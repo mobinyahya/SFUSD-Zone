@@ -1,0 +1,41 @@
+# numbers follow scheme from this doc: https://docs.google.com/document/d/16mg3dBJCaQEz9eG0R7FukpBi3wyp6kvMAzieVbxV6Qw/edit#
+
+# 6 zones
+#3-zone-0: [872, 750, 507] # 3 Schools
+#
+6-zone-1: [676, 479, 796, 449, 760, 493] # K-8 Schools
+6-zone-2: [513, 539, 478, 680, 490, 664] # 2 across, 3 vertical, pick largest
+6-zone-3: [513, 488, 644, 848, 790, 723] # 2 across, 3 vertical, pick central
+6-zone-4: [481, 575, 420, 718, 525, 823] # Vertical stack, pick central
+6-zone-5: [490, 664, 650, 478, 513, 453] # Vertical stack, pick largest B
+6-zone-6: [490, 664, 650, 420, 513, 453] # Vertical stack, pick largest C
+6-zone-7: [490, 664, 650, 420, 539, 453] # Vertical stack, pick largest D
+6-zone-8: [490, 664, 650, 680, 513, 453] # Vertical stack, pick largest G
+6-zone-9: [490, 664, 650, 680, 539, 453] # Vertical stack, pick largest H
+6-zone-10: [507, 575, 539, 435, 650, 490] # 3 across, 2 vertical, pick central
+6-zone-11: [490, 664, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
+
+# 7 zones
+7-zone-12: [676, 479, 796, 449, 760, 493, 670] # K-8 schools + Lakeshore
+7-zone-13: [676, 479, 796, 449, 760, 493, 453] # K-8 schools + Harte
+7-zone-14: [490, 664, 650, 478, 539, 513, 867] # Vertical stack, pick largest A
+7-zone-15: [490, 664, 650, 420, 539, 513, 867] # Vertical stack, pick largest B
+7-zone-16: [490, 664, 650, 420, 876, 513, 867] # Vertical stack, pick largest C
+7-zone-17: [490, 664, 650, 680, 539, 513, 867] # Vertical stack, pick largest
+7-zone-18: [490, 664, 650, 680, 876, 513, 867] # Vertical stack, pick largest
+7-zone-19: [670, 876, 664, 490, 650, 680, 513] # 3 rows west, 4 rows east, pick largest A
+###7-zone-20: [670, 478, 664, 490, 650, 503, 513] # Wrong: 503 doesn't exist. 3 rows west, 4 rows east, pick largest B
+7-zone-21: [490, 549, 782, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
+
+## 8 zones
+#8-zone-22: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lakeshore + Harte
+####8-zone-23: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lau + Harte
+#8-zone-24: [413, 544, 478, 670, 513, 680, 650, 490] # 2 across, 4 vertical, pick largest
+#8-zone-25: [664, 876, 478, 589, 650, 420, 513, 490] # 4 across, 2 vertical, pick largest
+#8-zone-26: [664, 876, 670, 729, 513, 680, 490, 650] # 9 grid, leave center empty, pick largest
+#8-zone-27: [664, 876, 670, 729, 478, 680, 490, 650] # 9 grid, leave SE empty, pick largest
+#8-zone-28: [420, 876, 670, 729, 513, 680, 490, 650] # 9 grid, leave NW empty, pick largest
+#8-zone-29: [420, 876, 420, 729, 513, 680, 490, 650] # 9 grid, leave SW empty, pick largest
+####8-zone-30: [549, 735, 650, 869, 655, 614, 876, 722] # Wrong, 869,655 don't exist. 9 grid, pick 2 closest to each internal 4-point corner (not in same square)
+#8-zone-31: [490, 549, 782, 478, 420, 838, 729, 453] # Street view, conscious of Twin Peaks
+#8-zone-32: [490, 549, 782, 478, 420, 838, 513, 820] # Street view, conscious of Twin Peaks

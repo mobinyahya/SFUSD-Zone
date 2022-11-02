@@ -1,0 +1,16 @@
+Moptions: [13]
+distanceOptions: [3, 5]
+shortage: 120
+balance: 180
+coverdistanceOptions: [3.3, 3.5]
+lowfrlOptions: [0.4, 0.2]
+maxfrlOptions: [1.8]
+lbHOCidx1Options: [-1, 0.4]
+ubHOCidx1: 20
+lbaalpiOptions: [0.4, 0.2]
+ubaapli: 20
+lowMetOptions: [0.5, 0.4, -1]
+highMet: 10
+topMetOptions: [40]
+contigOptions: [1]
+citywide: False
