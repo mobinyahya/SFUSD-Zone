@@ -1,6 +1,5 @@
 import math
 from collections import defaultdict
-from zone_opt.Tuning_param import Tuning_param
 
 
 def evaluate_school_quality_stats(dz, zone_dict):

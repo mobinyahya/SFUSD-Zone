@@ -2,7 +2,7 @@ import os, sys, json
 
 sys.path.append('../..')
 sys.path.append('../../summary_statistics')
-from zone_viz_mobin import ZoneVisualizer
+from Graphic_Visualization.zone_viz import ZoneVisualizer
 from IP_Zoning import DesignZones
 from Local_Search_Zoning import evaluate_assignment_score
 from Local_Search_Zoning import Tuning_param

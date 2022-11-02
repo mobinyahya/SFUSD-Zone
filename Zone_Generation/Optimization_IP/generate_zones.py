@@ -11,11 +11,11 @@ from gurobipy import GRB
 import geopandas as gpd
 
 sys.path.append("../..")
-from util import get_distance, make_school_geodataframe
-from Graphic_Visualization.zone_viz_mobin import ZoneVisualizer
-from zone_opt.zone_eval import *
-from zone_opt.Tuning_param import *
-from zone_opt.graph_shortest_path import Shortest_Path
+from Helper_Functions.util import get_distance, make_school_geodataframe
+from Graphic_Visualization.zone_viz import ZoneVisualizer
+# from Zone_Generation.zone_eval import *
+from Zone_Generation.Config.Tuning_param import *
+from Helper_Functions.graph_shortest_path import Shortest_Path
 
 K8_SCHOOLS = [676, 449, 479, 760, 796, 493]
 SF_Montessori = 814
@@ -911,7 +911,7 @@ class DesignZones:
             return
 
         if type(self.centroids_type) == str:
-            with open("centroids.yaml", "r") as f:
+            with open("../Config/centroids.yaml", "r") as f:
                 centroid_options = yaml.safe_load(f)
             if self.centroids_type not in centroid_options:
                 raise ValueError(
@@ -2068,7 +2068,7 @@ if __name__ == "__main__":
     #         param.racial_dev = racial_dev
     #         for include_k8 in [True, False]:
     #             param.include_k8 = include_k8
-    #             with open("centroids.yaml", "r") as f:
+    #             with open("../Config/centroids.yaml", "r") as f:
     #                 centroid_options = yaml.safe_load(f)
     #                 for centroids in centroid_options:
     #                     param.zone_count = int(centroids.split("-")[0])
