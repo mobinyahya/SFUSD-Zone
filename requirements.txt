@@ -1,6 +1,6 @@
-numpy~=1.26.0
-pandas~=2.1.1
-gurobipy~=10.0.3
+numpy
+pandas
+gurobipy
 geopandas
 pyyaml
-ortools~=9.7.2996
+ortools
