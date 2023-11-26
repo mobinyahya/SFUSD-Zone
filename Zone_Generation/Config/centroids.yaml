@@ -1,7 +1,7 @@
 # numbers follow scheme from this doc: https://docs.google.com/document/d/16mg3dBJCaQEz9eG0R7FukpBi3wyp6kvMAzieVbxV6Qw/edit#
 
 # 6 zones
-#3-zone-0: [872, 750, 507] # 3 Schools
+3-zone-0: [872, 750, 507] # 3 Schools
 #
 6-zone-1: [676, 479, 796, 449, 760, 493] # K-8 Schools
 6-zone-2: [513, 539, 478, 680, 490, 664] # 2 across, 3 vertical, pick largest

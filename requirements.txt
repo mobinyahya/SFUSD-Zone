@@ -4,3 +4,6 @@ gurobipy
 geopandas
 pyyaml
 ortools
+matplotlib
+descartes
+seaborn
