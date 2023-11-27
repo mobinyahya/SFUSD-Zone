@@ -2,6 +2,8 @@ import csv
 import os
 from collections import defaultdict
 
+from ortools.sat.python import cp_model
+
 
 def add_constraints(model, vm, school_df, bg_df, centroids):
     # Every centroid must have the block the school is in assigned to it
@@ -11,30 +13,22 @@ def add_constraints(model, vm, school_df, bg_df, centroids):
     add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids)
     add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids)
     add_contiguity_constraints(model, vm, school_df, bg_df, centroids)
-    add_diversity_constraints(model, vm, school_df, bg_df, centroids)
+    # add_diversity_constraints(model, vm, school_df, bg_df, centroids)
 
 
 def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
     #    All zones must have more than 15% less of the average number of any group (FRL, White, Asian, Latino)
-    races = ['White']
+    races = ['Asian', 'White', 'Hispanic/Latino']
     for zone in centroids:
         for race in races:
-
-            scaling_constant = 1
-            race_min = int(scaling_constant * (bg_df[race].sum() / bg_df['student_count'].sum() - 0.15))
-            race_block_sum = 0
-            students_in_zone_sum = 0
-            for bg in vm[zone]:
-                scaled_race = int(scaling_constant * bg_df[bg_df['census_blockgroup'] == bg][race].values[0])
-                scaled_pop = int(
-                    scaling_constant * bg_df[bg_df['census_blockgroup'] == bg]['student_count'].values[0])
-                race_block_sum += vm[zone][bg] * scaled_race
-                students_in_zone_sum += vm[zone][bg] * scaled_pop
-            race_prop = model.NewIntVar(0, scaling_constant ** 2, f'{race}_prop')
-            # race_block_sum = sum(race_block_sum)
-            # students_in_zone_sum = sum(students_in_zone_sum)
-            model.AddDivisionEquality(race_prop, race_block_sum, students_in_zone_sum)
-            model.Add(race_prop > race_min)
+            # TODO: Check that this this is an equivalent constraint to the one in the paper
+            print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
+            race_min = int(bg_df[race].sum() - (0.15 * bg_df['student_count'].sum()))
+            # ^^ this is equivalent to (race/total - 0.15) * total
+            rounded_race = (bg_df[race]).round().tolist()
+            block_values = list(vm[zone].values())
+            race_block_sum = cp_model.LinearExpr.WeightedSum(block_values, rounded_race)
+            model.Add(race_block_sum > race_min)
 
 
 def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
@@ -55,10 +49,6 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
         travel_matrix = list(reader)
     travels = defaultdict(dict)
     # create 2d dictionary mapping block group number to block group number to travel time
-    # k = 0
-    # for column in travel_matrix[0][1:]:
-    #     item_mapping = {}
-    #     item_mapping[column] = column
     for i in range(1, len(travel_matrix)):
         for j in range(1, len(travel_matrix[i])):
             if (travel_matrix[i][j] == '' or travel_matrix[i][0] == '' or travel_matrix[0][j] == ''):
@@ -102,9 +92,9 @@ def add_school_number_constraints(model, vm, school_df, bg_df, centroids):
             if bg in school_df['BlockGroup'].values:
                 schools_in_zone += vm[zone][bg]
         model.Add(
-            schools_in_zone >= schools_per_zone - 1)
+            schools_in_zone >= schools_per_zone - 2)
         # for some reason this -1 is necessary, otherwise the model is infeasible.
-        model.Add(schools_in_zone <= schools_per_zone + 1)
+        model.Add(schools_in_zone <= schools_per_zone + 2)
 
 
 def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids):

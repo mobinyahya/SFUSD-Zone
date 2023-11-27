@@ -66,7 +66,6 @@ class ZoneVisualizer:
     # def visualize_zones_from_dict(self, zone_dict,label=True,show=True, col='zone_id',title=''):
     def visualize_zones_from_dict(self, zone_dict, label=False, show=True, col='zone_id', title='',
                                   centroid_location=-1, save_name="don't save"):
-        # def visualize_zones_from_dict(self, centroid_locations, test_list, zone_dict, label=True, show=True, col='zone_id', title=''):
 
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
@@ -111,7 +110,7 @@ class ZoneVisualizer:
             df = self.sf.loc[self.sf['filter'] == 1]
 
         # plot zones
-        df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True)
+        df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
         plt.title(title)
 
         # plot centroid locations
