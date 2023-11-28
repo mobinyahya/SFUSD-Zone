@@ -9,6 +9,7 @@ import pandas as pd
 from shapely.geometry import Point
 
 
+
 class ZoneVisualizer:
     def __init__(self, level, year='1819'):
         self.level = level
@@ -65,7 +66,7 @@ class ZoneVisualizer:
 
     # def visualize_zones_from_dict(self, zone_dict,label=True,show=True, col='zone_id',title=''):
     def visualize_zones_from_dict(self, zone_dict, label=False, show=True, col='zone_id', title='',
-                                  centroid_location=-1, save_name="don't save"):
+                                  centroid_location=-1, save_name="don't save",):
 
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
@@ -97,10 +98,7 @@ class ZoneVisualizer:
             if label:
                 # self.sf.apply(lambda x: ax.annotate(fontsize=8, s= int(x.BlockGroup), xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
                 self.sf.apply(lambda x: ax.annotate(fontsize=8,
-                                                    s=int(x.BlockGroup) if int(x.BlockGroup) in [60750615002,
-                                                                                                 60750180001,
-                                                                                                 60759806001,
-                                                                                                 60750231031] else ".",
+                                                    text=int(x.BlockGroup),
                                                     xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
                 # self.sf.apply(lambda x: ax.annotate(fontsize=15, s= int(x.Block) if int(x.BlockGroup) == 60750179021 else ".", xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
                 # self.sf.apply(lambda x: ax.annotate(fontsize=15, s= int(x.Block) if int(x.Block) == 60750255002023 else ".", xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
@@ -115,6 +113,7 @@ class ZoneVisualizer:
 
         # plot centroid locations
         plt.scatter(centroid_location['lon'], centroid_location['lat'], s=20, c='black', marker='s')
+        # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
 
         # # plot school locations
         # aa = self.sc_merged.loc[self.sc_merged['category']=='Attendance']

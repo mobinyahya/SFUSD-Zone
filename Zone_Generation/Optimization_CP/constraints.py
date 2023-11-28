@@ -4,6 +4,8 @@ from collections import defaultdict
 
 from ortools.sat.python import cp_model
 
+from Zone_Generation.Optimization_CP.constants import SCALING_FACTOR
+
 
 def add_constraints(model, vm, school_df, bg_df, centroids):
     # Every centroid must have the block the school is in assigned to it
@@ -13,7 +15,22 @@ def add_constraints(model, vm, school_df, bg_df, centroids):
     add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids)
     add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids)
     add_contiguity_constraints(model, vm, school_df, bg_df, centroids)
-    # add_diversity_constraints(model, vm, school_df, bg_df, centroids)
+    add_diversity_constraints(model, vm, school_df, bg_df, centroids)
+    add_frl_constraints(model, vm, school_df, bg_df, centroids)
+
+
+def add_frl_constraints(model, vm, school_df, bg_df, centroids):
+    #     The FRL percentage of the zone must be within 15% of the average FRL percentage
+    frl_bg = bg_df['FRL Score'] * bg_df['student_count']
+    frl_min = int(
+        ((frl_bg.sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
+    for zone in centroids:
+        frl_coef = (frl_bg * SCALING_FACTOR).round().astype(int).tolist()
+        tcoef = (bg_df['student_count']).tolist()
+        block_values = list(vm[zone].values())
+        frl_block_sum = cp_model.LinearExpr.WeightedSum(block_values, frl_coef)
+        total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
+        model.Add(frl_block_sum >= total_block_sum * frl_min)
 
 
 def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
@@ -22,13 +39,21 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
     for zone in centroids:
         for race in races:
             # TODO: Check that this this is an equivalent constraint to the one in the paper
-            print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
-            race_min = int(bg_df[race].sum() - (0.15 * bg_df['student_count'].sum()))
+            # print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
+
+            race_min = int(((bg_df[race].sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
             # ^^ this is equivalent to (race/total - 0.15) * total
-            rounded_race = (bg_df[race]).round().tolist()
+            rcoef = (bg_df[race] * SCALING_FACTOR).tolist()
+            tcoef = (bg_df['student_count']).tolist()
             block_values = list(vm[zone].values())
-            race_block_sum = cp_model.LinearExpr.WeightedSum(block_values, rounded_race)
-            model.Add(race_block_sum > race_min)
+            race_block_sum = cp_model.LinearExpr.WeightedSum(block_values, rcoef)
+            total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
+            # r/t > rmin = r> rmin * t
+            # rmin = (R/T - 0.15)
+            # r > (R/T - 0.15) * t
+            # r*scaler > (R - 0.15) *scaler * t
+
+            model.Add(race_block_sum > total_block_sum * race_min)
 
 
 def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
@@ -61,26 +86,37 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
     neighbors = {}
     for row in adjacency_matrix:
         neighbors[row[0]] = set(row[1:])
+    centroid_bgs = []
+    for zone in centroids:
+        centroid_bgs.append(school_df[school_df['school_id'] == zone]['BlockGroup'].iloc[0])
     for zone in centroids:
         zone_bg = school_df[school_df['school_id'] == zone]['BlockGroup'].iloc[0]
         for bg in vm[zone]:
-            if bg in school_df['BlockGroup'].values:
+            if bg in centroid_bgs:
                 continue
 
             bg_distance_to_zone = travels[int(bg)][int(zone_bg)]
-            neighbors_closer = []
+            neighbors_closer = set()
+            all_neighbors = set()
             for neighbor in neighbors[str(int(bg))]:
                 if neighbor == '':
+                    # print(f"neighbor {neighbor} not in zone {zone}")
                     continue
                 neighbor = int(neighbor)
                 if float(neighbor) not in vm[zone]:
                     continue
+                # if float(neighbor) in BAD_NEIGHBORS:
+                #     continue
+                all_neighbors.add(float(neighbor))
                 neighbor_distance_to_zone = travels[neighbor][zone_bg]
                 if neighbor_distance_to_zone < bg_distance_to_zone:
-                    neighbors_closer.append(float(neighbor))
-            model.Add(
-                sum(vm[zone][n] for n in neighbors_closer) > 0
-            ).OnlyEnforceIf(vm[zone][bg])
+                    neighbors_closer.add(float(neighbor))
+            # if len(neighbors_closer) == 0:
+            #     print(f"no neighbors closer to {bg} than {zone_bg}")
+            # if len(all_neighbors) == 0:
+            #     print(f"no  neighbors of {bg}")
+            # model.Add(sum(vm[zone][n] for n in all_neighbors) >= vm[zone][bg])
+            model.Add(sum(vm[zone][n] for n in neighbors_closer) >= vm[zone][bg])
 
 
 def add_school_number_constraints(model, vm, school_df, bg_df, centroids):
@@ -92,9 +128,9 @@ def add_school_number_constraints(model, vm, school_df, bg_df, centroids):
             if bg in school_df['BlockGroup'].values:
                 schools_in_zone += vm[zone][bg]
         model.Add(
-            schools_in_zone >= schools_per_zone - 2)
+            schools_in_zone >= schools_per_zone - 1)
         # for some reason this -1 is necessary, otherwise the model is infeasible.
-        model.Add(schools_in_zone <= schools_per_zone + 2)
+        model.Add(schools_in_zone <= schools_per_zone + 1)
 
 
 def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids):

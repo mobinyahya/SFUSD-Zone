@@ -1,9 +1,12 @@
+import datetime
+import sys
+
 import pandas as pd
 import yaml
 from ortools.sat.python import cp_model
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS
+from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, YEAR, CENTROIDS
 from Zone_Generation.Optimization_CP.constraints import add_constraints
 from Zone_Generation.Optimization_CP.optimization import add_optimization
 
@@ -26,14 +29,17 @@ def prep_model():
     # solver.parameters.log_search_progress = True
     print(model.Validate())
     status = solver.Solve(model)
+
     print(f"Status = {solver.StatusName(status)}")
+    if status == cp_model.INFEASIBLE:
+        sys.exit(1)
     return solver, vm, school_df, bg_df, centroids
 
 
 def add_variables(model):
-    student_df = pd.read_csv('~/SFUSD/Data/Cleaned/enrolled_1819.csv')
-    school_df = pd.read_csv('~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv')
-    program_df = pd.read_csv('~/SFUSD/Data/Cleaned/programs_1819.csv')
+    student_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/enrolled_{YEAR}.csv')
+    school_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/schools_rehauled_{YEAR}.csv')
+    program_df = pd.read_csv(F'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
 
     student_df = student_df[student_df['grade'] == 'KG']
     print(len(student_df.index))
@@ -65,7 +71,7 @@ def add_variables(model):
 
     centroids = None
     with open("Zone_Generation/Config/centroids.yaml", "r") as stream:
-        centroids = yaml.safe_load(stream)['3-zone-0']
+        centroids = yaml.safe_load(stream)[CENTROIDS]
 
     # Create a 2d binary variable matrix for each school and each blockgroup
     # Each cell in the matrix represents whether a student from that blockgroup is assigned to that school
@@ -98,8 +104,15 @@ def visualize(solver, vm, school_df, bg_df, centroids):
                 zone_dict[bg] = int_map[zone]
                 break
     zv = ZoneVisualizer('BlockGroup')
-    zv.visualize_zones_from_dict(zone_dict, centroid_location=centroid_locations, title='No Diversity test',
-                                 save_name='test')
+    # bad_boys = pd.DataFrame()
+    # bad_boys['lat'] = 0
+    # bad_boys['lon'] = 0
+    # for n in BAD_NEIGHBORS:
+    #     bad_boys.loc[n, 'lat'] = bg_df[bg_df['census_blockgroup'] == n]['lat'].iloc[0]
+    #     bad_boys.loc[n, 'lon'] = bg_df[bg_df['census_blockgroup'] == n]['lon'].iloc[0]
+    zv.visualize_zones_from_dict(zone_dict, centroid_location=centroid_locations,
+                                 title=f'All Constraints, {CENTROIDS}, {MAX_SOLVER_TIME} seconds',
+                                 save_name=str(datetime.datetime.now()))
 
 
 def main():
