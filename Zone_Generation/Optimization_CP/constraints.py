@@ -24,6 +24,8 @@ def add_frl_constraints(model, vm, school_df, bg_df, centroids):
     frl_bg = bg_df['FRL Score'] * bg_df['student_count']
     frl_min = int(
         ((frl_bg.sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
+    frl_max = int(
+        ((frl_bg.sum() / bg_df['student_count'].sum()) + 0.15) * SCALING_FACTOR)
     for zone in centroids:
         frl_coef = (frl_bg * SCALING_FACTOR).round().astype(int).tolist()
         tcoef = (bg_df['student_count']).tolist()
@@ -31,6 +33,7 @@ def add_frl_constraints(model, vm, school_df, bg_df, centroids):
         frl_block_sum = cp_model.LinearExpr.WeightedSum(block_values, frl_coef)
         total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
         model.Add(frl_block_sum >= total_block_sum * frl_min)
+        model.Add(frl_block_sum <= total_block_sum * frl_max)
 
 
 def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
@@ -42,7 +45,7 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
             # print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
 
             race_min = int(((bg_df[race].sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
-            # ^^ this is equivalent to (race/total - 0.15) * total
+            race_max = int(((bg_df[race].sum() / bg_df['student_count'].sum()) + 0.15) * SCALING_FACTOR)
             rcoef = (bg_df[race] * SCALING_FACTOR).tolist()
             tcoef = (bg_df['student_count']).tolist()
             block_values = list(vm[zone].values())
@@ -51,9 +54,10 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
             # r/t > rmin = r> rmin * t
             # rmin = (R/T - 0.15)
             # r > (R/T - 0.15) * t
-            # r*scaler > (R - 0.15) *scaler * t
+            # r * scaler > (R - 0.15) * scaler * t
 
             model.Add(race_block_sum > total_block_sum * race_min)
+            model.Add(race_block_sum < total_block_sum * race_max)
 
 
 def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
@@ -100,22 +104,14 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids):
             all_neighbors = set()
             for neighbor in neighbors[str(int(bg))]:
                 if neighbor == '':
-                    # print(f"neighbor {neighbor} not in zone {zone}")
                     continue
                 neighbor = int(neighbor)
                 if float(neighbor) not in vm[zone]:
                     continue
-                # if float(neighbor) in BAD_NEIGHBORS:
-                #     continue
                 all_neighbors.add(float(neighbor))
                 neighbor_distance_to_zone = travels[neighbor][zone_bg]
                 if neighbor_distance_to_zone < bg_distance_to_zone:
                     neighbors_closer.add(float(neighbor))
-            # if len(neighbors_closer) == 0:
-            #     print(f"no neighbors closer to {bg} than {zone_bg}")
-            # if len(all_neighbors) == 0:
-            #     print(f"no  neighbors of {bg}")
-            # model.Add(sum(vm[zone][n] for n in all_neighbors) >= vm[zone][bg])
             model.Add(sum(vm[zone][n] for n in neighbors_closer) >= vm[zone][bg])
 
 
@@ -130,7 +126,7 @@ def add_school_number_constraints(model, vm, school_df, bg_df, centroids):
         model.Add(
             schools_in_zone >= schools_per_zone - 1)
         # for some reason this -1 is necessary, otherwise the model is infeasible.
-        model.Add(schools_in_zone <= schools_per_zone + 1)
+        model.Add(schools_in_zone <= schools_per_zone)
 
 
 def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids):
@@ -147,6 +143,7 @@ def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids):
         zone_students = sum(bg_students)
         # the number of students cannot be more than 15% greater than the capacity
         model.Add(100 * zone_students <= zone_capacity * 115)
+        model.Add(100 * zone_students >= zone_capacity * 85)
 
 
 def add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids):
