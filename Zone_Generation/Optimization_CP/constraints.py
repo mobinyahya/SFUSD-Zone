@@ -2,9 +2,10 @@ import csv
 import os
 from collections import defaultdict
 
+import pandas as pd
 from ortools.sat.python import cp_model
 
-from Zone_Generation.Optimization_CP.constants import SCALING_FACTOR
+from Zone_Generation.Optimization_CP.constants import SCALING_FACTOR, RACES
 
 
 def add_constraints(model, vm, school_df, bg_df, centroids):
@@ -21,14 +22,14 @@ def add_constraints(model, vm, school_df, bg_df, centroids):
 
 def add_frl_constraints(model, vm, school_df, bg_df, centroids):
     #     The FRL percentage of the zone must be within 15% of the average FRL percentage
-    frl_bg = bg_df['FRL Score'] * bg_df['student_count']
+
     frl_min = int(
-        ((frl_bg.sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
+        ((bg_df['FRL'].sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
     frl_max = int(
-        ((frl_bg.sum() / bg_df['student_count'].sum()) + 0.15) * SCALING_FACTOR)
+        ((bg_df['FRL'].sum() / bg_df['student_count'].sum()) + 0.15) * SCALING_FACTOR)
     for zone in centroids:
-        frl_coef = (frl_bg * SCALING_FACTOR).round().astype(int).tolist()
-        tcoef = (bg_df['student_count']).tolist()
+        frl_coef = (bg_df['FRL'] * SCALING_FACTOR).round().astype(int).tolist()
+        tcoef = (bg_df['student_count']).round().astype(int).tolist()
         block_values = list(vm[zone].values())
         frl_block_sum = cp_model.LinearExpr.WeightedSum(block_values, frl_coef)
         total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
@@ -38,16 +39,16 @@ def add_frl_constraints(model, vm, school_df, bg_df, centroids):
 
 def add_diversity_constraints(model, vm, school_df, bg_df, centroids):
     #    All zones must have more than 15% less of the average number of any group (FRL, White, Asian, Latino)
-    races = ['Asian', 'White', 'Hispanic/Latino']
+
     for zone in centroids:
-        for race in races:
+        for race in RACES:
             # TODO: Check that this this is an equivalent constraint to the one in the paper
             # print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
 
             race_min = int(((bg_df[race].sum() / bg_df['student_count'].sum()) - 0.15) * SCALING_FACTOR)
             race_max = int(((bg_df[race].sum() / bg_df['student_count'].sum()) + 0.15) * SCALING_FACTOR)
-            rcoef = (bg_df[race] * SCALING_FACTOR).tolist()
-            tcoef = (bg_df['student_count']).tolist()
+            rcoef = (bg_df[race] * SCALING_FACTOR).round().astype(int).tolist()
+            tcoef = (bg_df['student_count']).round().astype(int).tolist()
             block_values = list(vm[zone].values())
             race_block_sum = cp_model.LinearExpr.WeightedSum(block_values, rcoef)
             total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
@@ -132,18 +133,22 @@ def add_school_number_constraints(model, vm, school_df, bg_df, centroids):
 def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids):
     # The total capacity should be within 15% of the total number of students
     for zone in centroids:
-        school_capacities = []
-        for bg in vm[zone]:
-            if bg in school_df['BlockGroup'].values:
-                school_capacities.append(vm[zone][bg] * get_bg_for_school(school_df, bg)['capacity'])
-        bg_students = []
-        for bg in vm[zone]:
-            bg_students.append(vm[zone][bg] * bg_df[bg_df['census_blockgroup'] == bg]['student_count'].values[0])
-        zone_capacity = sum(school_capacities)
-        zone_students = sum(bg_students)
+        block_values = list(vm[zone].values())
+        zone_capacity_coefs = pd.Series([get_bg_for_school(school_df, bg) for bg in vm[zone]])
+        zone_capacity_coefs_max = (zone_capacity_coefs * SCALING_FACTOR * 1.15).round().astype(int).tolist()
+        zone_capacity_coefs_min = (zone_capacity_coefs * SCALING_FACTOR * 0.85).round().astype(int).tolist()
+
+        bg_counts = (bg_df['student_count'] * SCALING_FACTOR).round().astype(int).tolist()
+
+        print(sum(zone_capacity_coefs_max) / SCALING_FACTOR, sum(zone_capacity_coefs_min) / SCALING_FACTOR,
+              sum(bg_counts) / SCALING_FACTOR)
+        zone_capacity_min = cp_model.LinearExpr.WeightedSum(block_values, zone_capacity_coefs_min)
+        zone_capacity_max = cp_model.LinearExpr.WeightedSum(block_values, zone_capacity_coefs_max)
+        zone_students = cp_model.LinearExpr.WeightedSum(block_values, bg_counts)
         # the number of students cannot be more than 15% greater than the capacity
-        model.Add(100 * zone_students <= zone_capacity * 115)
-        model.Add(100 * zone_students >= zone_capacity * 85)
+        model.Add(zone_students <= zone_capacity_max)
+        # the number of students cannot be less than 15% less than the capacity
+        model.Add(zone_students >= zone_capacity_min)
 
 
 def add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids):
@@ -155,6 +160,6 @@ def add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids):
 def get_bg_for_school(school_df, bg):
     # Find the school in that blockgroup
     if bg in school_df['BlockGroup'].values:
-        return school_df[school_df['BlockGroup'] == int(bg)].iloc[0]
+        return school_df[school_df['BlockGroup'] == int(bg)].iloc[0]['capacity']
     else:
-        return None
+        return 0

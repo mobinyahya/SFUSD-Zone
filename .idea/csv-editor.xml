@@ -17,6 +17,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="$USER_HOME$/SFUSD/Data/Cleaned/schools_rehauled_1819.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>

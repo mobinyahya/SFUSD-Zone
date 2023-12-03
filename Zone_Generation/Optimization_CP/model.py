@@ -6,7 +6,7 @@ import yaml
 from ortools.sat.python import cp_model
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, YEAR, CENTROIDS
+from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, CENTROIDS, YEAR, RACES
 from Zone_Generation.Optimization_CP.constraints import add_constraints
 from Zone_Generation.Optimization_CP.optimization import add_optimization
 
@@ -37,37 +37,45 @@ def prep_model():
 
 
 def add_variables(model):
-    student_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/enrolled_{YEAR}.csv')
+    bg_df = pd.read_csv(f'~/Dropbox/SFUSD/Data/final_area_data/area_data_no_k8.csv')
     school_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/schools_rehauled_{YEAR}.csv')
     program_df = pd.read_csv(F'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
+    # program_df = pd.read_csv(F'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
+    # student_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/enrolled_{YEAR}.csv')
 
-    student_df = student_df[student_df['grade'] == 'KG']
-    print(len(student_df.index))
+    bg_df['enrolled_and_ge_applied'] = bg_df['enrolled_and_ge_applied']/3
+    for race in RACES:
+        bg_df[race] = bg_df['enrolled_and_ge_applied'] * (bg_df[f'resolved_ethnicity_{race}'] / bg_df['num_with_ethnicity'])
+        bg_df[race] = bg_df[race].fillna(0)
+    bg_df['FRL'] = bg_df['enrolled_and_ge_applied'] * (bg_df['frl_count'] / bg_df['frl_total_count'])
+    bg_df['FRL'] = bg_df['FRL'].fillna(0)
+    bg_df['student_count'] = bg_df['enrolled_and_ge_applied']
+    bg_df['student_count'] = bg_df['student_count'].fillna(0)
 
-    races = ['Asian', 'White', 'Hispanic/Latino']
-    for race in races:
-        student_df[race] = student_df['resolved_ethnicity'].apply(
-            lambda resolved: 1 if resolved == race else 0)
-
-    bg_df = student_df.groupby('census_blockgroup')
-    bg_df = bg_df.agg(
-        {'studentno': 'count', 'FRL Score': 'first', 'census_blockgroup': 'first', 'idschoolattendance': 'first',
-         'Asian': 'sum', 'White': 'sum', 'Hispanic/Latino': 'sum'})
-    bg_df = bg_df.rename(columns={'studentno': 'student_count'}).reset_index(drop=True)
+        # student_df[race] = student_df['resolved_ethnicity'].apply(
+        #     lambda resolved: 1 if resolved == race else 0)
+    #
+    # bg_df = student_df.groupby('census_blockgroup')
+    # bg_df = bg_df.agg(
+    #     {'studentno': 'count', 'FRL Score': 'first', 'census_blockgroup': 'first', 'idschoolattendance': 'first',
+    #      'Asian': 'sum', 'White': 'sum', 'Hispanic/Latino': 'sum'})
+    # bg_df = bg_df.rename(columns={'studentno': 'student_count'}).reset_index(drop=True)
 
     # Check that the last part of the program_id is "KG"
 
     program_df = program_df[program_df['program_id'].str[-2:] == 'KG']
 
+
     def program_capacity_for_school(row):
         return program_df[program_df['school_id'] == row['school_id']]['capacity'].sum()
-        # row['capacity'] = program_df[program_df['school_id'] == row['school_id']]['capacity'].sum()
 
     school_df['capacity'] = school_df.apply(program_capacity_for_school, axis=1)
+    print(school_df['capacity'].sum())
+    print(bg_df['student_count'].sum())
     # school_df = pd.merge(school_df, program_df, on='school_id', how='inner')
     # remove cap_lb, as it is not neccessarily the same capacity for the GE-KG program
     # school_df = school_df.drop(columns=['cap_lb'])
-    print(sum(school_df['capacity']))
+    # print(sum(school_df['capacity']))
 
     centroids = None
     with open("Zone_Generation/Config/centroids.yaml", "r") as stream:
@@ -80,6 +88,7 @@ def add_variables(model):
         vm[zone] = {}
         for bg in bg_df['census_blockgroup']:
             vm[zone][bg] = model.NewBoolVar(f'x_{zone}_{bg}')
+
     return vm, school_df, bg_df, centroids
 
 
