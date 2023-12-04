@@ -39,21 +39,22 @@ def prep_model():
 def add_variables(model):
     bg_df = pd.read_csv(f'~/Dropbox/SFUSD/Data/final_area_data/area_data_no_k8.csv')
     school_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/schools_rehauled_{YEAR}.csv')
-    program_df = pd.read_csv(F'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
+    # program_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
     # program_df = pd.read_csv(F'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
     # student_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/enrolled_{YEAR}.csv')
 
-    bg_df['enrolled_and_ge_applied'] = bg_df['enrolled_and_ge_applied']/3
+    bg_df['enrolled_and_ge_applied'] = bg_df['enrolled_and_ge_applied'] / 6
     for race in RACES:
-        bg_df[race] = bg_df['enrolled_and_ge_applied'] * (bg_df[f'resolved_ethnicity_{race}'] / bg_df['num_with_ethnicity'])
+        bg_df[race] = bg_df['enrolled_and_ge_applied'] * (
+                    bg_df[f'resolved_ethnicity_{race}'] / bg_df['num_with_ethnicity'])
         bg_df[race] = bg_df[race].fillna(0)
     bg_df['FRL'] = bg_df['enrolled_and_ge_applied'] * (bg_df['frl_count'] / bg_df['frl_total_count'])
     bg_df['FRL'] = bg_df['FRL'].fillna(0)
     bg_df['student_count'] = bg_df['enrolled_and_ge_applied']
     bg_df['student_count'] = bg_df['student_count'].fillna(0)
 
-        # student_df[race] = student_df['resolved_ethnicity'].apply(
-        #     lambda resolved: 1 if resolved == race else 0)
+    # student_df[race] = student_df['resolved_ethnicity'].apply(
+    #     lambda resolved: 1 if resolved == race else 0)
     #
     # bg_df = student_df.groupby('census_blockgroup')
     # bg_df = bg_df.agg(
@@ -63,11 +64,18 @@ def add_variables(model):
 
     # Check that the last part of the program_id is "KG"
 
-    program_df = program_df[program_df['program_id'].str[-2:] == 'KG']
-
+    # program_df = program_df[program_df['program_id'].str[-2:] == 'KG']
 
     def program_capacity_for_school(row):
-        return program_df[program_df['school_id'] == row['school_id']]['capacity'].sum()
+        #     get blockgroup in bg_df
+        bg = bg_df[bg_df['census_blockgroup'] == row['BlockGroup']]
+        if bg.empty:
+            return 0
+        bg = bg.iloc[0]
+        if bg['ge_schools'] != 1:
+            print('...')
+            return 0
+        return bg['ge_capacity']
 
     school_df['capacity'] = school_df.apply(program_capacity_for_school, axis=1)
     print(school_df['capacity'].sum())
