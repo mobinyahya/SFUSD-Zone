@@ -1,4 +1,7 @@
+import copy
 import datetime
+import json
+import os
 import sys
 
 import pandas as pd
@@ -13,6 +16,8 @@ from Zone_Generation.Optimization_CP.optimization import add_optimization
 
 def prep_model():
     model = cp_model.CpModel()
+    print(CENTROIDS)
+    print(MAX_SOLVER_TIME)
     print('Creating variables')
     vm, school_df, bg_df, centroids = add_variables(model)
     print('Adding constraints')
@@ -46,7 +51,7 @@ def add_variables(model):
     bg_df['enrolled_and_ge_applied'] = bg_df['enrolled_and_ge_applied'] / 6
     for race in RACES:
         bg_df[race] = bg_df['enrolled_and_ge_applied'] * (
-                    bg_df[f'resolved_ethnicity_{race}'] / bg_df['num_with_ethnicity'])
+                bg_df[f'resolved_ethnicity_{race}'] / bg_df['num_with_ethnicity'])
         bg_df[race] = bg_df[race].fillna(0)
     bg_df['FRL'] = bg_df['enrolled_and_ge_applied'] * (bg_df['frl_count'] / bg_df['frl_total_count'])
     bg_df['FRL'] = bg_df['FRL'].fillna(0)
@@ -104,11 +109,9 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     # Print solution.
     print(f"Objective value = {solver.ObjectiveValue()}")
     int_map = {}
+    zone_dict = {}
     for i, z in enumerate(centroids):
         int_map[z] = i
-    zone_dict = {}
-    for z in centroids:
-        zone_dict[z] = []
     centroid_locations = pd.DataFrame()
     centroid_locations['lat'] = 0
     centroid_locations['lon'] = 0
@@ -120,6 +123,14 @@ def visualize(solver, vm, school_df, bg_df, centroids):
             if solver.BooleanValue(vm[zone][bg]) == 1:
                 zone_dict[bg] = int_map[zone]
                 break
+    path = os.path.expanduser(f'~/Dropbox/SFUSD/Optimization/Zones/all-ge-students/CP/{CENTROIDS}/')
+    if not os.path.exists(path):
+        os.makedirs(path)
+    file_name = f'{MAX_SOLVER_TIME}_{datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")}_{solver.ObjectiveValue()}.json'
+    with open(path + file_name, 'w') as f:
+        copy_map = copy.deepcopy(zone_dict)
+        copy_map['int_map'] = int_map
+        json.dump(copy_map, f)
     zv = ZoneVisualizer('BlockGroup')
     # bad_boys = pd.DataFrame()
     # bad_boys['lat'] = 0
@@ -128,7 +139,7 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     #     bad_boys.loc[n, 'lat'] = bg_df[bg_df['census_blockgroup'] == n]['lat'].iloc[0]
     #     bad_boys.loc[n, 'lon'] = bg_df[bg_df['census_blockgroup'] == n]['lon'].iloc[0]
     zv.visualize_zones_from_dict(zone_dict, centroid_location=centroid_locations,
-                                 title=f'All Constraints, {CENTROIDS}, {MAX_SOLVER_TIME} seconds',
+                                 title=f'SFUSD Zoning with {CENTROIDS[0]} zones',
                                  save_name=str(datetime.datetime.now()))
 
 
