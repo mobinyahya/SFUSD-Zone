@@ -9,10 +9,11 @@ from collections import defaultdict
 import pandas as pd
 import yaml
 from ortools.sat.python import cp_model
+from ortools.sat.python.cp_model import Domain
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, CENTROIDS, YEAR, RACES
-from Zone_Generation.Optimization_CP.constraints import add_constraints
+from Zone_Generation.Optimization_CP.constraints import add_constraints, mapper_function
 from Zone_Generation.Optimization_CP.optimization import add_optimization
 
 
@@ -59,7 +60,8 @@ def prep_model():
     print('Adding constraints')
     neighbors = get_neighbors_mapping()
     travels = get_travel_matrix()
-    blocks_assigned_to_zone, neighbor_pairs = add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels)
+    blocks_assigned_to_zone, neighbor_pairs = add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping,
+                                                              neighbors, travels)
     print('Adding optimization')
     add_optimization(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels, neighbor_pairs)
     print('Solving')
@@ -138,12 +140,15 @@ def add_variables(model):
     m = len(centroids)
     centroid_mapping = {}
     for i, c in enumerate(centroids):
-        centroid_mapping[c] = i
+        # HARDCODED BECAUSE I KNOW THAT THERE ARE 70 SCHOOLS THERE
+        centroid_mapping[c] = mapper_function(i, 70)
+    domain = [mapper_function(i, 70) for i in range(len(centroids))]
+    d = Domain.FromValues(domain)
 
     # Create a mapping of blockgroups to zones
     vm = {}
     for bg in bg_df['census_blockgroup']:
-        vm[bg] = model.NewIntVar(0, m - 1, f'x_{bg}')
+        vm[bg] = model.NewIntVarFromDomain(d, f'x_{bg}')
         # vm[bg] = model.NewIntVar(0, len(centroids) - 1, f'x_{bg}')
 
     return vm, school_df, bg_df, centroids, centroid_mapping
@@ -154,6 +159,11 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     print(f"Objective value = {solver.ObjectiveValue()}")
     int_map = {}
     zone_dict = {}
+    rev_map = {}
+    for i, c in enumerate(centroids):
+        # HARDCODED BECAUSE I KNOW THAT THERE ARE 70 SCHOOLS THERE
+        rev_map[mapper_function(i, 70)] = c
+
     for i, z in enumerate(centroids):
         int_map[z] = i
     centroid_locations = pd.DataFrame()
@@ -162,8 +172,11 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     for zone in centroids:
         centroid_locations.loc[zone, 'lat'] = school_df[school_df['school_id'] == zone]['lat'].iloc[0]
         centroid_locations.loc[zone, 'lon'] = school_df[school_df['school_id'] == zone]['lon'].iloc[0]
+
     for bg in bg_df['census_blockgroup']:
-        zone_dict[bg] = solver.Value(vm[bg])
+        mapped_val = solver.Value(vm[bg])
+        zone_dict[bg] = int_map[rev_map[mapped_val]]
+
         # for zone in centroids:
         #     if solver.BooleanValue(vm[zone][bg]) == 1:
         #         zone_dict[bg] = int_map[zone]

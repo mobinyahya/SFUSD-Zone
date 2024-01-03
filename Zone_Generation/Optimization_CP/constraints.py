@@ -15,12 +15,12 @@ def add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, ne
     blocks_assigned_to_zone = create_indicator_variables(model, vm, school_df, bg_df, centroids, centroid_mapping)
     neighbor_pairs = create_neighbor_pair_indicators(model, vm, school_df, bg_df, centroids, centroid_mapping,
                                                      neighbors, travels)
-    add_school_number_constraints(model, vm, school_df, bg_df, centroids,
-                                  centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    add_school_number_constraints_alt(model, vm, school_df, bg_df, centroids,
+                                      centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
     add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping,
                                blocks_assigned_to_zone, neighbors, travels,
                                neighbor_pairs)  # easy to convert to integer
-    # All of these are essentially the exact same problem
+    # # All of these are essentially the exact same problem
     add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
                                   centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
     add_diversity_constraints(model, vm, school_df, bg_df, centroids,
@@ -36,12 +36,12 @@ def create_indicator_variables(model, vm, school_df, bg_df, centroids, centroid_
     blocks_assigned_to_zone = {}
     for bg in vm:
         if bg not in blocks_assigned_to_zone:
-            blocks_assigned_to_zone[bg] = []
-        for i in range(len(centroids)):
-            equal_var = model.NewBoolVar(f'equal_{bg}_{i}')
-            model.Add(vm[bg] == i).OnlyEnforceIf(equal_var)
-            model.Add(vm[bg] != i).OnlyEnforceIf(equal_var.Not())
-            blocks_assigned_to_zone[bg].append(equal_var)
+            blocks_assigned_to_zone[bg] = {}
+        for zone in centroids:
+            equal_var = model.NewBoolVar(f'equal_{bg}_{zone}')
+            model.Add(vm[bg] == centroid_mapping[zone]).OnlyEnforceIf(equal_var)
+            model.Add(vm[bg] != centroid_mapping[zone]).OnlyEnforceIf(equal_var.Not())
+            blocks_assigned_to_zone[bg][zone] = equal_var
     return blocks_assigned_to_zone
 
 
@@ -97,7 +97,7 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_
             # if this block group is assigned to this zone, then at least one closer neighbor must be equal to bg,
             # that is that one of them is 0
             model.Add(cp_model.LinearExpr.Sum(list(closer_neighbors)) < len(closer_neighbors)).OnlyEnforceIf(
-                blocks_assigned_to_zone[bg][centroid_mapping[zone]])
+                blocks_assigned_to_zone[bg][zone])
 
             # alternate method, may or may not be faster?
 
@@ -194,42 +194,45 @@ def add_school_number_constraints_alt(model, vm, school_df, bg_df, centroids,
     school_in_bg = []
     for bg in vm.keys():
         if bg in school_df['BlockGroup'].values:
-            school_in_bg.append(bg)
+            school_in_bg.append(vm[bg])
 
     num_school_blocks = len(school_in_bg)
     num_zones = len(centroids)
     schools_per_zone = ceil(num_school_blocks / num_zones)
     alt_schools_per_zone = schools_per_zone - 1
 
-    lb = mapper_function(0, num_school_blocks)
-    ub = mapper_function(num_zones - 1, num_school_blocks)
+    # lb = mapper_function(0, num_school_blocks)
+    # ub = mapper_function(num_zones - 1, num_school_blocks)
     mapped_vm = {}
-    for bg in school_in_bg:
-        mapped_vm[bg] = model.NewIntVar(lb, ub, f'mapped_{bg}')
-        for i in range(num_zones):
-            mapped_val = mapper_function(i, num_school_blocks)
-            mapped_var = mapped_vm[bg]
-
-            # intermediate_var_2 = model.NewBoolVar(f'intermediate_{bg}_{i}_2')
-            # model.Add((mapped_var == mapped_val)).OnlyEnforceIf(intermediate_var_2)
-            # model.Add((mapped_var != mapped_val)).OnlyEnforceIf(intermediate_var_2.Not())
-            # model.AddImplication(intermediate_var, intermediate_var_2)
-            # model.AddImplication(intermediate_var_2, intermediate_var)
-
-            # you can also do this without using the second intermediate variable
-            model.Add((mapped_var == mapped_val)).OnlyEnforceIf(blocks_assigned_to_zone[bg][i])
-            model.Add((mapped_var != mapped_val)).OnlyEnforceIf(blocks_assigned_to_zone[bg][i].Not())
+    # for bg in school_in_bg:
+    #     mapped_vm[bg] = model.NewIntVar(lb, ub, f'mapped_{bg}')
+    #     for i in range(num_zones):
+    #         mapped_val = mapper_function(i, num_school_blocks)
+    #         mapped_var = mapped_vm[bg]
     #
-    mapped_sum = cp_model.LinearExpr.Sum(list(mapped_vm.values()))
+    #         # intermediate_var_2 = model.NewBoolVar(f'intermediate_{bg}_{i}_2')
+    #         # model.Add((mapped_var == mapped_val)).OnlyEnforceIf(intermediate_var_2)
+    #         # model.Add((mapped_var != mapped_val)).OnlyEnforceIf(intermediate_var_2.Not())
+    #         # model.AddImplication(intermediate_var, intermediate_var_2)
+    #         # model.AddImplication(intermediate_var_2, intermediate_var)
+    #
+    #         # you can also do this without using the second intermediate variable
+    #         model.Add((mapped_var == mapped_val)).OnlyEnforceIf(blocks_assigned_to_zone[bg][i])
+    #         model.Add((mapped_var != mapped_val)).OnlyEnforceIf(blocks_assigned_to_zone[bg][i].Not())
+    #
+    mapped_sum = cp_model.LinearExpr.Sum(school_in_bg)
     all_possible_vals = get_sum_combinations(schools_per_zone, num_school_blocks)
+    if len(all_possible_vals) == 1:
+        model.Add(mapped_sum == all_possible_vals[0])
     #   mapped_sum must be equal to exactly one of the possible values
-    equals = []
-    for i in range(len(all_possible_vals)):
-        equal_to_i = model.NewBoolVar(f'equal_to_{i}')
-        model.Add(mapped_sum == all_possible_vals[i]).OnlyEnforceIf(equal_to_i)
-        model.Add(mapped_sum != all_possible_vals[i]).OnlyEnforceIf(equal_to_i.Not())
-        equals.append(equal_to_i)
-    model.AddBoolOr(equals)
+    else:
+        equals = []
+        for i in range(len(all_possible_vals)):
+            equal_to_i = model.NewBoolVar(f'equal_to_{i}')
+            model.Add(mapped_sum == all_possible_vals[i]).OnlyEnforceIf(equal_to_i)
+            model.Add(mapped_sum != all_possible_vals[i]).OnlyEnforceIf(equal_to_i.Not())
+            equals.append(equal_to_i)
+        model.AddBoolOr(equals)
 
 
 def mapper_function(num, n):
@@ -285,7 +288,7 @@ def add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
     zone_capacity_coefs_min = (zone_capacity_coefs * SCALING_FACTOR * 0.85).round().astype(int).tolist()
 
     for zone in centroids:
-        block_values = [blocks_assigned_to_zone[bg][centroid_mapping[zone]] for bg in bgs]
+        block_values = [blocks_assigned_to_zone[bg][zone] for bg in bgs]
         zone_capacity_min = cp_model.LinearExpr.WeightedSum(block_values, zone_capacity_coefs_min)
         zone_capacity_max = cp_model.LinearExpr.WeightedSum(block_values, zone_capacity_coefs_max)
         zone_students = cp_model.LinearExpr.WeightedSum(block_values, bg_counts)
@@ -308,7 +311,7 @@ def add_frl_constraints(model, vm, school_df, bg_df, centroids,
     tcoef = (bg_df['student_count']).round().astype(int).tolist()
     bgs = vm.keys()
     for zone in centroids:
-        block_values = [blocks_assigned_to_zone[bg][centroid_mapping[zone]] for bg in bgs]
+        block_values = [blocks_assigned_to_zone[bg][zone] for bg in bgs]
         frl_block_sum = cp_model.LinearExpr.WeightedSum(block_values, frl_coef)
         total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
         model.Add(frl_block_sum >= total_block_sum * frl_min)
@@ -330,7 +333,7 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids,
             # TODO: Check that this this is an equivalent constraint to the one in the paper
             # print(race, bg_df[race].sum(), 'total', bg_df['student_count'].sum())
 
-            block_values = [blocks_assigned_to_zone[bg][centroid_mapping[zone]] for bg in bgs]
+            block_values = [blocks_assigned_to_zone[bg][zone] for bg in bgs]
             race_block_sum = cp_model.LinearExpr.WeightedSum(block_values, rcoef)
             total_block_sum = cp_model.LinearExpr.WeightedSum(block_values, tcoef)
             # r/t > rmin = r> rmin * t
