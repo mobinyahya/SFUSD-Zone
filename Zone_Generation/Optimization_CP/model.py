@@ -7,6 +7,7 @@ import sys
 import pandas as pd
 import yaml
 from ortools.sat.python import cp_model
+from ortools.sat.python.cp_model import Domain
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, CENTROIDS, YEAR, RACES
@@ -19,11 +20,11 @@ def prep_model():
     print(CENTROIDS)
     print(MAX_SOLVER_TIME)
     print('Creating variables')
-    vm, school_df, bg_df, centroids = add_variables(model)
+    vm, school_df, bg_df, centroids, centroid_mapping = add_variables(model)
     print('Adding constraints')
-    add_constraints(model, vm, school_df, bg_df, centroids)
+    add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping)
     print('Adding optimization')
-    add_optimization(model, vm, school_df, bg_df, centroids)
+    add_optimization(model, vm, school_df, bg_df, centroids, centroid_mapping)
     print('Solving')
     solver = cp_model.CpSolver()
 
@@ -36,8 +37,9 @@ def prep_model():
     status = solver.Solve(model)
 
     print(f"Status = {solver.StatusName(status)}")
-    if status == cp_model.INFEASIBLE:
+    if status == cp_model.INFEASIBLE or status == cp_model.MODEL_INVALID or status == cp_model.UNKNOWN:
         sys.exit(1)
+
     return solver, vm, school_df, bg_df, centroids
 
 
@@ -78,7 +80,6 @@ def add_variables(model):
             return 0
         bg = bg.iloc[0]
         if bg['ge_schools'] != 1:
-            print('...')
             return 0
         return bg['ge_capacity']
 
@@ -93,16 +94,22 @@ def add_variables(model):
     centroids = None
     with open("Zone_Generation/Config/centroids.yaml", "r") as stream:
         centroids = yaml.safe_load(stream)[CENTROIDS]
+    vals = []
+    # number of blocks
+    n = len(bg_df['census_blockgroup'])
+    # number of zones
+    m = len(centroids)
+    centroid_mapping = {}
+    for i, c in enumerate(centroids):
+        centroid_mapping[c] = i
 
-    # Create a 2d binary variable matrix for each school and each blockgroup
-    # Each cell in the matrix represents whether a student from that blockgroup is assigned to that school
+    # Create a mapping of blockgroups to zones
     vm = {}
-    for zone in centroids:
-        vm[zone] = {}
-        for bg in bg_df['census_blockgroup']:
-            vm[zone][bg] = model.NewBoolVar(f'x_{zone}_{bg}')
+    for bg in bg_df['census_blockgroup']:
+        vm[bg] = model.NewIntVar(0, m - 1, f'x_{bg}')
+        # vm[bg] = model.NewIntVar(0, len(centroids) - 1, f'x_{bg}')
 
-    return vm, school_df, bg_df, centroids
+    return vm, school_df, bg_df, centroids, centroid_mapping
 
 
 def visualize(solver, vm, school_df, bg_df, centroids):
@@ -119,10 +126,11 @@ def visualize(solver, vm, school_df, bg_df, centroids):
         centroid_locations.loc[zone, 'lat'] = school_df[school_df['school_id'] == zone]['lat'].iloc[0]
         centroid_locations.loc[zone, 'lon'] = school_df[school_df['school_id'] == zone]['lon'].iloc[0]
     for bg in bg_df['census_blockgroup']:
-        for zone in centroids:
-            if solver.BooleanValue(vm[zone][bg]) == 1:
-                zone_dict[bg] = int_map[zone]
-                break
+        zone_dict[bg] = solver.Value(vm[bg])
+        # for zone in centroids:
+        #     if solver.BooleanValue(vm[zone][bg]) == 1:
+        #         zone_dict[bg] = int_map[zone]
+        #         break
     path = os.path.expanduser(f'~/Dropbox/SFUSD/Optimization/Zones/all-ge-students/CP/{CENTROIDS}/')
     if not os.path.exists(path):
         os.makedirs(path)
