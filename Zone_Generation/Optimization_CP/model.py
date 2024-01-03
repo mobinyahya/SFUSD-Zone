@@ -1,18 +1,53 @@
 import copy
+import csv
 import datetime
 import json
 import os
 import sys
+from collections import defaultdict
 
 import pandas as pd
 import yaml
 from ortools.sat.python import cp_model
-from ortools.sat.python.cp_model import Domain
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, CENTROIDS, YEAR, RACES
 from Zone_Generation.Optimization_CP.constraints import add_constraints
 from Zone_Generation.Optimization_CP.optimization import add_optimization
+
+
+def get_neighbors_mapping():
+    # create dictionary mapping block group number to list of neighbor block
+    file = os.path.expanduser(
+        "~/Dropbox/SFUSD/Optimization/block_group_adjacency_matrix.csv"
+    )
+    with open(file, "r") as f:
+        reader = csv.reader(f)
+        adjacency_matrix = list(reader)
+    # create dictionary mapping attendance area school id to list of neighbor
+    # attendance area ids (similarly, block group number)
+    neighbors = {}
+    for row in adjacency_matrix:
+        neighbors[row[0]] = set(row[1:])
+    return neighbors
+
+
+def get_travel_matrix():
+    file = os.path.expanduser(
+        '~/Dropbox/SFUSD/Optimization/bg2bg_distances.csv'
+    )
+    with open(file, 'r') as f:
+        reader = csv.reader(f)
+        travel_matrix = list(reader)
+    travels = defaultdict(dict)
+    # create 2d dictionary mapping block group number to block group number to travel time
+    for i in range(1, len(travel_matrix)):
+        for j in range(1, len(travel_matrix[i])):
+            if (travel_matrix[i][j] == '' or travel_matrix[i][0] == '' or travel_matrix[0][j] == ''):
+                continue
+
+            travels[int(travel_matrix[i][0])][int(travel_matrix[0][j])] = float(travel_matrix[i][j])
+    return travels
 
 
 def prep_model():
@@ -22,9 +57,11 @@ def prep_model():
     print('Creating variables')
     vm, school_df, bg_df, centroids, centroid_mapping = add_variables(model)
     print('Adding constraints')
-    add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping)
+    neighbors = get_neighbors_mapping()
+    travels = get_travel_matrix()
+    blocks_assigned_to_zone, neighbor_pairs = add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels)
     print('Adding optimization')
-    add_optimization(model, vm, school_df, bg_df, centroids, centroid_mapping)
+    add_optimization(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels, neighbor_pairs)
     print('Solving')
     solver = cp_model.CpSolver()
 
