@@ -106,26 +106,6 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_
             # model.Add(at_least_one_indicator == 0).OnlyEnforceIf(
             #     blocks_assigned_to_zone[bg][centroid_mapping[zone]])
 
-    # for zone in centroids:
-    #     zone_bg = school_df[school_df['school_id'] == zone]['BlockGroup'].iloc[0]
-    #     for bg in vm[zone]:
-    #         if bg in centroid_bgs:
-    #             continue
-    #
-    #         bg_distance_to_zone = travels[int(bg)][int(zone_bg)]
-    #         neighbors_closer = set()
-    #         all_neighbors = set()
-    #         for neighbor in neighbors[str(int(bg))]:
-    #             if neighbor == '':
-    #                 continue
-    #             neighbor = int(neighbor)
-    #             if float(neighbor) not in vm[zone]:
-    #                 continue
-    #             all_neighbors.add(float(neighbor))
-    #             neighbor_distance_to_zone = travels[neighbor][zone_bg]
-    #             if neighbor_distance_to_zone < bg_distance_to_zone:
-    #                 neighbors_closer.add(float(neighbor))
-    #         model.Add(sum(vm[zone][n] for n in neighbors_closer) >= vm[zone][bg])
 
 
 def add_school_number_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, blocks_assigned_to_zone):
