@@ -1,0 +1,9 @@
+numpy
+pandas
+gurobipy
+geopandas
+pyyaml
+ortools
+matplotlib
+descartes
+seaborn

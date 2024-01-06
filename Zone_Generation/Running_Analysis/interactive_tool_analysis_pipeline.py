@@ -13,8 +13,13 @@ import yaml
 import geopandas as gpd
 from shapely.geometry import Point
 
-from generate_zones import DesignZones, _get_zone_dict, ETHNICITY_DICT, K8_SCHOOLS
-from zone_viz import ZoneVisualizer
+from Zone_Generation.Optimization_IP.generate_zones import (
+    DesignZones,
+    _get_zone_dict,
+    ETHNICITY_DICT,
+    K8_SCHOOLS,
+)
+from Graphic_Visualization.zone_viz_KLM import ZoneVisualizer
 
 SPED_PROGRAMS = ["SA", "MS", "MM", "TC", "AF", "ED", "AO"]
 ETHNICITY_COLS = [
@@ -46,14 +51,14 @@ K8_MAP = {"1": "Yes", "2": "No"}
 
 class DashboardCreator:
     def __init__(
-            self,
-            year: Union[int, list] = 21,
-            capacity_scenario="A",
-            level="BlockGroup",
-            program_type="GE",
-            drop_optout=True,
-            new_schools=True,
-            individual_years=False,
+        self,
+        year: Union[int, list] = 21,
+        capacity_scenario="A",
+        level="BlockGroup",
+        program_type="GE",
+        drop_optout=True,
+        new_schools=True,
+        individual_years=False,
     ):
         self.year = year
         self.capacity_scenario = capacity_scenario
@@ -80,7 +85,11 @@ class DashboardCreator:
             _,
         ) = self._load_area_data(include_k8=False)
         self.school_counts, self.district_avg = self._load_current_cbeds_data()
-        self.modality_zones, self.walk_time, self.transit_time = self._load_transportation_data()
+        (
+            self.modality_zones,
+            self.walk_time,
+            self.transit_time,
+        ) = self._load_transportation_data()
         self.distances = self._load_distance_data()
         with open("centroids.yaml", "r") as f:
             self.centroid_options = yaml.safe_load(f)
@@ -154,8 +163,8 @@ class DashboardCreator:
         school = self._load_school_data(include_k8)
         school["school_name"] = (
             school[["census_blockgroup", "school_name"]]
-                .groupby("census_blockgroup")["school_name"]
-                .transform(lambda x: "\n".join(x))
+            .groupby("census_blockgroup")["school_name"]
+            .transform(lambda x: "\n".join(x))
         )
         school_area = school.groupby("census_blockgroup", as_index=False).sum()
         school_names = school.groupby("census_blockgroup").first()[["school_name"]]
@@ -186,6 +195,8 @@ class DashboardCreator:
                 year_area_data[y] = year_area.copy()
         student_area = student.groupby("census_blockgroup", as_index=False).sum()
         area_data = area_data.merge(student_area, how="outer", on="census_blockgroup")
+        area_data.to_csv("~/Desktop/area_data.csv")
+        exit()
 
         return area_data, student, school, year_area_data, year_student_data
 
@@ -204,22 +215,22 @@ class DashboardCreator:
         ).first()
         num_blockgroups = (
             area_data[["census_blockgroup"]]
-                .merge(num_blockgroups, how="left", on="census_blockgroup")
-                .groupby("Tract")
-                .count()
+            .merge(num_blockgroups, how="left", on="census_blockgroup")
+            .groupby("Tract")
+            .count()
         )
         census_student = census_student.merge(
             num_blockgroups, left_on="Tract", right_index=True
         )
 
         census_student["all_school_aged_children"] = (
-                census_student["Draft Estimate"] / census_student["census_block"]
+            census_student["Draft Estimate"] / census_student["census_block"]
         )
         census_student = census_student[["all_school_aged_children", "Tract"]]
         census_student = (
             translator.groupby("census_blockgroup", as_index=False)
-                .first()
-                .merge(census_student, how="left", on="Tract")
+            .first()
+            .merge(census_student, how="left", on="Tract")
         )
         area_data = area_data.merge(census_student, how="left", on="census_blockgroup")
         return area_data
@@ -253,7 +264,7 @@ class DashboardCreator:
         )
         # student_data = self._make_program_type_lists(student_data)
 
-        if year == 21:
+        if year in [21, 22]:
             student_data.loc[:, "ell"] = student_data["englprof"].apply(
                 lambda x: 1 if x in ["N", "L"] else 0
             )
@@ -284,13 +295,17 @@ class DashboardCreator:
 
         for rnd in range(2, 6):
             if f"r{rnd}_programs" in student_data.columns:
-                student_data["r1_programs"] = student_data["r1_programs"].fillna(student_data[f"r{rnd}_programs"])
-        student_data.r1_programs = student_data.r1_programs.apply(lambda x: eval(x) if not pd.isna(x) else [])
+                student_data["r1_programs"] = student_data["r1_programs"].fillna(
+                    student_data[f"r{rnd}_programs"]
+                )
+        student_data.r1_programs = student_data.r1_programs.apply(
+            lambda x: eval(x) if not pd.isna(x) else []
+        )
         student_data["enrolled_and_ge_applied"] = student_data.apply(
             lambda x: sum([i == "GE" for i in x["r1_programs"]]) / len(x["r1_programs"])
             if x["enrolled_students"] == 1 and len(x["r1_programs"]) > 0
             else 0,
-            axis=1
+            axis=1,
         )
         student_data = student_data[
             [
@@ -305,7 +320,7 @@ class DashboardCreator:
                 "enrolled_idschool",
             ]
             + ETHNICITY_COLS
-            ]
+        ]
 
         return student_data.rename(columns={"sped": "sped_count", "ell": "ell_count"})
 
@@ -399,13 +414,22 @@ class DashboardCreator:
     def _load_transportation_data():
         maps = {}
         for time in [20, 30]:
-            for mode in ['walk', "bike", "transit"]:
+            for mode in ["walk", "bike", "transit"]:
                 with open(
-                        os.path.expanduser(f"~/Dropbox/SFUSD/Data/Cleaned/bgs_within_{time}_{mode}_time_1.4_adjusted.yaml"), "r"
+                    os.path.expanduser(
+                        f"~/Dropbox/SFUSD/Data/Cleaned/bgs_within_{time}_{mode}_time_1.4_adjusted.yaml"
+                    ),
+                    "r",
                 ) as f:
                     maps[f"{mode}_{time}"] = yaml.safe_load(f)
-        walk = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/bg_to_school_walk_time.csv", index_col='origin_bg')
-        transit = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/bg_to_school_transit_time.csv", index_col='origin_bg')
+        walk = pd.read_csv(
+            "~/Dropbox/SFUSD/Data/Cleaned/bg_to_school_walk_time.csv",
+            index_col="origin_bg",
+        )
+        transit = pd.read_csv(
+            "~/Dropbox/SFUSD/Data/Cleaned/bg_to_school_transit_time.csv",
+            index_col="origin_bg",
+        )
         return maps, walk, transit
 
     def _add_frl_and_census_blocks(self, st_df):
@@ -452,7 +476,7 @@ class DashboardCreator:
 
     def _load_current_cbeds_data(self):
         if os.path.isfile(
-                os.path.expanduser("~/SFUSD/Data/Cleaned/current_students_2122.csv")
+            os.path.expanduser("~/SFUSD/Data/Cleaned/current_students_2122.csv")
         ):
             df = pd.read_csv("~/SFUSD/Data/Cleaned/current_students_2122.csv")
         else:
@@ -463,24 +487,38 @@ class DashboardCreator:
             df["resolved_ethnicity"].replace(ETHNICITY_DICT, inplace=True)
             df = pd.get_dummies(df, columns=["resolved_ethnicity"])
             df = self._add_frl_and_census_blocks(df)
-            df["num_students_w_frl"] = df.frl.apply(lambda x: 1 if not pd.isna(x) else 0)
+            df["num_students_w_frl"] = df.frl.apply(
+                lambda x: 1 if not pd.isna(x) else 0
+            )
             df.loc[:, "ell"] = df["englprof"].apply(
                 lambda x: 1 if x in ["N", "L"] else (0 if not pd.isna(x) else np.nan)
             )
             df.loc[:, "sped"] = np.where(df["sped"] == "Y", 1, 0)
-            df[["schno", "ell", "frl", "num_students_w_frl", "sped", "census_blockgroup"] + ETHNICITY_COLS].to_csv(
-                "~/SFUSD/Data/Cleaned/current_students_2122.csv", index=False
-            )
+            df[
+                [
+                    "schno",
+                    "ell",
+                    "frl",
+                    "num_students_w_frl",
+                    "sped",
+                    "census_blockgroup",
+                ]
+                + ETHNICITY_COLS
+            ].to_csv("~/SFUSD/Data/Cleaned/current_students_2122.csv", index=False)
 
         df.loc[:, "num_students_w_frl"] = df["frl"].apply(
             lambda x: 1 if not pd.isna(x) else 0
         )
         df.loc[:, "num_students"] = 1
         all_eth_cols = [i for i in df.columns if re.match("resolved_ethnicity*", i)]
-        df.loc[:, "num_with_ethnicity"] = df.apply(lambda x: 1 if sum(x[all_eth_cols]) > 0 else 0, axis=1)
+        df.loc[:, "num_with_ethnicity"] = df.apply(
+            lambda x: 1 if sum(x[all_eth_cols]) > 0 else 0, axis=1
+        )
         school_counts = df.groupby("schno").sum()
 
-        l1_tests = pd.read_csv("~/Dropbox/SFUSD/Data/school_l1_test_scores.csv", index_col="school_id")
+        l1_tests = pd.read_csv(
+            "~/Dropbox/SFUSD/Data/school_l1_test_scores.csv", index_col="school_id"
+        )
         school_counts = school_counts.join(l1_tests, how="left")
         # school_counts["L1_test%"] = (school_counts.math_l1_tests + school_counts.ela_l1_tests)/ (school_counts.num_math_tests + school_counts.num_ela_tests)
         # school_counts["frl%"] = school_counts.frl / school_counts.num_students_w_frl
@@ -489,7 +527,9 @@ class DashboardCreator:
 
         ethnicities_short = [x.split("_")[-1] + "%" for x in ETHNICITY_COLS]
         for long, short in zip(ETHNICITY_COLS, ethnicities_short):
-            school_counts[short] = school_counts[long] / school_counts["num_with_ethnicity"]
+            school_counts[short] = (
+                school_counts[long] / school_counts["num_with_ethnicity"]
+            )
 
         sch2bg = dict(
             zip(self.school_data_k8.school_id, self.school_data_k8.census_blockgroup)
@@ -499,11 +539,14 @@ class DashboardCreator:
         ]
         school_counts.dropna(subset=["census_blockgroup"], inplace=True)
 
-        l1_pct = self.cbeds_data.L1_test_count.sum() / self.cbeds_data.total_test_count.sum()
+        l1_pct = (
+            self.cbeds_data.L1_test_count.sum() / self.cbeds_data.total_test_count.sum()
+        )
 
         district_avg = df[
-            ["frl", "num_students_w_frl", "ell", "sped", "num_students"] + ETHNICITY_COLS
-            ].sum(axis=0)
+            ["frl", "num_students_w_frl", "ell", "sped", "num_students"]
+            + ETHNICITY_COLS
+        ].sum(axis=0)
         # district_avg = df[
         #     ["frl%", "ell%", "L1_test_count%", "sped%"] + ETHNICITY_COLS
         # ].sum(axis=0)
@@ -551,8 +594,8 @@ class DashboardCreator:
 
         metrics = {}
         metrics["avg_num_ge_within_1mi"] = (
-                sum(pairs["within_1mi"] * pairs["all_students"])
-                / students["all_students"].sum()
+            sum(pairs["within_1mi"] * pairs["all_students"])
+            / students["all_students"].sum()
         )
         metrics["max_min_dist"] = (
             pairs.groupby("student_blockgroup").min()["dist"].max()
@@ -629,24 +672,47 @@ class DashboardCreator:
                 for sch, block_groups in self.modality_zones[f"{mode}_{time}"].items():
                     sch_zone = zone_dict[sch2bg[sch]]
                     blocks_in_zone = [
-                        x
-                        for x in block_groups
-                        if zone_dict[x] == sch_zone
+                        x for x in block_groups if zone_dict[x] == sch_zone
                     ]
                     for bg in blocks_in_zone:
                         options_per_bg[bg] += 1
                     preserved += sum([bg2num_students[x] for x in blocks_in_zone])
-                    sch_student_modality_pairs += sum([bg2num_students[x] for x in block_groups])
+                    sch_student_modality_pairs += sum(
+                        [bg2num_students[x] for x in block_groups]
+                    )
 
-                metrics[f"%_{time}_{mode}_bgs_preserved_adjusted"] = float(preserved) / sch_student_modality_pairs
+                metrics[f"%_{time}_{mode}_bgs_preserved_adjusted"] = (
+                    float(preserved) / sch_student_modality_pairs
+                )
                 for i in range(3):
                     if i == 2:
-                        options = sum([bg2num_students[bg] for bg in zone_dict.keys() if options_per_bg[bg] >= i])
+                        options = sum(
+                            [
+                                bg2num_students[bg]
+                                for bg in zone_dict.keys()
+                                if options_per_bg[bg] >= i
+                            ]
+                        )
                     else:
-                        options = sum([bg2num_students[bg] for bg in zone_dict.keys() if options_per_bg[bg] == i])
-                    metrics[f"%_with_{i if i < 2 else '2+'}_{time}min_{mode}_options_adjusted"] = options / n
-                metrics[f"num_options_in_{time}mins_{mode}_adjusted"] = sum(
-                    [bg2num_students[bg] * num for bg, num in options_per_bg.items()]) / n
+                        options = sum(
+                            [
+                                bg2num_students[bg]
+                                for bg in zone_dict.keys()
+                                if options_per_bg[bg] == i
+                            ]
+                        )
+                    metrics[
+                        f"%_with_{i if i < 2 else '2+'}_{time}min_{mode}_options_adjusted"
+                    ] = (options / n)
+                metrics[f"num_options_in_{time}mins_{mode}_adjusted"] = (
+                    sum(
+                        [
+                            bg2num_students[bg] * num
+                            for bg, num in options_per_bg.items()
+                        ]
+                    )
+                    / n
+                )
 
         return pd.Series(metrics)
 
@@ -655,37 +721,57 @@ class DashboardCreator:
             ["census_blockgroup", "all_students", "zone_id"]
         ].rename(columns={"census_blockgroup": "student_blockgroup"})
         schools = self.school_data_k8 if include_k8 else self.school_data_no_k8
-        schools = schools.loc[schools["ge_capacity"] > 0][['school_id', 'census_blockgroup']]
-        schools.loc[:, 'zone_id'] = schools['census_blockgroup'].replace(zone_dict)
-        pairs = students.merge(schools, how='inner', on='zone_id')
+        schools = schools.loc[schools["ge_capacity"] > 0][
+            ["school_id", "census_blockgroup"]
+        ]
+        schools.loc[:, "zone_id"] = schools["census_blockgroup"].replace(zone_dict)
+        pairs = students.merge(schools, how="inner", on="zone_id")
         pairs["walk_time"] = pairs.apply(
             lambda x: self.walk_time.loc[
                 int(x["student_blockgroup"]), str(int(x["school_id"]))
-            ] if (int(x["student_blockgroup"]) != 60750179021) else np.nan,
+            ]
+            if (int(x["student_blockgroup"]) != 60750179021)
+            else np.nan,
             axis=1,
         )
 
         # pairs.loc[pairs.student_blockgroup == 60750179021, ['walk_time']] = np.nan
         # pairs.loc[pairs.student_blockgroup == 60750179021, ['transit_time']] = np.nan
-        max_walk = pairs.groupby("student_blockgroup").max().rename(columns={"walk_time": "avg_max_walk_time"})
-        max_walk["avg_max_walk_time"] = max_walk["avg_max_walk_time"] * max_walk["all_students"]
-        max_walk = max_walk.groupby('zone_id').sum()
-        max_walk["avg_max_walk_time"] = max_walk["avg_max_walk_time"] / max_walk["all_students"]
+        max_walk = (
+            pairs.groupby("student_blockgroup")
+            .max()
+            .rename(columns={"walk_time": "avg_max_walk_time"})
+        )
+        max_walk["avg_max_walk_time"] = (
+            max_walk["avg_max_walk_time"] * max_walk["all_students"]
+        )
+        max_walk = max_walk.groupby("zone_id").sum()
+        max_walk["avg_max_walk_time"] = (
+            max_walk["avg_max_walk_time"] / max_walk["all_students"]
+        )
 
-        avg_walk = pairs.groupby("student_blockgroup").mean().rename(columns={"walk_time": "avg_walk_time"})
+        avg_walk = (
+            pairs.groupby("student_blockgroup")
+            .mean()
+            .rename(columns={"walk_time": "avg_walk_time"})
+        )
         avg_walk["avg_walk_time"] = avg_walk["avg_walk_time"] * avg_walk["all_students"]
-        avg_walk = avg_walk.groupby('zone_id').sum()
+        avg_walk = avg_walk.groupby("zone_id").sum()
         avg_walk["avg_walk_time"] = avg_walk["avg_walk_time"] / avg_walk["all_students"]
-        return max_walk[['avg_max_walk_time']].join(avg_walk[['avg_walk_time']])
+        return max_walk[["avg_max_walk_time"]].join(avg_walk[["avg_walk_time"]])
 
-    def _supplementary_zone_level_transportation_metrics(self, df, include_k8, zone_dict, walk_multiplier=1.3):
+    def _supplementary_zone_level_transportation_metrics(
+        self, df, include_k8, zone_dict, walk_multiplier=1.3
+    ):
         students = df.loc[df["all_students"] > 0][
             ["census_blockgroup", "all_students", "zone_id"]
         ].rename(columns={"census_blockgroup": "student_blockgroup"})
         schools = self.school_data_k8 if include_k8 else self.school_data_no_k8
-        schools = schools.loc[schools["ge_capacity"] > 0][['school_id', 'census_blockgroup']]
-        schools.loc[:, 'zone_id'] = schools['census_blockgroup'].replace(zone_dict)
-        pairs = students.merge(schools, how='inner', on='zone_id')
+        schools = schools.loc[schools["ge_capacity"] > 0][
+            ["school_id", "census_blockgroup"]
+        ]
+        schools.loc[:, "zone_id"] = schools["census_blockgroup"].replace(zone_dict)
+        pairs = students.merge(schools, how="inner", on="zone_id")
         pairs["walk_time"] = pairs.apply(
             lambda x: self.walk_time.loc[
                 int(x["student_blockgroup"]), str(int(x["school_id"]))
@@ -698,39 +784,85 @@ class DashboardCreator:
             ],  # if (int(x["student_blockgroup"]) != 60750179021) else np.nan,
             axis=1,
         )
-        pairs.loc[:, "30min_walk_adjusted"] = pairs["walk_time"].apply(lambda x: 1 if x <= 30/walk_multiplier else 0)
-        pairs.loc[:, "30min_transit"] = pairs["transit_time"].apply(lambda x: 1 if x <= 30 else 0)
-        pairs.loc[:, "20min_walk_adjusted"] = pairs["walk_time"].apply(lambda x: 1 if x <= 20/walk_multiplier else 0)
-        pairs.loc[:, "20min_transit"] = pairs["transit_time"].apply(lambda x: 1 if x <= 20 else 0)
+        pairs.loc[:, "30min_walk_adjusted"] = pairs["walk_time"].apply(
+            lambda x: 1 if x <= 30 / walk_multiplier else 0
+        )
+        pairs.loc[:, "30min_transit"] = pairs["transit_time"].apply(
+            lambda x: 1 if x <= 30 else 0
+        )
+        pairs.loc[:, "20min_walk_adjusted"] = pairs["walk_time"].apply(
+            lambda x: 1 if x <= 20 / walk_multiplier else 0
+        )
+        pairs.loc[:, "20min_transit"] = pairs["transit_time"].apply(
+            lambda x: 1 if x <= 20 else 0
+        )
 
-        num_options = pairs.groupby('student_blockgroup', as_index=False).sum()[
-            ['student_blockgroup', "30min_walk_adjusted", "30min_transit", "20min_walk_adjusted", "20min_transit"]]
-        num_options = num_options.merge(students, how='left', on='student_blockgroup')
-        num_options["2+_30min_walk_adjusted"] = num_options["30min_walk_adjusted"].apply(lambda x: 1 if x >= 2 else 0)
-        num_options["2+_30min_transit"] = num_options["30min_transit"].apply(lambda x: 1 if x >= 2 else 0)
-        num_options["2+_20min_walk_adjusted"] = num_options["20min_walk_adjusted"].apply(lambda x: 1 if x >= 2 else 0)
-        num_options["2+_20min_transit"] = num_options["20min_transit"].apply(lambda x: 1 if x >= 2 else 0)
-        columns = ["2+_30min_walk_adjusted", "2+_30min_transit", "30min_walk_adjusted", "30min_transit","2+_20min_walk_adjusted", "2+_20min_transit", "20min_walk_adjusted", "20min_transit"]
+        num_options = pairs.groupby("student_blockgroup", as_index=False).sum()[
+            [
+                "student_blockgroup",
+                "30min_walk_adjusted",
+                "30min_transit",
+                "20min_walk_adjusted",
+                "20min_transit",
+            ]
+        ]
+        num_options = num_options.merge(students, how="left", on="student_blockgroup")
+        num_options["2+_30min_walk_adjusted"] = num_options[
+            "30min_walk_adjusted"
+        ].apply(lambda x: 1 if x >= 2 else 0)
+        num_options["2+_30min_transit"] = num_options["30min_transit"].apply(
+            lambda x: 1 if x >= 2 else 0
+        )
+        num_options["2+_20min_walk_adjusted"] = num_options[
+            "20min_walk_adjusted"
+        ].apply(lambda x: 1 if x >= 2 else 0)
+        num_options["2+_20min_transit"] = num_options["20min_transit"].apply(
+            lambda x: 1 if x >= 2 else 0
+        )
+        columns = [
+            "2+_30min_walk_adjusted",
+            "2+_30min_transit",
+            "30min_walk_adjusted",
+            "30min_transit",
+            "2+_20min_walk_adjusted",
+            "2+_20min_transit",
+            "20min_walk_adjusted",
+            "20min_transit",
+        ]
         for col in columns:
             num_options[col] *= num_options["all_students"]
-        num_options = num_options.groupby('zone_id').sum()
+        num_options = num_options.groupby("zone_id").sum()
         for col in columns:
             num_options[col] /= num_options["all_students"]
         num_options = num_options[columns]
 
-        pairs.loc[pairs.student_blockgroup == 60750179021, ['walk_time']] = np.nan
-        pairs.loc[pairs.student_blockgroup == 60750179021, ['transit_time']] = np.nan
-        max_walk = pairs.groupby("student_blockgroup").max().rename(columns={"walk_time": "avg_max_walk_time"})
-        max_walk["avg_max_walk_time"] = max_walk["avg_max_walk_time"] * max_walk["all_students"]
-        max_walk = max_walk.groupby('zone_id').sum()
-        max_walk["avg_max_walk_time"] = max_walk["avg_max_walk_time"] / max_walk["all_students"]
-        avg_walk = pairs.groupby("student_blockgroup").mean().rename(columns={"walk_time": "avg_walk_time"})
+        pairs.loc[pairs.student_blockgroup == 60750179021, ["walk_time"]] = np.nan
+        pairs.loc[pairs.student_blockgroup == 60750179021, ["transit_time"]] = np.nan
+        max_walk = (
+            pairs.groupby("student_blockgroup")
+            .max()
+            .rename(columns={"walk_time": "avg_max_walk_time"})
+        )
+        max_walk["avg_max_walk_time"] = (
+            max_walk["avg_max_walk_time"] * max_walk["all_students"]
+        )
+        max_walk = max_walk.groupby("zone_id").sum()
+        max_walk["avg_max_walk_time"] = (
+            max_walk["avg_max_walk_time"] / max_walk["all_students"]
+        )
+        avg_walk = (
+            pairs.groupby("student_blockgroup")
+            .mean()
+            .rename(columns={"walk_time": "avg_walk_time"})
+        )
         avg_walk["avg_walk_time"] = avg_walk["avg_walk_time"] * avg_walk["all_students"]
-        avg_walk = avg_walk.groupby('zone_id').sum()
+        avg_walk = avg_walk.groupby("zone_id").sum()
         avg_walk["avg_walk_time"] = avg_walk["avg_walk_time"] / avg_walk["all_students"]
-        avg_max = max_walk[['avg_max_walk_time']].join(avg_walk[['avg_walk_time']])
-        avg_max['avg_max_walk_adjusted'] = avg_max['avg_max_walk_time'] * walk_multiplier
-        avg_max['avg_walk_adjusted'] = avg_max['avg_walk_time'] * walk_multiplier
+        avg_max = max_walk[["avg_max_walk_time"]].join(avg_walk[["avg_walk_time"]])
+        avg_max["avg_max_walk_adjusted"] = (
+            avg_max["avg_max_walk_time"] * walk_multiplier
+        )
+        avg_max["avg_walk_adjusted"] = avg_max["avg_walk_time"] * walk_multiplier
 
         return num_options.join(avg_max)
 
@@ -743,7 +875,9 @@ class DashboardCreator:
         dissimilarity_total = 0
         for eth in ETHNICITY_COLS:
             zone_eth_distn = zone_eths[eth]
-            uniform_distn = zone_total * (ethnicity_total[eth] / df["num_with_ethnicity"].sum())
+            uniform_distn = zone_total * (
+                ethnicity_total[eth] / df["num_with_ethnicity"].sum()
+            )
             difference_norm = np.linalg.norm(zone_eth_distn - uniform_distn, 1)
             dissimilarity_total += difference_norm / 2
             eth_name = eth.split("_")[-1] + "_dissimilarity"
@@ -754,16 +888,24 @@ class DashboardCreator:
         metrics["dissimilarity"] = dissimilarity_total / df["num_with_ethnicity"].sum()
 
         zone_grouped = df.groupby("zone_id").sum()
-        for col, col_total in [('frl_count', 'frl_total_count'), ('sped_count', 'all_students'),
-                               ('ell_count', 'ell_total_count'), ("L1_test_count", "total_test_count")]:
+        for col, col_total in [
+            ("frl_count", "frl_total_count"),
+            ("sped_count", "all_students"),
+            ("ell_count", "ell_total_count"),
+            ("L1_test_count", "total_test_count"),
+        ]:
             zone_frl = zone_grouped[col]
             zone_total = zone_grouped[col_total]
             uniform_col = zone_total * (df[col].sum() / df[col_total].sum())
             difference_norm = np.linalg.norm(zone_frl - uniform_col, 1)
-            if col == 'frl_count':
-                metrics[f"{col.split('_')[0]}_dissimilarity"] = difference_norm / df[col_total].sum()
+            if col == "frl_count":
+                metrics[f"{col.split('_')[0]}_dissimilarity"] = (
+                    difference_norm / df[col_total].sum()
+                )
             else:
-                metrics[f"{col.split('_')[0]}_dissimilarity"] = (difference_norm / 2) / df[col].sum()
+                metrics[f"{col.split('_')[0]}_dissimilarity"] = (
+                    difference_norm / 2
+                ) / df[col].sum()
         return pd.Series(metrics)
 
     def _comparison_to_current_schools(self, df, zone_dict, include_k8):
@@ -780,18 +922,27 @@ class DashboardCreator:
 
         ethnicities_short = [x.split("_")[-1] + "%" for x in ETHNICITY_COLS]
         for long, short in zip(ETHNICITY_COLS, ethnicities_short):
-            zone_enrollment[short] = zone_enrollment[long] / zone_enrollment["num_with_ethnicity"]
+            zone_enrollment[short] = (
+                zone_enrollment[long] / zone_enrollment["num_with_ethnicity"]
+            )
 
-        zone_enrollment["L1_test%"] = (zone_enrollment.math_l1_tests + zone_enrollment.ela_l1_tests) / (
-                    zone_enrollment.num_math_tests + zone_enrollment.num_ela_tests)
-        zone_enrollment["frl%"] = zone_enrollment.frl / zone_enrollment.num_students_w_frl
+        zone_enrollment["L1_test%"] = (
+            zone_enrollment.math_l1_tests + zone_enrollment.ela_l1_tests
+        ) / (zone_enrollment.num_math_tests + zone_enrollment.num_ela_tests)
+        zone_enrollment["frl%"] = (
+            zone_enrollment.frl / zone_enrollment.num_students_w_frl
+        )
         zone_enrollment["ell%"] = zone_enrollment.ell / zone_enrollment.num_students
         zone_enrollment["sped%"] = zone_enrollment.sped / zone_enrollment.num_students
 
-        zone_enrollment = zone_enrollment[["frl%", "ell%", "sped%", "L1_test%"] + ethnicities_short]
+        zone_enrollment = zone_enrollment[
+            ["frl%", "ell%", "sped%", "L1_test%"] + ethnicities_short
+        ]
         # print("Zone enrollment", zone_enrollment)
         # print(zone_enrollment.columns)
-        district_avg = self.district_avg[["frl%", "ell%", "sped%", "L1_test%"] + ethnicities_short]  # / len(
+        district_avg = self.district_avg[
+            ["frl%", "ell%", "sped%", "L1_test%"] + ethnicities_short
+        ]  # / len(
         #     zone_enrollment
         # )
         # df1 = pd.DataFrame(df.all_students / df.all_students.sum())
@@ -809,42 +960,41 @@ class DashboardCreator:
             np.linalg.norm(enrollment_diff["frl%"], 1)
             # / school_counts.num_students_w_frl.sum()
         )
-        enrollment_ell_diff = (
-            np.linalg.norm(enrollment_diff["ell%"], 1)  # / school_counts.num_students.sum()
-        )
-        enrollment_sped_diff = (
-            np.linalg.norm(enrollment_diff["sped%"], 1)  # / school_counts.num_students.sum()
-        )
-        enrollment_l1_diff = (
-            np.linalg.norm(enrollment_diff["L1_test%"], 1)
-        )
+        enrollment_ell_diff = np.linalg.norm(
+            enrollment_diff["ell%"], 1
+        )  # / school_counts.num_students.sum()
+        enrollment_sped_diff = np.linalg.norm(
+            enrollment_diff["sped%"], 1
+        )  # / school_counts.num_students.sum()
+        enrollment_l1_diff = np.linalg.norm(enrollment_diff["L1_test%"], 1)
         enrollment_race_diff = (
-                np.linalg.norm(enrollment_diff[ethnicities_short], 1) / 2
+            np.linalg.norm(enrollment_diff[ethnicities_short], 1) / 2
         )  # / df[ethnicities_short].sum().sum()
         # print('zone:\n',df[["frl%", "ell%", "sped%", "L1_test%", "all_students"] + ethnicities_short])
 
         zone_diff = (
-            df[["frl%", "ell%", "sped%", "L1_test%", "all_students"] + ethnicities_short]
-                # .rename(columns={"ell_count": "ell", "frl_count": "frl"})
-                .subtract(district_avg)
+            df[
+                ["frl%", "ell%", "sped%", "L1_test%", "all_students"]
+                + ethnicities_short
+            ]
+            # .rename(columns={"ell_count": "ell", "frl_count": "frl"})
+            .subtract(district_avg)
         )
         zone_diff = zone_diff.mul(zone_weights, axis=0)
         # print(zone_diff)
         # print(zone_diff.mul(df.all_students/df.all_students.sum(), axis=0))
         # print(df.all_students/df.all_students.sum())
-        zone_frl_diff = (
-            np.linalg.norm(zone_diff["frl%"], 1)  # / school_counts.num_students_w_frl.sum()
-        )
-        zone_ell_diff = (
-            np.linalg.norm(zone_diff["ell%"], 1)  # / school_counts.num_students.sum()
-        )
-        zone_sped_diff = (
-            np.linalg.norm(zone_diff["sped%"], 1)  # / school_counts.num_students.sum()
-        )
-        zone_l1_diff = (
-            np.linalg.norm(zone_diff["L1_test%"], 1)
-        )
-        zone_race_diff = (np.linalg.norm(zone_diff[ethnicities_short], 1) / 2)  # / df[
+        zone_frl_diff = np.linalg.norm(
+            zone_diff["frl%"], 1
+        )  # / school_counts.num_students_w_frl.sum()
+        zone_ell_diff = np.linalg.norm(
+            zone_diff["ell%"], 1
+        )  # / school_counts.num_students.sum()
+        zone_sped_diff = np.linalg.norm(
+            zone_diff["sped%"], 1
+        )  # / school_counts.num_students.sum()
+        zone_l1_diff = np.linalg.norm(zone_diff["L1_test%"], 1)
+        zone_race_diff = np.linalg.norm(zone_diff[ethnicities_short], 1) / 2  # / df[
         #     ETHNICITY_COLS
         # ].sum().sum()
         metrics = {
@@ -858,7 +1008,7 @@ class DashboardCreator:
         return pd.Series(metrics)
 
     def zone_metrics(
-            self, zone_file, include_k8, all_students=True, specific_year=None
+        self, zone_file, include_k8, all_students=True, specific_year=None
     ):
         df = self.get_appropriate_area_data(all_students, include_k8, specific_year)
 
@@ -868,7 +1018,9 @@ class DashboardCreator:
         disruption = self._disruption_metrics(
             zone_dict, include_k8, specific_year=specific_year
         )
-        zone_transportation = self._zone_level_transportation_metrics(df, include_k8, zone_dict)
+        zone_transportation = self._zone_level_transportation_metrics(
+            df, include_k8, zone_dict
+        )
         # violations = self._capacity_violation_metrics(df, include_k8, specific_year, zone_dict)
         ge_var = self._student_count_variability_metrics(df, specific_year, zone_dict)
 
@@ -883,16 +1035,16 @@ class DashboardCreator:
         metrics["ell%"] = metrics["ell_count"] / metrics["ell_total_count"]
         metrics["L1_test%"] = metrics["L1_test_count"] / metrics["total_test_count"]
         metrics["median_hh_income"] = (
-                metrics["Median_HH_Income"] / metrics["ses_total_count"]
+            metrics["Median_HH_Income"] / metrics["ses_total_count"]
         )
         metrics["poverty%"] = (
-                metrics["Families in Poverty"] / metrics["ses_total_count"]
+            metrics["Families in Poverty"] / metrics["ses_total_count"]
         )
         metrics["AvgColorIndex"] = (
-                metrics["AvgColorIndex"] / metrics["dashboard_school_count"]
+            metrics["AvgColorIndex"] / metrics["dashboard_school_count"]
         )
         metrics["change_score"] = (
-                metrics["change_score"] / metrics["dashboard_school_count"]
+            metrics["change_score"] / metrics["dashboard_school_count"]
         )
         for long, short in zip(ETHNICITY_COLS, ethnicities_short):
             metrics[short] = metrics[long] / metrics["num_with_ethnicity"]
@@ -926,12 +1078,12 @@ class DashboardCreator:
                     "L1_test%",
                 ]
                 + ethnicities_short
-                ]
-                .join(proximity)
-                .join(disruption)
-                .join(names)
-                .join(ge_var)
-                .join(zone_transportation)
+            ]
+            .join(proximity)
+            .join(disruption)
+            .join(names)
+            .join(ge_var)
+            .join(zone_transportation)
         )
 
         transportation = self._transportation_metrics(zone_dict)
@@ -959,7 +1111,7 @@ class DashboardCreator:
             violations[">20%_shortage"] = violations.apply(
                 lambda x: 1
                 if x.ge_capacity - x.enrolled_and_ge_applied
-                   < -0.20 * x.enrolled_and_ge_applied
+                < -0.20 * x.enrolled_and_ge_applied
                 else 0,
                 axis=1,
             )
@@ -969,7 +1121,7 @@ class DashboardCreator:
             violations[">20%_shortage"] = violations.apply(
                 lambda x: 1
                 if x.ge_capacity - x.enrolled_and_ge_applied
-                   < -0.20 * x.enrolled_and_ge_applied
+                < -0.20 * x.enrolled_and_ge_applied
                 else 0,
                 axis=1,
             )
@@ -986,8 +1138,11 @@ class DashboardCreator:
                 )
                 zone_year = year_df.groupby("zone_id", as_index=False).sum()
                 ge_var = ge_var.append(zone_year)
-            ge_var = ge_var.groupby("zone_id").std()[["enrolled_and_ge_applied"]].rename(
-                columns={'enrolled_and_ge_applied': 'ge_estimate_variance'})
+            ge_var = (
+                ge_var.groupby("zone_id")
+                .std()[["enrolled_and_ge_applied"]]
+                .rename(columns={"enrolled_and_ge_applied": "ge_estimate_variance"})
+            )
         else:
             ge_var = df.groupby("zone_id", as_index=False).sum()
             ge_var.loc[:, "ge_estimate_variance"] = 1
@@ -1073,7 +1228,7 @@ class DashboardCreator:
         )
 
     def compute_metrics_on_file_list(
-            self, file_list, img_save_location, output_save_file, append=True
+        self, file_list, img_save_location, output_save_file, append=True
     ):
         zv = ZoneVisualizer("BlockGroup")
         output = []
@@ -1129,44 +1284,73 @@ class DashboardCreator:
         else:
             table = pd.concat(output, axis=1).T
         dissimilarity_metrics = [
-                                    x.split("_")[-1] + "_dissimilarity" for x in ETHNICITY_COLS
-                                ] + ["frl_dissimilarity", "sped_dissimilarity", "ell_dissimilarity", "L1_dissimilarity",
-                                     "dissimilarity"]
-        transportation_metrics = [f"%_{time}_{mode}_bgs_preserved_adjusted" for mode in
-                                                                         ['walk', 'bike', 'transit'] for time in [20, 30]
-                                 ] + [f"%_with_{i if i < 2 else '2+'}_{time}min_{mode}_options_adjusted" for i in range(3) for mode
-                                      in ['walk', 'bike', 'transit'] for time in [20, 30]] + [f"num_options_in_{time}mins_{mode}_adjusted" for mode in
-                                                                         ['walk', 'bike', 'transit'] for time in [20,30]]
-        improvement_metrics = ["frl_improvement", "ell_improvement", "race_improvement", "sped_improvement",
-                               "l1_improvement"]
+            x.split("_")[-1] + "_dissimilarity" for x in ETHNICITY_COLS
+        ] + [
+            "frl_dissimilarity",
+            "sped_dissimilarity",
+            "ell_dissimilarity",
+            "L1_dissimilarity",
+            "dissimilarity",
+        ]
+        transportation_metrics = (
+            [
+                f"%_{time}_{mode}_bgs_preserved_adjusted"
+                for mode in ["walk", "bike", "transit"]
+                for time in [20, 30]
+            ]
+            + [
+                f"%_with_{i if i < 2 else '2+'}_{time}min_{mode}_options_adjusted"
+                for i in range(3)
+                for mode in ["walk", "bike", "transit"]
+                for time in [20, 30]
+            ]
+            + [
+                f"num_options_in_{time}mins_{mode}_adjusted"
+                for mode in ["walk", "bike", "transit"]
+                for time in [20, 30]
+            ]
+        )
+        improvement_metrics = [
+            "frl_improvement",
+            "ell_improvement",
+            "race_improvement",
+            "sped_improvement",
+            "l1_improvement",
+        ]
         ordered_cols = (
-                transportation_metrics
-                + dissimilarity_metrics
-                + improvement_metrics
-                + ["year", "Option"]
+            transportation_metrics
+            + dissimilarity_metrics
+            + improvement_metrics
+            + ["year", "Option"]
         )
         table.sort_values("Zone Name", inplace=True)
         table["Option"] = (
-                table.groupby(
-                    [
-                        "FRL Balance",
-                        "Racial Representativeness",
-                        "Number of Zones",
-                        # "Consider School Quality",
-                        "Include K-8",
-                        "year",
-                    ]
-                ).cumcount()
-                + 1
+            table.groupby(
+                [
+                    "FRL Balance",
+                    "Racial Representativeness",
+                    "Number of Zones",
+                    # "Consider School Quality",
+                    "Include K-8",
+                    "year",
+                ]
+            ).cumcount()
+            + 1
         )
 
         table = table[
             [x for x in table.columns if x not in ordered_cols] + ordered_cols
-            ]
+        ]
         table.to_csv(output_save_file, index=False)
 
     def compute_transit_subset_metrics_on_file_list(
-            self, file_list, output_save_file, append=True, all_students=True, specific_year=None, walk_multiplier=1.3
+        self,
+        file_list,
+        output_save_file,
+        append=True,
+        all_students=True,
+        specific_year=None,
+        walk_multiplier=1.3,
     ):
         output = []
         # for mode in ['walk', "bike", "transit"]:
@@ -1190,11 +1374,7 @@ class DashboardCreator:
             serialized_metrics = self._serialize_metrics(metrics)
             output.append(
                 pd.concat(
-                    [
-                        levers,
-                        serialized_metrics,
-                        pd.Series({"year": str(self.year)}),
-                    ]
+                    [levers, serialized_metrics, pd.Series({"year": str(self.year)}),]
                 )
             )
 
@@ -1209,22 +1389,22 @@ class DashboardCreator:
         ordered_cols = ["year", "Option"]
         table.sort_values("Zone Name", inplace=True)
         table["Option"] = (
-                table.groupby(
-                    [
-                        "FRL Balance",
-                        "Racial Representativeness",
-                        "Number of Zones",
-                        # "Consider School Quality",
-                        "Include K-8",
-                        "year",
-                    ]
-                ).cumcount()
-                + 1
+            table.groupby(
+                [
+                    "FRL Balance",
+                    "Racial Representativeness",
+                    "Number of Zones",
+                    # "Consider School Quality",
+                    "Include K-8",
+                    "year",
+                ]
+            ).cumcount()
+            + 1
         )
 
         table = table[
             [x for x in table.columns if x not in ordered_cols] + ordered_cols
-            ]
+        ]
         table.to_csv(output_save_file, index=False)
 
     def compute_benchmarks(self, out_file):
@@ -1318,15 +1498,19 @@ def compute_school_dissimilarity_benchmark():
         print(f)
         yr = pd.read_excel(f)
         df = df.append(yr)
-    elem_sch = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/schools_table_for_zone_development.csv")
-    df = df.groupby('Sch No', as_index=False).sum()
-    df = elem_sch[['school_id']].merge(df, how='inner', left_on='school_id', right_on="Sch No")
+    elem_sch = pd.read_csv(
+        "~/Dropbox/SFUSD/Data/Cleaned/schools_table_for_zone_development.csv"
+    )
+    df = df.groupby("Sch No", as_index=False).sum()
+    df = elem_sch[["school_id"]].merge(
+        df, how="inner", left_on="school_id", right_on="Sch No"
+    )
     assert len(df) == 72  # check correct schools
-    n = df['TotalCount'].sum()
+    n = df["TotalCount"].sum()
 
     ethnicity_dissimilarity = {}
     dissimilarity_total = 0
-    for eth in ['AsianCount', 'BlackCount', 'HispanicCount', 'PICount', "WhiteCount"]:
+    for eth in ["AsianCount", "BlackCount", "HispanicCount", "PICount", "WhiteCount"]:
         uniform_distn = df["TotalCount"] * (df[eth].sum() / n)
         difference_norm = np.linalg.norm(df[eth] - uniform_distn, 1)
         dissimilarity_total += difference_norm / 2
@@ -1353,7 +1537,7 @@ if __name__ == "__main__":
     img_save_location = "/Users/katherinementzer/code/personal-website/WWW/"
     output_save_file = "/Users/katherinementzer/SFUSD/dashboard_metrics.csv"
     # file_list = get_missing_patterns_file_list(output_save_file, file_list)
-    dc = DashboardCreator(year=[14, 15, 16, 17, 18, 21], individual_years=False)
+    dc = DashboardCreator(year=[14, 15, 16, 17, 18, 21, 22], individual_years=False)
     # dc.compute_metrics_on_file_list(
     #     file_list, img_save_location, output_save_file, append=False
     # )
@@ -1376,9 +1560,15 @@ if __name__ == "__main__":
         "GE_Zoning_1_2_1_2_2_centroids 6-zone-3_BG",
         "GE_Zoning_2_1_1_2_1_centroids 6-zone-9_BG",
     ]
-    file_list = [f"/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/{x}.csv" for x in selected_zones]
+    file_list = [
+        f"/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/{x}.csv"
+        for x in selected_zones
+    ]
     dc.compute_transit_subset_metrics_on_file_list(
-        file_list, "/Users/katherinementzer/SFUSD/transit_metrics.csv", append=False, walk_multiplier=1.4
+        file_list,
+        "/Users/katherinementzer/SFUSD/transit_metrics.csv",
+        append=False,
+        walk_multiplier=1.4,
     )
     # dc.compute_benchmarks("/Users/katherinementzer/SFUSD/benchmark.csv")
 

@@ -3,7 +3,7 @@ import numpy as np
 import sys, os
 
 
-zones2018_path ='/Users/katherinementzer/Dropbox/SFUSD/Data/Computed/Itai/ZonesToTest/summary_sept17LPzones_2018b.csv'
+zones2018_path ='~/Dropbox/SFUSD/Data/Computed/Itai/ZonesToTest/summary_sept17LPzones_2018b.csv'
 zones2018 = pd.read_csv(zones2018_path)
 # remove stats using language zones
 zones2018 = zones2018.loc[zones2018['LP Zones']==0]
