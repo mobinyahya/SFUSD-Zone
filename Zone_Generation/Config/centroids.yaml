@@ -1,33 +1,35 @@
-# numbers follow scheme from this doc: https://docs.google.com/document/d/16mg3dBJCaQEz9eG0R7FukpBi3wyp6kvMAzieVbxV6Qw/edit#
-
-# 6 zones
-#3-zone-0: [872, 750, 507] # 3 Schools
+######
+###### Joseph Suggested Zone and Information Doc for the following:
+###### https://docs.google.com/document/d/16mg3dBJCaQEz9eG0R7FukpBi3wyp6kvMAzieVbxV6Qw/edit#
+######
 #
-6-zone-1: [676, 479, 796, 449, 760, 493] # K-8 Schools
-6-zone-2: [513, 539, 478, 680, 490, 664] # 2 across, 3 vertical, pick largest
-6-zone-3: [513, 488, 644, 848, 790, 723] # 2 across, 3 vertical, pick central
-6-zone-4: [481, 575, 420, 718, 525, 823] # Vertical stack, pick central
-6-zone-5: [490, 664, 650, 478, 513, 453] # Vertical stack, pick largest B
-6-zone-6: [490, 664, 650, 420, 513, 453] # Vertical stack, pick largest C
-6-zone-7: [490, 664, 650, 420, 539, 453] # Vertical stack, pick largest D
-6-zone-8: [490, 664, 650, 680, 513, 453] # Vertical stack, pick largest G
-6-zone-9: [490, 664, 650, 680, 539, 453] # Vertical stack, pick largest H
-6-zone-10: [507, 575, 539, 435, 650, 490] # 3 across, 2 vertical, pick central
-6-zone-11: [490, 664, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
-
-# 7 zones
-7-zone-12: [676, 479, 796, 449, 760, 493, 670] # K-8 schools + Lakeshore
-7-zone-13: [676, 479, 796, 449, 760, 493, 453] # K-8 schools + Harte
-7-zone-14: [490, 664, 650, 478, 539, 513, 867] # Vertical stack, pick largest A
-7-zone-15: [490, 664, 650, 420, 539, 513, 867] # Vertical stack, pick largest B
-7-zone-16: [490, 664, 650, 420, 876, 513, 867] # Vertical stack, pick largest C
-7-zone-17: [490, 664, 650, 680, 539, 513, 867] # Vertical stack, pick largest
-7-zone-18: [490, 664, 650, 680, 876, 513, 867] # Vertical stack, pick largest
-7-zone-19: [670, 876, 664, 490, 650, 680, 513] # 3 rows west, 4 rows east, pick largest A
-###7-zone-20: [670, 478, 664, 490, 650, 503, 513] # Wrong: 503 doesn't exist. 3 rows west, 4 rows east, pick largest B
-7-zone-21: [490, 549, 782, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
-
-## 8 zones
+#3-zone-0: [676, 449, 493] # K-8 Schools
+#
+#6-zone-1: [676, 479, 796, 449, 760, 493] # K-8 Schools
+#6-zone-2: [513, 539, 478, 680, 490, 664] # 2 across, 3 vertical, pick largest
+#6-zone-3: [513, 488, 644, 848, 790, 723] # 2 across, 3 vertical, pick central
+#6-zone-4: [481, 575, 420, 718, 525, 823] # Vertical stack, pick central
+#6-zone-5: [490, 664, 650, 478, 513, 453] # Vertical stack, pick largest B
+#6-zone-6: [490, 664, 650, 420, 513, 453] # Vertical stack, pick largest C
+#6-zone-7: [490, 664, 650, 420, 539, 453] # Vertical stack, pick largest D
+#6-zone-8: [490, 664, 650, 680, 513, 453] # Vertical stack, pick largest G
+#6-zone-9: [490, 664, 650, 680, 539, 453] # Vertical stack, pick largest H
+#6-zone-10: [507, 575, 539, 435, 650, 490] # 3 across, 2 vertical, pick central
+#6-zone-11: [490, 664, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
+#
+## 7 zones
+#7-zone-12: [676, 479, 796, 449, 760, 493, 670] # K-8 schools + Lakeshore
+#7-zone-13: [676, 479, 796, 449, 760, 493, 453] # K-8 schools + Harte
+#7-zone-14: [490, 664, 650, 478, 539, 513, 867] # Vertical stack, pick largest A
+#7-zone-15: [490, 664, 650, 420, 539, 513, 867] # Vertical stack, pick largest B
+#7-zone-16: [490, 664, 650, 420, 876, 513, 867] # Vertical stack, pick largest C
+#7-zone-17: [490, 664, 650, 680, 539, 513, 867] # Vertical stack, pick largest
+#7-zone-18: [490, 664, 650, 680, 876, 513, 867] # Vertical stack, pick largest
+#7-zone-19: [670, 876, 664, 490, 650, 680, 513] # 3 rows west, 4 rows east, pick largest A
+####7-zone-20: [670, 478, 664, 490, 650, 503, 513] # Wrong: 503 doesn't exist. 3 rows west, 4 rows east, pick largest B
+#7-zone-21: [490, 549, 782, 478, 420, 838, 513] # Street view, conscious of Twin Peaks
+#
+### 8 zones
 #8-zone-22: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lakeshore + Harte
 ####8-zone-23: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lau + Harte
 #8-zone-24: [413, 544, 478, 670, 513, 680, 650, 490] # 2 across, 4 vertical, pick largest
@@ -39,3 +41,64 @@
 ####8-zone-30: [549, 735, 650, 869, 655, 614, 876, 722] # Wrong, 869,655 don't exist. 9 grid, pick 2 closest to each internal 4-point corner (not in same square)
 #8-zone-31: [490, 549, 782, 478, 420, 838, 729, 453] # Street view, conscious of Twin Peaks
 #8-zone-32: [490, 549, 782, 478, 420, 838, 513, 820] # Street view, conscious of Twin Peaks
+#
+#
+######
+###### Mobin's Temp Zone Centers for Test
+######
+##
+#### 9 zones
+##9-zone-1: [848, 481, 735, 513, 562, 816, 680, 539, 488]
+##
+#### 12 zones
+##12-zone-1: [413, 525, 562, 650, 497, 625, 867, 746, 862, 544, 478, 603]
+##
+#### 13 zones
+##13-zone-1: [413, 525, 562, 650, 497, 625, 867, 746, 862, 544, 478, 603, 575]
+##13-zone-2: [413, 525, 562, 650, 497, 625, 867, 746, 862, 544, 478, 603, 644]
+##13-zone-3: [664, 569, 823, 562, 859, 497, 625, 867, 691, 488, 750, 656, 478]
+##13-zone-4: [664, 569, 823, 562, 859, 497, 625, 867, 691, 488, 750, 656, 589]
+##
+##
+#####
+##### Joseph Suggested Zone and Information Doc for the following:
+##### https://docs.google.com/document/d/1Wg-czin1d-AF0nxk6XllBlvIcLK2CTogWGTlQFXqLu8/edit
+#####
+
+#10 zones
+10-zone-1: [490, 650, 420, 478, 876, 539, 680, 614, 513, 603]
+#### 10-zone-2: [490, 650, 603, 660, 513, 670, 876, 544, 664, 420]
+10-zone-3: [497, 507, 513, 490, 718, 729, 488, 435, 544, 862]
+10-zone-4: [823, 490, 664, 650, 816, 420, 876, 513, 729, 867]
+10-zone-5: [872, 569, 823, 589, 497, 507, 729, 746, 862, 644]
+10-zone-6: [435, 589, 823, 497, 782, 722, 507, 746, 650, 680]
+10-zone-7: [562, 823, 413, 544, 670, 746, 593, 453, 507, 497]
+10-zone-8: [823, 786, 650, 589, 816, 420, 722, 842, 729, 593]
+10-zone-9: [478, 691, 862, 750, 481, 549, 842, 848, 872, 801]
+#####10-zone-10: [439, 815, 764, 559, 405, 697, 853, 725, 785, 571]
+
+#
+## 13 zones
+#####13-zone-1: [539, 603, 876, 650, 490, 513, 478, 544, 691, 859, 867, 848, 999]
+13-zone-2: [859, 838, 505, 842, 497, 544, 746, 790, 614, 830, 539, 435, 644]
+13-zone-3: [735, 569, 413, 456, 834, 481, 862, 507, 453, 823, 670, 575, 638]
+#####13-zone-4: [589, 569, 505, 478, 664, 735, 525, 644, 420, 750, 842, 497]
+13-zone-5: [507, 614, 575, 722, 876, 782, 644, 589, 735, 786, 816, 723, 456]
+13-zone-6: [453, 507, 729, 746, 862, 544, 478, 816, 838, 490, 786, 549, 664]
+13-zone-7: [513, 680, 729, 746, 862, 544, 478, 816, 838, 490, 786, 549, 664]
+#####13-zone-8: [453, 838, 999, 872, 823, 569, 664, 544, 862, 670, 746, 691, 857]
+#####13-zone-9: [503, 680, 656, 575, 722, 876, 478, 589, 718, 816, 453, 872, 664]
+13-zone-10: [413, 435, 589, 420, 656, 513, 453, 872, 786, 718, 478, 876, 670]
+
+##18 zones
+18-zone-1: [562, 490, 786, 650, 816, 603, 680, 507, 513, 867, 820, 670, 539, 722, 782, 644, 435, 413]
+18-zone-2: [413, 435, 544, 862, 670, 691, 842, 722, 420, 718, 786, 823, 490, 838, 513, 867, 680, 729]
+18-zone-3: [490, 823, 664, 650, 816, 603, 544, 478, 420, 680, 876, 539, 614, 513, 453, 722, 862, 435]
+#####18-zone-4: [999, 859, 490, 823, 735, 848, 435, 644, 782, 539, 488, 722, 842, 575, 614, 513, 680, 503]
+18-zone-5: [625, 999, 490, 507, 513, 790, 650, 729, 722, 589, 549, 876, 488, 644, 664, 670, 862, 544]
+18-zone-6: [823, 490, 859, 816, 723, 680, 656, 507, 521, 593, 820, 842, 488, 862, 782, 644, 664, 569]
+18-zone-7: [490, 999, 497, 680, 507, 521, 691, 575, 420, 718, 786, 823, 413, 435, 644, 750, 670, 746]
+18-zone-8: [746, 820, 691, 593, 867, 453, 625, 497, 999, 872, 801, 823, 569, 413, 664, 544, 750, 862]
+18-zone-9: [490, 823, 650, 420, 603, 680, 614, 513, 453, 478, 876, 539, 862, 544, 664, 820, 569, 999]
+18-zone-10: [750, 862, 746, 691, 513, 507, 680, 497, 999, 872, 820, 478, 876, 569, 435, 644, 589, 656]
+##
