@@ -3,7 +3,6 @@ import csv
 import datetime
 import json
 import os
-import sys
 from collections import defaultdict
 
 import pandas as pd
@@ -11,7 +10,7 @@ import yaml
 from ortools.sat.python import cp_model
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Zone_Generation.Optimization_CP.constants import MAX_SOLVER_TIME, NUM_SOLVER_THREADS, CENTROIDS, YEAR, RACES
+from Zone_Generation.Optimization_CP.constants import NUM_SOLVER_THREADS, YEAR, RACES, MAX_SOLVER_TIME, CENTROIDS
 from Zone_Generation.Optimization_CP.constraints import add_constraints
 from Zone_Generation.Optimization_CP.optimization import add_optimization
 
@@ -50,22 +49,23 @@ def get_travel_matrix():
     return travels
 
 
-def prep_model():
+def prep_model(time, zones):
     model = cp_model.CpModel()
-    print(CENTROIDS)
-    print(MAX_SOLVER_TIME)
+    print(zones)
+    print(time // 60)
     print('Creating variables')
-    vm, school_df, bg_df, centroids, centroid_mapping = add_variables(model)
+    vm, school_df, bg_df, centroids, centroid_mapping = add_variables(model, zones)
     print('Adding constraints')
     neighbors = get_neighbors_mapping()
     travels = get_travel_matrix()
-    blocks_assigned_to_zone, neighbor_pairs = add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels)
+    blocks_assigned_to_zone, neighbor_pairs = add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping,
+                                                              neighbors, travels)
     print('Adding optimization')
     add_optimization(model, vm, school_df, bg_df, centroids, centroid_mapping, neighbors, travels, neighbor_pairs)
     print('Solving')
     solver = cp_model.CpSolver()
 
-    solver.parameters.max_time_in_seconds = MAX_SOLVER_TIME
+    solver.parameters.max_time_in_seconds = time
 
     # Adding parallelism
     solver.parameters.num_search_workers = NUM_SOLVER_THREADS
@@ -75,12 +75,12 @@ def prep_model():
 
     print(f"Status = {solver.StatusName(status)}")
     if status == cp_model.INFEASIBLE or status == cp_model.MODEL_INVALID or status == cp_model.UNKNOWN:
-        sys.exit(1)
+        return (None, None, None, None, None)
 
     return solver, vm, school_df, bg_df, centroids
 
 
-def add_variables(model):
+def add_variables(model, zones):
     bg_df = pd.read_csv(f'~/Dropbox/SFUSD/Data/final_area_data/area_data_no_k8.csv')
     school_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/schools_rehauled_{YEAR}.csv')
     # program_df = pd.read_csv(f'~/SFUSD/Data/Cleaned/programs_{YEAR}.csv')
@@ -121,8 +121,8 @@ def add_variables(model):
         return bg['ge_capacity']
 
     school_df['capacity'] = school_df.apply(program_capacity_for_school, axis=1)
-    print(school_df['capacity'].sum())
-    print(bg_df['student_count'].sum())
+    # print(school_df['capacity'].sum())
+    # print(bg_df['student_count'].sum())
     # school_df = pd.merge(school_df, program_df, on='school_id', how='inner')
     # remove cap_lb, as it is not neccessarily the same capacity for the GE-KG program
     # school_df = school_df.drop(columns=['cap_lb'])
@@ -130,7 +130,7 @@ def add_variables(model):
 
     centroids = None
     with open("Zone_Generation/Config/centroids.yaml", "r") as stream:
-        centroids = yaml.safe_load(stream)[CENTROIDS]
+        centroids = yaml.safe_load(stream)[zones]
     vals = []
     # number of blocks
     n = len(bg_df['census_blockgroup'])
@@ -150,6 +150,8 @@ def add_variables(model):
 
 
 def visualize(solver, vm, school_df, bg_df, centroids):
+    if solver is None:
+        return
     # Print solution.
     print(f"Objective value = {solver.ObjectiveValue()}")
     int_map = {}
@@ -168,10 +170,10 @@ def visualize(solver, vm, school_df, bg_df, centroids):
         #     if solver.BooleanValue(vm[zone][bg]) == 1:
         #         zone_dict[bg] = int_map[zone]
         #         break
-    path = os.path.expanduser(f'~/Dropbox/SFUSD/Optimization/Zones/all-ge-students/CP/{CENTROIDS}/')
+    path = os.path.expanduser(f'~/Dropbox/SFUSD/Optimization/Zones/all-ge-students/CP/{len(centroids)}/')
     if not os.path.exists(path):
         os.makedirs(path)
-    file_name = f'{MAX_SOLVER_TIME}_{datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")}_{solver.ObjectiveValue()}.json'
+    file_name = f'{solver.parameters.max_time_in_seconds}_{datetime.datetime.now().strftime("%d-%m %H:%M")}_{solver.ObjectiveValue()}.json'
     with open(path + file_name, 'w') as f:
         copy_map = copy.deepcopy(zone_dict)
         copy_map['int_map'] = int_map
@@ -184,12 +186,12 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     #     bad_boys.loc[n, 'lat'] = bg_df[bg_df['census_blockgroup'] == n]['lat'].iloc[0]
     #     bad_boys.loc[n, 'lon'] = bg_df[bg_df['census_blockgroup'] == n]['lon'].iloc[0]
     zv.visualize_zones_from_dict(zone_dict, centroid_location=centroid_locations,
-                                 title=f'SFUSD Zoning with {CENTROIDS[0]} zones',
+                                 title=f'SFUSD Zoning with {len(centroids)} zones, with obj val {solver.ObjectiveValue()}, in {solver.parameters.max_time_in_seconds} seconds, with {solver.parameters.num_search_workers} threads',
                                  save_name=str(datetime.datetime.now()))
 
 
-def main():
-    visualize(*prep_model())
+def main(time=MAX_SOLVER_TIME, zones=CENTROIDS):
+    visualize(*prep_model(time, zones))
 
 
 if __name__ == '__main__':

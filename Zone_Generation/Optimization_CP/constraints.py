@@ -21,12 +21,12 @@ def add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, ne
                                blocks_assigned_to_zone, neighbors, travels,
                                neighbor_pairs)  # easy to convert to integer
     # All of these are essentially the exact same problem
-    add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
-                                  centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
-    add_diversity_constraints(model, vm, school_df, bg_df, centroids,
-                              centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
-    add_frl_constraints(model, vm, school_df, bg_df, centroids,
-                        centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    # add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
+    #                               centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    # add_diversity_constraints(model, vm, school_df, bg_df, centroids,
+    #                           centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    # add_frl_constraints(model, vm, school_df, bg_df, centroids,
+    #                     centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
 
     # add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids) #not needed since true by definition
     return blocks_assigned_to_zone, neighbor_pairs
@@ -86,14 +86,16 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_
                     continue
                 neighbor = int(neighbor)
                 if float(neighbor) not in vm.keys():
+                    print('why would this happen')
                     continue
                 neighbor_distance_to_zone = travels[neighbor][zone_bg]
                 bg_distance_to_zone = travels[int(bg)][int(zone_bg)]
                 if neighbor_distance_to_zone < bg_distance_to_zone:
                     closer_neighbors.add(neighbor_pairs[bg][neighbor])
-            if len(closer_neighbors) == 0:
-                # this should be fine to skip???
-                continue
+            # if len(closer_neighbors) == 0:
+            #     print(zone, bg)
+            #     # this should be fine to skip???
+            #     continue
             # if this block group is assigned to this zone, then at least one closer neighbor must be equal to bg,
             # that is that one of them is 0
             model.Add(cp_model.LinearExpr.Sum(list(closer_neighbors)) < len(closer_neighbors)).OnlyEnforceIf(

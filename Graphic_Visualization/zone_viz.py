@@ -133,7 +133,8 @@ class ZoneVisualizer:
                 path = os.path.expanduser("~/SFUSD/Visualization_Tool_Data/")
                 print(path + save_name + '.png')
                 plt.savefig(path + save_name + '.png')
-            plt.show()
+            # plt.show()
+            plt.close()
         print("Finished plotting")
         return plt
 
