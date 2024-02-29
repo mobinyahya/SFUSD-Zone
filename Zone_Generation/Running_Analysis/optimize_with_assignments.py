@@ -57,7 +57,7 @@ class OptimizePostChoice:
                 centroids_type=random.randint(0, 1),
                 include_k8=citywide,
             )
-            self.opt.set_model(shortage, balance)
+            self.opt._set_objective_model(shortage, balance)
             self.opt._add_geo_constraints(
                 max_distance=-1,
                 real_distance=False,
@@ -73,7 +73,7 @@ class OptimizePostChoice:
                 centroids_type=-1,
                 include_k8=citywide,
             )
-            self.opt.set_model(shortage, balance)
+            self.opt._set_objective_model(shortage, balance)
             self.opt._add_geo_constraints(
                 max_distance=distance,
                 real_distance=True,
@@ -123,12 +123,12 @@ class OptimizePostChoice:
     def _set_ge_and_language_zones(
         LP_zone_names, LP_zone_path_list, file_name, i, market
     ):
-        market.zones.set_zone(file_name)
+        market.zone_lists.set_zone(file_name)
         if i == 0:
-            market.zones.set_area_id2prog_list_dict()
+            market.zone_lists.set_area_id2prog_list_dict()
             lp_zones = 0
         else:
-            market.zones.set_area_id2prog_list_dict(
+            market.zone_lists.set_area_id2prog_list_dict(
                 LP_zone_path_list=LP_zone_path_list[i - 1]
             )
             lp_zones = LP_zone_names[i - 1]
@@ -158,7 +158,7 @@ class OptimizePostChoice:
             self.umodel = UtilityModel(
                 market.programs, MNL_COEFF_PATH, MNL_FEATURES_PATH
             )
-            self.umodel.student_data = market.students.student_data
+            self.umodel.students23 = market.students.students23
             self.umodel.draw_utility_model_randomness(market, option=None)
             # market.OriginalPreferences = umodel.OriginalPreferences
             self.umodel.get_restricted_preferences(market)
@@ -180,7 +180,7 @@ class OptimizePostChoice:
 
     def _generate_assignment_df(self, market):
         assignment_df = pd.DataFrame()
-        assignment_df["studentno"] = market.students.student_data.index
+        assignment_df["studentno"] = market.students.students23.index
         assignment_df["programno"] = market.match
         assignment_df["programcodes"] = [
             x if x != "" else np.nan for x in market.assignmentCodes
@@ -361,8 +361,8 @@ class OptimizePostChoice:
                     infeasible += 1
                     continue
                 infeasible = 0
-                zone_list = self.opt.z
-                zone_dict = self.opt.zd
+                zone_list = self.opt.zone_lists
+                zone_dict = self.opt.zone_dict
 
                 if i % 2 == 0:
                     ties = "STB"
@@ -408,8 +408,8 @@ class OptimizePostChoice:
 
         self.opt.constraints["Ties"] = ties
         market.setTieBreaker(ties)
-        market.zones.set_zone_from_dict(zone_list, zone_dict)
-        market.zones.set_area_id2prog_list_dict(
+        market.zone_lists.set_zone_from_dict(zone_list, zone_dict)
+        market.zone_lists.set_area_id2prog_list_dict(
             LP_zone_path_list=LP_zone_path_list
         )
         market.setPolicyZones()

@@ -63,30 +63,30 @@ def Run_Zoning(centroid_choices = None, candidates = None, subdivision_count = 2
     dz._add_diversity_constraints(lbfrl= lbfrl_limit, ubfrl= ubfrl_limit)
 
     # make sure the original centroid schools are balanced
-    dz.m.addConstr(dz.x[dz.area2idx[dz.sch2block[481]], 0] + dz.x[dz.area2idx[dz.sch2block[862]], 0] + dz.x[dz.area2idx[dz.sch2block[872]], 0]  <= 2)
-    dz.m.addConstr(dz.x[dz.area2idx[dz.sch2block[859]], 1] + dz.x[dz.area2idx[dz.sch2block[862]], 1] + dz.x[dz.area2idx[dz.sch2block[872]], 1]  <= 2)
+    dz.m.addConstr(dz.x[dz.area2idx[dz.sch2bg[481]], 0] + dz.x[dz.area2idx[dz.sch2bg[862]], 0] + dz.x[dz.area2idx[dz.sch2bg[872]], 0] <= 2)
+    dz.m.addConstr(dz.x[dz.area2idx[dz.sch2bg[859]], 1] + dz.x[dz.area2idx[dz.sch2bg[862]], 1] + dz.x[dz.area2idx[dz.sch2bg[872]], 1] <= 2)
 
     dz.solve()
 
     zv = ZoneVisualizer('BlockGroup')
-    zv.visualize_zones_from_dict(dz.zd,show=True,label=False)
+    zv.zones_from_dict(dz.zone_dict, show=True, label=False)
     return dz
 
 
 def evalute_final_zoning(dz1, dz2):
     final_dz = DesignZones(M=4, level='BlockGroup', centroidsType=-1, include_citywide=False)
 
-    final_dz.update_centroid_telemetry(dz1.choices + dz2.choices)
+    final_dz.update_centroid_telemetry(dz1.centroid_aa + dz2.centroid_aa)
     final_dz.initializeNeighborsPerCentroids()
 
     param = Tuning_param()
     final_dz.setmodel(shortage = param.shortage, balance = param.balance)
 
-    final_dz.zd = {**dz1.zd, **dz2.zd}
-    evaluate_assignment_score(final_dz, final_dz.zd, shortage_limit = param.shortage, balance_limit = param.balance, lbfrl_limit= param.lbfrl, ubfrl_limit= param.ubfrl)
+    final_dz.zone_dict = {**dz1.zone_dict, **dz2.zone_dict}
+    evaluate_assignment_score(final_dz, final_dz.zone_dict, shortage_limit = param.shortage, balance_limit = param.balance, lbfrl_limit= param.lbfrl, ubfrl_limit= param.ubfrl)
 
     zv = ZoneVisualizer('BlockGroup')
-    zv.visualize_zones_from_dict(final_dz.zd,show=True,label=False)
+    zv.zones_from_dict(final_dz.zone_dict, show=True, label=False)
 
 # def evalute_final_zoning(dz1, dz2, dz3, dz4):
 #     final_dz = DesignZones(M=8, level='BlockGroup', centroidsType=-1, include_citywide=False)

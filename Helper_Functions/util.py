@@ -1,10 +1,12 @@
-import numpy as np
-import pandas as pd
 import os
 import csv
+import math
+import pickle
+import numpy as np
+import pandas as pd
+import geopandas as gpd
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
-
 
 def get_school_latlon():
     # get school latitude and longitude DataFrame
@@ -71,11 +73,11 @@ def make_school_geodataframe(school_path ='~/SFUSD/Data/Cleaned/schools_rehauled
     # get school data table
     # cleanschoolpath = '~/SFUSD/Data/Cleaned/school_1819.csv'
 
-    sc_df = pd.read_csv(school_path)
+    sch_df = pd.read_csv(school_path)
 
     # make GeoDataFrame
-    geometry = [Point(xy) for xy in zip(sc_df['lon'], sc_df['lat'])]
-    school_geo_df = gpd.GeoDataFrame(sc_df, crs='epsg:4326', geometry=geometry)
+    geometry = [Point(xy) for xy in zip(sch_df['lon'], sch_df['lat'])]
+    school_geo_df = gpd.GeoDataFrame(sch_df, crs='epsg:4326', geometry=geometry)
 
     # read shape file of attendance areas
     path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
@@ -87,17 +89,203 @@ def make_school_geodataframe(school_path ='~/SFUSD/Data/Cleaned/schools_rehauled
 
     return sc_merged
 
+def load_census_shapefile(level):
+    # get census block shapefile
+    path = os.path.expanduser(
+        "~/SFUSD/Census 2010_ Blocks for San Francisco/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp"
+    )
+    census_sf = gpd.read_file(path)
+    census_sf["Block"] = (
+        census_sf["geoid10"].fillna(value=0).astype("int64", copy=False)
+    )
+
+    df = pd.read_csv("~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv")
+    df["Block"].fillna(value=0, inplace=True)
+    df["Block"] = df["Block"].astype("int64")
+
+    census_sf = census_sf.merge(df, how="left", on="Block")
+
+    census_sf.dropna(subset=['BlockGroup', 'Block'], inplace=True)
+    census_sf[level] = census_sf[level].astype('int64')
+
+    return census_sf
+
+def load_euc_distance_data(level, complete_bg = False):
+    if level == "attendance_area":
+        save_path = "~/Dropbox/SFUSD/Optimization/distances_aa2aa.csv"
+    elif level == "BlockGroup":
+        save_path = "~/Dropbox/SFUSD/Optimization/distances_bg2bg.csv"
+    elif (level == "Block") & (complete_bg == False):
+        save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b_schools.csv"
+    elif (level == "Block") & (complete_bg == True):
+        save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b.csv"
+
+    if os.path.exists(os.path.expanduser(save_path)):
+        distances = pd.read_csv(save_path, index_col=level)
+        distances.columns = [str(int(float(x))) for x in distances.columns]
+        return distances
+
+    if level == "Block":
+        census_sf = load_census_shapefile(level)
+        df = census_sf.dissolve(by="Block", as_index=False)
+        df["centroid"] = df.centroid
+        df["Lat"] = df["centroid"].apply(lambda x: x.y)
+        df["Lon"] = df["centroid"].apply(lambda x: x.x)
+        df = df[["Block", "Lat", "Lon"]]
+        df.loc[:, "key"] = 0
+        df = df.merge(df, how="outer", on="key")
+
+        df.rename(
+            columns={
+                "Lat_x": "Lat",
+                "Lon_x": "Lon",
+                "Lat_y": "st_lat",
+                "Lon_y": "st_lon",
+                "Block_x": "Block",
+            },
+            inplace=True,
+        )
+    elif level == "BlockGroup":
+        census_sf = load_census_shapefile(level)
+        df = census_sf.dissolve(by="BlockGroup", as_index=False)
+        df["centroid"] = df.centroid
+        df["Lat"] = df["centroid"].apply(lambda x: x.y)
+        df["Lon"] = df["centroid"].apply(lambda x: x.x)
+        df = df[["BlockGroup", "Lat", "Lon"]]
+        df.loc[:, "key"] = 0
+        df = df.merge(df, how="outer", on="key")
+        df.rename(
+            columns={
+                "Lat_x": "Lat",
+                "Lon_x": "Lon",
+                "Lat_y": "st_lat",
+                "Lon_y": "st_lon",
+                "BlockGroup_x": "BlockGroup",
+            },
+            inplace=True,
+        )
+    elif level == "attendance_area":
+        df = area_data[["attendance_area", "lat", "lon"]]
+        df.loc[:, "key"] = 0
+        df = df.merge(df, how="outer", on="key")
+        df.rename(
+            columns={
+                "lat_x": "Lat",
+                "lon_x": "Lon",
+                "lat_y": "st_lat",
+                "lon_y": "st_lon",
+                "attendance_area_x": "attendance_area",
+            },
+            inplace=True,
+        )
+
+    df["distance"] = df.apply(get_distance, axis=1)
+    df[level] = df[level].astype('Int64')
+
+    table = pd.pivot_table(
+        df,
+        values="distance",
+        index=[level],
+        columns=[level + "_y"],
+        aggfunc=np.sum,
+    )
+    table.to_csv(save_path)
+    return table
+
+def load_driving_distance_data(level, choices, sch2level, area_data = None, destinations = None):
+    if level == 'BlockGroup':
+        savename = '~/Dropbox/SFUSD/Optimization/OD_drive_time_cut60.csv'
+
+    if os.path.exists(os.path.expanduser(savename)):
+        drive_time = pd.read_csv(savename)
+    if destinations == None:
+        destinations = choices
+
+    drive_time_distance = pd.DataFrame(index=sorted(list(area_data['BlockGroup'])))
+    for school_id in destinations:
+        # make sure this school_id was found by the system
+        if len(drive_time.loc[drive_time['Name_1'] == school_id]) != 0:
+            distance_array = []
+            for bg in sorted(list(area_data['BlockGroup'])):
+                # make sure this bg id was found by the system, and the lack of distance info
+                # is not just due to the cut-off
+                if len(drive_time.loc[drive_time['Name_12'] == bg]) != 0:
+                    dist = drive_time.loc[drive_time['Name_1'] == school_id].loc[drive_time['Name_12'] == bg]['Total_Trav']
+                    if len(dist) == 1:
+                        dist = float(dist)
+                    elif len(dist) == 0:
+                        # dist = 100
+                        dist = math.inf
+                    else:
+                        print("duplicate distance data, error")
+                        print(dist)
+
+                else:
+                    # value -1 represents an unassigned value for now, we later
+                    # construct value for these indices, using their neighbor avg
+                    dist = -1
+                    # print("missing bg init: " + str(bg))
+
+                distance_array.append(dist)
+            print("school_id  " + str(school_id))
+            print(" this is the sch2block  " + str(sch2level[school_id]))
+            drive_time_distance[str(sch2level[school_id])] = distance_array
+
+def load_bg2att(level, census_sf = None):
+    savename = '/Users/mobin/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
+
+    # # This mapping is based on polygon shapefile information (not the students info)
+    # if self.level=='Block':
+    #     savename ='/Users/mobin/Dropbox/SFUSD/Optimization/b2aa_mapping.pkl'
+    # if self.level=='BlockGroup':
+    #     savename ='/Users/mobin/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
+    # elif self.level=='attendance_area':
+    #     # We don't need a mapping in this case
+    #     return
+
+    if os.path.exists(os.path.expanduser(savename)):
+        file = open(savename, "rb")
+        bg2att = pickle.load(file)
+        print("bg to aa map was loaded from file")
+        return bg2att
+
+    # load attendance area geometry + its id in a single dataframe
+    path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+    sf = gpd.read_file(path)
+    sf = sf.to_crs('epsg:4326')
+    sc_merged = make_school_geodataframe()
+    translator = sc_merged.loc[sc_merged['category'] == 'Attendance'][['school_id', 'index_right']]
+    translator['school_id'] = translator['school_id'].fillna(value=0).astype('int64', copy=False)
+    sf = sf.merge(translator, how='left', left_index=True, right_on='index_right')
+
+    # load blockgroup/block  geometry + its id in a single dataframe
+    df = census_sf.dissolve(level, as_index=False)
+
+    bg2att = {}
+    for i in range(len(df.index)):
+        area_c = df['geometry'][i].centroid
+        for z, row in sf.iterrows():
+            aa_poly = row['geometry']
+            # if aa_poly.contains(area_c) | aa_poly.touches(area_c):
+            if aa_poly.contains(area_c):
+                bg2att[df[level][i]] = row['school_id']
+
+    file = open(savename, "wb")
+    pickle.dump(bg2att, file)
+    file.close()
+
+    return bg2att
 
 def make_simplified_school_geodataframe():
     ''' make sc_merged '''
     # get school data table
     # cleanschoolpath = '~/SFUSD/Data/Cleaned/school_1819.csv'
     cleanschoolpath = '~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv'
-    sc_df = pd.read_csv(cleanschoolpath)
+    sch_df = pd.read_csv(cleanschoolpath)
 
     # Make GeoDataFrame
-    geometry = [Point(xy) for xy in zip(sc_df['lon'], sc_df['lat'])]
-    school_geo_df = gpd.GeoDataFrame(sc_df, crs='epsg:4326', geometry=geometry)
+    geometry = [Point(xy) for xy in zip(sch_df['lon'], sch_df['lat'])]
+    school_geo_df = gpd.GeoDataFrame(sch_df, crs='epsg:4326', geometry=geometry)
 
     return school_geo_df
 
@@ -324,7 +512,7 @@ def get_student_zone(zone_file, st_df, return_dict=False):
     zone_dict = {}
     for idx, schools in enumerate(zones):
         zone_dict = {**zone_dict, **{int(float(s)): idx for s in schools if s != ''}}
-    st_df['zone_id'] = st_df['idschoolattendance'].astype('Int64').replace(zone_dict)
+    st_df['zone_id'] = st_df['attendance_area'].astype('Int64').replace(zone_dict)
     if return_dict:
         return st_df, zone_dict
     return st_df

@@ -138,9 +138,9 @@ def visualize(solver, vm, school_df, bg_df, centroids):
     # for n in BAD_NEIGHBORS:
     #     bad_boys.loc[n, 'lat'] = bg_df[bg_df['census_blockgroup'] == n]['lat'].iloc[0]
     #     bad_boys.loc[n, 'lon'] = bg_df[bg_df['census_blockgroup'] == n]['lon'].iloc[0]
-    zv.visualize_zones_from_dict(zone_dict, centroid_location=centroid_locations,
-                                 title=f'SFUSD Zoning with {CENTROIDS[0]} zones',
-                                 save_name=str(datetime.datetime.now()))
+    zv.zones_from_dict(zone_dict, centroid_location=centroid_locations,
+                       title=f'SFUSD Zoning with {CENTROIDS[0]} zones',
+                       save_name=str(datetime.datetime.now()))
 
 
 def main():

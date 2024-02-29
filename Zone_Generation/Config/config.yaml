@@ -1,0 +1,29 @@
+
+# changing levers
+centroids_type: '10-zone-7'
+frl_dev: 0.26
+racial_dev: 1
+include_k8: False
+
+# fixed levers
+boundary_threshold: .05
+shortage: 0.2 # this is in percentage
+overage: 0.35 # this is in percentage
+all_cap_shortage: -1 # this is in percentage
+population_type: "All"
+max_distance: 4.0 # best valid value for 59 zines: 2.75
+population_dev: 0.5
+path: "/Users/mobin/SFUSD/Visualization_Tool_Data/"
+
+
+#capacity_vicinity: 0.005
+#fixed_vicinity: 0.12
+
+# move_SpEd: False
+
+# unused metrics
+# balance: 1000
+# aalpi_dev: 0.15
+# lbscqlty: 0.75
+# HOCidx1_dev: 0.2
+

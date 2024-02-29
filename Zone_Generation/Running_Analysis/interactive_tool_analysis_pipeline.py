@@ -15,7 +15,7 @@ from shapely.geometry import Point
 
 from Zone_Generation.Optimization_IP.generate_zones import (
     DesignZones,
-    _get_zone_dict,
+    load_zones_from_file,
     ETHNICITY_DICT,
     K8_SCHOOLS,
 )
@@ -344,7 +344,7 @@ class DashboardCreator:
             lambda x: 1 if not pd.isna(x) else 0
         )
 
-        cap_data = pd.read_csv("~/Dropbox/SFUSD/Data/stanford_capacities_12.23.21.csv")
+        cap_data = pd.read_csv("~/Dropbox/SFUSD/Data/School_Capacity/stanford_capacities_12.23.21.csv")
         cap_data.rename(
             columns={
                 "SchNum": "school_id",
@@ -362,7 +362,7 @@ class DashboardCreator:
         ].rename(columns={"r3_capacity": "all_nonsped_cap"})
 
         tk5_cap = pd.read_csv(
-            "~/Dropbox/SFUSD/Data/stanford_capacities_12.23.21_TK-5.csv",
+            "~/Dropbox/SFUSD/Data/School_Capacity/stanford_capacities_12.23.21_TK-5.csv",
             usecols=["School ID", "School Capacity"],
         )
         tk5_cap.rename(
@@ -1012,7 +1012,7 @@ class DashboardCreator:
     ):
         df = self.get_appropriate_area_data(all_students, include_k8, specific_year)
 
-        zone_dict = _get_zone_dict(zone_file)
+        zone_dict = load_zones_from_file(zone_file)
         df["zone_id"] = df["census_blockgroup"].replace(zone_dict)
         proximity = self._calculate_metrics_category(df, self._proximity_metrics)
         disruption = self._disruption_metrics(
@@ -1365,7 +1365,7 @@ class DashboardCreator:
 
             include_k8 = levers["Include K-8"] == "Yes"
             df = self.get_appropriate_area_data(all_students, include_k8, specific_year)
-            zone_dict = _get_zone_dict(zonefile)
+            zone_dict = load_zones_from_file(zonefile)
             df["zone_id"] = df["census_blockgroup"].replace(zone_dict)
 
             metrics = self._supplementary_zone_level_transportation_metrics(
@@ -1529,13 +1529,13 @@ def compute_school_dissimilarity_benchmark():
 if __name__ == "__main__":
     # file_list = generate_file_list()
 
-    file_list = glob.glob(
-        "/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/GE_Zoning_*_BG.csv"
-    ) + glob.glob(
-        "/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/GE_Zoning_*_BG_ls.csv"
-    )
+    # file_list = glob.glob(
+    #     "/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/GE_Zoning_*_BG.csv"
+    # ) + glob.glob(
+    #     "/Users/katherinementzer/Dropbox/SFUSD/Optimization/Zones/Visualization_Tool 05:16:22/GE_Zoning_*_BG_ls.csv"
+    # )
     img_save_location = "/Users/katherinementzer/code/personal-website/WWW/"
-    output_save_file = "/Users/katherinementzer/SFUSD/dashboard_metrics.csv"
+    # output_save_file = "/Users/katherinementzer/SFUSD/dashboard_metrics.csv"
     # file_list = get_missing_patterns_file_list(output_save_file, file_list)
     dc = DashboardCreator(year=[14, 15, 16, 17, 18, 21, 22], individual_years=False)
     # dc.compute_metrics_on_file_list(
@@ -1570,7 +1570,7 @@ if __name__ == "__main__":
         append=False,
         walk_multiplier=1.4,
     )
-    # dc.compute_benchmarks("/Users/katherinementzer/SFUSD/benchmark.csv")
+    dc.compute_benchmarks("/Users/katherinementzer/SFUSD/benchmark.csv")
 
     # save_path = os.path.expanduser("~/Desktop/commands.csv")
     # print_google_sheets_formulas(save_path, num_metrics=39, hci_version=True)

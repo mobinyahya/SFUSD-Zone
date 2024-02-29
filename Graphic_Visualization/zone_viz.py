@@ -2,6 +2,8 @@ import csv
 import glob
 import os
 
+import shapely.geometry as sg
+import matplotlib.colors as mcolors
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,7 +38,7 @@ class ZoneVisualizer:
         # almost the sc_ll file (school data) + Points(lon/lat) of them, in a geo-data-frame
         school_geo_df = gpd.GeoDataFrame(sc_ll, crs='epsg:4326', geometry=geometry)
         # read shape file of attendance areas
-        if self.level == 'idschoolattendance':
+        if self.level == 'attendance_area':
             # Used to be in downloads folder, but I moved it to SFUSD folder
             path = os.path.expanduser('~/SFUSD/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
             self.sf = gpd.read_file(path)
@@ -52,7 +54,7 @@ class ZoneVisualizer:
             self.sf = self.sf.merge(df, how='left', left_on='geoid10', right_on='Block')
         self.sf = self.sf.to_crs(epsg=4326)
 
-        if self.level == 'idschoolattendance':
+        if self.level == 'attendance_area':
             # school data and shape file merged
             # sc_merged includes all data in school_geo_df, and also showing in which attendance area(?) each Point is.
             # This info is available in an extra columnt, 'index_right'
@@ -64,18 +66,151 @@ class ZoneVisualizer:
             self.translator = translator.rename(columns={'school_id': 'aa_zone'})
             self.sc_merged = sc_merged.merge(self.translator, how='left', on='index_right')
 
-    # def visualize_zones_from_dict(self, zone_dict,label=True,show=True, col='zone_id',title=''):
-    def visualize_zones_from_dict(self, zone_dict, label=False, show=True, col='zone_id', title='',
-                                  centroid_location=-1, save_name="don't save",):
+
+    def population_heatmap(self, area_population, sch_df, metric, title="", save_path=""):
+        ax = self.load_base_plot()
+        # self.sf.dropna(subset=[self.level], inplace=True)
+
+        pd.set_option('display.float_format', lambda x: '%.0f' % x)
+
+        # Map to population/number of students in each blockgroup
+        population_dict = area_population.set_index('BlockGroup')['ge_students'].to_dict()
+        self.sf['ge_students'] = self.sf['BlockGroup'].replace(population_dict)
+
+
+        # Calculate the area for each block group
+        sf_projected = self.sf.to_crs(epsg=3857)  # Replace 3857 with a more suitable CRS if needed
+        self.sf['area'] = sf_projected.area
+
+
+        sorted_df = self.sf.sort_values('ge_students', ascending=False)
+        distinct_blockgroups = sorted_df.drop_duplicates('BlockGroup')
+
+
+        # Aggregate the df info to have area information at Blockgroup level. For that, you need to sum the area
+        # of each block, but don't sum the ge_students, etc (since they were already computed at blockgroup level)
+        df_area_sum = self.sf.dissolve(by='BlockGroup', aggfunc={'area': 'sum'})
+        # Join with original DataFrame to get other columns.
+        df_first_row = self.sf.drop(['area', 'geometry'], axis=1).groupby('BlockGroup').first()
+        # Join the two DataFrames. The resulting DataFrame will have the aggregated 'area' and the combined 'geometry' for each 'BlockGroup',
+        df = df_first_row.join(df_area_sum)
+
+
+        df["normalized_ge_students"] = df["ge_students"] / df["area"]
+        # plot population
+        df.plot(ax=ax, column='normalized_ge_students', cmap='Reds', legend=True, aspect=1)
+        # df.plot(ax=ax, column='ge_students', cmap='Reds', legend=True, aspect=1)
+
+        if metric == "ge_capacity":
+            ## plot school locations
+            # df.plot(ax=ax, color='lightblue', legend=True, aspect=1)
+            plt.scatter(sch_df['lon'], sch_df['lat'], s=sch_df['ge_capacity'] * 5, c='blue', marker='o')
+        if metric == "ge_popularity":
+            ## plot school locations
+            # df.plot(ax=ax, color='lightblue', legend=True, aspect=1)
+            plt.scatter(sch_df['lon'], sch_df['lat'], s=sch_df['ge_popularity'] * 300, c='green', marker='o')
+
+        self.show_plot(save_path, title)
+
+
+    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min = None, metric_max = None, title='', save_path=""):
+        self._read_data()
+        if self.level == 'attendance_area':
+            self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
+            self.sf = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
+
+
+        ax = self.load_base_plot()
+        zone_metric_dict = stat_df.set_index('zone ID')[metric].to_dict()
+
+        self.sf.dropna(subset=[self.level], inplace=True)
+        self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
+        self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(62) else 0)
+
+        # for each block in each row, add the corresponding metric
+        # of the zone in which this block blongs to as a column
+        self.sf['zone_metric'] = self.sf["zone_id"].replace(zone_metric_dict)
+
+        df = self.sf.loc[self.sf['filter'] == 1]
+
+
+        # percentage of students in each zone that ranked the
+        # school within that zone as their top school in r1_ranked_idschool
+        if metric == "listed_rank_1%":
+            df.plot(ax=ax, column='zone_metric', cmap='Greens', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
+
+        if metric == "assigned_rank_1%":
+            df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
+
+        if metric == "rank1_shortage%":
+            df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
+
+        if metric == "real_rank1_unassigned%":
+            df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
+
+        fig = ax.figure  # Get the figure object
+        cbar_ax = fig.axes[-1]  # This assumes your plot is the first axes and the colorbar is the second
+        cbar_ax.tick_params(labelsize=30)  # Adjust the font size as needed
+
+        if metric == 'shortage%':
+            # Create a reversed colormap for negative values
+            cmap_neg_reversed = plt.cm.Blues_r  # '_r' creates a reversed version of the colormap
+            cmap_pos = plt.cm.Reds  # For positive values
+
+            # Normalization for negative and positive values
+            norm_neg = mcolors.Normalize(vmin=metric_min, vmax=0)
+            norm_pos = mcolors.Normalize(vmin=0, vmax=metric_max)
+
+            # Split the DataFrame
+            df_neg = df[df['zone_metric'] < 0]
+            df_pos = df[df['zone_metric'] > 0]
+
+            # Plot negative values with the reversed colormap
+            df_neg.plot(ax=ax, column='zone_metric', cmap=cmap_neg_reversed, legend=True, norm=norm_neg, aspect=1)
+            # Plot positive values
+            df_pos.plot(ax=ax, column='zone_metric', cmap=cmap_pos, legend=True, norm=norm_pos, aspect=1)
+
+            fig = ax.figure  # Get the figure object
+
+            # Adjust font size for all colorbars
+            for cbar_ax in fig.axes[1:]:  # Skip the first ax which is your main plot, the rest are colorbars
+                cbar_ax.tick_params(labelsize=30)  # Adjust the font size as needed
+            print("_____")
+
+        self.show_plot(save_path, title)
+
+    def load_base_plot(self):
+        plt.figure(figsize=(20, 20))
+        ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
+        return ax
+
+    def show_plot(self, save_path, title):
+
+        plt.title(title)
+        plt.gca().set_yticklabels([])
+        plt.gca().set_xticklabels([])
+        plt.gca().set_xlim(-122.525, -122.350)
+        plt.gca().set_ylim(37.70, 37.84)
+
+
+        if save_path != "":
+            print(save_path + '.png')
+            plt.savefig(save_path + '.png')
+        plt.show()
+        print("Finished plotting")
+        return plt
+
+    def zones_from_dict(self, zone_dict, label=False, title="",
+                        centroid_location=-1, save_path=""):
 
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
-        if self.level == 'idschoolattendance':
+        if self.level == 'attendance_area':
             self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
             df = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
             # df['zone_id'] = df['aa_zone'].replace(zone_dict)
 
-            df['filter'] = df['zone_id'].apply(lambda x: 1 if int(x) in range(20) else 0)
+            df['filter'] = df['zone_id'].apply(lambda x: 1 if int(x) in range(65) else 0)
             df = df.loc[df['filter'] == 1]
 
             plt.figure(figsize=(15, 15))
@@ -100,11 +235,10 @@ class ZoneVisualizer:
                 self.sf.apply(lambda x: ax.annotate(fontsize=8,
                                                     text=int(x.BlockGroup),
                                                     xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
-                # self.sf.apply(lambda x: ax.annotate(fontsize=15, s= int(x.Block) if int(x.BlockGroup) == 60750179021 else ".", xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
                 # self.sf.apply(lambda x: ax.annotate(fontsize=15, s= int(x.Block) if int(x.Block) == 60750255002023 else ".", xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
 
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
-            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(20) else 0)
+            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(62) else 0)
             df = self.sf.loc[self.sf['filter'] == 1]
 
         # plot zones
@@ -112,7 +246,9 @@ class ZoneVisualizer:
         plt.title(title)
 
         # plot centroid locations
-        plt.scatter(centroid_location['lon'], centroid_location['lat'], s=20, c='black', marker='s')
+        plt.scatter(centroid_location['lon'], centroid_location['lat'], s=3, c='black', marker='s')
+        for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['school_id']):
+            plt.text(lon, lat, id, ha='center', va='center')
         # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
 
         # # plot school locations
@@ -123,19 +259,9 @@ class ZoneVisualizer:
         # plt.scatter(aa['lon'],aa['lat'],s=10, c='red',marker='s')
         # plt.scatter(citywide['lon'],citywide['lat'],s=10, c='black',marker='^')
 
-        plt.gca().set_yticklabels([])
-        plt.gca().set_xticklabels([])
-        plt.gca().set_xlim(-122.525, -122.350)
-        plt.gca().set_ylim(37.70, 37.84)
+        self.show_plot(save_path, title)
 
-        if show:
-            if save_name != "don't save":
-                path = os.path.expanduser("~/SFUSD/Visualization_Tool_Data/")
-                print(path + save_name + '.png')
-                plt.savefig(path + save_name + '.png')
-            plt.show()
-        print("Finished plotting")
-        return plt
+
 
     def visualize_SpEd(self, sped_df, sped_types, label=False, centroid_location=-1):
         # Note TOD: This visualization assumes that each school has at most 1 program to be visualized.
@@ -211,5 +337,5 @@ class ZoneVisualizer:
         save_path = os.path.expanduser(directory)
         for k, v in lp_zone_dict.items():
             zone_dict = self.read_language_zone(v)
-            self.visualize_zones_from_dict(zone_dict, label=False, show=False, title=k)
+            self.zones_from_dict(zone_dict, label=False, title=k)
             plt.savefig(save_path + k)

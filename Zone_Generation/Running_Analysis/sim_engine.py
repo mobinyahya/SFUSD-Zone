@@ -90,7 +90,7 @@ class SimulateZones:
         params = {
             "year": self.market.config["generator"]["year"],
             "zone_file": file_name.split("/")[-1][:-4],
-            "M": len(self.market.zones.zone2area_list),
+            "M": len(self.market.zone_lists.zone2area_list),
             "LP Zones": self.market.config["lp-zones"],
         }
         if os.path.exists(file_name[:-4] + "_params.txt"):

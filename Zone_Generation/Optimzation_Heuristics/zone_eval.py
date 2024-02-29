@@ -66,7 +66,7 @@ def stats_evaluation(dz, zone_dict):
         for b in zone_dict:
             if (zone_dict[b] == z):
                 if (b in dz.area2idx):
-                    for idx, row in dz.sc_df.iterrows():
+                    for idx, row in dz.sch_df.iterrows():
                         if (row["K-8"]) == 1:
                             if row[dz.level] == b:
                                 stats["K8 School Count"][z] += 1
@@ -80,7 +80,7 @@ def stats_evaluation(dz, zone_dict):
     # # stats['Max Distance to GE'], stats['Proximate Choices'] = evaluate_proximity_stats(dz, zone_dict)
     print(stats)
 
-    print(sum(dz.sc_df["K-8"]))
+    print(sum(dz.sch_df["K-8"]))
 
 
     return stats
@@ -222,33 +222,88 @@ def evaluate_frl(dz, zone_dict, lbfrl_limit, ubfrl_limit):
 
 def drop_boundary(dz, zone_dict):
     sketchy_boundary = []
-    for j in range(dz.A):
-        level_j = dz.idx2area[j]
-        if level_j in zone_dict:
-            neighbors = dz.neighbors[j]
+    for area_idx in range(dz.A):
+        area = dz.idx2area[area_idx]
+        if area in zone_dict:
+            neighbors = dz.neighbors[area_idx]
             if len(neighbors) >= 1:
+                seperated_neighbors = 0
                 for neighbor_idx in neighbors:
                     if dz.idx2area[neighbor_idx] in zone_dict:
-                        if zone_dict[dz.idx2area[neighbor_idx]] != zone_dict[level_j]:
-                            sketchy_boundary.append(level_j)
-                            break
-                    else:
-                        sketchy_boundary.append(level_j)
-                        break
+                        if zone_dict[dz.idx2area[neighbor_idx]] != zone_dict[area]:
+                            seperated_neighbors += 1
+                            # sketchy_boundary.append(area)
+                            # break
+                if seperated_neighbors >= len(neighbors)/3:
+                    sketchy_boundary.append(area)
 
-    for level_j in sketchy_boundary:
-        zone_dict.pop(level_j, None)
+    for area in sketchy_boundary:
+        zone_dict.pop(area, None)
 
     return zone_dict
 
 # we trim neighbors on the boundary that do not satisfy strong contiguity
-def trim_boundary(dz, zone_dict):
+def trim_noncontiguity(dz, zone_dict):
     while True:
-        old_zone_dict_size = len(zone_dict)
+        prev_size = len(zone_dict)
         isContiguous, zone_dict = strong_contiguity_analysis(dz, zone_dict, mode="trimming")
-        if old_zone_dict_size == len(zone_dict):
+        if prev_size == len(zone_dict):
             break
-        # old_zone_dict_size = len(zone_dict)
+    return zone_dict
+
+
+# remove blockgroups that are very far from the centroid of their
+# zone and make it unassigned. This is part of trimming process
+def drop_centroid_distant(dz, zone_dict):
+    for z in range(dz.M):
+        bg_z = str(dz.idx2area[dz.centroids[z]])
+        for j in range(dz.A):
+            bg_j = dz.idx2area[j]
+            if bg_j in zone_dict:
+                if zone_dict[bg_j] == z:
+                    if dz.euc_distances.loc[bg_j, bg_z] > 1.5:
+                        zone_dict.pop(bg_j)
+    return zone_dict
+
+# assign blockgroups that are around the centroid of each zone, to that zone,
+# in order to have more initialized blockgroups.
+# This process takes place after the trimming.
+def assign_centroid_vicinity(dz, zone_dict, config):
+    for z in range(dz.M):
+        z_capacity = dz.seats[dz.centroids[z]]
+        bg_z = dz.idx2area[dz.centroids[z]]
+
+        fixed_w = 0.0
+        capacity_w = 0.006
+
+        # far_schools = [999, 589, 525, 823, 872]
+        #
+        # # Best capacity_w for 0.003 zone for in bg level:  0.2
+        # capacity_w = 0.004
+        # sch_z = dz.centroid_sch[z]
+        # if sch_z in [497]:
+        #     fixed_w = 0.21
+        # elif sch_z in [999, 872]:
+        #     fixed_w = 0.3
+        # elif sch_z in [525]:
+        #     fixed_w = 0.2
+        # elif sch_z in far_schools:
+        #     fixed_w = 0.18
+        # else:
+        #     # Best fixed_w for 56 zone for in bg level:  0.2
+        #     fixed_w = 0.15
+
+        for j in range(dz.A):
+            bg_j = dz.idx2area[j]
+            if bg_j not in zone_dict:
+                if dz.euc_distances.loc[bg_z, str(bg_j)] < z_capacity * capacity_w + fixed_w:
+                    zone_dict[bg_j] = z
+            else:
+                curr_zone_index = zone_dict[bg_j]
+                bg_cz = dz.idx2area[dz.centroids[curr_zone_index]]
+                if dz.euc_distances.loc[bg_z, str(bg_j)] < dz.euc_distances.loc[bg_cz, str(bg_j)]:
+                    zone_dict[bg_j] = z
+
     return zone_dict
 
 # --------------------------------------------------------------------------------------------------
@@ -260,21 +315,23 @@ def evaluate_contiguity(dz, zone_dict):
 
 def strong_contiguity_analysis(dz, zone_dict, mode = "evaluation"):
     # every centroid belongs to its own zone
+
     for z in range(dz.M):
         level_z = dz.idx2area[dz.centroids[z]]
         if level_z in zone_dict:
             if zone_dict[level_z] != z:
-                # print("for z : " +str(z) + "  centroid location is: " +str(level_z) +
-                #       " which is assigned to zone :  " + str(zone_dict[level_z]))
-                zone_dict.pop(level_z)
+                # print("for z : ", z, "  centroid location is: ", level_z,
+                #       " which is assigned to zone :  ", zone_dict[level_z])
+                if mode == "trimming":
+                    zone_dict.pop(level_z)
                 return False, zone_dict
+
         # in evaluation mode, all centroid blockgroups must be assigned to a blocl.
         # but in trimming mode, these blockgroups can be missing from our zone_dict
         elif mode == "evaluation":
             print("z.idx2area[dz.centroids[" + str(z) + "]] should already be in zone_dict, Error")
             print(level_z)
             return False, None
-
 
 
     for j in range(dz.A):
@@ -295,17 +352,18 @@ def strong_contiguity_analysis(dz, zone_dict, mode = "evaluation"):
 
             if count == 0:
                 if mode == "trimming":
-                    # print("dropping blockgroup " + str(level_j) + " that was matched to zone " +str(zone_dict[level_j]))
-                    zone_dict.pop(level_j)
+                    if len(closer_neighbors) >= 1:
+                        # print("dropping blockgroup " + str(level_j) + " that was matched to zone " +str(zone_dict[level_j]))
+                        zone_dict.pop(level_j)
                 elif mode == "evaluation":
                     if len(closer_neighbors) >= 1:
                         # print("moving to an undesired direction for blockgroup " + str(level_j))
                         return False, zone_dict
 
         elif mode == "evaluation":
-            print("???")
-            print(level_j)
+            print("Error. Missing area from zone_dict: " + str(level_j))
             return False, zone_dict
+
     return True, zone_dict
 
 def check_assignment_completeness(dz, zone_dict):
@@ -439,14 +497,14 @@ def evaluate_sch_count_balance(dz, zone_dict):
     if dz.include_k8:
         zone_k8_count = {}
         print("max value")
-        print(dz.sc_df.index.max())
+        print(dz.sch_df.index.max())
         for z in range(dz.M):
             zone_k8_count[z] = sum([
-                dz.sc_df["K-8"][j]
+                dz.sch_df["K-8"][j]
                 # for j in range(len(dz.sc_df.index))
-                for j in range((dz.sc_df.index.max()))
-                if (j in dz.sc_df[dz.level])
-                if (zone_dict[dz.sc_df[dz.level][j]] == z)
+                for j in range((dz.sch_df.index.max()))
+                if (j in dz.sch_df[dz.level])
+                if (zone_dict[dz.sch_df[dz.level][j]] == z)
             ])
             if zone_k8_count[z] > 1:
                 y_sch_count_balance = math.inf
@@ -459,15 +517,15 @@ def evaluate_school_buffer_boundary(dz, zone_dict, boundary_threshold):
     # to a school, are matched to the same zone as that school.
     y_sch_buffer_boundary = 0
 
-    for i, row in dz.sc_df.iterrows():
+    for i, row in dz.sch_df.iterrows():
         if (row["K-8"] == 1) & (dz.include_k8 == False):
             continue
         s = row["school_id"]
 
         for b in zone_dict:
-            if zone_dict[b] != zone_dict[dz.sch2block[s]]:
+            if zone_dict[b] != zone_dict[dz.sch2bg[s]]:
                 # if dz.euc_distances.loc[dz.sch2block[s], str(b)] < boundary_threshold:
-                if dz.area2idx[dz.sch2block[s]] in dz.neighbors[dz.area2idx[b]]:
+                if dz.area2idx[dz.sch2bg[s]] in dz.neighbors[dz.area2idx[b]]:
                     y_sch_buffer_boundary += 1
 
     return y_sch_buffer_boundary
@@ -487,6 +545,9 @@ def evaluate_assignment_score(param, dz, zone_dict, boundary_cost_fraction = 1):
     # ------------------------------------------------------------
     # param = Tuning_param()
 
+    y_distance = y_sch_buffer_boundary = y_sch_count_balance = y_shortage = y_boundary = 0
+
+    # TODO fix, here is the error. Also change the way you compute contiguity
     if evaluate_contiguity(dz, zone_dict) == False:
         # print("contiguity not satisfied")
         return math.inf

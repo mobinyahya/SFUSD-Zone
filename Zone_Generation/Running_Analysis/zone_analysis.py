@@ -13,8 +13,8 @@ from generate_zones import DesignZones, _get_zone_dict, _get_constraints_from_fi
 
 
 def get_zone_of_school(design_zones: DesignZones, school_id):
-    tmp = design_zones.sc_df.loc[
-        design_zones.sc_df["idschoolattendance"] == school_id
+    tmp = design_zones.sch_df.loc[
+        design_zones.sch_df["idschoolattendance"] == school_id
         ].reset_index()
     return tmp[design_zones.level][0]
 
