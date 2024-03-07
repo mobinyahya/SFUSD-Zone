@@ -31,6 +31,21 @@ class Stat_Class(object):
         zone_metrics["seats shortage/overage"] = abs(zone_metrics["ge_students"] - zone_metrics["seats"])
         zone_metrics["shortage%"] = (zone_metrics["ge_students"] - zone_metrics["seats"])/zone_metrics["ge_students"]
         zone_metrics["school_count"] = sum([self.dz.schools[self.area2idx[j]] for j in zone])
+
+        schools = self.dz.school_df
+        sch_dict = schools.set_index('school_id')["school_name"].to_dict()
+        zone_metrics["schools_names"] = []
+        for sch_id in sch_dict:
+            if self.level == "attendance_area":
+                sch_area = self.dz.sch2aa[sch_id]
+            elif self.level == "BlockGroup":
+                sch_area = self.dz.sch2bg[sch_id]
+            elif self.level == "Block":
+                sch_area = self.dz.sch2b[sch_id]
+            if sch_area in zone:
+                zone_metrics["schools_names"].append(sch_dict[sch_id])
+
+
         return zone_metrics
 
     # Step 3: Find the top-ranked school in the same zone for each student
@@ -234,19 +249,11 @@ if __name__ == "__main__":
     input_level = 'BlockGroup'
     # input_level = 'attendance_area'
     dz = DesignZones(
-        M=int(config["centroids_type"].split("-")[0]),
-        level=input_level,
-        centroid_sch_option=config["centroids_type"],
-        include_k8=config["include_k8"],
-        population_type=config["population_type"],
-        capacity_scenario="A",
-        new_schools=True,
-        use_loaded_data=True
+        config=config,
+        level=input_level
     )
 
-
-
-    input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Zones02-15"
+    input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
 
     csv_files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
     if input_level == 'BlockGroup':
@@ -261,7 +268,7 @@ if __name__ == "__main__":
     for zoning_file in zoning_files:
         Stat = Stat_Class(dz, input_level)
 
-        zone_lists, zone_dict = load_zones_from_file(file_path = os.path.join(input_folder, zoning_file))
+        zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
         Stat.dz.zone_lists = zone_lists
         Stat.dz.zone_dict = zone_dict
 

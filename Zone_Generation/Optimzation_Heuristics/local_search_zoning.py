@@ -91,6 +91,15 @@ def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_BG.csv")
     elif load_level == "Block":
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_B.csv")
+        # TODO 59zone mode
+        zd = {}
+        west_schools = [664, 544, 750, 782, 862]
+        west_centroids = [0, 1, 4]
+        for block, zone_numb in dz.zone_dict.items():
+            if zone_numb in west_centroids:
+                zd[block] = zone_numb
+        dz.zone_dict = zd
+
     else:
         raise ValueError("Invalid Input Level")
 
@@ -319,13 +328,14 @@ def local_search(config):
     # if not os.path.exists(param.path + name + "_AA" +".png"):
     #     return
 
-    input_level = 'BlockGroup'
-    # input_level = 'Block'
+    # input_level = 'BlockGroup'
+    input_level = 'Block'
     dz = DesignZones(
         config=config,
         level=input_level,
     )
-    dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="attendance_area")
+    # dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="attendance_area")
+    # dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="Block")
     local_search_iteration(dz, config, name, input_level)
     # for new_shortage in [0.35, 0.29, 0.24]:
     #     if new_shortage < param.shortage:
@@ -339,31 +349,99 @@ def local_search(config):
 def local_search_iteration(dz, config, name, input_level):
     print("New round of Local Search")
     zv = ZoneVisualizer(input_level)
-    dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
-    # # heuristic(dz, dz.zd)
-    # # handle_anomolies(dz, dz.zd)
-    # # sanity_check(dz)
-    zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
-    dz.zd = drop_boundary(dz, dz.zone_dict)
-    zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
-    dz.zd = drop_centroid_distant(dz, dz.zone_dict)
-    zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
-    # dz.zone_dict = {}
+    # # A = [ (7208, 1.5759523811927518), (6462, 1.5764219652757931), (6449, 1.6082992769023123), (6607, 1.6114440953533102), (6448, 1.6535187117331729), (6437, 1.6988615312378084), (6440, 1.7179360920519), (1006, 1.966782161032183), (5830, 1.9742523569559007), (5831, 2.0232732041814403), (5887, 2.05018540434458), (5875, 2.058040748301533), (5821, 2.067520757434597), (5816, 2.0767501102020467), (5874, 2.133204474362609), (5873, 2.157850222597515), (5848, 2.171074455027876), (5871, 2.225709991859607), (5828, 2.235652208859644), (5839, 2.238174108323707), (5870, 2.2470516535042213), (5822, 2.252432128195028), (5872, 2.266060083024929), (5825, 2.2750584910641405), (1011, 2.278969979615756), (5863, 2.279151153785969), (5826, 2.285305102136879), (5838, 2.309735973624558), (5623, 2.3201013534548163), (5869, 2.333317200506202), (5868, 2.3354508179328257), (5862, 2.3471917810142813), (1004, 2.3598297234570333), (5867, 2.3624493317653714), (5860, 2.377172243682048), (1003, 2.3927932867227906), (5853, 2.395810935470801), (1005, 2.4155257234056675), (5844, 2.415606879656859), (5846, 2.424130788887536), (5849, 2.444281846635924), (5852, 2.454461598532165), (5818, 2.4558749232028303), (5833, 2.497781256397007), (1009, 2.5080669891296434), (5850, 2.5318696764850843), (5824, 2.543279417371356), (5859, 2.5572608375278945), (5851, 2.564924185691183), (5835, 2.571716010350328), (5856, 2.5755696389126426), (5854, 2.5793387093273865), (1010, 2.6066774860042843), (5858, 2.6151949587959216), (5855, 2.6356926092485544), (5847, 2.6478070382733883), (5840, 2.650357250824485), (5841, 2.650644264685125), (1007, 2.665040061281906), (5836, 2.675151237454701), (5837, 2.6829864256001823), (5823, 2.687826219772208), (1008, 2.688900808504526), (5829, 2.720443275304112), (5834, 2.7219075908344887)]
+    # A = [(6440, 1.7179360920519), (1006, 1.966782161032183), (5830, 1.9742523569559007), (5831, 2.0232732041814403), (5887, 2.05018540434458), (5875, 2.058040748301533), (5821, 2.067520757434597), (5816, 2.0767501102020467), (5874, 2.133204474362609), (5873, 2.157850222597515), (5848, 2.171074455027876), (5871, 2.225709991859607), (5828, 2.235652208859644), (5839, 2.238174108323707), (5870, 2.2470516535042213), (5822, 2.252432128195028), (5872, 2.266060083024929), (5825, 2.2750584910641405), (1011, 2.278969979615756), (5863, 2.279151153785969), (5826, 2.285305102136879), (5838, 2.309735973624558), (5623, 2.3201013534548163), (5869, 2.333317200506202), (5868, 2.3354508179328257), (5862, 2.3471917810142813), (1004, 2.3598297234570333), (5867, 2.3624493317653714), (5860, 2.377172243682048), (1003, 2.3927932867227906), (5853, 2.395810935470801), (1005, 2.4155257234056675), (5844, 2.415606879656859), (5846, 2.424130788887536), (5849, 2.444281846635924), (5852, 2.454461598532165), (5818, 2.4558749232028303), (5833, 2.497781256397007), (1009, 2.5080669891296434), (5850, 2.5318696764850843), (5824, 2.543279417371356), (5859, 2.5572608375278945), (5851, 2.564924185691183), (5835, 2.571716010350328), (5856, 2.5755696389126426), (5854, 2.5793387093273865), (1010, 2.6066774860042843), (5858, 2.6151949587959216), (5855, 2.6356926092485544), (5847, 2.6478070382733883), (5840, 2.650357250824485), (5841, 2.650644264685125), (1007, 2.665040061281906), (5836, 2.675151237454701), (5837, 2.6829864256001823), (5823, 2.687826219772208), (1008, 2.688900808504526), (5829, 2.720443275304112), (5834, 2.7219075908344887)]
+    # A = [(5591, 1.2772043565928195), (5335, 1.2781694891737096), (6515, 1.279431561850764), (6443, 1.2796585074293665), (6454, 1.2842266237583626), (5596, 1.2845993544699776), (6474, 1.2901945999560098), (6468, 1.2909926985638551), (6514, 1.291206213580826), (5338, 1.2928853217237022), (4096, 1.2958643238069707), (6501, 1.298663279837014), (5590, 1.3018903452868775), (6500, 1.303319459582792), (4075, 1.3052680529697065), (6463, 1.3057457502190772), (6439, 1.314422563474744), (5339, 1.3174822603618686), (6503, 1.3199723880114742), (6502, 1.3241911609435788), (6470, 1.3255569175911708), (5334, 1.3259675200101568), (5584, 1.3271389145946175), (7294, 1.3279298902933816), (6486, 1.3290959919926233), (6467, 1.332084936445447), (7281, 1.333049570095429), (5329, 1.3341816333797163), (6473, 1.335418332099488), (6707, 1.3362869009372556), (4077, 1.3428275362645177), (7280, 1.3429364623678266), (6505, 1.3479607279010313), (6472, 1.350728572033748), (6476, 1.351112674731019), (6444, 1.3517930147616972), (6469, 1.353340078843244), (7291, 1.3647184390270772), (6471, 1.3748838903106335), (6433, 1.3775473404716154), (6475, 1.380273715212751), (7283, 1.380542763106836), (6434, 1.3815278149821748), (6445, 1.393731814624172), (6506, 1.3947275202107594), (6435, 1.399027380429468), (4074, 1.403461985939307), (6459, 1.410583339406633), (6436, 1.4141476651788558), (6456, 1.4365328918915077), (6732, 1.4403504919766936), (6457, 1.4429996060796435), (7196, 1.444822631794688), (6458, 1.45631171074611), (6460, 1.4666846396366124), (4078, 1.4987968135231011), (6432, 1.4996752293264488), (6438, 1.5105770197857515), (6455, 1.518560826978755), (4079, 1.524963993052182), (7208, 1.5759523811927518), (6462, 1.5764219652757931), (6449, 1.6082992769023123), (6607, 1.6114440953533102), (6448, 1.6535187117331729), (6437, 1.6988615312378084), (6440, 1.7179360920519), (1006, 1.966782161032183), (5830, 1.9742523569559007), (5831, 2.0232732041814403), (5887, 2.05018540434458), (5875, 2.058040748301533), (5821, 2.067520757434597), (5816, 2.0767501102020467), (5874, 2.133204474362609), (5873, 2.157850222597515), (5848, 2.171074455027876), (5871, 2.225709991859607), (5828, 2.235652208859644), (5839, 2.238174108323707), (5870, 2.2470516535042213), (5822, 2.252432128195028), (5872, 2.266060083024929), (5825, 2.2750584910641405), (1011, 2.278969979615756), (5863, 2.279151153785969), (5826, 2.285305102136879), (5838, 2.309735973624558), (5623, 2.3201013534548163), (5869, 2.333317200506202), (5868, 2.3354508179328257), (5862, 2.3471917810142813), (1004, 2.3598297234570333), (5867, 2.3624493317653714), (5860, 2.377172243682048), (1003, 2.3927932867227906), (5853, 2.395810935470801), (1005, 2.4155257234056675), (5844, 2.415606879656859), (5846, 2.424130788887536), (5849, 2.444281846635924), (5852, 2.454461598532165), (5818, 2.4558749232028303), (5833, 2.497781256397007), (1009, 2.5080669891296434), (5850, 2.5318696764850843), (5824, 2.543279417371356), (5859, 2.5572608375278945), (5851, 2.564924185691183), (5835, 2.571716010350328), (5856, 2.5755696389126426), (5854, 2.5793387093273865), (1010, 2.6066774860042843), (5858, 2.6151949587959216), (5855, 2.6356926092485544), (5847, 2.6478070382733883), (5840, 2.650357250824485), (5841, 2.650644264685125), (1007, 2.665040061281906), (5836, 2.675151237454701), (5837, 2.6829864256001823), (5823, 2.687826219772208), (1008, 2.688900808504526), (5829, 2.720443275304112), (5834, 2.7219075908344887)]
+    # corner_blocks = []
+    # debug_dict = {}
+    # # for i in range(dz.A):
+    # #     area = dz.idx2area[i]
+    # #     debug_dict[area] = 1
+    # for block_pairs in A:
+    #     block_area = dz.idx2area[block_pairs[0]]
+    #     debug_dict[block_area] = 1
+    #     corner_blocks.append(block_area)
+    # print("corner_blocks = ", corner_blocks)
+    # print(debug_dict)
+    # zv.zones_from_dict(debug_dict, centroid_location=dz.centroid_location)
+    # exit()
+    #
+    west_blocks = []
+    west_schools = [664, 544, 750]
+    southeast_schools = [625, 453, 867]
+
+    for sch in southeast_schools:
+        sch_area = dz.sch2b[sch]
+        if sch == 664:
+            distance = 2.4
+        elif sch == 750:
+            distance = 2.3
+        else:
+            distance = 2.6
+        for i in range(dz.A):
+            if (dz.euc_distances.loc[sch_area, str(dz.idx2area[i])] < distance):
+                west_blocks.append(dz.idx2area[i])
+
+    debug_dict = {}
+    for block in west_blocks:
+        debug_dict[block] = 1
+    zv.zones_from_dict(debug_dict, centroid_location=dz.centroid_location)
+    print("west_blocks ", west_blocks)
+    exit()
+
+    # dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
+    # # # heuristic(dz, dz.zd)
+    # # # handle_anomolies(dz, dz.zd)
+    # # # sanity_check(dz)
+    # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
+    # dz.zd = drop_boundary(dz, dz.zone_dict)
+    # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
+    # dz.zd = drop_centroid_distant(dz, dz.zone_dict)
+    # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
+    dz.zone_dict = {}
     dz.zone_dict = assign_centroid_vicinity(dz, dz.zone_dict, config)
     dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
-    samezone_pairs = compute_samezone_pairs(dz, dz.zone_dict)
-    dz.samezone_pairs = samezone_pairs
-    # TODO check if during the assignment, one centroid is assigned to another zone.
+    dz.samezone_pairs = compute_samezone_pairs(dz, dz.zone_dict)
+    # # TODO check if during the assignment, one centroid is assigned to another zone.
     zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
 
+    # west_idx = [0, 1, 2, 4]
+    # zd = {}
+    # for b, z in dz.zone_dict.items():
+    #     if z not in west_idx:
+    #         continue
+    #     adj_row = False
+    #     idx_b = dz.area2idx[b]
+    #
+    #     if z == 2:
+    #         for i in dz.neighbors[idx_b]:
+    #             if dz.idx2area[i] not in dz.zone_dict:
+    #                 adj_row = True
+    #
+    #     if z in [1,4]:
+    #         for i in dz.neighbors[idx_b]:
+    #             if dz.idx2area[i] in dz.zone_dict:
+    #                 if dz.zone_dict[dz.idx2area[i]] == 2:
+    #                     adj_row = True
+    #     if adj_row == False:
+    #         zd[b] = z
+    # zv.zones_from_dict(zd, centroid_location=dz.centroid_location)
+    # print("zd ", zd)
+    # exit()
     print("1110")
     dz._set_objective_model(max_distance=config["max_distance"])
     initialize_preassigned_units(dz, dz.zone_dict)
     dz._shortage_and_balance_constraints(shortage_=True, balance_= False,
                      shortage=config["shortage"], overage= config["overage"], all_cap_shortage=config["all_cap_shortage"])
     dz._add_geo_constraints(contiguity=True)
+
+    print(f"Total number of dz.m variables: {dz.m.numVars}")
+
+    # Print the total number of constraints in the model
+    print(f"Total number of dz.m constraints: {dz.m.numConstrs}")
+
     # dz._add_population_balance_constraint(population_dev=param.population_dev)
-    dz._add_school_count_constraint()
+    # dz._add_school_count_constraint()
     # dz._add_met_quality_constraint(min_pct = config["lbscqlty"])
     # dz._boundary_threshold_constraint(boundary_threshold=config["boundary_threshold"])
     print("1114")

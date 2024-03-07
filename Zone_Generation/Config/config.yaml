@@ -1,18 +1,18 @@
 
 # changing levers
-centroids_type: '10-zone-7'
-frl_dev: 0.26
+centroids_type: '20-zone-1'
+frl_dev: 1
 racial_dev: 1
 include_k8: False
 
 # fixed levers
 boundary_threshold: .05
-shortage: 0.2 # this is in percentage
-overage: 0.35 # this is in percentage
+shortage: 0.3 # this is in percentage
+overage: 0.3 # this is in percentage
 all_cap_shortage: -1 # this is in percentage
 population_type: "All"
-max_distance: 4.0 # best valid value for 59 zines: 2.75
-population_dev: 0.5
+max_distance: 1.28 # best valid value for 59 zines: 1.272
+population_dev: -1
 path: "/Users/mobin/SFUSD/Visualization_Tool_Data/"
 
 
