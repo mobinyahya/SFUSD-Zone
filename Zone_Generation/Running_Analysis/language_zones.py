@@ -34,7 +34,7 @@ class LanguageZones:
             or -1 * shortage_pct * (sum(self.opt.seats) - self.opt.N) / self.opt.M
         )
         self.opt.construct_shortage_objective_model()
-        self.opt._add_geo_constraints(
+        self.opt._add_contiguity_constraint(
             max_distance=-1,
             real_distance=False,
             cover_distance=coverdistance,

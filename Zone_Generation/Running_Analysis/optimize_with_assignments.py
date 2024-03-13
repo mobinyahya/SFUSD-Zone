@@ -58,7 +58,7 @@ class OptimizePostChoice:
                 include_k8=citywide,
             )
             self.opt._set_objective_model(shortage, balance)
-            self.opt._add_geo_constraints(
+            self.opt._add_contiguity_constraint(
                 max_distance=-1,
                 real_distance=False,
                 cover_distance=coverdistance,
@@ -74,7 +74,7 @@ class OptimizePostChoice:
                 include_k8=citywide,
             )
             self.opt._set_objective_model(shortage, balance)
-            self.opt._add_geo_constraints(
+            self.opt._add_contiguity_constraint(
                 max_distance=distance,
                 real_distance=True,
                 cover_distance=-1,

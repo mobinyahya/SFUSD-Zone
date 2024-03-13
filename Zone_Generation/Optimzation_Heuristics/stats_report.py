@@ -246,17 +246,21 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     mcmc_filter_mode = False
 
-    input_level = 'BlockGroup'
+    input_level = 'Block'
+    # input_level = 'BlockGroup'
     # input_level = 'attendance_area'
     dz = DesignZones(
         config=config,
         level=input_level
     )
 
-    input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
+    # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
+    input_folder = "/Users/mobin/Desktop/Grid_Add"
 
     csv_files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
-    if input_level == 'BlockGroup':
+    if input_level == 'Block':
+        zoning_files = [csv_file for csv_file in csv_files if "B" in csv_file and "BG" not in csv_file]
+    elif input_level == 'BlockGroup':
         zoning_files = [csv_file for csv_file in csv_files if "BG" in csv_file]
     elif input_level == 'attendance_area':
         zoning_files = [csv_file for csv_file in csv_files if "AA" in csv_file]

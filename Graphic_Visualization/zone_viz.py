@@ -210,8 +210,9 @@ class ZoneVisualizer:
             df = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
             # df['zone_id'] = df['aa_zone'].replace(zone_dict)
 
-            df['filter'] = df['zone_id'].apply(lambda x: 1 if int(x) in range(65) else 0)
-            df = df.loc[df['filter'] == 1]
+            # TODO uncomment the following
+            # df['filter'] = df['zone_id'].apply(lambda x: 1 if int(x) in range(65) else 0)
+            # df = df.loc[df['filter'] == 1]
 
             plt.figure(figsize=(15, 15))
             ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
