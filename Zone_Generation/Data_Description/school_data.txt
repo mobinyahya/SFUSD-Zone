@@ -1,6 +1,5 @@
-  {
+school_data_columns = {
   "_comment": "This file contains metadata about the student pandas dataframe, in the following, each key represents a column in school dataframe",
-
   "school_id": {
     "DataType": "int",
     "Values": "3-digit integers",
@@ -30,11 +29,6 @@
     "DataType": "str",
     "Values": "[Attendance, Citywide]",
     "Description": "Whether the school is an attendance area school (i.e., belongs to a particular neighborhood) or is citywide (i.e., available to all students with no neighborhood priority"
-  },
-  "grades": {
-    "DataType": "str",
-    "Values": "['K-2nd', 'K-5th', 'K-8th', 'PK-4th', 'PK-5th', 'PK-8th', 'PK-TK-5th', 'TK-5th']",
-    "Description": "Grade range of the school"
   },
   "greatschools_rating": {
     "DataType": "int",
@@ -91,7 +85,6 @@
     "DataType": "int",
     "Values": "11-digit integers",
     "Description": "2010 census block group that the school is in"
-  },
   }
 }
 

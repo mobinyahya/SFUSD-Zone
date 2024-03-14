@@ -2,20 +2,22 @@ import os
 import csv
 import yaml
 import pandas as pd
-from Zone_Generation.Optimization_IP.generate_zones import *
+from Zone_Generation.Optimization_IP.design_zones import *
+from Zone_Generation.Config.Constants import *
 
 
 class Stat_Class(object):
-    def __init__(self, dz, input_level):
+    def __init__(self, dz, config):
+        self.level = config["level"]
+        self.years = config["years"]
+
         self.dz = dz
-        self.level = dz.level
         self.area2idx = dz.area2idx
         self.idx2area = dz.idx2area
         self.neighbors = dz.neighbors
-        self.input_level = input_level
         self.schools = self.dz.school_df
         self.students = self.dz.student_df
-        self.years = dz.years
+
         self.students23 = pd.read_csv("/Users/mobin/SFUSD/Data/Cleaned/Cleaned_Students_22.csv", low_memory=False)
 
 
@@ -188,17 +190,17 @@ class Stat_Class(object):
             zone_metrics["zone ID"] = "Zone " + str(self.dz.zone_lists.index(zone))
             zone_metrics_df = zone_metrics_df.append(zone_metrics, ignore_index=True)
 
-        student_metrics = self.compute_listed_rank1()
-        zone_metrics_df = zone_metrics_df.merge(student_metrics, how='inner', on="zone ID")
+        # student_metrics = self.compute_listed_rank1()
+        # zone_metrics_df = zone_metrics_df.merge(student_metrics, how='inner', on="zone ID")
 
 
-        student_shortage = self.compute_topchoice_shortage()
-        zone_metrics_df = zone_metrics_df.merge(student_shortage, how='inner', on="zone ID")
-        zone_metrics_df["rank1_shortage%"] = zone_metrics_df["rank1_shortage"] / zone_metrics_df["ge_students"]
-        zone_metrics_df.drop(["rank1_shortage"], axis='columns', inplace=True)
+        # student_shortage = self.compute_topchoice_shortage()
+        # zone_metrics_df = zone_metrics_df.merge(student_shortage, how='inner', on="zone ID")
+        # zone_metrics_df["rank1_shortage%"] = zone_metrics_df["rank1_shortage"] / zone_metrics_df["ge_students"]
+        # zone_metrics_df.drop(["rank1_shortage"], axis='columns', inplace=True)
 
-        real_rank1_assignments = self.compute_real_rank1_assignment()
-        zone_metrics_df = zone_metrics_df.merge(real_rank1_assignments, how='inner', on="zone ID")
+        # real_rank1_assignments = self.compute_real_rank1_assignment()
+        # zone_metrics_df = zone_metrics_df.merge(real_rank1_assignments, how='inner', on="zone ID")
 
         if assignments is not None:
             assignment_metrics = self.compute_assignment_metrics(assignments)
@@ -239,6 +241,30 @@ class Stat_Class(object):
 
         return result_df, acceptable_zone
 
+def load_zones_from_pkl(dz, file_path):
+    zone_lists = []
+    with open(file_path, 'rb') as file:
+        zd = pickle.load(file)
+        zone_dict = {key: all_schools.index(value) for key, value in zd.items()}
+
+    counter = 0
+    for z in range(len(all_schools)):
+        zone_z = []
+        for area in zone_dict:
+            if zone_dict[area] == z:
+                zone_z.append(area)
+                counter += 1
+
+        zone_lists.append(zone_z)
+
+    print("zone_lists ", zone_lists)
+    print("zone_dict ", zone_dict)
+    print("counter ", counter)
+    print("len(zone_dict) ", len(zone_dict))
+    # exit()
+
+    return zone_lists, zone_dict
+
 
 if __name__ == "__main__":
 
@@ -246,23 +272,19 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     mcmc_filter_mode = False
 
-    input_level = 'Block'
-    # input_level = 'BlockGroup'
-    # input_level = 'attendance_area'
     dz = DesignZones(
         config=config,
-        level=input_level
     )
 
     # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
-    input_folder = "/Users/mobin/Desktop/Grid_Add"
+    input_folder = "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones"
 
-    csv_files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
-    if input_level == 'Block':
+    csv_files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
+    if config["level"] == 'Block':
         zoning_files = [csv_file for csv_file in csv_files if "B" in csv_file and "BG" not in csv_file]
-    elif input_level == 'BlockGroup':
+    elif config["level"] == 'BlockGroup':
         zoning_files = [csv_file for csv_file in csv_files if "BG" in csv_file]
-    elif input_level == 'attendance_area':
+    elif config["level"] == 'attendance_area':
         zoning_files = [csv_file for csv_file in csv_files if "AA" in csv_file]
 
     zoning_files = [csv_file for csv_file in zoning_files if "Stats" not in csv_file
@@ -270,9 +292,11 @@ if __name__ == "__main__":
     print("zoning_files   ", zoning_files)
 
     for zoning_file in zoning_files:
-        Stat = Stat_Class(dz, input_level)
+        Stat = Stat_Class(dz, config)
 
-        zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
+        # zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
+        zone_lists, zone_dict = load_zones_from_pkl(dz, file_path=os.path.join(input_folder, zoning_file))
+
         Stat.dz.zone_lists = zone_lists
         Stat.dz.zone_dict = zone_dict
 

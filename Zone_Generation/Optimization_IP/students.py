@@ -8,9 +8,11 @@ from Zone_Generation.Config.Constants import *
 class Students(object):
     def __init__( self, config):
         self.drop_optout = config["drop_optout"]
+        self.years = config["years"]
+        self.population_type = config["population_type"]
+
 
     def load_student_data(self):
-        self.years = [14, 15, 16, 17, 18, 21, 22]
 
         cleaned_student_path = ("/Users/mobin/SFUSD/Data/Cleaned/Cleaned_Students_" +
                                 '_'.join([str(year) for year in self.years]) + ".csv")
@@ -107,84 +109,84 @@ class Students(object):
         # student_data = student_data.merge(cbeds[['census_block', 'frl']], how='left', on='census_block')
 
 
-            student_data = self._make_program_types(student_data)
-            student_data = self._filter_program_types(student_data, year)
+        student_data = self._make_program_types(student_data)
+        student_data = self._filter_program_types(student_data, year)
 
-            student_data = student_data[IMPORTANT_COLS + ETHNICITY_COLS]
+        student_data = student_data[IMPORTANT_COLS + ETHNICITY_COLS]
 
-            # Fill NaN values in columns with the mean value
-            for col in ["FRL", "AALPI Score"]:
-                mean_value = student_data[col].mean()
-                student_data['FRL'].fillna(value=mean_value, inplace=True)
+        # Fill NaN values in columns with the mean value
+        for col in ["FRL", "AALPI Score"]:
+            mean_value = student_data[col].mean()
+            student_data['FRL'].fillna(value=mean_value, inplace=True)
 
-            # Fill NaN values in the remaining columns with 0
-            student_data.fillna(value=0, inplace=True)
+        # Fill NaN values in the remaining columns with 0
+        student_data.fillna(value=0, inplace=True)
 
-            return student_data
+        return student_data
 
-        def _make_program_types(self, df):
-            # look at rounds 1-4, and all the programs listed in those rounds
-            # make a new column program_types, which is a list of all such program types over different rounds
-            """ create column with each type of program applied to """
-            for round in range(1, 4):
-                col = "r{}_programs".format(round)
-                if col in df.columns:
-                    if round == 1:
-                        df["program_types"] = df[col]
-                    else:
-                        df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else [])
-                        df["program_types"] = df["program_types"] + df[col]
-            df["program_types"] = df["program_types"].apply(lambda x: np.unique(x))
-            return df
-
-        def _filter_program_types(self, df, year):
-            """Identify students relevant to the program of interest"""
-            if self.population_type == "SB":
-                df["filter"] = df.apply(
-                    lambda row: 1
-                    if row["homelang_desc"] == "SP-Spanish" or "SB" in row["program_types"]
-                    else 0,
-                    axis=1,
-                )
-            elif self.population_type == "CB":
-                df["filter"] = df.apply(
-                    lambda row: 1
-                    if row["homelang_desc"] == "CC-Chinese Cantonese"
-                       or "CB" in row["program_types"]
-                    else 0,
-                    axis=1,
-                )
-            elif self.population_type == "GE":
-                if year != 18:
-                    df['filter'] = df.apply(
-                        lambda row: 1
-                        if "GE" in row["program_types"]
-                        else 0,
-                        axis=1
-                    )
+    def _make_program_types(self, df):
+        # look at rounds 1-4, and all the programs listed in those rounds
+        # make a new column program_types, which is a list of all such program types over different rounds
+        """ create column with each type of program applied to """
+        for round in range(1, 4):
+            col = "r{}_programs".format(round)
+            if col in df.columns:
+                if round == 1:
+                    df["program_types"] = df[col]
                 else:
-                    def filter_students(row):
-                        if (
-                                row["r1_idschool"] == row["enrolled_idschool"]
-                                and row["r1_programcode"] == "GE"
-                        ):
-                            return 1
-                        elif (
-                                row["r3_idschool"] == row["enrolled_idschool"]
-                                and row["r3_programcode"] == "GE"
-                        ):
-                            return 1
-                        elif (
-                                row["r1_idschool"] != row["enrolled_idschool"]
-                                and row["r3_idschool"] != row["enrolled_idschool"]
-                        ):
-                            return 1
-                        else:
-                            return 0
+                    df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else [])
+                    df["program_types"] = df["program_types"] + df[col]
+        df["program_types"] = df["program_types"].apply(lambda x: np.unique(x))
+        return df
 
-                    df["filter"] = df.apply(filter_students, axis=1)
-            # if program type is "All"
-            elif self.population_type == "All":
-                return df
-            return df.loc[df["filter"] == 1]
+    def _filter_program_types(self, df, year):
+        """Identify students relevant to the program of interest"""
+        if self.population_type == "SB":
+            df["filter"] = df.apply(
+                lambda row: 1
+                if row["homelang_desc"] == "SP-Spanish" or "SB" in row["program_types"]
+                else 0,
+                axis=1,
+            )
+        elif self.population_type == "CB":
+            df["filter"] = df.apply(
+                lambda row: 1
+                if row["homelang_desc"] == "CC-Chinese Cantonese"
+                   or "CB" in row["program_types"]
+                else 0,
+                axis=1,
+            )
+        elif self.population_type == "GE":
+            if year != 18:
+                df['filter'] = df.apply(
+                    lambda row: 1
+                    if "GE" in row["program_types"]
+                    else 0,
+                    axis=1
+                )
+            else:
+                def filter_students(row):
+                    if (
+                            row["r1_idschool"] == row["enrolled_idschool"]
+                            and row["r1_programcode"] == "GE"
+                    ):
+                        return 1
+                    elif (
+                            row["r3_idschool"] == row["enrolled_idschool"]
+                            and row["r3_programcode"] == "GE"
+                    ):
+                        return 1
+                    elif (
+                            row["r1_idschool"] != row["enrolled_idschool"]
+                            and row["r3_idschool"] != row["enrolled_idschool"]
+                    ):
+                        return 1
+                    else:
+                        return 0
+
+                df["filter"] = df.apply(filter_students, axis=1)
+        # if program type is "All"
+        elif self.population_type == "All":
+            return df
+        return df.loc[df["filter"] == 1]
 

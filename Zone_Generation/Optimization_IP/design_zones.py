@@ -76,29 +76,24 @@ class DesignZones:
 
 
     def construct_datastructures(self):
-
-        # self.seats: A dictionary, for every area index:
-        # (keys: area index j), (values: number of seats for GE students in area index j)
-        self.seats = (self.area_data["ge_capacity"].astype("int64").to_numpy())
-
-        # self.schools: A dictionary, for every area:
-        # (keys: area index j), (values: number of schools in area index j) this value is usually 0 or 1
-        self.schools = self.area_data['num_schools']
-
-        # self.N: Total number of GE students
         self.N = sum(self.area_data["ge_students"])
-
-        # self.F: Average percentage of FRL students
-        # (students that are eligible for Free or reduced price lunch)
         self.F = sum(self.area_data["FRL"]) / (self.N)
-
-        # self.A: Total number of areas (number of distinct area indices)
         self.A = len(self.area_data.index)
 
-        # self.studentsInArea: A dictionary, for every area index:
-        # (keys: area index j), (values: number of GE students in area index j)
+
+        self.seats = (self.area_data["ge_capacity"].astype("int64").to_numpy())
+        self.schools = self.area_data['num_schools']
         self.studentsInArea = self.area_data["ge_students"]
-        self.constraints = {"include_k8": self.include_k8}
+
+
+        self.area_data[self.level] = self.area_data[self.level].astype("int64")
+
+
+        self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
+        self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
+        self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
+
+        self.euc_distances = load_euc_distance_data(self.level)
 
         print("Average FRL ratio:       ", self.F)
         print("Number of Areas:       ", self.A)
@@ -108,20 +103,6 @@ class DesignZones:
         print("Number of GE seats:       ", sum(self.seats))
         print("Number of zones:       ", self.M)
 
-        self.area_data[self.level] = self.area_data[self.level].astype("int64")
-
-        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
-        # (keys: census area code AA), (values: index of area AA, in our data set)
-        # Note that we can access our dictionaries only using the area index, and not the area code
-        self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
-
-        # self.area2idx: A dictionary, mapping each area index in our data, to its census area code
-        # (keys: area index j), (values: census area code fo the area with index j)
-        self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
-
-        self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
-
-        self.euc_distances = load_euc_distance_data(self.level)
         # self.save_partial_distances()
         # self.drive_distances = self.load_driving_distance_data()
 
@@ -146,16 +127,13 @@ class DesignZones:
 
 
 
-
-
-
     def load_students_and_schools(self):
         students_data = Students(self.config)
         schools_data = Schools(self.config)
         self.student_df = students_data.load_student_data()
         self.school_df = schools_data.load_school_data()
 
-        student_stats = self._aggregate_student_data_to_area(self.student_df, students_data.years)
+        student_stats = self._aggregate_student_data_to_area(self.student_df)
         school_stats = self._aggregate_school_data_to_area(self.school_df)
 
         self.area_data = student_stats.merge(school_stats, how='outer', on=self.level)
@@ -168,10 +146,8 @@ class DesignZones:
 
 
 
-
-
-    # groupby the student data of year i, such that we have the information only on area level
-    def _aggregate_student_data_to_area(self, student_df, years):
+    # groupby the student data by area level
+    def _aggregate_student_data_to_area(self, student_df):
         # sum_columns = list(student_df.columns)
         # sum_columns.remove("FRL")
         # mean_columns = [self.level, "FRL"]
@@ -180,12 +156,12 @@ class DesignZones:
         # mean_students = student_df[mean_columns].groupby(self.level, as_index=False).mean()
         #
         # student_stats = mean_students.merge(sum_students, how="left", on=self.level)
-        student_stats =  student_df.groupby(self.level, as_index=False).sum()
+        student_stats = student_df.groupby(self.level, as_index=False).sum()
         student_stats = student_stats[AREA_COLS + [self.level]]
 
         for col in student_stats.columns:
             if col not in BUILDING_BLOCKS:
-                student_stats[col] /= len(years)
+                student_stats[col] /= len(self.config["years"])
         return student_stats
 
     def _aggregate_school_data_to_area(self, school_df):
@@ -289,46 +265,8 @@ class DesignZones:
                 else:
                     self.neighbors[n] = [u]
 
-        # self.check_neighbormap()
-
-    # check validity of neighborhood map
-    def check_neighbormap(self):
-        counter = 0
-        for area in self.neighbors:
-            for neighbor in self.neighbors[area]:
-                if area not in self.neighbors[neighbor]:
-                    raise ValueError(
-                        "The Neighborhood Map Is Not Valid. There Is a Directed Neighboring Relationship.")
-    def load_geodesic_neighbors(self):
-        # self.closer_geodesic_neighbors = {}
-
-        self.shortestpath = Shortest_Path(self.neighbors, self.centroids)
-        print("Pairwise Shortestpath Distance: ", self.shortestpath)
-
-        for c in self.centroids:
-            # for area in range(self.A):
-            for area in self.candidate_idx:
-                closer_geod = []
-                for n in self.neighbors[area]:
-                    if self.shortestpath[n, c] < self.shortestpath[area, c]:
-                        closer_geod.append(n)
-                self.closer_geodesic_neighbors[area, c] = closer_geod
-
     def initialize_centroid_neighbors(self):
         """ for each centroid c and each area j, define a set n(j,c) to be all neighbors of j that are closer to c than j"""
-
-        # pd.set_option('display.max_rows', None)
-
-        # self.load_geodesic_neighbors()
-        # A = 60750101001017
-        # idx_A = self.area2idx[A]
-        # if idx_A in range(self.A):
-        #     print("Yes")
-        # if A in self.euc_distances.index:
-        #     print("Also in distances")
-        # print("self.euc_distances.columns", list(self.euc_distances.columns))
-        # print("self.euc_distances.loc[60750327004002]:  ", self.euc_distances.loc[60750327004002])
-
         self.euc_distances.dropna(inplace=True)
 
         save_path = os.path.expanduser("~/Dropbox/SFUSD/Optimization/59zone_contiguity_constraint.pkl")
@@ -357,7 +295,6 @@ class DesignZones:
 
 
 
-
 if __name__ == "__main__":
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
@@ -371,7 +308,8 @@ if __name__ == "__main__":
     dz = DesignZones(config=config)
     dz.samezone_pairs = []
     IP = Integer_Program(dz)
-    IP._set_objective_model(max_distance=config["max_distance"])
+    IP._initializs_feasiblity_constraints(max_distance=config["max_distance"])
+    IP._set_objective_model()
     IP._shortage_and_balance_constraints(shortage_=True, balance_= False,
                      shortage=config["shortage"], overage= config["overage"], all_cap_shortage=config["all_cap_shortage"])
 

@@ -1,4 +1,4 @@
-{
+program_data_columns = {
   "GeneralEducation": {
     "GE": "General Education"
   },

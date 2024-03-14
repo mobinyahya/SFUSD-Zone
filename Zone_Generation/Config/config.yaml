@@ -1,7 +1,7 @@
 
 # changing levers
 #centroids_type: '9-zone-west'
-centroids_type: '4-zone-2'
+centroids_type: '5-zone-2'
 
 frl_dev: 1
 racial_dev: 1
@@ -11,12 +11,13 @@ boundary_threshold: .05
 shortage: 0.3 # this is in percentage
 overage: 0.5 # this is in percentage
 all_cap_shortage: -1 # this is in percentage
-population_type: "All"
 max_distance: -1 # best valid value for 59 zines: 1.272
 population_dev: -1
 path: "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones/"
 
 
+years: [14, 15, 16, 17, 18, 21, 22]
+population_type: "GE"
 drop_optout: True
 capacity_scenario: "A"
 new_schools: True

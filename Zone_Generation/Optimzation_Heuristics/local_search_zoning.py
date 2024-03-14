@@ -6,7 +6,7 @@ sys.path.append('../../summary_statistics')
 import pickle
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 # from IP_Zoning import DesignZones
-from Zone_Generation.Optimization_IP.desing_zones import DesignZones, load_zones_from_file, Compute_Name
+from Zone_Generation.Optimization_IP.design_zones import DesignZones, load_zones_from_file, Compute_Name
 from Zone_Generation.Optimzation_Heuristics.zone_eval import * # evaluate_assignment_score, Tuning_param, boundary_trimming, evaluate_contiguity
 from Helper_Functions.ReCom import *
 from Helper_Functions.abstract_geography import *
@@ -82,7 +82,7 @@ def iterative_lp():
 
 rec_path = "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones/"
 def load_recursive_maps(zv, dz):
-    with open(os.path.expanduser(rec_path + "4-zone-1x_zd.pkl"), 'rb') as file:
+    with open(os.path.expanduser(rec_path + "5-zone-1x_zd.pkl"), 'rb') as file:
         zd = pickle.load(file)
         zone_dict = {key: dz.centroid_sch.index(value) for key, value in zd.items()
                      if value in dz.centroid_sch}
@@ -323,20 +323,20 @@ def local_search(config):
     # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
     # dz.samezone_pairs = set()
 
-    # dz.zone_dict = assign_centroid_vicinity(dz, dz.zone_dict, config, loaded_szd)
     # dz.zone_dict = drop_inner_boundary(dz, dz.zone_dict)
     # IP.zone_dict = drop_all_subset_zones(IP, IP.zone_dict)
     IP.zone_dict = {}
-
+    IP.zone_dict = assign_centroid_vicinity(dz, IP.zone_dict, config, loaded_szd)
     # dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
     IP.samezone_pairs = compute_samezone_pairs(IP, IP.zone_dict)
 
 
-    # for block in IP.zone_dict:
-    #     vis_zd[block] = all_schools.index(dz.centroid_sch[IP.zone_dict[block]])
-    # zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
+    for block in IP.zone_dict:
+        vis_zd[block] = all_schools.index(dz.centroid_sch[IP.zone_dict[block]])
+    zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
 
-    IP._set_objective_model(loaded_szd, max_distance=config["max_distance"])
+    IP._initializs_feasiblity_constraints(max_distance=config["max_distance"])
+    IP._set_objective_model()
     initialize_preassigned_units(IP, IP.zone_dict)
 
     IP._shortage_and_balance_constraints(shortage_=True, balance_= False,
@@ -370,7 +370,7 @@ def local_search(config):
         vis_zd = {key: all_schools.index(value) for key, value in new_loaded_szd.items()}
         zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations, save_path=config["path"]+name+"x_"+SUFFIX[input_level])
 
-        with open(os.path.expanduser(rec_path + name + "x_zd.pkl"), 'wb') as file:
+        with open(os.path.expanduser(rec_path + name + "x_B_zd.pkl"), 'wb') as file:
             pickle.dump(new_loaded_szd, file)
 
 

@@ -8,27 +8,77 @@ from Zone_Generation.Config.Constants import *
 class Integer_Program(object):
     def __init__(self, Area_Data):
         self.M = Area_Data.M
+
+        # self.N: Total number of GE students.
         self.N = Area_Data.N
+
+        # self.A: Total number of areas (number of distinct area indices)
         self.A = Area_Data.A
+
+        # self.F: Average percentage of FRL students
+        # (students that are eligible for Free or reduced price lunch)
+        self.F = Area_Data.F
 
         self.level = Area_Data.level
 
+        # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
+        # (keys: area index j), (values: census area code for the area with index j)
+        # Example: self.idx2area[41] == census area code for the area with index 41)
         self.idx2area = Area_Data.idx2area
+
+        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
+        # (keys: census area code AA), (values: index of area AA, in our data set)
+        # Example: self.area2idx[area code AA] == index of area AA in our data set
+        # Note that we can access our dictionaries only using the area index, and not the area code
         self.area2idx = Area_Data.area2idx
+
+        # self.sch2area: A dictionary, mapping each school id, to its census area code
+        # Example: self.sch2area[644] == sensus area code for the school, with school id 644
         self.sch2area = Area_Data.sch2area
 
         self.include_k8 = Area_Data.include_k8
+
+        # self.studentsInArea is a dictionary of:
+        # (keys: area index j), (values: number of GE students in area index j)
+        # Example: self.studentsInArea[41] == number of GE students in area index 41
         self.studentsInArea = Area_Data.studentsInArea
+
+        # self.seats is a dictionary of:
+        # (keys: area index j), (values: number of seats for GE students in area index j)
+        # Example: self.seats[41] == number of seats for GE students in area index 41
         self.seats = Area_Data.seats
+
+        # self.schools is a dictionary of:
+        # (keys: area index j), (values: number of schools in area index j) this value is usually 0 or 1
+        # Example: self.schools[41] == number of schools in area index 41 (this value is usually 0 or 1)
         self.schools = Area_Data.schools
         self.school_df = Area_Data.school_df
+
+        # Most important, and most comprehensive data file.
+        # dataself.area_data is a pandas dataframe. Each column shows a metric for areas
+        # Each row, represent an area.
+        # Example: self.area_data['ge_students'][41] == number of GE students in area with index 41.
         self.area_data = Area_Data.area_data
 
         self.centroids = Area_Data.centroids
+
+        # self.euc_distances is a dictionary of:
+        # (keys: a pair of (area index i, area index j)), (values: euclidean distance, in miles, between area i and area j
+        # Example: self.euc_distances[41, 13] == 3.42, which means area 41 and area 13 are 3.42 miles away
         self.euc_distances = Area_Data.euc_distances
+
+        # self.neighbors is a dictionary of,
+        # (keys: area index j), (values: a list of indices of neighboring areas, to area j.
+        # Example: self.neighbors[41] == [32, 12, 52, 2], which is a list of indices of areas, adjacent to area 41.
         self.neighbors = Area_Data.neighbors
 
+        # self.closer_euc_neighbors is a dictionary of:
+        # (keys: a pair of (area index j, zone index z)), (values: a list of indices of
+        # neighboring areas, to area j, that are closer to the area of centroid z than araa j
+        # Example: self.closer_euc_neighbors[41, 3] == [32, 2], which is a list of indices of areas,
+        # adjacent to area 41, that are closer to the area of centroid 3 than araa 41
         self.closer_euc_neighbors = Area_Data.closer_euc_neighbors
+
         self.samezone_pairs = []
 
         self.constraints = Area_Data.constraints
@@ -37,6 +87,52 @@ class Integer_Program(object):
 
 
 
+    def _initializs_feasiblity_constraints(self, loaded_zd=[], max_distance=-1):
+        valid_assignments = []
+        # if a max distance constraint is given, allow areas to be matched only to
+        # zone centroids that are closer than max_distance
+        if max_distance > 0:
+            for z in range(self.M):
+                centroid_z = self.centroids[z]
+                # zone_max_distance = max_distance
+                for i in range(self.A):
+                    if (self.euc_distances.loc[self.idx2area[centroid_z], str(self.idx2area[i])] < max_distance):
+                        valid_assignments.append((i,z))
+
+        else:
+            for z in range(self.M):
+                for i in range(self.A):
+                    if self.idx2area[i] in loaded_zd:
+                        continue
+                    valid_assignments.append((i,z))
+
+
+        # Initialize a dictionary to hold valid zones for each area
+        self.valid_area_per_zone = {z: [] for z in range(self.M)}
+        # Initialize a dictionary to hold valid zones for each area
+        self.valid_zone_per_area = {i: [] for i in range(self.A)}
+
+        # Populate the dictionary with valid zones for each area
+        for i, z in valid_assignments:
+            self.valid_area_per_zone[z].append(i)
+            self.valid_zone_per_area[i].append(z)
+
+        self.m = gp.Model("Zone model")
+
+        # Variable self.x[i,z]: is a binary variable. It indicates
+        # whether area with index i is assigned to zone z or not.
+        # Example: if self.x[41,2] == 0, it means area with index 41 is not assigned to zone 2.
+        self.x = self.m.addVars(valid_assignments, vtype=GRB.BINARY, name="x")
+
+        # Feasiblity Constraint: every area must  belong to exactly one zone
+        self.m.addConstrs(
+            (gp.quicksum(self.x[i, z] for z in self.valid_zone_per_area[i]) == 1
+            for i in range(self.A)
+             # ),
+             if self.idx2area[i] not in loaded_zd),
+            "FeasibilityConstraint"
+        )
+
     def set_y_distance(self):
         self.y_distance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="distance distortion")
 
@@ -44,7 +140,6 @@ class Integer_Program(object):
             centroid_area = self.idx2area[self.centroids[z]]
             zone_dist_sum = gp.quicksum([((self.euc_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
             # zone_dist_sum = gp.quicksum([((self.drive_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
-            # zone_dist_sum = gp.quicksum([((self.drive_distances.loc[centroid_area, str(self.idx2area[j])]) * (self.studentsInArea[j]) * self.x[j, z] for j in range(self.A)])
             self.m.addConstr(zone_dist_sum <= self.y_distance)
 
 
@@ -107,67 +202,7 @@ class Integer_Program(object):
                         self.m.addConstr(self.x[j, z] <= self.b[i, j])
 
 
-
-    def _set_objective_model(self, loaded_zd=[], max_distance=-1):
-        self.m = gp.Model("Zone model")
-        valid_assignments = []
-        # if a max distance constraint is given, allow areas to be matched only to
-        # zone centroids that are closer than max_distance
-        if max_distance > 0:
-            for z in range(self.M):
-                centroid_z = self.centroids[z]
-                # zone_max_distance = max_distance
-                for i in range(self.A):
-                    if (self.euc_distances.loc[self.idx2area[centroid_z], str(self.idx2area[i])] < max_distance):
-                        valid_assignments.append((i,z))
-                    else:
-                        if (self.euc_distances.loc[self.idx2area[centroid_z], str(self.idx2area[i])] > 3.5):
-                            continue
-                        area_i = self.idx2area[i]
-                        if area_i not in corner_blocks:
-                            continue
-                        valid_assignments.append((i,z))
-
-        else:
-            for z in range(self.M):
-                for i in range(self.A):
-                    if self.idx2area[i] in loaded_zd:
-                        continue
-                    valid_assignments.append((i,z))
-        self.x = self.m.addVars(valid_assignments, vtype=GRB.BINARY, name="x")
-
-
-        # Initialize a dictionary to hold valid zones for each area
-        self.valid_area_per_zone = {z: [] for z in range(self.M)}
-        # Initialize a dictionary to hold valid zones for each area
-        self.valid_zone_per_area = {i: [] for i in range(self.A)}
-
-        # Populate the dictionary with valid zones for each area
-        for i, z in valid_assignments:
-            self.valid_area_per_zone[z].append(i)
-            self.valid_zone_per_area[i].append(z)
-
-        # Feasiblity Constraint: every area has to belong to one zone
-        self.m.addConstrs(
-            (gp.quicksum(self.x[i, z] for z in self.valid_zone_per_area[i]) == 1
-            for i in range(self.A)
-             # ),
-             if self.idx2area[i] not in loaded_zd),
-            "FeasibilityConstraint"
-        )
-
-
-        # self.x = self.m.addVars(self.A, self.M, lb=0.0, ub= 1.0, vtype=GRB.CONTINUOUS, name="x")
-        # self.x[1, 0].vtype = GRB.INTEGER
-
-        # self.constraints['M'] = self.M
-        # # for z in range(self.M):
-        # for j in range(self.A):
-        #     if j %10 == 0:
-        #         z = random.randint(0, self.M - 1)
-        #         self.x[j,z].vtype = GRB.BINARY
-
-
+    def _set_objective_model(self):
         # self.set_y_distance()
         # self.distance_coef = 1
 
@@ -186,8 +221,6 @@ class Integer_Program(object):
         # which will result into compact and nice looking shapes for zones.
         self.m.setObjective(self.boundary_coef * self.y_boundary, GRB.MINIMIZE)
         # self.m.setObjective(1 , GRB.MINIMIZE)
-        # self.m.setObjective(self.distance_coef * self.y_distance + self.shortage_coef * self.y_shortage +
-        #                     self.boundary_coef * self.y_boundary , GRB.MINIMIZE)
         # self.m.setObjective( self.distance_coef * self.y_distance +  self.shortage_coef * self.y_shortage +
         #                      self.balance_coef * self.y_balance + self.boundary_coef * self.y_boundary , GRB.MINIMIZE)
 
@@ -503,6 +536,10 @@ class Integer_Program(object):
                 self.constraints["math_scores_1819"] = min_pct
 
 
+    # Enforce school quality balance constraint, using "AvgColorIndex" metric, which is:
+    # Average of ela_color, math_color, chronic_color, and suspension_color, where Red=1 and Blue=5
+    # Make sure all zones are within min_pct and max_pct of average of AvgColorIndex for each zone
+    # min_pct: min percentage. max_pct: max percentage
     def _add_met_quality_constraint(self, min_pct = 0, max_pct=None, topX=0):
         scores = self.area_data["AvgColorIndex"].fillna(value=0)
 

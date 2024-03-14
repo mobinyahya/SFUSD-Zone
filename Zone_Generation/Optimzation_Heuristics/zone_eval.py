@@ -313,11 +313,11 @@ def assign_centroid_vicinity(dz, zone_dict, config, loaded_zd):
         bg_z = dz.idx2area[dz.centroids[z]]
 
 
-        capacity_w = 0.005
-        fixed_w = 0.02
+        capacity_w = 0.001
+        fixed_w = 0.11
         sch_z = dz.centroid_sch[z]
-        if sch_z in [575, 478, 722]:
-            fixed_w = .1
+        # if sch_z in [575, 478, 722]:
+        #     fixed_w = .02
         # elif sch_z in [999]:
         #     fixed_w = 0.2
         # else:
