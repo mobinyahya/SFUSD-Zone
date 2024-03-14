@@ -37,11 +37,11 @@ class Stat_Class(object):
         zone_metrics["schools_names"] = []
         for sch_id in sch_dict:
             if self.level == "attendance_area":
-                sch_area = self.dz.sch2aa[sch_id]
+                sch_area = self.dz.sch2area[sch_id]
             elif self.level == "BlockGroup":
-                sch_area = self.dz.sch2bg[sch_id]
+                sch_area = self.dz.sch2area[sch_id]
             elif self.level == "Block":
-                sch_area = self.dz.sch2b[sch_id]
+                sch_area = self.dz.sch2area[sch_id]
             if sch_area in zone:
                 zone_metrics["schools_names"].append(sch_dict[sch_id])
 

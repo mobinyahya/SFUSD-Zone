@@ -1,0 +1,18 @@
+{
+  "ELL": {
+    "FullName": "English Language Learner",
+    "Description": "Can be identified by 'L - Limited English' or 'N - Non English' (some years just 'L' and 'N') in the 'englprof_desc' ('englprof') column of the student data"
+  },
+  "FRL": {
+    "FullName": "Free or Reduced-price Lunch",
+    "Description": "Note that while this is in the student data, we do not have this available at the student level - only the block level average, which we use for each student"
+  },
+  "FRPM": {
+    "FullName": "Free or Reduced Price Meals",
+    "Description": "Analagous to FRL."
+  },
+  "AALPI": {
+    "FullName": "African American, Latinx, or Pacific Islander",
+    "Description": "The district's focal groups for historically underserved ethnic groups."
+  }
+}

@@ -6,12 +6,13 @@ sys.path.append('../../summary_statistics')
 import pickle
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 # from IP_Zoning import DesignZones
-from Zone_Generation.Optimization_IP.generate_zones import DesignZones, load_zones_from_file, Compute_Name
+from Zone_Generation.Optimization_IP.desing_zones import DesignZones, load_zones_from_file, Compute_Name
 from Zone_Generation.Optimzation_Heuristics.zone_eval import * # evaluate_assignment_score, Tuning_param, boundary_trimming, evaluate_contiguity
 from Helper_Functions.ReCom import *
 from Helper_Functions.abstract_geography import *
 from Zone_Generation.Config.Constants import *
 from Helper_Functions.Relaxed_ReCom import Relaxed_ReCom
+from Zone_Generation.Optimization_IP.integer_program import Integer_Program
 
 # in this code, we run the iterative local search algorithm, to get better zone assignments
 # Assumptions:
@@ -21,13 +22,13 @@ from Helper_Functions.Relaxed_ReCom import Relaxed_ReCom
 
 
 
-def compute_samezone_pairs(dz, zone_dict):
+def compute_samezone_pairs(IP, zone_dict):
     samezone_pairs = set()
     samezone_pairs.add((-1, -1))
-    for i in range(dz.A):
-        bg_i = dz.idx2area[i]
-        for j in dz.neighbors[i]:
-            bg_j = dz.idx2area[j]
+    for i in range(IP.A):
+        bg_i = IP.idx2area[i]
+        for j in IP.neighbors[i]:
+            bg_j = IP.idx2area[j]
             if i >= j:
                 continue
             if (bg_j in zone_dict) and (bg_i in zone_dict):
@@ -78,40 +79,20 @@ def iterative_lp():
 
 
 
-# def load_rec_maps(dz):
-#     zd = {}
-#     for block, zone_numb_sch in load_zd.items():
-#         if zone_numb_sch not in dz.centroid_sch:
-#             continue
-#         # if zone_numb_sch == 670:
-#         #     if dz.euc_distances.loc[dz.sch2b[zone_numb_sch], str(block)] > 0.65:
-#         #        continue
-#         zone_idx = dz.centroid_sch.index(zone_numb_sch)
-#         zd[block] = zone_idx
-#     return zd
 
-rec_path = "/Users/mobin/SFUSD/Visualization_Tool_Data/Rec_Zones/"
-def load_recursive_maps(dz, name):
-    pkl_path = os.path.expanduser(rec_path + name + ".pkl")
-    with open(pkl_path, 'rb') as file:
-    # with open(rec_path + name + ".pkl", 'rb') as file:
-        zone_sch_dict = pickle.load(file)
-
-    zd = {}
-    for block, zone_sch in zone_sch_dict.items():
-        zd[block] = zone_sch / 50
-    print("loaded zone_sch_dict = ", zone_sch_dict)
+rec_path = "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones/"
+def load_recursive_maps(zv, dz):
+    with open(os.path.expanduser(rec_path + "4-zone-1x_zd.pkl"), 'rb') as file:
+        zd = pickle.load(file)
+        zone_dict = {key: dz.centroid_sch.index(value) for key, value in zd.items()
+                     if value in dz.centroid_sch}
+        loaded_zd = {key: value for key, value in zd.items() if value not in dz.centroid_sch}
 
 
-    zv = ZoneVisualizer("Block")
-    zv.zones_from_dict(zd, centroid_location=dz.centroid_location, save_path=rec_path + name + "_B")
+    vis_zd = {key: all_schools.index(value) for key, value in loaded_zd.items()}
+    zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
 
-    exit()
-    pkl_path = os.path.expanduser(rec_path + name + ".pkl")
-    with open(pkl_path, 'wb') as file:
-        pickle.dump(zd, file)
-
-    return zd
+    return loaded_zd, zone_dict, vis_zd
 def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
     if load_level == "attendance_area":
         aa_zl, aa_zd = load_zones_from_file(path + name + "_AA.csv")
@@ -127,44 +108,6 @@ def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_BG.csv")
     elif load_level == "Block":
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_B.csv")
-        # TODO 59zone mode
-        # zd = {}
-        # east_schools = [453, 625, 830, 507, 513, 521, 867]
-        # west_schools = [544, 664, 750,
-        #                 782, 413, 435,
-        #                 862, 539, 848]
-        golden_gate_sch = [644]
-
-        rec_zone_maps = {}
-        for block, zone_numb in dz.zone_dict.items():
-            zone_numb_sch = dz.centroid_sch[zone_numb]
-            if zone_numb_sch in golden_gate_sch:
-                rec_zone_maps[block] = zone_numb_sch
-        print("rec_zone_maps = ", rec_zone_maps)
-
-        zv = ZoneVisualizer("Block")
-
-        vis_zd = {key: all_schools.index(value) for key, value in rec_zone_maps.items()}
-        zv.zones_from_dict(vis_zd, centroid_location=dz.centroid_location)
-
-        rec_path = "/Users/mobin/SFUSD/Visualization_Tool_Data/Rec_Zones/"
-        with open(os.path.expanduser(rec_path + "zone-init-total-loaded_zd.pkl"), 'rb') as file:
-            loaded_szd = pickle.load(file)
-            loaded_szd = {key: value for key, value in loaded_szd.items()}
-            vis_zd = {key: all_schools.index(value) for key, value in loaded_szd.items()}
-            zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
-
-        for block,zone_sch in  loaded_szd.items():
-            rec_zone_maps[block] = zone_sch
-        vis_zd = {key: all_schools.index(value) for key, value in rec_zone_maps.items()}
-        zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations, save_path=config["path"] + "zones-init-total-x" + SUFFIX["BlockGroup"])
-
-        save_path = os.path.expanduser(rec_path + "zones-init-total-x.pkl")
-        with open(save_path, 'wb') as file:
-            pickle.dump(rec_zone_maps, file)
-
-        exit()
-        dz.zone_dict = rec_zone_maps
     else:
         raise ValueError("Invalid Input Level")
 
@@ -194,29 +137,10 @@ def aa2bg_Zoning(dz, aa_zd):
                 else:
                     neighbor_count[blockgroup_zoning[dz.idx2area[neighbor]]] = 1
 
-    # # not just count each neighbor that is attached to the similar zone center, but actually
-    # # look at neighbors that are closer to the centroid, and count such neighbors (and do this for each centroid)
-    # for blockgroup in dz.area2idx:
-    #     #neighbor count will have: for each zone center c, how many neighbors of blockgroup
-    #     # that are closer to c, are also assigned to c
-    #     neighbor_count = {}
-    #     for z in range(dz.M):
-    #         closer_neighbors = dz.closer_euc_neighbors[dz.area2idx[blockgroup], dz.centroids[z]]
-    #         print("for zone " + str(z) + " list of closer_neighbors:")
-    #         print(closer_neighbors)
-    #         for neighbor in closer_neighbors:
-    #             if dz.idx2area[neighbor] in blockgroup_zoning:
-    #                 if blockgroup_zoning[dz.idx2area[neighbor]] == z:
-    #                     print("neighbor")
-    #                     print(neighbor)
-    #                     # count how many neighbors of this blockgroup are from each different zone
-    #                     if z in neighbor_count:
-    #                         temp = neighbor_count[z]
-    #                         neighbor_count[z] = temp + 1
-    #                     else:
-    #                         neighbor_count[z] = 1
-# todo check how it happened that blockgroups were not in the bg2att
 
+
+        # some blockgroups might have been missed in bg2att dict
+        # (One of the reasons: this block might not have any students --> is not included in the data, that we compute bg2att based on)
         # if all neighbors of this blockgroup are in the same zone
         # assign this blockgroup to the same zone (even if based on bg2att, we had a different outcome)
         if (bg in dz.bg2att):
@@ -227,22 +151,6 @@ def aa2bg_Zoning(dz, aa_zd):
                     # which is the zone #of all neighbors of this blockgroup)
                     blockgroup_zoning[bg] = list(neighbor_count.keys())[0]
 
-        # some blockgroups might have been missed in bg2att dict
-        # (One of the reasons: this block might not have any students --> is not included in the data, that we compute bg2att based on)
-        # else:
-        #     # find which zone was most common among neighbors
-        #     max_zone = -1
-        #     if len(neighbor_count) == 0:
-        #         print("size of neighbor count is 0, Error")
-        #         print(blockgroup)
-        #     for z in neighbor_count:
-        #         if max_zone == -1:
-        #             max_zone = z
-        #         else:
-        #             if neighbor_count[z] > neighbor_count[max_zone]:
-        #                 max_zone = z
-        #     # assign the same zone number that most of the neighbors have to this blockgroup
-        #     blockgroup_zoning[blockgroup] = max_zone
 
 
     # if evaluate_contiguity(dz, blockgroup_zoning) == False:
@@ -397,35 +305,12 @@ def local_search(config):
     input_level = 'Block'
     dz = DesignZones(
         config=config,
-        level=input_level,
     )
     # dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="attendance_area")
-    # dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="Block")
-    # dz.zone_dict = load_recursive_maps(dz=dz, name=name)
-    # dz.zone_dict = load_rec_maps(dz)
-    local_search_iteration(dz, config, name, input_level)
-    # for new_shortage in [0.35, 0.29, 0.24]:
-    #     if new_shortage < param.shortage:
-    #         print("checking for shortage: " + str(new_shortage))
-    #         param.shortage = new_shortage
-    #         name = Compute_Name(param)
-    #         if not os.path.exists(param.path + name + "_AA" + ".png"):
-    #             local_search_iteration(dz, param, name, input_level)
-
-
-def local_search_iteration(dz, config, name, input_level):
-    print("New round of Local Search")
     zv = ZoneVisualizer(input_level)
+    IP = Integer_Program(dz)
 
-    rec_path = "/Users/mobin/SFUSD/Visualization_Tool_Data/Rec_Zones/"
-    with open(os.path.expanduser(rec_path + "6-zone-2x_loaded_zd.pkl"), 'rb') as file:
-        loaded_szd = pickle.load(file)
-        loaded_szd = {key: value for key, value in loaded_szd.items() if value != 589}
-        # loaded_szd = {key: value for key, value in loaded_szd.items()}
-
-        vis_zd = {key: all_schools.index(value) for key, value in loaded_szd.items()}
-        zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
-        # exit()
+    loaded_szd, IP.zone_dict, vis_zd = load_recursive_maps(zv, dz=dz)
 
     # dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
     # # # heuristic(dz, dz.zd)
@@ -436,65 +321,58 @@ def local_search_iteration(dz, config, name, input_level):
     # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
     # dz.zd = drop_centroid_distant(dz, dz.zone_dict)
     # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
-    dz.zone_dict = {}
     # dz.samezone_pairs = set()
-    dz.zone_dict = assign_centroid_vicinity(dz, dz.zone_dict, config, loaded_szd)
-    dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
-    dz.samezone_pairs = compute_samezone_pairs(dz, dz.zone_dict)
-    # # # TODO check if during the assignment, one centroid is assigned to another zone.
-    zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
 
-    print("1110")
-    dz._set_objective_model(loaded_szd, max_distance=config["max_distance"])
-    initialize_preassigned_units(dz, dz.zone_dict)
-    dz._shortage_and_balance_constraints(shortage_=True, balance_= False,
+    # dz.zone_dict = assign_centroid_vicinity(dz, dz.zone_dict, config, loaded_szd)
+    # dz.zone_dict = drop_inner_boundary(dz, dz.zone_dict)
+    # IP.zone_dict = drop_all_subset_zones(IP, IP.zone_dict)
+    IP.zone_dict = {}
+
+    # dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
+    IP.samezone_pairs = compute_samezone_pairs(IP, IP.zone_dict)
+
+
+    # for block in IP.zone_dict:
+    #     vis_zd[block] = all_schools.index(dz.centroid_sch[IP.zone_dict[block]])
+    # zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations)
+
+    IP._set_objective_model(loaded_szd, max_distance=config["max_distance"])
+    initialize_preassigned_units(IP, IP.zone_dict)
+
+    IP._shortage_and_balance_constraints(shortage_=True, balance_= False,
                      shortage=config["shortage"], overage= config["overage"], all_cap_shortage=config["all_cap_shortage"])
-    dz._add_contiguity_constraint(loaded_szd)
+    IP._add_contiguity_constraint(loaded_szd)
 
-    # dz.m.update()  # Update the model
-    # print(f"Total number of dz.m variables: {dz.m.numVars}")
-    # print(f"Total number of dz.m constraints: {dz.m.numConstrs}")
+    IP._add_school_count_constraint(loaded_szd)
+    solve_success = IP.solve()
 
-    # dz._add_population_balance_constraint(population_dev=param.population_dev)
-    dz._add_school_count_constraint(loaded_szd)
-    # dz._add_met_quality_constraint(min_pct = config["lbscqlty"])
-    # dz._boundary_threshold_constraint(boundary_threshold=config["boundary_threshold"])
-    print("1114")
-    solve_success = dz.solve()
-
+    print("IP.zone_dict ", IP.zone_dict)
 
     if solve_success == 1:
-        # zv.visualize_zones_from_dict(dz.zd, centroid_location=dz.centroid_location, save_name= name + "_BG")
-        # dz.save(path=param.path, name = name + "_BG")
+        # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[input_level])
+        # dz.save(path=config["path"], name=name+"_"+SUFFIX[input_level])
         local_search_mode = "None"
         if local_search_mode == "spanning_tree_cut":
             for noiterations in range(3):
-                print("run number " + str(noiterations) + " ---------------------------------------------")
+                print("run number ", noiterations)
                 spanning_tree_cut(dz, config)
-                update_z(dz, dz.zone_dict)
+                update_z(dz, IP.zone_dict)
         # find local search solution, and save it
         elif local_search_mode == "local_swap":
-            iterative_update(config, dz, dz.zone_dict, zv, noiterations=3)
-        # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[input_level])
-        # dz.save(path=config["path"], name=name+"_"+SUFFIX[input_level])
+            iterative_update(config, dz, IP.zone_dict, zv, noiterations=3)
 
-        new_loaded_szd = {key: dz.centroid_sch[value] for key, value in dz.zone_dict.items()}
+
+        new_loaded_szd = {key: dz.centroid_sch[value] for key, value in IP.zone_dict.items()}
+
         for blocks in loaded_szd:
             new_loaded_szd[blocks] = loaded_szd[blocks]
 
         vis_zd = {key: all_schools.index(value) for key, value in new_loaded_szd.items()}
         zv.zones_from_dict(vis_zd, centroid_location=dz.schools_locations, save_path=config["path"]+name+"x_"+SUFFIX[input_level])
-        # print("dz.zone_dictd_is = ", dz.zone_dict)
-        # exit()
-        with open(os.path.expanduser(rec_path + name + "x_loaded_zd.pkl"), 'wb') as file:
+
+        with open(os.path.expanduser(rec_path + name + "x_zd.pkl"), 'wb') as file:
             pickle.dump(new_loaded_szd, file)
 
-    # # stats_evaluation(dz, dz.zd)
-    # dz = load_initial_assignemt(dz, name=name, load_level="BG")
-    # zv = ZoneVisualizer(input_level)
-    # dz.zd = {60750209001: 0, 60750209002: 0, 60750209003: 0, 60750209004: 0, 60750210001: 0, 60750210002: 0, 60750210003: 0, 60750210004: 0, 60750211001: 0, 60750211002: 0, 60750211003: 0, 60750212001: 0, 60750212002: 0, 60750212003: 0, 60750213001: 0, 60750213002: 0, 60750214001: 0, 60750214002: 0, 60750214003: 0, 60750215001: 0, 60750215002: 0, 60750215003: 0, 60750215004: 0, 60750215005: 0, 60750216001: 0, 60750216002: 0, 60750217001: 0, 60750217002: 0, 60750217003: 0, 60750218001: 0, 60750218002: 0, 60750218003: 0, 60750218004: 0, 60750228033: 0, 60750229011: 0, 60750229012: 0, 60750229013: 0, 60750229021: 0, 60750229022: 0, 60750229031: 0, 60750229032: 0, 60750229033: 0, 60750230011: 0, 60750230012: 0, 60750230013: 0, 60750230031: 0, 60750230032: 0, 60750231022: 0, 60750231032: 0, 60750232002: 0, 60750232003: 0, 60750251001: 0, 60750251002: 0, 60750251003: 0, 60750252001: 0, 60750252002: 0, 60750252003: 0, 60750252004: 0, 60750253001: 0, 60750253002: 0, 60750253003: 0, 60750253004: 0, 60750254011: 0, 60750254012: 0, 60750254013: 0, 60750254021: 0, 60750254022: 0, 60750254023: 0, 60750254031: 0, 60750254032: 0, 60750255001: 0, 60750255002: 0, 60750256001: 0, 60750256002: 0, 60750256003: 0, 60750256004: 0, 60750257011: 0, 60750257013: 0, 60750257021: 0, 60750257023: 0, 60750258001: 0, 60750259001: 0, 60750259002: 0, 60750307001: 0, 60750307002: 0, 60750311001: 0, 60750612001: 0, 60750612002: 0, 60759806001: 0, 60750255003: 1, 60750255004: 1, 60750255005: 1, 60750255006: 1, 60750260011: 1, 60750260012: 1, 60750260021: 1, 60750260022: 1, 60750260031: 1, 60750260032: 1, 60750260041: 1, 60750260042: 1, 60750261001: 1, 60750261002: 1, 60750261003: 1, 60750261004: 1, 60750263011: 1, 60750263023: 1, 60750264011: 1, 60750264012: 1, 60750264031: 1, 60750264041: 1, 60750264042: 1, 60750307003: 1, 60750308001: 1, 60750308002: 1, 60750308003: 1, 60750308004: 1, 60750309001: 1, 60750309002: 1, 60750309003: 1, 60750309004: 1, 60750309005: 1, 60750310001: 1, 60750310002: 1, 60750310003: 1, 60750311002: 1, 60750311003: 1, 60750311004: 1, 60750311005: 1, 60750312011: 1, 60750312012: 1, 60750312013: 1, 60750312014: 1, 60750312021: 1, 60750312022: 1, 60750330002: 1, 60750330005: 1, 60750330006: 1, 60750351001: 1, 60750351002: 1, 60750351003: 1, 60750351004: 1, 60750351005: 1, 60750351006: 1, 60750351007: 1, 60750352011: 1, 60750352012: 1, 60750352013: 1, 60750352014: 1, 60750352015: 1, 60750352021: 1, 60750352022: 1, 60750352023: 1, 60750353002: 1, 60750353003: 1, 60750353005: 1, 60750353006: 1, 60750354001: 1, 60750354002: 1, 60750354003: 1, 60750354004: 1, 60750354005: 1, 60750605021: 1, 60750605022: 1, 60750605023: 1, 60759805011: 1, 60750170003: 2, 60750171012: 2, 60750171022: 2, 60750204011: 2, 60750204012: 2, 60750204013: 2, 60750204021: 2, 60750204022: 2, 60750205003: 2, 60750206002: 2, 60750211004: 2, 60750262001: 2, 60750262002: 2, 60750262003: 2, 60750262004: 2, 60750262005: 2, 60750263012: 2, 60750263013: 2, 60750263021: 2, 60750263022: 2, 60750263031: 2, 60750263032: 2, 60750301012: 2, 60750301013: 2, 60750301014: 2, 60750301021: 2, 60750301022: 2, 60750301023: 2, 60750302011: 2, 60750302012: 2, 60750302013: 2, 60750302021: 2, 60750302022: 2, 60750302023: 2, 60750303011: 2, 60750303012: 2, 60750303013: 2, 60750303014: 2, 60750303021: 2, 60750303022: 2, 60750303023: 2, 60750304001: 2, 60750304002: 2, 60750304003: 2, 60750304004: 2, 60750304005: 2, 60750305001: 2, 60750305002: 2, 60750305003: 2, 60750306001: 2, 60750306002: 2, 60750306003: 2, 60750308005: 2, 60750309006: 2, 60750309007: 2, 60750313011: 2, 60750313012: 2, 60750313013: 2, 60750313021: 2, 60750313022: 2, 60750313023: 2, 60750314001: 2, 60750314002: 2, 60750314003: 2, 60750314004: 2, 60750314005: 2, 60750326011: 2, 60750326012: 2, 60750326013: 2, 60750326021: 2, 60750326022: 2, 60750326023: 2, 60750327001: 2, 60750327002: 2, 60750327003: 2, 60750327004: 2, 60750327005: 2, 60750327006: 2, 60750327007: 2, 60750328011: 2, 60750328012: 2, 60750328013: 2, 60750328021: 2, 60750328022: 2, 60750328023: 2, 60750329011: 2, 60750329012: 2, 60750329013: 2, 60750329014: 2, 60750329021: 2, 60750329022: 2, 60750329023: 2, 60750330001: 2, 60750330003: 2, 60750330004: 2, 60750331001: 2, 60750331002: 2, 60750331003: 2, 60750331004: 2, 60750332011: 2, 60750332031: 2, 60750332032: 2, 60750332041: 2, 60750332042: 2, 60750332043: 2, 60750353001: 2, 60750353004: 2, 60750604001: 2, 60750124011: 3, 60750124021: 3, 60750124022: 3, 60750124023: 3, 60750126011: 3, 60750126021: 3, 60750126022: 3, 60750127001: 3, 60750127002: 3, 60750127003: 3, 60750128001: 3, 60750128002: 3, 60750128003: 3, 60750128004: 3, 60750129022: 3, 60750129023: 3, 60750130002: 3, 60750130003: 3, 60750130004: 3, 60750131021: 3, 60750131022: 3, 60750132001: 3, 60750132002: 3, 60750132003: 3, 60750133001: 3, 60750133002: 3, 60750133003: 3, 60750133004: 3, 60750133005: 3, 60750134001: 3, 60750134002: 3, 60750134003: 3, 60750135001: 3, 60750135002: 3, 60750152001: 3, 60750152002: 3, 60750152003: 3, 60750153001: 3, 60750153002: 3, 60750154001: 3, 60750154002: 3, 60750154003: 3, 60750154004: 3, 60750154005: 3, 60750155001: 3, 60750155002: 3, 60750155003: 3, 60750156001: 3, 60750156002: 3, 60750156003: 3, 60750157001: 3, 60750157003: 3, 60750157004: 3, 60750158012: 3, 60750160001: 3, 60750165004: 3, 60750176013: 3, 60750176014: 3, 60750178011: 3, 60750178012: 3, 60750178021: 3, 60750178022: 3, 60750180001: 3, 60750180002: 3, 60750227021: 3, 60750401001: 3, 60750401002: 3, 60750401003: 3, 60750401004: 3, 60750402001: 3, 60750402002: 3, 60750402003: 3, 60750402004: 3, 60750426011: 3, 60750426012: 3, 60750426021: 3, 60750426022: 3, 60750426023: 3, 60750427001: 3, 60750427002: 3, 60750427003: 3, 60750428001: 3, 60750428002: 3, 60750428003: 3, 60750451001: 3, 60750451002: 3, 60750451003: 3, 60750452001: 3, 60750452002: 3, 60750452003: 3, 60750452004: 3, 60750452005: 3, 60750476001: 3, 60750476002: 3, 60750476003: 3, 60750476004: 3, 60750477011: 3, 60750477012: 3, 60750477013: 3, 60750477021: 3, 60750477022: 3, 60750477023: 3, 60750478011: 3, 60750478012: 3, 60750478013: 3, 60750478021: 3, 60750478022: 3, 60750478023: 3, 60750479011: 3, 60750479012: 3, 60750479013: 3, 60750479014: 3, 60750479015: 3, 60750479021: 3, 60750479022: 3, 60750479023: 3, 60750601001: 3, 60750607001: 3, 60750607002: 3, 60750607003: 3, 60750615002: 3, 60750615004: 3, 60750615005: 3, 60750615006: 3, 60759802001: 3, 60759803001: 3, 60750101001: 4, 60750101002: 4, 60750102001: 4, 60750102002: 4, 60750102003: 4, 60750103001: 4, 60750103002: 4, 60750103003: 4, 60750104001: 4, 60750104002: 4, 60750104003: 4, 60750104004: 4, 60750105001: 4, 60750105002: 4, 60750106001: 4, 60750106002: 4, 60750106003: 4, 60750107001: 4, 60750107002: 4, 60750107003: 4, 60750107004: 4, 60750108001: 4, 60750108002: 4, 60750108003: 4, 60750109001: 4, 60750109002: 4, 60750109003: 4, 60750110001: 4, 60750110002: 4, 60750110003: 4, 60750111001: 4, 60750111002: 4, 60750111003: 4, 60750112001: 4, 60750112002: 4, 60750112003: 4, 60750113001: 4, 60750113002: 4, 60750117001: 4, 60750117002: 4, 60750118001: 4, 60750119011: 4, 60750119012: 4, 60750119021: 4, 60750119022: 4, 60750120001: 4, 60750120002: 4, 60750121001: 4, 60750121002: 4, 60750122011: 4, 60750122012: 4, 60750122021: 4, 60750123011: 4, 60750123012: 4, 60750123021: 4, 60750123022: 4, 60750124012: 4, 60750125011: 4, 60750125012: 4, 60750125021: 4, 60750125022: 4, 60750129011: 4, 60750129012: 4, 60750129021: 4, 60750130001: 4, 60750131011: 4, 60750131012: 4, 60750151001: 4, 60750151002: 4, 60750157002: 4, 60750158011: 4, 60750158013: 4, 60750158021: 4, 60750158022: 4, 60750159001: 4, 60750159002: 4, 60750161001: 4, 60750161002: 4, 60750161003: 4, 60750161004: 4, 60750162001: 4, 60750162002: 4, 60750162003: 4, 60750163001: 4, 60750163002: 4, 60750163003: 4, 60750164001: 4, 60750164002: 4, 60750165001: 4, 60750165002: 4, 60750165003: 4, 60750166001: 4, 60750166002: 4, 60750166003: 4, 60750166004: 4, 60750167001: 4, 60750167002: 4, 60750167003: 4, 60750167004: 4, 60750168011: 4, 60750168012: 4, 60750171011: 4, 60750171013: 4, 60750171021: 4, 60750171023: 4, 60750176012: 4, 60750176015: 4, 60750179021: 4, 60750301011: 4, 60750611001: 4, 60750611002: 4, 60750611003: 4, 60750615001: 4, 60750615003: 4, 60750176011: 4, 60750168013: 5, 60750168021: 5, 60750168022: 5, 60750168023: 5, 60750169001: 5, 60750169002: 5, 60750170001: 5, 60750170002: 5, 60750177001: 5, 60750177002: 5, 60750201001: 5, 60750201002: 5, 60750201003: 5, 60750201004: 5, 60750202001: 5, 60750202002: 5, 60750202003: 5, 60750203001: 5, 60750203002: 5, 60750203003: 5, 60750205001: 5, 60750205002: 5, 60750206001: 5, 60750206003: 5, 60750206004: 5, 60750207001: 5, 60750207002: 5, 60750207003: 5, 60750208001: 5, 60750208002: 5, 60750208003: 5, 60750208004: 5, 60750226001: 5, 60750226002: 5, 60750227022: 5, 60750227041: 5, 60750227042: 5, 60750228011: 5, 60750228012: 5, 60750228013: 5, 60750228021: 5, 60750228022: 5, 60750228031: 5, 60750228032: 5, 60750231021: 5, 60750231031: 5, 60750232001: 5, 60750233001: 5, 60750234001: 5, 60750234002: 5, 60750257012: 5, 60750257022: 5, 60750258002: 5, 60750259003: 5, 60750264021: 5, 60750264022: 5, 60750264023: 5, 60750264032: 5, 60750610001: 5, 60750610002: 5, 60750614001: 5, 60750614002: 5, 60750614003: 5, 60759809001: 5}
-    # iterative_update(dz, dz.zd, zv, noiterations=5)
-    # zv.visualize_zones_from_dict(dz.zd, centroid_location=dz.centroid_location, save_name= name + "_BG")
 
 def recom_search(config):
     input_level = 'BlockGroup'

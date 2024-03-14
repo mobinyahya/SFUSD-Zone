@@ -1,0 +1,241 @@
+{
+  "studentno": {
+    "DataType": "int",
+    "Values": "8 or 9 digit integer",
+    "Description": "student number, the leading ‘S’ truncated and changed to an integer",
+    "Notes": "Changed to int for faster indexing"
+  },
+  "r1_ranked_idschool": {
+    "DataType": "str",
+    "Values": "list of 3-digit ints",
+    "Description": "List of ints, the school IDs for all schools that the student ranked in round 1",
+    "Notes": "Can be easily read with eval()"
+  },
+  "r1_listed_ranks": {
+    "DataType": "str",
+    "Values": "list of ints",
+    "Description": "List of ints, the corresponding rank of each ranked school in ‘r1_ranked_idschool’"
+  },
+  "r1_programs": {
+    "DataType": "str",
+    "Values": "list of 2-character strings",
+    "Description": "List of strings, the corresponding program applied to at each ranked school in ‘r1_ranked_idschool’",
+    "Notes": "See 'Program Types' tab for allowed codes"
+  },
+   "r1_designation_randomnumber": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "The random number used to determine designation ordering in round 1."
+  },
+  "requestprogramdesignation": {
+    "DataType": "int",
+    "Values": "0 or 1",
+    "Description": "Indicator of whether student opted to be considered for designation to a language program."
+  },
+  "r2_ranked_idschool": {
+    "DataType": "str",
+    "Values": "list of 3-digit ints",
+    "Description": "List of ints, the school IDs for all schools that the student ranked in round 2",
+    "Notes": "List is same length as r2_listed ranks, r2_programs, r2_random number, and r2_cohort string."
+  },
+  "r2_listed_ranks": {
+    "DataType": "str",
+    "Values": "list of ints",
+    "Description": "List of ints, the corresponding rank of each ranked school in ‘r2_ranked_idschool’"
+  },
+  "r2_programs": {
+    "DataType": "str",
+    "Values": "list of 2-character strings",
+    "Description": "List of strings, the corresponding program applied to at each ranked school in ‘r2_ranked_idschool’"
+  },
+  "r1_idschool": {
+    "DataType": "int",
+    "Values": "3-digit int",
+    "Description": "The school ID to which the student was assigned in round 1"
+  },
+  "r1_programcode": {
+    "DataType": "str",
+    "Values": "2-character string",
+    "Description": "The program type that the student was assigned to in round 1"
+  },
+  "r1_rank": {
+    "DataType": "int",
+    "Values": "int > 0",
+    "Description": "The rank of the round 1 assigned program on the student's preference list."
+  },
+  "r1_isdesignation": {
+    "DataType": "int",
+    "Values": "0 or 1",
+    "Description": "Indicator for whether the student was designated to their round 1 assignment (i.e., the program they were assigned to wasn't on their preference list)"
+  },
+  "r1_distance": {
+    "DataType": "float",
+    "Values": "float > 0",
+    "Description": "Distance between the student and their round 1 assigned program. Calculated by the district, not us."
+  },
+  "ctip1": {
+    "DataType": "int",
+    "Values": "0 or 1",
+    "Description": "Indicator of whether student lives in a census tract that receives CTIP priority (an equity priority), meaning that the area is historically in the bottom quintile of test scores. There are CTIP categories 1 through 5, with 1 being the most disadvantaged and 5 being the least disadvantaged."
+  },
+  "idschoolattendance": {
+    "DataType": "int",
+    "Values": "int > 0 or empty",
+    "Description": "The student's attendance area school. This is only really populated for elementary schoolers, since middle and high schools don't have attendance areas."
+  },
+  "zipcode": {
+    "DataType": "int",
+    "Values": "5-digit integer",
+    "Description": "Zipcode of student's home. We fill in missing values using lat lon (note this means that it could be the zipcode of their attendance area school, if the student lat-lon is missing + filled in by the attendance area school)."
+  },
+  "sex": {
+    "DataType": "str",
+    "Values": "M or F or empty",
+    "Description": "Sex of the student."
+  },
+  "speced": {
+    "DataType": "str",
+    "Values": "Yes or No or empty",
+    "Description": "Whether student has an IEP (individual education plan), i.e., special education."
+  },
+  "ethnicity_desc": {
+    "DataType": "str",
+    "Values": "One or two character code, then dash, then the full spelling, or empty.",
+    "Description": "Ethnicity of student, somewhat finer grained categories than resolved_ethnicity but also more missing values, don't have for applicants who don't enroll. Typically should not use this, instead use resolved_ethnicity."
+  },
+  "disability": {
+    "DataType": "empty",
+    "Description": "Whether the student has a disability. This information is censored so we don't actually get it, hence the empty column."
+  },
+  "homelang_desc": {
+    "DataType": "str",
+    "Values": "One or two character code, then dash, then the full spelling, or empty.",
+    "Description": "Language spoken by student at home. Some years, missing for applicants who don't enroll. In some years, the column is called 'homelang' and only includes the 1-2 character prefix."
+  },
+  "englprof_desc": {
+    "DataType": "str",
+    "Values": "One of 'L-Limited English', 'E-English', 'R-Redesignated', 'P-Pending', 'F-Fluent', 'N-Non English', or empty",
+    "Description": "English proficiency of student. L or N is considered an English language learner (ELL). Missing for applicants who don't enroll. In some years, the column is called 'englprof' and only contains the 1 character prefix."
+  },
+  "enrolled_idschool": {
+    "DataType": "int",
+    "Values": "3-digit int or empty",
+    "Description": "The school ID where the student enrolled following the choice process. If empty, we presume the student did not enroll in an SFUSD school. Occasionally this is filled with a school ID not in the schools_rehauled file - this is often a special education accommodation or charter school that is still provided under the SFUSD umbrella."
+  },
+  "resolved_ethnicity": {
+    "DataType": "str",
+    "Values": "One of several categories, or empty",
+    "Description": "Ethnicity of student. Typically our highest quality ethnicity data. Exact categories and capitalization vary from year to year (needs standardizing on our end). We have to fill this in from another data source for applicants who do not enroll."
+  },
+  "math_scalescore": {
+    "DataType": "int",
+    "Values": "4-digit int or empty",
+    "Description": "Score of student on standardized math exam for the current year (only filled for current 3rd-8th grade and 11th graders). Students only start taking this after 3rd grade. Specifically, the test is taken in grades 3-8 and in grade 11. Our data is only for 2018-19 and earlier years.",
+    "Notes": "https://www.sfusd.edu/caa-ela-and-math"
+  },
+  "ela_scalescore": {
+    "DataType": "int",
+    "Values": "4-digit int or empty",
+    "Description": "Score of student on standardized english language arts exam for the current year (only filled for current 3rd-8th grade and 11th graders). Students only start taking this after 3rd grade. Specifically, the test is taken in grades 3-8 and in grade 11. Our data is only for 2018-19 and earlier years.",
+    "Notes": "https://www.sfusd.edu/caa-ela-and-math"
+  },
+  "r2_idschool": {
+    "DataType": "int",
+    "Values": "3-digit int",
+    "Description": "The school ID to which the student was assigned in round 1. NOTE: We estimate this for 2018-19 because we're missing post-run data from round 2. Hopefully will remedy this data problem soon."
+  },
+  "final_school": {
+    "DataType": "int",
+    "Values": "3 digit integer",
+    "Description": "The last school that the student was assigned to in any round. Filled starting with round 3, then missing values are filled using round 2, etc."
+  },
+  "census_block": {
+    "DataType": "int",
+    "Values": "14-digit int or empty",
+    "Description": "The 2010 census block number that the student lives in. Census blocks can change slightly census to census."
+  },
+  "freelunch_prob": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "Fraction of students in the student's census block who are eligible for free lunch. We do not have this at the student level (and can't legally), so this is a 1-5 year average depending on the year of student data. Free or reduced price lunch eligibility is freelunch_prob + reducedlunch_prob."
+  },
+  "reducedlunch_prob": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "We do not have this at the student level (and can't legally), so this is a 1-5 year average depending on the year of student data. Free ro reduced price lunch eligibility is freelunch_prob + reducedlunch_prob. "
+  },
+  "census_blockgroup": {
+    "DataType": "int",
+    "Values": "11-digit int or empty",
+    "Description": "The 2010 census block group number that the student lives in. Census blocks can change slightly census to census. Blocks fit exactly into block groups."
+  },
+  "HOCidx1": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "Census block group level composite diversity measure created by Henry O'Connell (HOC) that is an equally weighted average of an AALPI score, Academic Score, Neighborhood socio-economic status score, and a free or reduced price lunch eligibility score. A higher value indicates greater disadvantage.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "HOCidx2": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "Census block group level composite diversity measure created by Henry O'Connell (HOC) that is a weighted average of an AALPI score (0.5), Academic score (0.2), Neighborhood socio-economic status score (0.15), and a free or reduced price lunch eligibility score (0.15). A higher value indicates greater disadvantage.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "HOCidx3": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "Census block group level composite diversity measure created by Henry O'Connell (HOC) that is a weighted average of an AALPI score (0.15), Academic score (0.15), Neighborhood socio-economic status score (0.5), and a free or reduced price lunch eligibility score (0.2). A higher value indicates greater disadvantage.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "AALPI_Score": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "The African American, Latinx, and Pacific Islander racial component of the HOCidx diversity measure. Block group % AALPI / max(block group % AALPI). Higher is more historically underserved.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "Academic_Score": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "The academic score component of the HOCidx diversity measure. (Block group % of students getting level 1 (lowest) test scores) / max(Block group % of students getting level 1 test scores). Higher is more disadvantaged.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "Nhood_SES_Score": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "The neighborhood socio-economic status component of the HOCidx diversity measure. (median household income score + poverty rate score + adult educational attainment score) / max(median"
+  },
+  "FRL Score": {
+    "DataType": "float",
+    "Values": "float in [0,1]",
+    "Description": "The free or reduced price lunch eligibility component of the HOCidx diversity measure. Block group FRL / max(block group FRL). Higher is more disadvantaged.",
+    "Notes": "Details and construction: https://www.dropbox.com/scl/fi/dn1rktaf2be4rryhp34jk/Diversity-Indeces-for-Guard-Rails.xlsx?dl=0&rlkey=y8xa2wyxfb2v5ejkh6wbe4sae"
+  },
+  "sibling": {
+    "DataType": "str",
+    "Values": "List of ints",
+    "Description": "A list of school IDs where this student has a sibling"
+  },
+  "currentlpsibling": {
+    "DataType": "str",
+    "Values": "List of ints",
+    "Description": "A list of school IDs where this student has a sibling in that current language pathway"
+  },
+  "currentlp": {
+    "DataType": "str",
+    "Values": "List of ints",
+    "Description": "A list of school IDs where this student is in the current language pathway"
+  },
+  "aa": {
+    "DataType": "str",
+    "Values": "list of ints",
+    "Description": "A list of school IDs where this student has priority from being in the attendance area. DO NOT USE TO IDENTIFY ATTENDANCE AREA - the 'idschoolattendance' column is much more reliable. Probably should retire this column."
+  },
+  "median_hh_income": {
+    "DataType": "int",
+    "Values": "int > 0 or empty",
+    "Description": "Median household income of all households in the student's census block. American Community Survey, 5-year sample 2017-2021"
+  }
+ }
+
+
+

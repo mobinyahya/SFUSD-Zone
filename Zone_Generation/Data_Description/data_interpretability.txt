@@ -1,0 +1,23 @@
+In our area_data dataframe, each row is a different area.
+You can access information of column X for area with index j, as self.area_data[X][j]
+Here is an example:
+Number of ge students in area j is: self.area_data["ge_students"][j]
+
+
+Here are the set of columns:
+
+'AALPI Score':
+'FRL':
+'ge_students': Number of GE (General Education) students in each area
+'all_prog_students':  Total number of students (across all programs including GE, Special Education, etc) in each area
+'Block': Census Block number each area
+'BlockGroup': Census BlockGroup number for each area
+'attendance_area': Attendance Area number for each area
+'eng_scores_1819',
+'math_scores_1819',
+'greatschools_rating',
+'MetStandards',
+'AvgColorIndex':
+'all_prog_capacity': Total Number of seats in each area. (We precomputed total number schools in each area, the summed the total number seats across all those schools, for different program types)
+'ge_capacity': Total Number of GE seats in each area. (We precomputed total number schools in each area, the summed the total number of GE seats across all those schools)
+'num_schools': Total Number of Schools in each area.

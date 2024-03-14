@@ -1,11 +1,10 @@
 
 # changing levers
 #centroids_type: '9-zone-west'
-centroids_type: '7-zone-1'
+centroids_type: '4-zone-2'
 
 frl_dev: 1
 racial_dev: 1
-include_k8: False
 
 # fixed levers
 boundary_threshold: .05
@@ -15,9 +14,14 @@ all_cap_shortage: -1 # this is in percentage
 population_type: "All"
 max_distance: -1 # best valid value for 59 zines: 1.272
 population_dev: -1
-path: "/Users/mobin/SFUSD/Visualization_Tool_Data/Rec_Zones/"
+path: "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones/"
 
 
+drop_optout: True
+capacity_scenario: "A"
+new_schools: True
+include_k8: False
+level: 'Block' # 'Block', 'BlockGroup' or 'attendance_area'
 #capacity_vicinity: 0.005
 #fixed_vicinity: 0.12
 
