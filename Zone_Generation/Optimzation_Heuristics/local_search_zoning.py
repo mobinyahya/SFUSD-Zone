@@ -108,10 +108,9 @@ def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_BG.csv")
     elif load_level == "Block":
         dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_B.csv")
+        print("dz.zone_dict ", dz.zone_dict)
     else:
         raise ValueError("Invalid Input Level")
-
-    return dz
 
 
 def aa2bg_Zoning(dz, aa_zd):
@@ -306,8 +305,11 @@ def local_search(config):
     dz = DesignZones(
         config=config,
     )
-    # dz = load_initial_assignemt(dz, path=config["path"], name=name, load_level="attendance_area")
     zv = ZoneVisualizer(input_level)
+    load_initial_assignemt(dz, path=config["path"], name=name, load_level="Block")
+    zv.zones_from_dict(dz.zone_dict, centroid_location=dz.schools_locations)
+    exit()
+
     IP = Integer_Program(dz)
 
     loaded_szd, IP.zone_dict, vis_zd = load_recursive_maps(zv, dz=dz)

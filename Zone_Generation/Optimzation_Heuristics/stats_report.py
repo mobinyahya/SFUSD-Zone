@@ -257,11 +257,20 @@ def load_zones_from_pkl(dz, file_path):
 
         zone_lists.append(zone_z)
 
-    print("zone_lists ", zone_lists)
-    print("zone_dict ", zone_dict)
-    print("counter ", counter)
-    print("len(zone_dict) ", len(zone_dict))
-    # exit()
+    filename = file_path.replace(".pkl", ".csv")
+    print("filename", filename)
+    # save zones themselves
+    if "5-zone-2x_B" in filename:
+        with open(filename, "w") as outFile:
+            writer = csv.writer(outFile, lineterminator="\n")
+            for z in zone_lists:
+                writer.writerow(z)
+            print("savingxx")
+
+    # print("zone_lists ", zone_lists)
+    # print("zone_dict ", zone_dict)
+    # print("counter ", counter)
+    # print("len(zone_dict) ", len(zone_dict))
 
     return zone_lists, zone_dict
 
@@ -279,7 +288,9 @@ if __name__ == "__main__":
     # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
     input_folder = "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones"
 
+
     csv_files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
+
     if config["level"] == 'Block':
         zoning_files = [csv_file for csv_file in csv_files if "B" in csv_file and "BG" not in csv_file]
     elif config["level"] == 'BlockGroup':
@@ -303,7 +314,7 @@ if __name__ == "__main__":
         # assignments = pd.read_csv(os.path.join(input_folder, zoning_file.replace(".csv", "")  + "_Assignment.csv"), low_memory=False)
 
         print("csv_file " + str(zoning_file))
-        print("zone_list  " + str(zone_lists))
+        # print("zone_list  " + str(zone_lists))
 
         if len(zone_lists)<=1:
             continue
