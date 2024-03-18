@@ -1,3 +1,4 @@
 *.pyc
 SFUSD
 /Zone_Generation/LLM/config.py
+/Zone_Generation/Data_Description/top_5_area_data.csv

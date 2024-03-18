@@ -1,7 +1,8 @@
 import requests
+from config import OPENAI_API_KEY
 
 # Your OpenAI API key
-api_key = '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'
+api_key = OPENAI_API_KEY
 
 payload = {
     'model': 'gpt-3.5-turbo-1106',  # Specify the model here

@@ -1,11 +1,12 @@
 import requests
 import os
+from config import ANTHROPIC_API_KEY
 
 
 
 # Set up the API endpoint and headers
 api_endpoint = "https://api.anthropic.com/v1/complete"
-api_key = "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"
+api_key = ANTHROPIC_API_KEY
 headers = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {api_key}"
