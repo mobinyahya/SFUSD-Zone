@@ -70,6 +70,7 @@ class DesignZones:
 
         self.load_students_and_schools()
         self.construct_datastructures()
+
         self.load_neighborhood_dict()
         self.initialize_centroids()
         self.initialize_centroid_neighbors()
@@ -166,8 +167,9 @@ class DesignZones:
 
     def _aggregate_school_data_to_area(self, school_df):
 
-        sum_columns = [self.level, "all_prog_capacity", "ge_capacity", "num_schools"]
-        mean_columns = [self.level, "eng_scores_1819", "math_scores_1819", "greatschools_rating", "MetStandards", "AvgColorIndex"]
+        sum_columns = [self.level, "all_prog_capacity", "ge_capacity", "num_schools", "english_score",
+                       "math_score", "greatschools_rating", "AvgColorIndex"]
+        mean_columns = [self.level, "MetStandards",]
 
         sum_schools = school_df[sum_columns].groupby(self.level, as_index=False).sum()
         mean_schools = school_df[mean_columns].groupby(self.level, as_index=False).mean()

@@ -7,16 +7,21 @@ from Zone_Generation.Config.Constants import *
 
 class Integer_Program(object):
     def __init__(self, Area_Data):
+        # Number of zones. This is given to us as input.
+        # We are trying to divide the city into self.M number of zones
         self.M = Area_Data.M
 
         # self.N: Total number of GE students.
+        # Computation based on area_data file: self.N = sum(self.area_data["ge_students"])
         self.N = Area_Data.N
 
         # self.A: Total number of areas (number of distinct area indices)
+        # Computation based on area_data file: self.A = len(self.area_data.index)
         self.A = Area_Data.A
 
         # self.F: Average percentage of FRL students
         # (students that are eligible for Free or reduced price lunch)
+        # Computation based on area_data file: self.F = sum(self.area_data["FRL"]) / (self.N)
         self.F = Area_Data.F
 
         self.level = Area_Data.level
@@ -24,16 +29,21 @@ class Integer_Program(object):
         # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
         # (keys: area index j), (values: census area code for the area with index j)
         # Example: self.idx2area[41] == census area code for the area with index 41)
+        # Computation based on area_data file: self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
         self.idx2area = Area_Data.idx2area
+
+
 
         # self.area2idx: A dictionary, mapping each census area code, to its index in our data
         # (keys: census area code AA), (values: index of area AA, in our data set)
         # Example: self.area2idx[area code AA] == index of area AA in our data set
         # Note that we can access our dictionaries only using the area index, and not the area code
+        # Computation based on area_data file: self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
         self.area2idx = Area_Data.area2idx
 
         # self.sch2area: A dictionary, mapping each school id, to its census area code
         # Example: self.sch2area[644] == sensus area code for the school, with school id 644
+        # Computation based on area_data file: self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
         self.sch2area = Area_Data.sch2area
 
         self.include_k8 = Area_Data.include_k8
@@ -41,16 +51,19 @@ class Integer_Program(object):
         # self.studentsInArea is a dictionary of:
         # (keys: area index j), (values: number of GE students in area index j)
         # Example: self.studentsInArea[41] == number of GE students in area index 41
+        # Computation based on area_data file: self.studentsInArea = self.area_data["ge_students"]
         self.studentsInArea = Area_Data.studentsInArea
 
         # self.seats is a dictionary of:
         # (keys: area index j), (values: number of seats for GE students in area index j)
         # Example: self.seats[41] == number of seats for GE students in area index 41
+        # Computation based on area_data file: self.seats = self.area_data["ge_capacity"].to_numpy()
         self.seats = Area_Data.seats
 
         # self.schools is a dictionary of:
         # (keys: area index j), (values: number of schools in area index j) this value is usually 0 or 1
         # Example: self.schools[41] == number of schools in area index 41 (this value is usually 0 or 1)
+        # Computation based on area_data file: self.schools = self.area_data['num_schools']
         self.schools = Area_Data.schools
         self.school_df = Area_Data.school_df
 
@@ -79,15 +92,9 @@ class Integer_Program(object):
         # adjacent to area 41, that are closer to the area of centroid 3 than araa 41
         self.closer_euc_neighbors = Area_Data.closer_euc_neighbors
 
-        self.samezone_pairs = []
-
-        self.constraints = Area_Data.constraints
-
-        self.centroid_type = Area_Data.centroid_type
 
 
-
-    def _initializs_feasiblity_constraints(self, loaded_zd=[], max_distance=-1):
+    def _initializs_feasiblity_constraints(self, max_distance=-1):
         valid_assignments = []
         # if a max distance constraint is given, allow areas to be matched only to
         # zone centroids that are closer than max_distance
@@ -102,8 +109,6 @@ class Integer_Program(object):
         else:
             for z in range(self.M):
                 for i in range(self.A):
-                    if self.idx2area[i] in loaded_zd:
-                        continue
                     valid_assignments.append((i,z))
 
 
@@ -128,41 +133,41 @@ class Integer_Program(object):
         self.m.addConstrs(
             (gp.quicksum(self.x[i, z] for z in self.valid_zone_per_area[i]) == 1
             for i in range(self.A)
-             # ),
-             if self.idx2area[i] not in loaded_zd),
-            "FeasibilityConstraint"
+             ),
         )
 
+
     def set_y_distance(self):
-        self.y_distance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="distance distortion")
+        y_distance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="distance distortion")
 
         for z in range(self.M):
             centroid_area = self.idx2area[self.centroids[z]]
             zone_dist_sum = gp.quicksum([((self.euc_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
             # zone_dist_sum = gp.quicksum([((self.drive_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
-            self.m.addConstr(zone_dist_sum <= self.y_distance)
+            self.m.addConstr(zone_dist_sum <= y_distance)
+        return y_distance
 
 
     def set_y_balance(self):
-        self.y_balance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="balance distortion")
+        y_balance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="balance distortion")
 
         # minimize the maximum distortion from average number of students (across zones)
         for z in range(self.M):
             zone_stud = gp.quicksum([self.studentsInArea[j]*self.x[j,z] for j in range(self.A)])
-            self.m.addConstr(self.N/self.M - zone_stud <= self.y_balance)
-            self.m.addConstr(zone_stud - self.N/self.M <= self.y_balance)
-
+            self.m.addConstr(self.N/self.M - zone_stud <= y_balance)
+            self.m.addConstr(zone_stud - self.N/self.M <= y_balance)
+        return y_balance
 
     def set_y_shortage(self):
-        self.y_shortage = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="shortage distortion")
+        y_shortage = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="shortage distortion")
 
         # minimize the maximum distortion from average student
         # deficit (student capacity -  number of seats) (across zones)
         for z in range(self.M):
             zone_stud = gp.quicksum([self.studentsInArea[j]*self.x[j,z] for j in range(self.A)])
             zone_seats = gp.quicksum([self.seats[j]*self.x[j,z] for j in range(self.A)])
-            self.m.addConstr(zone_stud - zone_seats <= self.y_shortage)
-
+            self.m.addConstr(zone_stud - zone_seats <= y_shortage)
+        return y_shortage
 
     # This function constructs the boundary cost variables.
     # Boundary cost variables are used in the optimization model objective
@@ -172,25 +177,22 @@ class Integer_Program(object):
             for j in self.neighbors[i]:
                 if i >= j:
                     continue
-                if ((i,j) in self.samezone_pairs) or ((j,i) in self.samezone_pairs):
-                    continue
                 neighboring_tuples.append((i,j))
 
         # self.b[i, j]: a binary boundary variable. This variable will be 1,
         # if area with index i, and area with index j, are adjacent areas, that
         # are assigned to different zones (hence, they will be part of boundary cost)
         self.b = self.m.addVars(neighboring_tuples, vtype=GRB.BINARY, name="boundary_vars")
-        self.y_boundary = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="boundary distortion")
-        self.m.addConstr(gp.quicksum(self.b[i, j] for i, j in neighboring_tuples) == self.y_boundary)
+        y_boundary = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="boundary distortion")
+        self.m.addConstr(gp.quicksum(self.b[i, j] for i, j in neighboring_tuples) == y_boundary)
         self._add_boundary_constraint()
+        return y_boundary
 
     def _add_boundary_constraint(self):
         # if i and j are neighbors, check if they are boundaries of different zones
         for i in range(self.A):
             for j in self.neighbors[i]:
                 if i >= j:
-                    continue
-                if ((i,j) in self.samezone_pairs) or ((j,i) in self.samezone_pairs):
                     continue
                 for z in range(self.M):
                     if (i in self.valid_area_per_zone[z]) and (j in self.valid_area_per_zone[z]):
@@ -203,26 +205,25 @@ class Integer_Program(object):
 
 
     def _set_objective_model(self):
-        # self.set_y_distance()
-        # self.distance_coef = 1
+        # y_distance = self.set_y_distance()
+        # distance_coef = 1
+        #
+        # y_balance = self.set_y_balance()
+        # balance_coef = 0
+        #
+        # y_shortage = self.set_y_shortage()
+        # shortage_coef = 2
 
-        # self.set_y_balance()
-        # self.balance_coef = 0
-
-        # self.set_y_shortage()
-        # self.shortage_coef = 2
-
-
-        self.set_y_boundary()
-        self.boundary_coef = 10
+        y_boundary = self.set_y_boundary()
+        boundary_coef = 10
 
         # set the objective of the Integer Program.
         # The integer program will try to minimize the cost of boundary,
         # which will result into compact and nice looking shapes for zones.
-        self.m.setObjective(self.boundary_coef * self.y_boundary, GRB.MINIMIZE)
+        self.m.setObjective(boundary_coef * y_boundary, GRB.MINIMIZE)
         # self.m.setObjective(1 , GRB.MINIMIZE)
-        # self.m.setObjective( self.distance_coef * self.y_distance +  self.shortage_coef * self.y_shortage +
-        #                      self.balance_coef * self.y_balance + self.boundary_coef * self.y_boundary , GRB.MINIMIZE)
+        # self.m.setObjective(distance_coef * y_distance +  shortage_coef * y_shortage +
+        #                      balance_coef * y_balance + boundary_coef * y_boundary , GRB.MINIMIZE)
 
 
 
@@ -251,7 +252,6 @@ class Integer_Program(object):
                      for j in self.valid_area_per_zone[z]]
                 )
             )
-        self.constraints["All_Cap_Propotional_Shortage"] = all_cap_shortage
 
 
     # proportional shortage for each zone =
@@ -274,7 +274,6 @@ class Integer_Program(object):
                      for j in self.valid_area_per_zone[z]]
                 )
             )
-        self.constraints["Propotional_Shortage"] = shortage
 
     # percentage of students (GE students) in the zone, that we need to add to fill all the GE seats in the zone
     def _proportional_overage_constraint(self, overage):
@@ -292,7 +291,6 @@ class Integer_Program(object):
                      for j in self.valid_area_per_zone[z]]
                 )
             )
-        self.constraints["Propotional_Overage"] = overage
 
     def fixed_shortage_const(self, shortage):
         # each zone has at least the shortage
@@ -303,7 +301,6 @@ class Integer_Program(object):
                      for j in self.valid_area_per_zone[z]]
                 )
                 <= shortage)
-        self.constraints["Fixed_Shortage"] = shortage
 
     def _shortage_and_balance_constraints(self, shortage_=True, balance_=True, shortage=0.15, overage=0.2, all_cap_shortage=0.8, balance=1000):
         if shortage_:
@@ -327,7 +324,6 @@ class Integer_Program(object):
                     )
                     self.m.addConstr(firstZone - secondZone <= balance)
                     self.m.addConstr(firstZone - secondZone >= -balance)
-            self.constraints["Balance"] = balance
 
 
 
@@ -373,7 +369,6 @@ class Integer_Program(object):
                     )
                     self.m.addConstr(self.x[j, z] <= any_neighbor_sum, name="Contiguity")
 
-        self.constraints["contiguity"] = 1
 
     # ---------------------------------------------------------------------------
     # ---------------------------------------------------------------------------
@@ -442,7 +437,6 @@ class Integer_Program(object):
             self.m.addConstr(zone_sum <= (self.F + frl_dev) * district_students, name="FRL UB")
 
 
-        self.constraints["frl_dev"] = frl_dev
 
 
     def _add_aalpi_constraint(self, aalpi_dev):
@@ -459,7 +453,6 @@ class Integer_Program(object):
             self.m.addConstr(zone_sum >= (district_average - aalpi_dev) * district_students, name="AALPI LB")
             self.m.addConstr(zone_sum <= (district_average  + aalpi_dev) * district_students, name="AALPI UB")
 
-        self.constraints["aalpi_dev"] = aalpi_dev
 
     # ---------------------------------------------------------------------------
     # ---------------------------------------------------------------------------
@@ -468,12 +461,10 @@ class Integer_Program(object):
     # by computing the total number of schools in the city and dividing it by the number of zones.
     # Next, add a constraint to make sure the number of schools in each zone
     # is within average number of schools per zone + or - 1
-    def _add_school_count_constraint(self, loaded_zd=[]):
+    def _add_school_count_constraint(self):
         zone_school_count = {}
-        #TODO change
-        avg_school_count = sum([self.schools[j] for j in range(self.A)
-                                if self.idx2area[j] not in loaded_zd]
-                               ) / self.M + 0.0001
+        avg_school_count = sum([self.schools[j] for j in range(self.A)]) / self.M + 0.0001
+
         # note: although we enforce max deviation of 1 from avg, in practice,
         # no two zones will have more than 1 difference in school count
         # Reason: school count is int. Observe the avg_school_count +-1,
@@ -481,7 +472,6 @@ class Integer_Program(object):
         # * I implemented the code this way (instead of pairwise comparison), since it is faster
         for z in range(self.M):
             zone_school_count[z] = gp.quicksum([self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]])
-            # TODO
             self.m.addConstr(zone_school_count[z] <= avg_school_count + 1)
             self.m.addConstr(zone_school_count[z] >= avg_school_count - 1)
 
@@ -495,119 +485,89 @@ class Integer_Program(object):
                 self.m.addConstr(zone_k8_count[z] <= 1)
 
 
-
-    def _add_school_quality_constraint(self, min_pct, max_pct=None):
-        scores = self.area_data["eng_scores_1819"].fillna(value=0)
-        schools = self.area_data["num_schools"].fillna(value=0)
-        for z in range(self.M):
-            zone_sum = gp.quicksum(
-                [scores[j] * schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
-            )
-            district_average = (
-                    sum(scores * schools)
-                    / sum(schools)
-                    * gp.quicksum([self.x[j, z] * schools[j] for j in self.valid_area_per_zone[z]])
-            )
-
-            self.m.addConstr(zone_sum >= min_pct * district_average)
-            if max_pct != None:
-                self.m.addConstr(zone_sum <= max_pct * district_average)
-                self.constraints["engscores1819"] = str(min_pct) + "-" + str(max_pct)
-            else:
-                self.constraints["engscores1819"] = min_pct
-
-        scores = self.area_data["math_scores_1819"].fillna(value=0)
+    # Enforce a balance in english score over schools of different zones as follows:
+    # Compute the average: average english score over all schools in the district.
+    # Sum up english scores for schools of each zone. Divide the english score for each zone,
+    # by total number of schools within that zone.
+    # Make sure the average english score for each zone,
+    # is between (1-score_dev) * average and (1+score_dev) * average
+    def _add_school_eng_score_quality_constraint(self, score_dev=-1):
+        if not (1 > score_dev > -1):
+            return
+        eng_scores = self.area_data["english_score"].fillna(value=0)
+        school_average = sum(eng_scores) / sum(self.schools)
 
         for z in range(self.M):
             zone_sum = gp.quicksum(
-                [scores[j] * schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+                [eng_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
-            district_average = (
-                    sum(scores * schools)
-                    / sum(schools)
-                    * gp.quicksum([self.x[j, z] * schools[j] for j in self.valid_area_per_zone[z]])
+            zone_schools = gp.quicksum(
+                [self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+            )
+            self.m.addConstr(zone_sum >= (1 - score_dev) * school_average * zone_schools)
+            self.m.addConstr(zone_sum <= (1 + score_dev) * school_average * zone_schools)
+
+    def _add_school_math_score_quality_constraint(self, score_dev=-1):
+        if not (1 > score_dev > -1):
+            return
+
+        math_scores = self.area_data["math_score"].fillna(value=0)
+        school_average = sum(math_scores) / sum(self.schools)
+
+        for z in range(self.M):
+            zone_sum = gp.quicksum(
+                [math_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+            )
+            zone_schools = gp.quicksum(
+                [self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
 
-            self.m.addConstr(zone_sum >= min_pct * district_average)
-            if max_pct != None:
-                self.m.addConstr(zone_sum <= max_pct * district_average)
-                self.constraints["math_scores_1819"] = str(min_pct) + "-" + str(max_pct)
-            else:
-                self.constraints["math_scores_1819"] = min_pct
+            self.m.addConstr(zone_sum >= (1 - score_dev) * school_average * zone_schools)
+            self.m.addConstr(zone_sum <= (1 + score_dev) * school_average * zone_schools)
+
 
 
     # Enforce school quality balance constraint, using "AvgColorIndex" metric, which is:
     # Average of ela_color, math_color, chronic_color, and suspension_color, where Red=1 and Blue=5
     # Make sure all zones are within min_pct and max_pct of average of AvgColorIndex for each zone
     # min_pct: min percentage. max_pct: max percentage
-    def _add_met_quality_constraint(self, min_pct = 0, max_pct=None, topX=0):
-        scores = self.area_data["AvgColorIndex"].fillna(value=0)
+    def _add_color_quality_constraint(self, score_dev=-1, topX=0):
+        if not (1 > score_dev > -1):
+            return
+        color_scores = self.area_data["AvgColorIndex"].fillna(value=0)
+        school_average = sum(color_scores) / sum(self.schools)
 
-        if min_pct > 0:
-            for z in range(self.M):
-                zone_sum = gp.quicksum(
-                    [scores[j] * self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
-                )
-                district_average = (
-                        sum(scores * self.schools) / sum(self.schools)
-                        * gp.quicksum([self.x[j, z] * self.schools[j] for j in self.valid_area_per_zone[z]])
-                )
+        for z in range(self.M):
+            zone_sum = gp.quicksum(
+                [color_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+            )
+            zone_schools = gp.quicksum(
+                [self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+            )
 
-                self.m.addConstr(zone_sum >= min_pct * district_average)
-                if max_pct is not None:
-                    self.m.addConstr(zone_sum <= max_pct * district_average)
-                    self.constraints["AvgColorIndex"] = (str(min_pct) + "-" + str(max_pct))
-                else:
-                    self.constraints["AvgColorIndex"] = min_pct
+            self.m.addConstr(zone_sum >= (1 - score_dev) * school_average * zone_schools)
+            self.m.addConstr(zone_sum <= (1 + score_dev) * school_average * zone_schools)
+
 
         if topX > 0:
             top_schools = np.zeros([self.A])
-            top = np.percentile(scores, 100 * (1 - self.M / self.A) - 0.05)
-            top = np.percentile(scores, topX)
+            top = np.percentile(color_scores, 100 * (1 - self.M / self.A) - 0.05)
+            top = np.percentile(color_scores, topX)
             print(top)
             for j in range(self.A):
-                if scores[j] > top:
+                if color_scores[j] > top:
                     top_schools[j] = 1
             for z in range(self.M):
                 topz = gp.quicksum(
                     [self.x[j, z] * top_schools[j] for j in self.valid_area_per_zone[z]]
                 )
                 self.m.addConstr(topz >= 0.8)
-                self.constraints["AvgColorIndex"] = topX
-
-
-    # We want to make sure families have the option to go to a school,
-    # if they are only a block away from that school.
-    # make sure areas that are closer than boundary_threshold distance
-    # to a school, are matched to the same zone as that school.
-    def _boundary_threshold_constraint(self, boundary_threshold):
-        for z in range(self.M):
-            for i in range(self.A):
-                if i not in self.valid_area_per_zone[z]:
-                    continue
-                area = self.idx2area[i]
-
-                for idx, row in self.school_df.iterrows():
-                    if (row["K-8"] == 1) & (self.include_k8 == False):
-                        continue
-
-                    if self.level in ["Block", "BlockGroup"]:
-                        sch_area = self.sch2area[row["school_id"]]
-                    else:
-                        raise ValueError("It is not recommended to have boundary threshold constraint for Attendance Area Zones")
-                    sch_idx = self.area2idx[sch_area]
-                    if sch_idx not in self.valid_area_per_zone[z]:
-                        continue
-
-                    if self.euc_distances.loc[sch_area, str(area)] < boundary_threshold:
-                            self.m.addConstr(self.x[i, z] == 0)
-                            self.m.addConstr(self.x[sch_idx, z] == 0)
 
 
     # ---------------------------------------------------------------------------
     # ---------------------------------------------------------------------------
 
-    def save(self, path,  rand=random.randint(0, 400000), save_opt_params = False, name = "", solve_success = 1):
+    def save(self, path,  name = "", solve_success = 1):
         filename = os.path.expanduser(path)
         filename += name
         filename += ".csv"
@@ -622,8 +582,7 @@ class Integer_Program(object):
                 writer.writerow({})
 
 
-    def solve(self, write=False, save_path="~/SFUSD/"):
-
+    def solve(self):
         self.m.update()  # Update the model
         print(f"Total number of dz.m variables: {self.m.numVars}")
         print(f"Total number of dz.m constraints: {self.m.numConstrs}")
@@ -667,9 +626,6 @@ class Integer_Program(object):
                     zone_lists[z].append(k8_schno)
             self.zone_dict = zone_dict
             self.zone_lists = zone_lists
-
-            if write:
-                self.save(save_path)
 
             return 1
 

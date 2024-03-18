@@ -22,6 +22,7 @@ class Schools(object):
             school_df = pd.read_csv(f"~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv")
 
         school_df.rename(columns={"attendance_area": "attendance_area"}, inplace=True)
+
         print("self.level ", self.level)
         school_df[self.level] = school_df[self.level].astype('Int64')
 
@@ -36,6 +37,12 @@ class Schools(object):
         # school_df = self._inflate_capacity(school_df)
         school_df["num_schools"] = 1
 
+        school_df.rename(
+            columns={
+                "eng_scores_1819": "english_score",
+                "math_scores_1819": "math_score",
+            }, inplace=True
+        )
         return school_df
 
     def _load_capacity(self, school_df):

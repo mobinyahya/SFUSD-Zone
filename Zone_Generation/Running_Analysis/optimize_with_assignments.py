@@ -83,7 +83,7 @@ class OptimizePostChoice:
             )
 
         self.opt._add_diversity_constraints(lowfrl, maxfrl, lbHOCidx1, ubHOCidx1, lbaalpi, ubaapli)
-        self.opt._add_met_quality_constraint(lowMet, highMet, topMet)
+        self.opt._add_color_quality_constraint(lowMet, highMet, topMet)
 
     def _set_up_programs_and_schools(self):
         if not hasattr(self, "schools"):

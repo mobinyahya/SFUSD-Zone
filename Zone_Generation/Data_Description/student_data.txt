@@ -104,19 +104,17 @@ student_data_columns = {
   "math_scalescore": {
     "DataType": "int",
     "Values": "4-digit int or empty",
-    "Description": "Score of student on standardized math exam for the current year (only filled for current 3rd-8th grade and 11th graders). Students only start taking this after 3rd grade. Specifically, the test is taken in grades 3-8 and in grade 11. Our data is only for 2018-19 and earlier years.",
-    "Notes": "https://www.sfusd.edu/caa-ela-and-math"
+    "Description": "Score of student on standardized math exam for the current year.",
   },
   "ela_scalescore": {
     "DataType": "int",
     "Values": "4-digit int or empty",
-    "Description": "Score of student on standardized english language arts exam for the current year (only filled for current 3rd-8th grade and 11th graders). Students only start taking this after 3rd grade. Specifically, the test is taken in grades 3-8 and in grade 11. Our data is only for 2018-19 and earlier years.",
-    "Notes": "https://www.sfusd.edu/caa-ela-and-math"
+    "Description": "Score of student on standardized english language arts exam for the current year.",
   },
    "census_block": {
     "DataType": "int",
     "Values": "14-digit int or empty",
-    "Description": "The 2010 census block number that the student lives in. Census blocks can change slightly census to census."
+    "Description": "The 2010 census block number that the student lives in."
   },
   "freelunch_prob": {
     "DataType": "float",
