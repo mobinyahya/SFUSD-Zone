@@ -13,25 +13,27 @@ headers = {
 }
 
 # Set up the file paths
-file_paths = [
-    "/Users/mobin/PycharmProjects/SFUSD-Zone/Zone_Generation/Optimization_IP/integer_program.py",
-    "/Users/mobin/PycharmProjects/SFUSD-Zone/Zone_Generation/Data_Description/area_data.txt"
-]
-
+file_paths = {
+    "integer_program": "/Users/mobin/PycharmProjects/SFUSD-Zone/Zone_Generation/Optimization_IP/integer_program.py",
+    "area_data": "/Users/mobin/PycharmProjects/SFUSD-Zone/Zone_Generation/Data_Description/area_data.txt",
+    "top_5_area_data": "/Users/mobin/PycharmProjects/SFUSD-Zone/Zone_Generation/Data_Description/top_5_area_data.csv"
+}
 # Read the contents of the files
-file_contents = []
-for file_path in file_paths:
-    with open(file_path, "r") as file:
-        file_contents.append(file.read())
-
-
+file_contents = {}
+for file in file_paths:
+    with open(file_paths[file], "r") as data:
+        file_contents[file] = data.read()
 
 
 # Prepare the API request payload
 prompt = f"""
 Here are the files:
 
-{file_contents[0]}
+File integer_program.py: {file_contents["integer_program"]}
+
+File area_data.txt: {file_contents["area_data"]}
+
+File top_5_area_data.csv: {file_contents["top_5_area_data"]}
 
 Project Description: 
 In partnership with SFUSD (San Francisco Unified School District), I've developed a solution,
@@ -39,6 +41,11 @@ to find a zoning system for schools. Where we divide the city of San Francisco, 
 
 Census areas: Building blocks of the city. Each census area should be assigned to exactly one zone.
               Variable self.x[i,z]: is a binary variable. It indicates whether area with index i is assigned to zone z or not.
+You can access areas using either their census area code, or their index:
+    Access using index: For each value j in range(self.A), there is a unique area, with index j.
+                        In other words, each value j in [0,..., self.A], represents a different area index.
+    Access using census area code: Each area has a distinct census area code number. 
+    
 Number of zones: self.M. TNumber of zones that we are trying to divide the city into.
 
 Zone Description: 
@@ -69,10 +76,16 @@ Instructions:
 5. Very important: Ensure your suggested code can be appended to the existing 
     code file without causing any conflicts or errors.
 
-Request: How can I add a the following function to the code, while ensuring compatibility with the existing data structures and code base?
+Request: How can I add the following function to the code, while ensuring compatibility with the existing data structures and code base?
+Only return a python code, without any explanation. Your output should be only a python function, named requested_function, with no input arguments
+If you have anything you really need to say, put it in code comments.
+
 Function: Write a function in python to make sure: 
 average quality of schools across zones is balanced. 
 Use average color index to measure school quality. 
+
+Function: Write a function in python to make sure: Fraction of students at the school across all zones that meet 
+grade level standards is about the same, and is within 10% deviation. 
 """
 
 payload = {
