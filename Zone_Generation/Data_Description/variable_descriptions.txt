@@ -1,0 +1,23 @@
+area_data_columns = {
+  "file description":
+          "This file provides an explanation of variables in integer_program.py",
+  "FRL": {
+    "DataType": "float",
+    "Values": "",
+  },
+  "FRL": {
+    "DataType": "float",
+    "Values": "",
+  },
+  "FRL": {
+    "DataType": "float",
+    "Values": "",
+  },
+  "FRL": {
+    "DataType": "float",
+    "Values": "",
+  },
+  "FRL": {
+    "DataType": "float",
+    "Values": "",
+  },
