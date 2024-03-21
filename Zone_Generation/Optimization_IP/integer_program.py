@@ -8,8 +8,8 @@ from Zone_Generation.Config.Constants import *
 class Integer_Program(object):
     def __init__(self, Area_Data):
         # Number of zones. This is given to us as input.
-        # We are trying to divide the city into self.M number of zones
-        self.M = Area_Data.M
+        # We are trying to divide the city into self.Z number of zones
+        self.Z = Area_Data.M
 
         # self.N: Total number of GE students.
         # Computation based on area_data file: self.N = sum(self.area_data["ge_students"])
@@ -24,28 +24,7 @@ class Integer_Program(object):
         # Computation based on area_data file: self.F = sum(self.area_data["FRL"]) / (self.N)
         self.F = Area_Data.F
 
-        self.level = Area_Data.level
-
-        # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
-        # (keys: area index j), (values: census area code for the area with index j)
-        # Example: self.idx2area[41] == census area code for the area with index 41)
-        # Computation based on area_data file: self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
-        self.idx2area = Area_Data.idx2area
-
-
-
-        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
-        # (keys: census area code AA), (values: index of area AA, in our data set)
-        # Example: self.area2idx[area code AA] == index of area AA in our data set
-        # Note that we can access our dictionaries only using the area index, and not the area code
-        # Computation based on area_data file: self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
-        self.area2idx = Area_Data.area2idx
-
-        # self.sch2area: A dictionary, mapping each school id, to its census area code
-        # Example: self.sch2area[644] == sensus area code for the school, with school id 644
-        # Computation based on area_data file: self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
-        self.sch2area = Area_Data.sch2area
-
+        # Should K8 schools be considered into the calculations or not
         self.include_k8 = Area_Data.include_k8
 
         # self.studentsInArea is a dictionary of:
@@ -92,28 +71,43 @@ class Integer_Program(object):
         # adjacent to area 41, that are closer to the area of centroid 3 than araa 41
         self.closer_euc_neighbors = Area_Data.closer_euc_neighbors
 
+        self.level = Area_Data.level
+        # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
+        # (keys: area index j), (values: census area code for the area with index j)
+        # Example: self.idx2area[41] == census area code for the area with index 41)
+        # Computation based on area_data file: self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
+        self.idx2area = Area_Data.idx2area
 
 
-    def _initializs_feasiblity_constraints(self, max_distance=-1):
+
+        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
+        # (keys: census area code AA), (values: index of area AA, in our data set)
+        # Example: self.area2idx[area code AA] == index of area AA in our data set
+        # Note that we can access our dictionaries only using the area index, and not the area code
+        # Computation based on area_data file: self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
+        self.area2idx = Area_Data.area2idx
+
+        # self.sch2area: A dictionary, mapping each school id, to its census area code
+        # Example: self.sch2area[644] == sensus area code for the school, with school id 644
+        # Computation based on area_data file: self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
+        self.sch2area = Area_Data.sch2area
+
+
+    def _initializs_feasiblity_constraints(self, max_distance=float('inf')):
+        print("max_distance ", max_distance + 1)
         valid_assignments = []
         # if a max distance constraint is given, allow areas to be matched only to
         # zone centroids that are closer than max_distance
-        if max_distance > 0:
-            for z in range(self.M):
-                centroid_z = self.centroids[z]
-                # zone_max_distance = max_distance
-                for i in range(self.A):
-                    if (self.euc_distances.loc[self.idx2area[centroid_z], str(self.idx2area[i])] < max_distance):
-                        valid_assignments.append((i,z))
-
-        else:
-            for z in range(self.M):
-                for i in range(self.A):
+        for z in range(self.Z):
+            centroid_z = self.centroids[z]
+            # zone_max_distance = max_distance
+            for i in range(self.A):
+                if (self.euc_distances[centroid_z][i] < max_distance):
                     valid_assignments.append((i,z))
 
 
         # Initialize a dictionary to hold valid zones for each area
-        self.valid_area_per_zone = {z: [] for z in range(self.M)}
+        self.valid_area_per_zone = {z: [] for z in range(self.Z)}
         # Initialize a dictionary to hold valid zones for each area
         self.valid_zone_per_area = {i: [] for i in range(self.A)}
 
@@ -140,9 +134,8 @@ class Integer_Program(object):
     def set_y_distance(self):
         y_distance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="distance distortion")
 
-        for z in range(self.M):
-            centroid_area = self.idx2area[self.centroids[z]]
-            zone_dist_sum = gp.quicksum([((self.euc_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
+        for z in range(self.Z):
+            zone_dist_sum = gp.quicksum([((self.euc_distances[self.centroids[z]][j]) ** 2) * self.x[j, z] for j in range(self.A)])
             # zone_dist_sum = gp.quicksum([((self.drive_distances.loc[centroid_area, str(self.idx2area[j])]) ** 2) * self.x[j, z] for j in range(self.A)])
             self.m.addConstr(zone_dist_sum <= y_distance)
         return y_distance
@@ -152,10 +145,10 @@ class Integer_Program(object):
         y_balance = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="balance distortion")
 
         # minimize the maximum distortion from average number of students (across zones)
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_stud = gp.quicksum([self.studentsInArea[j]*self.x[j,z] for j in range(self.A)])
-            self.m.addConstr(self.N/self.M - zone_stud <= y_balance)
-            self.m.addConstr(zone_stud - self.N/self.M <= y_balance)
+            self.m.addConstr(self.N/self.Z - zone_stud <= y_balance)
+            self.m.addConstr(zone_stud - self.N/self.Z <= y_balance)
         return y_balance
 
     def set_y_shortage(self):
@@ -163,7 +156,7 @@ class Integer_Program(object):
 
         # minimize the maximum distortion from average student
         # deficit (student capacity -  number of seats) (across zones)
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_stud = gp.quicksum([self.studentsInArea[j]*self.x[j,z] for j in range(self.A)])
             zone_seats = gp.quicksum([self.seats[j]*self.x[j,z] for j in range(self.A)])
             self.m.addConstr(zone_stud - zone_seats <= y_shortage)
@@ -194,7 +187,7 @@ class Integer_Program(object):
             for j in self.neighbors[i]:
                 if i >= j:
                     continue
-                for z in range(self.M):
+                for z in range(self.Z):
                     if (i in self.valid_area_per_zone[z]) and (j in self.valid_area_per_zone[z]):
                         self.m.addConstr(gp.quicksum([self.x[i, z], -1 * self.x[j, z]]) <= self.b[i, j])
                         self.m.addConstr(gp.quicksum([-1 * self.x[i, z], self.x[j, z]]) <= self.b[i, j])
@@ -226,7 +219,6 @@ class Integer_Program(object):
         #                      balance_coef * y_balance + boundary_coef * y_boundary , GRB.MINIMIZE)
 
 
-
     # ---------------------------------------------------------------------------
     # ---------------------------------------------------------------------------
     # All programs proportional shortage for each zone =
@@ -239,7 +231,7 @@ class Integer_Program(object):
     # larger than the given input, all_cap_shortage
     def _all_cap_proportional_shortage_constraint(self, all_cap_shortage):
         # No zone has shortage more than all_cap_shortage percentage of its total student population
-        for z in range(self.M):
+        for z in range(self.Z):
             self.m.addConstr(
                 gp.quicksum(
                     [(self.area_data["all_prog_students"][j] - self.area_data["all_prog_capacity"][j]) * self.x[j, z]
@@ -261,7 +253,7 @@ class Integer_Program(object):
     # larger than the given input "shortage"
     def _proportional_shortage_constraint(self, shortage):
         # No zone has shortage more than shortage percentage of its population
-        for z in range(self.M):
+        for z in range(self.Z):
             self.m.addConstr(
                 (1 - shortage) *
                 gp.quicksum(
@@ -278,7 +270,7 @@ class Integer_Program(object):
     # percentage of students (GE students) in the zone, that we need to add to fill all the GE seats in the zone
     def _proportional_overage_constraint(self, overage):
         # No zone has overage more than overage percentage of its population
-        for z in range(self.M):
+        for z in range(self.Z):
             self.m.addConstr(
                 gp.quicksum(
                     [(-self.studentsInArea[j] + self.seats[j]) * self.x[j, z]
@@ -292,9 +284,9 @@ class Integer_Program(object):
                 )
             )
 
-    def fixed_shortage_const(self, shortage):
+    def _absolute_shortage_const(self, shortage):
         # each zone has at least the shortage
-        for z in range(self.M):
+        for z in range(self.Z):
             self.m.addConstr(
                 gp.quicksum(
                     [(self.studentsInArea[j] - self.seats[j]) * self.x[j, z]
@@ -302,28 +294,15 @@ class Integer_Program(object):
                 )
                 <= shortage)
 
-    def _shortage_and_balance_constraints(self, shortage_=True, balance_=True, shortage=0.15, overage=0.2, all_cap_shortage=0.8, balance=1000):
-        if shortage_:
-            # self.fixed_shortage_const()
-            if shortage != -1:
-                self._proportional_shortage_constraint(shortage)
-            if overage != -1:
-                self._proportional_overage_constraint(overage)
-            if all_cap_shortage != -1:
-                self._all_cap_proportional_shortage_constraint()
+    def _shortage_constraints(self, shortage=0.15, overage=0.2, all_cap_shortage=0.8):
+        # self.fixed_shortage_const()
+        if shortage <= 1:
+            self._proportional_shortage_constraint(shortage)
+        if overage <= 1:
+            self._proportional_overage_constraint(overage)
+        if all_cap_shortage <= 1:
+            self._all_cap_proportional_shortage_constraint(all_cap_shortage)
 
-        if balance_:
-            # add number of students balance constraint
-            for z in range(self.M):
-                firstZone = gp.quicksum(
-                    [self.studentsInArea[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
-                )
-                for q in range(z + 1, self.M):
-                    secondZone = gp.quicksum(
-                        [self.studentsInArea[j] * self.x[j, q] for j in self.valid_area_per_zone[z]]
-                    )
-                    self.m.addConstr(firstZone - secondZone <= balance)
-                    self.m.addConstr(firstZone - secondZone >= -balance)
 
 
 
@@ -333,9 +312,9 @@ class Integer_Program(object):
     # assign unit 𝑗 to zone with centroid area 𝑧, only if
     # there is a ‘path’ of closer neighboring areas also assigned
     # to the same zone that connects area 𝑗 to the centroid area 𝑧.
-    def _add_contiguity_constraint(self, loaded_szd=[]):
+    def _add_contiguity_constraint(self):
         # initialization - every centroid belongs to its own zone
-        for z in range(self.M):
+        for z in range(self.Z):
             self.m.addConstr(
                 self.x[self.centroids[z], z] == 1, name="Centroids to Zones"
             )
@@ -343,17 +322,15 @@ class Integer_Program(object):
         # (x[j,z] (and indicator that unit j is assigned to zone z)) \leq
         # (sum of all x[j',z] where j' is in self.closer_neighbors_per_centroid[area,c] where c is centroid for z)
         for j in range(self.A):
-            for z in range(self.M):
+            for z in range(self.Z):
                 if j == self.centroids[z]:
                     continue
                 if j not in self.valid_area_per_zone[z]:
                     continue
-                X = self.closer_euc_neighbors[j, self.centroids[z]]
-                Y = [neighbor for neighbor in X if self.idx2area[neighbor] not in loaded_szd]
-                # only impose the contiguity as we said, if the area j has a neighbor that is closer to centroid z.
+                # only impose the contiguity if the area j has a neighbor that is closer to centroid z.
                 # otherwise, just make sure j has at least another neighbor assigned tot the same zone z, so that
                 # j is not an island assigned to z.
-                if len(Y) >= 1:  # TODO
+                if len(self.closer_euc_neighbors[j, self.centroids[z]]) >= 1:
                     neighbor_sum = gp.quicksum(
                         self.x[k, z]
                         for k in self.closer_euc_neighbors[j, self.centroids[z]]
@@ -389,11 +366,28 @@ class Integer_Program(object):
             self._add_aalpi_constraint(aalpi_dev)
 
     # Enforce zones to have almost the same number of students
+    # Make sure the difference between total population of GE students
+    # among two different zone is at most _balance.
+    def _absolute_population_constraint(self, _balance=1000):
+        # add number of students balance constraint
+        for z in range(self.Z):
+            firstZone = gp.quicksum(
+                [self.studentsInArea[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
+            )
+            for q in range(z + 1, self.Z):
+                secondZone = gp.quicksum(
+                    [self.studentsInArea[j] * self.x[j, q] for j in self.valid_area_per_zone[z]]
+                )
+                self.m.addConstr(firstZone - secondZone <= _balance)
+                self.m.addConstr(firstZone - secondZone >= -_balance)
+
+
+    # Enforce zones to have almost the same number of students
     # Make sure the average population of each zone, is within a given
-    # population_dev% of average population for zones
-    def _add_population_balance_constraint(self, population_dev=1):
-        average_population = sum(self.area_data["all_prog_students"])/self.M
-        for z in range(self.M):
+    # population_dev% of average population over zones
+    def _proportional_population_constraint(self, population_dev=1):
+        average_population = sum(self.area_data["all_prog_students"])/self.Z
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [self.area_data["all_prog_students"][j] * self.x[j, z] for j in self.valid_area_per_zone[z]])
 
@@ -408,7 +402,7 @@ class Integer_Program(object):
         for race in ETHNICITY_COLS:
             race_ratio = sum(self.area_data[race]) / float(self.N)
 
-            for z in range(self.M):
+            for z in range(self.Z):
                 zone_sum = gp.quicksum(
                     [self.area_data[race][j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
                 )
@@ -426,7 +420,7 @@ class Integer_Program(object):
     # make sure the total FRL for students in each zone, is within an additive
     #  frl_dev% of average FRL over zones..
     def _add_frl_constraint(self, frl_dev=1):
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [self.area_data["FRL"][j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
@@ -441,7 +435,7 @@ class Integer_Program(object):
 
     def _add_aalpi_constraint(self, aalpi_dev):
         district_average = sum(self.area_data["AALPI Score"]) / self.N
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [self.area_data["AALPI Score"][j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
@@ -463,14 +457,14 @@ class Integer_Program(object):
     # is within average number of schools per zone + or - 1
     def _add_school_count_constraint(self):
         zone_school_count = {}
-        avg_school_count = sum([self.schools[j] for j in range(self.A)]) / self.M + 0.0001
+        avg_school_count = sum([self.schools[j] for j in range(self.A)]) / self.Z + 0.0001
 
         # note: although we enforce max deviation of 1 from avg, in practice,
         # no two zones will have more than 1 difference in school count
         # Reason: school count is int. Observe the avg_school_count +-1,
         # if avg_school_count is not int, and see how the inequalities will look like
         # * I implemented the code this way (instead of pairwise comparison), since it is faster
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_school_count[z] = gp.quicksum([self.schools[j] * self.x[j, z] for j in self.valid_area_per_zone[z]])
             self.m.addConstr(zone_school_count[z] <= avg_school_count + 1)
             self.m.addConstr(zone_school_count[z] >= avg_school_count - 1)
@@ -479,7 +473,7 @@ class Integer_Program(object):
         # make sure no zone has more than one K8 schools
         if self.include_k8:
             zone_k8_count = {}
-            for z in range(self.M):
+            for z in range(self.Z):
                 zone_k8_count[z] = gp.quicksum([self.area_data["K-8"][j] * self.x[j, z]
                                                 for j in self.valid_area_per_zone[z]])
                 self.m.addConstr(zone_k8_count[z] <= 1)
@@ -497,7 +491,7 @@ class Integer_Program(object):
         eng_scores = self.area_data["english_score"].fillna(value=0)
         school_average = sum(eng_scores) / sum(self.schools)
 
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [eng_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
@@ -514,7 +508,7 @@ class Integer_Program(object):
         math_scores = self.area_data["math_score"].fillna(value=0)
         school_average = sum(math_scores) / sum(self.schools)
 
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [math_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
@@ -537,7 +531,7 @@ class Integer_Program(object):
         color_scores = self.area_data["AvgColorIndex"].fillna(value=0)
         school_average = sum(color_scores) / sum(self.schools)
 
-        for z in range(self.M):
+        for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [color_scores[j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
             )
@@ -551,88 +545,14 @@ class Integer_Program(object):
 
         if topX > 0:
             top_schools = np.zeros([self.A])
-            top = np.percentile(color_scores, 100 * (1 - self.M / self.A) - 0.05)
+            top = np.percentile(color_scores, 100 * (1 - self.Z / self.A) - 0.05)
             top = np.percentile(color_scores, topX)
             print(top)
             for j in range(self.A):
                 if color_scores[j] > top:
                     top_schools[j] = 1
-            for z in range(self.M):
+            for z in range(self.Z):
                 topz = gp.quicksum(
                     [self.x[j, z] * top_schools[j] for j in self.valid_area_per_zone[z]]
                 )
                 self.m.addConstr(topz >= 0.8)
-
-
-    # ---------------------------------------------------------------------------
-    # ---------------------------------------------------------------------------
-
-    def save(self, path,  name = "", solve_success = 1):
-        filename = os.path.expanduser(path)
-        filename += name
-        filename += ".csv"
-
-        # save zones themselves
-        with open(filename, "w") as outFile:
-            writer = csv.writer(outFile, lineterminator="\n")
-            if solve_success == 1:
-                for z in self.zone_lists:
-                    writer.writerow(z)
-            else:
-                writer.writerow({})
-
-
-    def solve(self):
-        self.m.update()  # Update the model
-        print(f"Total number of dz.m variables: {self.m.numVars}")
-        print(f"Total number of dz.m constraints: {self.m.numConstrs}")
-        self.filename = ""
-        self.zone_dict = {}
-
-        try:
-            self.m.Params.TimeLimit = 10000
-            self.m.optimize()
-
-            zone_lists = []
-            for z in range(0, self.M):
-                zone = []
-                for j in range(0, self.A):
-                    if j not in self.valid_area_per_zone[z]:
-                        continue
-                    if self.x[j, z].X >= 0.999:
-                        self.zone_dict[self.idx2area[j]] = z
-                        zone.append(self.area_data[self.level][j])
-                        # add City wide school SF Montessori, even if we are not including city wide schools
-                        # 823 is the aa level of SF Montessori school (which has school id 814)
-                        if self.idx2area[j] in [823, 60750132001]:
-                            self.zone_dict[self.idx2area[j]] = z
-                            if self.level == "attendance_area":
-                                zone.append(SF_Montessori)
-                if not zone == False:
-                    zone_lists.append(zone)
-            zone_dict = {}
-            for idx, schools in enumerate(zone_lists):
-                zone_dict = {
-                    **zone_dict,
-                    **{int(float(s)): idx for s in schools if s != ""},
-                }
-            # add K-8 schools to dict if using them
-            if (self.level == 'attendance_area') & (self.include_k8):
-                cw = self.school_df.loc[self.school_df["K-8"] == 1]
-                for i, row in cw.iterrows():
-                    k8_schno = row["school_id"]
-                    z = zone_dict[self.sch2area[int(float(k8_schno))]]
-                    zone_dict = {**zone_dict, **{int(float(k8_schno)): z}}
-                    zone_lists[z].append(k8_schno)
-            self.zone_dict = zone_dict
-            self.zone_lists = zone_lists
-
-            return 1
-
-        except gp.GurobiError as e:
-            print("gurobi error #" + str(e.errno) + ": " + str(e))
-            return -1
-        except AttributeError:
-            print("attribute error")
-            return -1
-

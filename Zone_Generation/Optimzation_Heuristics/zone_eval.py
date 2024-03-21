@@ -257,12 +257,11 @@ def trim_noncontiguity(dz, zone_dict):
 # zone and make it unassigned. This is part of trimming process
 def drop_centroid_distant(dz, zone_dict):
     for z in range(dz.M):
-        bg_z = str(dz.idx2area[dz.centroids[z]])
         for j in range(dz.A):
             bg_j = dz.idx2area[j]
             if bg_j in zone_dict:
                 if zone_dict[bg_j] == z:
-                    if dz.euc_distances.loc[bg_j, bg_z] > 2:
+                    if dz.euc_distances[j][dz.centroids[z]] > 2:
                         zone_dict.pop(bg_j)
     return zone_dict
 
@@ -330,13 +329,13 @@ def assign_centroid_vicinity(dz, zone_dict, config, loaded_zd):
                 continue
 
             if bg_j not in vicinity_blocks:
-                if dz.euc_distances.loc[bg_z, str(bg_j)] < z_capacity * capacity_w + fixed_w:
+                if dz.euc_distances[dz.centroids[z]][j] < z_capacity * capacity_w + fixed_w:
                     zone_dict[bg_j] = z
                     vicinity_blocks.add(bg_j)
             else:
                 curr_zone_index = zone_dict[bg_j]
-                bg_cz = dz.idx2area[dz.centroids[curr_zone_index]]
-                if dz.euc_distances.loc[bg_z, str(bg_j)] < dz.euc_distances.loc[bg_cz, str(bg_j)]:
+                cz = dz.centroids[curr_zone_index]
+                if dz.euc_distances[dz.centroids[z]][j] < dz.euc_distances[cz][bg_j]:
                     zone_dict[bg_j] = z
 
     return zone_dict

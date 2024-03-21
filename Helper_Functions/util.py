@@ -110,7 +110,7 @@ def load_census_shapefile(level):
 
     return census_sf
 
-def load_euc_distance_data(level, complete_bg = False):
+def load_euc_distance_data(level, area2idx, complete_bg = False):
     if level == "attendance_area":
         save_path = "~/Dropbox/SFUSD/Optimization/distances_aa2aa.csv"
     elif level == "BlockGroup":
@@ -122,8 +122,20 @@ def load_euc_distance_data(level, complete_bg = False):
 
     if os.path.exists(os.path.expanduser(save_path)):
         distances = pd.read_csv(save_path, index_col=level)
-        distances.columns = [str(int(float(x))) for x in distances.columns]
-        return distances
+        distances.columns = [int(float(x)) for x in distances.columns]
+
+        distance_dict = {}
+        rows = distances.index.tolist()
+        cols = list(distances.columns)
+
+        # Change the csv file into a double dictionary, so the distances can be accessed easier
+        for area_i in rows:
+            inner_dict = {}
+            for area_j in cols:
+                inner_dict[area2idx[area_j]] = distances.loc[area_i, area_j]
+            distance_dict[area2idx[area_i]] = inner_dict
+
+        return distance_dict
 
     if level == "Block":
         census_sf = load_census_shapefile(level)

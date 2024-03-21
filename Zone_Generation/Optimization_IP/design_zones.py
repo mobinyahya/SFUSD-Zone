@@ -59,8 +59,8 @@ class DesignZones:
             config,
     ):
         self.config = config
-        # self.M: number of zones requested (The number of zones that we need to divide the city into)
-        self.M = int(config["centroids_type"].split("-")[0])  # number of possible zones
+        # self.Z: number of zones requested (The number of zones that we need to divide the city into)
+        self.Z = int(config["centroids_type"].split("-")[0])  # number of possible zones
         # The building blocks of zones. As a defualt, this is attendance_area
         self.level = config["level"]  # 'Block', 'BlockGroup' or 'attendance_area'
 
@@ -94,7 +94,7 @@ class DesignZones:
         self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
         self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
 
-        self.euc_distances = load_euc_distance_data(self.level)
+        self.euc_distances = load_euc_distance_data(self.level, self.area2idx)
 
         print("Average FRL ratio:       ", self.F)
         print("Number of Areas:       ", self.A)
@@ -102,7 +102,7 @@ class DesignZones:
         print("Number of total students: ", sum(self.area_data["all_prog_students"]))
         print("Number of total seats:    ", sum(self.area_data["all_prog_capacity"]))
         print("Number of GE seats:       ", sum(self.seats))
-        print("Number of zones:       ", self.M)
+        print("Number of zones:       ", self.Z)
 
         # self.save_partial_distances()
         # self.drive_distances = self.load_driving_distance_data()
@@ -269,8 +269,6 @@ class DesignZones:
 
     def initialize_centroid_neighbors(self):
         """ for each centroid c and each area j, define a set n(j,c) to be all neighbors of j that are closer to c than j"""
-        self.euc_distances.dropna(inplace=True)
-
         save_path = os.path.expanduser("~/Dropbox/SFUSD/Optimization/59zone_contiguity_constraint.pkl")
 
         if (self.level == "Block") and (self.centroid_type == '59-zone-1'):
@@ -281,18 +279,95 @@ class DesignZones:
 
 
         self.closer_euc_neighbors = {}
-        for c in self.centroids:
-            for area in range(self.A):
-                n = self.neighbors[area]
+        for z in self.centroids:
+            for idx in range(self.A):
+                n = self.neighbors[idx]
+
+                print("z ", z, " idx ", idx)
+                print(" self.euc_distances[z][idx] ", self.euc_distances[z][idx])
+
                 closer = [x for x in n
-                    if self.euc_distances.loc[self.idx2area[c], str(self.idx2area[area])]
-                       >= self.euc_distances.loc[self.idx2area[c], str(self.idx2area[x])]
+                    if self.euc_distances[z][idx]
+                       >= self.euc_distances[z][x]
                 ]
-                self.closer_euc_neighbors[area, c] = closer
+                self.closer_euc_neighbors[idx, z] = closer
 
         if (self.level == "Block") and (self.centroid_type == '59-zone-1'):
             with open(save_path, 'wb') as file:
                 pickle.dump(self.closer_euc_neighbors, file)
+
+
+    # ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+
+    def save(self, path,  name = "", solve_success = 1):
+        filename = os.path.expanduser(path)
+        filename += name
+        filename += ".csv"
+
+        # save zones themselves
+        with open(filename, "w") as outFile:
+            writer = csv.writer(outFile, lineterminator="\n")
+            if solve_success == 1:
+                for z in self.zone_lists:
+                    writer.writerow(z)
+            else:
+                writer.writerow({})
+
+
+    def solve(self, IP):
+        IP.m.update()  # Update the model
+        print(f"Total number of dz.m variables: {IP.m.numVars}")
+        print(f"Total number of dz.m constraints: {IP.m.numConstrs}")
+        self.filename = ""
+        self.zone_dict = {}
+
+        try:
+            IP.m.Params.TimeLimit = 10000
+            IP.m.optimize()
+
+            zone_lists = []
+            for z in range(0, self.Z):
+                zone = []
+                for j in range(0, self.A):
+                    if j not in IP.valid_area_per_zone[z]:
+                        continue
+                    if IP.x[j, z].X >= 0.999:
+                        self.zone_dict[self.idx2area[j]] = z
+                        zone.append(self.area_data[self.level][j])
+                        # add City wide school SF Montessori, even if we are not including city wide schools
+                        # 823 is the aa level of SF Montessori school (which has school id 814)
+                        if self.idx2area[j] in [823, 60750132001]:
+                            self.zone_dict[self.idx2area[j]] = z
+                            if self.level == "attendance_area":
+                                zone.append(SF_Montessori)
+                if not zone == False:
+                    zone_lists.append(zone)
+            zone_dict = {}
+            for idx, schools in enumerate(zone_lists):
+                zone_dict = {
+                    **zone_dict,
+                    **{int(float(s)): idx for s in schools if s != ""},
+                }
+            # add K-8 schools to dict if using them
+            if (self.level == 'attendance_area') & (self.include_k8):
+                cw = self.school_df.loc[self.school_df["K-8"] == 1]
+                for i, row in cw.iterrows():
+                    k8_schno = row["school_id"]
+                    z = zone_dict[self.sch2area[int(float(k8_schno))]]
+                    zone_dict = {**zone_dict, **{int(float(k8_schno)): z}}
+                    zone_lists[z].append(k8_schno)
+            self.zone_dict = zone_dict
+            self.zone_lists = zone_lists
+
+            return 1
+
+        except gp.GurobiError as e:
+            print("gurobi error #" + str(e.errno) + ": " + str(e))
+            return -1
+        except AttributeError:
+            print("attribute error")
+            return -1
 
 
 
@@ -308,29 +383,29 @@ if __name__ == "__main__":
 
 
     dz = DesignZones(config=config)
-    dz.samezone_pairs = []
     IP = Integer_Program(dz)
     IP._initializs_feasiblity_constraints(max_distance=config["max_distance"])
     IP._set_objective_model()
-    IP._shortage_and_balance_constraints(shortage_=True, balance_= False,
-                     shortage=config["shortage"], overage= config["overage"], all_cap_shortage=config["all_cap_shortage"])
+    IP._shortage_constraints(shortage=config["shortage"], overage= config["overage"],
+                      all_cap_shortage=config["all_cap_shortage"])
 
     IP._add_contiguity_constraint()
     IP._add_diversity_constraints(racial_dev=config["racial_dev"], frl_dev=config["frl_dev"])
     IP._add_school_count_constraint()
 
-    solve_success = IP.solve()
+    solve_success = dz.solve(IP)
 
     if solve_success == 1:
-        print("Resulting zone dictionary: ", IP.zone_dict)
-        IP.save(path=config["path"], name = name + "_AA")
+        print("Resulting zone dictionary: ", dz.zone_dict)
+        dz.save(path=config["path"], name = name + "_AA")
 
         zv = ZoneVisualizer(config["level"])
-        zv.zones_from_dict(IP.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
+        zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
         # stats_evaluation(dz, dz.zd)
 
 
 
+# Note: when you update the distance/neighboring files, also update the closer_eucledian distance file
 # Note: Total number of students in aa level is not the same as blockgroup level.
 # Reason: some students, do not have their bg info available
 # (but they do have their aa info, and also they pass every other filter, i.e. enrollment)

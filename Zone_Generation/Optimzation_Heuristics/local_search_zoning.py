@@ -47,7 +47,7 @@ def iterative_lp():
 
         rounded_zd = {}
         for i in range(0, 4):
-            dz = DesignZones(M=3, level='BlockGroup', centroidsType=0, include_citywide=True)
+            dz = DesignZones(config)
             print("linear rounding, iteration number " + str(i))
 
             dz.setmodel(shortage=config["shortage"], balance=config["balance"])
@@ -56,7 +56,7 @@ def iterative_lp():
             # dz.m.addConstr(dz.x[dz.area2idx[60750301013],1] == 0)
             for bg in rounded_zd:
                 print("not in the loop")
-                for z in range(dz.M):
+                for z in range(dz.Z):
                     if (z == rounded_zd[bg]):
                         print("add blockgroup of  " + str(bg) + " to the zone of  " + str(z))
                         dz.m.addConstr(dz.x[dz.area2idx[bg], z] == 1)
@@ -145,7 +145,7 @@ def aa2bg_Zoning(dz, aa_zd):
         if (bg in dz.bg2att):
             if len(neighbor_count) == 1:
                 # make sure this blockgroup is not the centroid
-                if bg not in [dz.idx2area[dz.centroids[z]] for z in range(dz.M)]:
+                if bg not in [dz.idx2area[dz.centroids[z]] for z in range(dz.Z)]:
                     # select the first key in neighbor_count (we have made sure neighbor_count has only 1 key,
                     # which is the zone #of all neighbors of this blockgroup)
                     blockgroup_zoning[bg] = list(neighbor_count.keys())[0]
@@ -221,7 +221,7 @@ def iterative_update(config, dz, zone_dict, ZoneVisualizer, noiterations):
 
 def initialize_preassigned_units(dz, zone_dict):
     for j in range(dz.A):
-        for z in range(dz.M):
+        for z in range(dz.Z):
             if j not in dz.valid_area_per_zone[z]:
                 continue
             bg_j = dz.idx2area[j]
@@ -254,7 +254,7 @@ def heuristic(dz, zone_dict):
             if level_j not in zone_dict:
                 if j in dz.centroids:
                     continue
-                for z in range(dz.M):
+                for z in range(dz.Z):
                     c = dz.centroids[z]
                     closer_neighbors = dz.closer_euc_neighbors[j, c]
                     if len(closer_neighbors) >= 1:
@@ -284,7 +284,7 @@ def sanity_check(dz):
             print(level_j)
 def update_z(dz, zone_dict):
     dz.zone_lists = []
-    for z in range(dz.M):
+    for z in range(dz.Z):
         dz.zone_lists.append([])
     for b in zone_dict:
         dz.zone_lists[zone_dict[b]].append(b)
@@ -295,20 +295,10 @@ def local_search(config):
     # if os.path.exists(config["path"] + name + "_BG" +".csv"):
     #     return
 
-    # if there is no png, it means it was either not considered yet, or
-    # we looked for solution and non exists
-    # if not os.path.exists(param.path + name + "_AA" +".png"):
-    #     return
-
-    # input_level = 'BlockGroup'
-    input_level = 'Block'
-    dz = DesignZones(
-        config=config,
-    )
-    zv = ZoneVisualizer(input_level)
+    dz = DesignZones(config=config)
+    zv = ZoneVisualizer(config["level"])
     load_initial_assignemt(dz, path=config["path"], name=name, load_level="Block")
     zv.zones_from_dict(dz.zone_dict, centroid_location=dz.schools_locations)
-    exit()
 
     IP = Integer_Program(dz)
 
@@ -323,14 +313,12 @@ def local_search(config):
     # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
     # dz.zd = drop_centroid_distant(dz, dz.zone_dict)
     # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location)
-    # dz.samezone_pairs = set()
 
     # dz.zone_dict = drop_inner_boundary(dz, dz.zone_dict)
     # IP.zone_dict = drop_all_subset_zones(IP, IP.zone_dict)
     IP.zone_dict = {}
     IP.zone_dict = assign_centroid_vicinity(dz, IP.zone_dict, config, loaded_szd)
     # dz.zone_dict = trim_noncontiguity(dz, dz.zone_dict)
-    IP.samezone_pairs = compute_samezone_pairs(IP, IP.zone_dict)
 
 
     for block in IP.zone_dict:
@@ -341,12 +329,12 @@ def local_search(config):
     IP._set_objective_model()
     initialize_preassigned_units(IP, IP.zone_dict)
 
-    IP._shortage_and_balance_constraints(shortage_=True, balance_= False,
-                     shortage=config["shortage"], overage= config["overage"], all_cap_shortage=config["all_cap_shortage"])
-    IP._add_contiguity_constraint(loaded_szd)
+    IP._shortage_constraints(shortage=config["shortage"], overage= config["overage"],
+                      all_cap_shortage=config["all_cap_shortage"])
+    IP._add_contiguity_constraint()
 
-    IP._add_school_count_constraint(loaded_szd)
-    solve_success = IP.solve()
+    IP._add_school_count_constraint()
+    solve_success = dz.solve()
 
     print("IP.zone_dict ", IP.zone_dict)
 
@@ -378,10 +366,7 @@ def local_search(config):
 
 def recom_search(config):
     input_level = 'BlockGroup'
-    dz = DesignZones(
-        config,
-        level=input_level,
-    )
+    dz = DesignZones(config)
     zv = ZoneVisualizer(input_level)
 
 

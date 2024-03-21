@@ -46,7 +46,7 @@ You can access areas using either their census area code, or their index:
                         In other words, each value j in [0,..., self.A], represents a different area index.
     Access using census area code: Each area has a distinct census area code number. 
     
-Number of zones: self.M. TNumber of zones that we are trying to divide the city into.
+Number of zones: self.Z. TNumber of zones that we are trying to divide the city into.
 
 Zone Description: 
 - Each zone, consists of a set of census areas.
@@ -86,6 +86,10 @@ Use average color index to measure school quality.
 
 Function: Write a function in python to make sure: Fraction of students at the school across all zones that meet 
 grade level standards is about the same, and is within 10% deviation. 
+
+Function: Write a function in python to make sure:
+Each zone should have at least 2 of the top 10 schools. 
+To find top 10 schools, Sort schools by their quality, using an average color index. 
 """
 
 payload = {
