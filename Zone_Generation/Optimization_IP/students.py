@@ -24,9 +24,11 @@ class Students(object):
         for i in range(len(self.years)):
             # load student data of year i
             student_data_years[i] = self._load_student_data(year=self.years[i])
+
         student_df = pd.concat(student_data_years, ignore_index=True)
 
         student_df.to_csv(cleaned_student_path, index=False)
+
         return student_df
 
 
@@ -108,11 +110,11 @@ class Students(object):
         # print("student_data.columns ", student_data.columns)
         # student_data = student_data.merge(cbeds[['census_block', 'frl']], how='left', on='census_block')
 
-
         student_data = self._make_program_types(student_data)
         student_data = self._filter_program_types(student_data, year)
 
         student_data = student_data[IMPORTANT_COLS + ETHNICITY_COLS]
+
 
         # Fill NaN values in columns with the mean value
         for col in ["FRL", "AALPI Score"]:
@@ -121,6 +123,12 @@ class Students(object):
 
         # Fill NaN values in the remaining columns with 0
         student_data.fillna(value=0, inplace=True)
+
+        student_data.rename(columns={"resolved_ethnicity_American Indian": "Ethnicity_American_Indian", "resolved_ethnicity_Asian": "Ethnicity_Asian",
+                                     "resolved_ethnicity_Black or African American": "Ethnicity_Black_or_African_American", "resolved_ethnicity_Filipino": "Ethnicity_Filipino",
+                                     "resolved_ethnicity_Pacific Islander": "Ethnicity_PacificIslander", "resolved_ethnicity_Hispanic/Latinx": "Ethnicity_Hispanic/Latinx",
+                                     "resolved_ethnicity_Two or More Races": "Ethnicity_Two_or_More_Races", "resolved_ethnicity_White": "Ethnicity_White",
+                                     }, inplace=True)
 
         return student_data
 

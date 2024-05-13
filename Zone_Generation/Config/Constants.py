@@ -27,6 +27,11 @@ ETHNICITY_DICT = {
     'Two or more races': 'Two or More Races'
 }
 
+AREA_ETHNICITIES = [
+            "Ethnicity_Black_or_African_American",
+            "Ethnicity_Hispanic/Latinx",
+            "Ethnicity_White",
+            "Ethnicity_Asian"]
 ETHNICITY_COLS = [
     "resolved_ethnicity_American Indian",
     "resolved_ethnicity_Asian",
@@ -41,6 +46,7 @@ AREA_COLS = [
     'AALPI Score',
     'FRL',
     'ge_students',
+    'af_students',
     'all_prog_students'
 ]
 OLD_COLS = [
@@ -130,7 +136,31 @@ corner_blocks = [60750127001008, 60750601001058, 60750601001092, 60750601001013,
                  60750179021053, 60750179021054, 60750179021010, 60750179021057, 60750179021052, 60750179021001, 60750179021045, 60750179021017, 60750179021036, 60750179021038, 60750179021041, 60750179021044, 60750179021008, 60750179021023, 60750179021034, 60750179021042, 60750179021014, 60750179021051,
                  60750179021043, 60750179021026, 60750179021048, 60750179021046, 60750179021035, 60750179021049, 60750179021047, 60750179021039, 60750179021032, 60750179021033, 60750179021025, 60750179021028, 60750179021029, 60750179021013, 60750179021027, 60750179021019, 60750179021024]
 
+max_distance = {
+    2: 12,
+    3: 12,
+    4: 10,
+    5: 8,
+    6: 8,
+    8: 6.5,
+    10: 6.5, #Time: 2min
+    13: 6, #Time: <2min
+    16: 5,
+    18: 5,
+}
 
+shortage_ratio = {
+    2: 0.22,
+    3: 0.22,
+    4: 0.22,
+    5: 0.23,
+    6: 0.25,
+    8: 0.3,
+    10: 0.32,
+    13: 0.35,
+    16: 0.35,
+    18: 0.35,
+}
 
 all_schools = [664, 521, 420, 435, 497, 453, 456, 848, 593,
             481, 488, 790, 490, 729, 505, 816, 513,
@@ -139,3 +169,30 @@ all_schools = [664, 521, 420, 435, 497, 453, 456, 848, 593,
             670, 782, 801, 691, 834, 723, 722, 735, 746, 872,
             507, 786,  820, 830, 838, 544, 823, 680,
             842, 859, 478, 867, 876, 603]
+
+# Create a dictionary mapping zone_id to colors
+zone_colors =  {
+    0: 'red', 664: 'red', 1: 'midnightblue', 521: 'midnightblue', 2: 'green', 420: 'green',
+    3: 'orange', 435: 'orange', 4: 'purple', 497: 'purple', 5: 'brown', 453: 'brown',
+    6: 'pink', 456: 'pink', 7: 'cyan', 848: 'cyan', 8: 'magenta', 593: 'magenta',
+    9: 'olive', 481: 'olive', 10: 'teal', 488: 'teal', 11: 'lime', 790: 'lime',
+    12: 'darkolivegreen', 490: 'darkolivegreen', 13: 'crimson', 729: 'crimson', 14: 'darkgreen', 505: 'darkgreen',
+    15: 'gold', 816: 'gold', 16: 'indigo', 513: 'indigo', 17: 'salmon', 549: 'salmon',
+    18: 'yellowgreen', 750: 'yellowgreen', 19: 'maroon', 525: 'maroon', 20: 'violet', 575: 'violet',
+    21: 'tan', 539: 'tan', 22: 'darkblue', 999: 'darkblue', 23: 'darkred', 562: 'darkred',
+    24: 'darkorange', 569: 'darkorange', 25: 'turquoise', 589: 'turquoise', 26: 'dodgerblue',
+    862: 'dodgerblue', 27: 'mediumvioletred', 614: 'mediumvioletred', 28: 'orchid', 625: 'orchid',
+    29: 'peru', 638: 'peru', 30: 'slateblue', 644: 'slateblue', 31: 'tomato', 650: 'tomato',
+    32: 'aquamarine', 656: 'aquamarine', 33: 'steelblue', 413: 'steelblue',
+    34: 'cornflowerblue', 718: 'cornflowerblue', 35: 'darkseagreen', 670: 'darkseagreen',
+    36: 'cadetblue', 782: 'cadetblue', 37: 'sandybrown', 801: 'sandybrown',
+    38: 'mediumorchid', 691: 'mediumorchid', 39: 'palevioletred', 834: 'palevioletred',
+    40: 'mediumpurple', 723: 'mediumpurple', 41: 'coral', 722: 'coral', 42: 'darkcyan', 735: 'darkcyan',
+    43: 'firebrick', 746: 'firebrick', 44: 'forestgreen', 872: 'forestgreen',
+    45: 'limegreen', 507: 'limegreen', 46: 'royalblue', 786: 'royalblue',
+    47: 'darkorchid', 820: 'darkorchid', 48: 'hotpink', 830: 'hotpink', 49: 'indianred', 838: 'indianred',
+    50: 'navy', 544: 'navy', 51: 'dimgray', 823: 'dimgray',
+    52: 'lightseagreen', 680: 'lightseagreen', 53: 'sienna', 842: 'sienna',
+    54: 'mediumseagreen', 859: 'mediumseagreen', 55: 'darkgoldenrod', 478: 'darkgoldenrod',
+    56: 'deepskyblue', 867: 'deepskyblue', 57: 'rosybrown', 876: 'rosybrown',
+    58: 'darkkhaki', 603: 'darkkhaki'}

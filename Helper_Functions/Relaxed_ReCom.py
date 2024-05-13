@@ -145,7 +145,7 @@ class Relaxed_ReCom(object):
     def compute_metrics(self, zone):
         zone_metric = {}
         zone_metric["nodes"] = len(zone)
-        zone_metric["frl"] = sum([self.dz.area_data["frl_count"][j] for j in zone])
+        zone_metric["frl"] = sum([self.dz.area_data["FRL"][j] for j in zone])
         zone_metric["students"] = sum([self.dz.studentsInArea[j] for j in zone])
         zone_metric["seats"] = sum([self.dz.seats[j] for j in zone])
         zone_metric["shortage%"] = max((zone_metric["students"] - zone_metric["seats"]), 1)

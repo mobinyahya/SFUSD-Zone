@@ -60,7 +60,7 @@ def Run_Zoning(centroid_choices = None, candidates = None, subdivision_count = 2
 
     dz.setmodel(shortage = balance_limit, balance = shortage_limit)
     dz.addGeoConstraints(maxdistance=-1, realDistance=True, coverDistance=False, strong_contiguity=True, neighbor=False, boundary=True)
-    dz._add_diversity_constraints(lbfrl= lbfrl_limit, ubfrl= ubfrl_limit)
+    dz._diversity_const(lbfrl= lbfrl_limit, ubfrl= ubfrl_limit)
 
     # make sure the original centroid schools are balanced
     dz.m.addConstr(dz.x[dz.area2idx[dz.sch2area[481]], 0] + dz.x[dz.area2idx[dz.sch2area[862]], 0] + dz.x[dz.area2idx[dz.sch2area[872]], 0] <= 2)

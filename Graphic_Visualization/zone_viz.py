@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
+from Zone_Generation.Config.Constants import *
 
 
 
@@ -67,7 +68,7 @@ class ZoneVisualizer:
             self.sc_merged = sc_merged.merge(self.translator, how='left', on='index_right')
 
 
-    def population_heatmap(self, area_population, sch_df, metric, title="", save_path=""):
+    def population_heatmap(self, area_population, sch_df=None, metric=None, title="", save_path=""):
         ax = self.load_base_plot()
         # self.sf.dropna(subset=[self.level], inplace=True)
 
@@ -139,14 +140,11 @@ class ZoneVisualizer:
         if metric == "listed_rank_1%":
             df.plot(ax=ax, column='zone_metric', cmap='Greens', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
 
-        if metric == "assigned_rank_1%":
+        if metric in ["assigned_rank_1%", "rank1_shortage", "real_rank1_unassigned"]:
             df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
 
-        if metric == "rank1_shortage%":
-            df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
-
-        if metric == "real_rank1_unassigned%":
-            df.plot(ax=ax, column='zone_metric', cmap='Reds', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
+        if metric == "frl%":
+            df.plot(ax=ax, column='zone_metric', cmap='Blues', legend=True, aspect=1, vmin=metric_min, vmax=metric_max)
 
         fig = ax.figure  # Get the figure object
         cbar_ax = fig.axes[-1]  # This assumes your plot is the first axes and the colorbar is the second
@@ -208,7 +206,7 @@ class ZoneVisualizer:
         if self.level == 'attendance_area':
             self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
             df = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
-            # df['zone_id'] = df['aa_zone'].replace(zone_dict)
+            df['zone_id'] = df['aa_zone'].replace(zone_dict)
 
             # TODO uncomment the following
             # df['filter'] = df['zone_id'].apply(lambda x: 1 if int(x) in range(65) else 0)
@@ -226,31 +224,36 @@ class ZoneVisualizer:
                     axis=1);
 
         elif (self.level == 'BlockGroup') | (self.level == 'Block'):
-            plt.figure(figsize=(20, 20))
-            ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
 
-            self.sf.dropna(subset=[self.level], inplace=True)
             # drop rows that have NaN for zone_id
+            self.sf.dropna(subset=[self.level], inplace=True)
             if label:
-                # self.sf.apply(lambda x: ax.annotate(fontsize=8, s= int(x.BlockGroup), xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
                 self.sf.apply(lambda x: ax.annotate(fontsize=8,
                                                     text=int(x.BlockGroup),
                                                     xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
-                # self.sf.apply(lambda x: ax.annotate(fontsize=15, s= int(x.Block) if int(x.Block) == 60750255002023 else ".", xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
-
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
-            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(62) else 0)
+            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(1000) else 0)
             df = self.sf.loc[self.sf['filter'] == 1]
 
-        # plot zones
-        df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
-        plt.title(title)
+            plt.figure(figsize=(20, 20))
+            ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
 
-        # plot centroid locations
-        plt.scatter(centroid_location['lon'], centroid_location['lat'], s=3, c='black', marker='s')
-        for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['school_id']):
-            plt.text(lon, lat, id, ha='center', va='center')
-        # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
+        # Create a new column 'zone_color' with colors based on zone_id
+        df['zone_color'] = df['zone_id'].map(zone_colors)
+
+        # Plot zones using the 'zone_color' column
+        df.plot(ax=ax, color=df['zone_color'], legend=True, aspect=1)
+
+
+        # plot zones
+        # df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
+        # plt.title(title)
+
+        """ plot centroid locations """
+        # plt.scatter(centroid_location['lon'], centroid_location['lat'], s=3, c='black', marker='s')
+        # for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['school_id']):
+        #     plt.text(lon, lat, id, ha='center', va='center')
+        # # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
 
         # # plot school locations
         # aa = self.sc_merged.loc[self.sc_merged['category']=='Attendance']

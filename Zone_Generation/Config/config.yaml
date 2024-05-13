@@ -1,19 +1,19 @@
 
 # changing levers
-#centroids_type: '9-zone-west'
-centroids_type: '6-zone-2'
+centroids_type: '13-zone-10'
 
-frl_dev: 1
+
+frl_dev: 0.28
 racial_dev: 1
 
 # fixed levers
-boundary_threshold: .05
-shortage: 0.3 # this is in percentage
-overage: 0.5 # this is in percentage
+#boundary_threshold: .05
+shortage: .45 # this is in percentage
+overage: 0.6 # this is in percentage
 all_cap_shortage: .inf # this is in percentage
 max_distance: .inf # best valid value for 59 zines: 1.272
 population_dev: .inf
-path: "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones/"
+path: "/Users/mobin/SFUSD/Visualization_Tool_Data/Thesis/Results_MCMC/"
 
 
 years: [14, 15, 16, 17, 18, 21, 22]

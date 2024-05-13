@@ -25,7 +25,13 @@ class Stat_Class(object):
         # compute metrics for each individual zone
         zone_metrics = {}
 
+        if self.level == "attendance_area":
+            zone = [u for u in zone if u in self.dz.sch2area]
+
         zone_metrics["ge_students"] = sum([self.dz.studentsInArea[self.area2idx[j]] for j in zone])
+
+        for ethnicity in AREA_ETHNICITIES:
+            zone_metrics[ethnicity] = sum([self.dz.area_data[ethnicity][self.area2idx[j]] for j in zone]) / zone_metrics["ge_students"]
 
         zone_metrics["frl%"] = sum([self.dz.area_data["FRL"][self.area2idx[j]] for j in zone]) / zone_metrics["ge_students"]
 
@@ -186,6 +192,7 @@ class Stat_Class(object):
     def compute_metrics(self, assignments = None):
         zone_metrics_df = pd.DataFrame(columns = ["zone ID"])
         for zone in self.dz.zone_lists:
+
             zone_metrics = self.compute_zone_metrics(zone)
             zone_metrics["zone ID"] = "Zone " + str(self.dz.zone_lists.index(zone))
             zone_metrics_df = zone_metrics_df.append(zone_metrics, ignore_index=True)
@@ -206,11 +213,16 @@ class Stat_Class(object):
             assignment_metrics = self.compute_assignment_metrics(assignments)
             zone_metrics_df = zone_metrics_df.merge(assignment_metrics, how='inner', on="zone ID")
 
+        print("zone_metrics_df ", zone_metrics_df)
+
         # Calculate the average values for each column
         avg_values = zone_metrics_df.mean()
 
         #change the definition of average frl_percentage
         avg_values["frl%"] = self.dz.F
+
+        for ethnicity in AREA_ETHNICITIES:
+            avg_values[ethnicity] = sum([self.dz.area_data[ethnicity][j] for j in range(self.dz.A)]) / self.dz.N
 
         # Calculate the maximum deviation for each column from the average
         max_deviations = zone_metrics_df.subtract(avg_values).abs().max()
@@ -241,42 +253,44 @@ class Stat_Class(object):
 
         return result_df, acceptable_zone
 
-def load_zones_from_pkl(dz, file_path):
-    zone_lists = []
-    with open(file_path, 'rb') as file:
-        zd = pickle.load(file)
-        zone_dict = {key: all_schools.index(value) for key, value in zd.items()}
+    def load_zones_from_pkl(self, dz, file_path):
+        zone_lists = []
+        with open(file_path, 'rb') as file:
+            zone_dict = pickle.load(file)
+            # zone_dict = {key: all_schools.index(value) for key, value in zd.items()}
 
-    counter = 0
-    for z in range(len(all_schools)):
-        zone_z = []
-        for area in zone_dict:
-            if zone_dict[area] == z:
-                zone_z.append(area)
-                counter += 1
+        # for z in range(len(all_schools)):
+        zone_ids =  sorted(set(zone_dict.values()))
+        M = len(zone_ids)
+        for z in range(M):
+            zone_z = []
+            for area in zone_dict:
+                if zone_dict[area] == zone_ids[z]:
+                    zone_z.append(area)
 
-        zone_lists.append(zone_z)
+            zone_lists.append(zone_z)
 
-    filename = file_path.replace(".pkl", ".csv")
-    print("filename", filename)
-    # save zones themselves
-    if "5-zone-2x_B" in filename:
-        with open(filename, "w") as outFile:
-            writer = csv.writer(outFile, lineterminator="\n")
-            for z in zone_lists:
-                writer.writerow(z)
-            print("savingxx")
+        print("zone_lists = ", zone_lists)
+        print("zone_dict = ", zone_dict)
+        # filename = file_path.replace(".pkl", ".csv")
+        # print("filename", filename)
+        # # save zones themselves
+        # if "5-zone-2x_B" in filename:
+        #     with open(filename, "w") as outFile:
+        #         writer = csv.writer(outFile, lineterminator="\n")
+        #         for z in zone_lists:
+        #             writer.writerow(z)
+        #         print("savingxx")
 
-    # print("zone_lists ", zone_lists)
-    # print("zone_dict ", zone_dict)
-    # print("counter ", counter)
-    # print("len(zone_dict) ", len(zone_dict))
+        # print("zone_dict ", zone_dict)
 
-    return zone_lists, zone_dict
+        # zv = ZoneVisualizer(config["level"])
+        # zv.zones_from_dict(zone_dict)
+
+        return zone_lists, zone_dict
 
 
 if __name__ == "__main__":
-
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
     mcmc_filter_mode = False
@@ -285,18 +299,20 @@ if __name__ == "__main__":
         config=config,
     )
 
-    # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Final_Zones"
-    input_folder = "/Users/mobin/SFUSD/Visualization_Tool_Data/AA_Zones"
+    input_folder = "/Users/mobin/SFUSD/Visualization_Tool_Data/Thesis/Results_MCMC"
+    # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Zones03-15"
 
 
-    csv_files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
+    files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
+    # files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
 
     if config["level"] == 'Block':
-        zoning_files = [csv_file for csv_file in csv_files if "B" in csv_file and "BG" not in csv_file]
+        zoning_files = [csv_file for csv_file in files if "B" in csv_file and "BG" not in csv_file]
     elif config["level"] == 'BlockGroup':
-        zoning_files = [csv_file for csv_file in csv_files if "BG" in csv_file]
+        zoning_files = [csv_file for csv_file in files]
+        # zoning_files = [csv_file for csv_file in files if "BG" in csv_file]
     elif config["level"] == 'attendance_area':
-        zoning_files = [csv_file for csv_file in csv_files if "AA" in csv_file]
+        zoning_files = [csv_file for csv_file in files if "AA" in csv_file]
 
     zoning_files = [csv_file for csv_file in zoning_files if "Stats" not in csv_file
                     and "Assignment" not in csv_file]
@@ -304,16 +320,15 @@ if __name__ == "__main__":
 
     for zoning_file in zoning_files:
         Stat = Stat_Class(dz, config)
+        print("file: " + str(zoning_file))
 
-        # zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
-        zone_lists, zone_dict = load_zones_from_pkl(dz, file_path=os.path.join(input_folder, zoning_file))
+        zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
+        # zone_lists, zone_dict = Stat.load_zones_from_pkl(dz, file_path=os.path.join(input_folder, zoning_file))
 
         Stat.dz.zone_lists = zone_lists
         Stat.dz.zone_dict = zone_dict
-
         # assignments = pd.read_csv(os.path.join(input_folder, zoning_file.replace(".csv", "")  + "_Assignment.csv"), low_memory=False)
 
-        print("csv_file " + str(zoning_file))
         # print("zone_list  " + str(zone_lists))
 
         if len(zone_lists)<=1:

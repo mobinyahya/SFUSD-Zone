@@ -9,7 +9,7 @@ class Integer_Program(object):
     def __init__(self, Area_Data):
         # Number of zones. This is given to us as input.
         # We are trying to divide the city into self.Z number of zones
-        self.Z = Area_Data.M
+        self.Z = Area_Data.Z
 
         # self.N: Total number of GE students.
         # Computation based on area_data file: self.N = sum(self.area_data["ge_students"])
@@ -93,8 +93,7 @@ class Integer_Program(object):
         self.sch2area = Area_Data.sch2area
 
 
-    def _initializs_feasiblity_constraints(self, max_distance=float('inf')):
-        print("max_distance ", max_distance + 1)
+    def _feasibility_const(self, sub_units=None, max_distance=float('inf')):
         valid_assignments = []
         # if a max distance constraint is given, allow areas to be matched only to
         # zone centroids that are closer than max_distance
@@ -102,6 +101,10 @@ class Integer_Program(object):
             centroid_z = self.centroids[z]
             # zone_max_distance = max_distance
             for i in range(self.A):
+                if sub_units != None:
+                    if self.idx2area[i] not in sub_units:
+                        # print("Error! ", i)
+                        continue
                 if (self.euc_distances[centroid_z][i] < max_distance):
                     valid_assignments.append((i,z))
 
@@ -127,6 +130,7 @@ class Integer_Program(object):
         self.m.addConstrs(
             (gp.quicksum(self.x[i, z] for z in self.valid_zone_per_area[i]) == 1
             for i in range(self.A)
+             # if self.idx2area[i] in sub_units
              ),
         )
 
@@ -214,6 +218,7 @@ class Integer_Program(object):
         # The integer program will try to minimize the cost of boundary,
         # which will result into compact and nice looking shapes for zones.
         self.m.setObjective(boundary_coef * y_boundary, GRB.MINIMIZE)
+        # self.m.setObjective(boundary_coef * y_shortage, GRB.MINIMIZE)
         # self.m.setObjective(1 , GRB.MINIMIZE)
         # self.m.setObjective(distance_coef * y_distance +  shortage_coef * y_shortage +
         #                      balance_coef * y_balance + boundary_coef * y_boundary , GRB.MINIMIZE)
@@ -229,7 +234,7 @@ class Integer_Program(object):
     # (Total number of seats for all programs (not just GE) in schools within the zone)
     # The following constraint makes sure no zone has an All programs proportional shortage
     # larger than the given input, all_cap_shortage
-    def _all_cap_proportional_shortage_constraint(self, all_cap_shortage):
+    def _all_cap_proportional_shortage_const(self, all_cap_shortage):
         # No zone has shortage more than all_cap_shortage percentage of its total student population
         for z in range(self.Z):
             self.m.addConstr(
@@ -251,7 +256,7 @@ class Integer_Program(object):
     # students in the zone
     # The following constraint makes sure no zone has a shortage
     # larger than the given input "shortage"
-    def _proportional_shortage_constraint(self, shortage):
+    def _proportional_shortage_const(self, shortage):
         # No zone has shortage more than shortage percentage of its population
         for z in range(self.Z):
             self.m.addConstr(
@@ -294,14 +299,13 @@ class Integer_Program(object):
                 )
                 <= shortage)
 
-    def _shortage_constraints(self, shortage=0.15, overage=0.2, all_cap_shortage=0.8):
-        # self.fixed_shortage_const()
+    def _shortage_const(self, shortage=0.15, overage=0.2, all_cap_shortage=0.8):
         if shortage <= 1:
-            self._proportional_shortage_constraint(shortage)
+            self._proportional_shortage_const(shortage)
         if overage <= 1:
             self._proportional_overage_constraint(overage)
         if all_cap_shortage <= 1:
-            self._all_cap_proportional_shortage_constraint(all_cap_shortage)
+            self._all_cap_proportional_shortage_const(all_cap_shortage)
 
 
 
@@ -312,7 +316,7 @@ class Integer_Program(object):
     # assign unit 𝑗 to zone with centroid area 𝑧, only if
     # there is a ‘path’ of closer neighboring areas also assigned
     # to the same zone that connects area 𝑗 to the centroid area 𝑧.
-    def _add_contiguity_constraint(self):
+    def _contiguity_const(self, sub_units=None):
         # initialization - every centroid belongs to its own zone
         for z in range(self.Z):
             self.m.addConstr(
@@ -322,8 +326,13 @@ class Integer_Program(object):
         # (x[j,z] (and indicator that unit j is assigned to zone z)) \leq
         # (sum of all x[j',z] where j' is in self.closer_neighbors_per_centroid[area,c] where c is centroid for z)
         for j in range(self.A):
+            if sub_units != None:
+                if self.idx2area[j] not in sub_units:
+                    continue
             for z in range(self.Z):
                 if j == self.centroids[z]:
+                    continue
+                if self.centroids[z] in self.neighbors[j]:
                     continue
                 if j not in self.valid_area_per_zone[z]:
                     continue
@@ -352,10 +361,10 @@ class Integer_Program(object):
     # Add constraints related to diversity such as: racial balance,
     # frl balance (balance in free or reduced priced lunch eligibility)
     # and aalpi balance, across all the zones.
-    def _add_diversity_constraints(self, racial_dev=1, frl_dev=1, aalpi_dev=1):
+    def _diversity_const(self, racial_dev=1, frl_dev=1, aalpi_dev=1):
         # racial balance constraint
         if racial_dev < 1:
-            self._add_racial_constraint(racial_dev)
+            self._racial_const(racial_dev)
 
         # frl constraint
         if frl_dev < 1:
@@ -368,7 +377,7 @@ class Integer_Program(object):
     # Enforce zones to have almost the same number of students
     # Make sure the difference between total population of GE students
     # among two different zone is at most _balance.
-    def _absolute_population_constraint(self, _balance=1000):
+    def _absolute_population_const(self, _balance=1000):
         # add number of students balance constraint
         for z in range(self.Z):
             firstZone = gp.quicksum(
@@ -376,7 +385,7 @@ class Integer_Program(object):
             )
             for q in range(z + 1, self.Z):
                 secondZone = gp.quicksum(
-                    [self.studentsInArea[j] * self.x[j, q] for j in self.valid_area_per_zone[z]]
+                    [self.studentsInArea[j] * self.x[j, q] for j in self.x[z]]
                 )
                 self.m.addConstr(firstZone - secondZone <= _balance)
                 self.m.addConstr(firstZone - secondZone >= -_balance)
@@ -385,7 +394,7 @@ class Integer_Program(object):
     # Enforce zones to have almost the same number of students
     # Make sure the average population of each zone, is within a given
     # population_dev% of average population over zones
-    def _proportional_population_constraint(self, population_dev=1):
+    def _proportional_population_const(self, population_dev=1):
         average_population = sum(self.area_data["all_prog_students"])/self.Z
         for z in range(self.Z):
             zone_sum = gp.quicksum(
@@ -398,7 +407,7 @@ class Integer_Program(object):
     # Make sure students of racial groups are fairly distributed among zones.
     # For specific racial minority, make sure the percentage of students in each zone, is within an additive
     #  race_dev% of percentage of total students of that race.
-    def _add_racial_constraint(self, race_dev=1):
+    def _racial_const(self, race_dev=1):
         for race in ETHNICITY_COLS:
             race_ratio = sum(self.area_data[race]) / float(self.N)
 
@@ -455,9 +464,13 @@ class Integer_Program(object):
     # by computing the total number of schools in the city and dividing it by the number of zones.
     # Next, add a constraint to make sure the number of schools in each zone
     # is within average number of schools per zone + or - 1
-    def _add_school_count_constraint(self):
+    def _add_school_count_const(self, sub_units=None):
         zone_school_count = {}
-        avg_school_count = sum([self.schools[j] for j in range(self.A)]) / self.Z + 0.0001
+        if sub_units != None:
+            avg_school_count = sum([self.schools[j] for j in range(self.A) if self.idx2area[j] in sub_units]) / self.Z + 0.0001
+        else:
+            avg_school_count = sum([self.schools[j] for j in range(self.A)]) / self.Z + 0.0001
+        print("avg_school_count ", avg_school_count)
 
         # note: although we enforce max deviation of 1 from avg, in practice,
         # no two zones will have more than 1 difference in school count
@@ -485,7 +498,7 @@ class Integer_Program(object):
     # by total number of schools within that zone.
     # Make sure the average english score for each zone,
     # is between (1-score_dev) * average and (1+score_dev) * average
-    def _add_school_eng_score_quality_constraint(self, score_dev=-1):
+    def _school_eng_score_quality_const(self, score_dev=-1):
         if not (1 > score_dev > -1):
             return
         eng_scores = self.area_data["english_score"].fillna(value=0)
@@ -501,7 +514,7 @@ class Integer_Program(object):
             self.m.addConstr(zone_sum >= (1 - score_dev) * school_average * zone_schools)
             self.m.addConstr(zone_sum <= (1 + score_dev) * school_average * zone_schools)
 
-    def _add_school_math_score_quality_constraint(self, score_dev=-1):
+    def _school_math_score_quality_const(self, score_dev=-1):
         if not (1 > score_dev > -1):
             return
 
@@ -525,7 +538,7 @@ class Integer_Program(object):
     # Average of ela_color, math_color, chronic_color, and suspension_color, where Red=1 and Blue=5
     # Make sure all zones are within min_pct and max_pct of average of AvgColorIndex for each zone
     # min_pct: min percentage. max_pct: max percentage
-    def _add_color_quality_constraint(self, score_dev=-1, topX=0):
+    def _color_quality_const(self, score_dev=-1, topX=0):
         if not (1 > score_dev > -1):
             return
         color_scores = self.area_data["AvgColorIndex"].fillna(value=0)

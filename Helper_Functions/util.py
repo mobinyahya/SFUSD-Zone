@@ -243,7 +243,24 @@ def load_driving_distance_data(level, choices, sch2level, area_data = None, dest
             print(" this is the sch2block  " + str(sch2level[school_id]))
             drive_time_distance[str(sch2level[school_id])] = distance_array
 
-def load_bg2att(level, census_sf = None):
+
+def load_b2bg():
+    df = pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')
+    b2bg = {}
+    # Iterate over each row in the DataFrame to populate the dictionary
+    for _, row in df.iterrows():
+        bg = row['BlockGroup']
+        b = row['Block']
+
+        # If the blockgroup is not yet in the dictionary, add it with the current block in a list
+        if b not in b2bg:
+            b2bg[b] = bg
+        # else:
+        #     print("Duplicate exists in the map")
+    return b2bg
+
+
+def load_bg2att(census_sf = None):
     savename = '/Users/mobin/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
 
     # # This mapping is based on polygon shapefile information (not the students info)
@@ -261,6 +278,7 @@ def load_bg2att(level, census_sf = None):
         print("bg to aa map was loaded from file")
         return bg2att
 
+    level = "Blockgroup"
     # load attendance area geometry + its id in a single dataframe
     path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
     sf = gpd.read_file(path)

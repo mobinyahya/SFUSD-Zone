@@ -58,7 +58,7 @@ class OptimizePostChoice:
                 include_k8=citywide,
             )
             self.opt._set_objective_model(shortage, balance)
-            self.opt._add_contiguity_constraint(
+            self.opt._contiguity_const(
                 max_distance=-1,
                 real_distance=False,
                 cover_distance=coverdistance,
@@ -74,7 +74,7 @@ class OptimizePostChoice:
                 include_k8=citywide,
             )
             self.opt._set_objective_model(shortage, balance)
-            self.opt._add_contiguity_constraint(
+            self.opt._contiguity_const(
                 max_distance=distance,
                 real_distance=True,
                 cover_distance=-1,
@@ -82,8 +82,8 @@ class OptimizePostChoice:
                 neighbor=False,
             )
 
-        self.opt._add_diversity_constraints(lowfrl, maxfrl, lbHOCidx1, ubHOCidx1, lbaalpi, ubaapli)
-        self.opt._add_color_quality_constraint(lowMet, highMet, topMet)
+        self.opt._diversity_const(lowfrl, maxfrl, lbHOCidx1, ubHOCidx1, lbaalpi, ubaapli)
+        self.opt._color_quality_const(lowMet, highMet, topMet)
 
     def _set_up_programs_and_schools(self):
         if not hasattr(self, "schools"):

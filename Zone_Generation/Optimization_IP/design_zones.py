@@ -34,6 +34,7 @@ def Compute_Name(config):
 def load_zones_from_file(file_path):
     zone_lists = []
     with open(file_path, 'r', newline='') as file:
+        print("file_path ", file_path)
         csv_reader = csv.reader(file, delimiter='\t')
         for row in csv_reader:
             # Convert each element in the row to an integer and store it in the list
@@ -132,19 +133,24 @@ class DesignZones:
         students_data = Students(self.config)
         schools_data = Schools(self.config)
         self.student_df = students_data.load_student_data()
+
         self.school_df = schools_data.load_school_data()
+        print("dz.student_df[af_students] ", self.student_df["af_students"].sum())
 
         student_stats = self._aggregate_student_data_to_area(self.student_df)
         school_stats = self._aggregate_school_data_to_area(self.school_df)
 
         self.area_data = student_stats.merge(school_stats, how='outer', on=self.level)
 
+
+
         self._load_auxilariy_areas()
 
         self.area_data.fillna(value=0, inplace=True)
         if self.level == "BlockGroup":
-            self.bg2att = load_bg2att(self.level)
-
+            self.bg2att = load_bg2att()
+        elif self.level == "Block":
+            self.b2bg = load_b2bg()
 
 
     # groupby the student data by area level
@@ -158,7 +164,7 @@ class DesignZones:
         #
         # student_stats = mean_students.merge(sum_students, how="left", on=self.level)
         student_stats = student_df.groupby(self.level, as_index=False).sum()
-        student_stats = student_stats[AREA_COLS + [self.level]]
+        student_stats = student_stats[AREA_COLS + [self.level] + AREA_ETHNICITIES]
 
         for col in student_stats.columns:
             if col not in BUILDING_BLOCKS:
@@ -205,7 +211,8 @@ class DesignZones:
         """set the centroids - each one is a block or attendance area depends on the method
         probably best to make it a school"""
 
-        with open("../Config/centroids.yaml", "r") as f:
+        # with open("../Config/centroids.yaml", "r") as f:
+        with open("../Config/automatic_centroids.yaml", "r") as f:
             centroid_configs = yaml.safe_load(f)
         if self.centroid_type not in centroid_configs:
             raise ValueError(
@@ -221,7 +228,6 @@ class DesignZones:
         else:
             self.centroid_location = self.school_df[(self.school_df['is_centroid'] == 1) & (self.school_df['K-8'] != 1)][['lon', 'lat', 'school_id']]
             self.schools_locations = self.school_df[['lon', 'lat', 'school_id']]
-
 
         centroid_areas = [self.sch2area[x] for x in self.centroid_sch]
         self.centroids = [self.area2idx[j] for j in centroid_areas]
@@ -282,10 +288,6 @@ class DesignZones:
         for z in self.centroids:
             for idx in range(self.A):
                 n = self.neighbors[idx]
-
-                print("z ", z, " idx ", idx)
-                print(" self.euc_distances[z][idx] ", self.euc_distances[z][idx])
-
                 closer = [x for x in n
                     if self.euc_distances[z][idx]
                        >= self.euc_distances[z][x]
@@ -323,7 +325,7 @@ class DesignZones:
         self.zone_dict = {}
 
         try:
-            IP.m.Params.TimeLimit = 10000
+            IP.m.Params.TimeLimit = 2000
             IP.m.optimize()
 
             zone_lists = []
@@ -360,14 +362,14 @@ class DesignZones:
             self.zone_dict = zone_dict
             self.zone_lists = zone_lists
 
-            return 1
+            return True
 
         except gp.GurobiError as e:
             print("gurobi error #" + str(e.errno) + ": " + str(e))
-            return -1
+            return False
         except AttributeError:
             print("attribute error")
-            return -1
+            return False
 
 
 
@@ -384,14 +386,14 @@ if __name__ == "__main__":
 
     dz = DesignZones(config=config)
     IP = Integer_Program(dz)
-    IP._initializs_feasiblity_constraints(max_distance=config["max_distance"])
+    IP._feasibility_const(max_distance=config["max_distance"])
     IP._set_objective_model()
-    IP._shortage_constraints(shortage=config["shortage"], overage= config["overage"],
-                      all_cap_shortage=config["all_cap_shortage"])
+    IP._shortage_const(shortage=config["shortage"], overage= config["overage"],
+                       all_cap_shortage=config["all_cap_shortage"])
 
-    IP._add_contiguity_constraint()
-    IP._add_diversity_constraints(racial_dev=config["racial_dev"], frl_dev=config["frl_dev"])
-    IP._add_school_count_constraint()
+    IP._contiguity_const()
+    IP._diversity_const(racial_dev=config["racial_dev"], frl_dev=config["frl_dev"])
+    IP._add_school_count_const()
 
     solve_success = dz.solve(IP)
 
@@ -400,7 +402,8 @@ if __name__ == "__main__":
         dz.save(path=config["path"], name = name + "_AA")
 
         zv = ZoneVisualizer(config["level"])
-        zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
+        zv.zones_from_dict(dz.zone_dict)
+        # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
         # stats_evaluation(dz, dz.zd)
 
 
