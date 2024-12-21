@@ -27,17 +27,24 @@ class Stat_Class(object):
 
         if self.level == "attendance_area":
             zone = [u for u in zone if u in self.dz.sch2area]
+        if self.dz.capacity_scenario == "Closure":
+            student_type = "all_students"
+            seat_type = "all_seats"
+        else:
+            student_type = "ge_students"
+            seat_type = "ge_seats"
 
-        zone_metrics["ge_students"] = sum([self.dz.studentsInArea[self.area2idx[j]] for j in zone])
+
+        zone_metrics[student_type] = sum([self.dz.studentsInArea[self.area2idx[j]] for j in zone])
 
         for ethnicity in AREA_ETHNICITIES:
-            zone_metrics[ethnicity] = sum([self.dz.area_data[ethnicity][self.area2idx[j]] for j in zone]) / zone_metrics["ge_students"]
+            zone_metrics[ethnicity] = sum([self.dz.area_data[ethnicity][self.area2idx[j]] for j in zone]) / zone_metrics[student_type]
 
-        zone_metrics["frl%"] = sum([self.dz.area_data["FRL"][self.area2idx[j]] for j in zone]) / zone_metrics["ge_students"]
+        zone_metrics["frl%"] = sum([self.dz.area_data["FRL"][self.area2idx[j]] for j in zone]) / zone_metrics[student_type]
 
-        zone_metrics["seats"] = sum([self.dz.seats[self.area2idx[j]] for j in zone])
-        zone_metrics["seats shortage/overage"] = abs(zone_metrics["ge_students"] - zone_metrics["seats"])
-        zone_metrics["shortage%"] = (zone_metrics["ge_students"] - zone_metrics["seats"])/zone_metrics["ge_students"]
+        zone_metrics[seat_type] = sum([self.dz.seats[self.area2idx[j]] for j in zone])
+        zone_metrics["seats shortage/overage"] = abs(zone_metrics[student_type] - zone_metrics[seat_type])
+        zone_metrics["shortage%"] = (zone_metrics[student_type] - zone_metrics[seat_type])/zone_metrics[student_type]
         zone_metrics["school_count"] = sum([self.dz.schools[self.area2idx[j]] for j in zone])
 
         schools = self.dz.school_df
@@ -299,18 +306,18 @@ if __name__ == "__main__":
         config=config,
     )
 
-    input_folder = "/Users/mobin/SFUSD/Visualization_Tool_Data/Thesis/Results_MCMC"
+    input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/School_Closure Candidates -all programs/13,14-zones/FRL < 15%"
     # input_folder = "/Users/mobin/Documents/sfusd/local_runs/Zones/Zones03-15"
 
 
-    files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
-    # files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
+    # files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
+    files = [f for f in os.listdir(input_folder) if f.endswith('.pkl')]
 
     if config["level"] == 'Block':
         zoning_files = [csv_file for csv_file in files if "B" in csv_file and "BG" not in csv_file]
     elif config["level"] == 'BlockGroup':
         zoning_files = [csv_file for csv_file in files]
-        # zoning_files = [csv_file for csv_file in files if "BG" in csv_file]
+        zoning_files = [csv_file for csv_file in files if "BlockGroup" in csv_file]
     elif config["level"] == 'attendance_area':
         zoning_files = [csv_file for csv_file in files if "AA" in csv_file]
 
@@ -322,14 +329,26 @@ if __name__ == "__main__":
         Stat = Stat_Class(dz, config)
         print("file: " + str(zoning_file))
 
-        zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
-        # zone_lists, zone_dict = Stat.load_zones_from_pkl(dz, file_path=os.path.join(input_folder, zoning_file))
+        # zone_lists, zone_dict = load_zones_from_file(file_path=os.path.join(input_folder, zoning_file))
+        zone_lists, zone_dict = Stat.load_zones_from_pkl(dz, file_path=os.path.join(input_folder, zoning_file))
 
         Stat.dz.zone_lists = zone_lists
         Stat.dz.zone_dict = zone_dict
         # assignments = pd.read_csv(os.path.join(input_folder, zoning_file.replace(".csv", "")  + "_Assignment.csv"), low_memory=False)
 
         # print("zone_list  " + str(zone_lists))
+        df = Stat.dz.school_df
+        df['new_name'] = df['school_id'].astype(str) + " " + df['school_name']
+
+        # Create 'Zone_ID' column using the map method
+        df['Zone_ID'] = df['BlockGroup'].map(zone_dict)
+        # df = df[["new_name", "Zone_ID", ]]
+        # print(df)
+        # base_name, _ = os.path.splitext(zoning_file)
+        # output_file_path = os.path.join(input_folder, base_name + "_schools.csv")
+        # # save the stats data into file
+        # df.to_csv(output_file_path, index=False)
+        # continue
 
         if len(zone_lists)<=1:
             continue

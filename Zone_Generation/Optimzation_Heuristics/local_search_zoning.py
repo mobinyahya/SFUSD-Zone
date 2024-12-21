@@ -89,8 +89,8 @@ def load_recursive_maps(zv, dz):
     return zd
 
 
-def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
-    if load_level == "attendance_area":
+def load_larger_granularity_zoning(dz, name, path, load_level='attendance_area'):
+    if load_level == "BlockGroup":
         aa_zl, aa_zd = load_zones_from_file(path + name + "_AA.csv")
 
         # aa_zv = ZoneVisualizer('attendance_area')
@@ -100,12 +100,8 @@ def load_initial_assignemt(dz, name, path, load_level='attendance_area'):
 
         dz.zone_dict = aa2bg_Zoning(dz, aa_zd)
 
-    elif load_level == "BlockGroup":
-        dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_BG.csv")
-
     elif load_level == "Block":
-        dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_B.csv")
-        print("dz.zone_dict ", dz.zone_dict)
+        dz.zone_lists, dz.zone_dict = load_zones_from_file(path + name + "_BG.csv")
     else:
         raise ValueError("Invalid Input Level")
 
@@ -338,7 +334,7 @@ def recursive(config):
     # IP._shortage_const(shortage=config["shortage"], overage= config["overage"],
     #                    all_cap_shortage=config["all_cap_shortage"])
     IP._contiguity_const(sub_units)
-    IP._add_school_count_const(sub_units)
+    IP._school_count_const(sub_units)
     solve_success = dz.solve(IP)
 
     if solve_success == 1:
@@ -370,8 +366,7 @@ def local_search(config):
 
     dz = DesignZones(config=config)
     zv = ZoneVisualizer(config["level"])
-    load_initial_assignemt(dz, path=config["path"], name=name, load_level=config["level"])
-    sub_units = dz.zone_dict
+    load_larger_granularity_zoning(dz, path=config["path"], name=name, load_level=config["level"])
     zv.zones_from_dict(dz.zone_dict, centroid_location=dz.schools_locations)
 
     IP = Integer_Program(dz)
@@ -406,8 +401,8 @@ def local_search(config):
                        all_cap_shortage=config["all_cap_shortage"])
     IP._contiguity_const()
 
-    IP._add_school_count_const()
-    solve_success = dz.solve()
+    IP._school_count_const()
+    solve_success = dz.solve(IP)
 
     print("IP.zone_dict ", dz.zone_dict)
 
@@ -661,8 +656,8 @@ if __name__ == "__main__":
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    recom_search(config)
-    # local_search(config)
+    # recom_search(config)
+    local_search(config)
     # recursive(config)
 
     # for frl_dev in [0.33, 0.27]:

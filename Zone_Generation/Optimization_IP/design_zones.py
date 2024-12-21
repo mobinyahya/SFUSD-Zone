@@ -68,6 +68,7 @@ class DesignZones:
         self.centroid_type = config["centroids_type"]
         self.include_k8 = config["include_k8"]
         self.population_type = config["population_type"]
+        self.capacity_scenario = config["capacity_scenario"]
 
         self.load_students_and_schools()
         self.construct_datastructures()
@@ -78,16 +79,9 @@ class DesignZones:
 
 
     def construct_datastructures(self):
-        self.N = sum(self.area_data["ge_students"])
-        self.F = sum(self.area_data["FRL"]) / (self.N)
+
         self.A = len(self.area_data.index)
-
-
-        self.seats = (self.area_data["ge_capacity"].astype("int64").to_numpy())
         self.schools = self.area_data['num_schools']
-        self.studentsInArea = self.area_data["ge_students"]
-
-
         self.area_data[self.level] = self.area_data[self.level].astype("int64")
 
 
@@ -97,12 +91,32 @@ class DesignZones:
 
         self.euc_distances = load_euc_distance_data(self.level, self.area2idx)
 
+        if self.capacity_scenario != "Closure":
+            self.seats = (self.area_data["ge_capacity"].astype("int64").to_numpy())
+            self.studentsInArea = self.area_data["ge_students"]
+            self.N = sum(self.area_data["ge_students"])
+
+        else:
+            imbalance_ratio = 3700 / sum(self.area_data["all_prog_students"])
+            self.area_data["all_prog_students"] = self.area_data["all_prog_students"] * imbalance_ratio
+
+            self.seats = (self.area_data["all_prog_capacity"].astype("int64").to_numpy())
+            self.studentsInArea = self.area_data["all_prog_students"]
+            self.N = sum(self.area_data["all_prog_students"])
+            self.area_data["FRL"] = 3700/2460 * self.area_data["FRL"]
+            for ethnicity in AREA_ETHNICITIES:
+                self.area_data[ethnicity] = 3700/2460 * self.area_data[ethnicity]
+            #     print("ethnicity ", ethnicity, "percentage is: ", sum(self.area_data[ethnicity]))
+
+        self.F = sum(self.area_data["FRL"]) / (self.N)
+
         print("Average FRL ratio:       ", self.F)
         print("Number of Areas:       ", self.A)
-        print("Number of GE students:       ", self.N)
+        print("Number of GE students:       ", sum(self.area_data["ge_students"]))
+        print("Number of GE seats:       ", sum(self.area_data["ge_capacity"]))
         print("Number of total students: ", sum(self.area_data["all_prog_students"]))
         print("Number of total seats:    ", sum(self.area_data["all_prog_capacity"]))
-        print("Number of GE seats:       ", sum(self.seats))
+        print("Number of Schools:       ", sum(self.schools))
         print("Number of zones:       ", self.Z)
 
         # self.save_partial_distances()
@@ -135,7 +149,6 @@ class DesignZones:
         self.student_df = students_data.load_student_data()
 
         self.school_df = schools_data.load_school_data()
-        print("dz.student_df[af_students] ", self.student_df["af_students"].sum())
 
         student_stats = self._aggregate_student_data_to_area(self.student_df)
         school_stats = self._aggregate_school_data_to_area(self.school_df)
@@ -212,21 +225,20 @@ class DesignZones:
         probably best to make it a school"""
 
         # with open("../Config/centroids.yaml", "r") as f:
-        with open("../Config/automatic_centroids.yaml", "r") as f:
+        with open("../Config/school_closure_centroids.yaml", "r") as f:
             centroid_configs = yaml.safe_load(f)
         if self.centroid_type not in centroid_configs:
             raise ValueError(
                 "The centroids type specified is not defined in centroids.yaml.")
 
         self.centroid_sch = centroid_configs[self.centroid_type]
-        print("Number of centroid schools ", len(self.centroid_sch))
 
         self.school_df['is_centroid'] = self.school_df['school_id'].apply(lambda x: 1 if x in self.centroid_sch else 0)
 
         if self.include_k8:
             self.centroid_location = self.school_df[self.school_df['is_centroid'] == 1][['lon', 'lat', 'school_id']]
         else:
-            self.centroid_location = self.school_df[(self.school_df['is_centroid'] == 1) & (self.school_df['K-8'] != 1)][['lon', 'lat', 'school_id']]
+            self.centroid_location = self.school_df[self.school_df['is_centroid'] == 1][['lon', 'lat', 'school_id']]
             self.schools_locations = self.school_df[['lon', 'lat', 'school_id']]
 
         centroid_areas = [self.sch2area[x] for x in self.centroid_sch]
@@ -325,7 +337,7 @@ class DesignZones:
         self.zone_dict = {}
 
         try:
-            IP.m.Params.TimeLimit = 2000
+            IP.m.Params.TimeLimit = 700
             IP.m.optimize()
 
             zone_lists = []
@@ -393,7 +405,7 @@ if __name__ == "__main__":
 
     IP._contiguity_const()
     IP._diversity_const(racial_dev=config["racial_dev"], frl_dev=config["frl_dev"])
-    IP._add_school_count_const()
+    IP._school_count_const()
 
     solve_success = dz.solve(IP)
 

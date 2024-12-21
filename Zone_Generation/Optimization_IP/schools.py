@@ -9,7 +9,7 @@ class Schools(object):
         self.level = config["level"]
         self.include_k8 = config["include_k8"]
 
-        if self.capacity_scenario not in ["Old", "A", "B", "C", "D"]:
+        if self.capacity_scenario not in ["Old", "A", "B", "C", "D", "Closure"]:
             raise ValueError(
                 f"Unrecognized capacity scenario {self.capacity_scenario}. Please use one of allowed capacity scenarios.")
 
@@ -25,8 +25,6 @@ class Schools(object):
 
         print("self.level ", self.level)
         school_df[self.level] = school_df[self.level].astype('Int64')
-
-        school_df = school_df.loc[school_df["category"] != "Citywide"]
 
         # Load School Capacities according to capacity policy
         school_df["K-8"] = school_df["school_id"].apply(lambda x: 1 if ((x in K8_SCHOOLS)) else 0)
@@ -47,7 +45,8 @@ class Schools(object):
 
     def _load_capacity(self, school_df):
         # add on capacity
-        programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
+        # programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
+        programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_09.16.24.csv")
         programs.rename(
             columns={
                 "SchNum": "school_id",
@@ -55,22 +54,32 @@ class Schools(object):
                 f"Scenario_{self.capacity_scenario}_Capacity": "Capacity",
             }, inplace=True
         )
-
         prog_ge = programs.loc[programs["program_type"] == "GE"][["school_id", "Capacity"]]
         prog_ge.rename(columns={"Capacity": "ge_capacity"}, inplace=True)
 
         prog_all = programs[["school_id", "Capacity"]].rename(columns={"Capacity": "all_prog_capacity"})
         prog_all = prog_all.groupby("school_id", as_index=False).sum()
 
-        school_df = school_df.merge(prog_all, how="inner", on="school_id")
-        school_df = school_df.merge(prog_ge, how="inner", on="school_id")
+        # prog_all = prog_all[prog_all['all_prog_capacity'] != 0]
+        # # prog_all = prog_all.loc[prog_all["Type"] != "Citywide"]
+        # print("=== ", len(prog_all))
+        # exit()
 
-        school_df = school_df.loc[school_df['ge_capacity'] > 0]
+
+        school_df = school_df.merge(prog_all, how="outer", on="school_id")
+        school_df = school_df.merge(prog_ge, how="outer", on="school_id")
+
+        if self.capacity_scenario == "Closure":
+            school_df = school_df[school_df['all_prog_capacity'] > 0]
+        else:
+            school_df = school_df.loc[school_df['ge_capacity'] > 0]
 
         if self.include_k8:
             school_df = school_df.loc[:, :]
         else:
             school_df = school_df.loc[school_df["K-8"] == 0]
+        school_df = school_df.loc[school_df["category"] != "Citywide"]
+
 
         return school_df
 

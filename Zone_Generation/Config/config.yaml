@@ -1,6 +1,6 @@
 
 # changing levers
-centroids_type: '13-zone-10'
+centroids_type: '6-zone-2'
 
 
 frl_dev: 0.28
@@ -8,22 +8,22 @@ racial_dev: 1
 
 # fixed levers
 #boundary_threshold: .05
-shortage: .45 # this is in percentage
-overage: 0.6 # this is in percentage
+shortage: .2 # this is in percentage
+overage: 0.8 # this is in percentage
 all_cap_shortage: .inf # this is in percentage
 max_distance: .inf # best valid value for 59 zines: 1.272
 population_dev: .inf
-path: "/Users/mobin/SFUSD/Visualization_Tool_Data/Thesis/Results_MCMC/"
+path: "/Users/mobin/Documents/sfusd/local_runs/Zones/School_Closure/"
 
 
 years: [14, 15, 16, 17, 18, 21, 22]
 population_type: "GE"
 drop_optout: True
-capacity_scenario: "A"
+capacity_scenario: "Closure" # A
 new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
-level: "attendance_area"
+level: "BlockGroup"
 
 #capacity_vicinity: 0.005
 #fixed_vicinity: 0.12

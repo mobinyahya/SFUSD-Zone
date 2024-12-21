@@ -182,10 +182,10 @@ class Integer_Program(object):
         self.b = self.m.addVars(neighboring_tuples, vtype=GRB.BINARY, name="boundary_vars")
         y_boundary = self.m.addVar(lb=0, vtype=GRB.CONTINUOUS, name="boundary distortion")
         self.m.addConstr(gp.quicksum(self.b[i, j] for i, j in neighboring_tuples) == y_boundary)
-        self._add_boundary_constraint()
+        self._boundary_constraint()
         return y_boundary
 
-    def _add_boundary_constraint(self):
+    def _boundary_constraint(self):
         # if i and j are neighbors, check if they are boundaries of different zones
         for i in range(self.A):
             for j in self.neighbors[i]:
@@ -368,11 +368,11 @@ class Integer_Program(object):
 
         # frl constraint
         if frl_dev < 1:
-                self._add_frl_constraint(frl_dev)
+                self._frl_constraint(frl_dev)
 
         # aalpi constraint
         if aalpi_dev < 1:
-            self._add_aalpi_constraint(aalpi_dev)
+            self._aalpi_constraint(aalpi_dev)
 
     # Enforce zones to have almost the same number of students
     # Make sure the difference between total population of GE students
@@ -428,7 +428,7 @@ class Integer_Program(object):
     # Free or Reduced Price Lunch.
     # make sure the total FRL for students in each zone, is within an additive
     #  frl_dev% of average FRL over zones..
-    def _add_frl_constraint(self, frl_dev=1):
+    def _frl_constraint(self, frl_dev=1):
         for z in range(self.Z):
             zone_sum = gp.quicksum(
                 [self.area_data["FRL"][j] * self.x[j, z] for j in self.valid_area_per_zone[z]]
@@ -442,7 +442,7 @@ class Integer_Program(object):
 
 
 
-    def _add_aalpi_constraint(self, aalpi_dev):
+    def _aalpi_constraint(self, aalpi_dev):
         district_average = sum(self.area_data["AALPI Score"]) / self.N
         for z in range(self.Z):
             zone_sum = gp.quicksum(
@@ -464,7 +464,7 @@ class Integer_Program(object):
     # by computing the total number of schools in the city and dividing it by the number of zones.
     # Next, add a constraint to make sure the number of schools in each zone
     # is within average number of schools per zone + or - 1
-    def _add_school_count_const(self, sub_units=None):
+    def _school_count_const(self, sub_units=None):
         zone_school_count = {}
         if sub_units != None:
             avg_school_count = sum([self.schools[j] for j in range(self.A) if self.idx2area[j] in sub_units]) / self.Z + 0.0001

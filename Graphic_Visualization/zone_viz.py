@@ -1,5 +1,5 @@
 import csv
-import glob
+import glob, yaml
 import os
 
 import shapely.geometry as sg
@@ -249,11 +249,11 @@ class ZoneVisualizer:
         # df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
         # plt.title(title)
 
-        """ plot centroid locations """
-        # plt.scatter(centroid_location['lon'], centroid_location['lat'], s=3, c='black', marker='s')
-        # for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['school_id']):
-        #     plt.text(lon, lat, id, ha='center', va='center')
-        # # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
+        # """ plot centroid locations """
+        # plt.scatter(centroid_location['lon'], centroid_location['lat'], s=2, c='black', marker='s')
+        # for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['zone_ID']):
+        #     plt.text(lon, lat, id, ha='center', va='center', fontsize=20)
+        # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
 
         # # plot school locations
         # aa = self.sc_merged.loc[self.sc_merged['category']=='Attendance']
