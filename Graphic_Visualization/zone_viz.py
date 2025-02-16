@@ -1,16 +1,15 @@
 import csv
 import glob
-import os
 
-import shapely.geometry as sg
-import matplotlib.colors as mcolors
 import geopandas as gpd
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Patch
 from shapely.geometry import Point
-from Zone_Generation.Config.Constants import *
 
+from Zone_Generation.Config.Constants import *
 
 
 class ZoneVisualizer:
@@ -46,13 +45,16 @@ class ZoneVisualizer:
 
         elif (self.level == 'BlockGroup') | (self.level == 'Block'):
             # Changed to shape files folder from 2010 census
-            path = os.path.expanduser('~/SFUSD/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
-            self.sf = gpd.read_file(path)
-            self.sf['geoid10'] = self.sf['geoid10'].fillna(value=0).astype('int64', copy=False)
+            # path = os.path.expanduser('~/SFUSD/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
+            path = os.path.expanduser(
+                '~/Downloads/Census 2020_ Blocks for San Francisco_20241204[33]/geo_export_7924b18f-b5ea-4c14-b7cc-819b95caaf08.shp')
 
-            df = pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')
-            df['Block'] = df['Block'].fillna(value=0).astype('int64', copy=False)
-            self.sf = self.sf.merge(df, how='left', left_on='geoid10', right_on='Block')
+            self.sf = gpd.read_file(path)
+            self.sf['geoid20'] = self.sf['geoid20'].fillna(value=0).astype('int64', copy=False)
+            self.sf['Block'] = self.sf['geoid20']
+            # df = pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')
+            # df['Block'] = df['Block'].fillna(value=0).astype('int64', copy=False)
+            # self.sf = self.sf.merge(df, how='left', left_on='geoid10', right_on='Block')
         self.sf = self.sf.to_crs(epsg=4326)
 
         if self.level == 'attendance_area':
@@ -67,7 +69,6 @@ class ZoneVisualizer:
             self.translator = translator.rename(columns={'school_id': 'aa_zone'})
             self.sc_merged = sc_merged.merge(self.translator, how='left', on='index_right')
 
-
     def population_heatmap(self, area_population, sch_df=None, metric=None, title="", save_path=""):
         ax = self.load_base_plot()
         # self.sf.dropna(subset=[self.level], inplace=True)
@@ -78,15 +79,12 @@ class ZoneVisualizer:
         population_dict = area_population.set_index('BlockGroup')['ge_students'].to_dict()
         self.sf['ge_students'] = self.sf['BlockGroup'].replace(population_dict)
 
-
         # Calculate the area for each block group
         sf_projected = self.sf.to_crs(epsg=3857)  # Replace 3857 with a more suitable CRS if needed
         self.sf['area'] = sf_projected.area
 
-
         sorted_df = self.sf.sort_values('ge_students', ascending=False)
         distinct_blockgroups = sorted_df.drop_duplicates('BlockGroup')
-
 
         # Aggregate the df info to have area information at Blockgroup level. For that, you need to sum the area
         # of each block, but don't sum the ge_students, etc (since they were already computed at blockgroup level)
@@ -95,7 +93,6 @@ class ZoneVisualizer:
         df_first_row = self.sf.drop(['area', 'geometry'], axis=1).groupby('BlockGroup').first()
         # Join the two DataFrames. The resulting DataFrame will have the aggregated 'area' and the combined 'geometry' for each 'BlockGroup',
         df = df_first_row.join(df_area_sum)
-
 
         df["normalized_ge_students"] = df["ge_students"] / df["area"]
         # plot population
@@ -113,13 +110,11 @@ class ZoneVisualizer:
 
         self.show_plot(save_path, title)
 
-
-    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min = None, metric_max = None, title='', save_path=""):
+    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min=None, metric_max=None, title='', save_path=""):
         self._read_data()
         if self.level == 'attendance_area':
             self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
             self.sf = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
-
 
         ax = self.load_base_plot()
         zone_metric_dict = stat_df.set_index('zone ID')[metric].to_dict()
@@ -133,7 +128,6 @@ class ZoneVisualizer:
         self.sf['zone_metric'] = self.sf["zone_id"].replace(zone_metric_dict)
 
         df = self.sf.loc[self.sf['filter'] == 1]
-
 
         # percentage of students in each zone that ranked the
         # school within that zone as their top school in r1_ranked_idschool
@@ -187,19 +181,30 @@ class ZoneVisualizer:
         plt.title(title)
         plt.gca().set_yticklabels([])
         plt.gca().set_xticklabels([])
-        plt.gca().set_xlim(-122.525, -122.350)
-        plt.gca().set_ylim(37.70, 37.84)
-
+        # plt.gca().set_xlim(-122.525, -122.350)
+        # plt.gca().set_ylim(37.70, 37.84)
+        plt.gca().set_xlim(-122.42, -122.38)
+        plt.gca().set_ylim(37.74, 37.80)
 
         if save_path != "":
             print(save_path + '.png')
             plt.savefig(save_path + '.png')
-        plt.show()
+        # plt.show()
+
         print("Finished plotting")
         return plt
 
     def zones_from_dict(self, zone_dict, label=False, title="",
                         centroid_location=-1, save_path=""):
+        # isolated_blocks = ['60750614021003', '60750227022009', '60750607012015', '60750607013014', '60750607012005',
+        #                    '60750614021002', '60750227022002', '60750607012002', '60750607013015', '60750226002004',
+        #                    '60750607012011', '60750227022003', '60750227022004', '60750607012014', '60750607012012',
+        #                    '60750227022007']
+        # # change to ints and then set
+        # isolated_blocks = [int(x) for x in isolated_blocks]
+        # isolated_blocks = set(isolated_blocks)
+        # isolated_blocks = []
+        schools = [60750607012013, 60750227022008]
 
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
@@ -227,23 +232,41 @@ class ZoneVisualizer:
 
             # drop rows that have NaN for zone_id
             self.sf.dropna(subset=[self.level], inplace=True)
-            if label:
-                self.sf.apply(lambda x: ax.annotate(fontsize=8,
-                                                    text=int(x.BlockGroup),
-                                                    xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
             self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(1000) else 0)
-            df = self.sf.loc[self.sf['filter'] == 1]
 
-            plt.figure(figsize=(20, 20))
-            ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
+            df = self.sf.loc[self.sf['filter'] == 1]
+            # remove blocks that are not assigned to any zone
+            df = df.loc[df['zone_id'] != -1]
+
+            plt.figure(figsize=(15, 15))
+            ax = df.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
+            all_assigned_blocks = zone_dict.keys()
+            if label:
+                df.apply(lambda x: ax.annotate(fontsize=6,
+                                                    text='',
+                                                    xy=x.geometry.centroid.coords[0], ha='center'), axis=1)
 
         # Create a new column 'zone_color' with colors based on zone_id
-        df['zone_color'] = df['zone_id'].map(zone_colors)
+        df['zone_color'] = df['zone_id'].map({497: 'crimson', 999: 'midnightblue', 0: 'white'})
+
+
+
+        # any block that is an isolated block, color it with yellow
+        # df.loc[df['Block'].isin(isolated_blocks), 'zone_color'] = 'yellow'
+        # school blocks are green
+        df.loc[df['Block'].isin(schools), 'zone_color'] = 'green'
+
+        #remove blocks that are not assigned to any zone
+        df = df.loc[df['zone_id'] != -1]
 
         # Plot zones using the 'zone_color' column
         df.plot(ax=ax, color=df['zone_color'], legend=True, aspect=1)
-
+        # print min and max lat and lon
+        print("min lat: ", df['intptlat20'].min())
+        print("max lat: ", df['intptlat20'].max())
+        print("min lon: ", df['intptlon20'].min())
+        print("max lon: ", df['intptlon20'].max())
 
         # plot zones
         # df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
@@ -263,9 +286,8 @@ class ZoneVisualizer:
         # plt.scatter(aa['lon'],aa['lat'],s=10, c='red',marker='s')
         # plt.scatter(citywide['lon'],citywide['lat'],s=10, c='black',marker='^')
 
+
         self.show_plot(save_path, title)
-
-
 
     def visualize_SpEd(self, sped_df, sped_types, label=False, centroid_location=-1):
         # Note TOD: This visualization assumes that each school has at most 1 program to be visualized.

@@ -3,21 +3,140 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
-        <entry key="$USER_HOME$/Dropbox/SFUSD/Data/final_area_data/area_data_no_k8.csv">
+        <entry key="$USER_HOME$/Dropbox/SFUSD/Optimization/adjacency_matrix_b copy.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="$USER_HOME$/SFUSD/Data/Cleaned/programs_1819.csv">
+        <entry key="$USER_HOME$/Dropbox/SFUSD/Optimization/b_adjacency_matrix_20.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="$USER_HOME$/SFUSD/Data/Cleaned/schools_rehauled_1819.csv">
+        <entry key="$USER_HOME$/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Dropbox/SFUSD/Optimization/distances_bg2bg.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/SFUSD/Data/Webster-MissionBay/Max and Avg ES Students by Block.xlsx - CORRECTED Webster ESAA blocks.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/SFUSD/Data/Webster-MissionBay/Max and Avg ES Students by Block.xlsx - ES Avg by Race.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/SFUSD/Data/Webster-MissionBay/Max and Avg ES Students by Block.xlsx - List of Webster ESAA census blocks.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/Webster Census Blocks, grouped by neighborhood - Sheet1.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/6_6_20_3.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/smoothed_First_6_6_20_3.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/smoothed_First_6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/smoothed_Fourth_6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/smoothed_Second_6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/First smoothed-out version of 6_6_20_3.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/First smoothed-out version of 6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/Fourth smoothed-out version of 6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/Second smoothed-out version of 6_6_20_3.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/Second smoothed-out version of 6_6_5_2.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/smoothed/Third smoothed-out version of 6_6_5_2.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

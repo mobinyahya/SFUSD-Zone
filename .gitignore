@@ -2,3 +2,13 @@
 SFUSD
 /Zone_Generation/LLM/config.py
 /Zone_Generation/Data_Description/top_5_area_data.csv
+.DS_Store
+results
+webster.png
+neighbors.json
+travels.json
+tab2010_tab2020_st06_ca.txt
+results.zip
+travels.json
+webster.png
+neighbors.json
