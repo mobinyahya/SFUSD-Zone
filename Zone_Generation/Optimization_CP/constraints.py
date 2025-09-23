@@ -301,7 +301,7 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids,
 def get_school_capacity_of_bg(school_df, bg):
     # Find the school in that blockgroup
     if bg in school_df['BlockGroup'].values:
-        return school_df[school_df['BlockGroup'] == int(bg), 'capacity'].iloc[0]
+        return school_df[school_df['BlockGroup'] == int(bg)].iloc[0]['capacity']
     else:
         return 0
 
@@ -309,6 +309,6 @@ def get_school_capacity_of_bg(school_df, bg):
 def get_bg_of_school(school_df, school_id):
     # Find the school in that blockgroup
     if school_id in school_df['school_id'].values:
-        return school_df.loc[school_df['school_id'] == int(school_id), 'BlockGroup'].iloc[0]
+        return school_df[school_df['school_id'] == int(school_id)].iloc[0]['BlockGroup']
     else:
         return None
