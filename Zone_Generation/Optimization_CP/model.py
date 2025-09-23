@@ -120,7 +120,7 @@ def add_variables(model, zones):
     return vm, school_df, bg_df, centroids, centroid_mapping
 
 
-def visualize(solver, vm, school_df, bg_df, centroids):
+def visualize(solver, vm, school_df, bg_df, centroids, level):
     if solver is None:
         return
     # Print solution.
