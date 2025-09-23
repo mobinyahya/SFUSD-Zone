@@ -21,12 +21,12 @@ def add_constraints(model, vm, school_df, bg_df, centroids, centroid_mapping, ne
                                blocks_assigned_to_zone, neighbors, travels,
                                neighbor_pairs)  # easy to convert to integer
     # All of these are essentially the exact same problem
-    # add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
-    #                               centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
-    # add_diversity_constraints(model, vm, school_df, bg_df, centroids,
-    #                           centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
-    # add_frl_constraints(model, vm, school_df, bg_df, centroids,
-    #                     centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    add_zone_capacity_constraints(model, vm, school_df, bg_df, centroids,
+                                  centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    add_diversity_constraints(model, vm, school_df, bg_df, centroids,
+                              centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
+    add_frl_constraints(model, vm, school_df, bg_df, centroids,
+                        centroid_mapping, blocks_assigned_to_zone)  # hard to convert to integer
 
     # add_zone_duplicates_constraints(model, vm, school_df, bg_df, centroids) #not needed since true by definition
     return blocks_assigned_to_zone, neighbor_pairs
@@ -49,7 +49,7 @@ def create_neighbor_pair_indicators(model, vm, school_df, bg_df, centroids, cent
     neighbor_pairs = {}
     for bg in vm.keys():
         neighbor_pairs[bg] = {}
-        all_neighbors = neighbors[str(int(bg))]
+        all_neighbors = neighbors[bg]
         #     cant be smart and avoid creating extra variables, because each variable has a different travel time to each zone
         for neighbor in all_neighbors:
             if neighbor == '':
@@ -80,7 +80,7 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_
         for zone in centroids:
             zone_bg = school_df[school_df['school_id'] == zone]['BlockGroup'].iloc[0]
             closer_neighbors = set()
-            all_neighbors = neighbors[str(int(bg))]
+            all_neighbors = neighbors[bg]
             for neighbor in all_neighbors:
                 if neighbor == '':
                     continue
@@ -89,7 +89,7 @@ def add_contiguity_constraints(model, vm, school_df, bg_df, centroids, centroid_
                     print('why would this happen')
                     continue
                 neighbor_distance_to_zone = travels[neighbor][zone_bg]
-                bg_distance_to_zone = travels[int(bg)][int(zone_bg)]
+                bg_distance_to_zone = travels[bg][zone_bg]
                 if neighbor_distance_to_zone < bg_distance_to_zone:
                     closer_neighbors.add(neighbor_pairs[bg][neighbor])
             # if len(closer_neighbors) == 0:
@@ -133,39 +133,6 @@ def add_school_number_constraints(model, vm, school_df, bg_df, centroids, centro
     for zone in schools_in_zone:
         model.Add(cp_model.LinearExpr.Sum(schools_in_zone[zone]) >= alt_schools_per_zone)
         model.Add(cp_model.LinearExpr.Sum(schools_in_zone[zone]) <= schools_per_zone)
-
-    # mapped_vm = {}
-    # for bg in school_in_bg:
-    #     mapped_vm[str(bg)] = model.NewIntVar(1, num_school_blocks ** (num_zones - 1), f'mapped_{bg}')
-    #     for i in range(num_zones):
-    #         mapped_val = int((num_school_blocks+1) ** i)
-    #         mapped_var = mapped_vm[str(bg)]
-    #         intermediate_var = model.NewBoolVar(f'intermediate_{bg}_{i}_1')
-    #         intermediate_var_2 = model.NewBoolVar(f'intermediate_{bg}_{i}_2')
-    #         model.Add((bg == i)).OnlyEnforceIf(intermediate_var)
-    #         model.Add((bg != i)).OnlyEnforceIf(intermediate_var.Not())
-    #         model.Add((mapped_var == mapped_val)).OnlyEnforceIf(intermediate_var_2)
-    #         model.Add((mapped_var != mapped_val)).OnlyEnforceIf(intermediate_var_2.Not())
-    #         model.AddImplication(intermediate_var, intermediate_var_2)
-    #         model.AddImplication(intermediate_var_2, intermediate_var)
-    # model.Add((mapped_var == mapped_val)).OnlyEnforceIf(intermediate_var)
-    # model.Add((mapped_var != mapped_val)).OnlyEnforceIf(intermediate_var.Not())
-    #
-    # mapped_sum = cp_model.LinearExpr.Sum(list(mapped_vm.values()))
-    # think of the sum as a number in base num_school_blocks
-    # check if the ith digit is schools_per_zone or schools_per_zone - 1
-
-    # for i in range(num_zones):
-    #     # check if ith digits is school per zone or school per zone - 1
-    #     lb = 1
-    #     ub = num_school_blocks ** (num_zones - 1 - i)
-    #     division_thing = model.NewIntVar(lb, ub, f'division_{i}')
-    #     divisor = num_school_blocks ** i
-    #     model.AddDivisionEquality(division_thing, mapped_sum, divisor)
-    #     ith_digit = model.NewIntVar(0, num_school_blocks, f'ith_digit_{i}')
-    #     model.AddModuloEquality(ith_digit, division_thing, num_school_blocks)
-    #     model.Add(ith_digit >= alt_schools_per_zone)
-    #     model.Add(ith_digit <= schools_per_zone)
 
 
 def add_school_number_constraints_alt(model, vm, school_df, bg_df, centroids,
@@ -334,7 +301,7 @@ def add_diversity_constraints(model, vm, school_df, bg_df, centroids,
 def get_school_capacity_of_bg(school_df, bg):
     # Find the school in that blockgroup
     if bg in school_df['BlockGroup'].values:
-        return school_df[school_df['BlockGroup'] == int(bg)].iloc[0]['capacity']
+        return school_df[school_df['BlockGroup'] == int(bg), 'capacity'].iloc[0]
     else:
         return 0
 
@@ -342,6 +309,6 @@ def get_school_capacity_of_bg(school_df, bg):
 def get_bg_of_school(school_df, school_id):
     # Find the school in that blockgroup
     if school_id in school_df['school_id'].values:
-        return school_df[school_df['school_id'] == int(school_id)].iloc[0]['BlockGroup']
+        return school_df.loc[school_df['school_id'] == int(school_id), 'BlockGroup'].iloc[0]
     else:
         return None

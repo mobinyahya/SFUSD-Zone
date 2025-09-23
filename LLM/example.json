@@ -1,0 +1,6 @@
+{
+  "diversity_bound": 0.15,
+  "capacity_bound": 0.15,
+  "frl_bound": 0.15,
+  "num_schools_flex": 1
+}

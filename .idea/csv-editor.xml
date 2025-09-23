@@ -3,7 +3,7 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
-        <entry key="$USER_HOME$/Dropbox/SFUSD/Data/final_area_data/area_data_no_k8.csv">
+        <entry key="$USER_HOME$/Dropbox/SFUSD/Data/Cleaned/final_area_data/area_data_no_k8.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
@@ -18,6 +18,13 @@
           </value>
         </entry>
         <entry key="$USER_HOME$/SFUSD/Data/Cleaned/schools_rehauled_1819.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/demos/smoothed_smoothed_custom.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
