@@ -13,7 +13,7 @@ import yaml
 import geopandas as gpd
 from shapely.geometry import Point
 
-from Zone_Generation.Optimization_IP.generate_zones import (
+from Zone_Generation.Optimization.generate_zones import (
     DesignZones,
     load_zones_from_file,
     ETHNICITY_DICT,

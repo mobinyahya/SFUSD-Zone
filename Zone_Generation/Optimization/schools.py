@@ -46,7 +46,7 @@ class Schools(object):
     def _load_capacity(self, school_df):
         # add on capacity
         # programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
-        programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_09.16.24.csv")
+        programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
         programs.rename(
             columns={
                 "SchNum": "school_id",

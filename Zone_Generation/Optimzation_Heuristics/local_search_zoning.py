@@ -6,13 +6,13 @@ sys.path.append('../../summary_statistics')
 import pickle
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 # from IP_Zoning import DesignZones
-from Zone_Generation.Optimization_IP.design_zones import DesignZones, load_zones_from_file, Compute_Name
+from Zone_Generation.Optimization.design_zones import DesignZones, load_zones_from_file, Compute_Name
 from Zone_Generation.Optimzation_Heuristics.zone_eval import * # evaluate_assignment_score, Tuning_param, boundary_trimming, evaluate_contiguity
 from Helper_Functions.ReCom import *
 from Helper_Functions.abstract_geography import *
 from Zone_Generation.Config.Constants import *
 from Helper_Functions.Relaxed_ReCom import Relaxed_ReCom
-from Zone_Generation.Optimization_IP.integer_program import Integer_Program
+from Zone_Generation.Optimization.integer_program import Integer_Program
 
 # in this code, we run the iterative local search algorithm, to get better zone assignments
 # Assumptions:

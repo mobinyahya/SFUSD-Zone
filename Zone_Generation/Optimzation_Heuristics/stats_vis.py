@@ -1,7 +1,7 @@
 import os
 import yaml
 import pandas as pd
-from Zone_Generation.Optimization_IP.design_zones import *
+from Zone_Generation.Optimization.design_zones import *
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Zone_Generation.Optimzation_Heuristics.stats_report import Stat_Class
 

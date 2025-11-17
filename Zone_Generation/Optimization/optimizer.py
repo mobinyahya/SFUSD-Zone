@@ -1,57 +1,14 @@
-import sys
-import ast
-import yaml
+import csv
+import os
 import pickle
-import random, math, gc, os, csv
-from typing import Union
-import gurobipy as gp
+
 import pandas as pd
-from gurobipy import GRB
-import geopandas as gpd
+import yaml
 
-sys.path.append("../..")
-from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Helper_Functions.graph_shortest_path import Shortest_Path
-from Zone_Generation.Config.Constants import *
-# from Helper_Functions.util import get_distance, make_school_geodataframe, load_bg2att
-from Helper_Functions.util import *
-from Zone_Generation.Optimization_IP.load_optimization_data_old import *
-from Zone_Generation.Optimization_IP.schools import Schools
-from Zone_Generation.Optimization_IP.students import Students
-from Zone_Generation.Optimization_IP.integer_program import Integer_Program
-
-
-
-def Compute_Name(config):
-    name = str(config["centroids_type"])
-    # # add frl deviation
-    # name += "_frl_" + str(config["frl_dev"])
-    # # add shortage
-    # # name += "_shortage_" + str(config["shortage"])
-
-    return name
-
-def load_zones_from_file(file_path):
-    zone_lists = []
-    with open(file_path, 'r', newline='') as file:
-        print("file_path ", file_path)
-        csv_reader = csv.reader(file, delimiter='\t')
-        for row in csv_reader:
-            # Convert each element in the row to an integer and store it in the list
-            zone_row = []
-            for cell in row:
-                # Split the cell content by commas, convert to integers, and append to the row
-                cell_values = [int(val.strip()) for val in cell.split(',') if val.strip()]  #
-                zone_row.extend(cell_values)
-            zone_lists.append(zone_row)
-
-    # build a zone dictionary based on zone_list
-    zone_dict = {}
-    for index, sublist in enumerate(zone_lists):
-        for item in sublist:
-            zone_dict[item] = index
-
-    return zone_lists, zone_dict
+from Helper_Functions.util import load_euc_distance_data, load_bg2att, load_b2bg, load_census_shapefile
+from Zone_Generation.Config.Constants import AREA_ETHNICITIES, BUILDING_BLOCKS, AUX_BG, AREA_COLS
+from Zone_Generation.Optimization.schools import Schools
+from Zone_Generation.Optimization.students import Students
 
 
 class DesignZones:
@@ -77,13 +34,11 @@ class DesignZones:
         self.initialize_centroids()
         self.initialize_centroid_neighbors()
 
-
     def construct_datastructures(self):
 
         self.A = len(self.area_data.index)
         self.schools = self.area_data['num_schools']
         self.area_data[self.level] = self.area_data[self.level].astype("int64")
-
 
         self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
         self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
@@ -103,9 +58,9 @@ class DesignZones:
             self.seats = (self.area_data["all_prog_capacity"].astype("int64").to_numpy())
             self.studentsInArea = self.area_data["all_prog_students"]
             self.N = sum(self.area_data["all_prog_students"])
-            self.area_data["FRL"] = 3700/2460 * self.area_data["FRL"]
+            self.area_data["FRL"] = 3700 / 2460 * self.area_data["FRL"]
             for ethnicity in AREA_ETHNICITIES:
-                self.area_data[ethnicity] = 3700/2460 * self.area_data[ethnicity]
+                self.area_data[ethnicity] = 3700 / 2460 * self.area_data[ethnicity]
             #     print("ethnicity ", ethnicity, "percentage is: ", sum(self.area_data[ethnicity]))
 
         self.F = sum(self.area_data["FRL"]) / (self.N)
@@ -122,7 +77,6 @@ class DesignZones:
         # self.save_partial_distances()
         # self.drive_distances = self.load_driving_distance_data()
 
-
     def save_partial_distances(self):
         self.euc_distances = load_euc_distance_data(self.level, complete_bg=True)
 
@@ -135,13 +89,11 @@ class DesignZones:
         print("self.euc_distances.index", list(self.euc_distances.index))
         print("school_blocks ", school_blocks)
         print("len(existing_school_blocks): ", len(existing_school_blocks))
-        print("len((school_blocks)): ",  len((school_blocks)))
+        print("len((school_blocks)): ", len((school_blocks)))
         distances = self.euc_distances.loc[existing_school_blocks]
 
         save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b_schools.csv"
         distances.to_csv(save_path)
-
-
 
     def load_students_and_schools(self):
         students_data = Students(self.config)
@@ -153,9 +105,8 @@ class DesignZones:
         student_stats = self._aggregate_student_data_to_area(self.student_df)
         school_stats = self._aggregate_school_data_to_area(self.school_df)
 
+        student_stats[self.level] = student_stats[self.level].astype(int)
         self.area_data = student_stats.merge(school_stats, how='outer', on=self.level)
-
-
 
         self._load_auxilariy_areas()
 
@@ -164,7 +115,6 @@ class DesignZones:
             self.bg2att = load_bg2att()
         elif self.level == "Block":
             self.b2bg = load_b2bg()
-
 
     # groupby the student data by area level
     def _aggregate_student_data_to_area(self, student_df):
@@ -188,17 +138,16 @@ class DesignZones:
 
         sum_columns = [self.level, "all_prog_capacity", "ge_capacity", "num_schools", "english_score",
                        "math_score", "greatschools_rating", "AvgColorIndex"]
-        mean_columns = [self.level, "MetStandards",]
+        mean_columns = [self.level, "MetStandards", ]
 
         sum_schools = school_df[sum_columns].groupby(self.level, as_index=False).sum()
         mean_schools = school_df[mean_columns].groupby(self.level, as_index=False).mean()
 
         return mean_schools.merge(sum_schools, how="left", on=self.level)
 
-
     def _load_auxilariy_areas(self):
         # we add areas (blockgroups/blocks) that were missed from guardrail, since there was no student or school in them.
-        if (self.level=='BlockGroup') | (self.level=='Block'):
+        if (self.level == 'BlockGroup') | (self.level == 'Block'):
             valid_areas = set(pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')[self.level])
             census_areas = load_census_shapefile(self.level)[self.level]
             census_areas = set(census_areas)
@@ -211,21 +160,15 @@ class DesignZones:
             auxiliary_areas = common_areas - current_areas
 
             auxiliary_areas_df = pd.DataFrame({self.level: list(auxiliary_areas)})
-            self.area_data = self.area_data.append(auxiliary_areas_df, ignore_index=True)
+            self.area_data = pd.merge(self.area_data, auxiliary_areas_df, how='outer', on=self.level)
             self.area_data.fillna(value=0, inplace=True)
-
-
-
-
-
-
 
     def initialize_centroids(self):
         """set the centroids - each one is a block or attendance area depends on the method
         probably best to make it a school"""
 
-        # with open("../Config/centroids.yaml", "r") as f:
-        with open("../Config/school_closure_centroids.yaml", "r") as f:
+        with open("../Config/centroids.yaml", "r") as f:
+        # with open("../Config/school_closure_centroids.yaml", "r") as f:
             centroid_configs = yaml.safe_load(f)
         if self.centroid_type not in centroid_configs:
             raise ValueError(
@@ -243,7 +186,6 @@ class DesignZones:
 
         centroid_areas = [self.sch2area[x] for x in self.centroid_sch]
         self.centroids = [self.area2idx[j] for j in centroid_areas]
-
 
     def load_neighborhood_dict(self):
         """ build a dictionary mapping a block group/attendance area to a list
@@ -295,26 +237,24 @@ class DesignZones:
                     self.closer_euc_neighbors = pickle.load(file)
                 return
 
-
         self.closer_euc_neighbors = {}
         for z in self.centroids:
             for idx in range(self.A):
                 n = self.neighbors[idx]
                 closer = [x for x in n
-                    if self.euc_distances[z][idx]
-                       >= self.euc_distances[z][x]
-                ]
+                          if self.euc_distances[z][idx]
+                          >= self.euc_distances[z][x]
+                          ]
                 self.closer_euc_neighbors[idx, z] = closer
 
         if (self.level == "Block") and (self.centroid_type == '59-zone-1'):
             with open(save_path, 'wb') as file:
                 pickle.dump(self.closer_euc_neighbors, file)
 
-
     # ---------------------------------------------------------------------------
     # ---------------------------------------------------------------------------
 
-    def save(self, path,  name = "", solve_success = 1):
+    def save(self, path, name="", solve_success=1):
         filename = os.path.expanduser(path)
         filename += name
         filename += ".csv"
@@ -329,99 +269,99 @@ class DesignZones:
                 writer.writerow({})
 
 
-    def solve(self, IP):
-        IP.m.update()  # Update the model
-        print(f"Total number of dz.m variables: {IP.m.numVars}")
-        print(f"Total number of dz.m constraints: {IP.m.numConstrs}")
-        self.filename = ""
-        self.zone_dict = {}
 
-        try:
-            IP.m.Params.TimeLimit = 700
-            IP.m.optimize()
+class Optimizer:
+    def __init__(self, Area_Data: DesignZones, config):
+        # Number of zones. This is given to us as input.
+        # We are trying to divide the city into self.Z number of zones
+        self.Z = Area_Data.Z
 
-            zone_lists = []
-            for z in range(0, self.Z):
-                zone = []
-                for j in range(0, self.A):
-                    if j not in IP.valid_area_per_zone[z]:
-                        continue
-                    if IP.x[j, z].X >= 0.999:
-                        self.zone_dict[self.idx2area[j]] = z
-                        zone.append(self.area_data[self.level][j])
-                        # add City wide school SF Montessori, even if we are not including city wide schools
-                        # 823 is the aa level of SF Montessori school (which has school id 814)
-                        if self.idx2area[j] in [823, 60750132001]:
-                            self.zone_dict[self.idx2area[j]] = z
-                            if self.level == "attendance_area":
-                                zone.append(SF_Montessori)
-                if not zone == False:
-                    zone_lists.append(zone)
-            zone_dict = {}
-            for idx, schools in enumerate(zone_lists):
-                zone_dict = {
-                    **zone_dict,
-                    **{int(float(s)): idx for s in schools if s != ""},
-                }
-            # add K-8 schools to dict if using them
-            if (self.level == 'attendance_area') & (self.include_k8):
-                cw = self.school_df.loc[self.school_df["K-8"] == 1]
-                for i, row in cw.iterrows():
-                    k8_schno = row["school_id"]
-                    z = zone_dict[self.sch2area[int(float(k8_schno))]]
-                    zone_dict = {**zone_dict, **{int(float(k8_schno)): z}}
-                    zone_lists[z].append(k8_schno)
-            self.zone_dict = zone_dict
-            self.zone_lists = zone_lists
+        # self.N: Total number of GE students.
+        # Computation based on area_data file: self.N = sum(self.area_data["ge_students"])
+        self.N = Area_Data.N
 
-            return True
+        # self.A: Total number of areas (number of distinct area indices)
+        # Computation based on area_data file: self.A = len(self.area_data.index)
+        self.A = Area_Data.A
 
-        except gp.GurobiError as e:
-            print("gurobi error #" + str(e.errno) + ": " + str(e))
-            return False
-        except AttributeError:
-            print("attribute error")
-            return False
+        # self.F: Average percentage of FRL students
+        # (students that are eligible for Free or reduced price lunch)
+        # Computation based on area_data file: self.F = sum(self.area_data["FRL"]) / (self.N)
+        self.F = Area_Data.F
 
+        # Should K8 schools be considered into the calculations or not
+        self.include_k8 = Area_Data.include_k8
 
+        # self.studentsInArea is a dictionary of:
+        # (keys: area index j), (values: number of GE students in area index j)
+        # Example: self.studentsInArea[41] == number of GE students in area index 41
+        # Computation based on area_data file: self.studentsInArea = self.area_data["ge_students"]
+        self.studentsInArea = Area_Data.studentsInArea
 
+        # self.seats is a dictionary of:
+        # (keys: area index j), (values: number of seats for GE students in area index j)
+        # Example: self.seats[41] == number of seats for GE students in area index 41
+        # Computation based on area_data file: self.seats = self.area_data["ge_capacity"].to_numpy()
+        self.seats = Area_Data.seats
 
-if __name__ == "__main__":
-    with open("../Config/config.yaml", "r") as f:
-        config = yaml.safe_load(f)
+        # self.schools is a dictionary of:
+        # (keys: area index j), (values: number of schools in area index j) this value is usually 0 or 1
+        # Example: self.schools[41] == number of schools in area index 41 (this value is usually 0 or 1)
+        # Computation based on area_data file: self.schools = self.area_data['num_schools']
+        self.schools = Area_Data.schools
+        self.school_df = Area_Data.school_df
 
-    name = Compute_Name(config)
-    print("name: ", name)
-    # if os.path.exists(config["path"] + name + "_AA" +".csv"):
-    #     return
+        # Most important, and most comprehensive data file.
+        # dataself.area_data is a pandas dataframe. Each column shows a metric for areas
+        # Each row, represent an area.
+        # Example: self.area_data['ge_students'][41] == number of GE students in area with index 41.
+        self.area_data = Area_Data.area_data
 
+        self.centroids = Area_Data.centroids
 
-    dz = DesignZones(config=config)
-    IP = Integer_Program(dz)
-    IP._feasibility_const(max_distance=config["max_distance"])
-    IP._set_objective_model()
-    IP._shortage_const(shortage=config["shortage"], overage= config["overage"],
-                       all_cap_shortage=config["all_cap_shortage"])
+        # self.euc_distances is a dictionary of:
+        # (keys: a pair of (area index i, area index j)), (values: euclidean distance, in miles, between area i and area j
+        # Example: self.euc_distances[41, 13] == 3.42, which means area 41 and area 13 are 3.42 miles away
+        self.euc_distances = Area_Data.euc_distances
 
-    IP._contiguity_const()
-    IP._diversity_const(racial_dev=config["racial_dev"], frl_dev=config["frl_dev"])
-    IP._school_count_const()
+        # self.neighbors is a dictionary of,
+        # (keys: area index j), (values: a list of indices of neighboring areas, to area j.
+        # Example: self.neighbors[41] == [32, 12, 52, 2], which is a list of indices of areas, adjacent to area 41.
+        self.neighbors = Area_Data.neighbors
 
-    solve_success = dz.solve(IP)
+        # self.closer_euc_neighbors is a dictionary of:
+        # (keys: a pair of (area index j, zone index z)), (values: a list of indices of
+        # neighboring areas, to area j, that are closer to the area of centroid z than araa j
+        # Example: self.closer_euc_neighbors[41, 3] == [32, 2], which is a list of indices of areas,
+        # adjacent to area 41, that are closer to the area of centroid 3 than araa 41
+        self.closer_euc_neighbors = Area_Data.closer_euc_neighbors
 
-    if solve_success == 1:
-        print("Resulting zone dictionary: ", dz.zone_dict)
-        dz.save(path=config["path"], name = name + "_AA")
+        self.level = Area_Data.level
+        # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
+        # (keys: area index j), (values: census area code for the area with index j)
+        # Example: self.idx2area[41] == census area code for the area with index 41)
+        # Computation based on area_data file: self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
+        self.idx2area = Area_Data.idx2area
 
-        zv = ZoneVisualizer(config["level"])
-        zv.zones_from_dict(dz.zone_dict)
-        # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
-        # stats_evaluation(dz, dz.zd)
+        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
+        # (keys: census area code AA), (values: index of area AA, in our data set)
+        # Example: self.area2idx[area code AA] == index of area AA in our data set
+        # Note that we can access our dictionaries only using the area index, and not the area code
+        # Computation based on area_data file: self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
+        self.area2idx = Area_Data.area2idx
 
+        # self.sch2area: A dictionary, mapping each school id, to its census area code
+        # Example: self.sch2area[644] == sensus area code for the school, with school id 644
+        # Computation based on area_data file: self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
+        self.sch2area = Area_Data.sch2area
 
+        self.config = config
 
-# Note: when you update the distance/neighboring files, also update the closer_eucledian distance file
-# Note: Total number of students in aa level is not the same as blockgroup level.
-# Reason: some students, do not have their bg info available
-# (but they do have their aa info, and also they pass every other filter, i.e. enrollment)
+    def add_constraints(self):
+        raise NotImplementedError('Subclasses must implement add_constraints')
 
+    def add_objective(self):
+        raise NotImplementedError('Subclasses must implement add_objective')
+
+    def solve(self):
+        raise NotImplementedError('Subclasses must implement solve')

@@ -2,7 +2,7 @@ import os
 import csv
 import yaml
 import pandas as pd
-from Zone_Generation.Optimization_IP.design_zones import *
+from Zone_Generation.Optimization.design_zones import *
 from Zone_Generation.Config.Constants import *
 
 

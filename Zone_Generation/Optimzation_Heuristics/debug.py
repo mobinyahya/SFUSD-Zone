@@ -6,7 +6,7 @@ sys.path.append('../..')
 sys.path.append('../../summary_statistics')
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 # from IP_Zoning import DesignZones
-from Zone_Generation.Optimization_IP.generate_zones import DesignZones, load_zones_from_file, Compute_Name
+from Zone_Generation.Optimization.generate_zones import DesignZones, load_zones_from_file, Compute_Name
 from Zone_Generation.Optimzation_Heuristics.zone_eval import * # evaluate_assignment_score, Tuning_param, boundary_trimming, evaluate_contiguity
 from Helper_Functions.ReCom import *
 from Helper_Functions.abstract_geography import *

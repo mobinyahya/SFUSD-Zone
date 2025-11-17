@@ -6,11 +6,11 @@ sys.path.append('../..')
 sys.path.append('../../summary_statistics')
 import pickle
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Zone_Generation.Optimization_IP.design_zones import DesignZones,  Compute_Name
+from Zone_Generation.Optimization.design_zones import DesignZones,  Compute_Name
 from Helper_Functions.ReCom import *
 from Helper_Functions.abstract_geography import *
 from Zone_Generation.Config.Constants import *
-from Zone_Generation.Optimization_IP.integer_program import Integer_Program
+from Zone_Generation.Optimization.integer_program import Integer_Program
 from Zone_Generation.Optimzation_Heuristics.local_search_zoning import *
 
 

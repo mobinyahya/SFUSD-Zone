@@ -14,7 +14,7 @@ class Students(object):
 
     def load_student_data(self):
 
-        cleaned_student_path = ("/Users/mobin/SFUSD/Data/Cleaned/Cleaned_Students_" +
+        cleaned_student_path = ("~/SFUSD/Data/Cleaned/Cleaned_Students_" +
                                 '_'.join([str(year) for year in self.years]) + ".csv")
         if os.path.exists(cleaned_student_path):
             student_df = pd.read_csv(cleaned_student_path, low_memory=False)

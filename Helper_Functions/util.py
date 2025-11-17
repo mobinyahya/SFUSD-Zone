@@ -261,7 +261,7 @@ def load_b2bg():
 
 
 def load_bg2att(census_sf = None):
-    savename = '/Users/mobin/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
+    savename = '/Users/kumar/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
 
     # # This mapping is based on polygon shapefile information (not the students info)
     # if self.level=='Block':
@@ -280,7 +280,9 @@ def load_bg2att(census_sf = None):
 
     level = "Blockgroup"
     # load attendance area geometry + its id in a single dataframe
-    path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+    # path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+    # moving out of downloads for obvious reasons
+    path = os.path.expanduser('~/SFUSD/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
     sf = gpd.read_file(path)
     sf = sf.to_crs('epsg:4326')
     sc_merged = make_school_geodataframe()
