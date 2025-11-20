@@ -1,9 +1,6 @@
 import sys
 
-from Zone_Generation.Optimization.constraint_program_boolean import BooleanConstraintProgram, OptimizationConfig
-from Zone_Generation.Optimization.constraint_program_integer import IntegerConstraintProgram
-from Zone_Generation.Optimization.integer_program import Integer_Program
-from Zone_Generation.Optimization.optimizer import DesignZones
+from Zone_Generation.Optimization.optimizer import DesignZones, Optimizer
 
 sys.path.append("../..")
 from Graphic_Visualization.zone_viz import ZoneVisualizer
@@ -52,13 +49,12 @@ if __name__ == "__main__":
     print("name: ", name)
 
     dz = DesignZones(config=config)
-    optimizer = Integer_Program(dz, config)
+    optimizer = Optimizer.get_optimizer(dz, config)
     optimizer.add_constraints()
     optimizer.add_objective()
     zone_dict = optimizer.solve()
 
     if zone_dict is not None:
-
         print("Resulting zone dictionary: ", zone_dict)
         # dz.save(path=config["path"], name=name + "_AA")
 

@@ -168,7 +168,7 @@ class DesignZones:
         probably best to make it a school"""
 
         with open("../Config/centroids.yaml", "r") as f:
-        # with open("../Config/school_closure_centroids.yaml", "r") as f:
+            # with open("../Config/school_closure_centroids.yaml", "r") as f:
             centroid_configs = yaml.safe_load(f)
         if self.centroid_type not in centroid_configs:
             raise ValueError(
@@ -269,7 +269,6 @@ class DesignZones:
                 writer.writerow({})
 
 
-
 class Optimizer:
     def __init__(self, Area_Data: DesignZones, config):
         # Number of zones. This is given to us as input.
@@ -365,3 +364,18 @@ class Optimizer:
 
     def solve(self):
         raise NotImplementedError('Subclasses must implement solve')
+
+    @staticmethod
+    def get_optimizer(dz: DesignZones, config):
+        # mip, cp_int, cp_bool
+        if config["optimizer"] == "mip":
+            from Zone_Generation.Optimization.integer_program import Integer_Program
+            return Integer_Program(dz, config)
+        elif config["optimizer"] == "cp_int":
+            from Zone_Generation.Optimization.constraint_program_integer import IntegerConstraintProgram
+            return IntegerConstraintProgram(dz, config)
+        elif config["optimizer"] == "cp_bool":
+            from Zone_Generation.Optimization.constraint_program_boolean import BooleanConstraintProgram
+            return BooleanConstraintProgram(dz, config)
+        else:
+            raise ValueError("The optimizer type specified is not recognized.")

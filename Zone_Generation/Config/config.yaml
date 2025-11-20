@@ -25,8 +25,14 @@ new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
 level: "BlockGroup"
-# MIP,
-optimizer: ''
+#start_level: "attendance_area"
+#end_level: "BlockGroup"
+# mip, cp_int, cp_bool
+optimizer: 'cp_bool'
+# optimize with choice
+optimize_with_choice: True
+# simulate choice
+simulate_choice: True
 
 #capacity_vicinity: 0.005
 #fixed_vicinity: 0.12
