@@ -1,6 +1,7 @@
 
 # changing levers
 centroids_type: '6-zone-2'
+#centroids_type: '10-zone-3'
 #centroids_type: '57-zone-1'
 
 frl_dev: 0.28
@@ -24,9 +25,9 @@ capacity_scenario: "A"
 new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
-level: "Block"
+level: "BlockGroup"
 start_level: "attendance_area"
-end_level: "Block"
+end_level: "BlockGroup"
 # mip, cp_int, cp_bool
 optimizer: 'cp_bool'
 # optimize with choice

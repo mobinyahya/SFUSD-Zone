@@ -1,6 +1,7 @@
 import sys
 
 from Zone_Generation.Optimization.optimizer import DesignZones, Optimizer
+from Zone_Generation.Optimzation_Heuristics.zone_eval import stats_evaluation
 
 sys.path.append("../..")
 from Graphic_Visualization.zone_viz import ZoneVisualizer
@@ -57,6 +58,7 @@ if __name__ == "__main__":
     if zone_dict is not None:
         print("Resulting zone dictionary: ", zone_dict)
         # dz.save(path=config["path"], name=name + "_AA")
+        stats_evaluation(dz, zone_dict)
 
         zv = ZoneVisualizer(config["level"])
         zv.zones_from_dict(zone_dict)
