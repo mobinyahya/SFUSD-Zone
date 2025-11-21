@@ -7,7 +7,6 @@
           <value>
             <JupyterConnectionParameters>
               <option name="managed" value="true" />
-              <option name="sdkHomePath" value="$USER_HOME$/anaconda3/envs/sfusd-project/bin/python" />
             </JupyterConnectionParameters>
           </value>
         </entry>
