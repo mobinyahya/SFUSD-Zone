@@ -228,9 +228,10 @@ class BooleanConstraintProgram(Optimizer):
 
     def solve(self):
         solver = cp_model.CpSolver()
-        status = solver.Solve(self.m)
+
         solver.parameters.max_time_in_seconds = 60
         solver.parameters.num_search_workers = 5
+        status = solver.Solve(self.m)
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             print(f"Solution found with objective value {solver.ObjectiveValue()}")
@@ -244,3 +245,12 @@ class BooleanConstraintProgram(Optimizer):
         else:
             print("No solution found.")
             return None
+
+    def fix_areas(self, fixed_zone_dict):
+        if fixed_zone_dict is None:
+            return
+        for area, zone in fixed_zone_dict.items():
+            area_idx = self.area2idx[area]
+            if area_idx in self.valid_zone_per_area:
+                if zone in self.valid_zone_per_area[area_idx]:
+                    self.m.Add(self.x[zone][area_idx] == 1)

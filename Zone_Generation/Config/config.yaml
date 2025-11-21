@@ -24,9 +24,9 @@ capacity_scenario: "A"
 new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
-level: "BlockGroup"
-#start_level: "attendance_area"
-#end_level: "BlockGroup"
+level: "Block"
+start_level: "attendance_area"
+end_level: "Block"
 # mip, cp_int, cp_bool
 optimizer: 'cp_bool'
 # optimize with choice

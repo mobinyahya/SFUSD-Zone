@@ -160,6 +160,9 @@ class DesignZones:
             auxiliary_areas = common_areas - current_areas
 
             auxiliary_areas_df = pd.DataFrame({self.level: list(auxiliary_areas)})
+
+            self.area_data[self.level] = self.area_data[self.level].astype(int)
+            auxiliary_areas_df[self.level] = auxiliary_areas_df[self.level].astype(int)
             self.area_data = pd.merge(self.area_data, auxiliary_areas_df, how='outer', on=self.level)
             self.area_data.fillna(value=0, inplace=True)
 
@@ -364,6 +367,9 @@ class Optimizer:
 
     def solve(self):
         raise NotImplementedError('Subclasses must implement solve')
+
+    def fix_areas(self, fixed_zone_dict):
+        raise NotImplementedError('Subclasses must implement fix_areas')
 
     @staticmethod
     def get_optimizer(dz: DesignZones, config):
