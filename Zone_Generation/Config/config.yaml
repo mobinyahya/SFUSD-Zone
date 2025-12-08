@@ -1,10 +1,13 @@
 
 # changing levers
+#centroids_type: '4-zone-rec-4'
 centroids_type: '6-zone-2'
+#centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
+#centroids_type: '18-zone-7'
 #centroids_type: '57-zone-1'
 
-frl_dev: 0.28
+frl_dev: 0.3
 racial_dev: 0.3
 
 # fixed levers
@@ -14,7 +17,6 @@ overage: 0.8 # this is in percentage
 all_cap_shortage: .inf # this is in percentage
 max_distance: 4 # best valid value for 59 zines: 1.272
 population_dev: .inf
-path: "/Users/kumar/Dropbox/SFUSD/Visualizations/testing"
 
 
 years: [14, 15, 16, 17, 18, 21, 22]
@@ -27,7 +29,9 @@ include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
 level: "BlockGroup"
 start_level: "attendance_area"
-end_level: "BlockGroup"
+end_level: "Block"
+
+solve_time_limit: 300 # seconds
 # mip, cp_int, cp_bool
 optimizer: 'cp_bool'
 # optimize with choice

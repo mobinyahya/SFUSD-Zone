@@ -1,4 +1,5 @@
 import math
+import random
 from collections import defaultdict
 from Zone_Generation.Config.Constants import *
 
@@ -222,11 +223,8 @@ def evaluate_frl(dz, zone_dict, lbfrl_limit, ubfrl_limit):
 # --------------------------------------------------------------------------------------------------
 
 def drop_boundary(dz, zone_dict):
-    # if dz.level == "BlockGroup":
-    #     c = 2.7
-    # elif dz.level == "Block":
-    #     c = 4
-    c = 3.5
+    # c = 3.5
+    c = 5
     if dz.Z in [8,10]:
         c = 2.9
     elif dz.Z == 13:
@@ -257,6 +255,84 @@ def drop_boundary(dz, zone_dict):
         zone_dict.pop(area, None)
 
     return zone_dict
+
+
+def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
+    """
+    Drops areas that are within c graph distance from a zone boundary.
+
+    Args:
+        dz: Data zone object containing area and neighbor information
+        zone_dict: Dictionary mapping areas to zones
+        c: Graph distance threshold from boundary. Areas within this distance are dropped.
+           If None, uses default based on dz.Z
+
+    Returns:
+        Updated zone_dict with boundary areas removed
+    """
+    if c is None:
+        if dz.level == 'attendance_area':
+            c = 0
+        if dz.level == 'BlockGroup':
+            c = 0
+        if dz.level == 'Block':
+            c = 1
+
+    # First, identify boundary areas (distance 0 from boundary)
+    boundary_distance = {}
+    for area_idx in range(dz.A):
+        area = dz.idx2area[area_idx]
+        if area not in zone_dict:
+            continue
+
+        neighbors = dz.neighbors[area_idx]
+        is_boundary = False
+        for neighbor_idx in neighbors:
+            neighbor_area = dz.idx2area[neighbor_idx]
+            if neighbor_area not in zone_dict:
+                continue
+            if zone_dict[neighbor_area] != zone_dict[area]:
+                is_boundary = True
+                break
+
+        if is_boundary:
+            boundary_distance[area] = 0
+
+    # BFS to compute graph distance from boundary for all areas
+    from collections import deque
+    queue = deque(boundary_distance.keys())
+
+    while queue:
+        area = queue.popleft()
+        area_idx = dz.area2idx[area]
+        current_dist = boundary_distance[area]
+
+        for neighbor_idx in dz.neighbors[area_idx]:
+            neighbor_area = dz.idx2area[neighbor_idx]
+            if neighbor_area in zone_dict and zone_dict[neighbor_area] == zone_dict[area]:
+                if neighbor_area not in boundary_distance:
+                    boundary_distance[neighbor_area] = current_dist + 1
+                    queue.append(neighbor_area)
+
+    # Drop areas within distance c from boundary
+    floor_c = math.floor(c)
+    frac = c - floor_c
+    areas_to_drop = []
+    for area, dist in boundary_distance.items():
+        if dist <= floor_c:
+            prob = 1.0
+        elif dist == floor_c + 1:
+            prob = frac
+        else:
+            prob = 0.0
+        if random.random() < prob:
+            areas_to_drop.append(area)
+
+    for area in areas_to_drop:
+        zone_dict.pop(area, None)
+
+    return zone_dict
+
 
 # we trim neighbors on the boundary that do not satisfy strong contiguity
 def trim_noncontiguity(dz, zone_dict):

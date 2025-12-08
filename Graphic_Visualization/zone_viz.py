@@ -1,16 +1,14 @@
 import csv
-import glob, yaml
-import os
+import glob
 
-import shapely.geometry as sg
-import matplotlib.colors as mcolors
 import geopandas as gpd
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
-from Zone_Generation.Config.Constants import *
 
+from Zone_Generation.Config.Constants import *
 
 
 class ZoneVisualizer:
@@ -59,14 +57,13 @@ class ZoneVisualizer:
             # school data and shape file merged
             # sc_merged includes all data in school_geo_df, and also showing in which attendance area(?) each Point is.
             # This info is available in an extra columnt, 'index_right'
-            sc_merged = gpd.sjoin(school_geo_df, self.sf, how="inner", op='intersects')
+            sc_merged = gpd.sjoin(school_geo_df, self.sf, how="inner", predicate='intersects')
             self.labels = sc_merged.loc[sc_ll['category'] == 'Citywide'][['school_id', 'index_right', 'geometry']]
 
             # make zone to attendance area id translator
             translator = sc_merged.loc[sc_ll['category'] == 'Attendance'][['school_id', 'index_right', 'geometry']]
             self.translator = translator.rename(columns={'school_id': 'aa_zone'})
             self.sc_merged = sc_merged.merge(self.translator, how='left', on='index_right')
-
 
     def population_heatmap(self, area_population, sch_df=None, metric=None, title="", save_path=""):
         ax = self.load_base_plot()
@@ -78,15 +75,12 @@ class ZoneVisualizer:
         population_dict = area_population.set_index('BlockGroup')['ge_students'].to_dict()
         self.sf['ge_students'] = self.sf['BlockGroup'].replace(population_dict)
 
-
         # Calculate the area for each block group
         sf_projected = self.sf.to_crs(epsg=3857)  # Replace 3857 with a more suitable CRS if needed
         self.sf['area'] = sf_projected.area
 
-
         sorted_df = self.sf.sort_values('ge_students', ascending=False)
         distinct_blockgroups = sorted_df.drop_duplicates('BlockGroup')
-
 
         # Aggregate the df info to have area information at Blockgroup level. For that, you need to sum the area
         # of each block, but don't sum the ge_students, etc (since they were already computed at blockgroup level)
@@ -95,7 +89,6 @@ class ZoneVisualizer:
         df_first_row = self.sf.drop(['area', 'geometry'], axis=1).groupby('BlockGroup').first()
         # Join the two DataFrames. The resulting DataFrame will have the aggregated 'area' and the combined 'geometry' for each 'BlockGroup',
         df = df_first_row.join(df_area_sum)
-
 
         df["normalized_ge_students"] = df["ge_students"] / df["area"]
         # plot population
@@ -113,13 +106,11 @@ class ZoneVisualizer:
 
         self.show_plot(save_path, title)
 
-
-    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min = None, metric_max = None, title='', save_path=""):
+    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min=None, metric_max=None, title='', save_path=""):
         self._read_data()
         if self.level == 'attendance_area':
             self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
             self.sf = self.sf.merge(self.sc_merged, how='left', right_on='index_right', left_index=True)
-
 
         ax = self.load_base_plot()
         zone_metric_dict = stat_df.set_index('zone ID')[metric].to_dict()
@@ -133,7 +124,6 @@ class ZoneVisualizer:
         self.sf['zone_metric'] = self.sf["zone_id"].replace(zone_metric_dict)
 
         df = self.sf.loc[self.sf['filter'] == 1]
-
 
         # percentage of students in each zone that ranked the
         # school within that zone as their top school in r1_ranked_idschool
@@ -190,7 +180,6 @@ class ZoneVisualizer:
         plt.gca().set_xlim(-122.525, -122.350)
         plt.gca().set_ylim(37.70, 37.84)
 
-
         if save_path != "":
             print(save_path + '.png')
             plt.savefig(save_path + '.png')
@@ -218,10 +207,10 @@ class ZoneVisualizer:
             if label:
                 self.translator.apply(
                     lambda x: ax.annotate(fontsize=12, s=x.aa_zone, xy=x.geometry.centroid.coords[0], ha='center'),
-                    axis=1);
+                    axis=1)
                 self.labels.apply(
                     lambda x: ax.annotate(fontsize=12, s=x.school_id, xy=x.geometry.centroid.coords[0], ha='center'),
-                    axis=1);
+                    axis=1)
 
         elif (self.level == 'BlockGroup') | (self.level == 'Block'):
 
@@ -233,7 +222,7 @@ class ZoneVisualizer:
                                                     xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
             self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(1000) else 0)
-            df = self.sf.loc[self.sf['filter'] == 1]
+            df = self.sf.loc[self.sf['filter'] == 1].copy()
 
             plt.figure(figsize=(20, 20))
             ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
@@ -243,7 +232,6 @@ class ZoneVisualizer:
 
         # Plot zones using the 'zone_color' column
         df.plot(ax=ax, color=df['zone_color'], legend=True, aspect=1)
-
 
         # plot zones
         # df.plot(ax=ax, column='zone_id', cmap='tab20', legend=True, aspect=1)
@@ -264,8 +252,6 @@ class ZoneVisualizer:
         # plt.scatter(citywide['lon'],citywide['lat'],s=10, c='black',marker='^')
 
         self.show_plot(save_path, title)
-
-
 
     def visualize_SpEd(self, sped_df, sped_types, label=False, centroid_location=-1):
         # Note TOD: This visualization assumes that each school has at most 1 program to be visualized.

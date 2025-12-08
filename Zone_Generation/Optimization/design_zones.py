@@ -1,7 +1,6 @@
 import sys
 
 from Zone_Generation.Optimization.optimizer import DesignZones, Optimizer
-from Zone_Generation.Optimzation_Heuristics.zone_eval import stats_evaluation
 
 sys.path.append("../..")
 from Graphic_Visualization.zone_viz import ZoneVisualizer
@@ -53,17 +52,17 @@ if __name__ == "__main__":
     optimizer = Optimizer.get_optimizer(dz, config)
     optimizer.add_constraints()
     optimizer.add_objective()
-    zone_dict = optimizer.solve()
+    solution_output = optimizer.solve()
 
-    if zone_dict is not None:
-        print("Resulting zone dictionary: ", zone_dict)
-        # dz.save(path=config["path"], name=name + "_AA")
-        stats_evaluation(dz, zone_dict)
+    if solution_output.status != 'INFEASIBLE':
+        zone_dict = solution_output.zone_dict
 
         zv = ZoneVisualizer(config["level"])
-        zv.zones_from_dict(zone_dict)
-        # zv.zones_from_dict(dz.zone_dict, centroid_location=dz.centroid_location, save_path=config["path"]+name+"_"+SUFFIX[config["level"]])
-        # stats_evaluation(dz, dz.zd)
+        zv.zones_from_dict(zone_dict, save_path='output')
+
+        print("Objective value: ", solution_output.objective_value)
+        print('Boundary cost: ', solution_output.get_boundary_cost())
+        print('Demographics: ', solution_output.get_zone_demographics())
 
 # Note: when you update the distance/neighboring files, also update the closer_eucledian distance file
 # Note: Total number of students in aa level is not the same as blockgroup level.

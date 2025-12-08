@@ -1,6 +1,7 @@
 import csv
 import os
 import pickle
+from collections import defaultdict
 
 import pandas as pd
 import yaml
@@ -64,15 +65,26 @@ class DesignZones:
             #     print("ethnicity ", ethnicity, "percentage is: ", sum(self.area_data[ethnicity]))
 
         self.F = sum(self.area_data["FRL"]) / (self.N)
+        self.R = {}
+        for ethnicity in AREA_ETHNICITIES:
+            self.R[ethnicity] = sum(self.area_data[ethnicity]) / (self.N)
 
-        print("Average FRL ratio:       ", self.F)
+
+
+        # print("Average FRL ratio:       ", self.F)
         print("Number of Areas:       ", self.A)
+        # max,min number of students in an area
+        print("Max number of students in an area: ", max(self.studentsInArea))
+        print("Min number of students in an area: ", min(self.studentsInArea))
+        print('Avg number of students in an area: ', sum(self.studentsInArea) / self.A)
+        print('Median number of students in an area: ', self.area_data['ge_students'].median())
+
         print("Number of GE students:       ", sum(self.area_data["ge_students"]))
-        print("Number of GE seats:       ", sum(self.area_data["ge_capacity"]))
+        # print("Number of GE seats:       ", sum(self.area_data["ge_capacity"]))
         print("Number of total students: ", sum(self.area_data["all_prog_students"]))
-        print("Number of total seats:    ", sum(self.area_data["all_prog_capacity"]))
-        print("Number of Schools:       ", sum(self.schools))
-        print("Number of zones:       ", self.Z)
+        # print("Number of total seats:    ", sum(self.area_data["all_prog_capacity"]))
+        # print("Number of Schools:       ", sum(self.schools))
+        # print("Number of zones:       ", self.Z)
 
         # self.save_partial_distances()
         # self.drive_distances = self.load_driving_distance_data()
@@ -80,16 +92,16 @@ class DesignZones:
     def save_partial_distances(self):
         self.euc_distances = load_euc_distance_data(self.level, complete_bg=True)
 
-        print("len(self.euc_distances))  ", len(self.euc_distances))
+        # print("len(self.euc_distances))  ", len(self.euc_distances))
         school_blocks = list(self.sch2b.values())
 
         existing_school_blocks = [block for block in school_blocks if block in self.euc_distances.index]
 
         # pd.set_option('display.max_rows', None)
-        print("self.euc_distances.index", list(self.euc_distances.index))
-        print("school_blocks ", school_blocks)
-        print("len(existing_school_blocks): ", len(existing_school_blocks))
-        print("len((school_blocks)): ", len((school_blocks)))
+        # print("self.euc_distances.index", list(self.euc_distances.index))
+        # print("school_blocks ", school_blocks)
+        # print("len(existing_school_blocks): ", len(existing_school_blocks))
+        # print("len((school_blocks)): ", len((school_blocks)))
         distances = self.euc_distances.loc[existing_school_blocks]
 
         save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b_schools.csv"
@@ -272,90 +284,98 @@ class DesignZones:
                 writer.writerow({})
 
 
+class SolutionOutput:
+    def __init__(self, zone_dict, objective_value, status, user_time, dz: DesignZones):
+        self.zone_dict = zone_dict
+        self.objective_value = objective_value
+        self.status = status
+        self.user_time = user_time
+        self.dz = dz
+
+    def get_boundary_cost(self):
+        boundary_cost = 0
+        for i in range(self.dz.A):
+            a = self.dz.idx2area[i]
+            for j in self.dz.neighbors[i]:
+                b = self.dz.idx2area[j]
+                if self.zone_dict[a] != self.zone_dict[b]:
+                    boundary_cost += 1
+        return boundary_cost
+
+
+
+    # Assuming AREA_ETHNICITIES is defined somewhere and is a list of strings like ['Ethnicity_White', 'Ethnicity_Black', ...]
+
+    def get_zone_demographics(self):
+        """
+        Calculates aggregated and proportional demographics (total students, FRL proportion,
+        and racial/ethnic proportions) for each zone.
+
+        Assumes self.dz.area_data is a pandas DataFrame and self.zone_dict maps area to zone_id.
+        """
+
+        # 1. Define the columns to aggregate and the corresponding keys for the output dictionary
+        # The keys will be like 'White', 'Black', etc.
+        ETHNICITY_KEYS = [col[len('Ethnicity_'):] for col in AREA_ETHNICITIES]
+
+        # 2. Use a defaultdict to simplify accumulation and avoid checking for key existence
+        # We initialize with a lambda that returns a dict structure for aggregation
+        zone_aggregates = defaultdict(lambda: {
+            "total_students": 0.0,
+            "FRL": 0.0,
+            **{key: 0.0 for key in ETHNICITY_KEYS}
+        })
+
+        # 3. Iterate over the area data and aggregate by zone
+        # Using iterrows or a direct index-based loop can be fine, but pandas' built-in
+        # grouping/aggregation methods are often more efficient for large data.
+        # We'll stick to a loop here since the original code did, but optimize the lookups.
+
+        # Iterate over the area data index
+        for i, row in self.dz.area_data.iterrows():
+            area = self.dz.idx2area[i]
+            zone_id = self.zone_dict[area]
+
+            # Reference the aggregate dictionary for the current zone
+            agg = zone_aggregates[zone_id]
+
+            # Accumulate total students and FRL counts
+            agg["total_students"] += float(row["ge_students"])
+            agg["FRL"] += float(row["FRL"])
+
+            # Accumulate ethnicity counts
+            for ethnicity_col, key in zip(AREA_ETHNICITIES, ETHNICITY_KEYS):
+                agg[key] += float(row[ethnicity_col])
+
+        # 4. Convert aggregated counts to proportions
+        final_zone_demographics = {}
+        for zone_id, data in zone_aggregates.items():
+            total_students = data["total_students"]
+
+            # Create a new dictionary for the final, proportional results
+            final_demographics = {"total_students": round(total_students, 2)}
+
+            if total_students > 0:
+                # Calculate FRL proportion
+                final_demographics["FRL"] = round(data["FRL"] / total_students, 2)
+
+                # Calculate ethnicity proportions
+                for key in ETHNICITY_KEYS:
+                    final_demographics[key] = round(data[key] / total_students, 2)
+            else:
+                # Handle zones with zero students (FRL and ethnic proportions are 0)
+                final_demographics["FRL"] = 0.0
+                for key in ETHNICITY_KEYS:
+                    final_demographics[key] = 0.0
+
+            final_zone_demographics[zone_id] = final_demographics
+
+        return final_zone_demographics
+
+
 class Optimizer:
-    def __init__(self, Area_Data: DesignZones, config):
-        # Number of zones. This is given to us as input.
-        # We are trying to divide the city into self.Z number of zones
-        self.Z = Area_Data.Z
-
-        # self.N: Total number of GE students.
-        # Computation based on area_data file: self.N = sum(self.area_data["ge_students"])
-        self.N = Area_Data.N
-
-        # self.A: Total number of areas (number of distinct area indices)
-        # Computation based on area_data file: self.A = len(self.area_data.index)
-        self.A = Area_Data.A
-
-        # self.F: Average percentage of FRL students
-        # (students that are eligible for Free or reduced price lunch)
-        # Computation based on area_data file: self.F = sum(self.area_data["FRL"]) / (self.N)
-        self.F = Area_Data.F
-
-        # Should K8 schools be considered into the calculations or not
-        self.include_k8 = Area_Data.include_k8
-
-        # self.studentsInArea is a dictionary of:
-        # (keys: area index j), (values: number of GE students in area index j)
-        # Example: self.studentsInArea[41] == number of GE students in area index 41
-        # Computation based on area_data file: self.studentsInArea = self.area_data["ge_students"]
-        self.studentsInArea = Area_Data.studentsInArea
-
-        # self.seats is a dictionary of:
-        # (keys: area index j), (values: number of seats for GE students in area index j)
-        # Example: self.seats[41] == number of seats for GE students in area index 41
-        # Computation based on area_data file: self.seats = self.area_data["ge_capacity"].to_numpy()
-        self.seats = Area_Data.seats
-
-        # self.schools is a dictionary of:
-        # (keys: area index j), (values: number of schools in area index j) this value is usually 0 or 1
-        # Example: self.schools[41] == number of schools in area index 41 (this value is usually 0 or 1)
-        # Computation based on area_data file: self.schools = self.area_data['num_schools']
-        self.schools = Area_Data.schools
-        self.school_df = Area_Data.school_df
-
-        # Most important, and most comprehensive data file.
-        # dataself.area_data is a pandas dataframe. Each column shows a metric for areas
-        # Each row, represent an area.
-        # Example: self.area_data['ge_students'][41] == number of GE students in area with index 41.
-        self.area_data = Area_Data.area_data
-
-        self.centroids = Area_Data.centroids
-
-        # self.euc_distances is a dictionary of:
-        # (keys: a pair of (area index i, area index j)), (values: euclidean distance, in miles, between area i and area j
-        # Example: self.euc_distances[41, 13] == 3.42, which means area 41 and area 13 are 3.42 miles away
-        self.euc_distances = Area_Data.euc_distances
-
-        # self.neighbors is a dictionary of,
-        # (keys: area index j), (values: a list of indices of neighboring areas, to area j.
-        # Example: self.neighbors[41] == [32, 12, 52, 2], which is a list of indices of areas, adjacent to area 41.
-        self.neighbors = Area_Data.neighbors
-
-        # self.closer_euc_neighbors is a dictionary of:
-        # (keys: a pair of (area index j, zone index z)), (values: a list of indices of
-        # neighboring areas, to area j, that are closer to the area of centroid z than araa j
-        # Example: self.closer_euc_neighbors[41, 3] == [32, 2], which is a list of indices of areas,
-        # adjacent to area 41, that are closer to the area of centroid 3 than araa 41
-        self.closer_euc_neighbors = Area_Data.closer_euc_neighbors
-
-        self.level = Area_Data.level
-        # self.idx2area: A dictionary, mapping each area index in our data, to its census area code
-        # (keys: area index j), (values: census area code for the area with index j)
-        # Example: self.idx2area[41] == census area code for the area with index 41)
-        # Computation based on area_data file: self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
-        self.idx2area = Area_Data.idx2area
-
-        # self.area2idx: A dictionary, mapping each census area code, to its index in our data
-        # (keys: census area code AA), (values: index of area AA, in our data set)
-        # Example: self.area2idx[area code AA] == index of area AA in our data set
-        # Note that we can access our dictionaries only using the area index, and not the area code
-        # Computation based on area_data file: self.area2idx = dict(zip(self.area_data[self.level], self.area_data.index))
-        self.area2idx = Area_Data.area2idx
-
-        # self.sch2area: A dictionary, mapping each school id, to its census area code
-        # Example: self.sch2area[644] == sensus area code for the school, with school id 644
-        # Computation based on area_data file: self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
-        self.sch2area = Area_Data.sch2area
+    def __init__(self, dz: DesignZones, config):
+        self.dz = dz
 
         self.config = config
 
@@ -365,7 +385,7 @@ class Optimizer:
     def add_objective(self):
         raise NotImplementedError('Subclasses must implement add_objective')
 
-    def solve(self):
+    def solve(self) -> SolutionOutput:
         raise NotImplementedError('Subclasses must implement solve')
 
     def fix_areas(self, fixed_zone_dict):

@@ -1,12 +1,13 @@
-import os
 import csv
 import math
+import os
 import pickle
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-import geopandas as gpd
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
+
 
 def get_school_latlon():
     # get school latitude and longitude DataFrame
@@ -68,7 +69,7 @@ def make_simplified_student_geodataframe(kg_only=False, dropnull=False, year=18)
     return student_geo_df
 
 
-def make_school_geodataframe(school_path ='~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv'):
+def make_school_geodataframe(school_path='~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv'):
     ''' make sc_merged '''
     # get school data table
     # cleanschoolpath = '~/SFUSD/Data/Cleaned/school_1819.csv'
@@ -89,6 +90,7 @@ def make_school_geodataframe(school_path ='~/SFUSD/Data/Cleaned/schools_rehauled
 
     return sc_merged
 
+
 def load_census_shapefile(level):
     # get census block shapefile
     path = os.path.expanduser(
@@ -100,7 +102,7 @@ def load_census_shapefile(level):
     )
 
     df = pd.read_csv("~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv")
-    df["Block"].fillna(value=0, inplace=True)
+    df.loc[:, "Block"] = df["Block"].fillna(0)
     df["Block"] = df["Block"].astype("int64")
 
     census_sf = census_sf.merge(df, how="left", on="Block")
@@ -110,7 +112,8 @@ def load_census_shapefile(level):
 
     return census_sf
 
-def load_euc_distance_data(level, area2idx, complete_bg = False):
+
+def load_euc_distance_data(level, area2idx, complete_bg=False):
     if level == "attendance_area":
         save_path = "~/Dropbox/SFUSD/Optimization/distances_aa2aa.csv"
     elif level == "BlockGroup":
@@ -204,7 +207,8 @@ def load_euc_distance_data(level, area2idx, complete_bg = False):
     table.to_csv(save_path)
     return table
 
-def load_driving_distance_data(level, choices, sch2level, area_data = None, destinations = None):
+
+def load_driving_distance_data(level, choices, sch2level, area_data=None, destinations=None):
     if level == 'BlockGroup':
         savename = '~/Dropbox/SFUSD/Optimization/OD_drive_time_cut60.csv'
 
@@ -222,7 +226,8 @@ def load_driving_distance_data(level, choices, sch2level, area_data = None, dest
                 # make sure this bg id was found by the system, and the lack of distance info
                 # is not just due to the cut-off
                 if len(drive_time.loc[drive_time['Name_12'] == bg]) != 0:
-                    dist = drive_time.loc[drive_time['Name_1'] == school_id].loc[drive_time['Name_12'] == bg]['Total_Trav']
+                    dist = drive_time.loc[drive_time['Name_1'] == school_id].loc[drive_time['Name_12'] == bg][
+                        'Total_Trav']
                     if len(dist) == 1:
                         dist = float(dist)
                     elif len(dist) == 0:
@@ -260,7 +265,7 @@ def load_b2bg():
     return b2bg
 
 
-def load_bg2att(census_sf = None):
+def load_bg2att(census_sf=None):
     savename = '/Users/kumar/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
 
     # # This mapping is based on polygon shapefile information (not the students info)
@@ -307,6 +312,7 @@ def load_bg2att(census_sf = None):
     file.close()
 
     return bg2att
+
 
 def make_simplified_school_geodataframe():
     ''' make sc_merged '''
@@ -450,11 +456,13 @@ def applied_to_school(df, schoolid):
     df['applied'] = np.where(df['applied'] > 0, 1, 0)
     return df
 
+
 def calculate_euc_distance(lat1, lon1, lat2, lon2):
     # print(str(lat1) + "  " + str(lon1) + "  " + str(lat2) + "  " + str(lon2) + "  " )
     return 6371.01 * np.arccos(np.sin(lat1 * np.pi / 180) * np.sin(lat2 * np.pi / 180) + \
                                np.cos(lat1 * np.pi / 180) * np.cos(lat2 * np.pi / 180) \
                                * np.cos((lon1 - lon2) * np.pi / 180)) * 0.621371  # return distance in miles
+
 
 def get_distance(row):
     ''' helper function for calculating distance from student to school, get
@@ -464,6 +472,7 @@ def get_distance(row):
     lat2 = row['st_lat']
     lon2 = row['st_lon']
     return calculate_euc_distance(lat1, lon1, lat2, lon2)
+
 
 def fix_studentno(df):
     # take the leading 'S' off of student id number to make it an int
@@ -595,11 +604,11 @@ def simplify_ethnicities(df):
 
 
 def get_zone_dict(zonefile):
-    with open(zonefile,'r') as f:
+    with open(zonefile, 'r') as f:
         reader = csv.reader(f)
         zones = list(reader)
 
     zone_dict = {}
     for idx, schools in enumerate(zones):
-        zone_dict = {**zone_dict,**{int(float(s)):idx for s in schools if s != ''}}
+        zone_dict = {**zone_dict, **{int(float(s)): idx for s in schools if s != ''}}
     return zone_dict

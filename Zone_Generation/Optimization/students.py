@@ -119,8 +119,7 @@ class Students(object):
         # Fill NaN values in columns with the mean value
         for col in ["FRL", "AALPI Score"]:
             mean_value = student_data[col].mean()
-            student_data['FRL'].fillna(value=mean_value, inplace=True)
-
+            student_data.loc[:, col] = student_data[col].fillna(mean_value)
         # Fill NaN values in the remaining columns with 0
         student_data.fillna(value=0, inplace=True)
 
