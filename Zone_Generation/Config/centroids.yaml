@@ -44,7 +44,7 @@
 ## 7 zones
 #7-zone-12: [676, 479, 796, 449, 760, 493, 670] # K-8 schools + Lakeshore
 #7-zone-13: [676, 479, 796, 449, 760, 493, 453] # K-8 schools + Harte
-#7-zone-14: [490, 664, 650, 478, 539, 513, 867] # Vertical stack, pick largest A
+7-zone-14: [490, 664, 650, 478, 539, 513, 867] # Vertical stack, pick largest A
 #7-zone-15: [490, 664, 650, 420, 539, 513, 867] # Vertical stack, pick largest B
 #7-zone-16: [490, 664, 650, 420, 876, 513, 867] # Vertical stack, pick largest C
 #7-zone-17: [490, 664, 650, 680, 539, 513, 867] # Vertical stack, pick largest

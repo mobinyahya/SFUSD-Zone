@@ -1,6 +1,6 @@
 import os
 
-SCALING_CONST = 10 ** 6
+SCALING_CONST = 10 ** 2
 
 ETHNICITY_DICT = {
     'Chinese': 'Asian',

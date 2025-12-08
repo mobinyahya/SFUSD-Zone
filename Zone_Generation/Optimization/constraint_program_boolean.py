@@ -140,16 +140,13 @@ class BooleanConstraintProgram(Optimizer):
             r = int(SCALING_CONST * self.dz.R[race])
 
             for z in range(self.dz.Z):
-                race_sum = sum(
-                    [int(SCALING_CONST * self.dz.area_data[race][j]) *
-                     self.x[z][j] for j in
-                     self.valid_area_per_zone[z]]
-                )
+                vars_list = [self.x[z][j] for j in self.valid_area_per_zone[z]]
+                race_coefs = [int(SCALING_CONST * self.dz.area_data[race][j]) for j in self.valid_area_per_zone[z]]
+                pop_coefs = [int(SCALING_CONST * self.dz.area_data["ge_students"][j]) for j in
+                             self.valid_area_per_zone[z]]
 
-                pop_students = sum(
-                    [int(SCALING_CONST * self.dz.area_data["ge_students"][j]) * self.x[z][j] for j in
-                     self.valid_area_per_zone[z]]
-                )
+                race_sum = cp_model.LinearExpr.WeightedSum(vars_list, race_coefs)
+                pop_students = cp_model.LinearExpr.WeightedSum(vars_list, pop_coefs)
 
                 self.m.Add(race_sum * SCALING_CONST >= (r - race_dev) * pop_students)
                 self.m.Add(race_sum * SCALING_CONST <= (r + race_dev) * pop_students)
@@ -160,22 +157,21 @@ class BooleanConstraintProgram(Optimizer):
     # make sure the total FRL for students in each zone, is within an additive
     #  frl_dev% of average FRL over zones..
     def _frl_const(self):
+
+
         frl_dev = int(SCALING_CONST * self.config['frl_dev'])
         f = int(SCALING_CONST * self.dz.F)
         for z in range(self.dz.Z):
-            frl_sum = sum(
-                [int(SCALING_CONST * self.dz.area_data['FRL'][j]) *
-                 self.x[z][j] for j in
-                 self.valid_area_per_zone[z]]
-            )
+            vars_list = [self.x[z][j] for j in self.valid_area_per_zone[z]]
+            frl_coefs = [int(SCALING_CONST * self.dz.area_data['FRL'][j]) for j in self.valid_area_per_zone[z]]
+            pop_coefs = [int(SCALING_CONST * self.dz.area_data["ge_students"][j]) for j in
+                         self.valid_area_per_zone[z]]
 
-            pop_students = sum(
-                [int(SCALING_CONST * self.dz.area_data["ge_students"][j]) * self.x[z][j] for j in
-                 self.valid_area_per_zone[z]]
-            )
+            race_sum = cp_model.LinearExpr.WeightedSum(vars_list, frl_coefs)
+            pop_students = cp_model.LinearExpr.WeightedSum(vars_list, pop_coefs)
 
-            self.m.Add(frl_sum * SCALING_CONST >= (f - frl_dev) * pop_students)
-            self.m.Add(frl_sum * SCALING_CONST <= (f + frl_dev) * pop_students)
+            self.m.Add(race_sum * SCALING_CONST >= (f - frl_dev) * pop_students)
+            self.m.Add(race_sum * SCALING_CONST <= (f + frl_dev) * pop_students)
 
     def _proportional_shortage_const(self):
         # No zone has shortage more than shortage percentage of its population
@@ -231,40 +227,52 @@ class BooleanConstraintProgram(Optimizer):
             if closest_centroid in self.valid_zone_per_area[i]:
                 self.m.AddHint(self.x[closest_centroid][i], 1)
 
-    # def _add_hints(self):
-    #     # add hint that each block will be assigned to the closest centroid
-    #     # Only hint the top 80% closest blocks from each centroid
+    def _add_search_strategy(self):
+        # define search strategy
+        # for each zone, try to assign areas closer to centroid first
+        areas_by_constraint = sorted(
+            range(self.dz.A),
+            key=lambda i: len(self.valid_zone_per_area[i])
+        )
+
+        vars_ordered = []
+        for i in areas_by_constraint:
+            # For each area, order zones by distance
+            zones_sorted = sorted(
+                self.valid_zone_per_area[i],
+                key=lambda z: self.dz.euc_distances[self.dz.centroids[z]][i]
+            )
+            vars_ordered.extend(self.x[z][i] for z in zones_sorted)
+
+        self.m.AddDecisionStrategy(
+            vars_ordered,
+            cp_model.CHOOSE_FIRST,
+            cp_model.SELECT_MAX_VALUE
+        )
+
+
+
+    # def add_objective_old(self):
+    #     self._add_hints()
+    #     # self._add_search_strategy()
+    #     boundary_vars = []
     #
-    #     # First, find the closest centroid for each area
-    #     area_to_closest = {}
-    #     for i in range(self.dz.A):
-    #         closest_centroid = None
-    #         closest_distance = float('inf')
-    #         for z in range(self.dz.Z):
-    #             centroid_z = self.dz.centroids[z]
-    #             dist = self.dz.euc_distances[centroid_z][i]
-    #             if dist < closest_distance:
-    #                 closest_distance = dist
-    #                 closest_centroid = z
-    #         if closest_centroid in self.valid_zone_per_area[i]:
-    #             area_to_closest[i] = (closest_centroid, closest_distance)
+    #     for zone in range(self.dz.Z):
+    #         for i in self.valid_area_per_zone[zone]:
+    #             for j in self.dz.neighbors[i]:
+    #                 if i >= j:
+    #                     continue
+    #                 if j not in self.valid_area_per_zone[zone]:
+    #                     # always going to be assigned to a different zone so add own zone
+    #                     boundary_vars.append(self.x[zone][i])
+    #                     continue
+    #                 b = self.m.NewBoolVar(f"boundary_{i}_{j}")
+    #                 self.m.Add(self.x[zone][i] != self.x[zone][j]).OnlyEnforceIf(b)
+    #                 self.m.Add(self.x[zone][i] == self.x[zone][j]).OnlyEnforceIf(b.Not())
+    #                 boundary_vars.append(b)
     #
-    #     # Group areas by their closest centroid
-    #     centroid_to_areas = {}
-    #     for z in range(self.dz.Z):
-    #         centroid_to_areas[z] = []
     #
-    #     for i, (centroid, dist) in area_to_closest.items():
-    #         centroid_to_areas[centroid].append((i, dist))
-    #
-    #     # For each centroid, sort by distance and only hint the closest 80%
-    #     for z in range(self.dz.Z):
-    #         areas_with_dist = centroid_to_areas[z]
-    #         areas_with_dist.sort(key=lambda x: x[1])  # Sort by distance
-    #
-    #         num_to_hint = int(len(areas_with_dist) * 0.8)
-    #         for i, _ in areas_with_dist[:num_to_hint]:
-    #             self.m.AddHint(self.x[z][i], 1)
+    #     self.m.Minimize(sum(boundary_vars))
 
     def add_objective(self):
         self._add_hints()
@@ -273,19 +281,73 @@ class BooleanConstraintProgram(Optimizer):
         for zone in range(self.dz.Z):
             for i in self.valid_area_per_zone[zone]:
                 for j in self.dz.neighbors[i]:
+                    # 1. Enforce undirected edge check to avoid double processing
                     if i >= j:
                         continue
+
+                    # 2. Case: Neighbor j is not in this zone's valid area
+                    # The boundary exists solely if i is selected for this zone.
                     if j not in self.valid_area_per_zone[zone]:
-                        # always going to be assigned to a different zone so add own zone
                         boundary_vars.append(self.x[zone][i])
                         continue
-                    b = self.m.NewBoolVar(f"boundary_{i}_{j}")
-                    self.m.Add(self.x[zone][i] != self.x[zone][j]).OnlyEnforceIf(b)
-                    self.m.Add(self.x[zone][i] == self.x[zone][j]).OnlyEnforceIf(b.Not())
+
+                    # 3. Case: Both i and j are valid candidates for this zone
+                    # We want b = |x[i] - x[j]|.
+                    # Instead of expensive logic, we use linear inequalities.
+                    b = self.m.NewBoolVar(f"boundary_{zone}_{i}_{j}")
+
+                    # Constraint: b >= x[i] - x[j]
+                    self.m.Add(b >= self.x[zone][i] - self.x[zone][j])
+
+                    # Constraint: b >= x[j] - x[i]
+                    self.m.Add(b >= self.x[zone][j] - self.x[zone][i])
+
                     boundary_vars.append(b)
 
-
         self.m.Minimize(sum(boundary_vars))
+
+    # def add_objective(self):
+    #     self._add_hints()
+    #     boundary_terms = []
+    #
+    #     processed_edges = set()
+    #     for i in range(self.dz.A):
+    #         for j in self.dz.neighbors[i]:
+    #             if i >= j or (i, j) in processed_edges:
+    #                 continue
+    #             processed_edges.add((i, j))
+    #
+    #             # Find common zones
+    #             common_zones = set(self.valid_zone_per_area[i]) & set(self.valid_zone_per_area[j])
+    #             if not common_zones:
+    #                 boundary_terms.append(1)  # Always a boundary
+    #             else:
+    #                 match_vars = []
+    #
+    #                 # 2. Create "Match" variables for each potential zone
+    #                 # Logic: match_z implies (i is in z AND j is in z)
+    #                 for z in common_zones:
+    #                     match_z = self.m.NewBoolVar(f"match_{z}_{i}_{j}")
+    #
+    #                     # Replaces: match_z = x[z][i] * x[z][j]
+    #                     # We only enforce: match_z => (x[i] AND x[j])
+    #                     # Because we maximize match_z (via minimizing cost), this is sufficient.
+    #                     self.m.AddBoolAnd([self.x[z][i], self.x[z][j]]).OnlyEnforceIf(match_z)
+    #
+    #                     match_vars.append(match_z)
+    #
+    #                 # 3. Create "Same Zone" variable
+    #                 # Logic: same implies (match_z1 OR match_z2 OR ...)
+    #                 same_zone = self.m.NewBoolVar(f"same_{i}_{j}")
+    #
+    #                 # Replaces: sum(match_vars) >= 1
+    #                 # Enforce: same_zone => (match_z1 OR match_z2 ...)
+    #                 self.m.AddBoolOr(match_vars).OnlyEnforceIf(same_zone)
+    #
+    #                 # 4. Add to objective (Cost = NOT same)
+    #                 boundary_terms.append(same_zone.Not())
+    #     boundary_sum = cp_model.LinearExpr.Sum(boundary_terms)
+    #     self.m.Minimize(boundary_sum)
 
     def solve(self):
 
@@ -326,18 +388,22 @@ class BooleanConstraintProgram(Optimizer):
 
         solver.parameters.max_time_in_seconds = self.config['solve_time_limit']
         presolve_iterations = 0
-        gap_limit = 0.15
+        gap_limit = 0
         if self.dz.level != 'attendance_area':
-            presolve_iterations = 10000
+            presolve_iterations = 20
+            gap_limit = 0.15
         solver.parameters.max_presolve_iterations = presolve_iterations
         solver.parameters.relative_gap_limit = gap_limit
         solver.parameters.random_seed = 42
         solver.parameters.num_search_workers = 6
-        # solver.parameters.log_search_progress = True
+        solver.parameters.log_search_progress = True
+        #important to think about this parameter and thourhgly test later. for now leave at 1
+        solver.parameters.linearization_level = 0
+        solver.parameters.symmetry_level = 2
 
-        # solution_callback = StalledSearchCallback(30)
+        solution_callback = StalledSearchCallback(30)
 
-        status = solver.Solve(self.m)
+        status = solver.Solve(self.m, solution_callback)
 
         objective_value = solver.ObjectiveValue()
         best_bound = solver.BestObjectiveBound()

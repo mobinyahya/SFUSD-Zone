@@ -1,7 +1,7 @@
 
 # changing levers
-#centroids_type: '4-zone-rec-4'
 centroids_type: '6-zone-2'
+#centroids_type: '7-zone-14'
 #centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
 #centroids_type: '18-zone-7'
@@ -33,7 +33,7 @@ end_level: "Block"
 
 solve_time_limit: 300 # seconds
 # mip, cp_int, cp_bool
-optimizer: 'cp_bool'
+optimizer: 'cp_int'
 # optimize with choice
 optimize_with_choice: True
 # simulate choice
