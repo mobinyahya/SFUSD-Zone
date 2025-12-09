@@ -395,8 +395,11 @@ class BooleanConstraintProgram(Optimizer):
         solver.parameters.max_presolve_iterations = presolve_iterations
         solver.parameters.relative_gap_limit = gap_limit
         solver.parameters.random_seed = 42
-        solver.parameters.num_search_workers = 6
-        solver.parameters.log_search_progress = True
+        if self.config['is_local']:
+            solver.parameters.num_search_workers = 6
+        else:
+            solver.parameters.num_search_workers = 16
+        # solver.parameters.log_search_progress = True
         #important to think about this parameter and thourhgly test later. for now leave at 1
         solver.parameters.linearization_level = 0
         solver.parameters.symmetry_level = 2

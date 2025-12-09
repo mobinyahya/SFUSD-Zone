@@ -7,8 +7,9 @@ centroids_type: '6-zone-2'
 #centroids_type: '18-zone-7'
 #centroids_type: '57-zone-1'
 
-frl_dev: 0.3
-racial_dev: 0.3
+frl_dev: 0.25
+racial_dev: 0.25
+is_local: False
 
 # fixed levers
 #boundary_threshold: .05

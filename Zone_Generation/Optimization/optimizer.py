@@ -7,7 +7,7 @@ import pandas as pd
 import yaml
 
 from Helper_Functions.util import load_euc_distance_data, load_bg2att, load_b2bg, load_census_shapefile
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES, BUILDING_BLOCKS, AUX_BG, AREA_COLS
+from Zone_Generation.Config.Constants import AREA_ETHNICITIES, BUILDING_BLOCKS, AUX_BG, AREA_COLS, get_dropbox_path
 from Zone_Generation.Optimization.schools import Schools
 from Zone_Generation.Optimization.students import Students
 
@@ -22,6 +22,7 @@ class DesignZones:
         self.Z = int(config["centroids_type"].split("-")[0])  # number of possible zones
         # The building blocks of zones. As a defualt, this is attendance_area
         self.level = config["level"]  # 'Block', 'BlockGroup' or 'attendance_area'
+        self.is_local = config["is_local"]
 
         self.centroid_type = config["centroids_type"]
         self.include_k8 = config["include_k8"]
@@ -45,7 +46,7 @@ class DesignZones:
         self.idx2area = dict(zip(self.area_data.index, self.area_data[self.level]))
         self.sch2area = dict(zip(self.school_df["school_id"], self.school_df[self.level]))
 
-        self.euc_distances = load_euc_distance_data(self.level, self.area2idx)
+        self.euc_distances = load_euc_distance_data(self.level, self.area2idx, self.is_local)
 
         if self.capacity_scenario != "Closure":
             self.seats = (self.area_data["ge_capacity"].astype("int64").to_numpy())
@@ -90,7 +91,7 @@ class DesignZones:
         # self.drive_distances = self.load_driving_distance_data()
 
     def save_partial_distances(self):
-        self.euc_distances = load_euc_distance_data(self.level, complete_bg=True)
+        self.euc_distances = load_euc_distance_data(self.level, self.area2idx, self.is_local, complete_bg=True)
 
         # print("len(self.euc_distances))  ", len(self.euc_distances))
         school_blocks = list(self.sch2b.values())
@@ -104,7 +105,7 @@ class DesignZones:
         # print("len((school_blocks)): ", len((school_blocks)))
         distances = self.euc_distances.loc[existing_school_blocks]
 
-        save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b_schools.csv"
+        save_path = f"{get_dropbox_path(self.is_local)}/Optimization/distances_b2b_schools.csv"
         distances.to_csv(save_path)
 
     def load_students_and_schools(self):
@@ -124,9 +125,9 @@ class DesignZones:
 
         self.area_data.fillna(value=0, inplace=True)
         if self.level == "BlockGroup":
-            self.bg2att = load_bg2att()
+            self.bg2att = load_bg2att(self.is_local)
         elif self.level == "Block":
-            self.b2bg = load_b2bg()
+            self.b2bg = load_b2bg(self.is_local)
 
     # groupby the student data by area level
     def _aggregate_student_data_to_area(self, student_df):
@@ -160,8 +161,8 @@ class DesignZones:
     def _load_auxilariy_areas(self):
         # we add areas (blockgroups/blocks) that were missed from guardrail, since there was no student or school in them.
         if (self.level == 'BlockGroup') | (self.level == 'Block'):
-            valid_areas = set(pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')[self.level])
-            census_areas = load_census_shapefile(self.level)[self.level]
+            valid_areas = set(pd.read_csv(f'{get_dropbox_path(self.is_local)}/Optimization/block_blockgroup_tract.csv')[self.level])
+            census_areas = load_census_shapefile(self.level, self.is_local)[self.level]
             census_areas = set(census_areas)
             census_areas = census_areas - set(AUX_BG)
 
@@ -206,13 +207,13 @@ class DesignZones:
         """ build a dictionary mapping a block group/attendance area to a list
         of its neighboring block groups/attendnace areas"""
         if self.level == "Block":
-            file = os.path.expanduser("~/Dropbox/SFUSD/Optimization/adjacency_matrix_b.csv")
+            file = os.path.expanduser(f"{get_dropbox_path(self.is_local)}/Optimization/adjacency_matrix_b.csv")
 
         elif self.level == "BlockGroup":
-            file = os.path.expanduser("~/Dropbox/SFUSD/Optimization/adjacency_matrix_bg.csv")
+            file = os.path.expanduser(f"{get_dropbox_path(self.is_local)}/Optimization/adjacency_matrix_bg.csv")
 
         elif self.level == "attendance_area":
-            file = os.path.expanduser("~/Dropbox/SFUSD/Optimization/adjacency_matrix_aa.csv")
+            file = os.path.expanduser(f"{get_dropbox_path(self.is_local)}/Optimization/adjacency_matrix_aa.csv")
 
         with open(file, "r") as f:
             reader = csv.reader(f)

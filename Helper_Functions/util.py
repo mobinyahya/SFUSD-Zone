@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from Zone_Generation.Config.Constants import get_dropbox_path, get_sfusd_path
+
 
 def get_school_latlon():
     # get school latitude and longitude DataFrame
@@ -91,17 +93,19 @@ def make_school_geodataframe(school_path='~/SFUSD/Data/Cleaned/schools_rehauled_
     return sc_merged
 
 
-def load_census_shapefile(level):
+def load_census_shapefile(level, is_local):
     # get census block shapefile
-    path = os.path.expanduser(
-        "~/SFUSD/Census 2010_ Blocks for San Francisco/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp"
-    )
+    if is_local:
+        path = os.path.expanduser(
+            f'{get_sfusd_path(is_local)}/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+    else:
+        path = '/share/data/school_choice/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp'
     census_sf = gpd.read_file(path)
     census_sf["Block"] = (
         census_sf["geoid10"].fillna(value=0).astype("int64", copy=False)
     )
 
-    df = pd.read_csv("~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv")
+    df = pd.read_csv(f"{get_dropbox_path(is_local)}/Optimization/block_blockgroup_tract.csv")
     df.loc[:, "Block"] = df["Block"].fillna(0)
     df["Block"] = df["Block"].astype("int64")
 
@@ -113,15 +117,15 @@ def load_census_shapefile(level):
     return census_sf
 
 
-def load_euc_distance_data(level, area2idx, complete_bg=False):
+def load_euc_distance_data(level, area2idx,  is_local, complete_bg=False,):
     if level == "attendance_area":
-        save_path = "~/Dropbox/SFUSD/Optimization/distances_aa2aa.csv"
+        save_path = f"{get_dropbox_path(is_local)}/Optimization/distances_aa2aa.csv"
     elif level == "BlockGroup":
-        save_path = "~/Dropbox/SFUSD/Optimization/distances_bg2bg.csv"
+        save_path = f"{get_dropbox_path(is_local)}/Optimization/distances_bg2bg.csv"
     elif (level == "Block") & (complete_bg == False):
-        save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b_schools.csv"
+        save_path = f"{get_dropbox_path(is_local)}/Optimization/distances_b2b_schools.csv"
     elif (level == "Block") & (complete_bg == True):
-        save_path = "~/Dropbox/SFUSD/Optimization/distances_b2b.csv"
+        save_path = f"{get_dropbox_path(is_local)}/Optimization/distances_b2b.csv"
 
     if os.path.exists(os.path.expanduser(save_path)):
         distances = pd.read_csv(save_path, index_col=level)
@@ -141,7 +145,7 @@ def load_euc_distance_data(level, area2idx, complete_bg=False):
         return distance_dict
 
     if level == "Block":
-        census_sf = load_census_shapefile(level)
+        census_sf = load_census_shapefile(level, is_local)
         df = census_sf.dissolve(by="Block", as_index=False)
         df["centroid"] = df.centroid
         df["Lat"] = df["centroid"].apply(lambda x: x.y)
@@ -161,7 +165,7 @@ def load_euc_distance_data(level, area2idx, complete_bg=False):
             inplace=True,
         )
     elif level == "BlockGroup":
-        census_sf = load_census_shapefile(level)
+        census_sf = load_census_shapefile(level, is_local)
         df = census_sf.dissolve(by="BlockGroup", as_index=False)
         df["centroid"] = df.centroid
         df["Lat"] = df["centroid"].apply(lambda x: x.y)
@@ -249,8 +253,8 @@ def load_driving_distance_data(level, choices, sch2level, area_data=None, destin
             drive_time_distance[str(sch2level[school_id])] = distance_array
 
 
-def load_b2bg():
-    df = pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')
+def load_b2bg(is_local):
+    df = pd.read_csv(f'{get_dropbox_path(is_local)}/Optimization/block_blockgroup_tract.csv')
     b2bg = {}
     # Iterate over each row in the DataFrame to populate the dictionary
     for _, row in df.iterrows():
@@ -265,8 +269,8 @@ def load_b2bg():
     return b2bg
 
 
-def load_bg2att(census_sf=None):
-    savename = '/Users/kumar/Dropbox/SFUSD/Optimization/bg2aa_mapping.pkl'
+def load_bg2att(is_local, census_sf=None):
+    savename = f'{get_dropbox_path(is_local)}/Optimization/bg2aa_mapping.pkl'
 
     # # This mapping is based on polygon shapefile information (not the students info)
     # if self.level=='Block':
@@ -287,7 +291,7 @@ def load_bg2att(census_sf=None):
     # load attendance area geometry + its id in a single dataframe
     # path = os.path.expanduser('~/Downloads/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
     # moving out of downloads for obvious reasons
-    path = os.path.expanduser('~/SFUSD/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+    path = os.path.expanduser(f'{get_sfusd_path(is_local)}/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
     sf = gpd.read_file(path)
     sf = sf.to_crs('epsg:4326')
     sc_merged = make_school_geodataframe()

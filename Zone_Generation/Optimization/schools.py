@@ -8,6 +8,7 @@ class Schools(object):
         self.capacity_scenario = config["capacity_scenario"]
         self.level = config["level"]
         self.include_k8 = config["include_k8"]
+        self.is_local = config["is_local"]
 
         if self.capacity_scenario not in ["Old", "A", "B", "C", "D", "Closure"]:
             raise ValueError(
@@ -17,9 +18,9 @@ class Schools(object):
         # Load School Dataframe. Map School Name to AA number
         if self.new_schools:
             # school_df = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/schools_table_for_zone_development.csv")
-            school_df = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/schools_table_for_zone_development_updated.csv")
+            school_df = pd.read_csv(f"{get_dropbox_path(self.is_local)}/Data/Cleaned/schools_table_for_zone_development_updated.csv")
         else:
-            school_df = pd.read_csv(f"~/SFUSD/Data/Cleaned/schools_rehauled_1819.csv")
+            school_df = pd.read_csv(f"{get_sfusd_path(self.is_local)}/Data/Cleaned/schools_rehauled_1819.csv")
 
         school_df.rename(columns={"attendance_area": "attendance_area"}, inplace=True)
 
@@ -46,7 +47,7 @@ class Schools(object):
     def _load_capacity(self, school_df):
         # add on capacity
         # programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
-        programs = pd.read_csv("~/Dropbox/SFUSD/Data/Cleaned/stanford_capacities_12.23.21.csv")
+        programs = pd.read_csv(f"{get_dropbox_path(self.is_local)}/Data/Cleaned/stanford_capacities_12.23.21.csv")
         programs.rename(
             columns={
                 "SchNum": "school_id",

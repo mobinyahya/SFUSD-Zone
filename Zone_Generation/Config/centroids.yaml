@@ -56,9 +56,9 @@
 ### 8 zones
 #8-zone-22: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lakeshore + Harte
 ####8-zone-23: [676, 479, 796, 449, 760, 493, 670, 453] # K-8 schools + Lau + Harte
-#8-zone-24: [413, 544, 478, 670, 513, 680, 650, 490] # 2 across, 4 vertical, pick largest
+8-zone-24: [413, 544, 478, 670, 513, 680, 650, 490] # 2 across, 4 vertical, pick largest
 8-zone-25: [664, 876, 478, 589, 650, 420, 513, 490] # 4 across, 2 vertical, pick largest
-#8-zone-26: [664, 876, 670, 729, 513, 680, 490, 650] # 9 grid, leave center empty, pick largest
+8-zone-26: [664, 876, 670, 729, 513, 680, 490, 650] # 9 grid, leave center empty, pick largest
 #8-zone-27: [664, 876, 670, 729, 478, 680, 490, 650] # 9 grid, leave SE empty, pick largest
 #8-zone-28: [420, 876, 670, 729, 513, 680, 490, 650] # 9 grid, leave NW empty, pick largest
 #8-zone-29: [420, 876, 420, 729, 513, 680, 490, 650] # 9 grid, leave SW empty, pick largest

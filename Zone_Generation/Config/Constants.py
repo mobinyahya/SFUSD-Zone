@@ -2,6 +2,19 @@ import os
 
 SCALING_CONST = 10 ** 2
 
+def get_sfusd_path(is_local):
+
+    if is_local:
+        return os.path.expanduser("~/SFUSD")
+    else:
+        return os.path.expanduser("/share/data/school_choice")
+
+def get_dropbox_path(is_local):
+    if is_local:
+        return os.path.expanduser("~/Dropbox/SFUSD")
+    else:
+        return os.path.expanduser("~/sfusd-local-data/zones/SFUSD")
+
 ETHNICITY_DICT = {
     'Chinese': 'Asian',
     'Two or More': 'Two or More Races',

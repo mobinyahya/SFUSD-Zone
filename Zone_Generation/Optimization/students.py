@@ -10,11 +10,12 @@ class Students(object):
         self.drop_optout = config["drop_optout"]
         self.years = config["years"]
         self.population_type = config["population_type"]
+        self.is_local = config["is_local"]
 
 
     def load_student_data(self):
 
-        cleaned_student_path = ("~/SFUSD/Data/Cleaned/Cleaned_Students_" +
+        cleaned_student_path = (f"{get_sfusd_path(self.is_local)}/Data/Cleaned/Cleaned_Students_" +
                                 '_'.join([str(year) for year in self.years]) + ".csv")
         if os.path.exists(cleaned_student_path):
             student_df = pd.read_csv(cleaned_student_path, low_memory=False)
@@ -39,16 +40,16 @@ class Students(object):
                 print("WARNING: Due to limited data, switching to using student_1920.csv instead of "
                       "drop_optout_1920.csv and including all students instead of just enrolled.")
                 student_data = pd.read_csv(
-                    f"~/SFUSD/Data/Cleaned/student_1920.csv", low_memory=False)
+                    f"{get_sfusd_path(self.is_local)}/Data/Cleaned/student_1920.csv", low_memory=False)
                 student_data = student_data.dropna(subset=["enrolled_idschool"])
 
             else:
                 student_data = pd.read_csv(
                     # f"~/SFUSD/Data/Cleaned/drop_optout_{year}{year + 1}.csv", low_memory=False
-                    f"~/SFUSD/Data/Cleaned/enrolled_{year}{year + 1}.csv", low_memory = False)
+                    f"{get_sfusd_path(self.is_local)}/Data/Cleaned/enrolled_{year}{year + 1}.csv", low_memory = False)
         else:
             student_data = pd.read_csv(
-                f"~/SFUSD/Data/Cleaned/student_{year}{year + 1}.csv", low_memory=False)
+                f"{get_sfusd_path(self.is_local)}/Data/Cleaned/student_{year}{year + 1}.csv", low_memory=False)
 
         student_data = student_data.loc[student_data["grade"] == "KG"]
         student_data['resolved_ethnicity'] = student_data['resolved_ethnicity'].replace(ETHNICITY_DICT)

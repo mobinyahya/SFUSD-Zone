@@ -12,9 +12,10 @@ from Zone_Generation.Config.Constants import *
 
 
 class ZoneVisualizer:
-    def __init__(self, level, year='1819'):
+    def __init__(self, level, is_local, year='1819'):
         self.level = level
         self.year = year
+        self.is_local = is_local
         self._read_data()
 
     def _get_zone_dict(self, zonefile):
@@ -32,23 +33,27 @@ class ZoneVisualizer:
         # pd.set_option("display.max_rows", None, "display.max_columns", None)
 
         # get school latitude and longitude
-        sc_ll = pd.read_csv(f'~/SFUSD/Data/Cleaned/schools_rehauled_{self.year}.csv')
+        sc_ll = pd.read_csv(f'{get_sfusd_path(self.is_local)}/Data/Cleaned/schools_rehauled_{self.year}.csv')
         geometry = [Point(xy) for xy in zip(sc_ll['lon'], sc_ll['lat'])]
         # almost the sc_ll file (school data) + Points(lon/lat) of them, in a geo-data-frame
         school_geo_df = gpd.GeoDataFrame(sc_ll, crs='epsg:4326', geometry=geometry)
         # read shape file of attendance areas
         if self.level == 'attendance_area':
             # Used to be in downloads folder, but I moved it to SFUSD folder
-            path = os.path.expanduser('~/SFUSD/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+            if self.is_local:
+                path = os.path.expanduser(
+                    f'{get_sfusd_path(self.is_local)}/drive-download-20200216T210200Z-001/2013 ESAAs SFUSD.shp')
+            else:
+                path = '/share/data/school_choice/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp'
             self.sf = gpd.read_file(path)
 
         elif (self.level == 'BlockGroup') | (self.level == 'Block'):
             # Changed to shape files folder from 2010 census
-            path = os.path.expanduser('~/SFUSD/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
+            path = os.path.expanduser(f'{get_sfusd_path(self.is_local)}/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
             self.sf = gpd.read_file(path)
             self.sf['geoid10'] = self.sf['geoid10'].fillna(value=0).astype('int64', copy=False)
 
-            df = pd.read_csv('~/Dropbox/SFUSD/Optimization/block_blockgroup_tract.csv')
+            df = pd.read_csv(f'{get_dropbox_path(self.is_local)}/Optimization/block_blockgroup_tract.csv')
             df['Block'] = df['Block'].fillna(value=0).astype('int64', copy=False)
             self.sf = self.sf.merge(df, how='left', left_on='geoid10', right_on='Block')
         self.sf = self.sf.to_crs(epsg=4326)
