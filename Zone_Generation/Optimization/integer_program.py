@@ -450,14 +450,22 @@ class Integer_Program(Optimizer):
         print(f"Total number of variables: {self.m.numVars}")
         print(f"Total number of constraints: {self.m.numConstrs}")
 
-
-        self.m.Params.TimeLimit = 2 * 60
+        self.m.Params.TimeLimit = self.config['solve_time_limit']
         self.m.Params.OutputFlag = 0
         # optional: prevent writing a log file on macOS
         self.m.Params.LogFile = '/dev/null'
+        if self.config['relative_gap_limit']> 0:
+            self.m.Params.MIPGap = self.config['relative_gap_limit']
+        self.m.setParam("Seed", self.config['random_seed'])
+        if self.config['is_local']:
+            self.m.setParam("Threads", 6)
+        else:
+            self.m.setParam("Threads", 16)
+        if self.config['use_hints']:
+            self._add_hints()
         self.m.optimize()
 
-        zone_dict = self._generate_zone_dict()
+
 
         status_map = {
             gp.GRB.OPTIMAL: "OPTIMAL",
@@ -475,15 +483,16 @@ class Integer_Program(Optimizer):
         status_name = status_map.get(status_code, f"STATUS_{status_code}")
 
         obj_value = None
-        if hasattr(self.m, "SolCount") and self.m.SolCount > 0:
-            # For MIP, use ObjVal; for continuous models use ObjVal as well
+        zone_dict = None
+        if self.m.SolCount > 0:
             obj_value = self.m.ObjVal
+            zone_dict = self._generate_zone_dict()
 
         return SolutionOutput(
             zone_dict=zone_dict,
             objective_value=obj_value,
             status=status_name,
-            user_time=self.m.Runtime,
+            wall_time=self.m.Runtime,
             dz = self.dz
         )
 
@@ -515,6 +524,19 @@ class Integer_Program(Optimizer):
                 z = zone_dict[area]
                 if (i, z) in self.x:
                     self.m.addConstr(self.x[i, z] == 1, 'Fix area to zone {}, {}'.format(area, z))
+
+    def _add_hints(self):
+        for i in range(self.dz.A):
+            closest_centroid = None
+            closest_distance = float('inf')
+            for z in range(self.dz.Z):
+                centroid_z = self.dz.centroids[z]
+                dist = self.dz.euc_distances[centroid_z][i]
+                if dist < closest_distance:
+                    closest_distance = dist
+                    closest_centroid = z
+            if (i, closest_centroid) in self.x:
+                self.x[i, closest_centroid].Start = 1
 
     def _generate_zone_dict(self):
         zone_dict = {}

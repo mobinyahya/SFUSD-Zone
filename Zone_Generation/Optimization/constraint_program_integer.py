@@ -1,14 +1,8 @@
-import time
-from dataclasses import dataclass
-from typing import Optional
-
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import Domain
-from shapely.constructive import boundary
 
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES, SCALING_CONST
 from Zone_Generation.Optimization.constraint_program_boolean import BooleanConstraintProgram
-from Zone_Generation.Optimization.optimizer import Optimizer, DesignZones, SolutionOutput
+from Zone_Generation.Optimization.optimizer import DesignZones
 
 
 class IntegerConstraintProgram(BooleanConstraintProgram):
@@ -19,6 +13,8 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
     def add_integer_variables(self):
         y = []
         for i in range(self.dz.A):
+            if len(self.valid_zone_per_area[i]) == 0:
+                continue
             var = self.m.NewIntVarFromDomain(Domain.FromValues(self.valid_zone_per_area[i]),
                                              f"area_{self.dz.idx2area[i]}_zone_idx")
             for z in self.valid_zone_per_area[i]:
@@ -49,7 +45,6 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
                 self.m.AddHint(self.y[i], closest_centroid)
 
     def add_objective(self):
-        self._add_hints()
         boundary_vars = []
         for area in range(self.dz.A):
             for neighbor in self.dz.neighbors[area]:

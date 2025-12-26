@@ -6,6 +6,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
+from Helper_Functions.util import compute_zone_deviations
 from Zone_Generation.Optimization.design_zones import Compute_Name
 from Zone_Generation.Optimization.recursive_zoning import recursive_zone_supervised
 
@@ -30,7 +31,7 @@ history = [
 class LeverPullingAgent:
     def __init__(self):
         self.client = OpenAI(
-            base_url='http://100.108.82.68:11434/v1/',
+            base_url='http://localhost:11434/v1/',
             api_key='ollama',  # required, but unused
         )
 
@@ -38,40 +39,11 @@ class LeverPullingAgent:
         response = self.client.chat.completions.parse(
             model='gemma3:27b',
             messages=history,
-            response_format=OptimizationConfig,
+            response_format=OptimizationConfig
         )
         return response.choices[0].message.parsed
 
 
-# python
-from typing import Dict, Any
-
-
-def compute_zone_deviations(zone_demographics: Dict[Any, Dict[str, float]]) -> Dict[str, Any]:
-    if not zone_demographics:
-        return {"frl_deviation": 0.0, "max_racial_deviation": 0.0, "per_ethnicity_deviation": {}}
-
-    zones = list(zone_demographics.keys())
-
-    # infer ethnicity keys as everything except 'total_students' and 'FRL'
-    sample = next(iter(zone_demographics.values()))
-    ethnicity_keys = [k for k in sample.keys() if k not in ("total_students", "FRL")]
-
-    per_eth_dev = {}
-    for eth in ethnicity_keys:
-        values = [zone_demographics[z].get(eth, 0.0) for z in zones]
-        per_eth_dev[eth] = round(max(values) - min(values), 4)
-
-    frl_values = [zone_demographics[z].get("FRL", 0.0) for z in zones]
-    frl_dev = round(max(frl_values) - min(frl_values), 4)
-
-    max_racial_dev = round(max(per_eth_dev.values()) if per_eth_dev else 0.0, 4)
-
-    return {
-        "frl_deviation": frl_dev,
-        "max_racial_deviation": max_racial_dev,
-        "per_ethnicity_deviation": per_eth_dev
-    }
 
 
 if __name__ == "__main__":
@@ -88,7 +60,7 @@ if __name__ == "__main__":
         cur_config["racial_dev"] = cur_racial_dev
         cur_config["frl_dev"] = cur_frl_dev
         print(cur_config)
-        output = recursive_zone_supervised(cur_config)
+        output, total_time = recursive_zone_supervised(cur_config)
 
         demographics = output.get_zone_demographics()
 
@@ -98,7 +70,7 @@ if __name__ == "__main__":
         print(formatted_demos)
         print("*" * 20)
 
-        zv = ZoneVisualizer(output.dz.level)
+        zv = ZoneVisualizer(output.dz.level, og_config['is_local'])
         zv.zones_from_dict(output.zone_dict, label=False)
 
         user_input = input("How would you like to have the zones adjusted?")

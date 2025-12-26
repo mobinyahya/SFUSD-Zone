@@ -4,11 +4,13 @@ centroids_type: '6-zone-2'
 #centroids_type: '7-zone-14'
 #centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
+#centroids_type: '13-zone-6'
 #centroids_type: '18-zone-7'
 #centroids_type: '57-zone-1'
+#centroids_type: '59-zone'
 
-frl_dev: 0.25
-racial_dev: 0.25
+frl_dev: 0.1
+racial_dev: 0.07
 is_local: False
 
 # fixed levers
@@ -16,7 +18,7 @@ is_local: False
 shortage: .2 # this is in percentage
 overage: 0.8 # this is in percentage
 all_cap_shortage: .inf # this is in percentage
-max_distance: 4 # best valid value for 59 zines: 1.272
+max_distance: 5 # best valid value for 59 zines: 1.272
 population_dev: .inf
 
 
@@ -29,12 +31,16 @@ new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
 level: "BlockGroup"
-start_level: "attendance_area"
+start_level: "BlockGroup"
 end_level: "Block"
 
+relative_gap_limit: 0.15
 solve_time_limit: 300 # seconds
+random_seed: 42
 # mip, cp_int, cp_bool
 optimizer: 'cp_int'
+use_hints: True
+
 # optimize with choice
 optimize_with_choice: True
 # simulate choice

@@ -7,3 +7,5 @@ ortools
 matplotlib
 descartes
 seaborn
+networkx
+pymetis

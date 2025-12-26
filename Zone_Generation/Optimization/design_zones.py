@@ -57,12 +57,13 @@ if __name__ == "__main__":
     if solution_output.status != 'INFEASIBLE':
         zone_dict = solution_output.zone_dict
 
-        zv = ZoneVisualizer(config["level"])
+        zv = ZoneVisualizer(config["level"], config['is_local'])
         zv.zones_from_dict(zone_dict, save_path='output')
 
         print("Objective value: ", solution_output.objective_value)
         print('Boundary cost: ', solution_output.get_boundary_cost())
-        print('Demographics: ', solution_output.get_zone_demographics())
+        demographics = solution_output.get_zone_demographics()
+        print(compute_zone_deviations(demographics))
 
 # Note: when you update the distance/neighboring files, also update the closer_eucledian distance file
 # Note: Total number of students in aa level is not the same as blockgroup level.

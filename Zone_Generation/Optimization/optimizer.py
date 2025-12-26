@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import pickle
 from collections import defaultdict
@@ -6,6 +7,7 @@ from collections import defaultdict
 import pandas as pd
 import yaml
 
+from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Helper_Functions.util import load_euc_distance_data, load_bg2att, load_b2bg, load_census_shapefile
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, BUILDING_BLOCKS, AUX_BG, AREA_COLS, get_dropbox_path
 from Zone_Generation.Optimization.schools import Schools
@@ -69,8 +71,6 @@ class DesignZones:
         self.R = {}
         for ethnicity in AREA_ETHNICITIES:
             self.R[ethnicity] = sum(self.area_data[ethnicity]) / (self.N)
-
-
 
         # print("Average FRL ratio:       ", self.F)
         print("Number of Areas:       ", self.A)
@@ -161,7 +161,8 @@ class DesignZones:
     def _load_auxilariy_areas(self):
         # we add areas (blockgroups/blocks) that were missed from guardrail, since there was no student or school in them.
         if (self.level == 'BlockGroup') | (self.level == 'Block'):
-            valid_areas = set(pd.read_csv(f'{get_dropbox_path(self.is_local)}/Optimization/block_blockgroup_tract.csv')[self.level])
+            valid_areas = set(
+                pd.read_csv(f'{get_dropbox_path(self.is_local)}/Optimization/block_blockgroup_tract.csv')[self.level])
             census_areas = load_census_shapefile(self.level, self.is_local)[self.level]
             census_areas = set(census_areas)
             census_areas = census_areas - set(AUX_BG)
@@ -286,11 +287,11 @@ class DesignZones:
 
 
 class SolutionOutput:
-    def __init__(self, zone_dict, objective_value, status, user_time, dz: DesignZones):
+    def __init__(self, zone_dict, objective_value, status, wall_time, dz: DesignZones):
         self.zone_dict = zone_dict
         self.objective_value = objective_value
         self.status = status
-        self.user_time = user_time
+        self.wall_time = wall_time
         self.dz = dz
 
     def get_boundary_cost(self):
@@ -301,9 +302,7 @@ class SolutionOutput:
                 b = self.dz.idx2area[j]
                 if self.zone_dict[a] != self.zone_dict[b]:
                     boundary_cost += 1
-        return boundary_cost
-
-
+        return boundary_cost / 2  # each boundary counted twice
 
     # Assuming AREA_ETHNICITIES is defined somewhere and is a list of strings like ['Ethnicity_White', 'Ethnicity_Black', ...]
 
@@ -373,6 +372,33 @@ class SolutionOutput:
 
         return final_zone_demographics
 
+    def save_output(self, folder_path):
+        # save the image, dict_solution, objective_value, status, wall_time
+        save_path = os.path.expanduser(folder_path)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        # save zone dict as json file
+        filename = os.path.join(save_path, "zone_dict.json")
+        with open(filename, "w") as f:
+            json.dump(self.zone_dict, f)
+
+        boundary_cost = -1
+        if self.zone_dict is not None and len(self.zone_dict) > 0:
+            boundary_cost = self.get_boundary_cost()
+            file_name = os.path.join(save_path, "zones_visualization")
+            zv = ZoneVisualizer(self.dz.level, self.dz.is_local)
+            zv.zones_from_dict(self.zone_dict, save_path=file_name, label=False)
+
+        output_info = {
+            "boundary_cost": boundary_cost,
+            "status": self.status,
+            "wall_time": self.wall_time
+        }
+        filename = os.path.join(save_path, "solution_info.json")
+        with open(filename, "w") as f:
+            json.dump(output_info, f)
+
 
 class Optimizer:
     def __init__(self, dz: DesignZones, config):
@@ -391,6 +417,9 @@ class Optimizer:
 
     def fix_areas(self, fixed_zone_dict):
         raise NotImplementedError('Subclasses must implement fix_areas')
+
+    def _add_hints(self):
+        raise NotImplementedError('Subclasses must implement _add_hints')
 
     @staticmethod
     def get_optimizer(dz: DesignZones, config):

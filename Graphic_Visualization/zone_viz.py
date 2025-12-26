@@ -49,7 +49,8 @@ class ZoneVisualizer:
 
         elif (self.level == 'BlockGroup') | (self.level == 'Block'):
             # Changed to shape files folder from 2010 census
-            path = os.path.expanduser(f'{get_sfusd_path(self.is_local)}/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
+            path = os.path.expanduser(
+                f'{get_sfusd_path(self.is_local)}/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp')
             self.sf = gpd.read_file(path)
             self.sf['geoid10'] = self.sf['geoid10'].fillna(value=0).astype('int64', copy=False)
 
@@ -70,7 +71,7 @@ class ZoneVisualizer:
             self.translator = translator.rename(columns={'school_id': 'aa_zone'})
             self.sc_merged = sc_merged.merge(self.translator, how='left', on='index_right')
 
-    def population_heatmap(self, area_population, sch_df=None, metric=None, title="", save_path=""):
+    def population_heatmap(self, area_population, sch_df=None, metric=None, title="", save_path="", show_plot=False):
         ax = self.load_base_plot()
         # self.sf.dropna(subset=[self.level], inplace=True)
 
@@ -109,9 +110,10 @@ class ZoneVisualizer:
             # df.plot(ax=ax, color='lightblue', legend=True, aspect=1)
             plt.scatter(sch_df['lon'], sch_df['lat'], s=sch_df['ge_popularity'] * 300, c='green', marker='o')
 
-        self.show_plot(save_path, title)
+        self.show_plot(save_path, title, show_plot)
 
-    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min=None, metric_max=None, title='', save_path=""):
+    def zone_stats_heatmap(self, metric, zone_dict, stat_df, metric_min=None, metric_max=None, title='', save_path="",
+                           show_plot=False):
         self._read_data()
         if self.level == 'attendance_area':
             self.sc_merged['zone_id'] = self.sc_merged['aa_zone'].replace(zone_dict)
@@ -170,14 +172,14 @@ class ZoneVisualizer:
                 cbar_ax.tick_params(labelsize=30)  # Adjust the font size as needed
             print("_____")
 
-        self.show_plot(save_path, title)
+        self.show_plot(save_path, title, show_plot)
 
     def load_base_plot(self):
         plt.figure(figsize=(20, 20))
         ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
         return ax
 
-    def show_plot(self, save_path, title):
+    def show_plot(self, save_path, title, show_plot=False):
 
         plt.title(title)
         plt.gca().set_yticklabels([])
@@ -188,12 +190,12 @@ class ZoneVisualizer:
         if save_path != "":
             print(save_path + '.png')
             plt.savefig(save_path + '.png')
-        plt.show()
+        if show_plot:
+            plt.show()
         print("Finished plotting")
         return plt
 
-    def zones_from_dict(self, zone_dict, label=False, title="",
-                        centroid_location=-1, save_path=""):
+    def zones_from_dict(self, zone_dict, label=False, title="", save_path="", show_plot=False):
 
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
@@ -233,7 +235,20 @@ class ZoneVisualizer:
             ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
 
         # Create a new column 'zone_color' with colors based on zone_id
+        # try:
+        #     df['zone_color'] = df['zone_id'].map(zone_colors)
+        # except Exception as e:
+        unique_zones = df['zone_id'].unique()
+
+        n_zones = len(unique_zones)
+        # randomize order of colors
+        colors = plt.cm.hsv(np.linspace(0, 1, n_zones + 1)[:-1])
+        np.random.shuffle(colors)
+        color_list = [mcolors.rgb2hex(colors[i]) for i in range(n_zones)]
+        zone_colors = dict(zip(sorted(unique_zones), color_list))
+
         df['zone_color'] = df['zone_id'].map(zone_colors)
+
 
         # Plot zones using the 'zone_color' column
         df.plot(ax=ax, color=df['zone_color'], legend=True, aspect=1)
@@ -243,10 +258,7 @@ class ZoneVisualizer:
         # plt.title(title)
 
         # """ plot centroid locations """
-        # plt.scatter(centroid_location['lon'], centroid_location['lat'], s=2, c='black', marker='s')
-        # for lon, lat, id in zip(centroid_location['lon'], centroid_location['lat'], centroid_location['zone_ID']):
-        #     plt.text(lon, lat, id, ha='center', va='center', fontsize=20)
-        # plt.scatter(bb['lon'], bb['lat'], s=20, c='red', marker='s')
+
 
         # # plot school locations
         # aa = self.sc_merged.loc[self.sc_merged['category']=='Attendance']
@@ -256,7 +268,7 @@ class ZoneVisualizer:
         # plt.scatter(aa['lon'],aa['lat'],s=10, c='red',marker='s')
         # plt.scatter(citywide['lon'],citywide['lat'],s=10, c='black',marker='^')
 
-        self.show_plot(save_path, title)
+        self.show_plot(save_path, title, show_plot)
 
     def visualize_SpEd(self, sped_df, sped_types, label=False, centroid_location=-1):
         # Note TOD: This visualization assumes that each school has at most 1 program to be visualized.

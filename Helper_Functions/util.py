@@ -117,7 +117,7 @@ def load_census_shapefile(level, is_local):
     return census_sf
 
 
-def load_euc_distance_data(level, area2idx,  is_local, complete_bg=False,):
+def load_euc_distance_data(level, area2idx, is_local, complete_bg=False, ):
     if level == "attendance_area":
         save_path = f"{get_dropbox_path(is_local)}/Optimization/distances_aa2aa.csv"
     elif level == "BlockGroup":
@@ -616,3 +616,41 @@ def get_zone_dict(zonefile):
     for idx, schools in enumerate(zones):
         zone_dict = {**zone_dict, **{int(float(s)): idx for s in schools if s != ''}}
     return zone_dict
+
+
+def compute_zone_deviations(zone_demographics):
+    # get deviations in FRL and racial composition from average across zones
+    if not zone_demographics:
+        return {"max_frl_deviation": 0.0, "max_racial_deviation": 0.0, "per_ethnicity_deviation": {}}
+
+    zones = list(zone_demographics.keys())
+    num_zones = len(zones)
+
+    if num_zones == 0:
+        return {"max_frl_deviation": 0.0, "max_racial_deviation": 0.0, "per_ethnicity_deviation": {}}
+
+    # infer ethnicity keys as everything except 'total_students' and 'FRL'
+    sample = next(iter(zone_demographics.values()))
+    ethnicity_keys = [k for k in sample.keys() if k not in ('total_students', 'FRL')]
+
+    # compute average FRL and ethnicity proportions across zones
+    avg_frl = sum(zone_demographics[z].get('FRL', 0) for z in zones) / num_zones
+    avg_ethnicity = {eth: sum(zone_demographics[z].get(eth, 0) for z in zones) / num_zones
+                     for eth in ethnicity_keys}
+
+    # compute deviations
+    frl_deviations = [abs(zone_demographics[z].get('FRL', 0) - avg_frl) for z in zones]
+    frl_deviation = max(frl_deviations) if frl_deviations else 0.0
+
+    per_ethnicity_deviation = {}
+    for eth in ethnicity_keys:
+        eth_deviations = [abs(zone_demographics[z].get(eth, 0) - avg_ethnicity[eth]) for z in zones]
+        per_ethnicity_deviation[eth] = round(max(eth_deviations), 2) if eth_deviations else 0.0
+
+    max_racial_deviation = max(per_ethnicity_deviation.values()) if per_ethnicity_deviation else 0.0
+
+    return {
+        "max_frl_deviation": round(frl_deviation, 2),
+        "max_racial_deviation": max_racial_deviation,
+        "per_ethnicity_deviation": per_ethnicity_deviation
+    }

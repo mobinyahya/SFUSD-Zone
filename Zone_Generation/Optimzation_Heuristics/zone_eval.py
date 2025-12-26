@@ -1,6 +1,6 @@
 import math
 import random
-from collections import defaultdict
+from collections import defaultdict, deque
 from Zone_Generation.Config.Constants import *
 
 
@@ -9,9 +9,10 @@ def evaluate_school_quality_stats(dz, zone_dict):
     sch_qlty_stats = [0] * dz.Z
 
     for z in range(dz.Z):
-        zone_sum = sum([scores[dz.area2idx[b]] * dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)&(b in dz.area2idx)])
+        zone_sum = sum([scores[dz.area2idx[b]] * dz.schools[dz.area2idx[b]] for b in zone_dict if
+                        (zone_dict[b] == z) & (b in dz.area2idx)])
         # the following district_average is a weighted average. If a zone has more schools, their sum of qualities will of course be more
-        zone_sch = sum([dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)&(b in dz.area2idx)])
+        zone_sch = sum([dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z) & (b in dz.area2idx)])
         sch_qlty_stats[z] = zone_sum / zone_sch
     return sch_qlty_stats
 
@@ -21,10 +22,11 @@ def evaluate_metric_stats(dz, zone_dict, metric):
     # metric_ratio = sum(dz.area_data[metric].fillna(0)) / float(dz.N)
     for z in range(dz.Z):
         zone_stud = sum([dz.studentsInArea[dz.area2idx[b]] for b in zone_dict
-                               if (zone_dict[b] == z)&(b in dz.area2idx)])
+                         if (zone_dict[b] == z) & (b in dz.area2idx)])
         metric_stats[z] = sum([dz.area_data[metric][dz.area2idx[b]] for b in zone_dict
-                               if (zone_dict[b] == z)&(b in dz.area2idx)]) / zone_stud
+                               if (zone_dict[b] == z) & (b in dz.area2idx)]) / zone_stud
     return metric_stats
+
 
 def evaluate_proximity_stats(dz, zone_dict):
     max_sch_dist = [0] * dz.Z
@@ -41,7 +43,7 @@ def evaluate_proximity_stats(dz, zone_dict):
         proximate_sch_count = 0
 
         for b in zone_dict:
-            if (zone_dict[b] == z)&(b in dz.area2idx):
+            if (zone_dict[b] == z) & (b in dz.area2idx):
                 # For blockgroup b, find closest GE school in the same zone
                 min_sch_dist = 100
                 for school in sch_list[z]:
@@ -54,7 +56,8 @@ def evaluate_proximity_stats(dz, zone_dict):
 
                 max_sch_dist[z] = max(max_sch_dist[z], min_sch_dist)
 
-        zone_stud = sum([dz.studentsInArea[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)&(b in dz.area2idx)])
+        zone_stud = sum(
+            [dz.studentsInArea[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z) & (b in dz.area2idx)])
         proximate_choices[z] = proximate_sch_count / zone_stud
 
     return max_sch_dist, proximate_choices
@@ -84,13 +87,11 @@ def stats_evaluation(dz, zone_dict):
 
     print(sum(dz.sch_df["K-8"]))
 
-
     return stats
 
+
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
-
-
 
 
 # This class represents a directed graph
@@ -137,6 +138,7 @@ class Graph:
         del queue
         return visited
 
+
 def evaluate_discontiguity_cost(dz, zone_dict):
     # initialize discontiguity cost to zero
     distance_weight = {}
@@ -162,7 +164,7 @@ def evaluate_discontiguity_cost(dz, zone_dict):
             if visited[dz.area2idx[area]] == False:
                 distance_weight[area] = 100000
             else:
-                counter+=1
+                counter += 1
                 distance_weight[area] = 1
         # compute size of visited nodes
         dc_cost += (len(zone_areas) - visited_count)
@@ -171,20 +173,24 @@ def evaluate_discontiguity_cost(dz, zone_dict):
 
     return dc_cost, distance_weight
 
+
 def evaluate_school_quality(dz, zone_dict, min_pct):
     y_school_balance = 1
     scores = dz.guardrails['AvgColorIndex'].fillna(value=0)
 
     if min_pct > 0:
         for z in range(dz.Z):
-            zone_sum = sum([scores[dz.area2idx[b]] * dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
+            zone_sum = sum(
+                [scores[dz.area2idx[b]] * dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
             # the following district_average is a weighted average. If a zone has more schools, their sum of qualities will of course be more
-            district_average = sum(scores * dz.schools) / sum(dz.schools) * sum([dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
+            district_average = sum(scores * dz.schools) / sum(dz.schools) * sum(
+                [dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
             y_school_balance = min(y_school_balance, zone_sum / district_average)
             if y_school_balance < min_pct:
-            # if zone_sum < min_pct * district_average:
+                # if zone_sum < min_pct * district_average:
                 y_school_balance = math.inf
     return y_school_balance
+
 
 def evaluate_student_balance(dz, zone_dict, balance_limit):
     y_balance = 0
@@ -198,7 +204,6 @@ def evaluate_student_balance(dz, zone_dict, balance_limit):
     if y_balance > balance_limit:
         y_balance = math.inf
     return y_balance
-
 
 
 def evaluate_frl(dz, zone_dict, lbfrl_limit, ubfrl_limit):
@@ -219,13 +224,14 @@ def evaluate_frl(dz, zone_dict, lbfrl_limit, ubfrl_limit):
         y_frl = math.inf
     return y_frl
 
+
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 
 def drop_boundary(dz, zone_dict):
-    # c = 3.5
-    c = 5
-    if dz.Z in [8,10]:
+    c = 3.5
+    # c = 5
+    if dz.Z in [8, 10]:
         c = 2.9
     elif dz.Z == 13:
         c = 2.7
@@ -248,7 +254,7 @@ def drop_boundary(dz, zone_dict):
                     else:
                         seperated_neighbors += 1
 
-                if seperated_neighbors >= len(neighbors)/c:
+                if seperated_neighbors >= len(neighbors) / c:
                     sketchy_boundary.append(area)
 
     for area in sketchy_boundary:
@@ -256,10 +262,10 @@ def drop_boundary(dz, zone_dict):
 
     return zone_dict
 
-
 def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
     """
-    Drops areas that are within c graph distance from a zone boundary.
+    Drops areas that are within c graph distance from a zone boundary,
+    excluding centroids and areas within c distance from any centroid.
 
     Args:
         dz: Data zone object containing area and neighbor information
@@ -276,15 +282,47 @@ def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
         if dz.level == 'BlockGroup':
             c = 0
         if dz.level == 'Block':
-            c = 1
+            c = 0
 
-    # First, identify boundary areas (distance 0 from boundary)
+    # Compute graph distance from all centroids using BFS
+    centroid_distance = {}
+    for z in range(dz.Z):
+        centroid_idx = dz.centroids[z]
+
+        queue = deque([(centroid_idx, 0)])
+        visited = {centroid_idx}
+
+        while queue:
+            current_idx, dist = queue.popleft()
+            current_area = dz.idx2area[current_idx]
+
+            # Store minimum distance from any centroid
+            if current_area not in centroid_distance or dist < centroid_distance[current_area]:
+                centroid_distance[current_area] = dist
+
+            # Explore neighbors if within same zone
+            if current_area in zone_dict:
+                for neighbor_idx in dz.neighbors[current_idx]:
+                    neighbor_area = dz.idx2area[neighbor_idx]
+                    if (neighbor_idx not in visited and
+                        neighbor_area in zone_dict and
+                        zone_dict[neighbor_area] == zone_dict[current_area]):
+                        visited.add(neighbor_idx)
+                        queue.append((neighbor_idx, dist + 1))
+
+    # Identify boundary areas
     boundary_distance = {}
     for area_idx in range(dz.A):
         area = dz.idx2area[area_idx]
+
         if area not in zone_dict:
             continue
 
+        # Skip if within c distance from any centroid
+        if area in centroid_distance and centroid_distance[area] <= c:
+            continue
+
+        # Check if boundary
         neighbors = dz.neighbors[area_idx]
         is_boundary = False
         for neighbor_idx in neighbors:
@@ -298,8 +336,7 @@ def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
         if is_boundary:
             boundary_distance[area] = 0
 
-    # BFS to compute graph distance from boundary for all areas
-    from collections import deque
+    # BFS from boundary areas
     queue = deque(boundary_distance.keys())
 
     while queue:
@@ -309,12 +346,17 @@ def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
 
         for neighbor_idx in dz.neighbors[area_idx]:
             neighbor_area = dz.idx2area[neighbor_idx]
+
+            # Skip if within c distance from centroid
+            if neighbor_area in centroid_distance and centroid_distance[neighbor_area] <= c:
+                continue
+
             if neighbor_area in zone_dict and zone_dict[neighbor_area] == zone_dict[area]:
                 if neighbor_area not in boundary_distance:
                     boundary_distance[neighbor_area] = current_dist + 1
                     queue.append(neighbor_area)
 
-    # Drop areas within distance c from boundary
+    # Drop areas within distance c from boundary (excluding centroid-protected areas)
     floor_c = math.floor(c)
     frac = c - floor_c
     areas_to_drop = []
@@ -327,6 +369,9 @@ def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
             prob = 0.0
         if random.random() < prob:
             areas_to_drop.append(area)
+            # Double-check not within c of centroid
+            if area not in centroid_distance or centroid_distance[area] > c:
+                areas_to_drop.append(area)
 
     for area in areas_to_drop:
         zone_dict.pop(area, None)
@@ -342,6 +387,54 @@ def trim_noncontiguity(dz, zone_dict):
         if prev_size == len(zone_dict):
             break
     return zone_dict
+
+
+def trim_noncontiguity_soft(dz, zone_dict):
+    """
+    Performs soft contiguity trimming by doing BFS from each centroid.
+    Only keeps areas reachable from the centroid within the same zone.
+
+    Args:
+        dz: Data zone object containing area and neighbor information
+        zone_dict: Dictionary mapping areas to zones
+
+    Returns:
+        Updated zone_dict with only contiguous areas from each centroid
+    """
+    new_zone_dict = {}
+
+    for z in range(dz.Z):
+        centroid_idx = dz.centroids[z]
+        centroid_area = dz.idx2area[centroid_idx]
+
+        # Skip if centroid not in zone_dict
+        if centroid_area not in zone_dict:
+            continue
+
+        # BFS from centroid
+        visited = set()
+        queue = deque([centroid_idx])
+        visited.add(centroid_idx)
+
+        while queue:
+            current_idx = queue.popleft()
+            current_area = dz.idx2area[current_idx]
+
+            # Add to new zone dict
+            new_zone_dict[current_area] = z
+
+            # Explore neighbors
+            for neighbor_idx in dz.neighbors[current_idx]:
+                neighbor_area = dz.idx2area[neighbor_idx]
+
+                # Only visit if assigned to same zone and not visited
+                if (neighbor_idx not in visited and
+                        neighbor_area in zone_dict and
+                        zone_dict[neighbor_area] == z):
+                    visited.add(neighbor_idx)
+                    queue.append(neighbor_idx)
+
+    return new_zone_dict
 
 
 # remove blockgroups that are very far from the centroid of their
@@ -364,7 +457,6 @@ def drop_all_subset_zones(IP, zone_dict):
             continue
         zone_dict.pop(bg_j, None)
     return zone_dict
-
 
 
 def drop_inner_boundary(dz, zone_dict):
@@ -402,14 +494,13 @@ def assign_centroid_vicinity(dz, zone_dict, sub_units):
         z_capacity = dz.seats[dz.centroids[z]]
         bg_z = dz.idx2area[dz.centroids[z]]
 
-
         capacity_w = 0.002
         fixed_w = 0.15
         sch_z = dz.centroid_sch[z]
         # if sch_z in [575, 478, 722]:
         #     fixed_w = .02
         # else:
-            # fixed_w = 0.15
+        # fixed_w = 0.15
         vicinity_blocks = set()
         for j in range(dz.A):
             area_j = dz.idx2area[j]
@@ -429,6 +520,7 @@ def assign_centroid_vicinity(dz, zone_dict, sub_units):
 
     return zone_dict
 
+
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 
@@ -436,7 +528,8 @@ def evaluate_contiguity(dz, zone_dict):
     isContiguous, dz = strong_contiguity_analysis(dz, zone_dict, mode="evaluation")
     return isContiguous
 
-def strong_contiguity_analysis(dz, zone_dict, mode = "evaluation"):
+
+def strong_contiguity_analysis(dz, zone_dict, mode="evaluation"):
     # every centroid belongs to its own zone
     for z in range(dz.Z):
         level_z = dz.idx2area[dz.centroids[z]]
@@ -454,7 +547,6 @@ def strong_contiguity_analysis(dz, zone_dict, mode = "evaluation"):
             print("z.idx2area[dz.centroids[" + str(z) + "]] should already be in zone_dict, Error")
             print(level_z)
             return False, None
-
 
     for j in range(dz.A):
         level_j = dz.idx2area[j]
@@ -488,6 +580,7 @@ def strong_contiguity_analysis(dz, zone_dict, mode = "evaluation"):
 
     return True, zone_dict
 
+
 def check_assignment_completeness(dz, zone_dict):
     for j in range(dz.A):
         if dz.idx2area[j] not in zone_dict:
@@ -501,10 +594,12 @@ def evaluate_distance(dz, zone_dict):
     for z in range(dz.Z):
         zone_area = str(dz.idx2area[dz.centroids[z]])
         # y_distance += sum([((dz.drive_distances.loc[b, zone_area]) ** 2) * dz.studentsInArea[dz.area2idx[b]] for b in zone_dict if zone_dict[b] == z])
-        y_distance += sum([((dz.euc_distances.loc[b, zone_area]) ** 2) * dz.studentsInArea[dz.area2idx[b]] for b in zone_dict if zone_dict[b] == z])
+        y_distance += sum(
+            [((dz.euc_distances.loc[b, zone_area]) ** 2) * dz.studentsInArea[dz.area2idx[b]] for b in zone_dict if
+             zone_dict[b] == z])
         # y_distance += sum([((dz.euc_distances.loc[b, zone_area]) ** 2) * dz.studentsInArea[dz.area2idx[b]] * distance_weight[b] for b in zone_dict if zone_dict[b] == z])
 
-    y_distance = y_distance/dz.N
+    y_distance = y_distance / dz.N
     return y_distance
 
 
@@ -521,15 +616,15 @@ def evaluate_shortage(dz, zone_dict, shortage_limit):
 
     for z in range(dz.Z):
         zone_shortage = sum(
-                [(dz.studentsInArea[j] - dz.seats[j])
-                 for j in range(dz.A)
-                 if zone_dict[dz.idx2area[j]] == z]
-            )
+            [(dz.studentsInArea[j] - dz.seats[j])
+             for j in range(dz.A)
+             if zone_dict[dz.idx2area[j]] == z]
+        )
         zone_stud = sum(
-                [dz.studentsInArea[j]
-                 for j in range(dz.A)
-                 if zone_dict[dz.idx2area[j]] == z]
-            )
+            [dz.studentsInArea[j]
+             for j in range(dz.A)
+             if zone_dict[dz.idx2area[j]] == z]
+        )
 
         if (zone_shortage) > zone_stud * shortage_limit:
             # print("Optimized shortage:                     " + str(zone_shortage/zone_stud))
@@ -539,14 +634,14 @@ def evaluate_shortage(dz, zone_dict, shortage_limit):
     return y_shortage
 
 
-
 def evaluate_diversity(dz, zone_dict, frl_dev, race_dev):
     y_diversity = 0
 
     for z in range(dz.Z):
         if dz.use_loaded_data:
             zone_frl = sum([dz.area_data["frl_count"][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
-            zone_total_frl = sum([dz.area_data["frl_total_count"][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
+            zone_total_frl = sum(
+                [dz.area_data["frl_total_count"][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
 
             if zone_frl < zone_total_frl * (dz.FRL_ratio - frl_dev):
                 y_diversity = math.inf
@@ -556,7 +651,8 @@ def evaluate_diversity(dz, zone_dict, frl_dev, race_dev):
             for race in dz.ethnicity_cols:
                 race_ratio = sum(dz.area_data[race]) / sum(dz.area_data["num_with_ethnicity"])
                 zone_sum = sum([dz.area_data[race][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
-                zone_total = sum([dz.area_data["num_with_ethnicity"][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
+                zone_total = sum(
+                    [dz.area_data["num_with_ethnicity"][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
                 if (zone_sum < (race_ratio - race_dev) * zone_total):
                     y_diversity = math.inf
                 if (zone_sum > (race_ratio + race_dev) * zone_total):
@@ -571,9 +667,9 @@ def evaluate_diversity(dz, zone_dict, frl_dev, race_dev):
 
             for race in \
                     dz.ethnicity_cols:
-                    # ['resolved_ethnicity_White',
-                    #      'resolved_ethnicity_Hispanic/Latinx',
-                    #      'resolved_ethnicity_Asian']:
+                # ['resolved_ethnicity_White',
+                #      'resolved_ethnicity_Hispanic/Latinx',
+                #      'resolved_ethnicity_Asian']:
                 race_ratio = sum(dz.area_data[race]) / float(dz.N)
 
                 zone_sum = sum([dz.area_data[race][dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
@@ -583,9 +679,8 @@ def evaluate_diversity(dz, zone_dict, frl_dev, race_dev):
                 if (zone_sum > (race_ratio + race_dev) * district_students):
                     y_diversity = math.inf
 
-
-
     return y_diversity
+
 
 def evaluate_boundary(dz, zone_dict):
     y_boundary = 0
@@ -602,7 +697,6 @@ def evaluate_boundary(dz, zone_dict):
     return y_boundary
 
 
-
 def evaluate_sch_count_balance(dz, zone_dict):
     y_sch_count_balance = 0
 
@@ -612,7 +706,6 @@ def evaluate_sch_count_balance(dz, zone_dict):
         zone_school_count[z] = sum([dz.schools[dz.area2idx[b]] for b in zone_dict if (zone_dict[b] == z)])
         if (zone_school_count[z] > avg_school_count + 1) | (zone_school_count[z] < avg_school_count - 1):
             y_sch_count_balance = math.inf
-
 
     # if K8 schools are included,
     # make sure no zone has more than one K8 schools
@@ -631,8 +724,8 @@ def evaluate_sch_count_balance(dz, zone_dict):
             if zone_k8_count[z] > 1:
                 y_sch_count_balance = math.inf
 
-
     return y_sch_count_balance
+
 
 def evaluate_school_buffer_boundary(dz, zone_dict, boundary_threshold):
     # make sure areas that are closer than boundary_threshold distance
@@ -652,10 +745,11 @@ def evaluate_school_buffer_boundary(dz, zone_dict, boundary_threshold):
 
     return y_sch_buffer_boundary
 
+
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 
-def evaluate_assignment_score(param, dz, zone_dict, boundary_cost_fraction = 1):
+def evaluate_assignment_score(param, dz, zone_dict, boundary_cost_fraction=1):
     # check_assignment_completeness(dz, zone_dict)
 
     # boundary_cost_fraction is the fraction of boundary cost that should be included in the evaluated objective value.
@@ -729,10 +823,9 @@ def evaluate_assignment_score(param, dz, zone_dict, boundary_cost_fraction = 1):
     # objective = discontiguity_coef * discontiguity_cost + distance_coef * y_distance + balance_coef * y_balance + shortage_coef * y_shortage \
     #                                            + frl_coef * y_frl + boundary_cost_fraction * boundary_coef * y_boundary +  sch_quality_coef * y_school_balance
 
-    objective =  distance_coef * y_distance + school_buffer_coef * y_sch_buffer_boundary\
-             + boundary_cost_fraction * boundary_coef * y_boundary
+    objective = distance_coef * y_distance + school_buffer_coef * y_sch_buffer_boundary \
+                + boundary_cost_fraction * boundary_coef * y_boundary
     # print("Objective value is")
     # print(objective)
-
 
     return objective
