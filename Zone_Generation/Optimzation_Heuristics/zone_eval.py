@@ -1,6 +1,9 @@
 import math
 import random
 from collections import defaultdict, deque
+
+import networkx as nx
+
 from Zone_Generation.Config.Constants import *
 
 
@@ -262,116 +265,54 @@ def drop_boundary(dz, zone_dict):
 
     return zone_dict
 
-def drop_boundary_by_graph_distance(dz, zone_dict, c=None):
+
+def drop_boundary_by_graph_distance(zone_dict, G, centroids, c=0):
     """
     Drops areas that are within c graph distance from a zone boundary,
     excluding centroids and areas within c distance from any centroid.
 
     Args:
-        dz: Data zone object containing area and neighbor information
         zone_dict: Dictionary mapping areas to zones
+        G: networkx Graph object containing area and neighbor information
+        centroids: List of centroid area indices
         c: Graph distance threshold from boundary. Areas within this distance are dropped.
-           If None, uses default based on dz.Z
 
     Returns:
         Updated zone_dict with boundary areas removed
     """
-    if c is None:
-        if dz.level == 'attendance_area':
-            c = 0
-        if dz.level == 'BlockGroup':
-            c = 0
-        if dz.level == 'Block':
-            c = 0
+    boundary_nodes = set()
+    for u, v in G.edges():
+        if zone_dict[u] != zone_dict[v]:
+            boundary_nodes.add(u)
+            boundary_nodes.add(v)
 
-    # Compute graph distance from all centroids using BFS
-    centroid_distance = {}
-    for z in range(dz.Z):
-        centroid_idx = dz.centroids[z]
+    # if no boundary, nothing to do
+    if not boundary_nodes:
+        return zone_dict
 
-        queue = deque([(centroid_idx, 0)])
-        visited = {centroid_idx}
+    # compute shortest-path distances from all boundary nodes (unweighted graph)
+    boundary_distance = nx.multi_source_dijkstra_path_length(G, boundary_nodes)
 
-        while queue:
-            current_idx, dist = queue.popleft()
-            current_area = dz.idx2area[current_idx]
-
-            # Store minimum distance from any centroid
-            if current_area not in centroid_distance or dist < centroid_distance[current_area]:
-                centroid_distance[current_area] = dist
-
-            # Explore neighbors if within same zone
-            if current_area in zone_dict:
-                for neighbor_idx in dz.neighbors[current_idx]:
-                    neighbor_area = dz.idx2area[neighbor_idx]
-                    if (neighbor_idx not in visited and
-                        neighbor_area in zone_dict and
-                        zone_dict[neighbor_area] == zone_dict[current_area]):
-                        visited.add(neighbor_idx)
-                        queue.append((neighbor_idx, dist + 1))
-
-    # Identify boundary areas
-    boundary_distance = {}
-    for area_idx in range(dz.A):
-        area = dz.idx2area[area_idx]
-
-        if area not in zone_dict:
-            continue
-
-        # Skip if within c distance from any centroid
-        if area in centroid_distance and centroid_distance[area] <= c:
-            continue
-
-        # Check if boundary
-        neighbors = dz.neighbors[area_idx]
-        is_boundary = False
-        for neighbor_idx in neighbors:
-            neighbor_area = dz.idx2area[neighbor_idx]
-            if neighbor_area not in zone_dict:
-                continue
-            if zone_dict[neighbor_area] != zone_dict[area]:
-                is_boundary = True
-                break
-
-        if is_boundary:
-            boundary_distance[area] = 0
-
-    # BFS from boundary areas
-    queue = deque(boundary_distance.keys())
-
-    while queue:
-        area = queue.popleft()
-        area_idx = dz.area2idx[area]
-        current_dist = boundary_distance[area]
-
-        for neighbor_idx in dz.neighbors[area_idx]:
-            neighbor_area = dz.idx2area[neighbor_idx]
-
-            # Skip if within c distance from centroid
-            if neighbor_area in centroid_distance and centroid_distance[neighbor_area] <= c:
-                continue
-
-            if neighbor_area in zone_dict and zone_dict[neighbor_area] == zone_dict[area]:
-                if neighbor_area not in boundary_distance:
-                    boundary_distance[neighbor_area] = current_dist + 1
-                    queue.append(neighbor_area)
+    # compute shortest-path distances from all centroids (protect centroid neighborhoods)
+    # centroid_distance = nx.multi_source_dijkstra_path_length(G, centroids)
 
     # Drop areas within distance c from boundary (excluding centroid-protected areas)
     floor_c = math.floor(c)
     frac = c - floor_c
     areas_to_drop = []
-    for area, dist in boundary_distance.items():
-        if dist <= floor_c:
-            prob = 1.0
-        elif dist == floor_c + 1:
-            prob = frac
-        else:
-            prob = 0.0
-        if random.random() < prob:
-            areas_to_drop.append(area)
-            # Double-check not within c of centroid
-            if area not in centroid_distance or centroid_distance[area] > c:
-                areas_to_drop.append(area)
+    for node in G.nodes():
+        if node in boundary_distance:
+            dist = boundary_distance[node]
+            if dist <= floor_c:
+                prob = 1.0
+            elif dist == floor_c + 1:
+                prob = frac
+            else:
+                prob = 0.0
+            if random.random() < prob:
+                # Double-check not within c of centroid
+                if node not in centroids:
+                    areas_to_drop.append(node)
 
     for area in areas_to_drop:
         zone_dict.pop(area, None)
@@ -389,50 +330,31 @@ def trim_noncontiguity(dz, zone_dict):
     return zone_dict
 
 
-def trim_noncontiguity_soft(dz, zone_dict):
+def trim_noncontiguity_soft(zone_dict, G, centroids):
     """
     Performs soft contiguity trimming by doing BFS from each centroid.
     Only keeps areas reachable from the centroid within the same zone.
 
     Args:
-        dz: Data zone object containing area and neighbor information
         zone_dict: Dictionary mapping areas to zones
-
-    Returns:
-        Updated zone_dict with only contiguous areas from each centroid
+        G: networkx Graph object containing area and neighbor information
+        centroids: List of centroid area indices
     """
     new_zone_dict = {}
 
-    for z in range(dz.Z):
-        centroid_idx = dz.centroids[z]
-        centroid_area = dz.idx2area[centroid_idx]
+    G_copy = G.copy()
 
-        # Skip if centroid not in zone_dict
-        if centroid_area not in zone_dict:
-            continue
+    # remove nodes not in zone_dict
+    nodes_to_remove = [node for node in G_copy.nodes() if node not in zone_dict]
+    G_copy.remove_nodes_from(nodes_to_remove)
 
-        # BFS from centroid
-        visited = set()
-        queue = deque([centroid_idx])
-        visited.add(centroid_idx)
-
-        while queue:
-            current_idx = queue.popleft()
-            current_area = dz.idx2area[current_idx]
-
-            # Add to new zone dict
-            new_zone_dict[current_area] = z
-
-            # Explore neighbors
-            for neighbor_idx in dz.neighbors[current_idx]:
-                neighbor_area = dz.idx2area[neighbor_idx]
-
-                # Only visit if assigned to same zone and not visited
-                if (neighbor_idx not in visited and
-                        neighbor_area in zone_dict and
-                        zone_dict[neighbor_area] == z):
-                    visited.add(neighbor_idx)
-                    queue.append(neighbor_idx)
+    # get all connected components and remove any that do not contain a centroid
+    connected_components = list(nx.connected_components(G_copy))
+    centroid_set = set(centroids)
+    for component in connected_components:
+        if any(node in centroid_set for node in component):
+            for node in component:
+                new_zone_dict[node] = zone_dict[node]
 
     return new_zone_dict
 

@@ -196,7 +196,6 @@ class ZoneVisualizer:
         return plt
 
     def zones_from_dict(self, zone_dict, label=False, title="", save_path="", show_plot=False):
-
         # for each aa_zone (former school_id), change it with whichever zone index this gets
         # matched to based on the LP solution in zone_dict
         if self.level == 'attendance_area':
@@ -228,24 +227,24 @@ class ZoneVisualizer:
                                                     text=int(x.BlockGroup),
                                                     xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
-            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(1000) else 0)
+            self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(10000) else 0)
             df = self.sf.loc[self.sf['filter'] == 1].copy()
 
             plt.figure(figsize=(20, 20))
             ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
 
-        # Create a new column 'zone_color' with colors based on zone_id
-        # try:
-        #     df['zone_color'] = df['zone_id'].map(zone_colors)
-        # except Exception as e:
+        #check if zone_id has any values not in zone_colors
         unique_zones = df['zone_id'].unique()
 
-        n_zones = len(unique_zones)
-        # randomize order of colors
-        colors = plt.cm.hsv(np.linspace(0, 1, n_zones + 1)[:-1])
-        np.random.shuffle(colors)
-        color_list = [mcolors.rgb2hex(colors[i]) for i in range(n_zones)]
-        zone_colors = dict(zip(sorted(unique_zones), color_list))
+        from Zone_Generation.Config.Constants import zone_colors
+        known_zones = zone_colors.keys()
+        if not all(zone in known_zones for zone in unique_zones):
+            n_zones = len(unique_zones)
+            # randomize order of colors
+            colors = plt.cm.hsv(np.linspace(0, 1, n_zones + 1)[:-1])
+            np.random.shuffle(colors)
+            color_list = [mcolors.rgb2hex(colors[i]) for i in range(n_zones)]
+            zone_colors = dict(zip(sorted(unique_zones), color_list))
 
         df['zone_color'] = df['zone_id'].map(zone_colors)
 

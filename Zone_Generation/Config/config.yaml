@@ -1,16 +1,16 @@
 
 # changing levers
-centroids_type: '6-zone-2'
+#centroids_type: '6-zone-2'
 #centroids_type: '7-zone-14'
-#centroids_type: '8-zone-25'
+centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
 #centroids_type: '13-zone-6'
 #centroids_type: '18-zone-7'
 #centroids_type: '57-zone-1'
 #centroids_type: '59-zone'
 
-frl_dev: 0.1
-racial_dev: 0.07
+frl_dev: 0.3
+racial_dev: 0.3
 is_local: False
 
 # fixed levers
@@ -30,12 +30,14 @@ capacity_scenario: "A"
 new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
-level: "BlockGroup"
-start_level: "BlockGroup"
-end_level: "Block"
+# Block_0, Block_1, Block_2, Block_3
+level: "Block_1"
+recursive_levels: ['Block_3', 'Block_2', 'Block_1', 'Block_0']
+relative_gap_limits: [0.15, 0.15, 0.15, 0.1]
 
 relative_gap_limit: 0.15
-solve_time_limit: 300 # seconds
+#log_folder: '.'
+solve_time_limit: 45 # seconds
 random_seed: 42
 # mip, cp_int, cp_bool
 optimizer: 'cp_int'

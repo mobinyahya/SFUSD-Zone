@@ -1,20 +1,20 @@
 import pickle
 import time
-from collections import defaultdict
 
-import kahip
+import os
 
 import networkx as nx
-import numpy as np
-import pymetis
+import pandas as pd
+import yaml
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Helper_Functions.util import load_census_shapefile
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES
-from Zone_Generation.Optimization.optimizer import DesignZones
+from Helper_Functions.util import load_census_shapefile, calculate_euc_distance, convert_to_block_zone_dict
+from Zone_Generation.Config.Constants import AREA_ETHNICITIES, get_dropbox_path
+from Zone_Generation.Optimization.graph_utils import partition_graph_metis_partial_constraint, \
+    partition_graph_metis_constrained
 
 
-def create_graph(dz: DesignZones) -> nx.Graph:
+def create_graph(dz, config) -> nx.Graph:
     """
     Create a graph from DesignZones where nodes represent areas and edges represent adjacency.
 
@@ -47,6 +47,41 @@ def create_graph(dz: DesignZones) -> nx.Graph:
     df['Block'] = df['Block'].astype('Int64')
     df.set_index('Block', inplace=True)
 
+    school_path = f"{get_dropbox_path(config['is_local'])}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+    school_df = pd.read_csv(school_path)
+    distance_path = f"{get_dropbox_path(config['is_local'])}/Optimization/distances_b2b_schools.csv"
+
+    distances = pd.read_csv(distance_path, index_col=config['level'])
+    distances.columns = [int(float(x)) for x in distances.columns]
+
+    distance_dict = {}
+    rows = distances.index.tolist()
+    cols = list(distances.columns)
+
+    # Change the csv file into a double dictionary, so the distances can be accessed easier
+    for area_i in rows:
+        inner_dict = {}
+        for area_j in cols:
+            inner_dict[dz.area2idx[area_j]] = distances.loc[area_i, area_j]
+
+        # school_id = school_df.loc[school_df[config['level']] == area_i, 'school_id'].iloc[0]
+        # area_i is the school area id
+        distance_dict[dz.area2idx[area_i]] = inner_dict
+
+    # add as a graph attribute
+    G.graph['distance_dict'] = distance_dict
+
+    # 'english_score': float(area_row['english_score']),
+    # 'math_score': float(area_row['math_score']),
+    # 'greatschools_rating': float(area_row['greatschools_rating']),
+
+    school_data = {}
+    for _, row in school_df.iterrows():
+        school_info = row.to_dict()
+        school_id = school_info['school_id']
+        school_info.pop('school_id', None)
+        school_data[school_id] = school_info
+    G.graph['school_data'] = school_data
     # Add nodes with attributes from area_data
     for idx in range(dz.A):
         area_id = dz.idx2area[idx]
@@ -54,6 +89,8 @@ def create_graph(dz: DesignZones) -> nx.Graph:
 
         lat = float(df.loc[area_id, 'Lat'].iloc[0])
         lon = float(df.loc[area_id, 'Lon'].iloc[0])
+
+        schools_in_area = school_df[school_df[dz.level] == area_id]['school_id'].tolist()
 
         # Create node with attributes
         node_attrs = {
@@ -64,23 +101,32 @@ def create_graph(dz: DesignZones) -> nx.Graph:
             'all_prog_capacity': float(area_row['all_prog_capacity']),
             'num_schools': int(area_row['num_schools']),
             'FRL': float(area_row['FRL']),
+            'school_ids': schools_in_area,
             'lat': lat,
             'lon': lon
         }
 
         # Add ethnicity attributes
         for ethnicity in AREA_ETHNICITIES:
-            node_attrs[ethnicity] = float(area_row.get(ethnicity, 0))
-
-        # Add school quality metrics if available
-        if 'english_score' in area_row:
-            node_attrs['english_score'] = float(area_row.get('english_score', 0))
-        if 'math_score' in area_row:
-            node_attrs['math_score'] = float(area_row.get('math_score', 0))
-        if 'greatschools_rating' in area_row:
-            node_attrs['greatschools_rating'] = float(area_row.get('greatschools_rating', 0))
+            node_attrs[ethnicity] = float(area_row[ethnicity])
 
         G.add_node(idx, **node_attrs)
+
+    total_students = 0
+    total_f = 0
+    total_r = {}
+    for node in G.nodes(data=True):
+        total_students += node[1]["ge_students"]
+        total_f += node[1]['FRL']
+        for ethnicity in AREA_ETHNICITIES:
+            if ethnicity not in total_r:
+                total_r[ethnicity] = 0
+            total_r[ethnicity] += node[1][ethnicity]
+    G.graph['F'] = total_f / total_students if total_students > 0 else 0
+    r_props = {}
+    for ethnicity in AREA_ETHNICITIES:
+        r_props[ethnicity] = total_r[ethnicity] / total_students if total_students > 0 else 0
+    G.graph['R'] = r_props
 
     # Add edges based on neighbors
     for idx in range(dz.A):
@@ -90,296 +136,6 @@ def create_graph(dz: DesignZones) -> nx.Graph:
                 G.add_edge(idx, neighbor_idx)
 
     return G
-
-
-def partition_graph_metis(G, k):
-    """
-    Partitions a NetworkX graph into super-nodes of approximate size k.
-
-    Args:
-        G: networkx.Graph
-        k: The target size for each super-node.
-    """
-    # 1. Calculate number of partitions needed
-    n_partitions = max(1, len(G.nodes) // k)
-    # print(f"Partitioning into {n_partitions} super-nodes...")
-
-    # 2. METIS requires nodes to be 0...N-1. Create a mapping.
-    nodes = list(G.nodes())
-    node_to_idx = {node: i for i, node in enumerate(nodes)}
-
-    # 3. Build Adjacency List for PyMetis
-    # adjncy[i] contains the neighbors of node i
-    adj_list = [
-        [node_to_idx[neighbor] for neighbor in G.neighbors(node)]
-        for node in nodes
-    ]
-
-    # 4. Perform Partitioning
-    # cuts is the number of edges between super-nodes
-    # membership is a list where membership[i] is the partition ID of node i
-    cuts, membership = pymetis.part_graph(n_partitions, adjacency=adj_list)
-
-    # 5. Group original nodes into their super-node sets
-    super_nodes = {}
-    for node_idx, partition_id in enumerate(membership):
-        if partition_id not in super_nodes:
-            super_nodes[partition_id] = []
-        super_nodes[partition_id].append(nodes[node_idx])
-
-    return super_nodes
-
-
-def partition_graph_metis_partial_constraint(G, k):
-    """
-        Partitions a NetworkX graph into super-nodes of approximate size k.
-
-        Args:
-            G: networkx.Graph
-            k: The target size for each super-node.
-        """
-    # 1. Calculate number of partitions needed
-    n_partitions = max(1, len(G.nodes) // k)
-    # print(f"Partitioning into {n_partitions} super-nodes...")
-
-    # 2. METIS requires nodes to be 0...N-1. Create a mapping.
-    nodes = list(G.nodes())
-    node_to_idx = {node: i for i, node in enumerate(nodes)}
-
-    # 3. Build Adjacency List for PyMetis
-    # adjncy[i] contains the neighbors of node i
-    adj_list = [
-        [node_to_idx[neighbor] for neighbor in G.neighbors(node)]
-        for node in nodes
-    ]
-
-    vweights = []
-    for node in nodes:
-        # Add a base weight of 1 to schools so no partition is 'allowed' to be empty
-        schools = int(G.nodes[node]['num_schools'] * 100)+ 1
-        students = int(G.nodes[node]['ge_students'] * 10) + 2
-
-        vweights.extend([schools, students])
-
-    # 4. Perform Partitioning
-    # cuts is the number of edges between super-nodes
-    # membership is a list where membership[i] is the partition ID of node i
-    options = pymetis.Options()
-    options.ufactor = 25  # Set imbalance constraints
-    options.niter = 30
-    options.ncuts = 10
-    # options.ubvec = ubvec
-    options.contig = True
-
-    cuts, membership = pymetis.part_graph(
-        n_partitions,
-        adjacency=adj_list,
-        vweights=vweights,
-        options=options,
-    )
-
-    # 5. Group original nodes into their super-node sets
-    super_nodes = {}
-    for node_idx, partition_id in enumerate(membership):
-        if partition_id not in super_nodes:
-            super_nodes[partition_id] = []
-        super_nodes[partition_id].append(nodes[node_idx])
-
-    partition_stats = defaultdict(lambda: {'schools': 0, 'students': 0})
-    for ethnicity in AREA_ETHNICITIES:
-        for part_id in range(n_partitions):
-            partition_stats[part_id][ethnicity] = 0
-    for i, part_id in enumerate(membership):
-        node = nodes[i]
-        partition_stats[part_id]['schools'] += G.nodes[node]['num_schools']
-        partition_stats[part_id]['students'] += G.nodes[node]['ge_students']
-
-    # Print Report
-    # print("Partitioning Report:")
-    # for part_id, stats in partition_stats.items():
-    #     # percent difference between capacity and students
-    #
-    #     print(f" Partition {part_id}: "
-    #           f"Schools={stats['schools']}, "
-    #           f"Students=({int(stats['students'])}) ")
-    return super_nodes
-
-
-def partition_graph_metis_constrained(G, k):
-    """
-    Partitions a NetworkX graph into super-nodes of approximate size k.
-
-    Args:
-        G: networkx.Graph
-        k: The target size for each super-node.
-    """
-    # 1. Calculate number of partitions needed
-    n_partitions = max(1, len(G.nodes) // k)
-    # print(f"Partitioning into {n_partitions} super-nodes...")
-
-    # 2. METIS requires nodes to be 0...N-1. Create a mapping.
-    nodes = list(G.nodes())
-    node_to_idx = {node: i for i, node in enumerate(nodes)}
-
-    # 3. Build Adjacency List for PyMetis
-    # adjncy[i] contains the neighbors of node i
-    adj_list = [
-        [node_to_idx[neighbor] for neighbor in G.neighbors(node)]
-        for node in nodes
-    ]
-
-    total_frl = sum(G.nodes[node]['FRL'] for node in nodes)
-    total_students = sum(G.nodes[node]['ge_students'] for node in nodes)
-    target_frl_prop = total_frl / total_students
-    target_eth_props = {}
-    for ethnicity in AREA_ETHNICITIES:
-        node_eth = sum(G.nodes[node][ethnicity] for node in nodes)
-        target_eth_props[ethnicity] = node_eth / total_students
-
-    print(f"Target FRL proportion: {target_frl_prop:.2%}")
-
-    min_cap_diff = min(
-        G.nodes[node]['ge_capacity'] - G.nodes[node]['ge_students']
-        for node in nodes
-    )
-    vweights = []
-    for node in nodes:
-        # Add a base weight of 1 to schools so no partition is 'allowed' to be empty
-        schools = int(G.nodes[node]['num_schools']) + 1
-
-        # Make capacity difference always positive
-        cap_diff = G.nodes[node]['ge_capacity'] - G.nodes[node]['ge_students']
-        cap_coef = int(100 * (cap_diff - min_cap_diff))
-
-        node_frl = G.nodes[node]['FRL']
-        node_students = G.nodes[node]['ge_students']
-        node_frl_prop = node_frl / node_students if node_students > 0 else 0
-
-        # Weight by deviation from target (scaled by student count)
-        # Higher weight = further from target
-        frl_deviation = abs(node_frl_prop - target_frl_prop) * node_students
-        frl_weight = int(1000 * frl_deviation) + 1
-
-        r_weights = []
-        for ethnicity in AREA_ETHNICITIES:
-            node_ethnicity = G.nodes[node][ethnicity]
-            node_eth_prop = node_ethnicity / node_students if node_students > 0 else 0
-            eth_deviation = abs(node_eth_prop - target_eth_props[ethnicity]) * node_students
-            eth_weight = int(1000 * eth_deviation) + 1
-            r_weights.append(eth_weight)
-
-        vweights.extend([cap_coef, schools, frl_weight] + r_weights)
-
-    # 4. Perform Partitioning
-    # cuts is the number of edges between super-nodes
-    # membership is a list where membership[i] is the partition ID of node i
-    options = pymetis.Options()
-    options.ufactor = 30  # Set imbalance constraints
-    options.niter = 30
-    options.ncuts = 10
-    # options.ubvec = ubvec
-
-    cuts, membership = pymetis.part_graph(
-        n_partitions,
-        adjacency=adj_list,
-        vweights=vweights,
-        options=options,
-        contiguous=True
-    )
-
-    # 5. Group original nodes into their super-node sets
-    super_nodes = {}
-    for node_idx, partition_id in enumerate(membership):
-        if partition_id not in super_nodes:
-            super_nodes[partition_id] = []
-        super_nodes[partition_id].append(nodes[node_idx])
-
-    # Aggregate results
-    partition_stats = defaultdict(lambda: {'schools': 0, 'students': 0, 'capacity': 0, 'frl': 0})
-    for ethnicity in AREA_ETHNICITIES:
-        for part_id in range(n_partitions):
-            partition_stats[part_id][ethnicity] = 0
-    for i, part_id in enumerate(membership):
-        node = nodes[i]
-        partition_stats[part_id]['schools'] += G.nodes[node]['num_schools']
-        partition_stats[part_id]['students'] += G.nodes[node]['ge_students']
-        partition_stats[part_id]['capacity'] += G.nodes[node]['ge_capacity']
-        partition_stats[part_id]['frl'] += G.nodes[node]['FRL']
-        for ethnicity in AREA_ETHNICITIES:
-            partition_stats[part_id][ethnicity] += G.nodes[node][ethnicity]
-
-    # Print Report
-    print("Partitioning Report:")
-    for part_id, stats in partition_stats.items():
-        # Add frl prop and race prop by dividing by students
-        frl_prop = stats['frl'] / stats['students'] if stats['students'] > 0 else 0
-        r_props = {}
-        for ethnicity in AREA_ETHNICITIES:
-            r_props[ethnicity] = stats[ethnicity] / stats['students'] if stats['students'] > 0 else 0
-
-        # percent difference between capacity and students
-        capacity_diff = (stats['capacity'] - stats['students']) / stats['students'] if stats['students'] > 0 else 0
-
-        print(f" Partition {part_id}: "
-              f"Schools={stats['schools']}, "
-              f"Cap Diff=({capacity_diff:.2%}), "
-              f"FRL=({frl_prop:.2%}), "
-              + ", ".join([f"{ethnicity}= ({r_props[ethnicity]:.2%})" for ethnicity in AREA_ETHNICITIES]))
-    return super_nodes
-
-
-def partition_graph_kahip(G, k):
-    num_nodes = G.number_of_nodes()
-    n_partitions = max(1, num_nodes // k)
-
-    node_list = list(G.nodes())
-    node_to_idx = {node: i for i, node in enumerate(node_list)}
-
-    xadj = [0]
-    adjncy = []
-    adjwgt = []
-
-    for node in node_list:
-        for neighbor in G.neighbors(node):
-            adjncy.append(node_to_idx[neighbor])
-
-            # --- COMPACTNESS TRICK ---
-            # If nodes have 'pos' (x, y) coordinates:
-            if 'pos' in G.nodes[node] and 'pos' in G.nodes[neighbor]:
-                p1 = np.array([G.nodes[node]['lat'], G.nodes[node]['lon']])
-                p2 = np.array([G.nodes[neighbor]['lat'], G.nodes[neighbor]['lon']])
-                dist = np.linalg.norm(p1 - p2)
-                # Penalize cutting short edges heavily
-                weight = int(10000 / (dist + 0.1) ** 2)
-            else:
-                weight = 1
-
-            adjwgt.append(weight)
-        xadj.append(len(adjncy))
-
-    # Vertex weights (uniform)
-    vwgt = np.ones(num_nodes, dtype=np.int32).tolist()
-
-    # Using the Strongest available mode
-    edge_cuts, membership = kahip.kaffpa(
-        vwgt,
-        xadj,
-        adjncy,
-        adjwgt,
-        int(n_partitions),
-        0.01,  # Lower imbalance = tighter, more METIS-like balance
-        False,
-        1,
-        int(kahip.STRONGSOCIAL)
-    )
-
-    super_nodes = {}
-    for idx, partition_id in enumerate(membership):
-        if partition_id not in super_nodes:
-            super_nodes[partition_id] = []
-        super_nodes[partition_id].append(node_list[idx])
-
-    return super_nodes
 
 
 def partition_to_subgraphs(G, partition):
@@ -392,98 +148,238 @@ def partition_to_subgraphs(G, partition):
     return [G.subgraph(nodes).copy() for nodes in partition]
 
 
-def recursively_split(G, cur_size, depth):
+def recursively_split_with_zones(G, cur_size, depth, zone_offset=0):
     """
-    Recursively partition a graph into smaller subgraphs.
-
-    Args:
-        G: NetworkX graph to partition
-        cur_size: Target size for partitioning at current depth
-        depth: Number of recursive splits remaining
-        collect_all_depths: If True, return graphs from all depths
-
-    Returns:
-        If collect_all_depths is False: list of final subgraphs
-        If collect_all_depths is True: dict mapping depth -> list of subgraphs at that depth
+    Returns (zone_dict, next_zone_id) where zone_dict maps node -> zone_id
+    and next_zone_id is the next available zone ID.
     """
+    if depth == 0:
+        # Base case: assign all nodes in this subgraph to zone_offset
+        # Then increment for the next partition
+        return (
+            {node: zone_offset for node in G.nodes()},
+            zone_offset + 1  # Return next available zone ID
+        )
+    if cur_size <= 4:
+        return (
+            {node: zone_offset for node in G.nodes()},
+            zone_offset + 1  # Return next available zone ID
+        )
 
-    # New behavior: collect graphs at all depths
-    depth_graphs = {depth: [G]}
+    # Partition current graph
+    super_nodes = partition_graph_metis_partial_constraint(G, cur_size)
 
-    if depth == 0 or cur_size <= 3:
-        return depth_graphs
+    zone_dict = {}
+    current_zone_id = zone_offset
 
-    if cur_size > 30:
-        super_nodes = partition_graph_metis_partial_constraint(G, cur_size)
-    else:
-        super_nodes = partition_graph_metis(G, cur_size)
-    sub_graphs = partition_to_subgraphs(G, super_nodes.values())
+    for partition_nodes in super_nodes.values():
+        sub_g = G.subgraph(partition_nodes).copy()
 
-    # Recursively collect from subgraphs
-    for sub_g in sub_graphs:
-        sub_depth_graphs = recursively_split(sub_g, cur_size // 3, depth - 1)
-        for d, graphs in sub_depth_graphs.items():
-            if d not in depth_graphs:
-                depth_graphs[d] = []
-            depth_graphs[d].extend(graphs)
+        # Recursively partition deeper
+        sub_zones, next_zone_id = recursively_split_with_zones(
+            sub_g,
+            cur_size // 3,
+            depth - 1,
+            zone_offset=current_zone_id
+        )
 
-    return depth_graphs
+        zone_dict.update(sub_zones)
+        current_zone_id = next_zone_id  # Use returned next_zone_id
+
+    return zone_dict, current_zone_id
+
+
+def aggregate_zone_dict(partition, G):
+    # make new graph with partitioned nodes
+    # partition: dict of node_id to partition_id
+    # use partition_id as new area_id
+    # determine adjaceny based on superset of neighbors from original graph
+    new_G = nx.Graph()
+    for node, part_id in partition.items():
+        if part_id not in new_G:
+            new_G.add_node(part_id, ge_students=0, ge_capacity=0,
+                           all_prog_students=0, all_prog_capacity=0, num_schools=0,
+                           FRL=0, english_score=0, math_score=0, greatschools_rating=0,
+                           lat=0, lon=0, count=0)
+        # aggregate attributes
+        new_G.nodes[part_id]['ge_students'] += G.nodes[node]['ge_students']
+        new_G.nodes[part_id]['ge_capacity'] += G.nodes[node]['ge_capacity']
+        new_G.nodes[part_id]['all_prog_students'] += G.nodes[node]['all_prog_students']
+        new_G.nodes[part_id]['all_prog_capacity'] += G.nodes[node]['all_prog_capacity']
+        new_G.nodes[part_id]['num_schools'] += G.nodes[node]['num_schools']
+        new_G.nodes[part_id]['FRL'] += G.nodes[node]['FRL']
+        new_G.nodes[part_id].setdefault('school_ids', []).extend(G.nodes[node]['school_ids'])
+        for ethnicity in AREA_ETHNICITIES:
+            if ethnicity not in new_G.nodes[part_id]:
+                new_G.nodes[part_id][ethnicity] = 0
+            new_G.nodes[part_id][ethnicity] += G.nodes[node][ethnicity]
+
+        # create new attribute of block_ids, which is a list of original area_ids
+        new_G.nodes[part_id].setdefault('block_ids', []).append(G.nodes[node]['area_id'])
+
+    # load census shapefile
+    census_df = load_census_shapefile('Block', False)
+    census_df = census_df[['Block', 'geometry']]
+
+    # add column indicating which partition each block belongs to
+    block_to_part = {}
+    for node, part_id in partition.items():
+        area_id = G.nodes[node]['area_id']
+        block_to_part[area_id] = part_id
+    census_df['part_id'] = census_df['Block'].map(block_to_part)
+    # dissolve by part_id to get new geometries
+    dissolved_df = census_df.dissolve(by='part_id', as_index=False)
+    dissolved_df = dissolved_df[['part_id', 'geometry']]
+    dissolved_df.set_index('part_id', inplace=True)
+
+    # compute centroids for each new partition
+    dissolved_df['centroid'] = dissolved_df.centroid
+    dissolved_df['lat'] = dissolved_df['centroid'].apply(lambda x: x.y)
+    dissolved_df['lon'] = dissolved_df['centroid'].apply(lambda x: x.x)
+    for part_id in new_G.nodes():
+        if part_id in dissolved_df.index:
+            new_G.nodes[part_id]['lat'] = dissolved_df.loc[part_id, 'lat']
+            new_G.nodes[part_id]['lon'] = dissolved_df.loc[part_id, 'lon']
+    # create edges based on dissolved geometries adjacency
+    dissolved_df['geometry'] = dissolved_df['geometry'].buffer(0)
+    dissolved_df['neighbors'] = dissolved_df.geometry.apply(
+        lambda x: dissolved_df[dissolved_df.geometry.touches(x)].index.tolist()
+    )
+    for part_id, row in dissolved_df.iterrows():
+        if len(row['neighbors']) == 0:
+            print(f"Warning: Partition {part_id} has no neighbors!")
+        for neighbor_part_id in row['neighbors']:
+            new_G.add_edge(part_id, neighbor_part_id)
+
+    # TODO: Figure out how to handle this dumb thing
+
+    # normalize school quality metrics by number of schools
+    # num_schools = new_G.nodes[part_id]['num_schools']
+    # if num_schools > 0:
+    #     new_G.nodes[part_id]['english_score'] /= num_schools
+    #     new_G.nodes[part_id]['math_score'] /= num_schools
+    #     new_G.nodes[part_id]['greatschools_rating'] /= num_schools
+
+    # recompute the distant_dict by calculating distances between new centroids
+    # keep in mind that the distance dict is idx of a school to all other blocks
+    distance_dict = {}
+    # first get all the schools
+    for node_i in new_G.nodes():
+        distance_dict[node_i] = {}
+        lat_i = new_G.nodes[node_i]['lat']
+        lon_i = new_G.nodes[node_i]['lon']
+        for node_j in new_G.nodes():
+            if node_i == node_j:
+                distance = 0
+            else:
+                lat_j = new_G.nodes[node_j]['lat']
+                lon_j = new_G.nodes[node_j]['lon']
+                distance = calculate_euc_distance(lat_i, lon_i, lat_j, lon_j)
+            distance_dict[node_i][node_j] = distance
+    new_G.graph['distance_dict'] = distance_dict
+    new_G.graph['F'] = G.graph['F']
+    new_G.graph['R'] = G.graph['R']
+    new_G.graph['school_data'] = G.graph['school_data']
+    new_G.graph['partition'] = partition
+    return new_G
+
+
+def create_base_graph(save_folder):
+    with open("../Config/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    config['level'] = 'Block'
+    start_time = time.time()
+    dz = DesignZones(config=config)
+    end_time = time.time()
+    print(f"DesignZones created in {end_time - start_time:.2f} seconds")
+    G = create_graph(dz, config)
+
+    print(f"Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+    print(f"Sample node attributes: {list(G.nodes(data=True))[0]}")
+    file_name = f"{save_folder}/Block_0.pickle"
+    # if path does not exist, create it
+    os.makedirs(save_folder, exist_ok=True)
+
+    # save to file
+    with open(file_name, 'wb') as f:
+        pickle.dump(G, f)
+
+
+def recursively_split_and_save(output_folder):
+    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
+        G = pickle.load(f)
+
+    zv = ZoneVisualizer('Block', is_local=False)
+    # Unpack both return values
+    for depth in range(1, 4):
+        zone_dict, _ = recursively_split_with_zones(G, 4 ** 3, depth=depth)
+
+        print(f"Depth {4 - depth}:")
+        print(f" Total nodes assigned: {len(zone_dict)} / {G.number_of_nodes()}")
+        print(f" Number of zones: {len(set(zone_dict.values()))}")
+        print(f" Original number of nodes: {G.number_of_nodes()}")
+
+        block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
+        zv.zones_from_dict(block_zone_dict, show_plot=True)
+
+        # Save zone_dict to file
+        # with open(f'block_zones_depth_{4 - depth}.pickle', 'wb') as f:
+        #     pickle.dump(zone_dict, f)
+        file_name = f"{output_folder}/block_zones_depth_{4-depth}.pickle"
+        with open(file_name, 'wb') as f:
+            pickle.dump(zone_dict, f)
+
+
+def create_intermediate_graphs(output_folder):
+    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
+        G = pickle.load(f)
+
+    for level in range(1, 4):
+        with open(f'{output_folder}/block_zones_depth_{level}.pickle', 'rb') as f:
+            zone_dict = pickle.load(f)
+
+        aggregated_G = aggregate_zone_dict(zone_dict, G)
+        print(f'Number of connected components at depth {level}: {nx.number_connected_components(aggregated_G)}')
+        print(f"Aggregated graph at depth {level} has {aggregated_G.number_of_nodes()} nodes.")
+
+        with open(f'{output_folder}/Block_{level}.pickle', 'wb') as f:
+            pickle.dump(aggregated_G, f)
 
 
 if __name__ == "__main__":
-    # with open("../Config/config.yaml", "r") as f:
-    #     config = yaml.safe_load(f)
-    #
-    # config['level'] = 'Block'
-    # start_time = time.time()
-    # dz = DesignZones(config=config)
-    # end_time = time.time()
-    # print(f"DesignZones created in {end_time - start_time:.2f} seconds")
-    # G = create_graph(dz)
-    #
-    # print(f"Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
-    # print(f"Sample node attributes: {list(G.nodes(data=True))[0]}")
-    #
-    #
-    # # save to file
-    # with open('Block_0.pickle', 'wb') as f:
-    #     pickle.dump(G, f)
+    is_local = False
+    output_folder = f'{get_dropbox_path(is_local)}/Optimization/Zones/Graphs'
 
-    # load from file
-    start_time = time.time()
-    with open('Block_0.pickle', 'rb') as f:
+    # create_base_graph(output_folder)
+    # recursively_split_and_save(output_folder)
+    # create_intermediate_graphs(output_folder)
+    with open('../Config/config.yaml', "r") as f:
+        config = yaml.safe_load(f)
+    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
         G = pickle.load(f)
-    end_time = time.time()
-    print(f"Graph loaded from file in {end_time - start_time:.2f} seconds")
 
-    # super_nodes = partition_graph_metis_partial_constraint(G, len(G.nodes()) // 13)
-    #
-    # # create zone_dict
-    # zone_dict = {}
-    # for zone_idx, nodes in super_nodes.items():
-    #     for node in nodes:
-    #         area_id = G.nodes[node]['area_id']
-    #         zone_dict[area_id] = zone_idx
-    # print(f"Created {len(super_nodes)} zones.")
-    # zv = ZoneVisualizer('Block', is_local=False)
-    # zv.zones_from_dict(zone_dict, show_plot=True)
+    # open centroids file
+    with open("../Config/centroids.yaml", "r") as f:
+        centroid_configs = yaml.safe_load(f)
+    if config['centroids_type'] not in centroid_configs:
+        raise ValueError("The centroids type specified is not defined in centroids.yaml.")
 
-    depth_subgraphs = recursively_split(G, 4 ** 3, depth=4)
+    centroid_schools = centroid_configs[config['centroids_type']]
+    # search graph for centroid_school in node['school_ids']
+    centroids = []
+    for centroid_school in centroid_schools:
+        for node in G.nodes(data=True):
+            if centroid_school in node[1]['school_ids']:
+                centroids.append(node[0])
+                break
 
-    for depth, subgraphs in depth_subgraphs.items():
-        if depth == 4:
-            continue
-        print(f"Depth {depth}: {len(subgraphs)} subgraphs")
-        # Create zone_dict for visualization
-        zone_dict = {}
-        for zone_idx, sub_g in enumerate(subgraphs):
-            for node in sub_g.nodes():
-                area_id = G.nodes[node]['area_id']
-                zone_dict[area_id] = zone_idx
-        print(f"Created {len(subgraphs)} zones at depth {depth}.")
-        zv = ZoneVisualizer('Block', is_local=False)
-        zv.zones_from_dict(zone_dict, show_plot=True)
+    super_nodes = partition_graph_metis_constrained(G, len(centroids), centroids)
+    zone_dict = {}
+    for zone_id, nodes in super_nodes.items():
+        for node in nodes:
+            zone_dict[node] = zone_id
 
-        # save zone_dict to pickle
-        with open(f'block_zones_depth_{depth}.pickle', 'wb') as f:
-            pickle.dump(zone_dict, f)
+    block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
+    zv = ZoneVisualizer('Block', is_local)
+    zv.zones_from_dict(block_zone_dict, show_plot=True)

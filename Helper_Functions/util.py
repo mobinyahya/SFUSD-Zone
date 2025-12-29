@@ -461,6 +461,40 @@ def applied_to_school(df, schoolid):
     return df
 
 
+def convert_to_block_zone_dict(zone_dict, G):
+    block_zone_dict = {}
+    for node, zone in zone_dict.items():
+        if zone is None:
+            raise ValueError("Zone dict contains None zone assignment.")
+        if np.isnan(zone):
+            raise ValueError("Zone dict contains NaN zone assignment.")
+        # if area_id is an attribute, just use it
+        if 'area_id' in G.nodes[node]:
+            area_id = G.nodes[node]['area_id']
+            block_zone_dict[area_id] = zone
+        else:
+            # otherwise, assume node is a list of block ids
+            block_ids = G.nodes[node]['block_ids']
+            for block_id in block_ids:
+                block_zone_dict[block_id] = zone
+    return block_zone_dict
+
+def convert_block_zone_to_zone_dict(block_zone_dict, G):
+    zone_dict = {}
+    for node in G.nodes():
+        if 'area_id' in G.nodes[node]:
+            zone_dict[node] = block_zone_dict[G.nodes[node]['area_id']]
+            continue
+        block_ids = G.nodes[node]['block_ids']
+        # check that all block_ids have the same zone assignment
+        zones = {block_zone_dict[block_id] for block_id in block_ids}
+        if len(zones) > 1:
+            raise ValueError(f"Block IDs {block_ids} in node {node} have conflicting zone assignments: {zones}")
+
+        # assign the zone of the first block_id in the list
+        zone_dict[node] = block_zone_dict[block_ids[0]]
+    return zone_dict
+
 def calculate_euc_distance(lat1, lon1, lat2, lon2):
     # print(str(lat1) + "  " + str(lon1) + "  " + str(lat2) + "  " + str(lon2) + "  " )
     return 6371.01 * np.arccos(np.sin(lat1 * np.pi / 180) * np.sin(lat2 * np.pi / 180) + \
@@ -654,3 +688,36 @@ def compute_zone_deviations(zone_demographics):
         "max_racial_deviation": max_racial_deviation,
         "per_ethnicity_deviation": per_ethnicity_deviation
     }
+
+
+def Compute_Name(config):
+    name = str(config["centroids_type"])
+    # # add frl deviation
+    # name += "_frl_" + str(config["frl_dev"])
+    # # add shortage
+    # # name += "_shortage_" + str(config["shortage"])
+
+    return name
+
+
+def load_zones_from_file(file_path):
+    zone_lists = []
+    with open(file_path, 'r', newline='') as file:
+        print("file_path ", file_path)
+        csv_reader = csv.reader(file, delimiter='\t')
+        for row in csv_reader:
+            # Convert each element in the row to an integer and store it in the list
+            zone_row = []
+            for cell in row:
+                # Split the cell content by commas, convert to integers, and append to the row
+                cell_values = [int(val.strip()) for val in cell.split(',') if val.strip()]  #
+                zone_row.extend(cell_values)
+            zone_lists.append(zone_row)
+
+    # build a zone dictionary based on zone_list
+    zone_dict = {}
+    for index, sublist in enumerate(zone_lists):
+        for item in sublist:
+            zone_dict[item] = index
+
+    return zone_lists, zone_dict

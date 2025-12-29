@@ -8,21 +8,20 @@ from Zone_Generation.Optimization.optimizer import DesignZones, Optimizer, Solut
 
 
 def run_configs():
-    solve_time_limits = [60, 5 * 60, 10 * 60]  # in seconds
-    random_seeds = [42, 2025, 1014]
+    solve_time_limits = [5 * 60 * 60]  # in seconds
+    random_seeds = [42, 2025, 1014, 7]
 
     centroids_types = [
         '6-zone-2',
         '8-zone-25',
         '10-zone-3',
         '13-zone-6',
-        '18-zone-7'
     ]
 
-    levels = ['BlockGroup', 'Block']
-    frl_devs = [0.2, 0.4]
-    racial_devs = [0.3]
-    optimizers = ['mip', 'cp_bool', 'cp_int']
+    levels = ['Block_0']
+    frl_devs = [0.15, 0.25]
+    racial_devs = [0.2]
+    optimizers = ['cp_int']
 
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
@@ -44,20 +43,20 @@ def run_configs():
                                 config['racial_dev'] = racial_dev
                                 config['optimizer'] = optimizer_name
 
-                                dz = DesignZones(config=config)
-
                                 print(f"Testing config: time_limit={time_limit}, seed={seed}, "
                                       f"centroids_type={centroids_type}, level={level}, "
                                       f"frl_dev={frl_dev}, racial_dev={racial_dev}, "
                                       f"optimizer={optimizer_name}")
 
-                                optimizer = Optimizer.get_optimizer(dz, config)
+                                optimizer = Optimizer.get_optimizer(config)
                                 optimizer.add_constraints()
                                 optimizer.add_objective()
 
                                 folder_name = (f"time{time_limit}_seed{seed}_centroids{centroids_type}_"
                                                f"level{level}_frl{frl_dev}_racial{racial_dev}_opt{optimizer_name}")
+                                # output_folder = f"~/sfusd-local-data/zones/SFUSD/local_runs/comparisons/{folder_name}"
                                 output_folder = f"~/sfusd-local-data/zones/SFUSD/local_runs/comparisons/{folder_name}"
+
                                 # make the folder if it does not exist
                                 os.makedirs(os.path.expanduser(output_folder), exist_ok=True)
                                 try:
