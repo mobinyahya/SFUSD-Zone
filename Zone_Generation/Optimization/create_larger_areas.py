@@ -11,7 +11,7 @@ from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Helper_Functions.util import load_census_shapefile, calculate_euc_distance, convert_to_block_zone_dict
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, get_dropbox_path
 from Zone_Generation.Optimization.graph_utils import partition_graph_metis_partial_constraint, \
-    partition_graph_metis_constrained
+    write_graph_to_metis_file, parse_metis_output, partitions_to_zone_dict
 
 
 def create_graph(dz, config) -> nx.Graph:
@@ -354,32 +354,31 @@ if __name__ == "__main__":
     # create_base_graph(output_folder)
     # recursively_split_and_save(output_folder)
     # create_intermediate_graphs(output_folder)
-    with open('../Config/config.yaml', "r") as f:
-        config = yaml.safe_load(f)
-    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
-        G = pickle.load(f)
+    # with open('../Config/config.yaml', "r") as f:
+    #     config = yaml.safe_load(f)
+
 
     # open centroids file
-    with open("../Config/centroids.yaml", "r") as f:
-        centroid_configs = yaml.safe_load(f)
-    if config['centroids_type'] not in centroid_configs:
-        raise ValueError("The centroids type specified is not defined in centroids.yaml.")
-
-    centroid_schools = centroid_configs[config['centroids_type']]
-    # search graph for centroid_school in node['school_ids']
-    centroids = []
-    for centroid_school in centroid_schools:
-        for node in G.nodes(data=True):
-            if centroid_school in node[1]['school_ids']:
-                centroids.append(node[0])
-                break
-
-    super_nodes = partition_graph_metis_constrained(G, len(centroids), centroids)
-    zone_dict = {}
-    for zone_id, nodes in super_nodes.items():
-        for node in nodes:
-            zone_dict[node] = zone_id
-
-    block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
-    zv = ZoneVisualizer('Block', is_local)
-    zv.zones_from_dict(block_zone_dict, show_plot=True)
+    # with open("../Config/centroids.yaml", "r") as f:
+    #     centroid_configs = yaml.safe_load(f)
+    # if config['centroids_type'] not in centroid_configs:
+    #     raise ValueError("The centroids type specified is not defined in centroids.yaml.")
+    #
+    # centroid_schools = centroid_configs[config['centroids_type']]
+    # # search graph for centroid_school in node['school_ids']
+    # centroids = []
+    # for centroid_school in centroid_schools:
+    #     for node in G.nodes(data=True):
+    #         if centroid_school in node[1]['school_ids']:
+    #             centroids.append(node[0])
+    #             break
+    #
+    # super_nodes = partition_graph_metis_constrained(G, len(centroids), centroids)
+    # zone_dict = {}
+    # for zone_id, nodes in super_nodes.items():
+    #     for node in nodes:
+    #         zone_dict[node] = zone_id
+    #
+    # block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
+    # zv = ZoneVisualizer('Block', is_local)
+    # zv.zones_from_dict(block_zone_dict, show_plot=True)

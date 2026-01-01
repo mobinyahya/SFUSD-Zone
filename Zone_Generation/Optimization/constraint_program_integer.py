@@ -68,10 +68,3 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
             centroid_idx = self.centroid_schools.index(zone)
             if centroid_idx in self.valid_zone_per_area[area]:
                 self.m.Add(self.y[area] == centroid_idx)
-    #
-    # def _generate_zone_dict(self, solver):
-    #     zone_dict = {}
-    #     for i in range(self.A):
-    #         assigned_zone = solver.Value(self.y[i])
-    #         zone_dict[i] = self.centroid_schools[assigned_zone]
-    #     return zone_dict

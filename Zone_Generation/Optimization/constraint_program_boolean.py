@@ -62,8 +62,8 @@ class BooleanConstraintProgram(Optimizer):
     def _school_count_const(self):
         avg_school_count = sum([len(node[1]['school_ids']) for node in self.G.nodes(data=True)]) / self.Z
 
-        # TODO: ask sfusd if this is ok
-        school_ub = int(avg_school_count + 2)
+        # TODO: ask sfusd if we can relax this?
+        school_ub = int(avg_school_count + 1)
         school_lb = int(avg_school_count)
 
         # note: although we enforce max deviation of 1 from avg, in practice,
@@ -201,8 +201,6 @@ class BooleanConstraintProgram(Optimizer):
             ub_coefs = []
 
             for j in self.valid_area_per_zone[z]:
-                # students = self.dz.area_data["ge_students"][j]
-                # frl = self.dz.area_data['FRL'][j]
                 students = self.G.nodes[j]["ge_students"]
                 frl = self.G.nodes[j]['FRL']
 

@@ -1,8 +1,8 @@
 
 # changing levers
-#centroids_type: '6-zone-2'
+centroids_type: '6-zone-2'
 #centroids_type: '7-zone-14'
-centroids_type: '8-zone-25'
+#centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
 #centroids_type: '13-zone-6'
 #centroids_type: '18-zone-7'

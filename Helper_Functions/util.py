@@ -2,13 +2,14 @@ import csv
 import math
 import os
 import pickle
+from collections import defaultdict
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
-from Zone_Generation.Config.Constants import get_dropbox_path, get_sfusd_path
+from Zone_Generation.Config.Constants import get_dropbox_path, get_sfusd_path, AREA_ETHNICITIES
 
 
 def get_school_latlon():
@@ -651,8 +652,66 @@ def get_zone_dict(zonefile):
         zone_dict = {**zone_dict, **{int(float(s)): idx for s in schools if s != ''}}
     return zone_dict
 
+def compute_zone_demographics(G, zone_dict):
+    """
+            Calculates aggregated and proportional demographics (total students, FRL proportion,
+            and racial/ethnic proportions) for each zone.
+            """
 
-def compute_zone_deviations(zone_demographics):
+    # 1. Define the columns to aggregate and the corresponding keys for the output dictionary
+    # The keys will be like 'White', 'Black', etc.
+    ETHNICITY_KEYS = [col[len('Ethnicity_'):] for col in AREA_ETHNICITIES]
+
+    # 2. Use a defaultdict to simplify accumulation and avoid checking for key existence
+    # We initialize with a lambda that returns a dict structure for aggregation
+    zone_aggregates = defaultdict(lambda: {
+        "total_students": 0.0,
+        "FRL": 0.0,
+        **{key: 0.0 for key in ETHNICITY_KEYS}
+    })
+    # 3. Iterate over each area in the graph and accumulate counts into the appropriate zone
+
+    for node in G.nodes(data=True):
+        area_idx = node[0]
+        zone_id = zone_dict[area_idx]
+        area_data = node[1]
+
+        # Reference the aggregate dictionary for the current zone
+        agg = zone_aggregates[zone_id]
+
+        # Accumulate total students and FRL counts
+        agg["total_students"] += float(area_data["ge_students"])
+        agg["FRL"] += float(area_data["FRL"])
+        for ethnicity_col, key in zip(AREA_ETHNICITIES, ETHNICITY_KEYS):
+            agg[key] += float(area_data[ethnicity_col])
+
+    # 4. Convert aggregated counts to proportions
+    final_zone_demographics = {}
+    for zone_id, data in zone_aggregates.items():
+        total_students = data["total_students"]
+
+        # Create a new dictionary for the final, proportional results
+        final_demographics = {"total_students": round(total_students, 2)}
+
+        if total_students > 0:
+            # Calculate FRL proportion
+            final_demographics["FRL"] = round(data["FRL"] / total_students, 2)
+
+            # Calculate ethnicity proportions
+            for key in ETHNICITY_KEYS:
+                final_demographics[key] = round(data[key] / total_students, 2)
+        else:
+            # Handle zones with zero students (FRL and ethnic proportions are 0)
+            final_demographics["FRL"] = 0.0
+            for key in ETHNICITY_KEYS:
+                final_demographics[key] = 0.0
+
+        final_zone_demographics[zone_id] = final_demographics
+
+    return final_zone_demographics
+
+def compute_zone_deviations(G, zone_dict):
+    zone_demographics = compute_zone_demographics(G, zone_dict)
     # get deviations in FRL and racial composition from average across zones
     if not zone_demographics:
         return {"max_frl_deviation": 0.0, "max_racial_deviation": 0.0, "per_ethnicity_deviation": {}}

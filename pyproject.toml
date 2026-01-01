@@ -1,0 +1,22 @@
+[project]
+name = "sfusd-zone"
+version = "0.1.0"
+description = "Creating zones for SFUSD"
+requires-python = ">=3.13"
+dependencies = [
+    "descartes>=1.1.0",
+    "geopandas>=1.1.2",
+    "gerrychain>=0.3.2",
+    "gurobipy>=13.0.0",
+    "kahip>=3.22",
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "numpy>=2.4.0",
+    "ortools>=9.14.6206",
+    "pandas>=2.3.3",
+    "pymetis>=2025.2.2",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.8.0",
+    "scipy-stubs~=1.16.3",
+    "seaborn>=0.13.2",
+]
