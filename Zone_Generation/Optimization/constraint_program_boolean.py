@@ -1,3 +1,5 @@
+import time
+
 from ortools.sat.python import cp_model
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, SCALING_CONST
@@ -40,6 +42,12 @@ class BooleanConstraintProgram(Optimizer):
                 valid_area_per_zone[z].append(i)
                 valid_zone_per_area[i].append(z)
                 x[z][i] = var
+
+        # check if any area has no valid zones
+        for i in range(self.A):
+            if len(valid_zone_per_area[i]) == 0:
+                print(f"Area {i} has no valid zones! Infeasible model likely.")
+                self.m.Add(False)
         return valid_area_per_zone, valid_zone_per_area, x
 
     def _feasibility_const(self):
@@ -145,16 +153,18 @@ class BooleanConstraintProgram(Optimizer):
                 # only impose the contiguity if the area j has a neighbor that is closer to centroid z.
                 # otherwise, just make sure j has at least another neighbor assigned tot the same zone z, so that
                 # j is not an island assigned to z.
-                # TODO: Deal with these stupid edge cases
                 if try_to_add_neighbor_constraint(good_neighbors[j][z], z, j):
                     continue
-                if try_to_add_neighbor_constraint(ok_neighbors[j][z], z, j):
-                    continue
-                if try_to_add_neighbor_constraint(closer_neighbors[j][z], z, j):
-                    continue
-                if try_to_add_neighbor_constraint(all_neighbors[j][z], z, j):
-                    continue
                 # print('no acceptable neighbors at all!!! area ', j, ' zone ', z)
+                # do not allow this area to be assigned to this zone
+                self.m.Add(self.x[z][j] == 0)
+                # TODO: Deal with these stupid edge cases
+                # if try_to_add_neighbor_constraint(ok_neighbors[j][z], z, j):
+                #     continue
+                # if try_to_add_neighbor_constraint(closer_neighbors[j][z], z, j):
+                #     continue
+                # if try_to_add_neighbor_constraint(all_neighbors[j][z], z, j):
+                #     continue
 
     def _racial_const(self):
         for race_col in AREA_ETHNICITIES:
@@ -219,6 +229,34 @@ class BooleanConstraintProgram(Optimizer):
             self.m.Add(cp_model.LinearExpr.WeightedSum(vars_list, lb_coefs) >= 0)
             self.m.Add(cp_model.LinearExpr.WeightedSum(vars_list, ub_coefs) <= 0)
 
+    # we already have implicit constraint on distance
+    def _school_quality_const(self):
+        # ensure that each zone has at least one school above a certain great schools rating
+        threshold = self.config.get('great_schools_threshold')
+        if not threshold:
+            return
+
+        good_area_idxs = []
+        for i in range(self.A):
+            school_ids = self.G.nodes[i]['school_ids']
+            for school_id in school_ids:
+                if self.G.graph['school_data'][school_id]['greatschools_rating'] >= threshold:
+                    good_area_idxs.append(i)
+        for z in range(self.Z):
+            good_school_areas = []
+            for i in good_area_idxs:
+                if i in self.valid_area_per_zone[z]:
+                    good_school_areas.append(self.x[z][i])
+            if len(good_school_areas) > 0:
+                self.m.AddBoolOr(good_school_areas)
+            else:
+                # infeasible constraint, no area in this zone has a good school
+                print('Infeasible school quality constraint for zone ', z)
+                self.m.Add(False)
+
+    def _closest_school_const(self):
+        raise NotImplementedError('Not implemented for boolean CP')
+
     def _proportional_shortage_const(self):
         # No zone has shortage more than shortage percentage of its population
         for z in range(self.Z):
@@ -255,6 +293,10 @@ class BooleanConstraintProgram(Optimizer):
         self._proportional_shortage_const()
         self._proportional_overage_const()
 
+        # optional constraints
+        self._school_quality_const()
+        self._closest_school_const()
+
     def add_objective(self):
         boundary_vars = []
 
@@ -290,15 +332,17 @@ class BooleanConstraintProgram(Optimizer):
             self._add_hints()
 
         solver = cp_model.CpSolver()
-        self._add_solver_parameters(solver)
-
+        log_file = self._add_solver_parameters(solver)
         status = solver.Solve(self.m)
+        if log_file is not None:
+            print("Closing log file.")
+            log_file.close()
 
         objective_value = solver.ObjectiveValue()
         wall_time = solver.WallTime()
 
         return SolutionOutput(self._generate_zone_dict(solver), objective_value,
-                              solver.StatusName(status), wall_time, self.G, self.config['is_local'])
+                              solver.StatusName(status), wall_time, self.G, self.config)
 
     def fix_areas(self, fixed_zone_dict):
         if fixed_zone_dict is None:
@@ -310,19 +354,19 @@ class BooleanConstraintProgram(Optimizer):
 
     def _add_solver_parameters(self, solver):
         solver.parameters.max_time_in_seconds = self.config['solve_time_limit']
-        solver.parameters.max_presolve_iterations = 5
+        solver.parameters.max_presolve_iterations = 10
         solver.parameters.relative_gap_limit = self.config.get('relative_gap_limit', 0)
 
         solver.parameters.random_seed = self.config['random_seed']
         if self.config['is_local']:
             solver.parameters.num_search_workers = 6
         else:
-            solver.parameters.num_search_workers = 32
+            solver.parameters.num_search_workers = 24
 
         # important to think about this parameter and thourhgly test later. for now leave at 1
-        solver.parameters.linearization_level = 0
+        solver.parameters.linearization_level = 1
         solver.parameters.symmetry_level = 4
-
+        log_file = None
         log_folder = self.config.get('log_folder')
         if log_folder is not None:
             solver.parameters.log_to_stdout = False
@@ -330,18 +374,45 @@ class BooleanConstraintProgram(Optimizer):
 
             log_file_path = f"{log_folder}/{self.config['level']}_log.txt"
 
-            with open(log_file_path, "w") as f:
-                f.write("")
+            class CallbackHandler:
+                def __init__(self, config):
+                    self.log_file = open(log_file_path, "w")
+                    self.best_objective = float('inf')
+                    self.last_objective_time = time.time()
+                    self.stall_limit = config.get('stall_time_limit', -1)  # in seconds
+                    self.stopped = False
+                    self.start_time = time.time()
 
-            def on_log_message(message: str):
-                with open(log_file_path, "a") as f:
-                    f.write(message + "\n")
+                def on_log_message(self, message: str):
+                    self.log_file.write(message + "\n")
+                    self.log_file.flush()
 
+                    cur_time = time.time()
+                    cur_best_objective = self.best_objective
+                    if 'best:' in message:
+                        # take the number in between best: and next:
+                        parts = message.split('best:')
+                        cur_best_objective = float(parts[1].split('next:')[0].strip())
+
+                    if cur_time - self.last_objective_time > self.stall_limit > 0:
+                        if cur_best_objective < self.best_objective:
+                            self.best_objective = cur_best_objective
+                            self.last_objective_time = cur_time
+                        elif not self.stopped:
+                            self.stopped = True
+                            print(
+                                f"Stopping solver due to stall in objective improvement at time {cur_time - self.start_time}.")
+                            solver.StopSearch()
+
+            callback_handler = CallbackHandler(self.config)
             # Assign the callback and solve
-            solver.log_callback = on_log_message
+            solver.log_callback = callback_handler.on_log_message
+            log_file = callback_handler.log_file
         else:
             solver.parameters.log_to_stdout = True
             solver.parameters.log_search_progress = True
+
+        return log_file
 
     def _add_hints(self):
         # add hint that each area will be assigned to the closest centroid
@@ -373,7 +444,6 @@ class BooleanConstraintProgram(Optimizer):
         #         for z in self.valid_zone_per_area[i]:
         #             if z != assigned_zone:
         #                 self.m.AddHint(self.x[z][i], 0)
-
 
     def _generate_zone_dict(self, solver):
         zone_dict = {}

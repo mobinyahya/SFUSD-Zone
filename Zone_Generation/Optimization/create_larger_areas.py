@@ -10,8 +10,8 @@ import yaml
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Helper_Functions.util import load_census_shapefile, calculate_euc_distance, convert_to_block_zone_dict
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, get_dropbox_path
-from Zone_Generation.Optimization.graph_utils import partition_graph_metis_partial_constraint, \
-    write_graph_to_metis_file, parse_metis_output, partitions_to_zone_dict
+from Zone_Generation.Optimization.design_zones import DesignZones
+from Zone_Generation.Optimization.graph_utils import partition_graph_metis_partial_constraint
 
 
 def create_graph(dz, config) -> nx.Graph:
@@ -23,12 +23,12 @@ def create_graph(dz, config) -> nx.Graph:
     """
     G = nx.Graph()
 
-    census_sf = load_census_shapefile('Block', False)
-    df = census_sf.dissolve(by="Block", as_index=False)
+    census_sf = load_census_shapefile(config['level'], False)
+    df = census_sf.dissolve(by=config['level'], as_index=False)
     df["centroid"] = df.centroid
     df["Lat"] = df["centroid"].apply(lambda x: x.y)
     df["Lon"] = df["centroid"].apply(lambda x: x.x)
-    df = df[["Block", "Lat", "Lon"]]
+    df = df[[config['level'], "Lat", "Lon"]]
     df.loc[:, "key"] = 0
     df = df.merge(df, how="outer", on="key")
 
@@ -38,18 +38,23 @@ def create_graph(dz, config) -> nx.Graph:
             "Lon_x": "Lon",
             "Lat_y": "st_lat",
             "Lon_y": "st_lon",
-            "Block_x": "Block",
+            f"{config['level']}_x": config['level'],
         },
         inplace=True,
     )
 
     # df["distance"] = df.apply(get_distance, axis=1)
-    df['Block'] = df['Block'].astype('Int64')
-    df.set_index('Block', inplace=True)
+    df[config['level']] = df[config['level']].astype('Int64')
+    df.set_index(config['level'], inplace=True)
 
     school_path = f"{get_dropbox_path(config['is_local'])}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
     school_df = pd.read_csv(school_path)
-    distance_path = f"{get_dropbox_path(config['is_local'])}/Optimization/distances_b2b_schools.csv"
+    if config['level'] == 'Block':
+        distance_path = f"{get_dropbox_path(config['is_local'])}/Optimization/distances_b2b_schools.csv"
+    elif config['level'] == 'BlockGroup':
+        distance_path = f"{get_dropbox_path(config['is_local'])}/Optimization/distances_bg2bg.csv"
+    else:
+        raise ValueError("Unsupported level for distance matrix.")
 
     distances = pd.read_csv(distance_path, index_col=config['level'])
     distances.columns = [int(float(x)) for x in distances.columns]
@@ -67,13 +72,9 @@ def create_graph(dz, config) -> nx.Graph:
         # school_id = school_df.loc[school_df[config['level']] == area_i, 'school_id'].iloc[0]
         # area_i is the school area id
         distance_dict[dz.area2idx[area_i]] = inner_dict
-
+    # programs = pd.read_csv(f"{get_dropbox_path(config['is_local'])}/Optimization/distances_b2b_schools.csv")
     # add as a graph attribute
     G.graph['distance_dict'] = distance_dict
-
-    # 'english_score': float(area_row['english_score']),
-    # 'math_score': float(area_row['math_score']),
-    # 'greatschools_rating': float(area_row['greatschools_rating']),
 
     school_data = {}
     for _, row in school_df.iterrows():
@@ -199,8 +200,7 @@ def aggregate_zone_dict(partition, G):
         if part_id not in new_G:
             new_G.add_node(part_id, ge_students=0, ge_capacity=0,
                            all_prog_students=0, all_prog_capacity=0, num_schools=0,
-                           FRL=0, english_score=0, math_score=0, greatschools_rating=0,
-                           lat=0, lon=0, count=0)
+                           FRL=0, lat=0, lon=0)
         # aggregate attributes
         new_G.nodes[part_id]['ge_students'] += G.nodes[node]['ge_students']
         new_G.nodes[part_id]['ge_capacity'] += G.nodes[node]['ge_capacity']
@@ -288,7 +288,7 @@ def create_base_graph(save_folder):
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    config['level'] = 'Block'
+    config['level'] = 'BlockGroup'
     start_time = time.time()
     dz = DesignZones(config=config)
     end_time = time.time()
@@ -297,7 +297,7 @@ def create_base_graph(save_folder):
 
     print(f"Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
     print(f"Sample node attributes: {list(G.nodes(data=True))[0]}")
-    file_name = f"{save_folder}/Block_0.pickle"
+    file_name = f"{save_folder}/BlockGroup_0.pickle"
     # if path does not exist, create it
     os.makedirs(save_folder, exist_ok=True)
 
@@ -351,7 +351,7 @@ if __name__ == "__main__":
     is_local = False
     output_folder = f'{get_dropbox_path(is_local)}/Optimization/Zones/Graphs'
 
-    # create_base_graph(output_folder)
+    create_base_graph(output_folder)
     # recursively_split_and_save(output_folder)
     # create_intermediate_graphs(output_folder)
     # with open('../Config/config.yaml', "r") as f:

@@ -35,11 +35,6 @@ def solve_level(config, is_local, cur_block_zone_dict):
     zone_dict = None
     if cur_block_zone_dict is not None:
         zone_dict = convert_block_zone_to_zone_dict(cur_block_zone_dict, optimizer.G)
-        num_nodes = len(optimizer.G)
-        # c = 0
-        # if num_nodes > 1000:
-        #     c = 0.5
-        # print(c)
         zone_dict = drop_boundary_by_graph_distance(zone_dict, optimizer.G, optimizer.centroids)
         zone_dict = trim_noncontiguity_soft(zone_dict, optimizer.G, optimizer.centroids)
 

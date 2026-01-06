@@ -11,13 +11,13 @@ from Zone_Generation.Config.Constants import get_dropbox_path
 
 
 class SolutionOutput:
-    def __init__(self, zone_dict, objective_value, status, wall_time, G, is_local):
+    def __init__(self, zone_dict, objective_value, status, wall_time, G, config):
         self.zone_dict = zone_dict
         self.objective_value = objective_value
         self.status = status
         self.wall_time = wall_time
         self.G = G  # the graph of all the data we need
-        self.is_local = is_local
+        self.config = config
         self.block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
 
     def get_boundary_cost(self):
@@ -29,13 +29,16 @@ class SolutionOutput:
         return boundary_cost / 2  # each boundary counted twice
 
     def get_zone_demographics(self):
-        compute_zone_demographics(self.G, self.zone_dict)
+        return compute_zone_demographics(self.G, self.zone_dict)
 
     def visualize_zones(self):
-        zv = ZoneVisualizer('Block', self.is_local)
+        zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
         zv.zones_from_dict(self.block_zone_dict, show_plot=True)
 
     def save_output(self, folder_path):
+        if self.zone_dict is None or len(self.zone_dict) == 0:
+            print("No zones available to save.")
+            return
         # save the image, dict_solution, objective_value, status, wall_time
         save_path = os.path.expanduser(folder_path)
         if not os.path.exists(save_path):
@@ -50,13 +53,14 @@ class SolutionOutput:
         if self.zone_dict is not None and len(self.zone_dict) > 0:
             boundary_cost = self.get_boundary_cost()
             file_name = os.path.join(save_path, "zones_visualization")
-            zv = ZoneVisualizer(self.dz.level, self.dz.is_local)
-            zv.zones_from_dict(self.zone_dict, save_path=file_name)
+            zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
+            zv.zones_from_dict(self.block_zone_dict, save_path=file_name)
 
         output_info = {
             "boundary_cost": boundary_cost,
             "status": self.status,
-            "wall_time": self.wall_time
+            "wall_time": self.wall_time,
+            'config': self.config
         }
         filename = os.path.join(save_path, "solution_info.json")
         with open(filename, "w") as f:
@@ -139,6 +143,4 @@ if __name__ == "__main__":
         print("Objective value: ", solution_output.objective_value)
         print('Boundary cost: ', solution_output.get_boundary_cost())
         print('Wall time: ', solution_output.wall_time)
-        demographics = solution_output.get_zone_demographics()
-        print(compute_zone_deviations(demographics))
         solution_output.visualize_zones()

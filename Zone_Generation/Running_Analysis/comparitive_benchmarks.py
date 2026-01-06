@@ -1,26 +1,35 @@
+import datetime
 import json
 import os
 
 import pandas as pd
 import yaml
 
-from Zone_Generation.Optimization.optimizer import DesignZones, Optimizer, SolutionOutput
+from Zone_Generation.Optimization.optimizer import Optimizer
 
 
 def run_configs():
-    solve_time_limits = [5 * 60 * 60]  # in seconds
-    random_seeds = [42, 2025, 1014, 7]
+    solve_time_limits = [10 * 60]  # in seconds
+    random_seeds = [42]
 
     centroids_types = [
         '6-zone-2',
+        '6-zone-3',
+        '7-zone-14',
+        '7-zone-19',
         '8-zone-25',
+        '8-zone-22',
+        '10-zone-11',
         '10-zone-3',
         '13-zone-6',
+        '13-zone-5',
+        '18-zone-7',
+        '18-zone-10'
     ]
 
-    levels = ['Block_0']
-    frl_devs = [0.15, 0.25]
-    racial_devs = [0.2]
+    levels = ['BlockGroup_0']
+    frl_devs = [0.15, 0.2, 0.25, 0.3]
+    racial_devs = [0.15, 0.2, 0.25, 0.3]
     optimizers = ['cp_int']
 
     with open("../Config/config.yaml", "r") as f:
@@ -47,6 +56,7 @@ def run_configs():
                                       f"centroids_type={centroids_type}, level={level}, "
                                       f"frl_dev={frl_dev}, racial_dev={racial_dev}, "
                                       f"optimizer={optimizer_name}")
+                                print(datetime.datetime.now())
 
                                 optimizer = Optimizer.get_optimizer(config)
                                 optimizer.add_constraints()
@@ -54,13 +64,16 @@ def run_configs():
 
                                 folder_name = (f"time{time_limit}_seed{seed}_centroids{centroids_type}_"
                                                f"level{level}_frl{frl_dev}_racial{racial_dev}_opt{optimizer_name}")
-                                # output_folder = f"~/sfusd-local-data/zones/SFUSD/local_runs/comparisons/{folder_name}"
-                                output_folder = f"~/sfusd-local-data/zones/SFUSD/local_runs/comparisons/{folder_name}"
+                                output_folder = os.path.expanduser(
+                                    f"~/sfusd-local-data/zones/SFUSD/local_runs/1-1-26-runs/{folder_name}")
 
                                 # make the folder if it does not exist
-                                os.makedirs(os.path.expanduser(output_folder), exist_ok=True)
+                                os.makedirs(output_folder, exist_ok=True)
+                                config['log_folder'] = output_folder
+
                                 try:
                                     solution_output = optimizer.solve()
+                                    solution_output.save_output(output_folder)
                                 except Exception as e:
                                     print(f"Error solving with config: {e}")
                                     # save a file at the folder with the error message
@@ -68,14 +81,13 @@ def run_configs():
                                         f.write(str(e))
                                     continue
 
-                                solution_output.save_output(output_folder)
 
 
 def compare_across_configs():
     import re
 
     # iterate through the saved outputs and compare the results as dataframe, save to csv
-    root_folder = '~/sfusd-local-data/zones/SFUSD/local_runs/comparisons/'
+    root_folder = '~/sfusd-local-data/zones/SFUSD/local_runs/1-1-26-runs/'
 
     expanded_root = os.path.expanduser(root_folder)
     subfolders = [f for f in os.listdir(expanded_root) if
@@ -136,5 +148,6 @@ def compare_across_configs():
 
 
 if __name__ == "__main__":
-    compare_across_configs()
+    # compare_across_configs()
+    run_configs()
     # test_across_configs()
