@@ -1,6 +1,6 @@
 import os
 
-SCALING_CONST = 100
+SCALING_CONST = 20
 
 
 def get_sfusd_path(is_local):

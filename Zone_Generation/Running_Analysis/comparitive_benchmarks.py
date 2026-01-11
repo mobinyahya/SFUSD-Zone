@@ -1,3 +1,4 @@
+import copy
 import datetime
 import json
 import os
@@ -6,11 +7,12 @@ import pandas as pd
 import yaml
 
 from Zone_Generation.Optimization.optimizer import Optimizer
+from Zone_Generation.Optimization.recursive_zoning import recursive_zoning
 
 
 def run_configs():
     solve_time_limits = [10 * 60]  # in seconds
-    random_seeds = [42]
+    random_seeds = [42, 14]
 
     centroids_types = [
         '6-zone-2',
@@ -27,7 +29,7 @@ def run_configs():
         '18-zone-10'
     ]
 
-    levels = ['BlockGroup_0']
+    levels = ['Block_0']
     frl_devs = [0.15, 0.2, 0.25, 0.3]
     racial_devs = [0.15, 0.2, 0.25, 0.3]
     optimizers = ['cp_int']
@@ -81,6 +83,83 @@ def run_configs():
                                         f.write(str(e))
                                     continue
 
+
+def run_recursive_configs():
+    # similar to run_configs but for recursive zoning
+    computations = [
+        [['Block_0', 1]],
+
+        [['Block_1', 3 / 4], ['Block_0', 1 / 4]],
+        [['Block_1', 1 / 2], ['Block_0', 1 / 2]],
+
+        [['Block_2', 2 / 3], ['Block_0', 1 / 3]],
+        [['Block_2', 1 / 2], ['Block_0', 1 / 2]],
+
+        [['Block_2', 1 / 2], ['Block_1', 1 / 4], ['Block_0', 1 / 4]],
+        [['Block_2', 1 / 3], ['Block_1', 1 / 3], ['Block_0', 1 / 3]]
+    ]
+
+    random_seeds = [42, 14]
+
+    centroids_types = [
+        '4-zone-rec-4',
+        '4-zone-rec-3',
+        '5-zone-AF',
+        '5-zone-AF-relocated',
+        '6-zone-2',
+        '6-zone-3',
+        '7-zone-14',
+        '7-zone-19',
+        '8-zone-25',
+        '8-zone-22',
+        '10-zone-11',
+        '10-zone-3',
+        '13-zone-6',
+        '13-zone-5'
+    ]
+
+    total_times = [10 * 60, 5 * 60]  # total time for all levels
+
+    with open("../Config/config.yaml", "r") as f:
+        base_config = yaml.safe_load(f)
+    for total_time in total_times:
+        for seed in random_seeds:
+            for centroids_type in centroids_types:
+                for computation in computations:
+                    config = copy.deepcopy(base_config)
+                    config['random_seed'] = seed
+                    config['centroids_type'] = centroids_type
+                    config['recursive_levels'] = [level for level, _ in computation]
+                    config['relative_gap_limits'] = [0 for _ in computation]
+                    config['solve_time_limits'] = [int(total_time * proportion) for _, proportion in computation]
+
+                    print(f"Testing recursive config: seed={seed}, centroids_type={centroids_type}, "
+                          f"levels={config['recursive_levels']}, "
+                          f"time_limits={config['solve_time_limits']}")
+                    print(datetime.datetime.now())
+
+                    folder_name = (f"{centroids_type}/{seed}/{total_time}/"
+                                   f"{'-'.join(config['recursive_levels'])}"
+                                   f"_tl_{'-'.join([str(tl) for tl in config['solve_time_limits']])}")
+
+                    output_folder = os.path.expanduser(
+                        f"~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/{folder_name}")
+
+                    # make the folder if it does not exist
+                    os.makedirs(output_folder, exist_ok=True)
+                    config['log_folder'] = output_folder
+
+                    try:
+                        solutions = recursive_zoning(config)
+                        # save the last solution output
+                        for solution_output in solutions:
+                            solution_output.save_output(output_folder)
+                    except Exception as e:
+                        print(f"Error solving with recursive config: {e}")
+                        # save a file at the folder with the error message
+                        with open(os.path.expanduser(f"{output_folder}/error.txt"), "w") as f:
+                            f.write(str(e))
+                        continue
 
 
 def compare_across_configs():
@@ -149,5 +228,6 @@ def compare_across_configs():
 
 if __name__ == "__main__":
     # compare_across_configs()
-    run_configs()
+    # run_configs()
+    run_recursive_configs()
     # test_across_configs()

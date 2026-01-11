@@ -1,0 +1,3 @@
+recursive_levels: ['Block_2', 'Block_1', 'Block_0']
+relative_gap_limits: [0, 0, 0]
+time_limits: [300, 300, 300]

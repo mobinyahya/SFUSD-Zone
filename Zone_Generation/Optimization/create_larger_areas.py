@@ -288,7 +288,7 @@ def create_base_graph(save_folder):
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    config['level'] = 'BlockGroup'
+    config['level'] = 'Block'
     start_time = time.time()
     dz = DesignZones(config=config)
     end_time = time.time()
@@ -297,7 +297,7 @@ def create_base_graph(save_folder):
 
     print(f"Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
     print(f"Sample node attributes: {list(G.nodes(data=True))[0]}")
-    file_name = f"{save_folder}/BlockGroup_0.pickle"
+    file_name = f"{save_folder}/Block_0.pickle"
     # if path does not exist, create it
     os.makedirs(save_folder, exist_ok=True)
 

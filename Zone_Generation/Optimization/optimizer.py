@@ -21,12 +21,26 @@ class SolutionOutput:
         self.block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
 
     def get_boundary_cost(self):
+        if self.zone_dict is None or len(self.zone_dict) == 0:
+            return -1
         boundary_cost = 0
         for i in range(len(self.G)):
             for j in self.G.neighbors(i):
+                if i < j:  # prevent double counting
+                    continue
                 if self.zone_dict[i] != self.zone_dict[j]:
                     boundary_cost += 1
-        return boundary_cost / 2  # each boundary counted twice
+        return boundary_cost
+
+    def get_base_boundary_cost(self, base_G):
+        boundary_cost = 0
+        for i in range(len(base_G)):
+            for j in base_G.neighbors(i):
+                if i < j:  # prevent double counting
+                    continue
+                if self.block_zone_dict[base_G.nodes[i]['area_id']] != self.block_zone_dict[base_G.nodes[j]['area_id']]:
+                    boundary_cost += 1
+        return boundary_cost
 
     def get_zone_demographics(self):
         return compute_zone_demographics(self.G, self.zone_dict)
@@ -43,16 +57,16 @@ class SolutionOutput:
         save_path = os.path.expanduser(folder_path)
         if not os.path.exists(save_path):
             os.makedirs(save_path)
-
+        level = self.config['level']
         # save zone dict as json file
-        filename = os.path.join(save_path, "zone_dict.json")
+        filename = os.path.join(save_path, f"zone_dict_{level}.json")
         with open(filename, "w") as f:
             json.dump(self.zone_dict, f)
 
         boundary_cost = -1
         if self.zone_dict is not None and len(self.zone_dict) > 0:
             boundary_cost = self.get_boundary_cost()
-            file_name = os.path.join(save_path, "zones_visualization")
+            file_name = os.path.join(save_path, f"zones_visualization_{level}")
             zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
             zv.zones_from_dict(self.block_zone_dict, save_path=file_name)
 
@@ -62,7 +76,7 @@ class SolutionOutput:
             "wall_time": self.wall_time,
             'config': self.config
         }
-        filename = os.path.join(save_path, "solution_info.json")
+        filename = os.path.join(save_path, f"solution_info_{level}.json")
         with open(filename, "w") as f:
             json.dump(output_info, f)
 
@@ -139,8 +153,15 @@ if __name__ == "__main__":
     optimizer.add_objective()
     solution_output = optimizer.solve()
 
+    graph_folder = f'{get_dropbox_path(config["is_local"])}/Optimization/Zones/Graphs'
+
+    graph_filename = os.path.join(graph_folder, f"Block_0.pickle")
+    with open(graph_filename, "rb") as f:
+        base_G = pickle.load(f)
+
     if solution_output.status != 'INFEASIBLE':
         print("Objective value: ", solution_output.objective_value)
         print('Boundary cost: ', solution_output.get_boundary_cost())
+        print('Base Boundary cost: ', solution_output.get_base_boundary_cost(base_G))
         print('Wall time: ', solution_output.wall_time)
         solution_output.visualize_zones()

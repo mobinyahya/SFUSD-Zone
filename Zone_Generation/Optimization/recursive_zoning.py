@@ -1,3 +1,4 @@
+import copy
 import time
 
 import yaml
@@ -8,29 +9,32 @@ from Zone_Generation.Optimization.optimizer import Optimizer
 from Zone_Generation.Optimzation_Heuristics.zone_eval import drop_boundary_by_graph_distance, trim_noncontiguity_soft
 
 
-def recursive_zoning(config):
+def recursive_zoning(base_config):
     cur_block_zone_dict = None
     solutions = []
-    is_local = config['is_local']
+    is_local = base_config['is_local']
 
-    for i in range(len(config['recursive_levels'])):
+    for i in range(len(base_config['recursive_levels'])):
+        config = copy.deepcopy(base_config)
         cur_level = config['recursive_levels'][i]
+        print(f"solving for: {cur_level}")
         config['relative_gap_limit'] = config['relative_gap_limits'][i]
+        config['solve_time_limit'] = config['solve_time_limits'][i]
         config['level'] = cur_level
         solution_output = solve_level(config, is_local, cur_block_zone_dict)
         cur_block_zone_dict = solution_output.block_zone_dict
         solutions.append(solution_output)
         if solution_output.status in ['INFEASIBLE', 'MODEL_INVALID', 'UNKNOWN']:
             print(f"Zoning infeasible at level: {cur_level}")
+            print(solution_output.status)
             break
 
     return solutions
 
 
+
 def solve_level(config, is_local, cur_block_zone_dict):
     optimizer = Optimizer.get_optimizer(config)
-    optimizer.add_constraints()
-    optimizer.add_objective()
 
     zone_dict = None
     if cur_block_zone_dict is not None:
@@ -38,13 +42,16 @@ def solve_level(config, is_local, cur_block_zone_dict):
         zone_dict = drop_boundary_by_graph_distance(zone_dict, optimizer.G, optimizer.centroids)
         zone_dict = trim_noncontiguity_soft(zone_dict, optimizer.G, optimizer.centroids)
 
-        block_zone_dict = convert_to_block_zone_dict(zone_dict, optimizer.G)
-        zv = ZoneVisualizer('Block', is_local)
-        zv.zones_from_dict(block_zone_dict, show_plot=True)
+        # block_zone_dict = convert_to_block_zone_dict(zone_dict, optimizer.G)
+        # zv = ZoneVisualizer('Block', is_local)
+        # zv.zones_from_dict(block_zone_dict, show_plot=True)
 
-    optimizer.fix_areas(zone_dict)
+    optimizer.add_variables(zone_dict)
+    optimizer.add_constraints()
+    optimizer.add_objective()
+
     solution_output = optimizer.solve()
-    solution_output.visualize_zones()
+    # solution_output.visualize_zones()
 
     return solution_output
 

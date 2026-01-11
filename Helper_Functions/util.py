@@ -463,6 +463,8 @@ def applied_to_school(df, schoolid):
 
 
 def convert_to_block_zone_dict(zone_dict, G):
+    if not zone_dict:
+        return {}
     block_zone_dict = {}
     for node, zone in zone_dict.items():
         if zone is None:

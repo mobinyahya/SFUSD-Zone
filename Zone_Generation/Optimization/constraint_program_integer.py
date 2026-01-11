@@ -7,14 +7,20 @@ from Zone_Generation.Optimization.constraint_program_boolean import BooleanConst
 class IntegerConstraintProgram(BooleanConstraintProgram):
     def __init__(self, config):
         super().__init__(config)
+        self.y = None
+        # if self.config.get('closest_school_max_distance'):
+        #     self.school_id_2_area, self.school_access_vars = self.add_school_access_variables()
+
+    def add_variables(self, fixed_areas: dict[int, int] = None):
+        super().add_variables(fixed_areas)
         self.y = self.add_integer_variables()
-        if self.config.get('closest_school_max_distance'):
-            self.school_id_2_area, self.school_access_vars = self.add_school_access_variables()
 
     def add_integer_variables(self):
         y = []
         for i in range(self.A):
             if len(self.valid_zone_per_area[i]) == 0:
+                print('Area ', i, ' has no valid zones to be assigned to.')
+                self.m.add(False)
                 continue
             var = self.m.NewIntVarFromDomain(Domain.FromValues(self.valid_zone_per_area[i]), f"area_{i}_zone_idx")
             for z in self.valid_zone_per_area[i]:
@@ -23,15 +29,6 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
 
             y.append(var)
         return y
-
-    def _feasibility_const(self):
-        # each centroid belong to its own zone
-        for z in range(self.Z):
-            centroid_z = self.centroids[z]
-            self.m.Add(self.y[centroid_z] == z)
-            for neighbor in self.G.neighbors(centroid_z):
-                if neighbor in self.valid_zone_per_area[neighbor]:
-                    self.m.Add(self.y[neighbor] == z)
 
     def add_school_access_variables(self):
         # we define area i as having access to a school if it is assigned to the same zone as the school
@@ -52,21 +49,6 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
                 self.m.Add(self.y[area_id] == self.y[school_area]).OnlyEnforceIf(access_var)
                 self.m.Add(self.y[area_id] != self.y[school_area]).OnlyEnforceIf(access_var.Not())
         return school_id_2_area, school_access_vars
-
-    # def _add_hints(self):
-    #     super()._add_hints()
-    #     # add hint that each area will be assigned to the closest centroid
-    #     for i in range(self.A):
-    #         closest_centroid = None
-    #         closest_distance = float('inf')
-    #         for z in range(self.Z):
-    #             centroid_z = self.centroids[z]
-    #             dist = self.G.graph['distance_dict'][centroid_z][i]
-    #             if dist < closest_distance:
-    #                 closest_distance = dist
-    #                 closest_centroid = z
-    #         if closest_centroid in self.valid_zone_per_area[i]:
-    #             self.m.AddHint(self.y[i], closest_centroid)
 
     def _closest_school_const(self):
         # ensure that the closet school to each area is within a certain distance
@@ -108,12 +90,3 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
 
         boundary_sum = cp_model.LinearExpr.Sum(boundary_vars)
         self.m.Minimize(boundary_sum)
-
-    def fix_areas(self, fixed_zone_dict):
-        super().fix_areas(fixed_zone_dict)
-        if fixed_zone_dict is None:
-            return
-        for area, zone in fixed_zone_dict.items():
-            centroid_idx = self.centroid_schools.index(zone)
-            if centroid_idx in self.valid_zone_per_area[area]:
-                self.m.Add(self.y[area] == centroid_idx)

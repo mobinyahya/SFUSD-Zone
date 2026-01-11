@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict
 
 from ortools.sat.python import cp_model
 
@@ -10,10 +11,12 @@ class BooleanConstraintProgram(Optimizer):
     def __init__(self, config):
         super().__init__(config)
         self.m = cp_model.CpModel()
+        self.forbidden_assignments = defaultdict(set)
+        self.valid_area_per_zone, self.valid_zone_per_area, self.x = None, None, None
 
-        self.valid_area_per_zone, self.valid_zone_per_area, self.x = self.add_variables()
-
-    def add_variables(self):
+    def add_variables(self, fixed_areas: dict[int, int] = None):
+        if fixed_areas is None:
+            fixed_areas = {}
         max_distance = self.config.get('max_distance')
 
         if max_distance is None:
@@ -22,25 +25,55 @@ class BooleanConstraintProgram(Optimizer):
         valid_zone_per_area = {}
         x = {}
         for z in range(self.Z):
-            valid_area_per_zone[z] = []
+            valid_area_per_zone[z] = set()
             x[z] = {}
         for i in range(self.A):
-            valid_zone_per_area[i] = []
+            valid_zone_per_area[i] = set()
+
+        # identify the centroid neighbors
+        centroid_neighbor_assignments = {}
+        for i in self.centroids:
+            zone = self.centroids.index(i)
+            for neighbor in self.G.neighbors(i):
+                centroid_neighbor_assignments[neighbor] = zone
 
         for z in range(self.Z):
             centroid_z = self.centroids[z]
+            # create variable for the centroid
+            var = self.m.NewBoolVar(f"zone_{z}_area_{centroid_z}")
+            valid_area_per_zone[z].add(centroid_z)
+            valid_zone_per_area[centroid_z].add(z)
+            x[z][centroid_z] = var
+
             for i in range(self.A):
+                # ignore if centroid
+                if i in self.centroids:
+                    continue
+
+                if i in fixed_areas:
+                    # only allow assignment to the fixed zone
+                    fixed_zone = self.centroid_schools.index(fixed_areas[i])
+                    if fixed_zone != z:
+                        continue
+                    # this is bad style to repeat the same code, but we do this to avoid cases where
+                    # fixed areas are far from centroids or in centroid neighbors
+                    var = self.m.NewBoolVar(f"zone_{z}_area_{i}")
+                    valid_area_per_zone[z].add(i)
+                    valid_zone_per_area[i].add(z)
+                    x[z][i] = var
+                    continue
                 # ignore if far away from centroid
                 if self.G.graph['distance_dict'][centroid_z][i] > max_distance:
                     continue
 
-                # ignore if centroid of a different zone
-                if i in self.centroids and i != centroid_z:
-                    continue
+                if i in centroid_neighbor_assignments:
+                    assigned_zone = centroid_neighbor_assignments[i]
+                    if assigned_zone != z:
+                        continue
 
-                var = self.m.NewBoolVar(f"zone_{centroid_z}_area_{i}")
-                valid_area_per_zone[z].append(i)
-                valid_zone_per_area[i].append(z)
+                var = self.m.NewBoolVar(f"zone_{z}_area_{i}")
+                valid_area_per_zone[z].add(i)
+                valid_zone_per_area[i].add(z)
                 x[z][i] = var
 
         # check if any area has no valid zones
@@ -48,29 +81,18 @@ class BooleanConstraintProgram(Optimizer):
             if len(valid_zone_per_area[i]) == 0:
                 print(f"Area {i} has no valid zones! Infeasible model likely.")
                 self.m.Add(False)
-        return valid_area_per_zone, valid_zone_per_area, x
+        self.valid_area_per_zone = valid_area_per_zone
+        self.valid_zone_per_area = valid_zone_per_area
+        self.x = x
 
     def _feasibility_const(self):
         # Each area assigned to exactly one zone
         for i in range(self.A):
             self.m.AddExactlyOne([self.x[z][i] for z in self.valid_zone_per_area[i]])
 
-        # each centroid belong to its own zone, as well as its neighbors
-        for z in range(self.Z):
-            centroid_z = self.centroids[z]
-            self.m.Add(self.x[z][centroid_z] == 1)
-
-            # we do this so that when we trim the zones later, we don't end up removing centroids
-            # in the future consider adding a parameter to set the distance, so that we will not fail
-            # if we have more aggressive trimming
-            for neighbor in self.G.neighbors(centroid_z):
-                if neighbor in self.valid_area_per_zone[z]:
-                    self.m.Add(self.x[z][neighbor] == 1)
-
     def _school_count_const(self):
         avg_school_count = sum([len(node[1]['school_ids']) for node in self.G.nodes(data=True)]) / self.Z
 
-        # TODO: ask sfusd if we can relax this?
         school_ub = int(avg_school_count + 1)
         school_lb = int(avg_school_count)
 
@@ -130,10 +152,27 @@ class BooleanConstraintProgram(Optimizer):
                     elif neighbor == self.centroids[z]:
                         ok_neighbors[j][z].append(neighbor)
 
+        # print out any areas that have no good or ok neighbors for any zone
+        # for j in range(self.A):
+        #     if j in self.centroids:
+        #         continue
+        #     has_any_good = False
+        #     has_any_ok = False
+        #
+        #     for z in range(self.Z):
+        #         if len(good_neighbors[j][z]) > 0:
+        #             has_any_good = True
+        #         if len(ok_neighbors[j][z]) > 0:
+        #             has_any_ok = True
+        #     if not has_any_good:
+        #         print('Area ', j, ' has no good neighbors for any zone')
+        #     if not has_any_ok:
+        #         print('Area ', j, ' has no ok neighbors for any zone')
+
         def try_to_add_neighbor_constraint(neighbor_set, cur_zone, cur_block):
             cur_neighbors = [
                 self.x[z][k]
-                for k in neighbor_set
+                for k in neighbor_set if z not in self.forbidden_assignments[k]
             ]
             if len(cur_neighbors) > 0:
                 self.m.AddBoolOr(cur_neighbors).OnlyEnforceIf(self.x[cur_zone][cur_block])
@@ -144,27 +183,76 @@ class BooleanConstraintProgram(Optimizer):
             for z in range(self.Z):
                 if j not in self.valid_area_per_zone[z]:
                     continue
-                if self.centroids[z] in self.G.neighbors(j):
-                    continue
-                # if j is a centroid, any_neighbor will do
-                if j == self.centroids[z]:
-                    continue
 
                 # only impose the contiguity if the area j has a neighbor that is closer to centroid z.
                 # otherwise, just make sure j has at least another neighbor assigned tot the same zone z, so that
                 # j is not an island assigned to z.
                 if try_to_add_neighbor_constraint(good_neighbors[j][z], z, j):
                     continue
-                # print('no acceptable neighbors at all!!! area ', j, ' zone ', z)
-                # do not allow this area to be assigned to this zone
-                self.m.Add(self.x[z][j] == 0)
-                # TODO: Deal with these stupid edge cases
-                # if try_to_add_neighbor_constraint(ok_neighbors[j][z], z, j):
-                #     continue
+
+                if try_to_add_neighbor_constraint(ok_neighbors[j][z], z, j):
+                    continue
+
                 # if try_to_add_neighbor_constraint(closer_neighbors[j][z], z, j):
                 #     continue
                 # if try_to_add_neighbor_constraint(all_neighbors[j][z], z, j):
                 #     continue
+                # print('no acceptable neighbors at all!!! area ', j, ' zone ', z)
+                # do not allow this area to be assigned to this zone
+                # print('we have reached here for area ', j, ' zone ', z)
+                # make sure were not adding duplicate forbidden assignments
+                # make sure were able to forbid the assignment by checking that valid_zone_per_area has more than 1 zone after
+                if len(self.valid_zone_per_area[j] - self.forbidden_assignments[j]) <= 1:
+                    # print('Cannot forbid assignment of area ', j, ' to zone ', z, )
+                    continue
+
+                self.forbidden_assignments[j].add(z)
+                self.m.Add(self.x[z][j] == 0)
+                # TODO: Deal with these stupid edge cases
+
+    def _contiguity_const_flow(self):
+        # Total possible nodes that could be in a zone (upper bound for flow)
+        max_nodes = self.A
+
+        for z in range(self.Z):
+            centroid_z = self.centroids[z]
+            # flow_vars[(i, j)] is the amount of flow from node i to neighbor j
+            flow_vars = {}
+
+            nodes_in_zone = self.valid_area_per_zone[z]
+
+            for i in nodes_in_zone:
+                # Get neighbors that are also valid for this zone
+                neighbors = [n for n in self.G.neighbors(i) if n in nodes_in_zone]
+                for n in neighbors:
+                    # Flow can only exist if both nodes are in the zone
+                    # Max flow is bounded by total nodes
+                    f_var = self.m.NewIntVar(0, max_nodes, f"flow_z{z}_i{i}_n{n}")
+                    flow_vars[(i, n)] = f_var
+
+                    # Capacity Constraint: flow only if arc is 'active'
+                    # We assume x[z][i] and x[z][n] are the assignment variables
+                    self.m.Add(f_var == 0).OnlyEnforceIf(self.x[z][i].Not())
+                    self.m.Add(f_var == 0).OnlyEnforceIf(self.x[z][n].Not())
+
+            for i in nodes_in_zone:
+                # Outgoing flow from i
+                out_flow = [flow_vars[(i, n)] for n in nodes_in_zone
+                            if (i, n) in flow_vars]
+                # Incoming flow to i
+                in_flow = [flow_vars[(n, i)] for n in nodes_in_zone
+                           if (n, i) in flow_vars]
+
+                if i == centroid_z:
+                    # The Centroid: Source of flow
+                    # Sum(Out) - Sum(In) = Total Nodes in Zone - 1
+                    # Since we don't know the count, we use the assignment variables:
+                    total_assigned_minus_one = sum(self.x[z][j] for j in nodes_in_zone if j != centroid_z)
+                    self.m.Add(sum(out_flow) - sum(in_flow) == total_assigned_minus_one)
+                else:
+                    # Every other node: Consume 1 unit if assigned, else 0
+                    # Sum(In) - Sum(Out) = x[z][i]
+                    self.m.Add(sum(in_flow) - sum(out_flow) == self.x[z][i])
 
     def _racial_const(self):
         for race_col in AREA_ETHNICITIES:
@@ -288,14 +376,15 @@ class BooleanConstraintProgram(Optimizer):
         self._feasibility_const()
         self._school_count_const()
         self._contiguity_const()
+        # self._contiguity_const_flow()
         self._racial_const()
         self._frl_const()
         self._proportional_shortage_const()
         self._proportional_overage_const()
 
         # optional constraints
-        self._school_quality_const()
-        self._closest_school_const()
+        # self._school_quality_const()
+        # self._closest_school_const()
 
     def add_objective(self):
         boundary_vars = []
@@ -340,17 +429,13 @@ class BooleanConstraintProgram(Optimizer):
 
         objective_value = solver.ObjectiveValue()
         wall_time = solver.WallTime()
+        status_name = solver.StatusName(status)
+        zone_dict = None
+        if status_name == 'OPTIMAL' or status_name == 'FEASIBLE':
+            zone_dict = self._generate_zone_dict(solver)
 
-        return SolutionOutput(self._generate_zone_dict(solver), objective_value,
+        return SolutionOutput(zone_dict, objective_value,
                               solver.StatusName(status), wall_time, self.G, self.config)
-
-    def fix_areas(self, fixed_zone_dict):
-        if fixed_zone_dict is None:
-            return
-        for area, zone in fixed_zone_dict.items():
-            centroid_idx = self.centroid_schools.index(zone)
-            if centroid_idx in self.valid_zone_per_area[area]:
-                self.m.Add(self.x[centroid_idx][area] == 1)
 
     def _add_solver_parameters(self, solver):
         solver.parameters.max_time_in_seconds = self.config['solve_time_limit']
@@ -361,11 +446,14 @@ class BooleanConstraintProgram(Optimizer):
         if self.config['is_local']:
             solver.parameters.num_search_workers = 6
         else:
-            solver.parameters.num_search_workers = 24
+            solver.parameters.num_search_workers = 16
 
         # important to think about this parameter and thourhgly test later. for now leave at 1
         solver.parameters.linearization_level = 1
         solver.parameters.symmetry_level = 4
+        # solver.parameters.keep_symmetry_in_presolve = True
+        # solver.parameters.use_symmetry_in_lp = True
+
         log_file = None
         log_folder = self.config.get('log_folder')
         if log_folder is not None:
@@ -430,20 +518,6 @@ class BooleanConstraintProgram(Optimizer):
                 for z in self.valid_zone_per_area[i]:
                     if z != closest_centroid:
                         self.m.AddHint(self.x[z][i], 0)
-
-        # use metis to generate initial zones
-        # super_nodes = partition_graph_metis_constrained(self.G, self.Z, self.centroids)
-        # for i in range(self.A):
-        #     assigned_zone = None
-        #     for z in range(self.Z):
-        #         if i in super_nodes[z]:
-        #             assigned_zone = z
-        #             break
-        #     if assigned_zone is not None and assigned_zone in self.valid_zone_per_area[i]:
-        #         self.m.AddHint(self.x[assigned_zone][i], 1)
-        #         for z in self.valid_zone_per_area[i]:
-        #             if z != assigned_zone:
-        #                 self.m.AddHint(self.x[z][i], 0)
 
     def _generate_zone_dict(self, solver):
         zone_dict = {}
