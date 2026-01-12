@@ -5,6 +5,7 @@ import os
 
 import pandas as pd
 import yaml
+import seaborn as sns
 
 from Zone_Generation.Optimization.optimizer import Optimizer
 from Zone_Generation.Optimization.recursive_zoning import recursive_zoning
@@ -162,6 +163,161 @@ def run_recursive_configs():
                         continue
 
 
+def aggregate_recursive_results():
+    # average the results across seeds and between centroid types, but group by centroid number
+    # so that we can compare 4-zone, 5-zone, etc.
+    import re
+    root_folder = '~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/'
+    expanded_root = os.path.expanduser(root_folder)
+    centroid_folders = [f for f in os.listdir(expanded_root) if
+                        os.path.isdir(os.path.join(expanded_root, f))]
+    results = []
+    pattern = re.compile(
+        r"^(?P<centroid_num>\d+)-zone-[^/]+/(?P<seed>[^/]+)/(?P<time_limit>[^/]+)/"
+        r"(?P<levels>.+)_tl_(?P<time_limits>.+)$"
+    )
+
+    # only take the Block_0 level results for comparison
+    for centroid_folder in centroid_folders:
+        centroid_folder_path = os.path.join(expanded_root, centroid_folder)
+        seed_folders = [f for f in os.listdir(centroid_folder_path) if
+                        os.path.isdir(os.path.join(centroid_folder_path, f))]
+        for seed_folder in seed_folders:
+            seed_folder_path = os.path.join(centroid_folder_path, seed_folder)
+            time_limit_folders = [f for f in os.listdir(seed_folder_path) if
+                                  os.path.isdir(os.path.join(seed_folder_path, f))]
+            for time_limit_folder in time_limit_folders:
+                time_limit_folder_path = os.path.join(seed_folder_path, time_limit_folder)
+                computation_folders = [f for f in os.listdir(time_limit_folder_path) if
+                                       os.path.isdir(os.path.join(time_limit_folder_path, f))]
+                for computation_folder in computation_folders:
+                    computation_folder_path = os.path.join(time_limit_folder_path, computation_folder)
+                    # load all the solution outputs in the computations for this level, and sum the wall times
+                    # use the solution output for Block_0 level for the objective value and status
+                    try:
+                        filename = os.path.join(computation_folder_path, "solution_info_Block_0.json")
+                        with open(filename, "r") as f:
+                            output_info = json.load(f)
+                        status = output_info.get('status')
+                        wall_time = output_info.get('wall_time')
+                        objective_value = output_info.get('boundary_cost')
+                        for level in computation_folder.split('_tl_')[0].split('-'):
+                            if level == 'Block_0':
+                                continue
+                            filename = os.path.join(computation_folder_path, f"solution_info_{level}.json")
+                            with open(filename, "r") as f:
+                                output_info = json.load(f)
+                            wall_time += output_info.get('wall_time')
+                    except Exception:
+                        status = 'ERROR'
+                        wall_time = None
+                        objective_value = None
+                    m = pattern.match(f"{centroid_folder}/{seed_folder}/{time_limit_folder}/{computation_folder}")
+                    if m:
+                        param_dict = m.groupdict()
+                    else:
+                        param_dict = {
+                            'centroid_num': None,
+                            'seed': None,
+                            'time_limit': None,
+                            'levels': None,
+                            'time_limits': None
+                        }
+
+                    result_entry = {
+                        'centroid_num': param_dict.get('centroid_num'),
+                        'centroid_type': centroid_folder,
+                        'seed': param_dict.get('seed'),
+                        'time_limit': param_dict.get('time_limit'),
+                        'levels': param_dict.get('levels'),
+                        'time_limits': param_dict.get('time_limits'),
+                        'status': status,
+                        'wall_time': wall_time,
+                        'objective_value': objective_value
+                    }
+                    results.append(result_entry)
+
+    result_df = pd.DataFrame(results)
+    result_df.to_csv(os.path.expanduser(f"{root_folder}/comparative_recursive_results.csv"), index=False)
+
+
+def analyze_and_plot(filename):
+    # 1. Load the dataframe
+    df = pd.read_csv(filename)
+
+    # 2. Filter for valid runs
+    # We drop rows where wall_time or objective_value is NaN (e.g., ERROR status)
+    # to ensure the averages are calculated on valid data only.
+    df_clean = df.dropna(subset=['wall_time', 'objective_value'])
+    # also divide time limits by 60 to convert to minutes
+    df_clean['time_limits'] = df_clean['time_limits'].apply(
+        lambda x: '-'.join([str(round(int(tl) / 60, 2)) for tl in x.split('-')])
+    )
+
+    # 3. Group and Average
+    # We group by:
+    #  - centroid_num: to separate results by problem size/type
+    #  - levels & time_limits: these combined define the "strategy"
+    # We aggregate by averaging over the 'seed' entries.
+    grouped_df = df_clean.groupby(['centroid_num', 'levels', 'time_limits'])[
+        ['wall_time', 'objective_value']
+    ].mean().reset_index()
+
+    # 4. Create Plots
+    # Use a consistent style
+    sns.set_style("whitegrid")
+
+    # --- Plot 1: Objective Value ---
+    # We use 'catplot' to create a grid of plots (facets) based on centroid_num
+    g1 = sns.catplot(
+        data=grouped_df,
+        kind='bar',
+        x='levels',
+        y='objective_value',
+        hue='time_limits',  # Separation by time limits using color
+        col='centroid_num',  # Separation by centroid number using facets
+        col_wrap=3,  # Adjust layout (e.g., 3 plots per row)
+        height=4,
+        aspect=1.2,
+        sharey=False  # Allow different y-scales for different centroid numbers
+    )
+    g1.figure.subplots_adjust(top=0.9)
+    g1.figure.suptitle('Average Objective Value by Strategy (Levels + Time Limits)')
+
+    # Rotate x-axis labels for readability
+    for ax in g1.axes.flat:
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+
+    g1.savefig('objective_value_comparison.png')
+    print("Saved objective_value_comparison.png")
+
+    # --- Plot 2: Wall Time ---
+    g2 = sns.catplot(
+        data=grouped_df,
+        kind='bar',
+        x='levels',
+        y='wall_time',
+        hue='time_limits',
+        col='centroid_num',
+        col_wrap=3,
+        height=4,
+        aspect=1.2,
+        sharey=True  # Wall times share the same scale (limit ~600s)
+    )
+    g2.figure.subplots_adjust(top=0.9)
+    g2.figure.suptitle('Average Wall Time by Strategy (Levels + Time Limits)')
+
+    for ax in g2.axes.flat:
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+
+    g2.savefig('wall_time_comparison.png')
+    print("Saved wall_time_comparison.png")
+
+
 def compare_across_configs():
     import re
 
@@ -229,5 +385,9 @@ def compare_across_configs():
 if __name__ == "__main__":
     # compare_across_configs()
     # run_configs()
-    run_recursive_configs()
+    # run_recursive_configs()
+    # aggregate_recursive_results()
     # test_across_configs()
+    file = '~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/comparative_recursive_results.csv'
+    expanded_file = os.path.expanduser(file)
+    analyze_and_plot(expanded_file)
