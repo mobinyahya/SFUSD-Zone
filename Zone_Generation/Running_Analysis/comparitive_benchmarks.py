@@ -2,6 +2,7 @@ import copy
 import datetime
 import json
 import os
+import re
 
 import pandas as pd
 import yaml
@@ -16,6 +17,10 @@ def run_configs():
     random_seeds = [42, 14]
 
     centroids_types = [
+        '4-zone-rec-4',
+        '4-zone-rec-3',
+        '5-zone-AF',
+        '5-zone-AF-relocated',
         '6-zone-2',
         '6-zone-3',
         '7-zone-14',
@@ -25,9 +30,7 @@ def run_configs():
         '10-zone-11',
         '10-zone-3',
         '13-zone-6',
-        '13-zone-5',
-        '18-zone-7',
-        '18-zone-10'
+        '13-zone-5'
     ]
 
     levels = ['Block_0']
@@ -88,19 +91,20 @@ def run_configs():
 def run_recursive_configs():
     # similar to run_configs but for recursive zoning
     computations = [
-        [['Block_0', 1]],
+        # [['BlockGroup_0', 1]],
+        [['BlockGroup_1', 0.5], ['BlockGroup_0', 0.5]],
 
-        [['Block_1', 3 / 4], ['Block_0', 1 / 4]],
-        [['Block_1', 1 / 2], ['Block_0', 1 / 2]],
-
-        [['Block_2', 2 / 3], ['Block_0', 1 / 3]],
-        [['Block_2', 1 / 2], ['Block_0', 1 / 2]],
-
-        [['Block_2', 1 / 2], ['Block_1', 1 / 4], ['Block_0', 1 / 4]],
-        [['Block_2', 1 / 3], ['Block_1', 1 / 3], ['Block_0', 1 / 3]]
+        # [['Block_1', 3 / 4], ['Block_0', 1 / 4]],
+        # [['Block_1', 1 / 2], ['Block_0', 1 / 2]],
+        #
+        # [['Block_2', 2 / 3], ['Block_0', 1 / 3]],
+        # [['Block_2', 1 / 2], ['Block_0', 1 / 2]],
+        #
+        # [['Block_2', 1 / 2], ['Block_1', 1 / 4], ['Block_0', 1 / 4]],
+        # [['Block_2', 1 / 3], ['Block_1', 1 / 3], ['Block_0', 1 / 3]]
     ]
 
-    random_seeds = [42, 14]
+    random_seeds = [42]
 
     centroids_types = [
         '4-zone-rec-4',
@@ -119,48 +123,64 @@ def run_recursive_configs():
         '13-zone-5'
     ]
 
-    total_times = [10 * 60, 5 * 60]  # total time for all levels
+    frl_devs = [0.12, 0.15, 0.2, 0.25]
+    racial_devs = [0.12, 0.15, 0.2, 0.25]
+
+    overages = [0.7, 0.8, 0.9]
+    shortages = [0.15, 0.2, 0.25]
+
+    total_times = [4 * 60]  # total time for all levels
 
     with open("../Config/config.yaml", "r") as f:
         base_config = yaml.safe_load(f)
-    for total_time in total_times:
-        for seed in random_seeds:
-            for centroids_type in centroids_types:
-                for computation in computations:
-                    config = copy.deepcopy(base_config)
-                    config['random_seed'] = seed
-                    config['centroids_type'] = centroids_type
-                    config['recursive_levels'] = [level for level, _ in computation]
-                    config['relative_gap_limits'] = [0 for _ in computation]
-                    config['solve_time_limits'] = [int(total_time * proportion) for _, proportion in computation]
+    for frl_dev in frl_devs:
+        for racial_dev in racial_devs:
+            for overage in overages:
+                for shortage in shortages:
+                    for total_time in total_times:
+                        for seed in random_seeds:
+                            for centroids_type in centroids_types:
+                                for computation in computations:
+                                    config = copy.deepcopy(base_config)
+                                    config['frl_dev'] = frl_dev
+                                    config['racial_dev'] = racial_dev
+                                    config['overage'] = overage
+                                    config['shortage'] = shortage
+                                    config['random_seed'] = seed
+                                    config['centroids_type'] = centroids_type
+                                    config['recursive_levels'] = [level for level, _ in computation]
+                                    config['relative_gap_limits'] = [0.05 for _ in computation]
+                                    config['solve_time_limits'] = [int(total_time * proportion) for _, proportion in
+                                                                   computation]
 
-                    print(f"Testing recursive config: seed={seed}, centroids_type={centroids_type}, "
-                          f"levels={config['recursive_levels']}, "
-                          f"time_limits={config['solve_time_limits']}")
-                    print(datetime.datetime.now())
+                                    print(f"Testing recursive config: seed={seed}, centroids_type={centroids_type}, "
+                                          f"levels={config['recursive_levels']}, "
+                                          f"time_limits={config['solve_time_limits']}")
+                                    print(datetime.datetime.now())
 
-                    folder_name = (f"{centroids_type}/{seed}/{total_time}/"
-                                   f"{'-'.join(config['recursive_levels'])}"
-                                   f"_tl_{'-'.join([str(tl) for tl in config['solve_time_limits']])}")
+                                    folder_name = (
+                                        f"{centroids_type}/{seed}/{total_time}/{frl_dev}/{racial_dev}/{overage}/{shortage}/"
+                                        f"{'-'.join(config['recursive_levels'])}"
+                                        f"_tl_{'-'.join([str(tl) for tl in config['solve_time_limits']])}")
 
-                    output_folder = os.path.expanduser(
-                        f"~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/{folder_name}")
+                                    output_folder = os.path.expanduser(
+                                        f"~/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/{folder_name}")
 
-                    # make the folder if it does not exist
-                    os.makedirs(output_folder, exist_ok=True)
-                    config['log_folder'] = output_folder
+                                    # make the folder if it does not exist
+                                    os.makedirs(output_folder, exist_ok=True)
+                                    config['log_folder'] = output_folder
 
-                    try:
-                        solutions = recursive_zoning(config)
-                        # save the last solution output
-                        for solution_output in solutions:
-                            solution_output.save_output(output_folder)
-                    except Exception as e:
-                        print(f"Error solving with recursive config: {e}")
-                        # save a file at the folder with the error message
-                        with open(os.path.expanduser(f"{output_folder}/error.txt"), "w") as f:
-                            f.write(str(e))
-                        continue
+                                    try:
+                                        solutions = recursive_zoning(config)
+                                        # save the last solution output
+                                        for solution_output in solutions:
+                                            solution_output.save_output(output_folder)
+                                    except Exception as e:
+                                        print(f"Error solving with recursive config: {e}")
+                                        # save a file at the folder with the error message
+                                        with open(os.path.expanduser(f"{output_folder}/error.txt"), "w") as f:
+                                            f.write(str(e))
+                                        continue
 
 
 def aggregate_recursive_results():
@@ -246,50 +266,72 @@ def analyze_and_plot(filename):
     df = pd.read_csv(filename)
 
     # 2. Filter for valid runs
-    # We drop rows where wall_time or objective_value is NaN (e.g., ERROR status)
-    # to ensure the averages are calculated on valid data only.
     df_clean = df.dropna(subset=['wall_time', 'objective_value'])
-    # also divide time limits by 60 to convert to minutes
     df_clean['time_limits'] = df_clean['time_limits'].apply(
-        lambda x: '-'.join([str(round(int(tl) / 60, 2)) for tl in x.split('-')])
+        lambda x: '-'.join([str(round(int(tl) / 60, 1)) for tl in x.split('-')])
     )
 
-    # 3. Group and Average
-    # We group by:
-    #  - centroid_num: to separate results by problem size/type
-    #  - levels & time_limits: these combined define the "strategy"
-    # We aggregate by averaging over the 'seed' entries.
-    grouped_df = df_clean.groupby(['centroid_num', 'levels', 'time_limits'])[
-        ['wall_time', 'objective_value']
-    ].mean().reset_index()
+    # ignore Block_0 level results
+    df_clean = df_clean[df_clean['levels'] != 'Block_0']
 
-    # 4. Create Plots
-    # Use a consistent style
+    # 3. Group and calculate mean, min, max
+    grouped_df = df_clean.groupby(['centroid_num', 'levels', 'time_limits']).agg({
+        'wall_time': ['mean', 'min', 'max'],
+        'objective_value': ['mean', 'min', 'max']
+    }).reset_index()
+
+    # Flatten column names
+    grouped_df.columns = ['centroid_num', 'levels', 'time_limits',
+                          'wall_time_mean', 'wall_time_min', 'wall_time_max',
+                          'objective_value_mean', 'objective_value_min', 'objective_value_max']
+
+    # Calculate error bar distances (distance from mean to min/max)
+    grouped_df['wall_time_yerr_lower'] = grouped_df['wall_time_mean'] - grouped_df['wall_time_min']
+    grouped_df['wall_time_yerr_upper'] = grouped_df['wall_time_max'] - grouped_df['wall_time_mean']
+    grouped_df['objective_yerr_lower'] = grouped_df['objective_value_mean'] - grouped_df['objective_value_min']
+    grouped_df['objective_yerr_upper'] = grouped_df['objective_value_max'] - grouped_df['objective_value_mean']
+
+    # Rename centroid_num to Num Zones
+    grouped_df = grouped_df.rename(columns={'centroid_num': 'Num Zones'})
+
+    # 4. Create Plots with error bars showing min/max
     sns.set_style("whitegrid")
 
     # --- Plot 1: Objective Value ---
-    # We use 'catplot' to create a grid of plots (facets) based on centroid_num
     g1 = sns.catplot(
         data=grouped_df,
         kind='bar',
         x='levels',
-        y='objective_value',
-        hue='time_limits',  # Separation by time limits using color
-        col='centroid_num',  # Separation by centroid number using facets
-        col_wrap=3,  # Adjust layout (e.g., 3 plots per row)
+        y='objective_value_mean',
+        hue='time_limits',
+        col='Num Zones',
+        col_wrap=4,
         height=4,
         aspect=1.2,
-        sharey=False  # Allow different y-scales for different centroid numbers
+        sharey=False,
+        errorbar=None
     )
-    g1.figure.subplots_adjust(top=0.9)
-    g1.figure.suptitle('Average Objective Value by Strategy (Levels + Time Limits)')
 
-    # Rotate x-axis labels for readability
+    # Add custom error bars
+    for ax, (zone_num, zone_data) in zip(g1.axes.flat, grouped_df.groupby('Num Zones')):
+        for i, (idx, row) in enumerate(zone_data.iterrows()):
+            # Find the correct bar position
+            level_idx = list(zone_data['levels'].unique()).index(row['levels'])
+            hue_idx = list(zone_data['time_limits'].unique()).index(row['time_limits'])
+            n_hues = len(zone_data['time_limits'].unique())
+            width = ax.patches[0].get_width()
+            x = level_idx + (hue_idx - n_hues / 2 + 0.5) * width
+
+            yerr = [[row['objective_yerr_lower']], [row['objective_yerr_upper']]]
+            ax.errorbar(x, row['objective_value_mean'], yerr=yerr,
+                        fmt='none', color='black', capsize=3, linewidth=1)
+
+    g1.figure.subplots_adjust(top=0.9)
+    g1.figure.suptitle('Average Objective Value by Strategy (Levels + Time Limits)\nError bars show min/max range')
     for ax in g1.axes.flat:
         for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
-
     g1.savefig('objective_value_comparison.png')
     print("Saved objective_value_comparison.png")
 
@@ -298,28 +340,40 @@ def analyze_and_plot(filename):
         data=grouped_df,
         kind='bar',
         x='levels',
-        y='wall_time',
+        y='wall_time_mean',
         hue='time_limits',
-        col='centroid_num',
-        col_wrap=3,
+        col='Num Zones',
+        col_wrap=4,
         height=4,
         aspect=1.2,
-        sharey=True  # Wall times share the same scale (limit ~600s)
+        sharey=True,
+        errorbar=None
     )
-    g2.figure.subplots_adjust(top=0.9)
-    g2.figure.suptitle('Average Wall Time by Strategy (Levels + Time Limits)')
 
+    # Add custom error bars
+    for ax, (zone_num, zone_data) in zip(g2.axes.flat, grouped_df.groupby('Num Zones')):
+        for i, (idx, row) in enumerate(zone_data.iterrows()):
+            level_idx = list(zone_data['levels'].unique()).index(row['levels'])
+            hue_idx = list(zone_data['time_limits'].unique()).index(row['time_limits'])
+            n_hues = len(zone_data['time_limits'].unique())
+            width = ax.patches[0].get_width()
+            x = level_idx + (hue_idx - n_hues / 2 + 0.5) * width
+
+            yerr = [[row['wall_time_yerr_lower']], [row['wall_time_yerr_upper']]]
+            ax.errorbar(x, row['wall_time_mean'], yerr=yerr,
+                        fmt='none', color='black', capsize=3, linewidth=1)
+
+    g2.figure.subplots_adjust(top=0.9)
+    g2.figure.suptitle('Average Wall Time by Strategy (Levels + Time Limits)\nError bars show min/max range')
     for ax in g2.axes.flat:
         for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
-
     g2.savefig('wall_time_comparison.png')
     print("Saved wall_time_comparison.png")
 
 
 def compare_across_configs():
-    import re
 
     # iterate through the saved outputs and compare the results as dataframe, save to csv
     root_folder = '~/sfusd-local-data/zones/SFUSD/local_runs/1-1-26-runs/'

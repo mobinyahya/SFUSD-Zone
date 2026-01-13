@@ -218,15 +218,15 @@ def aggregate_zone_dict(partition, G):
         new_G.nodes[part_id].setdefault('block_ids', []).append(G.nodes[node]['area_id'])
 
     # load census shapefile
-    census_df = load_census_shapefile('Block', False)
-    census_df = census_df[['Block', 'geometry']]
+    census_df = load_census_shapefile('BlockGroup', False)
+    census_df = census_df[['BlockGroup', 'geometry']]
 
     # add column indicating which partition each block belongs to
     block_to_part = {}
     for node, part_id in partition.items():
         area_id = G.nodes[node]['area_id']
         block_to_part[area_id] = part_id
-    census_df['part_id'] = census_df['Block'].map(block_to_part)
+    census_df['part_id'] = census_df['BlockGroup'].map(block_to_part)
     # dissolve by part_id to get new geometries
     dissolved_df = census_df.dissolve(by='part_id', as_index=False)
     dissolved_df = dissolved_df[['part_id', 'geometry']]
@@ -288,7 +288,7 @@ def create_base_graph(save_folder):
     with open("../Config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    config['level'] = 'Block'
+    config['level'] = 'BlockGroup'
     start_time = time.time()
     dz = DesignZones(config=config)
     end_time = time.time()
@@ -297,7 +297,7 @@ def create_base_graph(save_folder):
 
     print(f"Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
     print(f"Sample node attributes: {list(G.nodes(data=True))[0]}")
-    file_name = f"{save_folder}/Block_0.pickle"
+    file_name = f"{save_folder}/BlockGroup_0.pickle"
     # if path does not exist, create it
     os.makedirs(save_folder, exist_ok=True)
 
@@ -307,15 +307,15 @@ def create_base_graph(save_folder):
 
 
 def recursively_split_and_save(output_folder):
-    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
+    with open(f'{output_folder}/BlockGroup_0.pickle', 'rb') as f:
         G = pickle.load(f)
 
-    zv = ZoneVisualizer('Block', is_local=False)
+    zv = ZoneVisualizer('BlockGroup', is_local=False)
     # Unpack both return values
-    for depth in range(1, 4):
-        zone_dict, _ = recursively_split_with_zones(G, 4 ** 3, depth=depth)
+    for depth in range(1, 3):
+        zone_dict, _ = recursively_split_with_zones(G, 3 ** 3, depth=depth)
 
-        print(f"Depth {4 - depth}:")
+        print(f"Depth {3 - depth}:")
         print(f" Total nodes assigned: {len(zone_dict)} / {G.number_of_nodes()}")
         print(f" Number of zones: {len(set(zone_dict.values()))}")
         print(f" Original number of nodes: {G.number_of_nodes()}")
@@ -326,24 +326,24 @@ def recursively_split_and_save(output_folder):
         # Save zone_dict to file
         # with open(f'block_zones_depth_{4 - depth}.pickle', 'wb') as f:
         #     pickle.dump(zone_dict, f)
-        file_name = f"{output_folder}/block_zones_depth_{4-depth}.pickle"
+        file_name = f"{output_folder}/block_group_zones_depth_{3-depth}.pickle"
         with open(file_name, 'wb') as f:
             pickle.dump(zone_dict, f)
 
 
 def create_intermediate_graphs(output_folder):
-    with open(f'{output_folder}/Block_0.pickle', 'rb') as f:
+    with open(f'{output_folder}/BlockGroup_0.pickle', 'rb') as f:
         G = pickle.load(f)
 
-    for level in range(1, 4):
-        with open(f'{output_folder}/block_zones_depth_{level}.pickle', 'rb') as f:
+    for level in range(1, 3):
+        with open(f'{output_folder}/block_group_zones_depth_{level}.pickle', 'rb') as f:
             zone_dict = pickle.load(f)
 
         aggregated_G = aggregate_zone_dict(zone_dict, G)
         print(f'Number of connected components at depth {level}: {nx.number_connected_components(aggregated_G)}')
         print(f"Aggregated graph at depth {level} has {aggregated_G.number_of_nodes()} nodes.")
 
-        with open(f'{output_folder}/Block_{level}.pickle', 'wb') as f:
+        with open(f'{output_folder}/BlockGroup_{level}.pickle', 'wb') as f:
             pickle.dump(aggregated_G, f)
 
 
@@ -351,9 +351,9 @@ if __name__ == "__main__":
     is_local = False
     output_folder = f'{get_dropbox_path(is_local)}/Optimization/Zones/Graphs'
 
-    create_base_graph(output_folder)
+    # create_base_graph(output_folder)
     # recursively_split_and_save(output_folder)
-    # create_intermediate_graphs(output_folder)
+    create_intermediate_graphs(output_folder)
     # with open('../Config/config.yaml', "r") as f:
     #     config = yaml.safe_load(f)
 

@@ -45,6 +45,8 @@ class SolutionOutput:
     def get_zone_demographics(self):
         return compute_zone_demographics(self.G, self.zone_dict)
 
+
+
     def visualize_zones(self):
         zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
         zv.zones_from_dict(self.block_zone_dict, show_plot=True)

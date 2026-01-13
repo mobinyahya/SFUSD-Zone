@@ -43,7 +43,7 @@ def solve_level(config, is_local, cur_block_zone_dict):
         zone_dict = trim_noncontiguity_soft(zone_dict, optimizer.G, optimizer.centroids)
 
         # block_zone_dict = convert_to_block_zone_dict(zone_dict, optimizer.G)
-        # zv = ZoneVisualizer('Block', is_local)
+        # zv = ZoneVisualizer('BlockGroup', is_local)
         # zv.zones_from_dict(block_zone_dict, show_plot=True)
 
     optimizer.add_variables(zone_dict)

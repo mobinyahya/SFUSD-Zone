@@ -7,8 +7,6 @@ from pydantic import BaseModel
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
 from Helper_Functions.util import compute_zone_deviations
-from Zone_Generation.Optimization.design_zones import Compute_Name
-from Zone_Generation.Optimization.recursive_zoning import recursive_zone_supervised
 
 
 class OptimizationConfig(BaseModel):

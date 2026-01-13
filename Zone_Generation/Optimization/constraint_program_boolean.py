@@ -254,6 +254,46 @@ class BooleanConstraintProgram(Optimizer):
                     # Sum(In) - Sum(Out) = x[z][i]
                     self.m.Add(sum(in_flow) - sum(out_flow) == self.x[z][i])
 
+    def _contiguity_const_circuit(self):
+        for z in range(self.Z):
+            arcs = []
+            nodes = self.valid_area_per_zone[z]
+            dummy_node = self.A + z
+            centroid_z = self.centroids[z]
+
+            # 1. The Dummy Node
+            # The dummy node CANNOT have a self-loop. It must be in the circuit.
+            # It connects ONLY to the centroid (start of the zone)
+            start_arc = self.m.NewBoolVar(f"z{z}_dummy_to_centroid")
+            arcs.append((dummy_node, centroid_z, start_arc))
+
+            # 2. Potential Exit Points
+            # Every node in the zone could potentially be the one to 'close' the loop back to dummy
+            for i in nodes:
+                exit_arc = self.m.NewBoolVar(f"z{z}_area{i}_to_dummy")
+                # This arc is only possible if node i is in the zone
+                self.m.Add(exit_arc <= self.x[z][i])
+                arcs.append((i, dummy_node, exit_arc))
+
+                # 3. Self-loops for inactive nodes
+                # If x[z][i] is 0, then the self-loop MUST be 1.
+                # If x[z][i] is 1, then the self-loop MUST be 0.
+                self_loop = self.m.NewBoolVar(f"z{z}_area{i}_self_loop")
+                self.m.Add(self_loop == 1).OnlyEnforceIf(self.x[z][i].Not())
+                self.m.Add(self_loop == 0).OnlyEnforceIf(self.x[z][i])
+                arcs.append((i, i, self_loop))
+
+                # 4. Arcs between neighbors
+                for n in self.G.neighbors(i):
+                    if n in self.valid_area_per_zone[z]:
+                        arc_var = self.m.NewBoolVar(f"arc_z{z}_from{i}_to{n}")
+                        # Basic requirement: both nodes must be in the zone
+                        self.m.Add(arc_var <= self.x[z][i])
+                        self.m.Add(arc_var <= self.x[z][n])
+                        arcs.append((i, n, arc_var))
+
+            self.m.AddCircuit(arcs)
+
     def _racial_const(self):
         for race_col in AREA_ETHNICITIES:
             race_dev = self.config['racial_dev']
@@ -377,6 +417,7 @@ class BooleanConstraintProgram(Optimizer):
         self._school_count_const()
         self._contiguity_const()
         # self._contiguity_const_flow()
+        # self._contiguity_const_circuit()
         self._racial_const()
         self._frl_const()
         self._proportional_shortage_const()
