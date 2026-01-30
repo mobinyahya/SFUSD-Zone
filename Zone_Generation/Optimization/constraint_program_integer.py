@@ -1,6 +1,7 @@
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import Domain
 
+from Zone_Generation.Config.Constants import SCALING_CONST
 from Zone_Generation.Optimization.constraint_program_boolean import BooleanConstraintProgram
 
 
@@ -77,7 +78,7 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
                     access_vars.append(access_var)
             self.m.AddBoolOr(access_vars)
 
-    def add_objective(self):
+    def add_boundary_objective(self):
         boundary_vars = []
         for area in range(self.A):
             for neighbor in self.G.neighbors(area):
@@ -87,6 +88,29 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
                     # if area and neighbor are assigned to different zones, then boundary_var = 1
                     self.m.Add(self.y[area] != self.y[neighbor]).OnlyEnforceIf(boundary_var)
                     self.m.Add(self.y[area] == self.y[neighbor]).OnlyEnforceIf(boundary_var.Not())
-
+    
         boundary_sum = cp_model.LinearExpr.Sum(boundary_vars)
         self.m.Minimize(boundary_sum)
+
+    def _boundary_const(self):
+        # isntead of minimizing boundary cost, we can add a constraint that the boundary cost
+        # must be below a certain threshold relative to the proportion of total edges
+        max_boundary_proportion = 0.25
+        if not max_boundary_proportion:
+            return
+
+        total_boundary_edges = 0
+        boundary_vars = []
+        for area in range(self.A):
+            for neighbor in self.G.neighbors(area):
+                if area < neighbor:
+                    boundary_var = self.m.NewBoolVar(f"boundary_area_{area}_neighbor_{neighbor}")
+                    boundary_vars.append(boundary_var)
+                    # if area and neighbor are assigned to different zones, then boundary_var = 1
+                    self.m.Add(self.y[area] != self.y[neighbor]).OnlyEnforceIf(boundary_var)
+                    self.m.Add(self.y[area] == self.y[neighbor]).OnlyEnforceIf(boundary_var.Not())
+                    total_boundary_edges += 1
+                            
+        boundary_sum = cp_model.LinearExpr.Sum(boundary_vars)
+        self.m.Add(
+            int(SCALING_CONST) * boundary_sum <= int(SCALING_CONST * max_boundary_proportion) * total_boundary_edges)

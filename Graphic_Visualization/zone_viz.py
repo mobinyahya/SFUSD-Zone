@@ -222,16 +222,16 @@ class ZoneVisualizer:
 
             # drop rows that have NaN for zone_id
             self.sf.dropna(subset=[self.level], inplace=True)
-            if label:
-                self.sf.apply(lambda x: ax.annotate(fontsize=8,
-                                                    text=int(x.BlockGroup),
-                                                    xy=x.geometry.centroid.coords[0], ha='center'), axis=1);
             self.sf['zone_id'] = self.sf[self.level].replace(zone_dict)
             self.sf['filter'] = self.sf['zone_id'].apply(lambda x: 1 if int(x) in range(10000) else 0)
             df = self.sf.loc[self.sf['filter'] == 1].copy()
-
             plt.figure(figsize=(20, 20))
             ax = self.sf.boundary.plot(ax=plt.gca(), alpha=0.4, color='grey')
+
+            if label:
+                self.sf.apply(lambda x: ax.annotate(fontsize=8,
+                                                    text=int(x.BlockGroup),
+                                                    xy=x.geometry.centroid.coords[0], ha='center'), axis=1)
 
         #check if zone_id has any values not in zone_colors
         unique_zones = df['zone_id'].unique()

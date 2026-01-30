@@ -2,6 +2,7 @@ import json
 import os
 import pickle
 
+import networkx
 import yaml
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
@@ -32,7 +33,7 @@ class SolutionOutput:
                     boundary_cost += 1
         return boundary_cost
 
-    def get_base_boundary_cost(self, base_G):
+    def get_base_boundary_cost(self, base_G: networkx.Graph):
         boundary_cost = 0
         for i in range(len(base_G)):
             for j in base_G.neighbors(i):
@@ -44,8 +45,6 @@ class SolutionOutput:
 
     def get_zone_demographics(self):
         return compute_zone_demographics(self.G, self.zone_dict)
-
-
 
     def visualize_zones(self):
         zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
@@ -71,6 +70,9 @@ class SolutionOutput:
             file_name = os.path.join(save_path, f"zones_visualization_{level}")
             zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
             zv.zones_from_dict(self.block_zone_dict, save_path=file_name)
+            # close the plot
+            import matplotlib.pyplot as plt
+            plt.close()
 
         output_info = {
             "boundary_cost": boundary_cost,
@@ -151,6 +153,7 @@ if __name__ == "__main__":
     print("name: ", name)
 
     optimizer = Optimizer.get_optimizer(config)
+    optimizer.add_variables()
     optimizer.add_constraints()
     optimizer.add_objective()
     solution_output = optimizer.solve()
@@ -164,6 +167,6 @@ if __name__ == "__main__":
     if solution_output.status != 'INFEASIBLE':
         print("Objective value: ", solution_output.objective_value)
         print('Boundary cost: ', solution_output.get_boundary_cost())
-        print('Base Boundary cost: ', solution_output.get_base_boundary_cost(base_G))
+        # print('Base Boundary cost: ', solution_output.get_base_boundary_cost(base_G))
         print('Wall time: ', solution_output.wall_time)
         solution_output.visualize_zones()

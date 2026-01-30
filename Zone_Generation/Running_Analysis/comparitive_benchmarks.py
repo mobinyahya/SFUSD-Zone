@@ -436,12 +436,96 @@ def compare_across_configs():
     return results_df
 
 
+def aggregate_recursive_metrics():
+    import pickle
+    from Zone_Generation.Config.Constants import get_dropbox_path
+    from Zone_Generation.Running_Analysis.zoning_metrics import ZoneMetrics
+
+    # Load Graph
+    is_local = False
+    dropbox_path = get_dropbox_path(is_local)
+    graph_path = f'{dropbox_path}/Optimization/Zones/Graphs/BlockGroup_0.pickle'
+
+    print(f"Loading graph from {graph_path}")
+    with open(graph_path, 'rb') as f:
+        G = pickle.load(f)
+
+    root_folder = os.path.expanduser('~/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/')
+    print(f"Scanning {root_folder} for zone_dict_BlockGroup_0.json files...")
+
+    results = []
+
+    # Walk through the directory structure
+    for root, dirs, files in os.walk(root_folder):
+        if 'zone_dict_BlockGroup_0.json' in files:
+            # Parse parameters from path relative to root_folder
+            rel_path = os.path.relpath(root, root_folder)
+            parts = rel_path.split('/')
+
+            if len(parts) >= 8:
+                # centroids_type/seed/total_time/frl_dev/racial_dev/overage/shortage/config_str
+                centroids_type = parts[0]
+                seed = parts[1]
+                total_time = parts[2]
+                frl_dev = parts[3]
+                racial_dev = parts[4]
+                overage = parts[5]
+                shortage = parts[6]
+                config_str = parts[7]
+
+                # Load zone dict
+                try:
+                    with open(os.path.join(root, 'zone_dict_BlockGroup_0.json'), 'r') as f:
+                        zone_dict = json.load(f)
+
+                    # Compute Metrics
+                    zm = ZoneMetrics(zone_dict.copy(), G)
+                    metrics = zm.get_metrics()
+
+                    # Add metadata
+                    metrics['centroids_type'] = centroids_type
+                    metrics['seed'] = seed
+                    metrics['total_time'] = total_time
+                    metrics['frl_dev'] = frl_dev
+                    metrics['racial_dev'] = racial_dev
+                    metrics['overage'] = overage
+                    metrics['shortage'] = shortage
+                    metrics['config_str'] = config_str
+
+                    # include the path for reference
+                    metrics['path'] = root
+
+                    # Also try to retrieve solution_info_BlockGroup_0.json
+                    if 'solution_info_BlockGroup_0.json' in files:
+                        try:
+                            with open(os.path.join(root, 'solution_info_BlockGroup_0.json'), 'r') as f:
+                                sol_info = json.load(f)
+                                metrics['wall_time'] = sol_info.get('wall_time')
+                                metrics['boundary_cost'] = sol_info.get('boundary_cost')
+                                metrics['status'] = sol_info.get('status')
+                        except Exception as e:
+                            print(f"Error reading solution_info in {root}: {e}")
+
+                    results.append(metrics)
+                except Exception as e:
+                    print(f"Error processing {root}: {e}")
+
+    if results:
+        df = pd.DataFrame(results)
+        output_csv = os.path.join(root_folder, 'recursive_metrics_flattened.csv')
+        df.to_csv(output_csv, index=False)
+        print(f"Saved metrics to {output_csv}")
+    else:
+        print("No results found.")
+
+
 if __name__ == "__main__":
+    aggregate_recursive_metrics()
     # compare_across_configs()
     # run_configs()
     # run_recursive_configs()
     # aggregate_recursive_results()
     # test_across_configs()
-    file = '~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/comparative_recursive_results.csv'
-    expanded_file = os.path.expanduser(file)
-    analyze_and_plot(expanded_file)
+    # file = '~/sfusd-local-data/zones/SFUSD/local_runs/recursive-runs/comparative_recursive_results.csv'
+    # expanded_file = os.path.expanduser(file)
+    # analyze_and_plot(expanded_file)

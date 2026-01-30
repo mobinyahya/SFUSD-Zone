@@ -24,9 +24,11 @@ class BooleanConstraintProgram(Optimizer):
         valid_area_per_zone = {}
         valid_zone_per_area = {}
         x = {}
+        zone_utility_vars = {}
         for z in range(self.Z):
             valid_area_per_zone[z] = set()
             x[z] = {}
+            zone_utility_vars[z] = {}
         for i in range(self.A):
             valid_zone_per_area[i] = set()
 
@@ -422,12 +424,13 @@ class BooleanConstraintProgram(Optimizer):
         self._frl_const()
         self._proportional_shortage_const()
         self._proportional_overage_const()
+        self._boundary_const()
 
         # optional constraints
         # self._school_quality_const()
         # self._closest_school_const()
 
-    def add_objective(self):
+    def add_boundary_objective(self):
         boundary_vars = []
 
         for zone in range(self.Z):
@@ -456,6 +459,49 @@ class BooleanConstraintProgram(Optimizer):
                     boundary_vars.append(b)
 
         self.m.Minimize(sum(boundary_vars))
+
+    def add_choice_objective(self):
+        # for every area, we create a variable representing the value that the area gets from the choice set
+        # for every indicator in self.x, we create a variable representing the value that the area gets from being assigned,
+        # and add it to the objective
+        
+        for area in range(self.A):
+            for zone in self.valid_zone_per_area[area]:
+                lb = int(-100* self.G[area]['ge_students'])
+                ub = int(100* self.G[area]['ge_students'])
+                area_zone_utility = self.m.NewIntVar(lb, ub, f"area_zone_utility_{area}_{zone}")
+                self.m.Add(area_zone_utility == 0).OnlyEnforceIf(self.x[zone][area].Not())
+                self.zone_utility_vars[zone][area] = area_zone_utility
+
+        self.m.Maximize(sum(self.zone_utility_vars.values()))
+
+    def _boundary_const(self):
+        # isntead of minimizing boundary cost, we can add a constraint that the boundary cost
+        # must be below a certain threshold relative to the proportion of total edges
+        max_boundary_proportion = 0.2
+        if not max_boundary_proportion:
+            return
+
+        total_boundary_edges = 0
+        for area in range(self.A):
+            for neighbor in self.G.neighbors(area):
+                if area < neighbor:
+                    total_boundary_edges += 1
+        boundary_vars = []
+        for area in range(self.A):
+            for neighbor in self.G.neighbors(area):
+                if area < neighbor:
+                    for zone in self.valid_zone_per_area[area]:
+                        if zone in self.valid_zone_per_area[neighbor]:
+                            boundary_var = self.m.NewBoolVar(f"boundary_area_{area}_neighbor_{neighbor}_zone_{zone}")
+                            boundary_vars.append(boundary_var)
+                            # if area and neighbor are assigned to different zones, then boundary_var = 1
+                            self.m.Add(self.x[zone][area] != self.x[zone][neighbor]).OnlyEnforceIf(boundary_var)
+                            self.m.Add(self.x[zone][area] == self.x[zone][neighbor]).OnlyEnforceIf(boundary_var.Not())
+        boundary_sum = cp_model.LinearExpr.Sum(boundary_vars)
+        self.m.Add(
+            int(SCALING_CONST) * boundary_sum <= int(SCALING_CONST * max_boundary_proportion) * total_boundary_edges)
+
 
     def solve(self):
         if self.config['use_hints']:
@@ -496,7 +542,7 @@ class BooleanConstraintProgram(Optimizer):
         # solver.parameters.use_symmetry_in_lp = True
 
         log_file = None
-        log_folder = self.config.get('log_folder')
+        log_folder = self.config.get('log_folder', None)
         if log_folder is not None:
             solver.parameters.log_to_stdout = False
             solver.parameters.log_search_progress = True
@@ -539,7 +585,7 @@ class BooleanConstraintProgram(Optimizer):
             log_file = callback_handler.log_file
         else:
             solver.parameters.log_to_stdout = True
-            solver.parameters.log_search_progress = True
+            solver.parameters.log_search_progress = False
 
         return log_file
 

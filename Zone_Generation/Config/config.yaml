@@ -1,7 +1,7 @@
 # changing levers
-#centroids_type: '4-zone-rec-3'
-#centroids_type: '5-zone-AF'
-centroids_type: '6-zone-3'
+# centroids_type: '4-zone-rec-3'
+centroids_type: '5-zone-AF'
+# centroids_type: '6-zone-3'
 #centroids_type: '7-zone-14'
 #centroids_type: '8-zone-25'
 #centroids_type: '10-zone-3'
@@ -10,16 +10,16 @@ centroids_type: '6-zone-3'
 #centroids_type: '57-zone-1'
 #centroids_type: '59-zone'
 
-frl_dev: 0.25
-racial_dev: 0.25
+frl_dev: 0.3
+racial_dev: 0.3
 is_local: False
 
 # fixed levers
 #boundary_threshold: .05
 shortage: .2 # this is in percentage
-overage: 0.8 # this is in percentage
+overage: .8 # this is in percentage
 all_cap_shortage: .inf # this is in percentage
-max_distance: 4 # best valid value for 59 zines: 1.272
+max_distance: 5 # best valid value for 59 zines: 1.272
 population_dev: .inf
 
 
@@ -32,15 +32,15 @@ new_schools: True
 include_k8: False
 # 'Block', 'BlockGroup' or 'attendance_area'
 # Block_0, Block_1, Block_2, Block_3
-level: "Block_1"
+level: "BlockGroup_1"
 recursive_levels: [ 'BlockGroup_1','BlockGroup_0' ]
 relative_gap_limits: [ 0, 0 ]
 solve_time_limits: [ 30,30 ] # seconds
 
 
-relative_gap_limit: 0
+relative_gap_limit: 0.1
 #log_folder: '.'
-solve_time_limit: 30 # seconds
+solve_time_limit: 60 # seconds
 #stall_time_limit: 20 # seconds
 random_seed: 42
 # mip, cp_int, cp_bool
