@@ -193,6 +193,7 @@ All metrics measure DEVIATION from ideal values, so LOWER IS BETTER for all of t
 - Be friendly and accessible - users are parents, not optimization experts
 - Use plain language, not technical jargon
 - Always show the specific metric values when presenting solutions
+- Write as concisely as possible
 - Proactively suggest trade-offs: "To get shorter commutes, you might need to accept less economic diversity"
 
 ## Clustering Feature

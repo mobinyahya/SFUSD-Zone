@@ -13,10 +13,6 @@ from pydantic import BaseModel
 from typing import Optional
 from urllib.parse import unquote
 
-# Add project root to path for LLM imports
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
 from data_loader import (
     get_clusters,
     load_zone_dict,
@@ -25,6 +21,10 @@ from data_loader import (
     get_zone_color,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
+
+# Add project root to path for LLM imports
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -12,6 +12,11 @@ import matplotlib.pyplot as plt
 
 
 class SolutionOutput:
+    """
+    Output from a single optimization solve.
+    
+    Can be converted to LevelResult for use with BenchmarkResult.
+    """
     def __init__(self, zone_dict, objective_value, status, wall_time, G, config):
         self.zone_dict = zone_dict
         self.objective_value = objective_value
@@ -20,6 +25,11 @@ class SolutionOutput:
         self.G = G  # the graph of all the data we need
         self.config = config
         self.block_zone_dict = convert_to_block_zone_dict(zone_dict, G)
+    
+    @property
+    def level(self) -> str:
+        """Get the optimization level from config."""
+        return self.config.get('level', 'unknown')
 
     def get_boundary_cost(self):
         if self.zone_dict is None or len(self.zone_dict) == 0:
@@ -51,37 +61,38 @@ class SolutionOutput:
         zv.zones_from_dict(self.block_zone_dict, show_plot=True)
 
     def save_output(self, folder_path):
+        """Save solution to folder (legacy format)."""
         if self.zone_dict is None or len(self.zone_dict) == 0:
             print("No zones available to save.")
             return
-        # save the image, dict_solution, objective_value, status, wall_time
         save_path = os.path.expanduser(folder_path)
         if not os.path.exists(save_path):
             os.makedirs(save_path)
-        level = self.config['level']
-        # save zone dict as json file
+        level = self.level
+        
+        # Save zone dict
         filename = os.path.join(save_path, f"zone_dict_{level}.json")
         with open(filename, "w") as f:
             json.dump(self.zone_dict, f)
 
-        boundary_cost = -1
-        if self.zone_dict is not None and len(self.zone_dict) > 0:
-            boundary_cost = self.get_boundary_cost()
+        boundary_cost = self.get_boundary_cost()
+        if boundary_cost >= 0:
             file_name = os.path.join(save_path, f"zones_visualization_{level}")
             zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
             zv.zones_from_dict(self.block_zone_dict, save_path=file_name)
-            # close the plot
             plt.close()
 
+        # Save solution info
         output_info = {
+            "level": level,
             "boundary_cost": boundary_cost,
             "status": self.status,
             "wall_time": self.wall_time,
-            'config': self.config
+            "config": self.config
         }
         filename = os.path.join(save_path, f"solution_info_{level}.json")
         with open(filename, "w") as f:
-            json.dump(output_info, f)
+            json.dump(output_info, f, indent=2)
 
 
 class Optimizer:

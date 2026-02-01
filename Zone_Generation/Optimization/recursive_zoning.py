@@ -48,7 +48,7 @@ def solve_level(config, is_local, cur_block_zone_dict):
 
     optimizer.add_variables(zone_dict)
     optimizer.add_constraints()
-    optimizer.add_objective()
+    optimizer.add_boundary_objective()
 
     solution_output = optimizer.solve()
     # solution_output.visualize_zones()
