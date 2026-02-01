@@ -69,12 +69,15 @@ main {
     grid-template-columns: 1fr 350px;
     gap: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 #map-panel {
     position: relative;
     background: var(--panel-bg);
     border-right: 1px solid var(--border-color);
+    overflow: hidden;
+    min-height: 0;
 }
 
 #map {
@@ -101,6 +104,8 @@ main {
     display: flex;
     flex-direction: column;
     background: var(--panel-bg);
+    overflow: hidden;
+    min-height: 0;
 }
 
 #chat-header {
@@ -120,6 +125,7 @@ main {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 0;
 }
 
 .message {
