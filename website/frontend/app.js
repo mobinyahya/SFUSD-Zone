@@ -201,6 +201,8 @@ function renderMap(geojson) {
         }
     }).addTo(map);
 
+    // Ensure Leaflet recalculates container size before fitting bounds
+    map.invalidateSize();
     map.fitBounds(geojsonLayer.getBounds());
 }
 
