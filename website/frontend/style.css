@@ -39,34 +39,11 @@ header h1 {
     font-weight: 600;
 }
 
-#cluster-selector {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-#cluster-selector label {
-    font-size: 0.9rem;
-}
-
-#cluster-dropdown {
-    padding: 8px 12px;
-    font-size: 0.9rem;
-    border: none;
-    border-radius: 4px;
-    min-width: 300px;
-    cursor: pointer;
-}
-
-#cluster-dropdown:disabled {
-    background: #bdc3c7;
-    cursor: not-allowed;
-}
 
 main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr 350px;
+    grid-template-columns: 1fr 4px 350px;
     gap: 0;
     min-height: 0;
     overflow: hidden;
@@ -75,7 +52,6 @@ main {
 #map-panel {
     position: relative;
     background: var(--panel-bg);
-    border-right: 1px solid var(--border-color);
     overflow: hidden;
     min-height: 0;
 }
@@ -83,6 +59,21 @@ main {
 #map {
     width: 100%;
     height: 100%;
+}
+
+#resize-handle {
+    background: var(--border-color);
+    cursor: col-resize;
+    position: relative;
+    transition: background 0.2s;
+}
+
+#resize-handle:hover {
+    background: var(--secondary-color);
+}
+
+#resize-handle.resizing {
+    background: var(--secondary-color);
 }
 
 .placeholder {
@@ -153,6 +144,70 @@ main {
     align-self: center;
     text-align: center;
     font-size: 0.85rem;
+}
+
+/* Markdown styling in messages */
+.message.assistant h1,
+.message.assistant h2,
+.message.assistant h3 {
+    margin: 8px 0 4px 0;
+    font-weight: 600;
+}
+
+.message.assistant h1 { font-size: 1.1rem; }
+.message.assistant h2 { font-size: 1.0rem; }
+.message.assistant h3 { font-size: 0.95rem; }
+
+.message.assistant p {
+    margin: 4px 0;
+}
+
+.message.assistant ul,
+.message.assistant ol {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+
+.message.assistant li {
+    margin: 2px 0;
+}
+
+.message.assistant code {
+    background: #f5f6fa;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85em;
+}
+
+.message.assistant pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
+.message.assistant pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+}
+
+.message.assistant strong {
+    font-weight: 600;
+}
+
+.message.assistant em {
+    font-style: italic;
+}
+
+.message.assistant blockquote {
+    border-left: 3px solid var(--border-color);
+    padding-left: 12px;
+    margin: 8px 0;
+    color: var(--text-muted);
 }
 
 #chat-input-area {
@@ -276,16 +331,133 @@ footer#charts-panel {
     font-weight: 500;
 }
 
+/* In-chat cluster selector */
+.cluster-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    max-width: 100%;
+}
+
+.cluster-selector.disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.cluster-selector-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+
+.cluster-option {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cluster-option:hover {
+    border-color: var(--secondary-color);
+    background: #f0f7ff;
+}
+
+.cluster-selector.disabled .cluster-option {
+    cursor: default;
+    background: #f5f6fa;
+}
+
+.cluster-selector.disabled .cluster-option:hover {
+    border-color: var(--border-color);
+    background: #f5f6fa;
+}
+
+.cluster-option-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--primary-color);
+}
+
+.cluster-option-meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Loading/thinking message */
+.message.loading {
+    background: #ecf0f1;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.message.loading::after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--secondary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Map loading overlay */
+.map-loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.map-loading.hidden {
+    display: none;
+}
+
+.map-loading .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-top-color: var(--secondary-color);
+}
+
+/* Chat input disabled state during processing */
+#chat-input-area.processing #chat-input,
+#chat-input-area.processing #chat-send {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
     main {
         grid-template-columns: 1fr;
-        grid-template-rows: 1fr 300px;
+        grid-template-rows: 1fr 4px 300px;
     }
 
     #map-panel {
         border-right: none;
         border-bottom: 1px solid var(--border-color);
+    }
+
+    #resize-handle {
+        cursor: row-resize;
+    }
+
+    #resize-handle:hover {
+        background: var(--secondary-color);
     }
 
     footer#charts-panel {

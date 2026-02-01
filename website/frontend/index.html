@@ -10,21 +10,20 @@
 <body>
     <header>
         <h1>SFUSD Zoning Explorer</h1>
-        <div id="cluster-selector">
-            <label for="cluster-dropdown">Select a zoning approach:</label>
-            <select id="cluster-dropdown" disabled>
-                <option value="">Loading clusters...</option>
-            </select>
-        </div>
     </header>
 
     <main>
         <section id="map-panel">
             <div id="map"></div>
             <div id="map-placeholder" class="placeholder">
-                <p>Select a zoning approach above to view the map</p>
+                <p>Chat with the agent to explore zoning options</p>
+            </div>
+            <div id="map-loading-overlay" class="map-loading hidden">
+                <div class="spinner"></div>
             </div>
         </section>
+
+        <div id="resize-handle"></div>
 
         <section id="chat-panel">
             <div id="chat-header">
@@ -32,12 +31,12 @@
             </div>
             <div id="chat-messages">
                 <div class="message system">
-                    Welcome! Select a zoning approach from the dropdown to explore solutions.
+                    Welcome! I'll help you explore school zoning options. Let me show you what's available...
                 </div>
             </div>
             <div id="chat-input-area">
-                <input type="text" id="chat-input" placeholder="Ask about this zoning solution..." disabled>
-                <button id="chat-send" disabled>Send</button>
+                <input type="text" id="chat-input" placeholder="Ask about zoning options...">
+                <button id="chat-send">Send</button>
             </div>
         </section>
     </main>
@@ -60,6 +59,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

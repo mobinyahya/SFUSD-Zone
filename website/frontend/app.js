@@ -7,18 +7,21 @@ let map = null;
 let geojsonLayer = null;
 let geojsonData = null;
 let currentSolution = null;
-let currentClusterLabel = '';
 let demographicsChart = null;
 let studentsChart = null;
-let clusters = [];
+let sessionId = null;
+let isProcessing = false;
 
 // DOM Elements
-const clusterDropdown = document.getElementById('cluster-dropdown');
 const mapPlaceholder = document.getElementById('map-placeholder');
+const mapLoadingOverlay = document.getElementById('map-loading-overlay');
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const chatSend = document.getElementById('chat-send');
+const chatInputArea = document.getElementById('chat-input-area');
 const loadingOverlay = document.getElementById('loading-overlay');
+const resizeHandle = document.getElementById('resize-handle');
+const mainContainer = document.querySelector('main');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
@@ -26,8 +29,9 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
     initMap();
     initCharts();
-    await loadClusters();
     setupEventListeners();
+    // Send initial message to trigger clustering
+    await sendInitialMessage();
 }
 
 function initMap() {
@@ -98,32 +102,6 @@ function initCharts() {
     });
 }
 
-async function loadClusters() {
-    try {
-        const response = await fetch(`${API_BASE}/api/clusters`);
-        if (!response.ok) throw new Error('Failed to load clusters');
-
-        const data = await response.json();
-        clusters = data.clusters;
-
-        clusterDropdown.innerHTML = '<option value="">-- Select a zoning approach --</option>';
-        clusters.forEach(cluster => {
-            const option = document.createElement('option');
-            option.value = cluster.path;
-            option.textContent = `${cluster.label} (${cluster.count} solutions)`;
-            option.dataset.clusterId = cluster.id;
-            option.dataset.label = cluster.label;
-            clusterDropdown.appendChild(option);
-        });
-
-        clusterDropdown.disabled = false;
-    } catch (error) {
-        console.error('Error loading clusters:', error);
-        clusterDropdown.innerHTML = '<option value="">Error loading clusters</option>';
-        addMessage('system', 'Failed to load zoning clusters. Please refresh the page.');
-    }
-}
-
 async function loadGeojson() {
     if (geojsonData) return geojsonData;
 
@@ -134,8 +112,8 @@ async function loadGeojson() {
     return geojsonData;
 }
 
-async function loadSolution(path, clusterLabel) {
-    showLoading(true);
+async function loadSolution(path) {
+    showMapLoading(true);
 
     try {
         const [geojson, solutionResponse] = await Promise.all([
@@ -146,19 +124,16 @@ async function loadSolution(path, clusterLabel) {
         if (!solutionResponse.ok) throw new Error('Failed to load solution');
 
         currentSolution = await solutionResponse.json();
-        currentClusterLabel = clusterLabel;
 
         renderMap(geojson);
         updateCharts();
-        enableChat();
 
         mapPlaceholder.classList.add('hidden');
-        addMessage('system', `Loaded: ${clusterLabel}`);
     } catch (error) {
         console.error('Error loading solution:', error);
         addMessage('system', 'Failed to load solution. Please try again.');
     } finally {
-        showLoading(false);
+        showMapLoading(false);
     }
 }
 
@@ -240,60 +215,238 @@ function updateCharts() {
     studentsChart.update();
 }
 
-function enableChat() {
-    chatInput.disabled = false;
-    chatSend.disabled = false;
-}
-
 function setupEventListeners() {
-    clusterDropdown.addEventListener('change', async e => {
-        const path = e.target.value;
-        if (!path) return;
-
-        const selected = e.target.options[e.target.selectedIndex];
-        const label = selected.dataset.label || 'Selected solution';
-        await loadSolution(path, label);
-    });
-
     chatSend.addEventListener('click', sendMessage);
     chatInput.addEventListener('keypress', e => {
-        if (e.key === 'Enter') sendMessage();
+        if (e.key === 'Enter' && !isProcessing) sendMessage();
     });
+    setupResizeHandle();
+}
+
+function setupResizeHandle() {
+    let isResizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+
+    resizeHandle.addEventListener('mousedown', e => {
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const chatPanel = document.getElementById('chat-panel');
+        startWidth = chatPanel.offsetWidth;
+        startHeight = chatPanel.offsetHeight;
+        resizeHandle.classList.add('resizing');
+
+        // Detect if we're in mobile/vertical mode
+        const isMobileView = window.innerWidth <= 900;
+        document.body.style.cursor = isMobileView ? 'row-resize' : 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!isResizing) return;
+
+        // Detect if we're in mobile/vertical mode
+        const isMobileView = window.innerWidth <= 900;
+
+        if (isMobileView) {
+            // Vertical resizing for mobile
+            const deltaY = startY - e.clientY;
+            const newHeight = Math.max(200, Math.min(600, startHeight + deltaY));
+            mainContainer.style.gridTemplateRows = `1fr 4px ${newHeight}px`;
+        } else {
+            // Horizontal resizing for desktop
+            const deltaX = startX - e.clientX;
+            const newWidth = Math.max(250, Math.min(800, startWidth + deltaX));
+            mainContainer.style.gridTemplateColumns = `1fr 4px ${newWidth}px`;
+        }
+
+        // Invalidate map size to ensure proper rendering after resize
+        if (map) {
+            map.invalidateSize();
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            resizeHandle.classList.remove('resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
+async function sendInitialMessage() {
+    // Automatically trigger clustering on load
+    await sendMessageToAgent('Show me the available zoning options grouped by their trade-offs.');
 }
 
 async function sendMessage() {
     const message = chatInput.value.trim();
-    if (!message) return;
+    if (!message || isProcessing) return;
 
     addMessage('user', message);
     chatInput.value = '';
 
+    await sendMessageToAgent(message);
+}
+
+async function sendMessageToAgent(message) {
+    setProcessing(true);
+    showMapLoading(true);
+
+    // Add thinking message
+    const thinkingMsg = addMessage('loading', 'Thinking... (this may take a moment)');
+
     try {
+        // Use AbortController for timeout (2 minutes for slow LLM calls)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
         const response = await fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message,
-                cluster_label: currentClusterLabel,
+                session_id: sessionId,
             }),
+            signal: controller.signal,
         });
 
-        if (!response.ok) throw new Error('Chat request failed');
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Chat response error:', response.status, errorText);
+            throw new Error(`Chat request failed: ${response.status}`);
+        }
 
         const data = await response.json();
-        addMessage('assistant', data.response);
+        console.log('Chat response:', data);
+
+        // Update session ID
+        sessionId = data.session_id;
+
+        // Remove thinking message
+        thinkingMsg.remove();
+
+        // Handle response based on type
+        if (data.response_type === 'clusters' && data.clusters && data.clusters.length > 0) {
+            // Show text response
+            if (data.text) {
+                addMessage('assistant', data.text);
+            }
+            // Render cluster selector in chat
+            renderClusterSelector(data.clusters);
+        } else if (data.response_type === 'solution_update' && data.solution_path) {
+            // Show text response
+            if (data.text) {
+                addMessage('assistant', data.text);
+            }
+            // Load the new solution
+            await loadSolution(data.solution_path);
+        } else {
+            // Just text response
+            addMessage('assistant', data.text || 'Agent returned empty response. Please try again.');
+        }
     } catch (error) {
         console.error('Chat error:', error);
-        addMessage('assistant', 'Sorry, there was an error processing your message.');
+        thinkingMsg.remove();
+        if (error.name === 'AbortError') {
+            addMessage('assistant', 'Request timed out. The agent is taking too long to respond. Please try again.');
+        } else {
+            addMessage('assistant', `Error: ${error.message}. Please try again.`);
+        }
+    } finally {
+        setProcessing(false);
+        showMapLoading(false);
     }
+}
+
+function renderClusterSelector(clusters) {
+    const container = document.createElement('div');
+    container.className = 'cluster-selector';
+
+    const title = document.createElement('div');
+    title.className = 'cluster-selector-title';
+    title.textContent = 'Select a zoning approach:';
+    container.appendChild(title);
+
+    clusters.forEach(cluster => {
+        const option = document.createElement('div');
+        option.className = 'cluster-option';
+        option.onclick = () => selectCluster(cluster.id, cluster.label);
+
+        const label = document.createElement('div');
+        label.className = 'cluster-option-label';
+        label.textContent = `${cluster.id}. ${cluster.label}`;
+
+        const meta = document.createElement('div');
+        meta.className = 'cluster-option-meta';
+        meta.textContent = `${cluster.count} solutions`;
+
+        option.appendChild(label);
+        option.appendChild(meta);
+        container.appendChild(option);
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message assistant';
+    wrapper.appendChild(container);
+
+    chatMessages.appendChild(wrapper);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function selectCluster(clusterId, clusterLabel) {
+    // Disable all cluster selectors to prevent reselection
+    const allClusterSelectors = document.querySelectorAll('.cluster-selector');
+    allClusterSelectors.forEach(selector => {
+        selector.classList.add('disabled');
+        // Remove onclick handlers from all options
+        const options = selector.querySelectorAll('.cluster-option');
+        options.forEach(opt => {
+            opt.onclick = null;
+            opt.style.cursor = 'default';
+        });
+    });
+
+    addMessage('user', `Select cluster ${clusterId}: ${clusterLabel}`);
+    await sendMessageToAgent(`Select cluster ${clusterId}`);
 }
 
 function addMessage(type, content) {
     const div = document.createElement('div');
     div.className = `message ${type}`;
-    div.textContent = content;
+
+    // Render markdown for assistant messages
+    if (type === 'assistant' && typeof marked !== 'undefined') {
+        // Configure marked for safe rendering
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+        });
+        div.innerHTML = marked.parse(content);
+    } else {
+        div.textContent = content;
+    }
+
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+}
+
+function setProcessing(processing) {
+    isProcessing = processing;
+    chatInputArea.classList.toggle('processing', processing);
+}
+
+function showMapLoading(show) {
+    mapLoadingOverlay.classList.toggle('hidden', !show);
 }
 
 function showLoading(show) {

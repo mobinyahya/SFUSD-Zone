@@ -494,3 +494,172 @@ class ZoningAgent:
         """Reset all filters to allow all solutions."""
         self.filter_state = FilterState()
         print("Filters reset. All Pareto-optimal solutions are now feasible.")
+
+    def chat_with_metadata(self, user_message: str) -> dict:
+        """
+        Process a user message and return the agent's response with metadata.
+
+        Returns a dict with:
+        - text: The LLM response text
+        - response_type: "text" | "clusters" | "solution_update"
+        - clusters: List of cluster info when show_solution_clusters was called
+        - solution_path: Path to solution when select_cluster was called
+        """
+        # Track tool calls and their results
+        tool_calls_made = []
+        clusters_data = None
+        solution_path = None
+
+        # Add user message to history
+        self.history.append({"role": "user", "content": user_message})
+
+        # Call the model
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=self.history,
+            tools=TOOLS,
+            tool_choice="auto",
+        )
+
+        assistant_message = response.choices[0].message
+
+        # Handle tool calls
+        while assistant_message.tool_calls:
+            # Add assistant message with tool calls to history
+            self.history.append({
+                "role": "assistant",
+                "content": assistant_message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in assistant_message.tool_calls
+                ],
+            })
+
+            # Execute each tool call
+            for tool_call in assistant_message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                # Track the tool call
+                tool_calls_made.append(tool_name)
+
+                # Capture cluster data before executing show_solution_clusters
+                if tool_name == "show_solution_clusters":
+                    # Execute the tool
+                    result = self._execute_tool(tool_name, arguments)
+
+                    # After execution, capture the cluster data
+                    if self._cluster_labels is not None:
+                        clusters_data = self._build_clusters_response()
+
+                elif tool_name == "select_cluster":
+                    # Get cluster info before it's cleared
+                    cluster_id = arguments.get("cluster_id", 1) - 1
+
+                    # Execute the tool (this clears cluster state)
+                    result = self._execute_tool(tool_name, arguments)
+
+                    # Get the centroid solution path after selection
+                    filtered = self._get_filtered_solutions()
+                    if len(filtered) > 0:
+                        normalized = normalize_metrics(filtered)
+                        solution, idx = get_centroid_solution(filtered, normalized)
+                        solution_path = solution["path"]
+
+                elif tool_name in ["tighten_filter", "loosen_filter", "get_current_solution"]:
+                    # Execute the tool
+                    result = self._execute_tool(tool_name, arguments)
+
+                    # Get the centroid solution path after filter changes
+                    filtered = self._get_filtered_solutions()
+                    if len(filtered) > 0:
+                        normalized = normalize_metrics(filtered)
+                        solution, idx = get_centroid_solution(filtered, normalized)
+                        solution_path = solution["path"]
+
+                else:
+                    result = self._execute_tool(tool_name, arguments)
+
+                # Add tool result to history
+                self.history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
+
+            # Get next response
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.history,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+            assistant_message = response.choices[0].message
+
+        # Add final response to history
+        final_content = assistant_message.content or ""
+        self.history.append({"role": "assistant", "content": final_content})
+
+        # If no solution path was set yet but tool calls were made (and we're not showing clusters),
+        # get the current centroid solution to display
+        if solution_path is None and clusters_data is None and len(tool_calls_made) > 0:
+            filtered = self._get_filtered_solutions()
+            if len(filtered) > 0:
+                normalized = normalize_metrics(filtered)
+                solution, idx = get_centroid_solution(filtered, normalized)
+                solution_path = solution["path"]
+
+        # Determine response type
+        if clusters_data is not None:
+            response_type = "clusters"
+        elif solution_path is not None:
+            response_type = "solution_update"
+        else:
+            response_type = "text"
+
+        return {
+            "text": final_content,
+            "response_type": response_type,
+            "clusters": clusters_data,
+            "solution_path": solution_path,
+        }
+
+    def _build_clusters_response(self) -> list:
+        """Build cluster data for frontend response."""
+        if self._cluster_labels is None:
+            return []
+
+        clusters = []
+        n_clusters = len(self._cluster_centers)
+
+        for cluster_id in range(n_clusters):
+            mask = self._cluster_labels == cluster_id
+            cluster_solutions = self._clustered_solutions[mask]
+
+            if len(cluster_solutions) == 0:
+                continue
+
+            # Get centroid solution for this cluster
+            normalized = normalize_metrics(cluster_solutions)
+            centroid_solution, _ = get_centroid_solution(cluster_solutions, normalized)
+
+            direction_info = self._cluster_directions.get(cluster_id, {})
+
+            clusters.append({
+                "id": cluster_id + 1,  # 1-indexed for user display
+                "label": direction_info.get("direction_label", f"Cluster {cluster_id + 1}"),
+                "count": int(mask.sum()),
+                "path": centroid_solution["path"],
+            })
+
+        return clusters

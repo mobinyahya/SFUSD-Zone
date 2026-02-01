@@ -1,11 +1,21 @@
 """FastAPI server for SFUSD Zoning Dashboard."""
+import uuid
+import logging
+import traceback
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from pydantic import BaseModel
+from typing import Optional
 from urllib.parse import unquote
+
+# Add project root to path for LLM imports
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from data_loader import (
     get_clusters,
@@ -14,8 +24,38 @@ from data_loader import (
     load_geojson,
     get_zone_color,
 )
+from LLM.exploration.zoning_agent import ZoningAgent
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Path to the solutions CSV
+DEFAULT_CSV_PATH = "/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/recursive_metrics_flattened.csv"
+
+# Session storage for ZoningAgent instances
+agent_sessions: dict[str, ZoningAgent] = {}
+
+# Thread pool for running blocking agent calls
+executor = ThreadPoolExecutor(max_workers=4)
 
 app = FastAPI(title="SFUSD Zoning Dashboard API")
+
+# Pre-loaded agent for faster first response
+_preloaded_agent: Optional[ZoningAgent] = None
+
+
+@app.on_event("startup")
+def startup_event():
+    """Pre-load the agent on startup to avoid first-request delay."""
+    global _preloaded_agent
+    logger.info("Pre-loading ZoningAgent on startup...")
+    try:
+        _preloaded_agent = ZoningAgent(DEFAULT_CSV_PATH)
+        logger.info("ZoningAgent pre-loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to pre-load agent: {e}")
+        logger.error(traceback.format_exc())
 
 # CORS for development
 app.add_middleware(
@@ -33,13 +73,23 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 class ChatRequest(BaseModel):
     message: str
-    cluster_label: str = ""
+    session_id: Optional[str] = None
 
 
 @app.get("/")
 async def root():
     """Serve the frontend."""
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint to verify agent status."""
+    return {
+        "status": "ok",
+        "agent_preloaded": _preloaded_agent is not None,
+        "active_sessions": len(agent_sessions),
+    }
 
 
 @app.get("/api/clusters")
@@ -98,14 +148,55 @@ async def get_geojson_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def get_or_create_agent(session_id: Optional[str]) -> tuple[str, ZoningAgent]:
+    """Get existing agent for session or create a new one."""
+    global _preloaded_agent
+
+    if session_id and session_id in agent_sessions:
+        logger.info(f"Reusing existing agent for session {session_id}")
+        return session_id, agent_sessions[session_id]
+
+    # Create new session
+    new_session_id = str(uuid.uuid4())
+
+    # Use pre-loaded agent for first session if available
+    if _preloaded_agent is not None:
+        logger.info(f"Using pre-loaded agent for session {new_session_id}")
+        agent = _preloaded_agent
+        _preloaded_agent = None  # Only use once
+    else:
+        logger.info(f"Creating new agent for session {new_session_id}...")
+        agent = ZoningAgent(DEFAULT_CSV_PATH)
+        logger.info(f"Agent created for session {new_session_id}")
+
+    agent_sessions[new_session_id] = agent
+    return new_session_id, agent
+
+
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
-    """Placeholder chat endpoint."""
-    label_info = f" Currently viewing: {request.cluster_label}" if request.cluster_label else ""
-    return {
-        "response": f"Agent connection coming soon.{label_info}",
-        "agent_connected": False,
-    }
+def chat(request: ChatRequest):
+    """Chat with the ZoningAgent (sync endpoint for blocking LLM calls)."""
+    try:
+        logger.info(f"Chat request: {request.message[:100]}...")
+        session_id, agent = get_or_create_agent(request.session_id)
+
+        # Call agent with metadata tracking
+        logger.info("Calling agent.chat_with_metadata...")
+        result = agent.chat_with_metadata(request.message)
+        logger.info(f"Agent response type: {result.get('response_type')}")
+        logger.info(f"Agent text length: {len(result.get('text', ''))}")
+
+        return {
+            "text": result["text"],
+            "response_type": result["response_type"],
+            "clusters": result.get("clusters"),
+            "solution_path": result.get("solution_path"),
+            "session_id": session_id,
+        }
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
