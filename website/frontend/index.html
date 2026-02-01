@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFUSD Zoning Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>SFUSD Zoning Explorer</h1>
+        <div id="cluster-selector">
+            <label for="cluster-dropdown">Select a zoning approach:</label>
+            <select id="cluster-dropdown" disabled>
+                <option value="">Loading clusters...</option>
+            </select>
+        </div>
+    </header>
+
+    <main>
+        <section id="map-panel">
+            <div id="map"></div>
+            <div id="map-placeholder" class="placeholder">
+                <p>Select a zoning approach above to view the map</p>
+            </div>
+        </section>
+
+        <section id="chat-panel">
+            <div id="chat-header">
+                <h2>Chat with Zoning Agent</h2>
+            </div>
+            <div id="chat-messages">
+                <div class="message system">
+                    Welcome! Select a zoning approach from the dropdown to explore solutions.
+                </div>
+            </div>
+            <div id="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Ask about this zoning solution..." disabled>
+                <button id="chat-send" disabled>Send</button>
+            </div>
+        </section>
+    </main>
+
+    <footer id="charts-panel">
+        <div id="demographics-chart-container">
+            <h3>Zone Demographics (FRL %)</h3>
+            <canvas id="demographics-chart"></canvas>
+        </div>
+        <div id="students-chart-container">
+            <h3>Students per Zone</h3>
+            <canvas id="students-chart"></canvas>
+        </div>
+    </footer>
+
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+        <p>Loading solution data...</p>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
