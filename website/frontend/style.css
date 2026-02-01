@@ -47,6 +47,7 @@ main {
     gap: 0;
     min-height: 0;
     overflow: hidden;
+    overflow: hidden;
 }
 
 #map-panel {
@@ -97,6 +98,8 @@ main {
     background: var(--panel-bg);
     overflow: hidden;
     min-height: 0;
+    overflow: hidden;
+    min-height: 0;
 }
 
 #chat-header {
@@ -116,6 +119,7 @@ main {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 0;
     min-height: 0;
 }
 
@@ -154,9 +158,17 @@ main {
     font-weight: 600;
 }
 
-.message.assistant h1 { font-size: 1.1rem; }
-.message.assistant h2 { font-size: 1.0rem; }
-.message.assistant h3 { font-size: 0.95rem; }
+.message.assistant h1 {
+    font-size: 1.1rem;
+}
+
+.message.assistant h2 {
+    font-size: 1.0rem;
+}
+
+.message.assistant h3 {
+    font-size: 0.95rem;
+}
 
 .message.assistant p {
     margin: 4px 0;
@@ -259,7 +271,7 @@ footer#charts-panel {
     height: 220px;
 }
 
-#charts-panel > div {
+#charts-panel>div {
     display: flex;
     flex-direction: column;
 }
@@ -307,7 +319,9 @@ footer#charts-panel {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Leaflet tooltip styling */
