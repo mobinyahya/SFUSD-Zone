@@ -457,8 +457,7 @@ class BooleanConstraintProgram(Optimizer):
                     self.m.Add(b >= self.x[zone][j] - self.x[zone][i])
 
                     boundary_vars.append(b)
-
-        self.m.Minimize(sum(boundary_vars))
+        self.m.Minimize(cp_model.LinearExpr.Sum(boundary_vars))
 
     def add_choice_objective(self):
         # for every area, we create a variable representing the value that the area gets from the choice set
@@ -508,7 +507,7 @@ class BooleanConstraintProgram(Optimizer):
             self._add_hints()
 
         solver = cp_model.CpSolver()
-        log_file = self._add_solver_parameters(solver)
+        log_file = self._add_solver_parameters(solver, objective_threshold=self.config.get('objective_threshold'))
         status = solver.Solve(self.m)
         if log_file is not None:
             print("Closing log file.")
@@ -524,7 +523,7 @@ class BooleanConstraintProgram(Optimizer):
         return SolutionOutput(zone_dict, objective_value,
                               solver.StatusName(status), wall_time, self.G, self.config)
 
-    def _add_solver_parameters(self, solver):
+    def _add_solver_parameters(self, solver, objective_threshold=None, minimize=True):
         solver.parameters.max_time_in_seconds = self.config['solve_time_limit']
         solver.parameters.max_presolve_iterations = 10
         solver.parameters.relative_gap_limit = self.config.get('relative_gap_limit', 0)
@@ -536,8 +535,8 @@ class BooleanConstraintProgram(Optimizer):
             solver.parameters.num_search_workers = 16
 
         # important to think about this parameter and thourhgly test later. for now leave at 1
-        solver.parameters.linearization_level = 1
-        solver.parameters.symmetry_level = 4
+        solver.parameters.linearization_level = 2
+        solver.parameters.symmetry_level = 2
         # solver.parameters.keep_symmetry_in_presolve = True
         # solver.parameters.use_symmetry_in_lp = True
 
@@ -550,9 +549,11 @@ class BooleanConstraintProgram(Optimizer):
             log_file_path = f"{log_folder}/{self.config['level']}_log.txt"
 
             class CallbackHandler:
-                def __init__(self, config):
-                    self.log_file = open(log_file_path, "w")
-                    self.best_objective = float('inf')
+                def __init__(self, config, objective_threshold=None, minimize=True):
+                    self.log_file = open(log_file_path, "w", encoding='utf-8')
+                    self.best_objective = float('inf') if minimize else float('-inf')
+                    self.objective_threshold = objective_threshold
+                    self.minimize = minimize
                     self.last_objective_time = time.time()
                     self.stall_limit = config.get('stall_time_limit', -1)  # in seconds
                     self.stopped = False
@@ -563,23 +564,36 @@ class BooleanConstraintProgram(Optimizer):
                     self.log_file.flush()
 
                     cur_time = time.time()
-                    cur_best_objective = self.best_objective
+
+                    # Parse current objective from log message
                     if 'best:' in message:
                         # take the number in between best: and next:
                         parts = message.split('best:')
                         cur_best_objective = float(parts[1].split('next:')[0].strip())
 
-                    if cur_time - self.last_objective_time > self.stall_limit > 0:
-                        if cur_best_objective < self.best_objective:
+                        # Update best_objective whenever we find a better value
+                        if (self.minimize and cur_best_objective < self.best_objective) or \
+                           (not self.minimize and cur_best_objective > self.best_objective):
                             self.best_objective = cur_best_objective
                             self.last_objective_time = cur_time
-                        elif not self.stopped:
-                            self.stopped = True
-                            print(
-                                f"Stopping solver due to stall in objective improvement at time {cur_time - self.start_time}.")
+
+                    # Check objective threshold
+                    if self.objective_threshold is not None:
+                        if self.minimize and self.best_objective < self.objective_threshold:
+                            print(f"Stopping solver: objective {self.best_objective} reached threshold {self.objective_threshold}")
+                            solver.StopSearch()
+                        elif not self.minimize and self.best_objective > self.objective_threshold:
+                            print(f"Stopping solver: objective {self.best_objective} reached threshold {self.objective_threshold}")
                             solver.StopSearch()
 
-            callback_handler = CallbackHandler(self.config)
+                    # Check stall time
+                    if self.stall_limit > 0 and cur_time - self.last_objective_time > self.stall_limit:
+                        if not self.stopped:
+                            self.stopped = True
+                            print(f"Stopping solver due to stall in objective improvement at time {cur_time - self.start_time}.")
+                            solver.StopSearch()
+
+            callback_handler = CallbackHandler(self.config, objective_threshold=objective_threshold, minimize=minimize)
             # Assign the callback and solve
             solver.log_callback = callback_handler.on_log_message
             log_file = callback_handler.log_file

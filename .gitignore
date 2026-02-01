@@ -5,3 +5,4 @@ SFUSD
 *.DS_STORE
 output/*
 .env
+.venv

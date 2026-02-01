@@ -38,7 +38,7 @@ relative_gap_limits: [ 0, 0 ]
 solve_time_limits: [ 30,30 ] # seconds
 
 
-relative_gap_limit: 0.1
+# relative_gap_limit: 0.1
 #log_folder: '.'
 solve_time_limit: 60 # seconds
 #stall_time_limit: 20 # seconds

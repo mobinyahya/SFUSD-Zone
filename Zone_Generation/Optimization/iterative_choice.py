@@ -1,8 +1,12 @@
+import os
+
+import pandas as pd
 from ortools.sat.python import cp_model
+
 from Zone_Generation.Optimization.constraint_program_integer import IntegerConstraintProgram
 from Zone_Generation.Optimization.utility_evaluation import UtilityEvaluator
 from Zone_Generation.Config.Constants import SCALING_CONST
-import pandas as pd
+from Zone_Generation.Optimization.optimizer import SolutionOutput
 
 class IterativeChoiceOptimizer(IntegerConstraintProgram):
     def __init__(self, config):
@@ -63,21 +67,26 @@ class IterativeChoiceOptimizer(IntegerConstraintProgram):
         if self.config['use_hints']:
             self._add_hints()
 
-        solver = cp_model.CpSolver()
-        log_file = self._add_solver_parameters(solver)
         
         # Iteration Loop
         best_solution = None
+        solver = cp_model.CpSolver()
+        original_log_folder = self.config['log_folder']
         
         for iteration in range(self.max_iterations):
             if iteration == 4 * self.max_iterations // 5:
                 # doubling the solve time limit
                 self.config['solve_time_limit'] *= 2
             print(f"\n=== Iteration {iteration + 1} / {self.max_iterations} ===")
+            self.config['log_folder'] = f"{original_log_folder}/iter_{iteration}"
+            os.makedirs(self.config['log_folder'], exist_ok=True)
             
             # Solve current model
+            log_file = self._add_solver_parameters(solver, objective_threshold=(self.best_real_utility+ 500) * SCALING_CONST, minimize=False)
             status = solver.Solve(self.m)
             status_name = solver.StatusName(status)
+            # close the log file
+            log_file.close()
             
             model_obj = 0.0
             if status == cp_model.OPTIMAL:
@@ -294,7 +303,7 @@ class IterativeChoiceOptimizer(IntegerConstraintProgram):
                         linear_expr += cp_model.LinearExpr.WeightedSum(term_vars, term_coeffs)
                     
                     # Apply cut: If assigned to zone z, then utility <= linear_expr
-                    self.m.Add(self.area_utility_vars[i] <= linear_expr+10).OnlyEnforceIf(self.x[z][i])
+                    self.m.Add(self.area_utility_vars[i] <= linear_expr).OnlyEnforceIf(self.x[z][i])
                     cuts_added += 1
             
             print(f"Added {cuts_added} Benders cuts.")
@@ -311,22 +320,22 @@ class IterativeChoiceOptimizer(IntegerConstraintProgram):
                         if val:
                             self.m.AddHint(self.y[i], z)
             
+            print(f"Best Real Utility: {self.best_real_utility}")
+            
             # Optionally check convergence
-            best_solution = self._generate_solution_output(solver, status, zone_dict, model_obj)
+            # best_solution = self._generate_solution_output(solver, status, zone_dict, model_obj)
             
             # Debug: Save output to local folder
-            import os
-            debug_dir = f"debug_output/iter_{iteration}"
-            if not os.path.exists(debug_dir):
-                os.makedirs(debug_dir, exist_ok=True)
-            print(f"Saving debug output to {debug_dir}")
-            best_solution.save_output(debug_dir)
+            # debug_dir = f"debug_output/iter_{iteration}"
+            # if not os.path.exists(debug_dir):
+            #     os.makedirs(debug_dir, exist_ok=True)
+            # print(f"Saving debug output to {debug_dir}")
+            # best_solution.save_output(debug_dir)
             
         return best_solution
 
 
     def _generate_solution_output(self, solver, status, zone_dict, obj_val):
-        from Zone_Generation.Optimization.optimizer import SolutionOutput
         wall_time = solver.WallTime()
         status_name = solver.StatusName(status)
         return SolutionOutput(zone_dict, obj_val, status_name, wall_time, self.G, self.config)

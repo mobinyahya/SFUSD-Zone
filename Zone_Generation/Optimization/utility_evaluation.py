@@ -84,13 +84,17 @@ class UtilityEvaluator:
         
         # 3. Map students to zones
         student_col = 'census_blockgroup' if level == 'BlockGroup' else 'census_block'
-        merged_df = self.student_df.merge(self.utility_df, on='studentno')
+        # Defragment after merge to avoid PerformanceWarning when adding columns
+        merged_df = self.student_df.merge(self.utility_df, on='studentno').copy()
         
-        def get_zone(val):
-            if pd.isnull(val): return None
-            return area_to_zone.get(str(int(float(val))))
-
-        merged_df['assigned_zone'] = merged_df[student_col].apply(get_zone)
+        # Vectorized zone mapping - convert block values to string keys and map
+        block_values = merged_df[student_col].values
+        assigned_zones = np.array([
+            area_to_zone.get(str(int(float(val)))) if pd.notna(val) else None
+            for val in block_values
+        ], dtype=object)
+        merged_df['assigned_zone'] = assigned_zones
+        
         initial_count = len(merged_df)
         merged_df = merged_df.dropna(subset=['assigned_zone'])
         if len(merged_df) < initial_count:
@@ -115,30 +119,38 @@ class UtilityEvaluator:
         merged_df, zone_to_cols, student_col = self._get_merged_data(zone_dict, G, level)
         
         print(f"Calculating utility metrics using method='{method}'...")
-        results = []
-        for zone_id, group in merged_df.groupby('assigned_zone'):
+        
+        # Pre-allocate utility array for all students
+        n_students = len(merged_df)
+        utilities = np.full(n_students, np.nan)
+        
+        # Get the index positions for each zone group
+        for zone_id, group_idx in merged_df.groupby('assigned_zone').groups.items():
             cols = zone_to_cols.get(zone_id, [])
+            idx_positions = merged_df.index.get_indexer(group_idx)
+            
             if not cols:
-                group['utility'] = -np.inf
+                utilities[idx_positions] = -np.inf
             else:
+                group_data = merged_df.loc[group_idx, cols].values
                 if method == 'max':
-                    group['utility'] = group[cols].max(axis=1)
+                    utilities[idx_positions] = np.max(group_data, axis=1)
                 elif method == 'logsum':
-                    # logsumexp for numerical stability
-                    group['utility'] = logsumexp(group[cols].values, axis=1)
-            results.append(group)
+                    utilities[idx_positions] = logsumexp(group_data, axis=1)
         
-        if results:
-            evaluated_df = pd.concat(results)
-        else:
-            evaluated_df = merged_df.copy()
-            evaluated_df['utility'] = np.nan
+        # Create evaluated dataframe efficiently
+        evaluated_df = pd.DataFrame({
+            'studentno': merged_df['studentno'].values,
+            'utility': utilities,
+            'assigned_zone': merged_df['assigned_zone'].values
+        })
         
-        # Aggregate by block
-        block_utilities = evaluated_df.groupby(student_col)['utility'].sum()
+        # Aggregate by block using the original index alignment
+        block_col_values = merged_df[student_col].values
+        block_utilities = pd.Series(utilities, index=block_col_values).groupby(level=0).sum()
 
         return {
-            'student_utilities': evaluated_df[['studentno', 'utility', 'assigned_zone']],
+            'student_utilities': evaluated_df,
             'block_utilities': block_utilities
         }
 
@@ -158,6 +170,10 @@ class UtilityEvaluator:
         """
         merged_df, zone_to_cols, student_col = self._get_merged_data(zone_dict, G, level)
         
+        # Reset index for consistent integer indexing
+        merged_df = merged_df.reset_index(drop=True)
+        n_students = len(merged_df)
+        
         # 1. Map each school ID to its CURRENT zone
         school_to_current_zone = {}
         for node_id, zone_id in zone_dict.items():
@@ -170,11 +186,23 @@ class UtilityEvaluator:
                     school_to_current_zone[str(sid)] = zone_id
 
         all_schools = sorted(self.school_to_cols.keys())
+        n_schools = len(all_schools)
+        school_to_idx = {sid: i for i, sid in enumerate(all_schools)}
 
         print(f"Calculating granular utility impacts (add/remove) using method='{method}'...")
-        student_impact_records = []
+        
+        # Pre-allocate arrays for results
+        # We'll store impacts in a 2D array (students x schools) and types separately
+        impact_matrix = np.zeros((n_students, n_schools), dtype=np.float64)
+        type_matrix = np.empty((n_students, n_schools), dtype=object)
+        valid_mask = np.zeros((n_students, n_schools), dtype=bool)
+        
+        # Pre-extract numpy arrays for efficiency
+        studentno_arr = merged_df['studentno'].values
+        block_arr = merged_df[student_col].values
         
         for zone_id, group in merged_df.groupby('assigned_zone'):
+            group_indices = group.index.values  # These are now integer positions
             cols = zone_to_cols.get(zone_id, [])
             
             # Precalculate baseline per student in this zone
@@ -191,8 +219,10 @@ class UtilityEvaluator:
             
             for sid in all_schools:
                 sid_cols = [c for c in self.school_to_cols[sid] if c in group.columns]
-                if not sid_cols: continue
+                if not sid_cols: 
+                    continue
                 
+                sid_idx = school_to_idx[sid]
                 is_in_zone = (school_to_current_zone.get(sid) == zone_id)
                 sid_utils_matrix = group[sid_cols].values
                 
@@ -209,7 +239,7 @@ class UtilityEvaluator:
                         # Addition impact: U_new - U = ln(1 + exp(V_s - U))
                         student_impacts = np.log1p(np.exp(diff))
                         type_str = 'add'
-                else: # max
+                else:  # max
                     sid_max = sid_utils_matrix.max(axis=1)
                     if is_in_zone:
                         remaining_cols = [c for c in cols if c not in sid_cols]
@@ -223,26 +253,29 @@ class UtilityEvaluator:
                         new_utils = np.maximum(baseline_utils, sid_max)
                         student_impacts = new_utils - baseline_utils
                         type_str = 'add'
-
-                # Create records for each student in the group
-                # To be memory efficient, we only record non-zero impacts if possible, 
-                # but the requirement says "for every block and student"
-                temp_df = pd.DataFrame({
-                    'studentno': group['studentno'].values,
-                    student_col: group[student_col].values,
-                    'school_id': sid,
-                    'type': type_str,
-                    'impact': student_impacts
-                })
-                student_impact_records.append(temp_df)
+                
+                # Store in pre-allocated arrays
+                impact_matrix[group_indices, sid_idx] = student_impacts
+                type_matrix[group_indices, sid_idx] = type_str
+                valid_mask[group_indices, sid_idx] = True
         
-        if not student_impact_records:
+        # Build dataframe from valid entries only
+        valid_students, valid_schools = np.where(valid_mask)
+        
+        if len(valid_students) == 0:
             return {
                 'student_impacts': pd.DataFrame(columns=['studentno', student_col, 'school_id', 'type', 'impact']),
                 'block_impacts': pd.DataFrame(columns=[student_col, 'school_id', 'type', 'impact'])
             }
-
-        student_impact_df = pd.concat(student_impact_records, ignore_index=True)
+        
+        # Construct final dataframe in one go
+        student_impact_df = pd.DataFrame({
+            'studentno': studentno_arr[valid_students],
+            student_col: block_arr[valid_students],
+            'school_id': [all_schools[i] for i in valid_schools],
+            'type': type_matrix[valid_students, valid_schools],
+            'impact': impact_matrix[valid_students, valid_schools]
+        })
         
         # Aggregate by block
         block_impact_df = student_impact_df.groupby([student_col, 'school_id', 'type'])['impact'].sum().reset_index()

@@ -23,7 +23,7 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
                 print('Area ', i, ' has no valid zones to be assigned to.')
                 self.m.add(False)
                 continue
-            var = self.m.NewIntVarFromDomain(Domain.FromValues(self.valid_zone_per_area[i]), f"area_{i}_zone_idx")
+            var = self.m.NewIntVarFromDomain(Domain.FromValues(list(self.valid_zone_per_area[i])), f"area_{i}_zone_idx")
             for z in self.valid_zone_per_area[i]:
                 self.m.Add(var == z).OnlyEnforceIf(self.x[z][i])
                 self.m.Add(var != z).OnlyEnforceIf(self.x[z][i].Not())
@@ -31,52 +31,51 @@ class IntegerConstraintProgram(BooleanConstraintProgram):
             y.append(var)
         return y
 
-    def add_school_access_variables(self):
-        # we define area i as having access to a school if it is assigned to the same zone as the school
-        school_id_2_area = {}
-        for node in self.G.nodes(data=True):
-            area_idx = node[0]
-            school_ids = node[1]['school_ids']
-            for school_id in school_ids:
-                school_id_2_area[school_id] = area_idx
-        school_access_vars = {}  # define whether area i has access to school s
-        for area_id in range(self.A):
-            for school_id in school_id_2_area.keys():
-                access_var = self.m.NewBoolVar(f"area_{area_id}_access_school_{school_id}")
-                school_area = school_id_2_area[school_id]
-                school_access_vars[(area_id, school_area)] = access_var
+    # def add_school_access_variables(self):
+    #     # we define area i as having access to a school if it is assigned to the same zone as the school
+    #     school_id_2_area = {}
+    #     for node in self.G.nodes(data=True):
+    #         area_idx = node[0]
+    #         school_ids = node[1]['school_ids']
+    #         for school_id in school_ids:
+    #             school_id_2_area[school_id] = area_idx
+    #     school_access_vars = {}  # define whether area i has access to school s
+    #     for area_id in range(self.A):
+    #         for school_id, school_area in school_id_2_area.items():
+    #             access_var = self.m.NewBoolVar(f"area_{area_id}_access_school_{school_id}")
+    #             school_access_vars[(area_id, school_area)] = access_var
 
-                # if area and school_area are assigned to the same zone, then access_var = 1
-                self.m.Add(self.y[area_id] == self.y[school_area]).OnlyEnforceIf(access_var)
-                self.m.Add(self.y[area_id] != self.y[school_area]).OnlyEnforceIf(access_var.Not())
-        return school_id_2_area, school_access_vars
+    #             # if area and school_area are assigned to the same zone, then access_var = 1
+    #             self.m.Add(self.y[area_id] == self.y[school_area]).OnlyEnforceIf(access_var)
+    #             self.m.Add(self.y[area_id] != self.y[school_area]).OnlyEnforceIf(access_var.Not())
+    #     return school_id_2_area, school_access_vars
 
-    def _closest_school_const(self):
-        # ensure that the closet school to each area is within a certain distance
-        max_distance = self.config.get('closest_school_max_distance')
-        if not max_distance:
-            return
-        for i in range(self.A):
-            # iterate through all schools to find the closest one
-            # get distance from area i to each school
+    # def _closest_school_const(self):
+    #     # ensure that the closet school to each area is within a certain distance
+    #     max_distance = self.config.get('closest_school_max_distance')
+    #     if not max_distance:
+    #         return
+    #     for i in range(self.A):
+    #         # iterate through all schools to find the closest one
+    #         # get distance from area i to each school
 
-            # use the fact that the distance dict in the graph is from school to area
-            close_enough_schools = []
-            for school_area in self.G.graph['distance_dict'].keys():
-                dist = self.G.graph['distance_dict'][school_area][i]
-                if dist < max_distance:
-                    close_enough_schools.append(school_area)
+    #         # use the fact that the distance dict in the graph is from school to area
+    #         close_enough_schools = []
+    #         for school_area in self.G.graph['distance_dict'].keys():
+    #             dist = self.G.graph['distance_dict'][school_area][i]
+    #             if dist < max_distance:
+    #                 close_enough_schools.append(school_area)
 
-            if not close_enough_schools:
-                print(f"Area {i} has no schools within the max distance of {max_distance}.")
-                self.m.Add(False)
-            # at least one of the close enough schools must be assigned to the same zone as area i
-            access_vars = []
-            for school_area in close_enough_schools:
-                access_var = self.school_access_vars.get((i, school_area))
-                if access_var is not None:
-                    access_vars.append(access_var)
-            self.m.AddBoolOr(access_vars)
+    #         if not close_enough_schools:
+    #             print(f"Area {i} has no schools within the max distance of {max_distance}.")
+    #             self.m.Add(False)
+    #         # at least one of the close enough schools must be assigned to the same zone as area i
+    #         access_vars = []
+    #         for school_area in close_enough_schools:
+    #             access_var = self.school_access_vars.get((i, school_area))
+    #             if access_var is not None:
+    #                 access_vars.append(access_var)
+    #         self.m.AddBoolOr(access_vars)
 
     def add_boundary_objective(self):
         boundary_vars = []

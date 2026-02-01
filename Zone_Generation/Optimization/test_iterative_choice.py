@@ -2,7 +2,6 @@ import os
 import sys
 import yaml
 import time
-import pandas as pd
 
 # Change to Optimization dir so relative paths in optimizer.py work
 target_dir = "/home/kumarc/sfusd/SFUSD-Zone/Zone_Generation/Optimization"
@@ -21,11 +20,15 @@ with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 # Override for testing
-config['max_iterations'] = 40
-config['solve_time_limit'] = 60
+config['max_iterations'] = 75
+config['solve_time_limit'] = 2.5 * 60
 config['level'] = 'BlockGroup_1' # Reduced problem size
 config['is_local'] = False 
 config['use_hints'] = True # Disable hints to speed up setup if they rely on other things
+config['log_folder'] = '/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/iterative_choice_test'
+
+# add extra directory with current timestamp
+config['log_folder'] += '/' + time.strftime("%Y%m%d_%H%M%S")
 
 print(f"Using level: {config['level']}")
 

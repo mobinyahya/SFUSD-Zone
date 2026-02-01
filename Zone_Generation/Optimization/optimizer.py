@@ -6,9 +6,9 @@ import networkx
 import yaml
 
 from Graphic_Visualization.zone_viz import ZoneVisualizer
-from Helper_Functions.util import Compute_Name, convert_to_block_zone_dict, compute_zone_deviations, \
-    compute_zone_demographics
+from Helper_Functions.util import Compute_Name, convert_to_block_zone_dict, compute_zone_demographics
 from Zone_Generation.Config.Constants import get_dropbox_path
+import matplotlib.pyplot as plt
 
 
 class SolutionOutput:
@@ -71,7 +71,6 @@ class SolutionOutput:
             zv = ZoneVisualizer(self.config['level'].split('_')[0], self.config['is_local'])
             zv.zones_from_dict(self.block_zone_dict, save_path=file_name)
             # close the plot
-            import matplotlib.pyplot as plt
             plt.close()
 
         output_info = {
