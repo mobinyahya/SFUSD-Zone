@@ -1751,3 +1751,5 @@ Closing log file.
 Closing log file.
 [17:02:53]   Status: OPTIMAL, Time: 10.2s, Boundary: 97
 [17:02:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+/home/kumarc/.local/share/uv/python/cpython-3.13.11-linux-x86_64-gnu/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 5 leaked semaphore objects to clean up at shutdown: {'/mp-9q60dgja', '/mp-w8ipgijh', '/mp-t2p56zkw', '/mp-_9b8fa21', '/mp-fp5uu0_n'}
+  warnings.warn(

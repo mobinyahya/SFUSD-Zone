@@ -193,7 +193,7 @@ def main():
                               help='Number of parallel workers (default: 5, ~30 cores with CP-SAT)')
     batch_parser.add_argument('--skip-existing', action='store_true',
                               help='Skip scenarios with existing results')
-    batch_parser.add_argument('--max-tasks-per-worker', type=int, default=50,
+    batch_parser.add_argument('--max-tasks-per-worker', type=int, default=100,
                               help='Recycle workers after N tasks (memory leak prevention)')
     batch_parser.add_argument('--sequential', action='store_true',
                               help='Run sequentially instead of parallel (for debugging)')

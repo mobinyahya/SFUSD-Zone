@@ -8,7 +8,7 @@ import os
 import signal
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -193,61 +193,88 @@ class ParallelRunner:
                 max_workers=self.config.max_workers,
                 max_tasks_per_child=self.config.max_tasks_per_worker,
             ) as executor:
-                # Submit all tasks
+                # Use a throttled submission approach to avoid deadlocking the executor
+                # when faced with thousands of tasks and worker recycling.
                 future_to_config = {}
-                for config, output_folder in tasks:
-                    if self._shutdown_event.is_set():
-                        break
-                    future = executor.submit(_run_single_scenario, config, output_folder, project_root)
-                    future_to_config[future] = (config, output_folder)
+                task_iter = iter(tasks)
                 
-                # Collect results as they complete
+                # Submit initial batch (2x workers to keep queue full but not overloaded)
+                initial_batch_size = self.config.max_workers * 2
+                for _ in range(initial_batch_size):
+                    try:
+                        config, output_folder = next(task_iter)
+                        if self._shutdown_event.is_set():
+                            break
+                        future = executor.submit(_run_single_scenario, config, output_folder, project_root)
+                        future_to_config[future] = (config, output_folder)
+                    except StopIteration:
+                        break
+                
+                # Collect results and feed new tasks
                 scenario_times = []
-                for future in as_completed(future_to_config):
+                from concurrent.futures import wait, FIRST_COMPLETED
+                
+                while future_to_config:
                     if self._shutdown_event.is_set():
                         # Cancel remaining futures
                         for f in future_to_config:
                             f.cancel()
                         break
                     
-                    config, output_folder = future_to_config[future]
-                    scenario_start = time.time()
+                    # Wait for at least one future to complete
+                    done, _ = wait(future_to_config.keys(), return_when=FIRST_COMPLETED)
                     
-                    try:
-                        result = future.result()
-                        batch_result.add_result(result)
-                        status = 'success' if result.status not in ['ERROR', 'INFEASIBLE'] else 'error'
-                    except Exception as e:
-                        if self.config.continue_on_error:
-                            error_result = BenchmarkResult.from_error(e, config.to_optimizer_config())
-                            batch_result.add_result(error_result)
-                            status = 'error'
+                    for future in done:
+                        config, output_folder = future_to_config.pop(future)
+                        scenario_start = time.time()
+                        
+                        try:
+                            # Use a short timeout to be safe, but result() should be ready
+                            result = future.result()
+                            batch_result.add_result(result)
+                            status = 'success' if result.status not in ['ERROR', 'INFEASIBLE'] else 'error'
+                        except (Exception, BaseException) as e:
+                            # Catch BaseException (like SystemExit) to prevent parent hang
+                            if self.config.continue_on_error:
+                                error_msg = str(e) or e.__class__.__name__
+                                error_result = BenchmarkResult.from_error(Exception(error_msg), config.to_optimizer_config())
+                                batch_result.add_result(error_result)
+                                status = 'error'
+                            else:
+                                raise
+                        
+                        completed += 1
+                        scenario_time = time.time() - scenario_start
+                        scenario_times.append(scenario_time)
+                        
+                        # Estimate remaining time
+                        avg_time = sum(scenario_times) / len(scenario_times)
+                        remaining = batch_result.total - completed
+                        estimated_remaining = avg_time * remaining / max(self.config.max_workers, 1)
+                        
+                        if progress_callback:
+                            progress_callback(ProgressUpdate(
+                                completed=completed,
+                                total=len(configs),
+                                current_scenario=config.get_output_folder_name(),
+                                status=status,
+                                elapsed_seconds=time.time() - start_time,
+                                estimated_remaining_seconds=estimated_remaining,
+                            ))
                         else:
-                            raise
-                    
-                    completed += 1
-                    scenario_time = time.time() - scenario_start
-                    scenario_times.append(scenario_time)
-                    
-                    # Estimate remaining time
-                    avg_time = sum(scenario_times) / len(scenario_times)
-                    remaining = len(tasks) - completed
-                    estimated_remaining = avg_time * remaining / max(self.config.max_workers, 1)
-                    
-                    if progress_callback:
-                        progress_callback(ProgressUpdate(
-                            completed=completed,
-                            total=len(configs),
-                            current_scenario=config.get_output_folder_name(),
-                            status=status,
-                            elapsed_seconds=time.time() - start_time,
-                            estimated_remaining_seconds=estimated_remaining,
-                        ))
-                    else:
-                        # Default progress output
-                        print(f"[{completed}/{len(configs)}] {status.upper()}: "
-                              f"{config.centroids_type} frl={config.frl_dev} "
-                              f"(ETA: {estimated_remaining/60:.1f}min)")
+                            # Default progress output
+                            print(f"[{completed}/{batch_result.total}] {status.upper()}: "
+                                  f"{config.centroids_type} frl={config.frl_dev} "
+                                  f"(ETA: {estimated_remaining/60:.1f}min)", flush=True)
+                        
+                        # Submit next task if we have more
+                        if not self._shutdown_event.is_set():
+                            try:
+                                next_config, next_output_folder = next(task_iter)
+                                next_future = executor.submit(_run_single_scenario, next_config, next_output_folder, project_root)
+                                future_to_config[next_future] = (next_config, next_output_folder)
+                            except StopIteration:
+                                pass
         
         finally:
             self._restore_signal_handler()
