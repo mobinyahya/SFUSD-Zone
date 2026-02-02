@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from Zone_Generation.Running_Analysis.benchmark.config import BenchmarkConfig, ScenarioSweep
 from Zone_Generation.Running_Analysis.benchmark.runner import run_benchmark, run_batch
 from Zone_Generation.Running_Analysis.benchmark.results import aggregate_results
+from Zone_Generation.Running_Analysis.benchmark.parallel import ParallelConfig, ParallelRunner
 
 
 # ============================================================================
@@ -44,11 +45,11 @@ def get_recursive_sweep() -> ScenarioSweep:
         centroids_types=CENTROID_TYPES,
         frl_devs=[0.12, 0.15, 0.2, 0.25],
         racial_devs=[0.12, 0.15, 0.2, 0.25],
-        random_seeds=[42],
+        random_seeds=[42, 14, 20],
         recursive_computations=RECURSIVE_COMPUTATIONS,
         total_times=[4 * 60],
         overages=[0.7, 0.8, 0.9],
-        shortages=[0.15, 0.2, 0.25],
+        shortages=[0.15, 0.2, 0.25]
     )
 
 
@@ -110,17 +111,48 @@ def cmd_run_batch(args):
         configs = configs[:args.limit]
         print(f"Limited to {len(configs)} scenarios")
     
-    results = run_batch(configs, args.output)
+    if args.sequential:
+        # Run sequentially (for debugging)
+        results = run_batch(configs, args.output)
+        batch_result = None
+    else:
+        # Run in parallel
+        parallel_config = ParallelConfig(
+            max_workers=args.workers or 5,
+            skip_existing=args.skip_existing,
+            continue_on_error=True,
+            max_tasks_per_worker=args.max_tasks_per_worker,
+        )
+        runner = ParallelRunner(parallel_config)
+        print(f"Running with {parallel_config.max_workers} parallel workers...")
+        if args.skip_existing:
+            print("Skipping existing results")
+        batch_result = runner.run(configs, args.output)
+        results = batch_result.results
     
     # Summary
-    success = sum(1 for r in results if r.status not in ['ERROR', 'INFEASIBLE'])
     print(f"\n{'='*60}")
-    print(f"Completed: {success}/{len(results)} successful")
+    if batch_result:
+        print(f"Completed: {batch_result.successful}/{batch_result.total} successful")
+        print(f"Failed: {batch_result.failed}, Skipped: {batch_result.skipped}")
+        print(f"Total time: {batch_result.total_wall_time/60:.1f} minutes")
+    else:
+        success = sum(1 for r in results if r.status not in ['ERROR', 'INFEASIBLE'])
+        print(f"Completed: {success}/{len(results)} successful")
 
 
 def cmd_aggregate(args):
     """Aggregate results from a folder into CSV."""
-    df = aggregate_results(args.input, args.output)
+    output = args.output
+    if not output and args.zone_data_dir:
+        output = os.path.join(args.input, "summary.csv")
+        print(f"No output specified. Defaulting to: {output}")
+        
+    df = aggregate_results(
+        args.input, 
+        output, 
+        zone_data_folder=args.zone_data_dir
+    )
     print(f"Aggregated {len(df)} results")
     if not df.empty:
         print("\nSummary:")
@@ -157,12 +189,21 @@ def main():
                               default='recursive', help='Benchmark mode')
     batch_parser.add_argument('--output', '-o', required=True, help='Base output folder')
     batch_parser.add_argument('--limit', type=int, help='Limit number of scenarios')
+    batch_parser.add_argument('--workers', '-w', type=int, default=None,
+                              help='Number of parallel workers (default: 5, ~30 cores with CP-SAT)')
+    batch_parser.add_argument('--skip-existing', action='store_true',
+                              help='Skip scenarios with existing results')
+    batch_parser.add_argument('--max-tasks-per-worker', type=int, default=50,
+                              help='Recycle workers after N tasks (memory leak prevention)')
+    batch_parser.add_argument('--sequential', action='store_true',
+                              help='Run sequentially instead of parallel (for debugging)')
     batch_parser.set_defaults(func=cmd_run_batch)
     
     # Aggregate
     agg_parser = subparsers.add_parser('aggregate', help='Aggregate results to CSV')
     agg_parser.add_argument('--input', '-i', required=True, help='Root folder with results')
     agg_parser.add_argument('--output', '-o', help='Output CSV file')
+    agg_parser.add_argument('--zone-data-dir', '-z', help='Folder to export detailed per-zone CSVs')
     agg_parser.set_defaults(func=cmd_aggregate)
     
     args = parser.parse_args()

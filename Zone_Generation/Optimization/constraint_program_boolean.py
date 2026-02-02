@@ -532,11 +532,11 @@ class BooleanConstraintProgram(Optimizer):
         if self.config['is_local']:
             solver.parameters.num_search_workers = 6
         else:
-            solver.parameters.num_search_workers = 16
+            solver.parameters.num_search_workers = 6
 
         # important to think about this parameter and thourhgly test later. for now leave at 1
-        solver.parameters.linearization_level = 2
-        solver.parameters.symmetry_level = 2
+        solver.parameters.linearization_level = 1
+        solver.parameters.symmetry_level = 4
         # solver.parameters.keep_symmetry_in_presolve = True
         # solver.parameters.use_symmetry_in_lp = True
 

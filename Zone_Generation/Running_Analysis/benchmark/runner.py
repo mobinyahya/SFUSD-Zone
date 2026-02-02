@@ -60,7 +60,7 @@ def run_benchmark(
         # Compute metrics on final solution
         if result.zone_dict:
             optimizer = Optimizer.get_optimizer(opt_config)
-            result.compute_metrics(optimizer.G)
+            result.compute_metrics(optimizer.G, opt_config)
         
         # Save results
         result.save(output_folder)

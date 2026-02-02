@@ -124,18 +124,23 @@ class Optimizer:
         self.A = len(self.G)
 
     def add_constraints(self):
+        """Add optimization constraints to the model. Must be implemented by subclasses."""
         raise NotImplementedError('Subclasses must implement add_constraints')
 
     def add_objective(self):
+        """Add the objective function to the model. Must be implemented by subclasses."""
         raise NotImplementedError('Subclasses must implement add_objective')
 
     def solve(self) -> SolutionOutput:
+        """Solve the optimization model and return results. Must be implemented by subclasses."""
         raise NotImplementedError('Subclasses must implement solve')
 
     def fix_areas(self, fixed_zone_dict):
+        """Fix certain areas to specific zones. Must be implemented by subclasses."""
         raise NotImplementedError('Subclasses must implement fix_areas')
 
     def _add_hints(self):
+        """Add solution hints to warm-start the solver. Must be implemented by subclasses."""
         raise NotImplementedError('Subclasses must implement _add_hints')
 
     @staticmethod

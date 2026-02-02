@@ -1,0 +1,1753 @@
+python: can't open file '/home/kumarc/sfusd/SFUSD-Zone/comparitive_benchmarks.py': [Errno 2] No such file or directory
+Generating 6048 scenarios...
+Running with 5 parallel workers...
+[15:09:09] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:11:10]   Status: FEASIBLE, Time: 120.2s, Boundary: 106
+[15:11:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:13:10]   Status: FEASIBLE, Time: 120.4s, Boundary: 123
+[15:13:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:13:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:14:55]   Status: OPTIMAL, Time: 104.9s, Boundary: 108
+[15:14:55] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:16:56]   Status: FEASIBLE, Time: 120.0s, Boundary: 125
+[15:16:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:16:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:18:56]   Status: FEASIBLE, Time: 120.0s, Boundary: 106
+[15:18:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:20:56]   Status: FEASIBLE, Time: 120.1s, Boundary: 114
+[15:20:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:20:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:22:33]   Status: OPTIMAL, Time: 97.0s, Boundary: 108
+[15:22:33] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:24:34]   Status: FEASIBLE, Time: 120.0s, Boundary: 126
+[15:24:34] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:24:34] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:25:33]   Status: OPTIMAL, Time: 59.0s, Boundary: 104
+[15:25:33] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:27:33]   Status: FEASIBLE, Time: 120.0s, Boundary: 112
+[15:27:33] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:27:33] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:29:22]   Status: OPTIMAL, Time: 108.6s, Boundary: 108
+[15:29:22] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:31:23]   Status: FEASIBLE, Time: 120.4s, Boundary: 121
+[15:31:23] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:31:23] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:31:38]   Status: OPTIMAL, Time: 15.5s, Boundary: 95
+[15:31:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:33:39]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:33:39] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:33:39] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:35:23]   Status: OPTIMAL, Time: 104.6s, Boundary: 108
+[15:35:23] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:37:24]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:37:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:37:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:37:53]   Status: OPTIMAL, Time: 29.4s, Boundary: 95
+[15:37:53] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:39:54]   Status: FEASIBLE, Time: 120.2s, Boundary: 108
+[15:39:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:39:54] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:40:46]   Status: OPTIMAL, Time: 52.0s, Boundary: 101
+[15:40:46] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:42:46]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[15:42:46] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:42:46] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:43:03]   Status: OPTIMAL, Time: 16.8s, Boundary: 95
+[15:43:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:45:04]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:45:04] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:45:04] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:45:44]   Status: OPTIMAL, Time: 39.8s, Boundary: 101
+[15:45:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:47:45]   Status: FEASIBLE, Time: 120.7s, Boundary: 115
+[15:47:45] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:47:45] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:48:15]   Status: OPTIMAL, Time: 30.2s, Boundary: 95
+[15:48:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:50:15]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:50:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:50:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:51:57]   Status: OPTIMAL, Time: 101.2s, Boundary: 108
+[15:51:57] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:53:57]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:53:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:53:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:54:15]   Status: OPTIMAL, Time: 17.4s, Boundary: 95
+[15:54:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:56:15]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:56:15] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:56:15] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:56:46]   Status: OPTIMAL, Time: 30.3s, Boundary: 101
+[15:56:46] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:58:46]   Status: FEASIBLE, Time: 120.1s, Boundary: 115
+[15:58:46] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:58:46] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:59:09]   Status: OPTIMAL, Time: 22.9s, Boundary: 95
+[15:59:09] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:01:09]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:01:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:01:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:01:58]   Status: OPTIMAL, Time: 48.8s, Boundary: 101
+[16:01:58] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:03:59]   Status: FEASIBLE, Time: 120.1s, Boundary: 111
+[16:03:59] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:03:59] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:04:11]   Status: OPTIMAL, Time: 12.5s, Boundary: 95
+[16:04:11] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:06:12]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:06:12] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:06:12] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:06:59]   Status: OPTIMAL, Time: 47.4s, Boundary: 101
+[16:06:59] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:09:00]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:09:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:09:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:09:29]   Status: OPTIMAL, Time: 28.9s, Boundary: 95
+[16:09:29] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:11:29]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:11:29] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:11:29] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:13:21]   Status: OPTIMAL, Time: 111.5s, Boundary: 108
+[16:13:21] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:15:21]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[16:15:21] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:15:21] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:17:03]   Status: OPTIMAL, Time: 101.2s, Boundary: 100
+[16:17:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:19:03]   Status: FEASIBLE, Time: 120.2s, Boundary: 111
+[16:19:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:19:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:19:40]   Status: OPTIMAL, Time: 36.8s, Boundary: 97
+[16:19:40] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:21:41]   Status: FEASIBLE, Time: 120.2s, Boundary: 110
+[16:21:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:21:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:22:44]   Status: OPTIMAL, Time: 63.5s, Boundary: 100
+[16:22:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:24:45]   Status: FEASIBLE, Time: 120.3s, Boundary: 110
+[16:24:45] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:24:45] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:25:18]   Status: OPTIMAL, Time: 33.4s, Boundary: 97
+[16:25:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:27:19]   Status: FEASIBLE, Time: 120.5s, Boundary: 110
+[16:27:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:27:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:27:50]   Status: OPTIMAL, Time: 31.1s, Boundary: 97
+[16:27:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:29:51]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:29:51] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:29:51] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:30:43]   Status: OPTIMAL, Time: 51.9s, Boundary: 96
+[16:30:43] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:32:43]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:32:43] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:32:43] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:32:56]   Status: OPTIMAL, Time: 12.0s, Boundary: 88
+[16:32:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:33:24]   Status: OPTIMAL, Time: 28.1s, Boundary: 101
+[16:33:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:33:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:33:56]   Status: OPTIMAL, Time: 31.4s, Boundary: 96
+[16:33:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:35:56]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:35:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:35:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:36:13]   Status: OPTIMAL, Time: 16.9s, Boundary: 88
+[16:36:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:50]   Status: OPTIMAL, Time: 37.1s, Boundary: 101
+[16:36:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:37:06]   Status: OPTIMAL, Time: 15.8s, Boundary: 90
+[16:37:06] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:38:19]   Status: OPTIMAL, Time: 72.4s, Boundary: 103
+[16:38:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:38:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:38:31]   Status: OPTIMAL, Time: 11.3s, Boundary: 88
+[16:38:31] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:39:02]   Status: OPTIMAL, Time: 30.8s, Boundary: 101
+[16:39:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:39:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:48]   Status: OPTIMAL, Time: 45.9s, Boundary: 96
+[16:39:48] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:02]   Status: OPTIMAL, Time: 74.1s, Boundary: 105
+[16:41:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:41:13]   Status: OPTIMAL, Time: 10.6s, Boundary: 88
+[16:41:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:48]   Status: OPTIMAL, Time: 35.0s, Boundary: 101
+[16:41:48] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:48] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:42:08]   Status: OPTIMAL, Time: 19.6s, Boundary: 88
+[16:42:08] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:43:03]   Status: OPTIMAL, Time: 54.6s, Boundary: 102
+[16:43:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:43:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:43:15]   Status: OPTIMAL, Time: 12.3s, Boundary: 88
+[16:43:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:43:52]   Status: OPTIMAL, Time: 36.2s, Boundary: 101
+[16:43:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:43:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:44:05]   Status: OPTIMAL, Time: 12.7s, Boundary: 88
+[16:44:05] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:44:41]   Status: OPTIMAL, Time: 35.8s, Boundary: 101
+[16:44:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:44:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:45:00]   Status: OPTIMAL, Time: 18.4s, Boundary: 88
+[16:45:00] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:45:36]   Status: OPTIMAL, Time: 36.7s, Boundary: 102
+[16:45:37] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:45:37] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:45:51]   Status: OPTIMAL, Time: 14.7s, Boundary: 88
+[16:45:51] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:46:14]   Status: OPTIMAL, Time: 22.6s, Boundary: 101
+[16:46:14] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:46:14] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:46:28]   Status: OPTIMAL, Time: 13.6s, Boundary: 88
+[16:46:28] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:47:05]   Status: OPTIMAL, Time: 36.7s, Boundary: 101
+[16:47:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:47:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:47:17]   Status: OPTIMAL, Time: 11.4s, Boundary: 88
+[16:47:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:47:48]   Status: OPTIMAL, Time: 31.0s, Boundary: 102
+[16:47:48] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:47:48] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:48:02]   Status: OPTIMAL, Time: 13.7s, Boundary: 88
+[16:48:02] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:48:36]   Status: OPTIMAL, Time: 34.4s, Boundary: 102
+[16:48:36] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:48:36] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:49:14]   Status: OPTIMAL, Time: 37.2s, Boundary: 96
+[16:49:14] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:50:56]   Status: OPTIMAL, Time: 101.8s, Boundary: 105
+[16:50:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:50:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:51:10]   Status: OPTIMAL, Time: 14.2s, Boundary: 88
+[16:51:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:34]   Status: OPTIMAL, Time: 23.3s, Boundary: 101
+[16:51:34] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:34] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:52:12]   Status: OPTIMAL, Time: 38.5s, Boundary: 96
+[16:52:12] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:54:13]   Status: FEASIBLE, Time: 120.2s, Boundary: 105
+[16:54:13] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:54:13] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:54:32]   Status: OPTIMAL, Time: 18.8s, Boundary: 89
+[16:54:32] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:55:03]   Status: OPTIMAL, Time: 31.0s, Boundary: 104
+[16:55:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:55:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:55:20]   Status: OPTIMAL, Time: 16.1s, Boundary: 89
+[16:55:20] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:55:26]   Status: OPTIMAL, Time: 5.8s, Boundary: 103
+[16:55:26] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:55:26] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:55:48]   Status: OPTIMAL, Time: 22.0s, Boundary: 89
+[16:55:48] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:55:53]   Status: OPTIMAL, Time: 4.5s, Boundary: 102
+[16:55:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:55:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:56:34]   Status: OPTIMAL, Time: 41.2s, Boundary: 94
+[16:56:34] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:58:35]   Status: FEASIBLE, Time: 120.1s, Boundary: 110
+[16:58:35] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:09:09] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:11:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:11:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:13:10]   Status: FEASIBLE, Time: 120.3s, Boundary: 125
+[15:13:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:13:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:14:16]   Status: OPTIMAL, Time: 65.3s, Boundary: 104
+[15:14:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:16:16]   Status: FEASIBLE, Time: 120.4s, Boundary: 113
+[15:16:17] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:16:17] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:18:17]   Status: FEASIBLE, Time: 120.3s, Boundary: 106
+[15:18:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:20:17]   Status: FEASIBLE, Time: 120.1s, Boundary: 115
+[15:20:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:20:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:22:16]   Status: OPTIMAL, Time: 118.1s, Boundary: 108
+[15:22:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:24:18]   Status: FEASIBLE, Time: 121.6s, Boundary: 125
+[15:24:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:24:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:26:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 106
+[15:26:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:28:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 115
+[15:28:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:28:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:29:44]   Status: OPTIMAL, Time: 86.0s, Boundary: 108
+[15:29:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:31:45]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:31:45] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:31:45] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:32:00]   Status: OPTIMAL, Time: 14.9s, Boundary: 95
+[15:32:00] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:34:00]   Status: FEASIBLE, Time: 120.2s, Boundary: 108
+[15:34:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:34:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:34:53]   Status: OPTIMAL, Time: 52.2s, Boundary: 101
+[15:34:53] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:36:53]   Status: FEASIBLE, Time: 120.1s, Boundary: 115
+[15:36:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:36:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:37:17]   Status: OPTIMAL, Time: 24.1s, Boundary: 95
+[15:37:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:39:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 109
+[15:39:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:39:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:41:17]   Status: OPTIMAL, Time: 119.0s, Boundary: 108
+[15:41:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:43:18]   Status: FEASIBLE, Time: 120.6s, Boundary: 123
+[15:43:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:43:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:45:18]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:45:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:47:18]   Status: FEASIBLE, Time: 120.1s, Boundary: 121
+[15:47:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:47:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:48:21]   Status: OPTIMAL, Time: 62.6s, Boundary: 101
+[15:48:21] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:50:22]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:50:22] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:50:22] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:52:02]   Status: OPTIMAL, Time: 99.9s, Boundary: 108
+[15:52:02] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:54:02]   Status: FEASIBLE, Time: 120.1s, Boundary: 124
+[15:54:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:54:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:55:29]   Status: OPTIMAL, Time: 86.9s, Boundary: 108
+[15:55:29] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:57:29]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:57:30] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:57:30] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:58:04]   Status: OPTIMAL, Time: 34.1s, Boundary: 101
+[15:58:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:00:04]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:00:04] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:00:04] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:01:40]   Status: OPTIMAL, Time: 95.9s, Boundary: 108
+[16:01:40] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:03:40]   Status: FEASIBLE, Time: 120.0s, Boundary: 126
+[16:03:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:03:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:04:03]   Status: OPTIMAL, Time: 22.2s, Boundary: 95
+[16:04:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:06:03]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:06:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:06:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:07:37]   Status: OPTIMAL, Time: 93.3s, Boundary: 108
+[16:07:37] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:09:37]   Status: FEASIBLE, Time: 120.0s, Boundary: 124
+[16:09:37] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:09:37] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:09:55]   Status: OPTIMAL, Time: 18.0s, Boundary: 95
+[16:09:55] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:11:56]   Status: FEASIBLE, Time: 120.3s, Boundary: 108
+[16:11:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:11:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:12:42]   Status: OPTIMAL, Time: 45.6s, Boundary: 101
+[16:12:42] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:14:43]   Status: FEASIBLE, Time: 120.7s, Boundary: 111
+[16:14:43] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:14:43] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:15:12]   Status: OPTIMAL, Time: 29.1s, Boundary: 95
+[16:15:12] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:17:12]   Status: FEASIBLE, Time: 120.0s, Boundary: 109
+[16:17:12] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:17:12] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:17:58]   Status: OPTIMAL, Time: 45.1s, Boundary: 97
+[16:17:58] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:19:58]   Status: FEASIBLE, Time: 120.1s, Boundary: 111
+[16:19:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:19:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:20:38]   Status: OPTIMAL, Time: 39.8s, Boundary: 97
+[16:20:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:22:38]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:22:38] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:22:38] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:23:33]   Status: OPTIMAL, Time: 55.1s, Boundary: 98
+[16:23:33] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:25:34]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:25:34] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:25:34] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:26:41]   Status: OPTIMAL, Time: 67.0s, Boundary: 100
+[16:26:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:28:41]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:28:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:28:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:29:17]   Status: OPTIMAL, Time: 35.2s, Boundary: 97
+[16:29:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:31:17]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:31:17] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:31:17] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:32:04]   Status: OPTIMAL, Time: 47.0s, Boundary: 96
+[16:32:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:34:05]   Status: FEASIBLE, Time: 120.1s, Boundary: 105
+[16:34:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:34:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:34:13]   Status: OPTIMAL, Time: 7.8s, Boundary: 88
+[16:34:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:35:04]   Status: OPTIMAL, Time: 51.6s, Boundary: 102
+[16:35:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:35:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:35:13]   Status: OPTIMAL, Time: 8.3s, Boundary: 88
+[16:35:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:26]   Status: OPTIMAL, Time: 73.0s, Boundary: 102
+[16:36:27] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:27] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:37:03]   Status: OPTIMAL, Time: 36.1s, Boundary: 96
+[16:37:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:38:59]   Status: OPTIMAL, Time: 116.1s, Boundary: 105
+[16:38:59] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:38:59] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:16]   Status: OPTIMAL, Time: 16.4s, Boundary: 88
+[16:39:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:39:54]   Status: OPTIMAL, Time: 38.3s, Boundary: 101
+[16:39:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:39:54] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:40:02]   Status: OPTIMAL, Time: 7.5s, Boundary: 88
+[16:40:02] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:40:38]   Status: OPTIMAL, Time: 35.4s, Boundary: 102
+[16:40:38] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:40:38] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:40:50]   Status: OPTIMAL, Time: 12.4s, Boundary: 88
+[16:40:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:18]   Status: OPTIMAL, Time: 27.6s, Boundary: 101
+[16:41:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:41:59]   Status: OPTIMAL, Time: 40.4s, Boundary: 96
+[16:41:59] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:43:59]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:43:59] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:43:59] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:44:39]   Status: OPTIMAL, Time: 39.6s, Boundary: 96
+[16:44:39] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:46:13]   Status: OPTIMAL, Time: 94.2s, Boundary: 105
+[16:46:13] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:46:13] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:46:28]   Status: OPTIMAL, Time: 14.1s, Boundary: 88
+[16:46:28] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:46:57]   Status: OPTIMAL, Time: 28.8s, Boundary: 101
+[16:46:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:46:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:47:41]   Status: OPTIMAL, Time: 44.1s, Boundary: 96
+[16:47:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:49:33]   Status: OPTIMAL, Time: 111.7s, Boundary: 105
+[16:49:33] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:49:33] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:49:44]   Status: OPTIMAL, Time: 10.6s, Boundary: 88
+[16:49:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:50:32]   Status: OPTIMAL, Time: 47.4s, Boundary: 102
+[16:50:32] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:50:32] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:50:41]   Status: OPTIMAL, Time: 9.4s, Boundary: 88
+[16:50:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:03]   Status: OPTIMAL, Time: 21.6s, Boundary: 102
+[16:51:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:51:18]   Status: OPTIMAL, Time: 14.9s, Boundary: 88
+[16:51:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:41]   Status: OPTIMAL, Time: 22.3s, Boundary: 101
+[16:51:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:51:49]   Status: OPTIMAL, Time: 7.6s, Boundary: 88
+[16:51:49] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:52:26]   Status: OPTIMAL, Time: 37.3s, Boundary: 102
+[16:52:26] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:52:26] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:52:44]   Status: OPTIMAL, Time: 17.1s, Boundary: 88
+[16:52:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:16]   Status: OPTIMAL, Time: 32.4s, Boundary: 102
+[16:53:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:17] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:53:28]   Status: OPTIMAL, Time: 11.6s, Boundary: 88
+[16:53:28] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:58]   Status: OPTIMAL, Time: 29.8s, Boundary: 101
+[16:53:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:54:39]   Status: OPTIMAL, Time: 40.6s, Boundary: 94
+[16:54:39] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:56:39]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:56:39] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:56:39] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:08]   Status: OPTIMAL, Time: 28.8s, Boundary: 89
+[16:57:08] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:57:26]   Status: OPTIMAL, Time: 17.1s, Boundary: 104
+[16:57:26] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:57:26] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:42]   Status: OPTIMAL, Time: 16.5s, Boundary: 89
+[16:57:42] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:57:50]   Status: OPTIMAL, Time: 6.9s, Boundary: 102
+[16:57:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:57:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:58:21]   Status: OPTIMAL, Time: 31.1s, Boundary: 89
+[16:58:21] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:58:27]   Status: OPTIMAL, Time: 6.1s, Boundary: 102
+[16:58:27] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:58:27] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:59:05]   Status: OPTIMAL, Time: 37.0s, Boundary: 94
+[16:59:05] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:05]   Status: FEASIBLE, Time: 120.1s, Boundary: 110
+[17:01:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:25]   Status: OPTIMAL, Time: 20.0s, Boundary: 89
+[17:01:25] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:31]   Status: OPTIMAL, Time: 5.8s, Boundary: 102
+[17:01:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:41]   Status: OPTIMAL, Time: 9.6s, Boundary: 84
+[17:01:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:56]   Status: OPTIMAL, Time: 14.6s, Boundary: 97
+[17:01:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:09:09] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:10:38]   Status: OPTIMAL, Time: 88.3s, Boundary: 108
+[15:10:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:12:38]   Status: FEASIBLE, Time: 120.0s, Boundary: 125
+[15:12:38] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:12:38] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:14:38]   Status: OPTIMAL, Time: 119.7s, Boundary: 106
+[15:14:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:16:39]   Status: FEASIBLE, Time: 120.4s, Boundary: 116
+[15:16:39] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:16:39] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:18:06]   Status: OPTIMAL, Time: 87.7s, Boundary: 106
+[15:18:06] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:20:07]   Status: FEASIBLE, Time: 120.0s, Boundary: 114
+[15:20:07] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:20:07] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:20:50]   Status: OPTIMAL, Time: 42.7s, Boundary: 104
+[15:20:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:22:50]   Status: FEASIBLE, Time: 120.2s, Boundary: 112
+[15:22:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:22:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:24:51]   Status: FEASIBLE, Time: 120.2s, Boundary: 106
+[15:24:51] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:26:51]   Status: FEASIBLE, Time: 120.2s, Boundary: 116
+[15:26:51] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:26:51] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:28:51]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:28:51] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:30:52]   Status: FEASIBLE, Time: 120.0s, Boundary: 127
+[15:30:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:30:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:31:42]   Status: OPTIMAL, Time: 50.2s, Boundary: 101
+[15:31:42] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:33:42]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:33:42] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:33:42] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:35:04]   Status: OPTIMAL, Time: 81.9s, Boundary: 108
+[15:35:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:37:05]   Status: FEASIBLE, Time: 120.7s, Boundary: 127
+[15:37:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:37:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:37:35]   Status: OPTIMAL, Time: 29.6s, Boundary: 95
+[15:37:35] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:39:35]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:39:36] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:39:36] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:40:22]   Status: OPTIMAL, Time: 46.3s, Boundary: 101
+[15:40:22] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:42:22]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[15:42:22] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:42:22] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:42:45]   Status: OPTIMAL, Time: 22.8s, Boundary: 95
+[15:42:45] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:44:46]   Status: FEASIBLE, Time: 120.1s, Boundary: 110
+[15:44:46] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:44:46] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:46:17]   Status: OPTIMAL, Time: 91.3s, Boundary: 108
+[15:46:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:48:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 121
+[15:48:18] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:48:18] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:48:42]   Status: OPTIMAL, Time: 24.2s, Boundary: 95
+[15:48:42] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:50:43]   Status: FEASIBLE, Time: 120.3s, Boundary: 108
+[15:50:43] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:50:43] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:51:41]   Status: OPTIMAL, Time: 57.9s, Boundary: 101
+[15:51:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:53:41]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:53:41] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:53:41] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:53:56]   Status: OPTIMAL, Time: 14.9s, Boundary: 95
+[15:53:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:55:56]   Status: FEASIBLE, Time: 120.0s, Boundary: 109
+[15:55:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:55:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:56:47]   Status: OPTIMAL, Time: 50.1s, Boundary: 101
+[15:56:47] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:58:47]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:58:47] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:58:47] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:59:16]   Status: OPTIMAL, Time: 28.3s, Boundary: 95
+[15:59:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:01:16]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:01:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:01:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:02:14]   Status: OPTIMAL, Time: 57.6s, Boundary: 101
+[16:02:14] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:04:14]   Status: FEASIBLE, Time: 120.1s, Boundary: 110
+[16:04:14] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:04:14] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:04:47]   Status: OPTIMAL, Time: 33.0s, Boundary: 95
+[16:04:47] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:06:49]   Status: FEASIBLE, Time: 121.1s, Boundary: 108
+[16:06:49] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:06:49] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:07:46]   Status: OPTIMAL, Time: 56.9s, Boundary: 101
+[16:07:46] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:09:46]   Status: FEASIBLE, Time: 120.2s, Boundary: 110
+[16:09:47] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:09:47] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:10:10]   Status: OPTIMAL, Time: 23.3s, Boundary: 95
+[16:10:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:12:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:12:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:12:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:12:58]   Status: OPTIMAL, Time: 47.2s, Boundary: 101
+[16:12:58] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:14:58]   Status: FEASIBLE, Time: 120.0s, Boundary: 115
+[16:14:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:14:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:15:19]   Status: OPTIMAL, Time: 20.9s, Boundary: 95
+[16:15:19] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:17:19]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:17:20] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:17:20] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:18:03]   Status: OPTIMAL, Time: 43.6s, Boundary: 97
+[16:18:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:20:05]   Status: FEASIBLE, Time: 121.0s, Boundary: 112
+[16:20:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:20:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:21:13]   Status: OPTIMAL, Time: 67.8s, Boundary: 100
+[16:21:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:23:13]   Status: FEASIBLE, Time: 120.5s, Boundary: 111
+[16:23:13] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:23:13] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:23:56]   Status: OPTIMAL, Time: 42.9s, Boundary: 98
+[16:23:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:25:56]   Status: OPTIMAL, Time: 119.1s, Boundary: 111
+[16:25:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:25:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:27:08]   Status: OPTIMAL, Time: 71.9s, Boundary: 100
+[16:27:08] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:29:08]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:29:08] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:29:08] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:29:46]   Status: OPTIMAL, Time: 38.0s, Boundary: 97
+[16:29:46] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:31:22]   Status: OPTIMAL, Time: 95.7s, Boundary: 110
+[16:31:22] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:31:22] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:31:38]   Status: OPTIMAL, Time: 15.1s, Boundary: 88
+[16:31:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:32:26]   Status: OPTIMAL, Time: 47.5s, Boundary: 102
+[16:32:26] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:32:26] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:32:45]   Status: OPTIMAL, Time: 19.6s, Boundary: 88
+[16:32:45] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:33:10]   Status: OPTIMAL, Time: 24.3s, Boundary: 102
+[16:33:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:33:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:33:24]   Status: OPTIMAL, Time: 14.3s, Boundary: 88
+[16:33:24] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:34:08]   Status: OPTIMAL, Time: 43.2s, Boundary: 101
+[16:34:08] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:34:08] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:34:27]   Status: OPTIMAL, Time: 19.3s, Boundary: 88
+[16:34:27] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:35:25]   Status: OPTIMAL, Time: 57.1s, Boundary: 102
+[16:35:25] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:35:25] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:35:36]   Status: OPTIMAL, Time: 11.1s, Boundary: 88
+[16:35:36] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:07]   Status: OPTIMAL, Time: 30.1s, Boundary: 101
+[16:36:07] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:07] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:36:26]   Status: OPTIMAL, Time: 19.4s, Boundary: 88
+[16:36:26] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:55]   Status: OPTIMAL, Time: 29.1s, Boundary: 101
+[16:36:56] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:56] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:37:12]   Status: OPTIMAL, Time: 16.7s, Boundary: 88
+[16:37:12] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:38:10]   Status: OPTIMAL, Time: 57.8s, Boundary: 102
+[16:38:11] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:38:11] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:38:25]   Status: OPTIMAL, Time: 14.7s, Boundary: 88
+[16:38:25] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:39:05]   Status: OPTIMAL, Time: 39.7s, Boundary: 103
+[16:39:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:39:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:51]   Status: OPTIMAL, Time: 45.8s, Boundary: 98
+[16:39:51] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:47]   Status: OPTIMAL, Time: 115.9s, Boundary: 105
+[16:41:48] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:48] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:42:23]   Status: OPTIMAL, Time: 35.4s, Boundary: 96
+[16:42:23] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:44:24]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:44:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:44:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:45:05]   Status: OPTIMAL, Time: 41.6s, Boundary: 96
+[16:45:05] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:47:03]   Status: OPTIMAL, Time: 117.5s, Boundary: 105
+[16:47:03] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:47:03] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:47:36]   Status: OPTIMAL, Time: 32.4s, Boundary: 96
+[16:47:36] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:49:36]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:49:36] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:49:36] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:49:49]   Status: OPTIMAL, Time: 13.3s, Boundary: 88
+[16:49:49] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:50:42]   Status: OPTIMAL, Time: 52.3s, Boundary: 102
+[16:50:42] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:50:42] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:50:56]   Status: OPTIMAL, Time: 14.0s, Boundary: 88
+[16:50:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:16]   Status: OPTIMAL, Time: 19.8s, Boundary: 101
+[16:51:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:51:50]   Status: OPTIMAL, Time: 33.7s, Boundary: 96
+[16:51:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:27]   Status: OPTIMAL, Time: 96.5s, Boundary: 105
+[16:53:27] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:27] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:53:37]   Status: OPTIMAL, Time: 10.1s, Boundary: 88
+[16:53:37] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:58]   Status: OPTIMAL, Time: 20.0s, Boundary: 101
+[16:53:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:54:36]   Status: OPTIMAL, Time: 38.6s, Boundary: 94
+[16:54:36] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:56:37]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:56:37] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:56:37] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:01]   Status: OPTIMAL, Time: 24.4s, Boundary: 89
+[16:57:01] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:57:21]   Status: OPTIMAL, Time: 19.3s, Boundary: 104
+[16:57:21] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:57:21] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:50]   Status: OPTIMAL, Time: 28.5s, Boundary: 89
+[16:57:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:58:08]   Status: OPTIMAL, Time: 17.8s, Boundary: 104
+[16:58:08] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:58:08] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:58:31]   Status: OPTIMAL, Time: 23.1s, Boundary: 89
+[16:58:31] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:58:38]   Status: OPTIMAL, Time: 6.1s, Boundary: 102
+[16:58:38] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:58:38] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:59:15]   Status: OPTIMAL, Time: 37.3s, Boundary: 94
+[16:59:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:15]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[17:01:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:32]   Status: OPTIMAL, Time: 16.2s, Boundary: 85
+[17:01:32] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:02:25]   Status: OPTIMAL, Time: 52.4s, Boundary: 100
+[17:02:25] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:09:09] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:11:10]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:11:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:13:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 126
+[15:13:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:13:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:14:05]   Status: OPTIMAL, Time: 55.2s, Boundary: 104
+[15:14:05] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:16:06]   Status: FEASIBLE, Time: 120.4s, Boundary: 117
+[15:16:06] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:16:06] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:17:58]   Status: OPTIMAL, Time: 111.4s, Boundary: 108
+[15:17:58] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:19:58]   Status: FEASIBLE, Time: 120.0s, Boundary: 125
+[15:19:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:19:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:20:50]   Status: OPTIMAL, Time: 51.6s, Boundary: 104
+[15:20:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:22:50]   Status: FEASIBLE, Time: 120.1s, Boundary: 112
+[15:22:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:22:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:24:50]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:24:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:26:51]   Status: FEASIBLE, Time: 120.1s, Boundary: 125
+[15:26:51] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:26:51] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:27:53]   Status: OPTIMAL, Time: 62.0s, Boundary: 105
+[15:27:53] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:29:53]   Status: FEASIBLE, Time: 120.1s, Boundary: 115
+[15:29:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:29:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:30:43]   Status: OPTIMAL, Time: 49.8s, Boundary: 101
+[15:30:43] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:32:44]   Status: FEASIBLE, Time: 120.6s, Boundary: 110
+[15:32:44] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:32:44] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:34:31]   Status: OPTIMAL, Time: 106.5s, Boundary: 108
+[15:34:31] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:36:31]   Status: FEASIBLE, Time: 120.1s, Boundary: 121
+[15:36:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:36:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:37:19]   Status: OPTIMAL, Time: 47.7s, Boundary: 101
+[15:37:19] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:39:19]   Status: FEASIBLE, Time: 120.1s, Boundary: 111
+[15:39:20] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:39:20] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:41:14]   Status: OPTIMAL, Time: 114.1s, Boundary: 108
+[15:41:14] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:43:14]   Status: FEASIBLE, Time: 120.0s, Boundary: 127
+[15:43:14] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:43:14] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:43:36]   Status: OPTIMAL, Time: 21.6s, Boundary: 95
+[15:43:36] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:45:36]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:45:36] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:45:36] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:46:18]   Status: OPTIMAL, Time: 41.6s, Boundary: 101
+[15:46:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:48:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:48:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:48:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:50:16]   Status: OPTIMAL, Time: 117.0s, Boundary: 108
+[15:50:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:52:16]   Status: FEASIBLE, Time: 120.1s, Boundary: 123
+[15:52:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:52:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:52:55]   Status: OPTIMAL, Time: 38.7s, Boundary: 101
+[15:52:55] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:54:55]   Status: FEASIBLE, Time: 120.2s, Boundary: 111
+[15:54:55] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:54:55] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:56:38]   Status: OPTIMAL, Time: 102.6s, Boundary: 108
+[15:56:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:58:38]   Status: FEASIBLE, Time: 120.1s, Boundary: 121
+[15:58:39] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:58:39] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:58:53]   Status: OPTIMAL, Time: 14.3s, Boundary: 95
+[15:58:53] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:00:53]   Status: FEASIBLE, Time: 120.2s, Boundary: 108
+[16:00:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:00:54] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:02:29]   Status: OPTIMAL, Time: 95.0s, Boundary: 108
+[16:02:29] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:04:29]   Status: FEASIBLE, Time: 120.0s, Boundary: 121
+[16:04:29] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:04:29] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:06:00]   Status: OPTIMAL, Time: 91.4s, Boundary: 108
+[16:06:00] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:08:01]   Status: FEASIBLE, Time: 120.0s, Boundary: 121
+[16:08:01] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:08:01] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:08:48]   Status: OPTIMAL, Time: 47.3s, Boundary: 101
+[16:08:48] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:10:49]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:10:49] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:10:49] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:12:18]   Status: OPTIMAL, Time: 89.2s, Boundary: 108
+[16:12:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:14:18]   Status: FEASIBLE, Time: 120.0s, Boundary: 121
+[16:14:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:14:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:14:34]   Status: OPTIMAL, Time: 15.0s, Boundary: 95
+[16:14:34] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:16:34]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[16:16:34] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:16:34] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:18:03]   Status: OPTIMAL, Time: 88.9s, Boundary: 103
+[16:18:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:18:15]   Status: OPTIMAL, Time: 11.5s, Boundary: 110
+[16:18:15] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:18:15] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:19:04]   Status: OPTIMAL, Time: 49.1s, Boundary: 97
+[16:19:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:21:04]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:21:05] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:21:05] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:21:59]   Status: OPTIMAL, Time: 54.6s, Boundary: 100
+[16:21:59] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:24:00]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:24:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:24:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:24:54]   Status: OPTIMAL, Time: 53.8s, Boundary: 97
+[16:24:54] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:26:52]   Status: OPTIMAL, Time: 118.4s, Boundary: 110
+[16:26:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:26:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:28:12]   Status: OPTIMAL, Time: 79.5s, Boundary: 100
+[16:28:12] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:28:19]   Status: OPTIMAL, Time: 6.7s, Boundary: 109
+[16:28:19] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:28:19] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:29:00]   Status: OPTIMAL, Time: 41.2s, Boundary: 97
+[16:29:00] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:31:01]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:31:01] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:31:01] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:31:45]   Status: OPTIMAL, Time: 43.7s, Boundary: 96
+[16:31:45] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:33:45]   Status: FEASIBLE, Time: 120.2s, Boundary: 105
+[16:33:45] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:33:45] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:34:24]   Status: OPTIMAL, Time: 38.5s, Boundary: 96
+[16:34:24] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:25]   Status: FEASIBLE, Time: 120.6s, Boundary: 105
+[16:36:25] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:25] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:37:01]   Status: OPTIMAL, Time: 35.5s, Boundary: 96
+[16:37:01] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:39:01]   Status: FEASIBLE, Time: 120.1s, Boundary: 105
+[16:39:01] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:39:01] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:39]   Status: OPTIMAL, Time: 38.3s, Boundary: 96
+[16:39:39] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:40]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:41:40] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:40] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:42:20]   Status: OPTIMAL, Time: 40.4s, Boundary: 96
+[16:42:20] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:43:58]   Status: OPTIMAL, Time: 96.9s, Boundary: 105
+[16:43:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:43:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:44:12]   Status: OPTIMAL, Time: 14.7s, Boundary: 88
+[16:44:12] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:44:31]   Status: OPTIMAL, Time: 18.4s, Boundary: 101
+[16:44:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:44:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:44:52]   Status: OPTIMAL, Time: 20.6s, Boundary: 88
+[16:44:52] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:45:29]   Status: OPTIMAL, Time: 36.6s, Boundary: 102
+[16:45:29] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:45:29] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:45:43]   Status: OPTIMAL, Time: 13.9s, Boundary: 88
+[16:45:43] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:46:37]   Status: OPTIMAL, Time: 53.8s, Boundary: 102
+[16:46:37] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:46:37] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:47:05]   Status: OPTIMAL, Time: 28.0s, Boundary: 96
+[16:47:05] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:48:24]   Status: OPTIMAL, Time: 78.1s, Boundary: 105
+[16:48:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:48:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:48:41]   Status: OPTIMAL, Time: 17.4s, Boundary: 89
+[16:48:41] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:49:11]   Status: OPTIMAL, Time: 29.3s, Boundary: 101
+[16:49:11] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:49:11] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:49:56]   Status: OPTIMAL, Time: 45.1s, Boundary: 96
+[16:49:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:57]   Status: FEASIBLE, Time: 120.0s, Boundary: 105
+[16:51:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:52:14]   Status: OPTIMAL, Time: 16.8s, Boundary: 88
+[16:52:14] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:35]   Status: OPTIMAL, Time: 80.8s, Boundary: 102
+[16:53:35] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:35] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:53:52]   Status: OPTIMAL, Time: 17.2s, Boundary: 90
+[16:53:52] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:54:22]   Status: OPTIMAL, Time: 30.0s, Boundary: 102
+[16:54:23] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:54:23] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:54:43]   Status: OPTIMAL, Time: 20.6s, Boundary: 89
+[16:54:43] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:54:59]   Status: OPTIMAL, Time: 16.0s, Boundary: 104
+[16:55:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:55:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:55:21]   Status: OPTIMAL, Time: 21.3s, Boundary: 89
+[16:55:21] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:55:52]   Status: OPTIMAL, Time: 30.5s, Boundary: 104
+[16:55:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:55:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:56:13]   Status: OPTIMAL, Time: 20.7s, Boundary: 89
+[16:56:13] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:56:19]   Status: OPTIMAL, Time: 6.6s, Boundary: 102
+[16:56:20] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:56:20] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:03]   Status: OPTIMAL, Time: 43.8s, Boundary: 94
+[16:57:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:59:00]   Status: OPTIMAL, Time: 116.3s, Boundary: 113
+[16:59:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:59:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:59:17]   Status: OPTIMAL, Time: 16.4s, Boundary: 89
+[16:59:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:59:33]   Status: OPTIMAL, Time: 16.3s, Boundary: 104
+[16:59:33] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:59:33] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:59:50]   Status: OPTIMAL, Time: 16.4s, Boundary: 89
+[16:59:50] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:00:11]   Status: OPTIMAL, Time: 20.8s, Boundary: 104
+[17:00:11] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:00:11] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:00:33]   Status: OPTIMAL, Time: 21.7s, Boundary: 89
+[17:00:33] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:05]   Status: OPTIMAL, Time: 32.2s, Boundary: 104
+[17:01:06] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:06] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:21]   Status: OPTIMAL, Time: 15.8s, Boundary: 89
+[17:01:21] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:27]   Status: OPTIMAL, Time: 5.4s, Boundary: 102
+[17:01:27] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:27] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:40]   Status: OPTIMAL, Time: 12.7s, Boundary: 85
+[17:01:40] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:02:24]   Status: OPTIMAL, Time: 43.5s, Boundary: 100
+[17:02:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:02:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:02:35]   Status: OPTIMAL, Time: 10.8s, Boundary: 84
+[17:02:35] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:02:48]   Status: OPTIMAL, Time: 13.2s, Boundary: 97
+[17:02:48] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:09:09] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:11:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 106
+[15:11:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:13:10]   Status: FEASIBLE, Time: 120.2s, Boundary: 115
+[15:13:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:13:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:14:10]   Status: OPTIMAL, Time: 59.4s, Boundary: 104
+[15:14:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:16:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 112
+[15:16:10] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:16:10] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:18:10]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:18:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:20:11]   Status: FEASIBLE, Time: 120.1s, Boundary: 125
+[15:20:11] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:20:11] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:21:03]   Status: OPTIMAL, Time: 52.2s, Boundary: 104
+[15:21:03] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:23:03]   Status: FEASIBLE, Time: 120.0s, Boundary: 112
+[15:23:04] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:23:04] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:24:30]   Status: OPTIMAL, Time: 86.0s, Boundary: 106
+[15:24:30] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:26:30]   Status: FEASIBLE, Time: 120.3s, Boundary: 116
+[15:26:30] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:26:30] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:27:26]   Status: OPTIMAL, Time: 55.3s, Boundary: 104
+[15:27:26] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:29:26]   Status: FEASIBLE, Time: 120.0s, Boundary: 112
+[15:29:26] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:29:26] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:30:17]   Status: OPTIMAL, Time: 50.5s, Boundary: 101
+[15:30:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:32:17]   Status: FEASIBLE, Time: 120.2s, Boundary: 110
+[15:32:17] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:32:17] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:32:49]   Status: OPTIMAL, Time: 31.9s, Boundary: 95
+[15:32:49] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:34:49]   Status: FEASIBLE, Time: 120.0s, Boundary: 108
+[15:34:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:34:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:35:49]   Status: OPTIMAL, Time: 59.2s, Boundary: 101
+[15:35:49] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:37:49]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:37:49] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.15/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:37:49] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:39:31]   Status: OPTIMAL, Time: 101.3s, Boundary: 108
+[15:39:31] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:41:31]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:41:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:41:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:42:15]   Status: OPTIMAL, Time: 43.5s, Boundary: 101
+[15:42:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:44:15]   Status: FEASIBLE, Time: 120.3s, Boundary: 110
+[15:44:16] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.15/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:44:16] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:45:56]   Status: OPTIMAL, Time: 100.8s, Boundary: 108
+[15:45:56] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:47:57]   Status: FEASIBLE, Time: 120.0s, Boundary: 121
+[15:47:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:47:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:48:32]   Status: OPTIMAL, Time: 34.7s, Boundary: 95
+[15:48:32] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:50:32]   Status: FEASIBLE, Time: 120.2s, Boundary: 108
+[15:50:32] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:50:32] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:51:16]   Status: OPTIMAL, Time: 43.7s, Boundary: 101
+[15:51:16] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:53:16]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[15:53:17] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:53:17] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:53:47]   Status: OPTIMAL, Time: 30.7s, Boundary: 95
+[15:53:47] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:55:48]   Status: FEASIBLE, Time: 120.1s, Boundary: 108
+[15:55:48] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.2/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:55:48] Solving level 1/2: BlockGroup_1
+Closing log file.
+[15:57:28]   Status: OPTIMAL, Time: 100.4s, Boundary: 108
+[15:57:28] Solving level 2/2: BlockGroup_0
+Closing log file.
+[15:59:29]   Status: FEASIBLE, Time: 120.0s, Boundary: 123
+[15:59:29] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[15:59:29] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:01:07]   Status: OPTIMAL, Time: 97.7s, Boundary: 108
+[16:01:07] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:03:07]   Status: FEASIBLE, Time: 120.1s, Boundary: 121
+[16:03:07] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:03:07] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:03:51]   Status: OPTIMAL, Time: 44.3s, Boundary: 101
+[16:03:51] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:05:52]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:05:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:05:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:07:52]   Status: FEASIBLE, Time: 120.2s, Boundary: 108
+[16:07:52] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:09:53]   Status: FEASIBLE, Time: 120.8s, Boundary: 123
+[16:09:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.12_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:09:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:11:38]   Status: OPTIMAL, Time: 104.3s, Boundary: 108
+[16:11:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:13:38]   Status: FEASIBLE, Time: 120.3s, Boundary: 123
+[16:13:39] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:13:39] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:14:23]   Status: OPTIMAL, Time: 44.4s, Boundary: 101
+[16:14:23] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:16:24]   Status: FEASIBLE, Time: 120.2s, Boundary: 110
+[16:16:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.12_racial0.25/overage0.9_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:16:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:17:24]   Status: OPTIMAL, Time: 60.1s, Boundary: 100
+[16:17:24] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:19:24]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:19:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:19:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:19:59]   Status: OPTIMAL, Time: 35.0s, Boundary: 97
+[16:19:59] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:22:00]   Status: FEASIBLE, Time: 120.0s, Boundary: 110
+[16:22:00] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:22:00] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:22:54]   Status: OPTIMAL, Time: 53.6s, Boundary: 97
+[16:22:54] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:24:54]   Status: FEASIBLE, Time: 120.4s, Boundary: 111
+[16:24:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.12/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:24:54] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:25:38]   Status: OPTIMAL, Time: 43.7s, Boundary: 99
+[16:25:38] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:25:49]   Status: OPTIMAL, Time: 10.9s, Boundary: 108
+[16:25:49] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.12/overage0.8_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:25:49] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:26:53]   Status: OPTIMAL, Time: 63.4s, Boundary: 100
+[16:26:53] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:28:53]   Status: FEASIBLE, Time: 120.0s, Boundary: 111
+[16:28:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:28:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:29:42]   Status: OPTIMAL, Time: 48.6s, Boundary: 97
+[16:29:42] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:31:42]   Status: OPTIMAL, Time: 119.8s, Boundary: 110
+[16:31:42] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:31:42] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:31:52]   Status: OPTIMAL, Time: 9.8s, Boundary: 88
+[16:31:52] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:32:52]   Status: OPTIMAL, Time: 59.8s, Boundary: 102
+[16:32:52] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:32:52] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:33:10]   Status: OPTIMAL, Time: 17.5s, Boundary: 90
+[16:33:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:34:02]   Status: OPTIMAL, Time: 51.5s, Boundary: 102
+[16:34:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:34:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:34:39]   Status: OPTIMAL, Time: 36.6s, Boundary: 96
+[16:34:39] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:36:22]   Status: OPTIMAL, Time: 103.6s, Boundary: 105
+[16:36:23] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.15/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:36:23] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:37:04]   Status: OPTIMAL, Time: 41.5s, Boundary: 96
+[16:37:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:38:53]   Status: OPTIMAL, Time: 108.7s, Boundary: 105
+[16:38:53] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.15/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:38:53] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:04]   Status: OPTIMAL, Time: 10.4s, Boundary: 88
+[16:39:04] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:39:30]   Status: OPTIMAL, Time: 26.5s, Boundary: 102
+[16:39:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.15/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:39:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:39:44]   Status: OPTIMAL, Time: 13.8s, Boundary: 88
+[16:39:44] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:40:21]   Status: OPTIMAL, Time: 36.5s, Boundary: 102
+[16:40:21] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:40:21] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:40:33]   Status: OPTIMAL, Time: 11.6s, Boundary: 88
+[16:40:33] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:41:14]   Status: OPTIMAL, Time: 40.8s, Boundary: 102
+[16:41:14] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:41:14] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:41:32]   Status: OPTIMAL, Time: 17.7s, Boundary: 88
+[16:41:32] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:42:02]   Status: OPTIMAL, Time: 29.5s, Boundary: 101
+[16:42:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:42:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:42:14]   Status: OPTIMAL, Time: 12.2s, Boundary: 88
+[16:42:14] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:42:58]   Status: OPTIMAL, Time: 44.0s, Boundary: 102
+[16:42:58] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:42:58] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:43:17]   Status: OPTIMAL, Time: 18.8s, Boundary: 88
+[16:43:17] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:44:31]   Status: OPTIMAL, Time: 73.2s, Boundary: 102
+[16:44:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.8_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:44:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:45:07]   Status: OPTIMAL, Time: 36.0s, Boundary: 96
+[16:45:07] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:47:08]   Status: FEASIBLE, Time: 120.1s, Boundary: 105
+[16:47:08] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.2/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:47:08] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:47:19]   Status: OPTIMAL, Time: 10.7s, Boundary: 88
+[16:47:19] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:47:49]   Status: OPTIMAL, Time: 30.6s, Boundary: 102
+[16:47:50] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:47:50] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:48:02]   Status: OPTIMAL, Time: 12.1s, Boundary: 88
+[16:48:02] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:48:24]   Status: OPTIMAL, Time: 21.8s, Boundary: 101
+[16:48:24] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.15_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:48:24] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:48:35]   Status: OPTIMAL, Time: 10.8s, Boundary: 88
+[16:48:35] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:49:01]   Status: OPTIMAL, Time: 26.4s, Boundary: 101
+[16:49:02] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.15_racial0.25/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:49:02] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:49:40]   Status: OPTIMAL, Time: 38.6s, Boundary: 96
+[16:49:40] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:51:33]   Status: OPTIMAL, Time: 112.4s, Boundary: 105
+[16:51:33] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:51:33] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:52:07]   Status: OPTIMAL, Time: 34.2s, Boundary: 96
+[16:52:07] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:53:54]   Status: OPTIMAL, Time: 106.5s, Boundary: 105
+[16:53:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.15_racial0.25/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:53:54] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:54:34]   Status: OPTIMAL, Time: 39.5s, Boundary: 94
+[16:54:34] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:56:34]   Status: FEASIBLE, Time: 120.0s, Boundary: 115
+[16:56:34] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:56:34] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:57:15]   Status: OPTIMAL, Time: 40.3s, Boundary: 94
+[16:57:15] Solving level 2/2: BlockGroup_0
+Closing log file.
+[16:58:12]   Status: OPTIMAL, Time: 57.3s, Boundary: 113
+[16:58:12] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed20/frl0.2_racial0.12/overage0.8_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[16:58:12] Solving level 1/2: BlockGroup_1
+Closing log file.
+[16:58:57]   Status: OPTIMAL, Time: 44.6s, Boundary: 94
+[16:58:57] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:00:57]   Status: OPTIMAL, Time: 119.7s, Boundary: 115
+[17:00:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.9_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:00:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:18]   Status: OPTIMAL, Time: 20.6s, Boundary: 89
+[17:01:18] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:23]   Status: OPTIMAL, Time: 4.2s, Boundary: 102
+[17:01:23] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.12/overage0.9_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:23] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:01:37]   Status: OPTIMAL, Time: 14.6s, Boundary: 85
+[17:01:37] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:01:57]   Status: OPTIMAL, Time: 19.3s, Boundary: 100
+[17:01:57] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.15/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:01:57] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:02:10]   Status: OPTIMAL, Time: 13.3s, Boundary: 84
+[17:02:10] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:02:31]   Status: OPTIMAL, Time: 20.5s, Boundary: 97
+[17:02:31] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed14/frl0.2_racial0.15/overage0.7_shortage0.2/BlockGroup_1-BlockGroup_0_tl_120-120
+[17:02:31] Solving level 1/2: BlockGroup_1
+Closing log file.
+[17:02:43]   Status: OPTIMAL, Time: 11.7s, Boundary: 84
+[17:02:43] Solving level 2/2: BlockGroup_0
+Closing log file.
+[17:02:53]   Status: OPTIMAL, Time: 10.2s, Boundary: 97
+[17:02:54] Results saved to /home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.2_racial0.15/overage0.7_shortage0.25/BlockGroup_1-BlockGroup_0_tl_120-120
