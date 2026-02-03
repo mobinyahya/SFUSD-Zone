@@ -54,6 +54,22 @@ def get_node_to_blockgroup_map(G: nx.Graph) -> dict[int, int]:
     return {node: data["area_id"] for node, data in G.nodes(data=True)}
 
 
+def load_solution_result(solution_path: str) -> dict:
+    """
+    Load result.json from a solution directory.
+
+    Args:
+        solution_path: Path to solution folder containing result.json
+
+    Returns:
+        Dict with keys: status, metrics, zone_data, boundary_cost, total_wall_time, etc.
+    """
+    result_path = os.path.join(solution_path, "result.json")
+    with open(result_path, "r") as f:
+        result = json.load(f)
+    return result
+
+
 def load_zone_dict(solution_path: str) -> dict[int, int]:
     """
     Load zone_dict for a solution and convert to blockgroup->zone mapping.
@@ -83,51 +99,59 @@ def load_zone_dict(solution_path: str) -> dict[int, int]:
     return bg_zone_dict
 
 
-def get_zone_demographics(bg_zone_dict: dict[int, int]) -> dict[int, dict]:
+def get_zone_demographics(solution_path: str) -> dict[int, dict]:
     """
-    Aggregate demographics per zone from graph node attributes.
+    Load pre-calculated zone demographics from result.json.
 
-    Returns dict mapping zone_id to demographics dict with:
-    - ge_students: total students
-    - FRL: total FRL count (to be normalized)
-    - Ethnicity_*: counts per ethnicity
+    NOTE: This function now reads from pre-calculated result.json instead of
+    recalculating from the graph. This is MUCH faster and avoids redundant computation.
+
+    Args:
+        solution_path: Path to solution folder containing result.json
+
+    Returns:
+        Dict mapping zone_id to comprehensive zone data with:
+        - zone_id: zone identifier
+        - ge_students: total general education students
+        - FRL_pct: Free/Reduced Lunch percentage (0-100, normalized for frontend)
+        - frl_pct: Free/Reduced Lunch percentage (0-1, from result.json)
+        - ethnicity_pcts: dict of ethnicity percentages by ethnicity name
+        - programs: dict of program counts (GE, SA, CN, AF, etc.)
+        - total_programs: total number of programs
+        - language_immersion_count: count of language immersion programs
+        - special_ed_count: count of special education programs
+        - avg_greatschools_rating: average GreatSchools rating
+        - avg_math_score: average math test score
+        - avg_eng_score: average English test score
+        - avg_suspension_index: average suspension index
+        - avg_closest_school_distance: average distance to closest school
+        - schools_in_attendance_area: number of schools in zone
+        - avg_max_utility: average maximum utility
+        - avg_logsum_utility: average logsum utility
     """
-    G = load_graph()
-    node_to_bg = get_node_to_blockgroup_map(G)
-    bg_to_node = {v: k for k, v in node_to_bg.items()}
+    try:
+        result = load_solution_result(solution_path)
+        # result.json has zone_data with string keys, convert to int
+        zone_data = result.get("zone_data", {})
 
-    zone_stats = {}
+        # Normalize field names for frontend compatibility
+        normalized_data = {}
+        for zone_id, data in zone_data.items():
+            zone_dict = data.copy()
+            # Frontend expects FRL_pct in 0-100 range (uppercase FRL)
+            # result.json has frl_pct in 0-1 range (lowercase frl)
+            if "frl_pct" in zone_dict:
+                zone_dict["FRL_pct"] = zone_dict["frl_pct"] * 100
+            normalized_data[int(zone_id)] = zone_dict
 
-    for bg_id, zone_id in bg_zone_dict.items():
-        if zone_id not in zone_stats:
-            zone_stats[zone_id] = {
-                "ge_students": 0,
-                "FRL": 0,
-            }
-            for eth in AREA_ETHNICITIES:
-                zone_stats[zone_id][eth] = 0
-
-        node_id = bg_to_node.get(bg_id)
-        if node_id is not None and node_id in G.nodes:
-            node_data = G.nodes[node_id]
-            zone_stats[zone_id]["ge_students"] += node_data.get("ge_students", 0)
-            zone_stats[zone_id]["FRL"] += node_data.get("FRL", 0)
-            for eth in AREA_ETHNICITIES:
-                zone_stats[zone_id][eth] += node_data.get(eth, 0)
-
-    # Normalize to percentages
-    for zone_id, stats in zone_stats.items():
-        total = stats["ge_students"]
-        if total > 0:
-            stats["FRL_pct"] = (stats["FRL"] / total) * 100
-            for eth in AREA_ETHNICITIES:
-                stats[f"{eth}_pct"] = (stats[eth] / total) * 100
-        else:
-            stats["FRL_pct"] = 0
-            for eth in AREA_ETHNICITIES:
-                stats[f"{eth}_pct"] = 0
-
-    return zone_stats
+        return normalized_data
+    except FileNotFoundError:
+        # Fallback for older solutions without result.json
+        # (could remove this if all solutions have result.json)
+        raise FileNotFoundError(
+            f"result.json not found in {solution_path}. "
+            "This solution may be from an older run without pre-calculated metrics."
+        )
 
 
 def convert_shapefile_to_geojson():

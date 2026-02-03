@@ -11,6 +11,15 @@ from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from .metrics_config import (
+    ALL_METRICS,
+    CORE_METRICS,
+    METRIC_BY_NAME,
+    CATEGORIES,
+    get_metrics_by_category,
+    get_metric_summary,
+    search_metrics,
+)
 from .pareto import (
     METRIC_CONFIG,
     load_solutions,
@@ -21,6 +30,7 @@ from .pareto import (
 )
 from .filters import (
     FilterState,
+    FilterBounds,
     apply_filters,
     get_filter_summary,
     calculate_tightening,
@@ -36,177 +46,217 @@ from .clusters import (
 )
 
 
-# Tool definitions for the LLM
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_solution",
-            "description": "Get the current 'average' or centroid solution based on the current filters. Returns the solution metrics and overall statistics.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tighten_filter",
-            "description": "Tighten the constraint for a specific metric to improve it (reduce its value since lower is better for all metrics). This will reduce the number of feasible solutions.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "metric_name": {
-                        "type": "string",
-                        "description": "The name of the metric to tighten. Must be one of the available metrics.",
-                        "enum": list(METRIC_CONFIG.keys()),
-                    },
-                    "strength": {
-                        "type": "string",
-                        "description": "How aggressively to tighten: 'mild' (~20% reduction in solutions), 'moderate' (~30%), or 'aggressive' (~50%)",
-                        "enum": ["mild", "moderate", "aggressive"],
-                    },
-                },
-                "required": ["metric_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "loosen_filter",
-            "description": "Loosen the constraint for a specific metric to allow more diverse solutions. Use this when the user is willing to accept worse values for a metric to improve others.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "metric_name": {
-                        "type": "string",
-                        "description": "The name of the metric to loosen.",
-                        "enum": list(METRIC_CONFIG.keys()),
-                    },
-                },
-                "required": ["metric_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_filter_bounds",
-            "description": "Get current filter bounds and statistics for all metrics. Shows the current constraints, ranges in all solutions, and ranges in filtered solutions.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_feasible_relaxation",
-            "description": "When there are no feasible solutions with current filters, find which filters need to be relaxed and by how much to restore feasibility.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "show_solution_clusters",
-            "description": "Group the current feasible solutions into clusters and show a representative solution from each cluster with an interpretable direction label. Useful when there are many solutions and the user wants to see different 'types' of solutions available. Each cluster represents a different approach to trade-offs.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "n_clusters": {
-                        "type": "integer",
-                        "description": "Number of clusters to create. Default is automatically chosen based on solution count (typically 3-5).",
-                        "minimum": 2,
-                        "maximum": 8,
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "select_cluster",
-            "description": "Select a cluster from the previous show_solution_clusters results. This will tighten all metric filters to only include solutions within that cluster, effectively narrowing down to that type of solution.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "cluster_id": {
-                        "type": "integer",
-                        "description": "The cluster number to select (1 to N, as shown in show_solution_clusters results)",
-                    },
-                },
-                "required": ["cluster_id"],
-            },
-        },
-    },
-]
+# ============================================================================
+# DYNAMIC TOOL DEFINITIONS
+# ============================================================================
 
-SYSTEM_PROMPT = """You are a helpful assistant that helps parents explore school zoning proposals for San Francisco Unified School District.
+def build_tools():
+    """Build tool definitions with current metric names."""
+    # Get all metric display names for enum
+    all_metric_names = [m.display_name for m in ALL_METRICS]
+    category_names = list(CATEGORIES.keys())
+    
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_solution",
+                "description": "Get the current 'balanced' centroid solution based on the current filters. Returns the solution metrics and overall statistics.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "show_all_metrics": {
+                            "type": "boolean",
+                            "description": "If true, show all metrics including detailed ones. Default is false (core metrics only).",
+                        }
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_all_metrics",
+                "description": "List all available metrics organized by category with their descriptions and directions (higher/lower is better). Use this to understand what metrics are available before filtering.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_metrics",
+                "description": "Search for metrics by keyword. Returns matching metrics with their details.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search term to find in metric names or descriptions (e.g., 'spanish', 'diversity', 'math').",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "tighten_filter",
+                "description": "Tighten the constraint for a specific metric to improve it. For 'lower is better' metrics, this reduces the maximum allowed value. For 'higher is better' metrics, this increases the minimum allowed value. This will reduce the number of feasible solutions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "metric_name": {
+                            "type": "string",
+                            "description": "The display name of the metric to tighten.",
+                            "enum": all_metric_names,
+                        },
+                        "strength": {
+                            "type": "string",
+                            "description": "How aggressively to tighten: 'mild' (~20% reduction), 'moderate' (~30%), or 'aggressive' (~50%)",
+                            "enum": ["mild", "moderate", "aggressive"],
+                        },
+                    },
+                    "required": ["metric_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "loosen_filter",
+                "description": "Loosen the constraint for a specific metric to allow more diverse solutions. Use when the user is willing to accept worse values for a metric to improve others.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "metric_name": {
+                            "type": "string",
+                            "description": "The display name of the metric to loosen.",
+                            "enum": all_metric_names,
+                        },
+                    },
+                    "required": ["metric_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_filter_bounds",
+                "description": "Get current filter bounds and statistics for metrics. Shows the current constraints, ranges in all solutions, and ranges in filtered solutions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "Optional: only show metrics in this category.",
+                            "enum": category_names,
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "find_feasible_relaxation",
+                "description": "When there are no feasible solutions with current filters, find which filters need to be relaxed and by how much to restore feasibility.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "show_solution_clusters",
+                "description": "Group the current feasible solutions into clusters and show a representative solution from each cluster with an interpretable direction label. Useful when there are many solutions and the user wants to see different 'types' of solutions available.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "n_clusters": {
+                            "type": "integer",
+                            "description": "Number of clusters to create. Default is automatically chosen based on solution count.",
+                            "minimum": 2,
+                            "maximum": 8,
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "select_cluster",
+                "description": "Select a cluster from the previous show_solution_clusters results. This will tighten all metric filters to only include solutions within that cluster.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cluster_id": {
+                            "type": "integer",
+                            "description": "The cluster number to select (1 to N, as shown in show_solution_clusters)",
+                        },
+                    },
+                    "required": ["cluster_id"],
+                },
+            },
+        },
+    ]
+
+
+def build_system_prompt():
+    """Build system prompt with current metric information."""
+    metric_summary = get_metric_summary()
+    
+    return f"""You are a helpful assistant that helps parents explore school zoning proposals for San Francisco Unified School District.
 
 ## Your Role
-You help users find zoning solutions that match their priorities by iteratively adjusting filters on various metrics. Think of yourself as a friendly guide who helps translate high-level preferences ("I want more diverse schools") into concrete adjustments to metric thresholds.
+You help users find zoning solutions that match their priorities by iteratively adjusting filters on various metrics. Think of yourself as a friendly guide who translates high-level preferences ("I want more diverse schools") into concrete filter adjustments.
 
-## Available Metrics
-All metrics measure DEVIATION from ideal values, so LOWER IS BETTER for all of them:
+## How Metrics Work
+- **Minimize metrics** (lower is better): Diversity deviations, distances, boundary cost
+- **Maximize metrics** (higher is better): Program counts, school quality ratings
 
-1. **Free and Reduced Lunch Population % Deviation from district average** - Measures economic diversity. Lower = more balanced free lunch percentages across zones.
+When tightening a filter:
+- For minimize metrics → lower the max allowed value (keep only better solutions)
+- For maximize metrics → raise the min allowed value (keep only better solutions)
 
-2. **Black Population % Deviation from district average** - Measures racial balance for Black students.
-
-3. **Hispanic Population % Deviation from district average** - Measures racial balance for Hispanic/Latinx students.
-
-4. **White Population % Deviation from district average** - Measures racial balance for White students.
-
-5. **Asian Population % Deviation from district average** - Measures racial balance for Asian students.
-
-6. **Total Population % Deviation from district average** - Measures seat availability balance across zones.
-
-7. **Average distance to closest school** - Average distance students travel. Lower = shorter commutes.
-
-8. **Compactness** - Measures how geographically compact the zones are. Lower = more compact, contiguous zones.
+{metric_summary}
 
 ## How to Help Users
 
-1. **Start by presenting the current "balanced" solution** - Show all metrics for the centroid solution.
+1. **Start by presenting the current "balanced" solution** - Show key metrics for the centroid solution.
 
-2. **Listen to feedback** - Users will express preferences like "I want shorter commutes" or "economic diversity is most important to me".
+2. **Use list_all_metrics or search_metrics** - When users ask about available metrics or specific programs.
 
-3. **Translate to filter adjustments** - When a user wants to improve something, tighten that filter. Explain the trade-off (other metrics may get worse).
+3. **Listen to feedback** - Users will express preferences like "I want shorter commutes" or "economic diversity is most important".
 
-4. **Handle impossible requests gracefully** - If filters become too tight (0 solutions), use find_feasible_relaxation to suggest which constraints to relax. Ask the user which metrics they're willing to compromise on.
+4. **Translate to filter adjustments** - When a user wants to improve something, tighten that filter. Explain the trade-off.
 
-5. **Always explain trade-offs** - Help users understand that improving one metric often means accepting worse values for others.
+5. **Handle impossible requests gracefully** - If filters become too tight (0 solutions), use find_feasible_relaxation.
+
+6. **Always explain trade-offs** - Improving one metric often means accepting worse values for others.
 
 ## Communication Style
 - Be friendly and accessible - users are parents, not optimization experts
 - Use plain language, not technical jargon
-- Always show the specific metric values when presenting solutions
-- Write as concisely as possible
-- Proactively suggest trade-offs: "To get shorter commutes, you might need to accept less economic diversity"
+- Always show specific metric values when presenting solutions
+- Be concise
+- Proactively suggest trade-offs
 
 ## Clustering Feature
-When users are exploring a large set of solutions or want to see what different types of solutions are available, use the clustering feature:
-
-1. **show_solution_clusters** - Groups similar solutions together and shows a representative from each group with a label describing what trade-offs that cluster makes (e.g., "Better commute distance; accepts higher economic diversity deviation")
-
-2. **select_cluster** - Once the user picks a cluster they like, this narrows the filters to only include solutions similar to that cluster
-
-Use clustering when:
-- The user seems overwhelmed by choices
-- The user asks "what are my options?" or "what trade-offs can I make?"
-- There are many (>10) feasible solutions and you want to help the user navigate
+When users are exploring or want to see different types of solutions:
+1. **show_solution_clusters** - Groups similar solutions and shows representatives
+2. **select_cluster** - Narrows filters to solutions in that cluster
 """
 
 
@@ -235,6 +285,20 @@ class ZoningAgent:
         
         # Load and process solutions
         self.all_solutions = load_solutions(csv_path)
+        
+        # Drop solutions with NaN values in metric columns
+        metric_cols = [m.column for m in ALL_METRICS if m.column in self.all_solutions.columns]
+        before_count = len(self.all_solutions)
+        self.all_solutions = self.all_solutions.dropna(subset=metric_cols)
+        if before_count > len(self.all_solutions):
+            print(f"Dropped {before_count - len(self.all_solutions)} solutions with missing metrics")
+            
+        # Drop duplicate solutions based on metric columns
+        before_count = len(self.all_solutions)
+        self.all_solutions = self.all_solutions.drop_duplicates(subset=metric_cols)
+        if before_count > len(self.all_solutions):
+            print(f"Dropped {before_count - len(self.all_solutions)} duplicate solutions")
+            
         self.normalized_solutions = normalize_metrics(self.all_solutions)
         self.pareto_frontier = compute_pareto_frontier(self.normalized_solutions)
         
@@ -245,18 +309,22 @@ class ZoningAgent:
         # Initialize filter state (no filters initially)
         self.filter_state = FilterState()
         
-        # Clustering state (populated when show_solution_clusters is called)
-        self._cluster_labels = None  # np.ndarray of cluster assignments
-        self._cluster_centers = None  # np.ndarray of cluster centers
-        self._cluster_directions = None  # dict of cluster direction info
-        self._clustered_solutions = None  # DataFrame of solutions used for clustering
-        self._clustered_vectors = None  # np.ndarray of vectorized solutions
+        # Clustering state
+        self._cluster_labels = None
+        self._cluster_centers = None
+        self._cluster_directions = None
+        self._clustered_solutions = None
+        self._clustered_vectors = None
         
-        # Conversation history
-        self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # Build tools dynamically
+        self.tools = build_tools()
+        
+        # Conversation history with dynamic system prompt
+        self.history = [{"role": "system", "content": build_system_prompt()}]
         
         print(f"Loaded {len(self.all_solutions)} total solutions")
         print(f"Computed Pareto frontier with {len(self.pareto_frontier)} solutions")
+        print(f"Available metrics: {len(ALL_METRICS)}")
     
     def _get_filtered_solutions(self):
         """Get currently filtered solutions from Pareto frontier."""
@@ -278,11 +346,29 @@ class ZoningAgent:
             solution, idx = get_centroid_solution(filtered, normalized_filtered)
             
             # Format response
+            show_all = arguments.get("show_all_metrics", False)
             result = f"**Current Solution** (centroid of {len(filtered)} feasible solutions)\n\n"
-            result += format_solution(solution)
+            result += format_solution(solution, show_all=show_all)
             result += f"\n\n**Path:** {solution['path']}"
             
             return result
+        
+        elif tool_name == "list_all_metrics":
+            return get_metric_summary()
+        
+        elif tool_name == "search_metrics":
+            query = arguments.get("query", "")
+            matches = search_metrics(query)
+            
+            if not matches:
+                return f"No metrics found matching '{query}'. Use list_all_metrics to see all available metrics."
+            
+            lines = [f"**Metrics matching '{query}':**\n"]
+            for m in matches:
+                direction = "lower is better" if m.direction == "minimize" else "higher is better"
+                lines.append(f"• **{m.display_name}** ({m.category}): {m.description} ({direction})")
+            
+            return "\n".join(lines)
         
         elif tool_name == "tighten_filter":
             metric_name = arguments["metric_name"]
@@ -298,16 +384,23 @@ class ZoningAgent:
                 return f"Cannot tighten: only {len(filtered)} solution(s) remaining. Consider loosening other filters first."
             
             try:
+                metric = METRIC_BY_NAME[metric_name]
                 new_bound, expected_remaining = calculate_tightening(
                     filtered, metric_name, reduction
                 )
                 
-                # Apply the new bound
-                self.filter_state.bounds[metric_name].max_bound = new_bound
+                # Apply the new bound based on direction
+                if metric.direction == "minimize":
+                    self.filter_state.bounds[metric_name].max_bound = new_bound
+                    bound_type = "max"
+                else:
+                    self.filter_state.bounds[metric_name].min_bound = new_bound
+                    bound_type = "min"
                 
                 actual_filtered = self._get_filtered_solutions()
+                direction = "lower is better" if metric.direction == "minimize" else "higher is better"
                 
-                return f"Tightened '{metric_name}' to max value {new_bound:.4f}. {len(actual_filtered)} solutions remaining (was {len(filtered)})."
+                return f"Tightened '{metric_name}' ({direction}) to {bound_type} value {new_bound:.4f}. {len(actual_filtered)} solutions remaining (was {len(filtered)})."
             
             except Exception as e:
                 return f"Error tightening filter: {str(e)}"
@@ -316,6 +409,7 @@ class ZoningAgent:
             metric_name = arguments["metric_name"]
             
             try:
+                metric = METRIC_BY_NAME[metric_name]
                 new_bound, added_count = calculate_loosening(
                     self.pareto_original, self.filter_state, metric_name
                 )
@@ -324,17 +418,23 @@ class ZoningAgent:
                     return f"'{metric_name}' is already unconstrained."
                 
                 before_count = len(self._get_filtered_solutions())
-                self.filter_state.bounds[metric_name].max_bound = new_bound
+                
+                if metric.direction == "minimize":
+                    self.filter_state.bounds[metric_name].max_bound = new_bound
+                else:
+                    self.filter_state.bounds[metric_name].min_bound = new_bound
+                
                 after_count = len(self._get_filtered_solutions())
                 
-                return f"Loosened '{metric_name}' to max value {new_bound:.4f}. {after_count} solutions now feasible (was {before_count})."
+                return f"Loosened '{metric_name}' to value {new_bound:.4f}. {after_count} solutions now feasible (was {before_count})."
             
             except Exception as e:
                 return f"Error loosening filter: {str(e)}"
         
         elif tool_name == "get_filter_bounds":
             filtered = self._get_filtered_solutions()
-            return get_filter_summary(self.filter_state, self.pareto_original, filtered)
+            category = arguments.get("category")
+            return get_filter_summary(self.filter_state, self.pareto_original, filtered, show_category=category)
         
         elif tool_name == "find_feasible_relaxation":
             suggestions = find_relaxation_needed(
@@ -346,8 +446,13 @@ class ZoningAgent:
             
             result = "**Suggested Relaxations** (relaxing any ONE of these could restore feasibility):\n\n"
             for metric_name, new_bound in suggestions.items():
-                current = self.filter_state.bounds[metric_name].max_bound
-                result += f"• **{metric_name}**: relax from {current:.4f} → {new_bound:.4f}\n"
+                metric = METRIC_BY_NAME.get(metric_name)
+                if metric and metric.direction == "minimize":
+                    current = self.filter_state.bounds[metric_name].max_bound
+                    result += f"• **{metric_name}**: relax max from {current:.4f} → {new_bound:.4f}\n"
+                elif metric:
+                    current = self.filter_state.bounds[metric_name].min_bound
+                    result += f"• **{metric_name}**: relax min from {current:.4f} → {new_bound:.4f}\n"
             
             result += "\nAsk the user which metric they're willing to compromise on."
             return result
@@ -361,10 +466,9 @@ class ZoningAgent:
             # Determine number of clusters
             n_clusters = arguments.get("n_clusters")
             if n_clusters is None:
-                # Auto-select: aim for ~3-5 clusters, with at least 2 solutions per cluster
                 n_clusters = min(max(2, len(filtered) // 3), 5)
-            n_clusters = min(n_clusters, len(filtered) // 2)  # At least 2 solutions per cluster
-            n_clusters = max(2, n_clusters)  # At least 2 clusters
+            n_clusters = min(n_clusters, len(filtered) // 2)
+            n_clusters = max(2, n_clusters)
             
             # Vectorize and cluster
             vectors = vectorize_solutions(filtered)
@@ -378,21 +482,18 @@ class ZoningAgent:
             self._cluster_centers = centers
             self._cluster_directions = directions
             
-            # Format summary
             return format_cluster_summary(filtered, vectors, labels, centers, directions)
         
         elif tool_name == "select_cluster":
             if self._cluster_labels is None:
                 return "No clustering results available. Call show_solution_clusters first."
             
-            # User provides 1-indexed cluster ID
             cluster_id = arguments["cluster_id"] - 1  # Convert to 0-indexed
             
             n_clusters = len(self._cluster_centers)
             if cluster_id < 0 or cluster_id >= n_clusters:
                 return f"Invalid cluster ID. Please choose between 1 and {n_clusters}."
             
-            # Get bounds for this cluster
             cluster_bounds = get_cluster_bounds(
                 self._clustered_solutions,
                 self._cluster_labels,
@@ -401,8 +502,12 @@ class ZoningAgent:
             
             # Apply bounds to filter state
             for metric_name, bounds in cluster_bounds.items():
-                # Only set max_bound since all metrics are minimize
-                self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
+                if metric_name in METRIC_BY_NAME:
+                    metric = METRIC_BY_NAME[metric_name]
+                    if metric.direction == "minimize":
+                        self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
+                    else:
+                        self.filter_state.bounds[metric_name].min_bound = bounds.min_bound
             
             # Clear clustering state
             cluster_size = (self._cluster_labels == cluster_id).sum()
@@ -413,7 +518,6 @@ class ZoningAgent:
             self._clustered_solutions = None
             self._clustered_vectors = None
             
-            # Get actual filtered count after applying bounds
             actual_count = len(self._get_filtered_solutions())
             
             return f"Selected cluster {cluster_id + 1} ({direction_label}). Filters tightened to {actual_count} solutions from this cluster."
@@ -427,14 +531,12 @@ class ZoningAgent:
         
         Handles tool calling automatically.
         """
-        # Add user message to history
         self.history.append({"role": "user", "content": user_message})
         
-        # Call the model
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.history,
-            tools=TOOLS,
+            tools=self.tools,
             tool_choice="auto",
         )
         
@@ -442,7 +544,6 @@ class ZoningAgent:
         
         # Handle tool calls
         while assistant_message.tool_calls:
-            # Add assistant message with tool calls to history
             self.history.append({
                 "role": "assistant",
                 "content": assistant_message.content,
@@ -459,7 +560,6 @@ class ZoningAgent:
                 ],
             })
             
-            # Execute each tool call
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
                 try:
@@ -469,23 +569,20 @@ class ZoningAgent:
                 
                 result = self._execute_tool(tool_name, arguments)
                 
-                # Add tool result to history
                 self.history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": result,
                 })
             
-            # Get next response
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.history,
-                tools=TOOLS,
+                tools=self.tools,
                 tool_choice="auto",
             )
             assistant_message = response.choices[0].message
         
-        # Add final response to history
         final_content = assistant_message.content or ""
         self.history.append({"role": "assistant", "content": final_content})
         
@@ -506,27 +603,22 @@ class ZoningAgent:
         - clusters: List of cluster info when show_solution_clusters was called
         - solution_path: Path to solution when select_cluster was called
         """
-        # Track tool calls and their results
         tool_calls_made = []
         clusters_data = None
         solution_path = None
 
-        # Add user message to history
         self.history.append({"role": "user", "content": user_message})
 
-        # Call the model
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.history,
-            tools=TOOLS,
+            tools=self.tools,
             tool_choice="auto",
         )
 
         assistant_message = response.choices[0].message
 
-        # Handle tool calls
         while assistant_message.tool_calls:
-            # Add assistant message with tool calls to history
             self.history.append({
                 "role": "assistant",
                 "content": assistant_message.content,
@@ -543,7 +635,6 @@ class ZoningAgent:
                 ],
             })
 
-            # Execute each tool call
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
                 try:
@@ -551,26 +642,16 @@ class ZoningAgent:
                 except json.JSONDecodeError:
                     arguments = {}
 
-                # Track the tool call
                 tool_calls_made.append(tool_name)
 
-                # Capture cluster data before executing show_solution_clusters
                 if tool_name == "show_solution_clusters":
-                    # Execute the tool
                     result = self._execute_tool(tool_name, arguments)
-
-                    # After execution, capture the cluster data
                     if self._cluster_labels is not None:
                         clusters_data = self._build_clusters_response()
 
                 elif tool_name == "select_cluster":
-                    # Get cluster info before it's cleared
                     cluster_id = arguments.get("cluster_id", 1) - 1
-
-                    # Execute the tool (this clears cluster state)
                     result = self._execute_tool(tool_name, arguments)
-
-                    # Get the centroid solution path after selection
                     filtered = self._get_filtered_solutions()
                     if len(filtered) > 0:
                         normalized = normalize_metrics(filtered)
@@ -578,10 +659,7 @@ class ZoningAgent:
                         solution_path = solution["path"]
 
                 elif tool_name in ["tighten_filter", "loosen_filter", "get_current_solution"]:
-                    # Execute the tool
                     result = self._execute_tool(tool_name, arguments)
-
-                    # Get the centroid solution path after filter changes
                     filtered = self._get_filtered_solutions()
                     if len(filtered) > 0:
                         normalized = normalize_metrics(filtered)
@@ -591,28 +669,23 @@ class ZoningAgent:
                 else:
                     result = self._execute_tool(tool_name, arguments)
 
-                # Add tool result to history
                 self.history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": result,
                 })
 
-            # Get next response
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.history,
-                tools=TOOLS,
+                tools=self.tools,
                 tool_choice="auto",
             )
             assistant_message = response.choices[0].message
 
-        # Add final response to history
         final_content = assistant_message.content or ""
         self.history.append({"role": "assistant", "content": final_content})
 
-        # If no solution path was set yet but tool calls were made (and we're not showing clusters),
-        # get the current centroid solution to display
         if solution_path is None and clusters_data is None and len(tool_calls_made) > 0:
             filtered = self._get_filtered_solutions()
             if len(filtered) > 0:
@@ -620,7 +693,6 @@ class ZoningAgent:
                 solution, idx = get_centroid_solution(filtered, normalized)
                 solution_path = solution["path"]
 
-        # Determine response type
         if clusters_data is not None:
             response_type = "clusters"
         elif solution_path is not None:
@@ -650,14 +722,13 @@ class ZoningAgent:
             if len(cluster_solutions) == 0:
                 continue
 
-            # Get centroid solution for this cluster
             normalized = normalize_metrics(cluster_solutions)
             centroid_solution, _ = get_centroid_solution(cluster_solutions, normalized)
 
             direction_info = self._cluster_directions.get(cluster_id, {})
 
             clusters.append({
-                "id": cluster_id + 1,  # 1-indexed for user display
+                "id": cluster_id + 1,
                 "label": direction_info.get("direction_label", f"Cluster {cluster_id + 1}"),
                 "count": int(mask.sum()),
                 "path": centroid_solution["path"],

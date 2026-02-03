@@ -113,6 +113,7 @@ async function loadGeojson() {
 }
 
 async function loadSolution(path) {
+    console.log('[loadSolution] Loading solution from path:', path);
     showMapLoading(true);
 
     try {
@@ -121,16 +122,23 @@ async function loadSolution(path) {
             fetch(`${API_BASE}/api/solution/${encodeURIComponent(path)}`)
         ]);
 
+        console.log('[loadSolution] Response status:', solutionResponse.status);
         if (!solutionResponse.ok) throw new Error('Failed to load solution');
 
         currentSolution = await solutionResponse.json();
+        console.log('[loadSolution] Solution loaded:', {
+            zones: Object.keys(currentSolution.zones || {}).length,
+            demographics: Object.keys(currentSolution.demographics || {}).length,
+            zone_data: Object.keys(currentSolution.zone_data || {}).length,
+            status: currentSolution.status
+        });
 
         renderMap(geojson);
         updateCharts();
 
         mapPlaceholder.classList.add('hidden');
     } catch (error) {
-        console.error('Error loading solution:', error);
+        console.error('[loadSolution] Error loading solution:', error);
         addMessage('system', 'Failed to load solution. Please try again.');
     } finally {
         showMapLoading(false);
@@ -197,22 +205,40 @@ function createTooltip(bgId, zoneId, demographics) {
 }
 
 function updateCharts() {
-    if (!currentSolution) return;
+    console.log('[updateCharts] Called');
+    if (!currentSolution) {
+        console.warn('[updateCharts] No currentSolution, returning');
+        return;
+    }
 
     const { demographics } = currentSolution;
+    console.log('[updateCharts] demographics:', demographics ? `${Object.keys(demographics).length} zones` : 'undefined');
+
+    if (!demographics) {
+        console.error('[updateCharts] demographics is undefined in currentSolution');
+        return;
+    }
+
     const zoneIds = Object.keys(demographics).sort((a, b) => Number(a) - Number(b));
+    console.log('[updateCharts] zoneIds:', zoneIds);
 
     // FRL chart
-    const frlData = zoneIds.map(id => demographics[id].FRL_pct || 0);
+    const frlData = zoneIds.map(id => {
+        const value = demographics[id].FRL_pct || 0;
+        console.log(`[updateCharts] Zone ${id} FRL_pct:`, value);
+        return value;
+    });
     demographicsChart.data.labels = zoneIds.map(id => `Zone ${id}`);
     demographicsChart.data.datasets[0].data = frlData;
     demographicsChart.update();
+    console.log('[updateCharts] FRL chart updated with data:', frlData);
 
     // Students chart
     const studentData = zoneIds.map(id => Math.round(demographics[id].ge_students || 0));
     studentsChart.data.labels = zoneIds.map(id => `Zone ${id}`);
     studentsChart.data.datasets[0].data = studentData;
     studentsChart.update();
+    console.log('[updateCharts] Students chart updated with data:', studentData);
 }
 
 function setupEventListeners() {

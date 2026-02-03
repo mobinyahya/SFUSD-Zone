@@ -12,7 +12,7 @@ from pathlib import Path
 from .zoning_agent import ZoningAgent
 
 
-DEFAULT_CSV_PATH = "/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/recursive_metrics_flattened.csv"
+DEFAULT_CSV_PATH = "~/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/summary.csv"
 
 
 def main():

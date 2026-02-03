@@ -11,21 +11,24 @@ from Zone_Generation.Optimization.optimizer import SolutionOutput
 class IterativeChoiceOptimizer(IntegerConstraintProgram):
     def __init__(self, config):
         super().__init__(config)
-        
+
         # Hardcoded paths as per plan/user context (or verify_modifications.py)
         # In a production setting, these should be in config, but for this task we use what we found.
         utility_path = "/share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv"
         student_path = "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
-        
+
         print(f"Initializing UtilityEvaluator with:\n utility: {utility_path}\n student: {student_path}")
         self.evaluator = UtilityEvaluator(utility_path, student_path)
         self.max_iterations = config.get('max_iterations', 5)
-        
+
     # To store variables for Benders decomposition
         self.area_utility_vars = {}
         self.school_id_to_area = {}
         self.best_real_utility = -float('inf')
         self.best_zone_dict = None
+
+        # Track cuts (zone assignments) at each iteration for Hamming distance analysis
+        self.cuts_history = []  # List of binary vectors representing zone assignments
 
     def add_variables(self, fixed_areas: dict[int, int] = None):
         super().add_variables(fixed_areas)
@@ -35,6 +38,19 @@ class IterativeChoiceOptimizer(IntegerConstraintProgram):
                 if 'school_ids' in self.G.nodes[area_id]:
                     for sid in self.G.nodes[area_id]['school_ids']:
                         self.school_id_to_area[sid] = area_id
+
+    def _compute_block_changes(self, zone_dict1, zone_dict2):
+        """
+        Compute number of blocks/areas that changed zone assignment (Hamming distance).
+
+        Returns:
+            int: Number of areas with different zone assignments
+        """
+        changes = 0
+        for area_id in zone_dict1:
+            if area_id in zone_dict2 and zone_dict1[area_id] != zone_dict2[area_id]:
+                changes += 1
+        return changes
 
     def add_choice_objective(self):
         """
@@ -101,7 +117,23 @@ class IterativeChoiceOptimizer(IntegerConstraintProgram):
             
             # Extract Zoning
             zone_dict = self._generate_zone_dict(solver)
-            
+
+            # Record cut and compute Hamming distances (block changes between iterations)
+            total_blocks = len(zone_dict)
+            if self.cuts_history:
+                print(f"Block zone changes from previous iterations:")
+                block_changes_list = []
+                for prev_iter, prev_zone_dict in enumerate(self.cuts_history):
+                    block_changes = self._compute_block_changes(prev_zone_dict, zone_dict)
+                    pct = 100.0 * block_changes / total_blocks
+                    print(f"  Iteration {prev_iter + 1} -> {iteration + 1}: "
+                          f"{block_changes}/{total_blocks} blocks changed ({pct:.1f}%)")
+                    block_changes_list.append(block_changes)
+                # Summary statistics
+                print(f"  Summary: Min={min(block_changes_list)}, Max={max(block_changes_list)}, "
+                      f"Avg={sum(block_changes_list) / len(block_changes_list):.1f}")
+            self.cuts_history.append(zone_dict.copy())
+
             # Evaluate using Real Utility Evaluator
             # Note: We need to convert zone_dict keys to match what evaluator expects?
             # _generate_zone_dict returns {area_index: zone_id} or {area_id: zone_id}?

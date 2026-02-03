@@ -19,6 +19,7 @@ from data_loader import (
     get_zone_demographics,
     load_geojson,
     get_zone_color,
+    load_solution_result,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 
@@ -31,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Path to the solutions CSV
-DEFAULT_CSV_PATH = "/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/recursive_metrics_flattened.csv"
+DEFAULT_CSV_PATH = "~/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/summary.csv"
 
 # Session storage for ZoningAgent instances
 agent_sessions: dict[str, ZoningAgent] = {}
@@ -105,17 +106,23 @@ async def get_solution_clusters():
 @app.get("/api/solution/{path:path}")
 async def get_solution(path: str):
     """
-    Get zone assignments and demographics for a specific solution.
+    Get zone assignments, demographics, and metrics for a specific solution.
 
     Returns:
     - zones: dict mapping blockgroup_id to zone_id
-    - demographics: dict mapping zone_id to demographic stats
+    - zone_data: dict mapping zone_id to comprehensive zone statistics (demographics, programs, quality metrics)
+    - metrics: dict of solution-level metrics (FRL, ethnicities, distances, etc.)
     - colors: dict mapping zone_id to hex color
+    - status: optimization status
+    - demographics: (DEPRECATED) same as zone_data, kept for backwards compatibility
     """
     try:
         decoded_path = unquote(path)
         bg_zone_dict = load_zone_dict(decoded_path)
-        demographics = get_zone_demographics(bg_zone_dict)
+        zone_data = get_zone_demographics(decoded_path)
+
+        # Load full result for metrics
+        result = load_solution_result(decoded_path)
 
         # Build colors map
         zone_ids = set(bg_zone_dict.values())
@@ -123,18 +130,25 @@ async def get_solution(path: str):
 
         # Convert keys to strings for JSON
         zones = {str(k): v for k, v in bg_zone_dict.items()}
-        demographics = {str(k): v for k, v in demographics.items()}
+        zone_data_json = {str(k): v for k, v in zone_data.items()}
         colors = {str(k): v for k, v in colors.items()}
 
         return {
             "zones": zones,
-            "demographics": demographics,
+            "zone_data": zone_data_json,
+            "demographics": zone_data_json,  # Kept for backwards compatibility
+            "metrics": result.get("metrics", {}),
+            "status": result.get("status", "UNKNOWN"),
+            "boundary_cost": result.get("boundary_cost"),
+            "total_wall_time": result.get("total_wall_time"),
             "colors": colors,
             "path": decoded_path,
         }
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Solution not found: {path}")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(f"Error loading solution: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

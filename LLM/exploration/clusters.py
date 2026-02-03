@@ -12,7 +12,12 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 
-from .pareto import METRIC_CONFIG, get_metric_columns
+from .metrics_config import (
+    ALL_METRICS,
+    METRIC_BY_COLUMN,
+    METRIC_BY_NAME,
+    get_metric_columns,
+)
 from .filters import FilterBounds
 
 
@@ -26,7 +31,8 @@ def vectorize_solutions(df: pd.DataFrame) -> np.ndarray:
     Returns:
         2D numpy array of shape (n_solutions, n_metrics)
     """
-    metric_cols = get_metric_columns()
+    # Only use columns that exist in both df and metric config
+    metric_cols = [col for col in get_metric_columns() if col in df.columns]
     return df[metric_cols].values.astype(np.float64)
 
 
@@ -99,11 +105,10 @@ def compute_cluster_directions(
         Dict mapping cluster_id to {
             "direction_vector": np.ndarray,
             "direction_label": str,
-            "normalized_direction": np.ndarray (for comparison)
+            "normalized_direction": np.ndarray
         }
     """
     metric_cols = get_metric_columns()
-    metric_names = list(METRIC_CONFIG.keys())
     
     # Compute overall centroid
     overall_centroid = vectors.mean(axis=0)
@@ -123,34 +128,39 @@ def compute_cluster_directions(
         normalized_direction = direction / ranges
         
         # Generate interpretable label
-        label_parts = []
-        
-        # Find metrics with significant deviations
-        # Lower values are better for all metrics, so:
-        # - Negative direction = lower than avg = BETTER at this metric
-        # - Positive direction = higher than avg = WORSE at this metric
-        
-        emphasized = []  # Metrics this cluster is BETTER at (lower values)
-        compromised = []  # Metrics this cluster is WORSE at (higher values)
+        emphasized = []  # Metrics this cluster is BETTER at
+        compromised = []  # Metrics this cluster is WORSE at
         
         threshold = 0.1  # 10% of range is significant
         
-        for i, (name, norm_dir) in enumerate(zip(metric_names, normalized_direction)):
-            # Get a shortened name for the label
-            short_name = _get_short_metric_name(name)
+        for i, col in enumerate(metric_cols):
+            if col not in METRIC_BY_COLUMN:
+                continue
             
-            if norm_dir < -threshold:
-                emphasized.append(short_name)
-            elif norm_dir > threshold:
-                compromised.append(short_name)
+            metric = METRIC_BY_COLUMN[col]
+            norm_dir = normalized_direction[i]
+            short_name = _get_short_metric_name(metric.display_name)
+            
+            # For MINIMIZE metrics: negative = better, positive = worse
+            # For MAXIMIZE metrics: positive = better, negative = worse
+            if metric.direction == "minimize":
+                if norm_dir < -threshold:
+                    emphasized.append(short_name)
+                elif norm_dir > threshold:
+                    compromised.append(short_name)
+            else:  # maximize
+                if norm_dir > threshold:
+                    emphasized.append(short_name)
+                elif norm_dir < -threshold:
+                    compromised.append(short_name)
         
         # Build label
         if emphasized and compromised:
-            label = f"Better {', '.join(emphasized[:2])}; accepts higher {', '.join(compromised[:2])}"
+            label = f"Better {', '.join(emphasized[:2])}; accepts worse {', '.join(compromised[:2])}"
         elif emphasized:
             label = f"Optimizes for {', '.join(emphasized[:3])}"
         elif compromised:
-            label = f"Allows higher {', '.join(compromised[:3])}"
+            label = f"Accepts worse {', '.join(compromised[:3])}"
         else:
             label = "Balanced trade-offs"
         
@@ -163,19 +173,32 @@ def compute_cluster_directions(
     return directions
 
 
-def _get_short_metric_name(full_name: str) -> str:
-    """Convert full metric names to shorter labels."""
+def _get_short_metric_name(display_name: str) -> str:
+    """Convert display names to shorter labels for cluster descriptions."""
     name_map = {
-        "Free and Reduced Lunch Population % Deviation from district average": "economic diversity",
-        "Black Population % Deviation from district average": "Black population balance",
-        "Hispanic Population % Deviation from district average": "Hispanic population balance",
-        "White Population % Deviation from district average": "White population balance",
-        "Asian Population % Deviation from district average": "Asian population balance",
-        "Total Population % Deviation from district average": "seat availability",
-        "Average distance to closest school": "commute distance",
-        "Compactness": "compactness",
+        # Diversity
+        "FRL Deviation": "economic diversity",
+        "Black Population Deviation": "Black population balance",
+        "Hispanic Population Deviation": "Hispanic population balance",
+        "White Population Deviation": "White population balance",
+        "Asian Population Deviation": "Asian population balance",
+        "Seat Disparity": "seat availability",
+        # Distance
+        "Avg Distance to Closest School": "commute distance",
+        "Schools in Attendance Area": "local school access",
+        "Boundary Cost (Compactness)": "compactness",
+        # Programs
+        "Total Programs": "program variety",
+        "Language Immersion Programs": "language programs",
+        "Special Education Programs": "special ed access",
+        "General Education Programs": "GE programs",
+        # Quality
+        "GreatSchools Rating": "school ratings",
+        "Math Scores": "math scores",
+        "English Scores": "English scores",
+        "Suspension Index": "discipline climate",
     }
-    return name_map.get(full_name, full_name)
+    return name_map.get(display_name, display_name)
 
 
 def get_representative_solution(
@@ -232,18 +255,19 @@ def get_cluster_bounds(
         cluster_id: Which cluster to get bounds for
         
     Returns:
-        Dict mapping metric_name to FilterBounds with min/max set
+        Dict mapping metric display_name to FilterBounds with min/max set
     """
-    metric_cols = get_metric_columns()
-    metric_names = list(METRIC_CONFIG.keys())
-    
     # Get solutions in this cluster
     cluster_mask = labels == cluster_id
     cluster_df = df.iloc[np.where(cluster_mask)[0]]
     
     bounds = {}
-    for name, col in zip(metric_names, metric_cols):
-        bounds[name] = FilterBounds(
+    for metric in ALL_METRICS:
+        col = metric.column
+        if col not in cluster_df.columns:
+            continue
+        
+        bounds[metric.display_name] = FilterBounds(
             min_bound=float(cluster_df[col].min()),
             max_bound=float(cluster_df[col].max())
         )

@@ -9,104 +9,134 @@ This module handles:
 
 import pandas as pd
 import numpy as np
-from typing import Literal
 from pathlib import Path
 
+from .metrics_config import (
+    ALL_METRICS,
+    CORE_METRICS,
+    METRIC_BY_COLUMN,
+    METRIC_BY_NAME,
+    get_metric_columns,
+    get_core_metric_columns,
+    MetricSpec,
+)
 
-# Metric configuration: maps user-friendly names to CSV columns and optimization direction
-# "minimize" means lower is better, "maximize" means higher is better
-METRIC_CONFIG: dict[str, dict[str, str | Literal["minimize", "maximize"]]] = {
-    "Free and Reduced Lunch Population % Deviation from district average": {
-        "column": "FRL",
-        "direction": "minimize",
-    },
-    "Black Population % Deviation from district average": {
-        "column": "Ethnicity_Black_or_African_American",
-        "direction": "minimize",
-    },
-    "Hispanic Population % Deviation from district average": {
-        "column": "Ethnicity_Hispanic/Latinx",
-        "direction": "minimize",
-    },
-    "White Population % Deviation from district average": {
-        "column": "Ethnicity_White",
-        "direction": "minimize",
-    },
-    "Asian Population % Deviation from district average": {
-        "column": "Ethnicity_Asian",
-        "direction": "minimize",
-    },
-    "Total Population % Deviation from district average": {
-        "column": "seat_disparity",
-        "direction": "minimize",
-    },
-    "Average distance to closest school": {
-        "column": "closest_school_distances",
-        "direction": "minimize",
-    },
-    "Compactness": {
-        "column": "boundary_cost",
-        "direction": "minimize",  # Lower boundary cost = more compact
-    },
-}
+
+# ============================================================================
+# BACKWARD COMPATIBILITY: METRIC_CONFIG dict
+# ============================================================================
+
+def _build_metric_config() -> dict[str, dict]:
+    """Build METRIC_CONFIG dict for backward compatibility."""
+    config = {}
+    for m in ALL_METRICS:
+        config[m.display_name] = {
+            "column": m.column,
+            "direction": m.direction,
+            "description": m.description,
+            "category": m.category,
+            "is_core": m.is_core,
+        }
+    return config
+
+
+METRIC_CONFIG = _build_metric_config()
 
 # Reverse mapping: column name -> user-friendly name
-COLUMN_TO_NAME = {v["column"]: k for k, v in METRIC_CONFIG.items()}
+COLUMN_TO_NAME = {m.column: m.display_name for m in ALL_METRICS}
 
 
-def get_metric_columns() -> list[str]:
-    """Get list of CSV column names for all metrics."""
-    return [config["column"] for config in METRIC_CONFIG.values()]
+# ============================================================================
+# SOLUTION LOADING
+# ============================================================================
 
-
-def load_solutions(csv_path: str | Path) -> pd.DataFrame:
+def load_solutions(
+    csv_path: str | Path,
+    use_core_only: bool = False
+) -> pd.DataFrame:
     """
     Load zoning solutions from CSV file.
     
-    Returns DataFrame with only the metric columns plus the 'path' column for identification.
+    Args:
+        csv_path: Path to CSV with zoning solutions
+        use_core_only: If True, only load core metrics (faster for basic usage)
+    
+    Returns:
+        DataFrame with metric columns plus 'path' for identification.
     """
     df = pd.read_csv(csv_path)
     
-    # Keep only metric columns and the path for identification
-    metric_cols = get_metric_columns()
-    cols_to_keep = metric_cols + ["path"]
+    # Determine which columns to keep
+    if use_core_only:
+        metric_cols = get_core_metric_columns()
+    else:
+        metric_cols = get_metric_columns()
+    
+    # Filter to columns that exist in the CSV
+    available_cols = [c for c in metric_cols if c in df.columns]
+    missing_cols = set(metric_cols) - set(available_cols)
+    
+    if missing_cols:
+        print(f"Note: {len(missing_cols)} metrics not in CSV: {list(missing_cols)[:5]}...")
+    
+    cols_to_keep = available_cols + ["path"]
     
     return df[cols_to_keep].copy()
 
 
+def get_available_metrics(df: pd.DataFrame) -> list[MetricSpec]:
+    """Get list of MetricSpecs for columns present in the DataFrame."""
+    return [
+        METRIC_BY_COLUMN[col] 
+        for col in df.columns 
+        if col in METRIC_BY_COLUMN
+    ]
+
+
+# ============================================================================
+# NORMALIZATION
+# ============================================================================
+
 def normalize_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalize all metrics to [0, 1] range.
+    Normalize all metrics to [0, 1] range where 0 = best.
     
-    For "minimize" metrics, 0 = best (lowest), 1 = worst (highest).
-    This allows us to take a simple average to find "balanced" solutions.
+    For "minimize" metrics, 0 = lowest value (best).
+    For "maximize" metrics, 0 = highest value (best), inverted.
     """
     normalized = df.copy()
+    metric_cols = [c for c in df.columns if c in METRIC_BY_COLUMN]
     
-    for name, config in METRIC_CONFIG.items():
-        col = config["column"]
+    for col in metric_cols:
+        metric = METRIC_BY_COLUMN[col]
         min_val = df[col].min()
         max_val = df[col].max()
         
         if max_val - min_val > 0:
-            # Normalize to [0, 1] where 0 is best
-            normalized[col] = (df[col] - min_val) / (max_val - min_val)
+            # Normalize to [0, 1]
+            col_vals = (df[col] - min_val) / (max_val - min_val)
             
-            # If maximizing, invert so 0 is still best
-            if config["direction"] == "maximize":
-                normalized[col] = 1 - normalized[col]
+            # For maximize metrics, invert so 0 is still best
+            if metric.direction == "maximize":
+                col_vals = 1 - col_vals
+            normalized[col] = col_vals
         else:
-            normalized[col] = 0  # All values are the same
+            normalized[col] = 0.0  # All values are the same
     
     return normalized
 
 
+# ============================================================================
+# PARETO FRONTIER
+# ============================================================================
+
 def dominates(row_a: pd.Series, row_b: pd.Series, metric_cols: list[str]) -> bool:
     """
-    Check if row_a dominates row_b (row_a is better or equal in all metrics, 
-    and strictly better in at least one).
+    Check if row_a dominates row_b.
     
     Uses normalized values where lower = better for all metrics.
+    row_a dominates row_b if it's better or equal in all metrics,
+    and strictly better in at least one.
     """
     better_or_equal = all(row_a[col] <= row_b[col] for col in metric_cols)
     strictly_better = any(row_a[col] < row_b[col] for col in metric_cols)
@@ -115,10 +145,10 @@ def dominates(row_a: pd.Series, row_b: pd.Series, metric_cols: list[str]) -> boo
 
 def compute_pareto_frontier(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute the Pareto frontier of solutions.
+    Compute the Pareto frontier of solutions using a vectorized NumPy approach.
     
-    A solution is Pareto-optimal if no other solution dominates it
-    (i.e., no solution is better in all metrics).
+    A solution is Pareto-optimal if no other solution dominates it.
+    Performance: O(N^2) worst case, but heavily pruned via vectorization.
     
     Args:
         df: DataFrame with normalized metrics (lower = better)
@@ -126,32 +156,65 @@ def compute_pareto_frontier(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame containing only Pareto-optimal solutions
     """
-    metric_cols = get_metric_columns()
-    n = len(df)
-    is_pareto = np.ones(n, dtype=bool)
+    metric_cols = [c for c in df.columns if c in METRIC_BY_COLUMN]
+    if not metric_cols:
+        return df.copy()
+        
+    # Extract values as NumPy array for speed
+    costs = df[metric_cols].values
+    n_points = costs.shape[0]
+    is_efficient = np.ones(n_points, dtype=bool)
     
-    for i in range(n):
-        if not is_pareto[i]:
+    for i in range(n_points):
+        if not is_efficient[i]:
             continue
-        for j in range(n):
-            if i == j or not is_pareto[j]:
-                continue
-            # Check if j dominates i
-            if dominates(df.iloc[j], df.iloc[i], metric_cols):
-                is_pareto[i] = False
-                break
-    
-    return df[is_pareto].copy()
+            
+        # A point 'c' dominates others if it's better or equal in all, 
+        # and strictly better in at least one.
+        # But for pruning, we just need to find points that are BETTER than the current one.
+        # Here we use the property: if any point j is better than i, i is not Pareto.
+        
+        # Vectorized check: which points are better than or equal to costs[i]?
+        # (Where better means <= since we normalized to lower-is-better)
+        current_cost = costs[i]
+        
+        # Points that are better than or equal to current in ALL dimensions
+        better_or_equal = np.all(costs <= current_cost, axis=1)
+        
+        # Points that are strictly better in at least ONE dimension
+        strictly_better = np.any(costs < current_cost, axis=1)
+        
+        # Points that dominate the current point i
+        dominators = better_or_equal & strictly_better
+        
+        if np.any(dominators):
+            is_efficient[i] = False
+        else:
+            # If current point i is NOT dominated, it might dominate others.
+            # We can prune points that are dominated by current point i.
+            
+            # Points current_cost dominates: current_cost is <= in all, < in one
+            better_than_others = np.all(current_cost <= costs, axis=1)
+            strictly_better_than_others = np.any(current_cost < costs, axis=1)
+            
+            dominated_by_i = better_than_others & strictly_better_than_others
+            is_efficient[dominated_by_i] = False
+            
+    return df[is_efficient].copy()
 
+
+# ============================================================================
+# CENTROID / BALANCED SOLUTION
+# ============================================================================
 
 def get_centroid_solution(
     df: pd.DataFrame,
     normalized_df: pd.DataFrame
 ) -> tuple[pd.Series, int]:
     """
-    Find the solution closest to the centroid of the normalized Pareto frontier.
+    Find the solution closest to the centroid of the normalized space.
     
-    This represents a "balanced" solution that trades off all metrics equally.
+    This represents a "balanced" solution trading off all metrics equally.
     
     Args:
         df: Original DataFrame with actual metric values
@@ -160,7 +223,7 @@ def get_centroid_solution(
     Returns:
         Tuple of (solution row from original df, index)
     """
-    metric_cols = get_metric_columns()
+    metric_cols = [c for c in normalized_df.columns if c in METRIC_BY_COLUMN]
     
     # Compute centroid of normalized values
     centroid = normalized_df[metric_cols].mean()
@@ -172,30 +235,49 @@ def get_centroid_solution(
     return df.loc[min_idx], min_idx
 
 
+# ============================================================================
+# STATISTICS AND FORMATTING
+# ============================================================================
+
 def get_metric_stats(df: pd.DataFrame) -> dict[str, dict[str, float]]:
     """
-    Get min, max, mean for each metric in the current solution set.
+    Get min, max, mean for each metric in the solution set.
     
-    Returns dict mapping metric name to stats dict.
+    Returns dict mapping metric display_name to stats dict.
     """
     stats = {}
-    for name, config in METRIC_CONFIG.items():
-        col = config["column"]
-        stats[name] = {
+    for col in df.columns:
+        if col not in METRIC_BY_COLUMN:
+            continue
+        
+        metric = METRIC_BY_COLUMN[col]
+        stats[metric.display_name] = {
             "min": float(df[col].min()),
             "max": float(df[col].max()),
             "mean": float(df[col].mean()),
-            "direction": config["direction"],
+            "direction": metric.direction,
+            "column": col,
         }
     return stats
 
 
-def format_solution(row: pd.Series) -> str:
-    """Format a solution row as human-readable string."""
+def format_solution(row: pd.Series, show_all: bool = False) -> str:
+    """
+    Format a solution row as human-readable string.
+    
+    Args:
+        row: Solution row from DataFrame
+        show_all: If True, show all metrics; otherwise only core metrics
+    """
     lines = []
-    for name, config in METRIC_CONFIG.items():
-        col = config["column"]
-        value = row[col]
-        direction = "lower is better" if config["direction"] == "minimize" else "higher is better"
-        lines.append(f"  • {name}: {value:.4f} ({direction})")
+    metrics_to_show = ALL_METRICS if show_all else CORE_METRICS
+    
+    for metric in metrics_to_show:
+        if metric.column not in row.index:
+            continue
+        
+        value = row[metric.column]
+        direction = "lower is better" if metric.direction == "minimize" else "higher is better"
+        lines.append(f"  • {metric.display_name}: {value:.4f} ({direction})")
+    
     return "\n".join(lines)
