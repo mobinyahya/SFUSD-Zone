@@ -7,7 +7,7 @@ from typing import Optional
 
 from Zone_Generation.Running_Analysis.metrics.base import MetricsResult, ZoneData
 from Zone_Generation.Running_Analysis.metrics.diversity import (
-    compute_diversity_metrics, compute_seat_disparity
+    compute_diversity_metrics, compute_seat_disparity, compute_theil_index
 )
 from Zone_Generation.Running_Analysis.metrics.distance import compute_distance_metrics
 from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics
@@ -89,14 +89,25 @@ class ZoneMetricsCalculator:
         # Add seat disparity
         seat_disparity = compute_seat_disparity(self.zone_blocks, self.G)
         result.update({'seat_disparity': seat_disparity})
-        
+
+        # Add Theil segregation index
+        theil_metrics, per_zone_entropy = compute_theil_index(
+            self.zone_dict, self.G, self.zone_blocks
+        )
+        result.update(theil_metrics)
+
         # Update zone data with demographics
         for zone_id, demos in per_zone_demos.items():
             if zone_id in result.zone_data:
                 result.zone_data[zone_id].ge_students = demos['ge_students']
                 result.zone_data[zone_id].frl_pct = demos['frl_pct']
                 result.zone_data[zone_id].ethnicity_pcts = demos['ethnicity_pcts']
-        
+
+        # Update zone data with entropy from Theil calculation
+        for zone_id, ent_data in per_zone_entropy.items():
+            if zone_id in result.zone_data:
+                result.zone_data[zone_id].ethnicity_entropy = ent_data['entropy']
+
         # 2. Distance metrics
         distance_metrics, per_zone_dist = compute_distance_metrics(
             self.zone_dict, self.G, self.zone_blocks, self.zone_schools

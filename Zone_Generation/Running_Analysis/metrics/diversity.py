@@ -2,6 +2,7 @@
 Diversity and demographic metrics for zoning.
 """
 
+import math
 import networkx as nx
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
@@ -106,5 +107,83 @@ def compute_seat_disparity(
         diff = abs(seats - students) / students
         total_diff += diff
         valid_zones += 1
-    
+
     return total_diff / valid_zones if valid_zones > 0 else 0.0
+
+
+def compute_theil_index(
+    zone_dict: dict[int, int],
+    G: nx.Graph,
+    zone_blocks: dict[int, list[int]]
+) -> tuple[dict[str, float], dict[int, dict]]:
+    """
+    Compute Theil's Information Theory Index for ethnic segregation.
+
+    The Theil Index measures segregation by comparing zone-level entropy
+    to district-wide entropy:
+
+        T = Σ (t_j / T) × (E - E_j) / E
+
+    where:
+        - T = total students, t_j = zone j students
+        - E = district-wide Shannon entropy, E_j = zone j entropy
+
+    Lower values indicate less segregation (zones match district composition).
+    Range: 0 (no segregation) to ~1 (high segregation)
+
+    Returns:
+        Tuple of (aggregated_metrics, per_zone_data)
+    """
+    # 1. Calculate district-wide entropy E using 4 main ethnic groups
+    district_eth_props = {eth: G.graph['R'][eth] for eth in AREA_ETHNICITIES}
+    E_district = -sum(
+        p * math.log(p) for p in district_eth_props.values() if p > 0
+    )
+
+    # 2. Calculate per-zone entropy and populations
+    zone_entropies = {}
+    zone_populations = {}
+    total_students = 0.0
+
+    for zone_id, blocks in zone_blocks.items():
+        zone_demo = {eth: 0.0 for eth in AREA_ETHNICITIES}
+        zone_demo['ge_students'] = 0.0
+
+        for block in blocks:
+            if block not in G.nodes:
+                continue
+            zone_demo['ge_students'] += G.nodes[block]['ge_students']
+            for eth in AREA_ETHNICITIES:
+                zone_demo[eth] += G.nodes[block][eth]
+
+        zone_populations[zone_id] = zone_demo['ge_students']
+        total_students += zone_demo['ge_students']
+
+        # Zone entropy
+        if zone_demo['ge_students'] > 0:
+            zone_eth_props = {
+                eth: zone_demo[eth] / zone_demo['ge_students']
+                for eth in AREA_ETHNICITIES
+            }
+            zone_entropies[zone_id] = -sum(
+                p * math.log(p) for p in zone_eth_props.values() if p > 0
+            )
+        else:
+            zone_entropies[zone_id] = 0.0
+
+    # 3. Compute Theil Index (student-weighted)
+    theil_index = 0.0
+    if E_district > 0 and total_students > 0:
+        for zone_id in zone_blocks:
+            t_j = zone_populations.get(zone_id, 0)
+            E_j = zone_entropies.get(zone_id, 0)
+            weight = t_j / total_students
+            theil_index += weight * (E_district - E_j) / E_district
+
+    # 4. Build per-zone data
+    per_zone_data = {
+        zone_id: {'entropy': zone_entropies.get(zone_id, 0.0)}
+        for zone_id in zone_blocks
+    }
+
+    return {'theil_index': theil_index}, per_zone_data

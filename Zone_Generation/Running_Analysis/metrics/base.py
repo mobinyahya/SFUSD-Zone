@@ -57,6 +57,9 @@ class ZoneData:
     avg_max_utility: float = 0.0
     avg_logsum_utility: float = 0.0
 
+    # Segregation
+    ethnicity_entropy: float = 0.0  # Shannon entropy of zone ethnic composition
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -76,6 +79,7 @@ class ZoneData:
             'schools_in_attendance_area': self.schools_in_attendance_area,
             'avg_max_utility': self.avg_max_utility,
             'avg_logsum_utility': self.avg_logsum_utility,
+            'ethnicity_entropy': self.ethnicity_entropy,
         }
 
 

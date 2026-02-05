@@ -45,6 +45,14 @@ CATEGORY_DESCRIPTIONS = {
 
 DIVERSITY_METRICS = [
     MetricSpec(
+        column="theil_index",
+        display_name="Ethnic Segregation Index",
+        description="Theil index measuring ethnic segregation (0=integrated, higher=segregated)",
+        category="diversity",
+        direction="minimize",
+        is_core=True,
+    ),
+    MetricSpec(
         column="FRL",
         display_name="FRL Deviation",
         description="Free/reduced lunch % deviation from district average",
@@ -58,7 +66,7 @@ DIVERSITY_METRICS = [
         description="Black student % deviation from district average",
         category="diversity",
         direction="minimize",
-        is_core=True,
+        is_core=False,
     ),
     MetricSpec(
         column="Ethnicity_Hispanic/Latinx",
@@ -66,7 +74,7 @@ DIVERSITY_METRICS = [
         description="Hispanic/Latinx student % deviation from district average",
         category="diversity",
         direction="minimize",
-        is_core=True,
+        is_core=False,
     ),
     MetricSpec(
         column="Ethnicity_White",
@@ -74,7 +82,7 @@ DIVERSITY_METRICS = [
         description="White student % deviation from district average",
         category="diversity",
         direction="minimize",
-        is_core=True,
+        is_core=False,
     ),
     MetricSpec(
         column="Ethnicity_Asian",
@@ -82,7 +90,7 @@ DIVERSITY_METRICS = [
         description="Asian student % deviation from district average",
         category="diversity",
         direction="minimize",
-        is_core=True,
+        is_core=False,
     ),
     MetricSpec(
         column="seat_disparity",

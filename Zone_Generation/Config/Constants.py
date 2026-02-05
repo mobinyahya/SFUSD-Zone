@@ -209,7 +209,7 @@ zone_colors = {
     12: 'darkolivegreen', 490: 'darkolivegreen', 13: 'crimson', 729: 'crimson', 14: 'darkgreen', 505: 'darkgreen',
     15: 'gold', 816: 'gold', 16: 'indigo', 513: 'indigo', 17: 'salmon', 549: 'salmon',
     18: 'yellowgreen', 750: 'yellowgreen', 19: 'maroon', 525: 'maroon', 20: 'violet', 575: 'violet',
-    21: 'tan', 539: 'tan', 22: 'darkblue', 999: 'darkblue', 23: 'darkred', 562: 'darkred',
+    21: 'tan', 539: 'tan', 22: 'fuchsia', 999: 'fuchsia', 23: 'darkred', 562: 'darkred',
     24: 'darkorange', 569: 'darkorange', 25: 'turquoise', 589: 'turquoise', 26: 'dodgerblue',
     862: 'dodgerblue', 27: 'mediumvioletred', 614: 'mediumvioletred', 28: 'orchid', 625: 'orchid',
     29: 'peru', 638: 'peru', 30: 'slateblue', 644: 'slateblue', 31: 'tomato', 650: 'tomato',
