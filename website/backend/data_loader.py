@@ -30,7 +30,7 @@ from Zone_Generation.Config.Constants import AREA_ETHNICITIES, zone_colors
 from LLM.exploration.metrics_config import CORE_METRICS, get_core_metric_columns
 
 # Paths
-CSV_PATH = Path("/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/recursive_metrics_flattened.csv")
+CSV_PATH = Path("/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/summary.csv")
 GRAPH_PATH = Path("/home/kumarc/sfusd-local-data/zones/SFUSD/Optimization/Zones/Graphs/BlockGroup_0.pickle")
 SHAPEFILE_PATH = Path("/share/data/school_choice/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp")
 GEOJSON_PATH = Path(__file__).parent.parent / "data" / "sf_blockgroups.geojson"

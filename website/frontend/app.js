@@ -130,12 +130,6 @@ function initCharts() {
         }
     });
 
-    charts.entropy = new Chart(document.getElementById('chart-entropy').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Entropy', data: [], backgroundColor: CHART_COLORS.tertiary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Entropy' } } } }
-    });
-
     // Distance Tab Charts
     charts.distance = new Chart(document.getElementById('chart-distance').getContext('2d'), {
         type: 'bar',
@@ -162,26 +156,16 @@ function initCharts() {
         options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
     });
 
-    charts.gePrograms = new Chart(document.getElementById('chart-ge-programs').getContext('2d'), {
+    charts.languageImmersion = new Chart(document.getElementById('chart-language-immersion').getContext('2d'), {
         type: 'bar',
-        data: { labels: [], datasets: [{ label: 'GE Programs', data: [], backgroundColor: CHART_COLORS.secondary }] },
+        data: { labels: [], datasets: [{ label: 'Language Immersion', data: [], backgroundColor: CHART_COLORS.tertiary }] },
         options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
     });
 
-    charts.specialPrograms = new Chart(document.getElementById('chart-special-programs').getContext('2d'), {
+    charts.specialEd = new Chart(document.getElementById('chart-special-ed').getContext('2d'), {
         type: 'bar',
-        data: {
-            labels: [],
-            datasets: [
-                { label: 'Language Immersion', data: [], backgroundColor: CHART_COLORS.tertiary },
-                { label: 'Special Ed', data: [], backgroundColor: CHART_COLORS.quaternary },
-            ]
-        },
-        options: {
-            ...defaultOptions,
-            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } }
-        }
+        data: { labels: [], datasets: [{ label: 'Special Ed', data: [], backgroundColor: CHART_COLORS.quaternary }] },
+        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
     });
 
     // Quality Tab Charts
@@ -364,7 +348,8 @@ function updateAllCharts() {
 
     const zoneData = currentSolution.zone_data;
     const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
-    const labels = zoneIds.map(id => `Zone ${id}`);
+    // Use sequential zone labels (Zone 0, Zone 1, etc.) instead of actual zone IDs
+    const labels = zoneIds.map((id, index) => `Zone ${index}`);
 
     // Diversity Charts
     updateChart(charts.frl, labels, zoneIds.map(id => zoneData[id].FRL_pct || (zoneData[id].frl_pct * 100) || 0));
@@ -391,8 +376,6 @@ function updateAllCharts() {
     charts.ethnicity.data.datasets[4].data = otherData;
     charts.ethnicity.update();
 
-    updateChart(charts.entropy, labels, zoneIds.map(id => zoneData[id].entropy || 0));
-
     // Distance Charts
     updateChart(charts.distance, labels, zoneIds.map(id => zoneData[id].avg_closest_school_distance || 0));
     updateChart(charts.attendance, labels, zoneIds.map(id => zoneData[id].schools_in_attendance_area || 0));
@@ -400,15 +383,8 @@ function updateAllCharts() {
 
     // Programs Charts
     updateChart(charts.totalPrograms, labels, zoneIds.map(id => zoneData[id].total_programs || 0));
-    updateChart(charts.gePrograms, labels, zoneIds.map(id => (zoneData[id].programs || {}).GE || 0));
-
-    // Language immersion and special ed
-    const langImmersion = zoneIds.map(id => zoneData[id].language_immersion_count || 0);
-    const specialEd = zoneIds.map(id => zoneData[id].special_ed_count || 0);
-    charts.specialPrograms.data.labels = labels;
-    charts.specialPrograms.data.datasets[0].data = langImmersion;
-    charts.specialPrograms.data.datasets[1].data = specialEd;
-    charts.specialPrograms.update();
+    updateChart(charts.languageImmersion, labels, zoneIds.map(id => zoneData[id].language_immersion_count || 0));
+    updateChart(charts.specialEd, labels, zoneIds.map(id => zoneData[id].special_ed_count || 0));
 
     // Quality Charts
     updateChart(charts.greatschools, labels, zoneIds.map(id => zoneData[id].avg_greatschools_rating || 0));
@@ -454,7 +430,8 @@ function updateComparisonTable() {
         ],
         'Programs': [
             { key: 'avg_total_programs_per_zone', name: 'Total Programs' },
-            { key: 'avg_GE_per_zone', name: 'GE Programs' },
+            { key: 'avg_language_immersion_per_zone', name: 'Language Immersion' },
+            { key: 'avg_special_ed_per_zone', name: 'Special Ed' },
         ],
         'Quality': [
             { key: 'avg_greatschools_rating', name: 'GreatSchools' },
