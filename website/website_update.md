@@ -1,5 +1,29 @@
-Look through the frontend code, where we make graphs. Rehaul it to have the following data available:
-1. Graphs showing information about all core metrics for each zone
-2. Table showing how the current solution does across all core metrics (aggregated, not per zone) relative to the total solution space, independent of the users personal filters. So for example it should show how the current solution does relative to the total solution space in terms of FRL, ethnic diversity, travel time, etc. This should be color coded, with red indicating that the current solution has a bad value for this metric, and green indicating that the current solution has a good value for this metric. This is meant to help users intrinsically reason about trade offs. 
+Look through the frontend code. There are a few small issues.
 
-Create a plan, and ask any clarifying questions needed. 
+The solution comparison table does not have all its valuse filled. Specifically, their are no distance, program, or quality metrics filled in. 
+
+Diversity:
+Frl Deviation
+Entropy index
+Seat disparity
+
+Distance:
+average distance to closest zone
+schools in attendance area
+
+Programs:
+
+Total programs
+Language programs
+Special education programsq
+
+Quality:
+
+Average Great schools rating
+Average math, english score
+suspension index
+
+
+Similarly, for the graphs at the bottom, there are a few issues, In diversity, remove the zone entropy graph, since this does not differ by zone. For quality, there seems to be issues where the first two bars in the graph are not being displayed correctly. For programs, remove the GE programs by zone graph, and split the combined language immerson and special ed graphs.
+
+Create a plan for how to fix these issues, and ask any qualifying questions needed. 

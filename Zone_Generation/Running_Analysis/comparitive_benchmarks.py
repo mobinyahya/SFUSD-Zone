@@ -159,6 +159,88 @@ def cmd_aggregate(args):
         print(df[['status', 'total_wall_time', 'boundary_cost']].describe())
 
 
+def cmd_regenerate(args):
+    """Regenerate result.json files with recomputed metrics for all benchmark runs."""
+    import pickle
+    from Zone_Generation.Running_Analysis.benchmark.results import BenchmarkResult
+    from Zone_Generation.Running_Analysis.metrics import ZoneMetricsCalculator
+    from Zone_Generation.Config.Constants import get_dropbox_path
+    
+    root_path = os.path.expanduser(args.input)
+    
+    # Cache graphs by level to avoid reloading
+    graph_cache = {}
+    
+    def get_graph(level: str, is_local: bool = False):
+        if level not in graph_cache:
+            graph_path = f"{get_dropbox_path(is_local)}/Optimization/Zones/Graphs/{level}.pickle"
+            with open(graph_path, 'rb') as f:
+                graph_cache[level] = pickle.load(f)
+        return graph_cache[level]
+    
+    # Find all result.json files
+    result_folders = []
+    for root, _, files in os.walk(root_path):
+        if "result.json" in files:
+            result_folders.append(root)
+    
+    print(f"Found {len(result_folders)} result folders")
+    
+    success_count = 0
+    error_count = 0
+    skip_count = 0
+    
+    for i, folder in enumerate(result_folders):
+        print(f"\n[{i+1}/{len(result_folders)}] Processing: {folder}")
+        
+        try:
+            # Load existing result
+            result = BenchmarkResult.load(folder)
+            
+            # Skip if no zone_dict
+            if not result.zone_dict:
+                print("  Skipping: No zone_dict found")
+                skip_count += 1
+                continue
+            
+            # Determine level from config or last level result
+            level = result.config.get('level', 'BlockGroup_0')
+            if result.level_results:
+                level = result.level_results[-1].level
+            
+            is_local = result.config.get('is_local', False)
+            
+            # Load graph and recompute metrics
+            G = get_graph(level, is_local)
+            calc = ZoneMetricsCalculator(
+                result.zone_dict.copy(), G, 
+                {'is_local': is_local, 'compute_choice': args.include_choice}
+            )
+            metrics_result = calc.compute_all(include_choice=args.include_choice)
+            
+            # Update result with new metrics
+            result.metrics = metrics_result.to_flat_dict()
+            result.zone_data = {zid: zd.to_dict() for zid, zd in metrics_result.zone_data.items()}
+            
+            # Save updated result
+            result.save(folder)
+            
+            print(f"  ✓ Regenerated with {len(result.metrics)} metrics")
+            success_count += 1
+            
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+            error_count += 1
+            if args.fail_fast:
+                raise
+    
+    print(f"\n{'='*60}")
+    print(f"Regeneration complete:")
+    print(f"  Success: {success_count}")
+    print(f"  Skipped: {skip_count}")
+    print(f"  Errors:  {error_count}")
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -205,6 +287,17 @@ def main():
     agg_parser.add_argument('--output', '-o', help='Output CSV file')
     agg_parser.add_argument('--zone-data-dir', '-z', help='Folder to export detailed per-zone CSVs')
     agg_parser.set_defaults(func=cmd_aggregate)
+    
+    # Regenerate
+    regen_parser = subparsers.add_parser('regenerate', 
+                                          help='Regenerate result.json files with updated metrics')
+    regen_parser.add_argument('--input', '-i', required=True, 
+                               help='Root folder containing benchmark results')
+    regen_parser.add_argument('--include-choice', action='store_true',
+                               help='Include choice metrics (slower)')
+    regen_parser.add_argument('--fail-fast', action='store_true',
+                               help='Stop on first error')
+    regen_parser.set_defaults(func=cmd_regenerate)
     
     args = parser.parse_args()
     
