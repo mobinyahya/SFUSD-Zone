@@ -1,1 +1,5 @@
-Some of the current methods in the website api are outdated. Specificially, the backend needs to be updated to use the results in the output folder rather than recalculating them in the backend. Look through the data directory and every result.json to see the structure of the data (which should be the same as the result from benchmarks). Ideally no metrics should be calculated by the website. Create a plan for how to rewrite the code and ask any clarifying questions as needed. 
+Look through the frontend code, where we make graphs. Rehaul it to have the following data available:
+1. Graphs showing information about all core metrics for each zone
+2. Table showing how the current solution does across all core metrics (aggregated, not per zone) relative to the total solution space, independent of the users personal filters. So for example it should show how the current solution does relative to the total solution space in terms of FRL, ethnic diversity, travel time, etc. This should be color coded, with red indicating that the current solution has a bad value for this metric, and green indicating that the current solution has a good value for this metric. This is meant to help users intrinsically reason about trade offs. 
+
+Create a plan, and ask any clarifying questions needed. 

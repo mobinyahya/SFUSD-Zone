@@ -12,6 +12,10 @@
     --border-color: #dcdde1;
     --text-color: #2c3e50;
     --text-muted: #7f8c8d;
+    --success-color: #27ae60;
+    --warning-color: #f39c12;
+    --danger-color: #e74c3c;
+    --sidebar-width: 280px;
 }
 
 body {
@@ -43,11 +47,11 @@ header h1 {
 main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr 4px 350px;
+    grid-template-columns: 1fr 4px 280px 4px 350px;
     gap: 0;
     min-height: 0;
     overflow: hidden;
-    overflow: hidden;
+    position: relative;
 }
 
 #map-panel {
@@ -62,18 +66,18 @@ main {
     height: 100%;
 }
 
-#resize-handle {
+.resize-handle {
     background: var(--border-color);
     cursor: col-resize;
     position: relative;
     transition: background 0.2s;
 }
 
-#resize-handle:hover {
+.resize-handle:hover {
     background: var(--secondary-color);
 }
 
-#resize-handle.resizing {
+.resize-handle.resizing {
     background: var(--secondary-color);
 }
 
@@ -92,14 +96,134 @@ main {
     display: none;
 }
 
+/* ============================================================================
+   Comparison Panel (Inline)
+   ============================================================================ */
+
+#comparison-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    overflow: hidden;
+    min-width: 200px;
+}
+
+.panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.panel-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.panel-description {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+#comparison-table-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+.no-solution-msg {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Comparison Table */
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.comparison-table th,
+.comparison-table td {
+    padding: 8px 6px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.comparison-table th {
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.comparison-table .metric-name {
+    font-weight: 500;
+}
+
+.comparison-table .metric-value {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+}
+
+.comparison-table .metric-rank {
+    text-align: center;
+    width: 60px;
+}
+
+/* Percentile indicator */
+.percentile-indicator {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: center;
+}
+
+.percentile-indicator.good {
+    background: #d4edda;
+    color: #155724;
+}
+
+.percentile-indicator.ok {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.percentile-indicator.bad {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Category headers in table */
+.comparison-table .category-header {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    padding: 10px 6px 6px;
+}
+
+.comparison-table .category-header td {
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* ============================================================================
+   Chat Panel
+   ============================================================================ */
+
 #chat-panel {
     display: flex;
     flex-direction: column;
     background: var(--panel-bg);
     overflow: hidden;
     min-height: 0;
-    overflow: hidden;
-    min-height: 0;
+    border-left: 1px solid var(--border-color);
 }
 
 #chat-header {
@@ -119,7 +243,6 @@ main {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 0;
     min-height: 0;
 }
 
@@ -261,32 +384,93 @@ main {
     background: #2980b9;
 }
 
-footer#charts-panel {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    padding: 16px 20px;
-    background: var(--panel-bg);
-    border-top: 1px solid var(--border-color);
-    height: 220px;
-}
+/* ============================================================================
+   Charts Panel with Tabs
+   ============================================================================ */
 
-#charts-panel>div {
+footer#charts-panel {
     display: flex;
     flex-direction: column;
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border-color);
+    height: 240px;
 }
 
-#charts-panel h3 {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 8px;
+#chart-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: #f8f9fa;
+}
+
+.chart-tab {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
     color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
 }
 
-#charts-panel canvas {
-    flex: 1;
-    max-height: 160px;
+.chart-tab:hover {
+    color: var(--text-color);
+    background: #ecf0f1;
 }
+
+.chart-tab.active {
+    color: var(--secondary-color);
+    border-bottom-color: var(--secondary-color);
+    background: var(--panel-bg);
+}
+
+#chart-tab-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-pane {
+    display: none;
+    height: 100%;
+    padding: 12px 16px;
+}
+
+.tab-pane.active {
+    display: block;
+}
+
+.chart-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    height: 100%;
+}
+
+.chart-container {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.chart-container h4 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.chart-container canvas {
+    flex: 1;
+    max-height: 140px;
+}
+
+/* ============================================================================
+   Loading Overlays
+   ============================================================================ */
 
 #loading-overlay {
     position: fixed;
@@ -454,11 +638,32 @@ footer#charts-panel {
     pointer-events: none;
 }
 
-/* Responsive */
+/* ============================================================================
+   Responsive Design
+   ============================================================================ */
+
+@media (max-width: 1200px) {
+    main {
+        grid-template-columns: 1fr 4px 200px 4px 300px;
+    }
+}
+
 @media (max-width: 900px) {
     main {
         grid-template-columns: 1fr;
         grid-template-rows: 1fr 4px 300px;
+    }
+
+    #comparison-panel {
+        display: none;
+    }
+
+    #resize-handle-left {
+        display: none;
+    }
+
+    #resize-handle-right {
+        cursor: row-resize;
     }
 
     #map-panel {
@@ -466,16 +671,21 @@ footer#charts-panel {
         border-bottom: 1px solid var(--border-color);
     }
 
-    #resize-handle {
-        cursor: row-resize;
-    }
-
-    #resize-handle:hover {
-        background: var(--secondary-color);
+    #chat-panel {
+        border-left: none;
     }
 
     footer#charts-panel {
-        grid-template-columns: 1fr;
         height: auto;
+        min-height: 280px;
+    }
+
+    .chart-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .chart-container canvas {
+        max-height: 120px;
     }
 }

@@ -27,6 +27,7 @@ from LLM.exploration.clusters import (
     get_representative_solution,
 )
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, zone_colors
+from LLM.exploration.metrics_config import CORE_METRICS, get_core_metric_columns
 
 # Paths
 CSV_PATH = Path("/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/llm_bg_runs/recursive_metrics_flattened.csv")
@@ -38,6 +39,7 @@ GEOJSON_PATH = Path(__file__).parent.parent / "data" / "sf_blockgroups.geojson"
 _graph_cache = None
 _geojson_cache = None
 _clusters_cache = None
+_solution_space_stats_cache = None
 
 
 def load_graph() -> nx.Graph:
@@ -205,6 +207,66 @@ def load_geojson() -> dict:
         _geojson_cache = json.load(f)
 
     return _geojson_cache
+
+
+def get_solution_space_stats() -> dict:
+    """
+    Get statistics for core metrics across all solutions in the solution space.
+
+    Returns dict mapping metric column name to:
+    - min: minimum value
+    - max: maximum value
+    - p10: 10th percentile
+    - p25: 25th percentile
+    - p50: median (50th percentile)
+    - p75: 75th percentile
+    - p90: 90th percentile
+    - direction: 'minimize' or 'maximize'
+    - display_name: user-friendly name
+    - description: brief description
+    - category: metric category
+    """
+    global _solution_space_stats_cache
+    if _solution_space_stats_cache is not None:
+        return _solution_space_stats_cache
+
+    # Load all solutions
+    all_solutions = load_solutions(CSV_PATH)
+
+    # Filter to only valid solutions (OPTIMAL or FEASIBLE)
+    if 'status' in all_solutions.columns:
+        valid_solutions = all_solutions[
+            all_solutions['status'].isin(['OPTIMAL', 'FEASIBLE'])
+        ]
+    else:
+        valid_solutions = all_solutions
+
+    stats = {}
+    for metric in CORE_METRICS:
+        col = metric.column
+        if col not in valid_solutions.columns:
+            continue
+
+        values = valid_solutions[col].dropna()
+        if len(values) == 0:
+            continue
+
+        stats[col] = {
+            'min': float(values.min()),
+            'max': float(values.max()),
+            'p10': float(values.quantile(0.10)),
+            'p25': float(values.quantile(0.25)),
+            'p50': float(values.quantile(0.50)),
+            'p75': float(values.quantile(0.75)),
+            'p90': float(values.quantile(0.90)),
+            'direction': metric.direction,
+            'display_name': metric.display_name,
+            'description': metric.description,
+            'category': metric.category,
+        }
+
+    _solution_space_stats_cache = stats
+    return stats
 
 
 def get_clusters(n_clusters: int = 5) -> list[dict]:

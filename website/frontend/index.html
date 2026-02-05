@@ -23,7 +23,19 @@
             </div>
         </section>
 
-        <div id="resize-handle"></div>
+        <div id="resize-handle-left" class="resize-handle"></div>
+
+        <section id="comparison-panel">
+            <div class="panel-header">
+                <h3>Solution Comparison</h3>
+                <p class="panel-description">How this solution ranks against all solutions</p>
+            </div>
+            <div id="comparison-table-container">
+                <p class="no-solution-msg">Select a solution to see comparison</p>
+            </div>
+        </section>
+
+        <div id="resize-handle-right" class="resize-handle"></div>
 
         <section id="chat-panel">
             <div id="chat-header">
@@ -42,13 +54,87 @@
     </main>
 
     <footer id="charts-panel">
-        <div id="demographics-chart-container">
-            <h3>Zone Demographics (FRL %)</h3>
-            <canvas id="demographics-chart"></canvas>
+        <!-- Tab Navigation -->
+        <div id="chart-tabs">
+            <button class="chart-tab active" data-tab="diversity">Diversity</button>
+            <button class="chart-tab" data-tab="distance">Distance</button>
+            <button class="chart-tab" data-tab="programs">Programs</button>
+            <button class="chart-tab" data-tab="quality">Quality</button>
         </div>
-        <div id="students-chart-container">
-            <h3>Students per Zone</h3>
-            <canvas id="students-chart"></canvas>
+
+        <!-- Tab Content -->
+        <div id="chart-tab-content">
+            <!-- Diversity Tab -->
+            <div class="tab-pane active" data-tab="diversity">
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>FRL % by Zone</h4>
+                        <canvas id="chart-frl"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Ethnic Composition by Zone</h4>
+                        <canvas id="chart-ethnicity"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Zone Entropy (Diversity)</h4>
+                        <canvas id="chart-entropy"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Distance Tab -->
+            <div class="tab-pane" data-tab="distance">
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>Avg Distance to Closest School</h4>
+                        <canvas id="chart-distance"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Schools in Attendance Area</h4>
+                        <canvas id="chart-attendance"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Students per Zone</h4>
+                        <canvas id="chart-students"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Programs Tab -->
+            <div class="tab-pane" data-tab="programs">
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>Total Programs by Zone</h4>
+                        <canvas id="chart-total-programs"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>GE Programs by Zone</h4>
+                        <canvas id="chart-ge-programs"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Language & Special Ed</h4>
+                        <canvas id="chart-special-programs"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quality Tab -->
+            <div class="tab-pane" data-tab="quality">
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>GreatSchools Rating</h4>
+                        <canvas id="chart-greatschools"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Test Scores by Zone</h4>
+                        <canvas id="chart-scores"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Suspension Index</h4>
+                        <canvas id="chart-suspension"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
     </footer>
 

@@ -20,6 +20,7 @@ from data_loader import (
     load_geojson,
     get_zone_color,
     load_solution_result,
+    get_solution_space_stats,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 
@@ -100,6 +101,23 @@ async def get_solution_clusters():
         clusters = get_clusters()
         return {"clusters": clusters}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/solution-space-stats")
+async def get_stats():
+    """
+    Get statistics for core metrics across the entire solution space.
+
+    Returns percentiles and ranges for each core metric to enable
+    comparison of individual solutions against the solution space.
+    """
+    try:
+        stats = get_solution_space_stats()
+        return {"stats": stats}
+    except Exception as e:
+        logger.error(f"Error getting solution space stats: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
