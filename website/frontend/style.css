@@ -185,19 +185,30 @@ main {
     text-align: center;
 }
 
+/* 5-tier color coding based on percentile performance */
+.percentile-indicator.excellent {
+    background: #1e7e34;
+    color: #ffffff;
+}
+
 .percentile-indicator.good {
-    background: #d4edda;
+    background: #a8e6a3;
     color: #155724;
 }
 
-.percentile-indicator.ok {
+.percentile-indicator.average {
     background: #fff3cd;
     color: #856404;
 }
 
-.percentile-indicator.bad {
-    background: #f8d7da;
-    color: #721c24;
+.percentile-indicator.below-avg {
+    background: #ffc8a0;
+    color: #8b4513;
+}
+
+.percentile-indicator.poor {
+    background: #e74c3c;
+    color: #ffffff;
 }
 
 /* Category headers in table */

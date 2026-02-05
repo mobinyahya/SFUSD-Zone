@@ -492,9 +492,12 @@ function getRankingClass(percentile, direction) {
     // For "maximize" metrics, higher percentile is better
     const effectivePercentile = direction === 'minimize' ? (100 - percentile) : percentile;
 
-    if (effectivePercentile >= 80) return 'good';
-    if (effectivePercentile >= 20) return 'ok';
-    return 'bad';
+    // 5-tier color coding based on how well this solution performs
+    if (effectivePercentile >= 80) return 'excellent';  // Top 20%
+    if (effectivePercentile >= 60) return 'good';       // 60-80%
+    if (effectivePercentile >= 40) return 'average';    // 40-60%
+    if (effectivePercentile >= 20) return 'below-avg';  // 20-40%
+    return 'poor';                                       // Bottom 20%
 }
 
 function formatValue(value, key) {
