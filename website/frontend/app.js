@@ -454,10 +454,15 @@ function updateComparisonTable() {
 
             if (value === undefined || !stats) continue;
 
-            const percentile = calculatePercentile(value, stats);
-            const ranking = getRankingClass(percentile, stats.direction);
+            const rawPercentile = calculatePercentile(value, stats);
+            // Normalize percentile so higher always means better
+            // For "minimize" metrics, invert the percentile
+            const normalizedPercentile = stats.direction === 'minimize' 
+                ? (100 - rawPercentile) 
+                : rawPercentile;
+            const ranking = getRankingClass(normalizedPercentile);
             const displayValue = formatValue(value, key);
-            const displayPercentile = `${Math.round(percentile)}%`;
+            const displayPercentile = `${Math.round(normalizedPercentile)}%`;
 
             html += `<tr>`;
             html += `<td class="metric-name">${name}</td>`;
@@ -487,16 +492,13 @@ function calculatePercentile(value, stats) {
     return 90 + 10 * (value - p90) / (max - p90);
 }
 
-function getRankingClass(percentile, direction) {
-    // For "minimize" metrics, lower percentile is better
-    // For "maximize" metrics, higher percentile is better
-    const effectivePercentile = direction === 'minimize' ? (100 - percentile) : percentile;
-
+function getRankingClass(normalizedPercentile) {
+    // Percentile is already normalized so higher = better
     // 5-tier color coding based on how well this solution performs
-    if (effectivePercentile >= 80) return 'excellent';  // Top 20%
-    if (effectivePercentile >= 60) return 'good';       // 60-80%
-    if (effectivePercentile >= 40) return 'average';    // 40-60%
-    if (effectivePercentile >= 20) return 'below-avg';  // 20-40%
+    if (normalizedPercentile >= 80) return 'excellent';  // Top 20%
+    if (normalizedPercentile >= 60) return 'good';       // 60-80%
+    if (normalizedPercentile >= 40) return 'average';    // 40-60%
+    if (normalizedPercentile >= 20) return 'below-avg';  // 20-40%
     return 'poor';                                       // Bottom 20%
 }
 
