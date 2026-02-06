@@ -25,7 +25,7 @@ from data_loader import (
     load_geojson,
     get_zone_color,
     load_solution_result,
-    get_solution_space_stats,
+    compute_percentile_ranks,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 
@@ -115,22 +115,6 @@ async def get_solution_clusters():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/solution-space-stats")
-async def get_stats():
-    """
-    Get statistics for core metrics across the entire solution space.
-
-    Returns percentiles and ranges for each core metric to enable
-    comparison of individual solutions against the solution space.
-    """
-    try:
-        stats = get_solution_space_stats()
-        return {"stats": stats}
-    except Exception as e:
-        logger.error(f"Error getting solution space stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/solution/{path:path}")
 async def get_solution(path: str):
@@ -162,11 +146,13 @@ async def get_solution(path: str):
         zone_data_json = {str(k): v for k, v in zone_data.items()}
         colors = {str(k): v for k, v in colors.items()}
 
+        solution_metrics = result.get("metrics", {})
         return {
             "zones": zones,
             "zone_data": zone_data_json,
             "demographics": zone_data_json,  # Kept for backwards compatibility
-            "metrics": result.get("metrics", {}),
+            "metrics": solution_metrics,
+            "percentile_ranks": compute_percentile_ranks(solution_metrics),
             "status": result.get("status", "UNKNOWN"),
             "boundary_cost": result.get("boundary_cost"),
             "total_wall_time": result.get("total_wall_time"),

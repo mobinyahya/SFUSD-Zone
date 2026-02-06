@@ -7,7 +7,6 @@ let map = null;
 let geojsonLayer = null;
 let geojsonData = null;
 let currentSolution = null;
-let solutionSpaceStats = null;
 let sessionId = null;
 let isProcessing = false;
 let posthogApiKey = null;
@@ -144,13 +143,6 @@ async function initApp() {
         console.error('Failed to initialize charts:', error);
     }
 
-    // Load solution space stats for comparison table
-    try {
-        await loadSolutionSpaceStats();
-    } catch (error) {
-        console.error('Failed to load solution space stats:', error);
-    }
-
     // Send initial message to trigger clustering
     try {
         await sendInitialMessage();
@@ -216,7 +208,7 @@ function initCharts() {
     charts.distance = new Chart(document.getElementById('chart-distance').getContext('2d'), {
         type: 'bar',
         data: { labels: [], datasets: [{ label: 'Avg Distance', data: [], backgroundColor: CHART_COLORS.secondary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'km' } } } }
+        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'miles' } } } }
     });
 
     charts.attendance = new Chart(document.getElementById('chart-attendance').getContext('2d'), {
@@ -309,21 +301,6 @@ function setupTabSwitching() {
             }, 100);
         });
     });
-}
-
-async function loadSolutionSpaceStats() {
-    try {
-        const response = await fetch(`${API_BASE}/api/solution-space-stats`);
-        if (!response.ok) {
-            console.warn('Failed to load solution space stats');
-            return;
-        }
-        const data = await response.json();
-        solutionSpaceStats = data.stats;
-        console.log('Solution space stats loaded:', Object.keys(solutionSpaceStats).length, 'metrics');
-    } catch (error) {
-        console.error('Error loading solution space stats:', error);
-    }
 }
 
 async function loadGeojson() {
@@ -502,8 +479,9 @@ function updateChart(chart, labels, data) {
 
 function updateComparisonTable() {
     const container = document.getElementById('comparison-table-container');
+    const ranks = currentSolution && currentSolution.percentile_ranks;
 
-    if (!currentSolution || !currentSolution.metrics || !solutionSpaceStats) {
+    if (!currentSolution || !currentSolution.metrics || !ranks) {
         container.innerHTML = '<p class="no-solution-msg">Select a solution to see comparison</p>';
         return;
     }
@@ -544,24 +522,17 @@ function updateComparisonTable() {
 
         for (const { key, name } of metricList) {
             const value = metrics[key];
-            const stats = solutionSpaceStats[key];
+            const rank = ranks[key];
 
-            if (value === undefined || !stats) continue;
+            if (value === undefined || !rank) continue;
 
-            const rawPercentile = calculatePercentile(value, stats);
-            // Normalize percentile so higher always means better
-            // For "minimize" metrics, invert the percentile
-            const normalizedPercentile = stats.direction === 'minimize' 
-                ? (100 - rawPercentile) 
-                : rawPercentile;
-            const ranking = getRankingClass(normalizedPercentile);
             const displayValue = formatValue(value, key);
-            const displayPercentile = `${Math.round(normalizedPercentile)}%`;
+            const displayPercentile = `${rank.percentile}%`;
 
             html += `<tr>`;
             html += `<td class="metric-name">${name}</td>`;
             html += `<td class="metric-value">${displayValue}</td>`;
-            html += `<td class="metric-rank"><span class="percentile-indicator ${ranking}">${displayPercentile}</span></td>`;
+            html += `<td class="metric-rank"><span class="percentile-indicator ${rank.ranking}">${displayPercentile}</span></td>`;
             html += `</tr>`;
         }
     }
@@ -575,38 +546,12 @@ function updateComparisonTable() {
     });
 }
 
-function calculatePercentile(value, stats) {
-    // Calculate percentile based on where value falls in distribution
-    const { min, max, p10, p25, p50, p75, p90 } = stats;
-
-    if (value <= min) return 0;
-    if (value >= max) return 100;
-
-    // Linear interpolation between percentile points
-    if (value <= p10) return 10 * (value - min) / (p10 - min);
-    if (value <= p25) return 10 + 15 * (value - p10) / (p25 - p10);
-    if (value <= p50) return 25 + 25 * (value - p25) / (p50 - p25);
-    if (value <= p75) return 50 + 25 * (value - p50) / (p75 - p50);
-    if (value <= p90) return 75 + 15 * (value - p75) / (p90 - p75);
-    return 90 + 10 * (value - p90) / (max - p90);
-}
-
-function getRankingClass(normalizedPercentile) {
-    // Percentile is already normalized so higher = better
-    // 5-tier color coding based on how well this solution performs
-    if (normalizedPercentile >= 80) return 'excellent';  // Top 20%
-    if (normalizedPercentile >= 60) return 'good';       // 60-80%
-    if (normalizedPercentile >= 40) return 'average';    // 40-60%
-    if (normalizedPercentile >= 20) return 'below-avg';  // 20-40%
-    return 'poor';                                       // Bottom 20%
-}
-
 function formatValue(value, key) {
     if (value === undefined || value === null) return '-';
 
     // Format based on metric type
     if (key.includes('distance')) {
-        return value.toFixed(2) + ' km';
+        return value.toFixed(2) + ' miles';
     }
     if (key.includes('rating')) {
         return value.toFixed(1);

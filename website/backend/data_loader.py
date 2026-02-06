@@ -269,6 +269,72 @@ def get_solution_space_stats() -> dict:
     return stats
 
 
+def _interpolate_percentile(value: float, stats: dict) -> float:
+    """Interpolate where a value falls in the distribution (0-100 raw percentile)."""
+    min_val = stats['min']
+    max_val = stats['max']
+    p10 = stats['p10']
+    p25 = stats['p25']
+    p50 = stats['p50']
+    p75 = stats['p75']
+    p90 = stats['p90']
+
+    if value <= min_val:
+        return 0.0
+    if value >= max_val:
+        return 100.0
+
+    if value <= p10:
+        return 10 * (value - min_val) / (p10 - min_val) if p10 != min_val else 0.0
+    if value <= p25:
+        return 10 + 15 * (value - p10) / (p25 - p10) if p25 != p10 else 10.0
+    if value <= p50:
+        return 25 + 25 * (value - p25) / (p50 - p25) if p50 != p25 else 25.0
+    if value <= p75:
+        return 50 + 25 * (value - p50) / (p75 - p50) if p75 != p50 else 50.0
+    if value <= p90:
+        return 75 + 15 * (value - p75) / (p90 - p75) if p90 != p75 else 75.0
+    return 90 + 10 * (value - p90) / (max_val - p90) if max_val != p90 else 90.0
+
+
+def _get_ranking_class(normalized_percentile: float) -> str:
+    """Map a normalized percentile (higher=better) to a CSS ranking class."""
+    if normalized_percentile >= 80:
+        return 'excellent'
+    if normalized_percentile >= 60:
+        return 'good'
+    if normalized_percentile >= 40:
+        return 'average'
+    if normalized_percentile >= 20:
+        return 'below-avg'
+    return 'poor'
+
+
+def compute_percentile_ranks(metrics: dict) -> dict:
+    """Compute normalized percentile ranks for a solution's metrics.
+
+    Returns dict mapping metric column -> {percentile, ranking, display_name, category}
+    where percentile is 0-100 (higher = better) and ranking is the CSS class.
+    """
+    stats = get_solution_space_stats()
+    ranks = {}
+    for col, stat in stats.items():
+        if col not in metrics:
+            continue
+        value = metrics[col]
+        if value is None:
+            continue
+        raw = _interpolate_percentile(value, stat)
+        normalized = (100 - raw) if stat['direction'] == 'minimize' else raw
+        ranks[col] = {
+            'percentile': round(normalized),
+            'ranking': _get_ranking_class(normalized),
+            'display_name': stat['display_name'],
+            'category': stat['category'],
+        }
+    return ranks
+
+
 def get_clusters(n_clusters: int = 5) -> list[dict]:
     """
     Get clustered solutions with labels and representative paths.
