@@ -47,17 +47,25 @@ header h1 {
 main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr 4px 280px 4px 350px;
+    grid-template-columns: 1fr 4px 350px;
     gap: 0;
     min-height: 0;
     overflow: hidden;
     position: relative;
 }
 
+#map-area {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
 #map-panel {
     position: relative;
     background: var(--panel-bg);
     overflow: hidden;
+    flex: 1;
     min-height: 0;
 }
 
@@ -97,67 +105,108 @@ main {
 }
 
 /* ============================================================================
-   Comparison Panel (Inline)
+   Comparison Panel (Horizontal below map)
    ============================================================================ */
 
 #comparison-panel {
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border-color);
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
-    border-left: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
-    overflow: hidden;
-    min-width: 200px;
+    margin-bottom: 8px;
 }
 
 .panel-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
+    padding: 10px 16px 6px;
+    flex-shrink: 0;
 }
 
 .panel-header h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.panel-description {
-    font-size: 0.8rem;
-    color: var(--text-muted);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 0;
 }
 
 #comparison-table-container {
     flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 16px 12px;
 }
 
 .no-solution-msg {
     color: var(--text-muted);
     font-size: 0.85rem;
     text-align: center;
-    padding: 20px;
+    padding: 12px;
 }
 
-/* Comparison Table */
+/* Horizontal category list */
+.category-list {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.category-card {
+    flex: 1;
+    min-width: 160px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.category-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+    gap: 8px;
+}
+
+.category-card-header:hover {
+    background: #ecf0f1;
+}
+
+.category-card-title {
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    white-space: nowrap;
+}
+
+.category-card-title .chevron {
+    font-size: 0.65rem;
+    display: inline-block;
+    margin-right: 3px;
+}
+
+.category-avg-rank {
+    flex-shrink: 0;
+}
+
+/* Metric table inside each category card */
 .comparison-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8rem;
-}
-
-.comparison-table th,
-.comparison-table td {
-    padding: 8px 6px;
-    text-align: left;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.comparison-table th {
-    font-weight: 600;
-    color: var(--text-muted);
     font-size: 0.75rem;
-    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.comparison-table.hidden {
+    display: none;
+}
+
+.comparison-table td {
+    padding: 5px 8px;
+    text-align: left;
+    border-top: 1px solid var(--border-color);
 }
 
 .comparison-table .metric-name {
@@ -171,17 +220,17 @@ main {
 
 .comparison-table .metric-rank {
     text-align: center;
-    width: 60px;
+    width: 50px;
 }
 
 /* Percentile indicator */
 .percentile-indicator {
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.75rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
     font-weight: 600;
-    min-width: 50px;
+    min-width: 40px;
     text-align: center;
 }
 
@@ -211,17 +260,18 @@ main {
     color: #ffffff;
 }
 
-/* Category headers in table */
-.comparison-table .category-header {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: var(--primary-color);
-    font-size: 0.8rem;
-    padding: 10px 6px 6px;
+/* Metric rows - clickable */
+.comparison-table .metric-row[data-clickable="true"] {
+    cursor: pointer;
+    transition: background 0.15s;
 }
 
-.comparison-table .category-header td {
-    border-bottom: 2px solid var(--border-color);
+.comparison-table .metric-row[data-clickable="true"]:hover {
+    background: #f0f7ff;
+}
+
+.comparison-table .metric-row.selected {
+    background: #e3f2fd;
 }
 
 /* ============================================================================
@@ -396,87 +446,69 @@ main {
 }
 
 /* ============================================================================
-   Charts Panel with Tabs
+   Charts Panel - Single Chart
    ============================================================================ */
 
 footer#charts-panel {
     display: flex;
     flex-direction: column;
     background: var(--panel-bg);
-    border-top: 1px solid var(--border-color);
+    border-top: 3px solid var(--border-color);
+    margin-top: 4px;
     height: 240px;
 }
 
-#chart-tabs {
-    display: flex;
-    gap: 0;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border-color);
-    background: #f8f9fa;
-}
-
-.chart-tab {
-    padding: 10px 20px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s ease;
-}
-
-.chart-tab:hover {
-    color: var(--text-color);
-    background: #ecf0f1;
-}
-
-.chart-tab.active {
-    color: var(--secondary-color);
-    border-bottom-color: var(--secondary-color);
-    background: var(--panel-bg);
-}
-
-#chart-tab-content {
-    flex: 1;
-    overflow: hidden;
-    position: relative;
-}
-
-.tab-pane {
+footer#charts-panel.hidden {
     display: none;
-    height: 100%;
-    padding: 12px 16px;
 }
 
-.tab-pane.active {
-    display: block;
-}
-
-.chart-row {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    height: 100%;
-}
-
-.chart-container {
+#charts-header-bar {
     display: flex;
-    flex-direction: column;
-    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px 0;
 }
 
-.chart-container h4 {
-    font-size: 0.8rem;
+#charts-header {
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin: 0;
 }
 
-.chart-container canvas {
+#charts-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 2px 0 0;
+    font-weight: 400;
+}
+
+#charts-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+
+#charts-close:hover {
+    background: #ecf0f1;
+    color: var(--text-color);
+}
+
+#single-chart-container {
     flex: 1;
-    max-height: 140px;
+    padding: 8px 16px 12px;
+    position: relative;
+    min-height: 0;
+}
+
+#chart-single {
+    width: 100%;
+    max-height: 180px;
 }
 
 /* ============================================================================
@@ -772,7 +804,7 @@ footer#charts-panel {
 
 @media (max-width: 1200px) {
     main {
-        grid-template-columns: 1fr 4px 200px 4px 300px;
+        grid-template-columns: 1fr 4px 300px;
     }
 }
 
@@ -780,14 +812,6 @@ footer#charts-panel {
     main {
         grid-template-columns: 1fr;
         grid-template-rows: 1fr 4px 300px;
-    }
-
-    #comparison-panel {
-        display: none;
-    }
-
-    #resize-handle-left {
-        display: none;
     }
 
     #resize-handle-right {
@@ -805,15 +829,6 @@ footer#charts-panel {
 
     footer#charts-panel {
         height: auto;
-        min-height: 280px;
-    }
-
-    .chart-row {
-        grid-template-columns: 1fr;
-        gap: 12px;
-    }
-
-    .chart-container canvas {
-        max-height: 120px;
+        min-height: 240px;
     }
 }

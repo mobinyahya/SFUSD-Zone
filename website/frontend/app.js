@@ -13,6 +13,8 @@ let posthogApiKey = null;
 
 // Chart instances
 let charts = {};
+let singleChart = null;
+let selectedMetricKey = null;
 
 // DOM Elements
 const mapPlaceholder = document.getElementById('map-placeholder');
@@ -22,10 +24,8 @@ const chatInput = document.getElementById('chat-input');
 const chatSend = document.getElementById('chat-send');
 const chatInputArea = document.getElementById('chat-input-area');
 const loadingOverlay = document.getElementById('loading-overlay');
-const resizeHandleLeft = document.getElementById('resize-handle-left');
 const resizeHandleRight = document.getElementById('resize-handle-right');
 const mainContainer = document.querySelector('main');
-const comparisonPanel = document.getElementById('comparison-panel');
 
 // Chart colors
 const CHART_COLORS = {
@@ -132,15 +132,8 @@ async function initApp() {
     setupEventListeners();
     try {
         initMap();
-        setupTabSwitching();
     } catch (error) {
         console.error('Failed to initialize map:', error);
-    }
-
-    try {
-        initCharts();
-    } catch (error) {
-        console.error('Failed to initialize charts:', error);
     }
 
     // Send initial message to trigger clustering
@@ -166,141 +159,116 @@ function initMap() {
     }).addTo(map);
 }
 
-function initCharts() {
+// Metric-to-chart-data mapping
+const METRIC_CHART_CONFIG = {
+    'theil_index': { type: 'ethnicity', title: 'Ethnic Composition by Zone', color: null },
+    'FRL': { type: 'bar', field: 'FRL_pct', title: 'FRL % by Zone', color: CHART_COLORS.primary, unit: '%', max: 100 },
+    'seat_disparity': { type: 'bar', field: 'seat_disparity', title: 'Seat Disparity by Zone', color: CHART_COLORS.quaternary, unit: '' },
+    'avg_closest_zone_school_distance': { type: 'bar', field: 'avg_closest_school_distance', title: 'Avg Distance to Closest School', color: CHART_COLORS.secondary, unit: 'miles' },
+    'avg_schools_in_attendance_area': { type: 'bar', field: 'schools_in_attendance_area', title: 'Schools in Attendance Area', color: CHART_COLORS.primary, unit: 'Count' },
+    'boundary_cost': { type: 'none' },
+    'avg_total_programs_per_zone': { type: 'bar', field: 'total_programs', title: 'Total Programs by Zone', color: CHART_COLORS.primary, unit: 'Count' },
+    'avg_GE_per_zone': { type: 'bar', field: 'GE_programs', title: 'General Education by Zone', color: CHART_COLORS.secondary, unit: 'Count' },
+    'avg_language_immersion_per_zone': { type: 'bar', field: 'language_immersion_count', title: 'Language Immersion by Zone', color: CHART_COLORS.tertiary, unit: 'Count' },
+    'avg_special_ed_per_zone': { type: 'bar', field: 'special_ed_count', title: 'Special Ed by Zone', color: CHART_COLORS.quaternary, unit: 'Count' },
+    'avg_greatschools_rating': { type: 'bar', field: 'avg_greatschools_rating', title: 'GreatSchools Rating by Zone', color: CHART_COLORS.secondary, unit: 'Rating', max: 10 },
+    'avg_math_score': { type: 'bar', field: 'avg_math_score', title: 'Math Scores by Zone', color: CHART_COLORS.primary, unit: 'Score' },
+    'avg_eng_score': { type: 'bar', field: 'avg_eng_score', title: 'English Scores by Zone', color: CHART_COLORS.tertiary, unit: 'Score' },
+    'avg_suspension_index': { type: 'bar', field: 'avg_suspension_index', title: 'Suspension Index by Zone', color: CHART_COLORS.quinary, unit: 'Index', max: 5 },
+};
+
+function showSingleChart(metricKey) {
+    if (!currentSolution || !currentSolution.zone_data) return;
+
+    const config = METRIC_CHART_CONFIG[metricKey];
+    if (!config || config.type === 'none') return;
+
+    const zoneData = currentSolution.zone_data;
+    const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
+    const labels = zoneIds.map((id, index) => `Zone ${index}`);
+
+    const canvas = document.getElementById('chart-single');
+    const chartsPanel = document.getElementById('charts-panel');
+    chartsPanel.classList.remove('hidden');
+
+    // Destroy previous chart
+    if (singleChart) {
+        singleChart.destroy();
+        singleChart = null;
+    }
+
     const defaultOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-            legend: { display: false }
-        },
-        scales: {
-            y: { beginAtZero: true }
-        }
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
     };
 
-    // Diversity Tab Charts
-    charts.frl = new Chart(document.getElementById('chart-frl').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'FRL %', data: [], backgroundColor: CHART_COLORS.primary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } } }
-    });
-
-    charts.ethnicity = new Chart(document.getElementById('chart-ethnicity').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [
-                { label: 'Black/African American', data: [], backgroundColor: CHART_COLORS.ethnicities['Black/African American'] },
-                { label: 'Hispanic/Latinx', data: [], backgroundColor: CHART_COLORS.ethnicities['Hispanic/Latinx'] },
-                { label: 'White', data: [], backgroundColor: CHART_COLORS.ethnicities['White'] },
-                { label: 'Asian', data: [], backgroundColor: CHART_COLORS.ethnicities['Asian'] },
-                { label: 'Other', data: [], backgroundColor: CHART_COLORS.ethnicities['Other'] },
-            ]
-        },
-        options: {
-            ...defaultOptions,
-            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
-            scales: { x: { stacked: true }, y: { stacked: true, max: 100, title: { display: true, text: '%' } } }
-        }
-    });
-
-    // Distance Tab Charts
-    charts.distance = new Chart(document.getElementById('chart-distance').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Avg Distance', data: [], backgroundColor: CHART_COLORS.secondary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'miles' } } } }
-    });
-
-    charts.attendance = new Chart(document.getElementById('chart-attendance').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Schools', data: [], backgroundColor: CHART_COLORS.primary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
-    });
-
-    charts.students = new Chart(document.getElementById('chart-students').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Students', data: [], backgroundColor: CHART_COLORS.quinary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
-    });
-
-    // Programs Tab Charts
-    charts.totalPrograms = new Chart(document.getElementById('chart-total-programs').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Total Programs', data: [], backgroundColor: CHART_COLORS.primary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
-    });
-
-    charts.languageImmersion = new Chart(document.getElementById('chart-language-immersion').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Language Immersion', data: [], backgroundColor: CHART_COLORS.tertiary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
-    });
-
-    charts.specialEd = new Chart(document.getElementById('chart-special-ed').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Special Ed', data: [], backgroundColor: CHART_COLORS.quaternary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, title: { display: true, text: 'Count' } } } }
-    });
-
-    // Quality Tab Charts
-    charts.greatschools = new Chart(document.getElementById('chart-greatschools').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Rating', data: [], backgroundColor: CHART_COLORS.secondary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, max: 10, title: { display: true, text: 'Rating' } } } }
-    });
-
-    charts.scores = new Chart(document.getElementById('chart-scores').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [
-                { label: 'Math', data: [], backgroundColor: CHART_COLORS.primary },
-                { label: 'English', data: [], backgroundColor: CHART_COLORS.tertiary },
-            ]
-        },
-        options: {
-            ...defaultOptions,
-            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Score' } } }
-        }
-    });
-
-    charts.suspension = new Chart(document.getElementById('chart-suspension').getContext('2d'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Index', data: [], backgroundColor: CHART_COLORS.quinary }] },
-        options: { ...defaultOptions, scales: { y: { beginAtZero: true, max: 5, title: { display: true, text: 'Index' } } } }
-    });
-}
-
-function setupTabSwitching() {
-    const tabs = document.querySelectorAll('.chart-tab');
-    const panes = document.querySelectorAll('.tab-pane');
-
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const targetTab = tab.dataset.tab;
-            const previousTab = document.querySelector('.chart-tab.active')?.dataset.tab;
-
-            trackEvent('chart_tab_switched', {
-                tab_name: targetTab,
-                previous_tab: previousTab,
-            });
-
-            // Update active tab
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-
-            // Update active pane
-            panes.forEach(pane => {
-                pane.classList.toggle('active', pane.dataset.tab === targetTab);
-            });
-
-            // Trigger chart resize for visible charts
-            setTimeout(() => {
-                Object.values(charts).forEach(chart => chart.resize());
-            }, 100);
+    if (config.type === 'ethnicity') {
+        // Stacked ethnicity bar chart
+        const ethnicityKeys = ['Ethnicity_Black_or_African_American', 'Ethnicity_Hispanic/Latinx', 'Ethnicity_White', 'Ethnicity_Asian'];
+        const ethnicityData = ethnicityKeys.map(key =>
+            zoneIds.map(id => {
+                const pcts = zoneData[id].ethnicity_pcts || {};
+                return (pcts[key] || 0) * 100;
+            })
+        );
+        const otherData = zoneIds.map((id, idx) => {
+            const sum = ethnicityData.reduce((acc, arr) => acc + arr[idx], 0);
+            return Math.max(0, 100 - sum);
         });
-    });
+
+        singleChart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Black/African American', data: ethnicityData[0], backgroundColor: CHART_COLORS.ethnicities['Black/African American'] },
+                    { label: 'Hispanic/Latinx', data: ethnicityData[1], backgroundColor: CHART_COLORS.ethnicities['Hispanic/Latinx'] },
+                    { label: 'White', data: ethnicityData[2], backgroundColor: CHART_COLORS.ethnicities['White'] },
+                    { label: 'Asian', data: ethnicityData[3], backgroundColor: CHART_COLORS.ethnicities['Asian'] },
+                    { label: 'Other', data: otherData, backgroundColor: CHART_COLORS.ethnicities['Other'] },
+                ]
+            },
+            options: {
+                ...defaultOptions,
+                plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
+                scales: { x: { stacked: true }, y: { stacked: true, max: 100, title: { display: true, text: '%' } } }
+            }
+        });
+    } else {
+        // Simple bar chart
+        const data = zoneIds.map(id => zoneData[id][config.field] || 0);
+        const scaleOpts = { beginAtZero: true };
+        if (config.max) scaleOpts.max = config.max;
+        if (config.unit) scaleOpts.title = { display: true, text: config.unit };
+
+        singleChart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color }] },
+            options: { ...defaultOptions, scales: { y: scaleOpts } }
+        });
+    }
+
+    // Update header and subtitle with district-wide value
+    document.getElementById('charts-header').textContent = config.title;
+    const subtitle = document.getElementById('charts-subtitle');
+    if (subtitle) {
+        const metricValue = currentSolution.metrics[metricKey];
+        const displayValue = metricValue !== undefined ? formatValue(metricValue, metricKey) : null;
+        subtitle.textContent = displayValue
+            ? `District-wide value: ${displayValue}`
+            : '';
+    }
+
+    // Highlight selected metric row
+    document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
+    const selectedRow = document.querySelector(`.metric-row[data-key="${metricKey}"]`);
+    if (selectedRow) selectedRow.classList.add('selected');
+
+    selectedMetricKey = metricKey;
+
+    trackEvent('metric_chart_clicked', { metric_key: metricKey });
 }
 
 async function loadGeojson() {
@@ -341,8 +309,8 @@ async function loadSolution(path) {
         });
 
         renderMap(geojson);
-        updateAllCharts();
         updateComparisonTable();
+        refreshSingleChart();
 
         mapPlaceholder.classList.add('hidden');
     } catch (error) {
@@ -411,70 +379,11 @@ function createTooltip(bgId, zoneId, demographics) {
     return content;
 }
 
-function updateAllCharts() {
-    if (!currentSolution || !currentSolution.zone_data) {
-        console.warn('[updateAllCharts] No solution data available');
-        return;
+function refreshSingleChart() {
+    // Re-render the currently selected metric chart with new solution data
+    if (selectedMetricKey && currentSolution && currentSolution.zone_data) {
+        showSingleChart(selectedMetricKey);
     }
-
-    const zoneData = currentSolution.zone_data;
-    const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
-    // Use sequential zone labels (Zone 0, Zone 1, etc.) instead of actual zone IDs
-    const labels = zoneIds.map((id, index) => `Zone ${index}`);
-
-    // Diversity Charts
-    updateChart(charts.frl, labels, zoneIds.map(id => zoneData[id].FRL_pct || (zoneData[id].frl_pct * 100) || 0));
-
-    // Ethnicity stacked bar
-    const ethnicityKeys = ['Ethnicity_Black_or_African_American', 'Ethnicity_Hispanic/Latinx', 'Ethnicity_White', 'Ethnicity_Asian'];
-    const ethnicityData = ethnicityKeys.map(key =>
-        zoneIds.map(id => {
-            const pcts = zoneData[id].ethnicity_pcts || {};
-            return (pcts[key] || 0) * 100;
-        })
-    );
-    // Calculate "Other" as remainder
-    const otherData = zoneIds.map((id, idx) => {
-        const sum = ethnicityData.reduce((acc, arr) => acc + arr[idx], 0);
-        return Math.max(0, 100 - sum);
-    });
-
-    charts.ethnicity.data.labels = labels;
-    charts.ethnicity.data.datasets[0].data = ethnicityData[0];
-    charts.ethnicity.data.datasets[1].data = ethnicityData[1];
-    charts.ethnicity.data.datasets[2].data = ethnicityData[2];
-    charts.ethnicity.data.datasets[3].data = ethnicityData[3];
-    charts.ethnicity.data.datasets[4].data = otherData;
-    charts.ethnicity.update();
-
-    // Distance Charts
-    updateChart(charts.distance, labels, zoneIds.map(id => zoneData[id].avg_closest_school_distance || 0));
-    updateChart(charts.attendance, labels, zoneIds.map(id => zoneData[id].schools_in_attendance_area || 0));
-    updateChart(charts.students, labels, zoneIds.map(id => Math.round(zoneData[id].ge_students || 0)));
-
-    // Programs Charts
-    updateChart(charts.totalPrograms, labels, zoneIds.map(id => zoneData[id].total_programs || 0));
-    updateChart(charts.languageImmersion, labels, zoneIds.map(id => zoneData[id].language_immersion_count || 0));
-    updateChart(charts.specialEd, labels, zoneIds.map(id => zoneData[id].special_ed_count || 0));
-
-    // Quality Charts
-    updateChart(charts.greatschools, labels, zoneIds.map(id => zoneData[id].avg_greatschools_rating || 0));
-
-    // Test scores
-    const mathScores = zoneIds.map(id => zoneData[id].avg_math_score || 0);
-    const engScores = zoneIds.map(id => zoneData[id].avg_eng_score || 0);
-    charts.scores.data.labels = labels;
-    charts.scores.data.datasets[0].data = mathScores;
-    charts.scores.data.datasets[1].data = engScores;
-    charts.scores.update();
-
-    updateChart(charts.suspension, labels, zoneIds.map(id => zoneData[id].avg_suspension_index || 0));
-}
-
-function updateChart(chart, labels, data) {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = data;
-    chart.update();
 }
 
 function updateComparisonTable() {
@@ -502,6 +411,7 @@ function updateComparisonTable() {
         ],
         'Programs': [
             { key: 'avg_total_programs_per_zone', name: 'Total Programs' },
+            { key: 'avg_GE_per_zone', name: 'General Education' },
             { key: 'avg_language_immersion_per_zone', name: 'Language Immersion' },
             { key: 'avg_special_ed_per_zone', name: 'Special Ed' },
         ],
@@ -513,37 +423,98 @@ function updateComparisonTable() {
         ],
     };
 
-    let html = '<table class="comparison-table">';
-    html += '<thead><tr><th>Metric</th><th>Value</th><th>Rank</th></tr></thead>';
-    html += '<tbody>';
+    let html = '<div class="category-list">';
 
     for (const [category, metricList] of Object.entries(categories)) {
-        html += `<tr class="category-header"><td colspan="3">${category}</td></tr>`;
+        const catId = category.toLowerCase();
 
+        // Compute average percentile for this category
+        let percentileSum = 0;
+        let percentileCount = 0;
+        for (const { key } of metricList) {
+            const rank = ranks[key];
+            if (rank && rank.percentile !== undefined) {
+                percentileSum += rank.percentile;
+                percentileCount++;
+            }
+        }
+        const avgPercentile = percentileCount > 0 ? Math.round(percentileSum / percentileCount) : null;
+        const avgRanking = avgPercentile !== null ? getPercentileRanking(avgPercentile) : 'average';
+        const avgBadgeHtml = avgPercentile !== null
+            ? `<span class="percentile-indicator ${avgRanking}">${avgPercentile}%</span>`
+            : '';
+
+        html += `<div class="category-card collapsed" data-category="${catId}" data-avg-badge="${encodeURIComponent(avgBadgeHtml)}">`;
+        html += `<div class="category-card-header">`;
+        html += `<span class="category-card-title"><span class="chevron">&#9654;</span> ${category}</span>`;
+        html += `<span class="category-avg-rank">${avgBadgeHtml}</span>`;
+        html += `</div>`;
+
+        html += `<table class="comparison-table category-metrics hidden">`;
         for (const { key, name } of metricList) {
             const value = metrics[key];
             const rank = ranks[key];
-
             if (value === undefined || !rank) continue;
 
-            const displayValue = formatValue(value, key);
             const displayPercentile = `${rank.percentile}%`;
+            const clickable = METRIC_CHART_CONFIG[key] && METRIC_CHART_CONFIG[key].type !== 'none';
+            const selectedClass = key === selectedMetricKey ? ' selected' : '';
 
-            html += `<tr>`;
+            html += `<tr class="metric-row${selectedClass}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
             html += `<td class="metric-name">${name}</td>`;
-            html += `<td class="metric-value">${displayValue}</td>`;
             html += `<td class="metric-rank"><span class="percentile-indicator ${rank.ranking}">${displayPercentile}</span></td>`;
             html += `</tr>`;
         }
+        html += `</table>`;
+        html += `</div>`;
     }
 
-    html += '</tbody></table>';
+    html += '</div>';
     container.innerHTML = html;
+
+    // Attach click handlers for category card headers
+    container.querySelectorAll('.category-card').forEach(card => {
+        const header = card.querySelector('.category-card-header');
+        const metricsTable = card.querySelector('.category-metrics');
+
+        header.addEventListener('click', () => {
+            const isCollapsed = card.classList.contains('collapsed');
+
+            if (isCollapsed) {
+                card.classList.remove('collapsed');
+                card.classList.add('expanded');
+                card.querySelector('.chevron').innerHTML = '&#9660;';
+                card.querySelector('.category-avg-rank').innerHTML = '';
+                metricsTable.classList.remove('hidden');
+            } else {
+                card.classList.remove('expanded');
+                card.classList.add('collapsed');
+                card.querySelector('.chevron').innerHTML = '&#9654;';
+                card.querySelector('.category-avg-rank').innerHTML = decodeURIComponent(card.dataset.avgBadge);
+                metricsTable.classList.add('hidden');
+            }
+        });
+    });
+
+    // Attach click handlers for metric rows
+    container.querySelectorAll('.metric-row[data-clickable="true"]').forEach(row => {
+        row.addEventListener('click', () => {
+            showSingleChart(row.dataset.key);
+        });
+    });
 
     trackEvent('comparison_table_viewed', {
         num_metrics: Object.keys(metrics).length,
         solution_path: currentSolution.path,
     });
+}
+
+function getPercentileRanking(percentile) {
+    if (percentile >= 80) return 'excellent';
+    if (percentile >= 60) return 'good';
+    if (percentile >= 40) return 'average';
+    if (percentile >= 20) return 'below-avg';
+    return 'poor';
 }
 
 function formatValue(value, key) {
@@ -590,38 +561,42 @@ function setupEventListeners() {
         console.error('[setupEventListeners] chatInput element not found!');
     }
 
+    const chartsClose = document.getElementById('charts-close');
+    if (chartsClose) {
+        chartsClose.addEventListener('click', () => {
+            document.getElementById('charts-panel').classList.add('hidden');
+            // Deselect metric row
+            document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
+            selectedMetricKey = null;
+            if (singleChart) {
+                singleChart.destroy();
+                singleChart = null;
+            }
+        });
+    }
+
     setupResizeHandle();
 }
 
 function setupResizeHandle() {
     let isResizing = false;
-    let activeHandle = null;
     let startX = 0;
     let startY = 0;
-    let startComparisonWidth = 0;
     let startChatWidth = 0;
 
-    const startResize = (e, handle) => {
-        isResizing = true;
-        activeHandle = handle;
-        startX = e.clientX;
-        startY = e.clientY;
-        startComparisonWidth = comparisonPanel.offsetWidth;
-        startChatWidth = document.getElementById('chat-panel').offsetWidth;
-        handle.classList.add('resizing');
-
-        const isMobileView = window.innerWidth <= 900;
-        document.body.style.cursor = isMobileView ? 'row-resize' : 'col-resize';
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
-    };
-
-    if (resizeHandleLeft) {
-        resizeHandleLeft.addEventListener('mousedown', e => startResize(e, resizeHandleLeft));
-    }
-
     if (resizeHandleRight) {
-        resizeHandleRight.addEventListener('mousedown', e => startResize(e, resizeHandleRight));
+        resizeHandleRight.addEventListener('mousedown', e => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startChatWidth = document.getElementById('chat-panel').offsetWidth;
+            resizeHandleRight.classList.add('resizing');
+
+            const isMobileView = window.innerWidth <= 900;
+            document.body.style.cursor = isMobileView ? 'row-resize' : 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
     }
 
     document.addEventListener('mousemove', e => {
@@ -630,24 +605,13 @@ function setupResizeHandle() {
         const isMobileView = window.innerWidth <= 900;
 
         if (isMobileView) {
-            // Mobile: vertical resize for chat panel
             const deltaY = startY - e.clientY;
             const newHeight = Math.max(200, Math.min(600, startChatWidth + deltaY));
             mainContainer.style.gridTemplateRows = `1fr 4px ${newHeight}px`;
         } else {
-            // Desktop: horizontal resize
             const deltaX = e.clientX - startX;
-
-            if (activeHandle === resizeHandleLeft) {
-                // Resizing comparison panel from left side
-                const newComparisonWidth = Math.max(150, Math.min(500, startComparisonWidth - deltaX));
-                const chatWidth = document.getElementById('chat-panel').offsetWidth;
-                mainContainer.style.gridTemplateColumns = `1fr 4px ${newComparisonWidth}px 4px ${chatWidth}px`;
-            } else if (activeHandle === resizeHandleRight) {
-                // Resizing chat panel from left side
-                const newChatWidth = Math.max(250, Math.min(600, startChatWidth - deltaX));
-                mainContainer.style.gridTemplateColumns = `1fr 4px ${startComparisonWidth}px 4px ${newChatWidth}px`;
-            }
+            const newChatWidth = Math.max(250, Math.min(600, startChatWidth - deltaX));
+            mainContainer.style.gridTemplateColumns = `1fr 4px ${newChatWidth}px`;
         }
 
         if (map) {
@@ -658,10 +622,7 @@ function setupResizeHandle() {
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
-            if (activeHandle) {
-                activeHandle.classList.remove('resizing');
-            }
-            activeHandle = null;
+            resizeHandleRight.classList.remove('resizing');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
         }

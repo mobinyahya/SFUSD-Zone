@@ -154,7 +154,7 @@ PROGRAM_METRICS = [
         description="Avg language immersion programs per zone",
         category="programs",
         direction="maximize",
-        is_core=False,
+        is_core=True,
     ),
     MetricSpec(
         column="avg_special_ed_per_zone",
@@ -162,7 +162,7 @@ PROGRAM_METRICS = [
         description="Avg special education programs per zone",
         category="programs",
         direction="maximize",
-        is_core=False,
+        is_core=True,
     ),
     MetricSpec(
         column="avg_GE_per_zone",
