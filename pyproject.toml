@@ -8,6 +8,7 @@ dependencies = [
     "geopandas>=1.1.2",
     "gerrychain>=0.3.2",
     "gurobipy>=13.0.0",
+    "httpx>=0.28.1",
     "kahip>=3.22",
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",

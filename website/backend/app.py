@@ -102,10 +102,7 @@ def health_check():
 @app.get("/api/config")
 async def get_config():
     """Serve frontend configuration including PostHog API key."""
-    key = os.getenv("POSTHOG_API_KEY")
-    if not key:
-        raise HTTPException(status_code=500, detail="PostHog API key not found")
-    return {"posthog_api_key": key}
+    return {"posthog_api_key": os.getenv("POSTHOG_API_KEY", "")}
 
 
 @app.get("/api/clusters")
