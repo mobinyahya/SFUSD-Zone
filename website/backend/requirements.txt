@@ -1,6 +1,0 @@
-fastapi
-uvicorn[standard]
-pandas
-geopandas
-networkx
-scikit-learn

@@ -5,6 +5,7 @@ description = "Creating zones for SFUSD"
 requires-python = ">=3.13"
 dependencies = [
     "descartes>=1.1.0",
+    "fastapi>=0.128.2",
     "geopandas>=1.1.2",
     "gerrychain>=0.3.2",
     "gurobipy>=13.0.0",
@@ -24,4 +25,5 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "scipy-stubs~=1.16.3",
     "seaborn>=0.13.2",
+    "uvicorn[standard]>=0.40.0",
 ]
