@@ -10,6 +10,7 @@ let currentSolution = null;
 let solutionSpaceStats = null;
 let sessionId = null;
 let isProcessing = false;
+let posthogApiKey = null;
 
 // Chart instances
 let charts = {};
@@ -47,6 +48,87 @@ const CHART_COLORS = {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+    // Fetch PostHog config from backend
+    try {
+        const configResponse = await fetch(`${API_BASE}/api/config`);
+        if (configResponse.ok) {
+            const config = await configResponse.json();
+            posthogApiKey = config.posthog_api_key;
+        }
+    } catch (error) {
+        console.warn('Failed to fetch PostHog config:', error);
+    }
+
+    // Check localStorage for prior consent + participant ID
+    const hasConsent = localStorage.getItem('posthog_consent') === 'true';
+    const participantId = localStorage.getItem('participant_id');
+
+    if (hasConsent && participantId) {
+        // Returning user: initialize PostHog and proceed directly
+        initPostHog(participantId);
+        await initApp();
+    } else {
+        // New user: show consent banner
+        showConsentBanner();
+    }
+}
+
+function showConsentBanner() {
+    const banner = document.getElementById('consent-banner');
+    const acceptBtn = document.getElementById('consent-accept');
+    banner.classList.remove('hidden');
+
+    acceptBtn.addEventListener('click', () => {
+        localStorage.setItem('posthog_consent', 'true');
+        banner.classList.add('hidden');
+        showIdentifyModal();
+    });
+}
+
+function showIdentifyModal() {
+    const modal = document.getElementById('identify-modal');
+    const submitBtn = document.getElementById('identify-submit');
+    const input = document.getElementById('participant-id');
+    modal.classList.remove('hidden');
+
+    const handleSubmit = async () => {
+        const participantId = input.value.trim();
+        if (!participantId) return;
+
+        localStorage.setItem('participant_id', participantId);
+        modal.classList.add('hidden');
+
+        initPostHog(participantId);
+        await initApp();
+    };
+
+    submitBtn.addEventListener('click', handleSubmit);
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleSubmit();
+    });
+}
+
+function initPostHog(participantId) {
+    if (!posthogApiKey || typeof posthog === 'undefined') {
+        console.warn('PostHog not available (no API key or SDK not loaded)');
+        return;
+    }
+
+    posthog.init(posthogApiKey, {
+        api_host: 'https://us.i.posthog.com',
+        autocapture: true,
+        capture_pageview: true,
+        session_recording: {
+            maskAllInputs: false,
+        },
+    });
+
+    posthog.identify(participantId);
+    posthog.capture('session_started', { participant_id: participantId });
+    console.log('PostHog initialized for participant:', participantId);
+}
+
+async function initApp() {
     // Set up event listeners FIRST - these are critical and should work even if other things fail
     setupEventListeners();
     try {
@@ -205,6 +287,12 @@ function setupTabSwitching() {
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const targetTab = tab.dataset.tab;
+            const previousTab = document.querySelector('.chart-tab.active')?.dataset.tab;
+
+            trackEvent('chart_tab_switched', {
+                tab_name: targetTab,
+                previous_tab: previousTab,
+            });
 
             // Update active tab
             tabs.forEach(t => t.classList.remove('active'));
@@ -267,6 +355,12 @@ async function loadSolution(path) {
             demographics: Object.keys(currentSolution.demographics || {}).length,
             zone_data: Object.keys(currentSolution.zone_data || {}).length,
             status: currentSolution.status
+        });
+
+        trackEvent('solution_loaded', {
+            solution_path: path,
+            num_zones: Object.keys(currentSolution.zones || {}).length ? new Set(Object.values(currentSolution.zones)).size : 0,
+            status: currentSolution.status,
         });
 
         renderMap(geojson);
@@ -474,6 +568,11 @@ function updateComparisonTable() {
 
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    trackEvent('comparison_table_viewed', {
+        num_metrics: Object.keys(metrics).length,
+        solution_path: currentSolution.path,
+    });
 }
 
 function calculatePercentile(value, stats) {
@@ -645,6 +744,12 @@ async function sendMessage() {
     addMessage('user', message);
     chatInput.value = '';
 
+    trackEvent('chat_message_sent', {
+        message_text: message,
+        message_length: message.length,
+        session_id: sessionId,
+    });
+
     await sendMessageToAgent(message);
 }
 
@@ -688,6 +793,14 @@ async function sendMessageToAgent(message) {
         sessionId = data.session_id;
 
         if (thinkingMsg) thinkingMsg.remove();
+
+        trackEvent('agent_response_received', {
+            response_type: data.response_type,
+            response_text: data.text,
+            has_clusters: !!(data.clusters && data.clusters.length > 0),
+            has_solution: !!data.solution_path,
+            session_id: sessionId,
+        });
 
         if (data.response_type === 'clusters' && data.clusters && data.clusters.length > 0) {
             if (data.text) {
@@ -762,6 +875,11 @@ async function selectCluster(clusterId, clusterLabel) {
         });
     });
 
+    trackEvent('cluster_selected', {
+        cluster_id: clusterId,
+        cluster_label: clusterLabel,
+    });
+
     addMessage('user', `Select cluster ${clusterId}: ${clusterLabel}`);
     await sendMessageToAgent(`Select cluster ${clusterId}`);
 }
@@ -795,6 +913,12 @@ function setProcessing(processing) {
 
 function showMapLoading(show) {
     mapLoadingOverlay.classList.toggle('hidden', !show);
+}
+
+function trackEvent(eventName, properties) {
+    if (typeof posthog !== 'undefined' && posthog.capture) {
+        posthog.capture(eventName, properties);
+    }
 }
 
 function showLoading(show) {

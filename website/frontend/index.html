@@ -139,9 +139,30 @@
         <p>Loading solution data...</p>
     </div>
 
+    <!-- Consent Banner -->
+    <div id="consent-banner" class="hidden">
+        <div class="consent-content">
+            <p>This session is being recorded for research purposes.
+            Your interactions, including chat messages and solution explorations,
+            will be captured to improve zoning recommendations.</p>
+            <button id="consent-accept">I Understand</button>
+        </div>
+    </div>
+
+    <!-- Identification Modal -->
+    <div id="identify-modal" class="hidden">
+        <div class="modal-content">
+            <h2>Welcome to the SFUSD Zoning Explorer</h2>
+            <p>Please enter your participant ID or name to begin.</p>
+            <input type="text" id="participant-id" placeholder="Enter your participant ID...">
+            <button id="identify-submit">Start Exploring</button>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://us-assets.i.posthog.com/static/array.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

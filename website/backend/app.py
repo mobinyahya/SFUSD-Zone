@@ -1,4 +1,5 @@
 """FastAPI server for SFUSD Zoning Dashboard."""
+import os
 import uuid
 import logging
 import traceback
@@ -12,6 +13,10 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional
 from urllib.parse import unquote
+from dotenv import load_dotenv
+
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from data_loader import (
     get_clusters,
@@ -92,6 +97,15 @@ def health_check():
         "agent_preloaded": _preloaded_agent is not None,
         "active_sessions": len(agent_sessions),
     }
+
+
+@app.get("/api/config")
+async def get_config():
+    """Serve frontend configuration including PostHog API key."""
+    key = os.getenv("POSTHOG_API_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="PostHog API key not found")
+    return {"posthog_api_key": key}
 
 
 @app.get("/api/clusters")
