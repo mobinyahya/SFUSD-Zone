@@ -6,6 +6,7 @@ const API_BASE = '';
 let map = null;
 let geojsonLayer = null;
 let geojsonData = null;
+let schoolMarkersLayer = null;
 let currentSolution = null;
 let sessionId = null;
 let isProcessing = false;
@@ -157,6 +158,59 @@ function initMap() {
         attribution: '&copy; OpenStreetMap, &copy; CARTO',
         maxZoom: 19,
     }).addTo(map);
+
+    // Load school locations
+    loadSchoolLocations();
+}
+
+async function loadSchoolLocations() {
+    try {
+        const response = await fetch(`${API_BASE}/api/schools`);
+        if (!response.ok) throw new Error('Failed to load school locations');
+
+        const data = await response.json();
+        renderSchoolMarkers(data.schools);
+    } catch (error) {
+        console.error('Error loading school locations:', error);
+    }
+}
+
+function renderSchoolMarkers(schools) {
+    if (!schools || schools.length === 0) return;
+
+    // Remove existing school markers if any
+    if (schoolMarkersLayer) {
+        map.removeLayer(schoolMarkersLayer);
+    }
+
+    // Create a layer group for school markers
+    schoolMarkersLayer = L.layerGroup();
+
+    schools.forEach(school => {
+        // Create custom icon using divIcon with school building emoji
+        const icon = L.divIcon({
+            html: '<div class="school-marker">🏫</div>',
+            className: 'school-marker-container',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+        });
+
+        // Create marker
+        const marker = L.marker([school.lat, school.lon], { icon });
+
+        // Add tooltip with school name
+        marker.bindTooltip(school.name, {
+            direction: 'top',
+            offset: [0, -10],
+            className: 'school-tooltip',
+        });
+
+        // Add to layer group
+        marker.addTo(schoolMarkersLayer);
+    });
+
+    // Add layer group to map
+    schoolMarkersLayer.addTo(map);
 }
 
 // Metric-to-chart-data mapping

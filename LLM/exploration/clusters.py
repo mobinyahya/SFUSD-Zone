@@ -17,9 +17,9 @@ from sklearn.cluster import KMeans, HDBSCAN, SpectralClustering
 from .metrics_config import (
     ALL_METRICS,
     METRIC_BY_COLUMN,
-    METRIC_BY_NAME,
     get_metric_columns,
 )
+from .pareto import format_solution
 from .filters import FilterBounds
 
 
@@ -55,7 +55,7 @@ class ClusteringMethod(ABC):
             - labels: array of cluster assignments (0 to n_clusters-1)
             - centers: array of shape (n_clusters, n_features)
         """
-        pass
+        raise NotImplementedError("Subclasses must implement fit_predict")
 
 
 class HDBSCANClusterer(ClusteringMethod):
@@ -271,12 +271,19 @@ def cluster_solutions(
     ranges = max_vals - min_vals
     ranges[ranges == 0] = 1.0
 
-    # Try Spectral clustering first
+    # Try the default clustering method first
     try:
-        clusterer = SpectralClusterer(n_clusters=n_clusters)
+        if DEFAULT_CLUSTERING_METHOD == "hdbscan":
+            clusterer = HDBSCANClusterer(n_clusters=n_clusters)
+        elif DEFAULT_CLUSTERING_METHOD == "spectral":
+            clusterer = SpectralClusterer(n_clusters=n_clusters)
+        elif DEFAULT_CLUSTERING_METHOD == "kmeans":
+            clusterer = KMeansClusterer(n_clusters=n_clusters, random_state=random_state)
+        else:
+            raise ValueError(f"Unknown clustering method: {DEFAULT_CLUSTERING_METHOD}")
         labels, normalized_centers = clusterer.fit_predict(normalized)
     except ValueError:
-        # Fall back to K-means if Spectral fails
+        # Fall back to K-means if the default clustering method fails
         clusterer = KMeansClusterer(n_clusters=n_clusters, random_state=random_state)
         labels, normalized_centers = clusterer.fit_predict(normalized)
 
@@ -487,7 +494,6 @@ def format_cluster_summary(
     
     Shows each cluster's size, direction label, and representative solution.
     """
-    from .pareto import format_solution
     
     n_clusters = len(cluster_centers)
     lines = [f"**Solution Clusters** ({n_clusters} groups found)\n"]

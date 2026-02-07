@@ -26,6 +26,7 @@ from data_loader import (
     get_zone_color,
     load_solution_result,
     compute_percentile_ranks,
+    get_school_locations,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 
@@ -185,6 +186,18 @@ async def get_geojson_data():
         geojson = load_geojson()
         return JSONResponse(content=geojson)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/schools")
+async def get_schools():
+    """Get all school locations with lat/lon coordinates."""
+    try:
+        schools = get_school_locations()
+        return {"schools": schools}
+    except Exception as e:
+        logger.error(f"Error loading school locations: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

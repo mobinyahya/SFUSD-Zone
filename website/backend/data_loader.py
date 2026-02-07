@@ -40,6 +40,7 @@ _graph_cache = None
 _geojson_cache = None
 _clusters_cache = None
 _solution_space_stats_cache = None
+_school_locations_cache = None
 
 
 def load_graph() -> nx.Graph:
@@ -49,6 +50,38 @@ def load_graph() -> nx.Graph:
         with open(GRAPH_PATH, "rb") as f:
             _graph_cache = pickle.load(f)
     return _graph_cache
+
+
+def get_school_locations() -> list[dict]:
+    """
+    Extract school locations from the graph.
+
+    Returns:
+        List of dicts with school_id, name, lat, lon, category
+    """
+    global _school_locations_cache
+    if _school_locations_cache is not None:
+        return _school_locations_cache
+
+    G = load_graph()
+    school_data = G.graph.get('school_data', {})
+
+    schools = []
+    for school_id, school_info in school_data.items():
+        # Only include schools with valid lat/lon
+        lat = school_info.get('lat')
+        lon = school_info.get('lon')
+        if lat is not None and lon is not None:
+            schools.append({
+                'school_id': school_id,
+                'name': school_info.get('school_name', f'School {school_id}'),
+                'lat': float(lat),
+                'lon': float(lon),
+                'category': school_info.get('category', 'Unknown'),
+            })
+
+    _school_locations_cache = schools
+    return schools
 
 
 def get_node_to_blockgroup_map(G: nx.Graph) -> dict[int, int]:
