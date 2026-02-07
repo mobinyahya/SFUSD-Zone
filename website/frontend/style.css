@@ -799,6 +799,59 @@ footer#charts-panel.hidden {
 }
 
 /* ============================================================================
+   Zone Legend
+   ============================================================================ */
+
+#zone-legend {
+    position: absolute;
+    bottom: 20px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    font-size: 0.8rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#zone-legend.hidden {
+    display: none;
+}
+
+#zone-legend h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.legend-item:last-child {
+    margin-bottom: 0;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.legend-label {
+    color: var(--text-color);
+    white-space: nowrap;
+}
+
+/* ============================================================================
    Responsive Design
    ============================================================================ */
 

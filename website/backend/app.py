@@ -137,14 +137,18 @@ async def get_solution(path: str):
         # Load full result for metrics
         result = load_solution_result(decoded_path)
 
-        # Build colors map
-        zone_ids = set(bg_zone_dict.values())
+        # Build zone index map (sorted zone IDs -> 1-indexed integers)
+        zone_ids = sorted(set(bg_zone_dict.values()))
+        zone_index_map = {zone_id: idx + 1 for idx, zone_id in enumerate(zone_ids)}
+
+        # Build colors map (using original zone IDs for lookup)
         colors = {zone_id: get_zone_color(zone_id) for zone_id in zone_ids}
 
         # Convert keys to strings for JSON
         zones = {str(k): v for k, v in bg_zone_dict.items()}
         zone_data_json = {str(k): v for k, v in zone_data.items()}
         colors = {str(k): v for k, v in colors.items()}
+        zone_index_map_json = {str(k): v for k, v in zone_index_map.items()}
 
         solution_metrics = result.get("metrics", {})
         return {
@@ -157,6 +161,7 @@ async def get_solution(path: str):
             "boundary_cost": result.get("boundary_cost"),
             "total_wall_time": result.get("total_wall_time"),
             "colors": colors,
+            "zone_index_map": zone_index_map_json,
             "path": decoded_path,
         }
     except FileNotFoundError as e:

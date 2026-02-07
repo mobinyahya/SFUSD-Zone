@@ -184,8 +184,9 @@ function showSingleChart(metricKey) {
     if (!config || config.type === 'none') return;
 
     const zoneData = currentSolution.zone_data;
+    const zoneIndexMap = currentSolution.zone_index_map || {};
     const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
-    const labels = zoneIds.map((id, index) => `Zone ${index}`);
+    const labels = zoneIds.map(id => `Zone ${zoneIndexMap[id] || id}`);
 
     const canvas = document.getElementById('chart-single');
     const chartsPanel = document.getElementById('charts-panel');
@@ -309,6 +310,7 @@ async function loadSolution(path) {
         });
 
         renderMap(geojson);
+        renderLegend();
         updateComparisonTable();
         refreshSingleChart();
 
@@ -326,7 +328,7 @@ function renderMap(geojson) {
         map.removeLayer(geojsonLayer);
     }
 
-    const { zones, demographics, colors } = currentSolution;
+    const { zones, demographics, colors, zone_index_map } = currentSolution;
 
     geojsonLayer = L.geoJSON(geojson, {
         style: feature => {
@@ -345,8 +347,9 @@ function renderMap(geojson) {
             const bgId = String(feature.properties.BlockGroup);
             const zoneId = zones[bgId];
             const zoneDemographics = zoneId !== undefined ? demographics[String(zoneId)] : null;
+            const zoneIndex = zoneId !== undefined && zone_index_map ? zone_index_map[String(zoneId)] : null;
 
-            const tooltipContent = createTooltip(bgId, zoneId, zoneDemographics);
+            const tooltipContent = createTooltip(bgId, zoneIndex, zoneDemographics);
             layer.bindTooltip(tooltipContent, { sticky: true });
 
             layer.on({
@@ -364,11 +367,11 @@ function renderMap(geojson) {
     map.fitBounds(geojsonLayer.getBounds());
 }
 
-function createTooltip(bgId, zoneId, demographics) {
+function createTooltip(bgId, zoneIndex, demographics) {
     let content = `<strong>BlockGroup: ${bgId}</strong>`;
 
-    if (zoneId !== undefined) {
-        content += `<br><span class="zone-info">Zone: ${zoneId}</span>`;
+    if (zoneIndex !== undefined && zoneIndex !== null) {
+        content += `<br><span class="zone-info">Zone ${zoneIndex}</span>`;
     }
 
     if (demographics) {
@@ -377,6 +380,39 @@ function createTooltip(bgId, zoneId, demographics) {
     }
 
     return content;
+}
+
+function renderLegend() {
+    const legendContainer = document.getElementById('zone-legend');
+    if (!legendContainer || !currentSolution) {
+        return;
+    }
+
+    const { colors, zone_index_map } = currentSolution;
+    if (!colors || !zone_index_map) {
+        legendContainer.classList.add('hidden');
+        return;
+    }
+
+    // Build legend entries sorted by zone index
+    const entries = Object.entries(zone_index_map)
+        .map(([zoneId, index]) => ({
+            zoneId,
+            index,
+            color: colors[zoneId] || '#808080'
+        }))
+        .sort((a, b) => a.index - b.index);
+
+    let html = '<h4>Zones</h4>';
+    for (const entry of entries) {
+        html += `<div class="legend-item">
+            <div class="legend-color" style="background-color: ${entry.color}"></div>
+            <span class="legend-label">Zone ${entry.index}</span>
+        </div>`;
+    }
+
+    legendContainer.innerHTML = html;
+    legendContainer.classList.remove('hidden');
 }
 
 function refreshSingleChart() {
