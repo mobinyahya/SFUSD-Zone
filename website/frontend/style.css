@@ -827,6 +827,47 @@ footer#charts-panel.hidden {
     color: var(--primary-color);
 }
 
+.legend-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.legend-header h4 {
+    margin: 0;
+}
+
+.toggle-schools-btn {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    background: #f8f9fa;
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.toggle-schools-btn:hover {
+    background: #ecf0f1;
+    border-color: var(--secondary-color);
+}
+
+.toggle-schools-btn.active {
+    background: var(--secondary-color);
+    color: white;
+    border-color: var(--secondary-color);
+}
+
+.toggle-schools-btn.active:hover {
+    background: #2980b9;
+    border-color: #2980b9;
+}
+
 .legend-item {
     display: flex;
     align-items: center;

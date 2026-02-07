@@ -7,6 +7,7 @@ let map = null;
 let geojsonLayer = null;
 let geojsonData = null;
 let schoolMarkersLayer = null;
+let schoolsVisible = false;
 let currentSolution = null;
 let sessionId = null;
 let isProcessing = false;
@@ -209,8 +210,10 @@ function renderSchoolMarkers(schools) {
         marker.addTo(schoolMarkersLayer);
     });
 
-    // Add layer group to map
-    schoolMarkersLayer.addTo(map);
+    // Only add layer to map if schools should be visible
+    if (schoolsVisible) {
+        schoolMarkersLayer.addTo(map);
+    }
 }
 
 // Metric-to-chart-data mapping
@@ -457,7 +460,17 @@ function renderLegend() {
         }))
         .sort((a, b) => a.index - b.index);
 
-    let html = '<h4>Zones</h4>';
+    let html = '<div class="legend-header"><h4>Zones</h4>';
+
+    // Add school toggle button
+    if (schoolMarkersLayer) {
+        const buttonText = schoolsVisible ? 'Hide Schools' : 'Show Schools';
+        const buttonClass = schoolsVisible ? 'active' : '';
+        html += `<button id="toggle-schools-btn" class="toggle-schools-btn ${buttonClass}" title="Toggle school markers">${buttonText}</button>`;
+    }
+
+    html += '</div>';
+
     for (const entry of entries) {
         html += `<div class="legend-item">
             <div class="legend-color" style="background-color: ${entry.color}"></div>
@@ -467,6 +480,33 @@ function renderLegend() {
 
     legendContainer.innerHTML = html;
     legendContainer.classList.remove('hidden');
+
+    // Attach event listener to toggle button
+    const toggleBtn = document.getElementById('toggle-schools-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleSchoolMarkers);
+    }
+}
+
+function toggleSchoolMarkers() {
+    if (!schoolMarkersLayer || !map) return;
+
+    schoolsVisible = !schoolsVisible;
+
+    if (schoolsVisible) {
+        map.addLayer(schoolMarkersLayer);
+    } else {
+        map.removeLayer(schoolMarkersLayer);
+    }
+
+    // Update button text and style
+    const toggleBtn = document.getElementById('toggle-schools-btn');
+    if (toggleBtn) {
+        toggleBtn.textContent = schoolsVisible ? 'Hide Schools' : 'Show Schools';
+        toggleBtn.classList.toggle('active', schoolsVisible);
+    }
+
+    trackEvent('schools_toggled', { visible: schoolsVisible });
 }
 
 function refreshSingleChart() {
