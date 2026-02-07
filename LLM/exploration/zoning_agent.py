@@ -462,10 +462,8 @@ class ZoningAgent:
             if len(filtered) < 3:
                 return f"Not enough solutions to cluster (only {len(filtered)}). Need at least 3 solutions."
             
-            # Determine number of clusters
-            n_clusters = arguments.get("n_clusters")
-            if n_clusters is None:
-                n_clusters = min(max(2, len(filtered) // 3), 5)
+            # Determine number of clusters (default to 3)
+            n_clusters = arguments.get("n_clusters", 3)
             n_clusters = min(n_clusters, len(filtered) // 2)
             n_clusters = max(2, n_clusters)
             
