@@ -54,7 +54,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="FRL",
-        display_name="FRL Community Representation",
+        display_name="FRL Representation",
         description="Free/reduced lunch % deviation from district average",
         category="diversity",
         direction="minimize",
@@ -62,7 +62,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="Ethnicity_Black_or_African_American",
-        display_name="Black Community Representation",
+        display_name="Black Representation",
         description="Black student % deviation from district average",
         category="diversity",
         direction="minimize",
@@ -70,7 +70,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="Ethnicity_Hispanic/Latinx",
-        display_name="Hispanic/Latinx Community Representation",
+        display_name="Hispanic/Latinx Representation",
         description="Hispanic/Latinx student % deviation from district average",
         category="diversity",
         direction="minimize",
@@ -78,7 +78,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="Ethnicity_White",
-        display_name="White Community Representation",
+        display_name="White Representation",
         description="White student % deviation from district average",
         category="diversity",
         direction="minimize",
@@ -86,7 +86,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="Ethnicity_Asian",
-        display_name="Asian Community Representation",
+        display_name="Asian Representation",
         description="Asian student % deviation from district average",
         category="diversity",
         direction="minimize",

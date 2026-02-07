@@ -436,9 +436,9 @@ function updateComparisonTable() {
     // Define metric categories and their metrics
     const categories = {
         'Diversity': [
-            { key: 'theil_index', name: 'Ethnic Segregation' },
-            { key: 'FRL', name: 'FRL Deviation' },
-            { key: 'seat_disparity', name: 'Seat Disparity' },
+            { key: 'theil_index', name: 'Ethnic Diversity Index' },
+            { key: 'FRL', name: 'FRL Representation' },
+            { key: 'seat_disparity', name: 'Student Seat Imbalance' },
         ],
         'Distance': [
             { key: 'avg_closest_zone_school_distance', name: 'Avg Distance' },

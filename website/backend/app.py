@@ -89,6 +89,12 @@ async def root():
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve the favicon."""
+    return FileResponse(FRONTEND_DIR / "favicon.ico")
+
+
 @app.get("/api/health")
 def health_check():
     """Health check endpoint to verify agent status."""
