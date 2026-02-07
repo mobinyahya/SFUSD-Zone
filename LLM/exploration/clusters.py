@@ -212,7 +212,7 @@ class SpectralClusterer(ClusteringMethod):
 
 
 # Default clustering method
-DEFAULT_CLUSTERING_METHOD = "hdbscan"
+DEFAULT_CLUSTERING_METHOD = "spectral"
 
 
 def vectorize_solutions(df: pd.DataFrame) -> np.ndarray:
