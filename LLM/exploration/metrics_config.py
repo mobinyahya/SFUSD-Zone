@@ -47,7 +47,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="theil_index",
         display_name="Ethnic Diversity Index",
-        description="Theil index measuring ethnic diversity (0=Highly-Diverse, higher=Non-Diverse)",
+        description="Theil Entropy index measuring ethnic diversity (0=Highly-Diverse, 1=Non-Diverse). This uses the following ethnic groups: Black, Hispanic/Latinx, White, Asian.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -55,7 +55,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="FRL",
         display_name="FRL Representation",
-        description="Free/reduced lunch % deviation from district average",
+        description="Average percentage that the free/reduced lunch population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of FRL representation.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -63,7 +63,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="Ethnicity_Black_or_African_American",
         display_name="Black Representation",
-        description="Black student % deviation from district average",
+        description="Average percentage that the black population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of black representation.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -71,7 +71,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="Ethnicity_Hispanic/Latinx",
         display_name="Hispanic/Latinx Representation",
-        description="Hispanic/Latinx student % deviation from district average",
+        description="Average percentage that the Hispanic/Latinx population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of Hispanic/Latinx representation.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -79,7 +79,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="Ethnicity_White",
         display_name="White Representation",
-        description="White student % deviation from district average",
+        description="Average percentage that the white population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of white representation.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -87,7 +87,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="Ethnicity_Asian",
         display_name="Asian Representation",
-        description="Asian student % deviation from district average",
+        description="Average percentage that the Asian population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of Asian representation.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -95,7 +95,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="seat_disparity",
         display_name="Student Seat Imbalance",
-        description="Imbalance between seats and students per zone",
+        description="Average percentage that the number of seats deviates from the number of students per zone. Lower indicates that zones are more balanced in terms of seat-student imbalance.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -111,7 +111,7 @@ DISTANCE_METRICS = [
     MetricSpec(
         column="avg_closest_zone_school_distance",
         display_name="Avg Distance to Closest School",
-        description="Average distance students travel to nearest school in zone",
+        description="Average distance to nearest school in zone (miles) across all zones.",
         category="distance",
         direction="minimize",
         is_core=True,
@@ -119,7 +119,7 @@ DISTANCE_METRICS = [
     MetricSpec(
         column="avg_schools_in_attendance_area",
         display_name="Schools in Attendance Area",
-        description="Avg number of zone schools in students' attendance area",
+        description="Avg number of schools in the a students attendance area and zone. Higher indicates that students have more access to nearby schools.",
         category="distance",
         direction="maximize",
         is_core=True,
@@ -127,7 +127,7 @@ DISTANCE_METRICS = [
     MetricSpec(
         column="boundary_cost",
         display_name="Boundary Cost (Compactness)",
-        description="Zone boundary complexity; lower = more compact zones",
+        description="Zone boundary complexity. This basically measures how jagged and weird the zones look. Lower indicates that zones are more compact and \"nicer\" looking.",
         category="distance",
         direction="minimize",
         is_core=True,
@@ -151,7 +151,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_language_immersion_per_zone",
         display_name="Language Immersion Programs",
-        description="Avg language immersion programs per zone",
+        description="Avg language immersion programs per zone.",
         category="programs",
         direction="maximize",
         is_core=True,
@@ -205,18 +205,18 @@ PROGRAM_METRICS = [
         direction="maximize",
         is_core=False,
     ),
-    MetricSpec(
-        column="avg_CN_per_zone",
-        display_name="Cantonese Immersion (CN)",
-        description="Cantonese immersion programs per zone",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
+    # MetricSpec(
+    #     column="avg_CN_per_zone",
+    #     display_name="Cantonese Immersion (CN)",
+    #     description="Cantonese immersion programs per zone",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
     MetricSpec(
         column="avg_AF_per_zone",
         display_name="Autism Focus (AF)",
-        description="Mild to Moderate Autism Focus programs per zone",
+        description="Autism Focus programs per zone. These are programs for students with autism spectrum disorder (ASD).",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -224,7 +224,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_CB_per_zone",
         display_name="Cantonese Biliteracy (CB)",
-        description="Cantonese biliteracy programs per zone",
+        description="Cantonese biliteracy programs per zone. These programs are targeted for english language learners.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -232,7 +232,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_MM_per_zone",
         display_name="Mild-Moderate (MM)",
-        description="Mild-moderate special education programs per zone",
+        description="Mild-moderate special education programs per zone. These are programs for students with mild to moderate autism spectrum disorder (ASD) needs or other developmental disabilities.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -240,7 +240,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_SB_per_zone",
         display_name="Spanish Biliteracy (SB)",
-        description="Spanish biliteracy programs per zone",
+        description="Spanish biliteracy programs per zone. These programs are targeted for english language learners.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -248,7 +248,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_FB_per_zone",
         display_name="Filipino Biliteracy (FB)",
-        description="Filipino biliteracy programs per zone",
+        description="Filipino biliteracy programs per zone. These programs are targeted for english language learners.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -256,7 +256,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_NC_per_zone",
         display_name="Newcomer Chinese (NC)",
-        description="Newcomer Chinese programs per zone",
+        description="Newcomer Chinese programs per zone. These programs are targeted for students who are recent immigrants to the US and need extra support.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -264,7 +264,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_MS_per_zone",
         display_name="Moderate-Severe (MS)",
-        description="Moderate-severe special education programs per zone",
+        description="Moderate-severe special education programs per zone. These are programs for students with moderate to severe autism spectrum disorder (ASD) or other developmental disabilities.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -272,7 +272,9 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_TC_per_zone",
         display_name="Total Communication (TC)",
-        description="Deaf/Hard of Hearing, Total Communication programs per zone",
+        description="Deaf/Hard of Hearing, Total Communication programs per zone. " + \
+                    "Total Communication employs a multi-modal approach that simultaneously combines speech, formal signs, and gestures " + \
+                    "to ensure the child has every tool available to understand and express themselves.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -280,7 +282,9 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="avg_AO_per_zone",
         display_name="Auditory Oral (AO)",
-        description="Deaf/Hard of Hearing, Auditory Oral programs per zone",
+        description="Deaf/Hard of Hearing, Auditory Oral programs per zone. " + \
+                    "Auditory-Oral programs focus exclusively on developing spoken language and listening skills " + \
+                    "by utilizing residual hearing and lip-reading while strictly avoiding sign language.",
         category="programs",
         direction="maximize",
         is_core=False,
@@ -292,40 +296,40 @@ PROGRAM_METRICS = [
 # QUALITY METRICS (higher = better)
 # ============================================================================
 
-QUALITY_METRICS = [
-    MetricSpec(
-        column="avg_greatschools_rating",
-        display_name="GreatSchools Rating",
-        description="Average GreatSchools rating (1-10 scale)",
-        category="quality",
-        direction="maximize",
-        is_core=True,
-    ),
-    MetricSpec(
-        column="avg_math_score",
-        display_name="Math Scores",
-        description="Average math proficiency scores",
-        category="quality",
-        direction="maximize",
-        is_core=True,
-    ),
-    MetricSpec(
-        column="avg_eng_score",
-        display_name="English Scores",
-        description="Average English proficiency scores",
-        category="quality",
-        direction="maximize",
-        is_core=True,
-    ),
-    MetricSpec(
-        column="avg_suspension_index",
-        display_name="Suspension Index",
-        description="Suspension index (1-5, higher = fewer suspensions = better)",
-        category="quality",
-        direction="maximize",
-        is_core=True,
-    ),
-]
+# QUALITY_METRICS = [
+#     MetricSpec(
+#         column="avg_greatschools_rating",
+#         display_name="GreatSchools Rating",
+#         description="Average GreatSchools rating (1-10 scale)",
+#         category="quality",
+#         direction="maximize",
+#         is_core=True,
+#     ),
+#     MetricSpec(
+#         column="avg_math_score",
+#         display_name="Math Scores",
+#         description="Average math proficiency scores",
+#         category="quality",
+#         direction="maximize",
+#         is_core=True,
+#     ),
+#     MetricSpec(
+#         column="avg_eng_score",
+#         display_name="English Scores",
+#         description="Average English proficiency scores",
+#         category="quality",
+#         direction="maximize",
+#         is_core=True,
+#     ),
+#     MetricSpec(
+#         column="avg_suspension_index",
+#         display_name="Suspension Index",
+#         description="Suspension index (1-5, higher = fewer suspensions = better)",
+#         category="quality",
+#         direction="maximize",
+#         is_core=True,
+#     ),
+# ]
 
 
 # ============================================================================
