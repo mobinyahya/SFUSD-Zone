@@ -46,8 +46,8 @@ CATEGORY_DESCRIPTIONS = {
 DIVERSITY_METRICS = [
     MetricSpec(
         column="theil_index",
-        display_name="Ethnic Diversity Index",
-        description="Theil Entropy index measuring ethnic diversity (0=Highly-Diverse, 1=Non-Diverse). This uses the following ethnic groups: Black, Hispanic/Latinx, White, Asian.",
+        display_name="Racial Diversity Index",
+        description="Theil Entropy index measuring racial diversity (0=Highly-Diverse, 1=Non-Diverse). This uses the following racial groups: Black, Hispanic/Latinx, White, Asian.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -296,27 +296,28 @@ PROGRAM_METRICS = [
 # QUALITY METRICS (higher = better)
 # ============================================================================
 
-# QUALITY_METRICS = [
+QUALITY_METRICS = [
+    MetricSpec(
+        column="avg_math_score",
+        display_name="Math Scores",
+        description="Average math proficiency scores",
+        category="quality",
+        direction="maximize",
+        is_core=True,
+    ),
+    MetricSpec(
+        column="avg_eng_score",
+        display_name="English Scores",
+        description="Average English proficiency scores",
+        category="quality",
+        direction="maximize",
+        is_core=True,
+    ),
+
 #     MetricSpec(
 #         column="avg_greatschools_rating",
 #         display_name="GreatSchools Rating",
 #         description="Average GreatSchools rating (1-10 scale)",
-#         category="quality",
-#         direction="maximize",
-#         is_core=True,
-#     ),
-#     MetricSpec(
-#         column="avg_math_score",
-#         display_name="Math Scores",
-#         description="Average math proficiency scores",
-#         category="quality",
-#         direction="maximize",
-#         is_core=True,
-#     ),
-#     MetricSpec(
-#         column="avg_eng_score",
-#         display_name="English Scores",
-#         description="Average English proficiency scores",
 #         category="quality",
 #         direction="maximize",
 #         is_core=True,
@@ -329,7 +330,7 @@ PROGRAM_METRICS = [
 #         direction="maximize",
 #         is_core=True,
 #     ),
-# ]
+]
 
 
 # ============================================================================

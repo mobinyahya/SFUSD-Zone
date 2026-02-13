@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Path to the solutions CSV
-DEFAULT_CSV_PATH = "~/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/summary.csv"
+DEFAULT_CSV_PATH = "/share/data/school_choice/local_runs/kumar_website_test/new_benchmarks_test/summary.csv"
 
 # Session storage for ZoningAgent instances
 agent_sessions: dict[str, ZoningAgent] = {}
