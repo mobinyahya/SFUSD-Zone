@@ -134,7 +134,6 @@ async def get_solution(path: str):
     - metrics: dict of solution-level metrics (FRL, ethnicities, distances, etc.)
     - colors: dict mapping zone_id to hex color
     - status: optimization status
-    - demographics: (DEPRECATED) same as zone_data, kept for backwards compatibility
     """
     try:
         decoded_path = unquote(path)
@@ -161,10 +160,10 @@ async def get_solution(path: str):
         return {
             "zones": zones,
             "zone_data": zone_data_json,
-            "demographics": zone_data_json,  # Kept for backwards compatibility
             "metrics": solution_metrics,
             "percentile_ranks": compute_percentile_ranks(solution_metrics),
             "status": result.get("status", "UNKNOWN"),
+            
             "boundary_cost": result.get("boundary_cost"),
             "total_wall_time": result.get("total_wall_time"),
             "colors": colors,

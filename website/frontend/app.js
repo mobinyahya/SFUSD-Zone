@@ -385,7 +385,7 @@ function renderMap(geojson) {
         map.removeLayer(geojsonLayer);
     }
 
-    const { zones, demographics, colors, zone_index_map } = currentSolution;
+    const { zones, zone_data, colors, zone_index_map } = currentSolution;
 
     geojsonLayer = L.geoJSON(geojson, {
         style: feature => {
@@ -403,7 +403,7 @@ function renderMap(geojson) {
         onEachFeature: (feature, layer) => {
             const bgId = String(feature.properties.BlockGroup);
             const zoneId = zones[bgId];
-            const zoneDemographics = zoneId !== undefined ? demographics[String(zoneId)] : null;
+            const zoneDemographics = zoneId !== undefined ? zone_data[String(zoneId)] : null;
             const zoneIndex = zoneId !== undefined && zone_index_map ? zone_index_map[String(zoneId)] : null;
 
             const tooltipContent = createTooltip(bgId, zoneIndex, zoneDemographics);
@@ -545,11 +545,11 @@ function updateComparisonTable() {
             { key: 'avg_language_immersion_per_zone', name: 'Language Immersion' },
             { key: 'avg_special_ed_per_zone', name: 'Special Ed' },
         ],
-        'Quality': [
-            { key: 'avg_greatschools_rating', name: 'GreatSchools' },
+        'Performance': [
+            // { key: 'avg_greatschools_rating', name: 'GreatSchools' },
             { key: 'avg_math_score', name: 'Math Scores' },
             { key: 'avg_eng_score', name: 'English Scores' },
-            { key: 'avg_suspension_index', name: 'Suspension Index' },
+            // { key: 'avg_suspension_index', name: 'Suspension Index' },
         ],
     };
 

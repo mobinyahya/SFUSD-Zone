@@ -31,7 +31,7 @@ from LLM.exploration.metrics_config import CORE_METRICS, get_core_metric_columns
 
 # Paths
 CSV_PATH = Path("/share/data/school_choice/local_runs/kumar_website_test/new_benchmarks_test/summary.csv")
-GRAPH_PATH = Path("/share/data/school_choice/local_runs/kumar_website_test/graphs/BlockGroup_0.pickle")
+GRAPH_PATH = Path("/share/data/school_choice/Data/Computed/Graphs/BlockGroup_0.pickle")
 SHAPEFILE_PATH = Path("/share/data/school_choice/shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp")
 GEOJSON_PATH = Path(__file__).parent.parent / "data" / "sf_blockgroups.geojson"
 
@@ -201,7 +201,7 @@ def convert_shapefile_to_geojson():
     gdf["geoid10"] = gdf["geoid10"].fillna(0).astype("int64")
 
     # Load block-to-blockgroup mapping
-    block_bg_path = Path("/home/kumarc/sfusd-local-data/zones/SFUSD/Optimization/block_blockgroup_tract.csv")
+    block_bg_path = Path("/share/data/school_choice/Zones/Optimization/block_blockgroup_tract.csv")
     if block_bg_path.exists():
         df = pd.read_csv(block_bg_path)
         df["Block"] = df["Block"].fillna(0).astype("int64")
@@ -438,7 +438,6 @@ if __name__ == "__main__":
     # Generate GeoJSON on first run
     convert_shapefile_to_geojson()
 
-    # Test clustering
     print("\nTesting clusters...")
     clusters = get_clusters()
     for c in clusters:
