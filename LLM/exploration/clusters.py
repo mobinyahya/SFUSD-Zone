@@ -517,6 +517,6 @@ def format_cluster_summary(
         lines.append("")
     
     lines.append("---\n")
-    lines.append("Use `select_cluster` with the cluster number (1-{}) to narrow down to that group of solutions.".format(n_clusters))
+    lines.append("To explore a specific cluster, please tell me which cluster number you'd like (1-{}).".format(n_clusters))
     
     return "\n".join(lines)

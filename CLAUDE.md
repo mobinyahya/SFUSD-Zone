@@ -403,3 +403,516 @@ OPENAI_API_KEY=your_gemini_api_key  # Used for LLM agent (configured for Gemini)
 - **LLM API**: Currently configured to use Google Gemini via OpenAI SDK compatibility
 - **Time estimates**: Recursive runs with 4-minute budgets typical for production quality
 - **Solution feasibility**: If solver fails, relax diversity constraints or increase distance limits
+
+---
+
+## Administrator AI Interaction System (Redesign 2026)
+
+### Overview
+The administrator interaction system has been redesigned as a **state-based, versioned system** with:
+- Concise, natural responses (80-100 words max for normal responses)
+- Flexible word limit: Can exceed when user explicitly requests comprehensive details
+- Zone-level data access via tool calls
+- Solution versioning with undo capability
+- Explicit confirmation/exit handling
+- Clear text-based metric direction indicators (not arrows)
+
+### State Schema
+
+```python
+@dataclass
+class ProposalVersion:
+    """Versioned snapshot of zoning proposal state."""
+    version_id: int
+    timestamp: str
+    filter_state: FilterState
+    solution_path: Optional[str]
+    solution_count: int
+    description: str
+
+@dataclass
+class AgentState:
+    """Complete session state."""
+    versions: list[ProposalVersion]
+    current_version: int
+    cluster_labels: Optional[list]
+    cluster_centers: Optional[list]
+    cluster_directions: Optional[dict]
+    clustered_solutions: Optional[object]
+    clustered_vectors: Optional[object]
+    awaiting_confirmation: bool
+    pending_action: Optional[dict]
+    last_action: str
+```
+
+### New Tools
+
+#### Zone-Level Queries
+- **`query_zone_data(zone_ids, metrics)`** - Get demographics, programs, quality, distance for specific zones
+- **`compare_zones(zone_ids)`** - Side-by-side comparison of 2+ zones
+
+#### Versioning
+- **`undo_action(steps)`** - Revert to previous filter state
+- **`show_version_history()`** - Display version timeline
+
+### State Diagram
+
+```
+┌─────────────┐
+│   Initial   │ v0: No filters, all Pareto solutions
+└──────┬──────┘
+       │
+       │ User: "Tighten diversity"
+       ▼
+┌─────────────┐
+│  Filtered   │ v1: Diversity tightened → 89 solutions
+└──────┬──────┘
+       │
+       │ User: "Show zones 1 and 3"
+       ▼
+┌─────────────┐
+│ Zone Query  │ (No version change - read-only)
+└──────┬──────┘
+       │
+       │ User: "Loosen distance"
+       ▼
+┌─────────────┐
+│  Adjusted   │ v2: Distance loosened → 134 solutions
+└──────┬──────┘
+       │
+       │ User: "Undo"
+       ▼
+┌─────────────┐
+│  Restored   │ v1: Back to 89 solutions (diversity tight)
+└─────────────┘
+```
+
+### Example Interaction Flow
+
+**Before (Verbose):**
+```
+User: What does the current solution look like?
+
+Agent: The current solution shows a Free/Reduced Lunch deviation 
+of 0.045 which represents how much the zones vary from the district 
+average. The racial diversity deviation is 0.082. The average distance 
+students travel is 1.23 miles. This solution includes 5 zones with 
+varying demographic compositions...
+
+[200+ words]
+```
+
+**After (Concise & Natural, 80-100 words):**
+```
+User: What does the current solution look like?
+
+Agent: v0: Initial balanced solution with 156 options available.
+
+Key metrics for the current centroid:
+• FRL deviation: 0.045 (lower is better) - strong equity
+• Racial diversity: 0.082 (lower is better) - good balance
+• Average distance: 1.23 miles (lower is better)
+• Total programs: 41 (higher is better)
+
+This represents a balanced approach between diversity and geographic access. Would you like to prioritize a specific metric or explore different trade-offs?
+
+---
+
+User: Show me zone 1 and zone 3 demographics
+
+Agent: **Zone 1:**
+• Students: 2,340, FRL: 45.2%
+• Ethnicity: Hispanic 52.1%, Asian 23.4%
+• Programs: 8, Language immersion: 2
+
+**Zone 3:**
+• Students: 1,890, FRL: 28.7%
+• Ethnicity: White 48.2%, Asian 31.1%
+• Programs: 12, Language immersion: 4
+
+---
+
+User: Make diversity tighter
+
+Agent: To tighten diversity (FRL deviation), I'll filter for zones with more similar economic composition.
+
+Expected outcomes:
+• Gains: More equitable distribution of students eligible for free/reduced lunch
+• Trade-offs: Typically reduces solutions by 40-50%, may slightly increase average distance
+
+How much would you like to tighten this - mildly, moderately, or aggressively?
+
+---
+
+User: moderately
+
+Agent: ✓ v1: Tightened FRL deviation (moderately)
+• Solutions: 156 → 67
+• FRL deviation improved: 0.098 → 0.045
+
+This focuses on more economically balanced zones. Would you like to continue exploring these solutions or adjust other metrics?
+
+---
+
+User: Compare zones 1 and 3 now
+
+Agent: **Comparing Zones 1, 3:**
+FRL %: 45.2% vs 28.7%
+Students: 2340 vs 1890
+Programs: 8 vs 12
+Rating: 6.8 vs 7.4
+Avg Dist: 1.1mi vs 0.9mi
+
+---
+
+User: Actually, undo that
+
+Agent: ✓ Reverted to v0 (initial balanced solution)
+
+You now have all 156 solutions available again with the original filter settings. We're back to the baseline with low FRL deviation (0.045). Would you like to try adjusting a different metric this time?
+
+---
+
+User: Show version history
+
+Agent: **Version History:**
+→ v0: Initial state (156 solutions)
+  v1: Tightened FRL deviation (67 solutions)
+```
+
+### Backend Implementation
+
+#### Key Changes in `zoning_agent.py`:
+
+1. **State Management** (lines 50-110)
+   - `AgentState` class tracks versions
+   - `save_version()` creates snapshots
+   - `undo()` restores previous states
+
+2. **New Tools** (lines 120-170)
+   - `query_zone_data` - loads zone_data from result.json
+   - `compare_zones` - side-by-side zone comparison
+   - `undo_action` - restore previous version
+   - `show_version_history` - display timeline
+
+3. **Auto-Versioning** (filter modifications)
+   - `tighten_filter` → saves v{N}
+   - `loosen_filter` → saves v{N}
+   - `select_cluster` → saves v{N}
+
+4. **Concise System Prompt** (lines 357-410)
+   - Max 50 words per response
+   - Bullet-point format
+   - Action-first structure
+   - Version tracking emphasis
+
+### Code Recommendations
+
+#### For Frontend Integration:
+```javascript
+// Track version in UI
+let currentVersion = 0;
+
+// Show undo button when version > 0
+if (response.version_id > 0) {
+  showUndoButton();
+}
+
+// Display version timeline
+function renderVersionHistory(versions) {
+  return versions.map(v => 
+    `<li class="${v.is_current ? 'active' : ''}">
+      v${v.version_id}: ${v.description} (${v.solution_count} solutions)
+    </li>`
+  );
+}
+```
+
+#### For Confirmation Flow:
+```python
+# In zoning_agent.py
+if tool_name == "tighten_filter":
+    # ... existing logic ...
+    
+    # Check if major change (>50% reduction)
+    if len(actual_filtered) < len(filtered) * 0.5:
+        self.state.awaiting_confirmation = True
+        self.state.pending_action = {
+            "type": "tighten",
+            "metric": metric_name,
+            "before": len(filtered),
+            "after": len(actual_filtered)
+        }
+        return f"⚠️ Major change: {len(filtered)}→{len(actual_filtered)} solutions. Confirm?"
+```
+
+#### For Session Persistence:
+```python
+# Save state to database/file
+def save_session(agent: ZoningAgent, session_id: str):
+    state_dict = {
+        "versions": [asdict(v) for v in agent.state.versions],
+        "current_version": agent.state.current_version,
+        "filter_state": asdict(agent.filter_state),
+    }
+    with open(f"sessions/{session_id}.json", "w") as f:
+        json.dump(state_dict, f)
+
+# Restore from database/file
+def load_session(agent: ZoningAgent, session_id: str):
+    with open(f"sessions/{session_id}.json", "r") as f:
+        state_dict = json.load(f)
+    
+    agent.state.versions = [ProposalVersion(**v) for v in state_dict["versions"]]
+    agent.state.current_version = state_dict["current_version"]
+    # Restore filter_state...
+```
+
+### Response Format Standards
+
+**Action Confirmation:**
+```
+✓ v{N}: {action_description}
+• {before}→{after} solutions
+• Trade-off: {key_impact}
+{prompt_for_next}
+```
+
+**Current Solution Summary (80-100 words, natural tone):**
+```
+v{N}: {count} solutions
+
+Current solution has strong diversity metrics with low FRL deviation (0.045) 
+and low racial diversity deviation (0.039). Average distance is 1.23 miles 
+with 41 programs available. This balances equity with access. Would you like 
+to prioritize a specific metric?
+```
+
+**Zone Data:**
+```
+**Zone {id}:**
+• {key_metric_1}
+• {key_metric_2}
+• {key_metric_3}
+```
+
+**Error/Infeasibility:**
+```
+⚠️ {problem_description}
+• Suggest: {action_to_fix}
+```
+
+### Critical Rules for Metric Display
+
+**ALWAYS use clear text for metric directions, NOT arrows:**
+- ❌ AVOID: `FRL: 0.045↓, programs: 41↑` (arrows are confusing)
+- ✅ USE: `FRL deviation: 0.045 (lower is better), 41 programs (higher is better)`
+- ✅ BETTER: `low FRL deviation (0.045)`, `41 programs available`
+- For changes: Use "increased", "decreased", "higher", "lower", "more", "fewer"
+
+**Why no arrows?** Arrows combined with qualitative words ("worse Hispanic/Latinx Representation↑") create confusion. Clear text is always better.
+
+**NEVER:**
+- List every metric individually (max 3-4 key ones)
+- Exceed 100 words per response
+- Use arrows (↑↓) for metric directions
+- Mix arrows with "worse" or "better" - extremely confusing
+- Use excessive qualitative ratings - occasional "strong" or "good" is fine, but don't rate everything as "excellent"
+- Show program breakdowns (SA, AF, CB, etc.) without context
+- Include ANY code-like references: function calls, syntax, programming terminology
+- Example: ❌ "select_cluster(2)" ✅ "Please tell me which cluster number (1, 2, or 3)"
+
+**WHY:** The verbose response example shows the problem - listing 20+ metrics with qualitative ratings ("very good", "excellent") but inconsistent direction info. Some metrics have "lower is better", others don't. The specific program counts (SA: 1.50, AF: 2.50, etc.) lack direction because they're component details, not standalone metrics.
+
+**FIX:** 
+- Keep responses to 80-100 words with natural phrasing
+- Tools provide data, agent extracts 2-4 KEY metrics with clear text
+- Use occasional qualitative language ("strong diversity", "good balance") but always pair with actual values
+- Users can ask for details if needed
+
+### No Code References - Critical for Administrator UX
+
+**PROBLEM:** Agent was including programming references in responses:
+- "You can select a cluster by its number (e.g., select_cluster(2))."
+- "Use query_zone_data() to see more details"
+
+**WHY WRONG:** Administrators are policy experts, not developers. Code syntax is:
+- Confusing and intimidating
+- Breaks the natural conversation flow
+- Makes the tool feel technical rather than accessible
+
+**SOLUTION:**
+❌ BAD: "select_cluster(2)" or "query_zone_data()"
+✅ GOOD: "Which cluster would you like to explore? Just tell me the cluster number (1, 2, or 3)."
+
+❌ BAD: "Call the compare_zones function"
+✅ GOOD: "Would you like to compare specific zones side-by-side?"
+
+**Rule:** Speak in plain administrative language. Never mention function names, syntax, or programming concepts.
+
+### Consultative Adjustment Workflow - Critical for UX
+
+**PROBLEM:** Agent was immediately applying adjustments without explanation or user control:
+```
+User: "Could we prioritize math scores more"
+Agent: "✓ v3: Prioritized higher Math Scores. • 289→260 solutions"
+```
+
+**WHY WRONG:** 
+- No explanation of what will be gained
+- No discussion of trade-offs
+- No user control over degree of change
+- Feels abrupt and non-consultative
+
+**SOLUTION - 3-Step Flow:**
+
+**Step 1: Explain Trade-offs**
+```
+User: "Could we prioritize math scores more"
+
+Agent: "To prioritize math scores, I'll filter for solutions with higher average math proficiency.
+
+Expected outcomes:
+• Gains: Better math performance across zones
+• Trade-offs: Typically reduces solutions by 30-40%, may increase average distance slightly
+
+How aggressively would you like to prioritize this? (mild / moderate / aggressive)"
+```
+
+**Step 2: User Chooses Strength**
+```
+User: "moderate"
+```
+
+**Step 3: Apply & Show Results**
+```
+Agent: "✓ v3: Tightened Math Scores (moderately)
+• Solutions: 289 → 183
+• Math scores improved: 2,409 → 2,543
+
+Would you like to adjust another metric or explore these solutions?"
+```
+
+**Key Principles:**
+- ALWAYS explain gains and trade-offs BEFORE applying changes
+- ALWAYS ask for strength level (mild/moderate/aggressive)
+- ALWAYS show before/after metrics in results
+- Maintain conversational flow with clear next steps
+
+### Word Limit Flexibility
+
+**Standard Response:** 80-100 words (concise, focused on key points)
+
+**Flexible Expansion:** Agent should intelligently recognize when more detail is needed based on user intent, not trigger phrases.
+
+**Use judgment - provide more detail when:**
+- User asks "what about...", "tell me more...", "explain..."
+- User seeks understanding: "why", "how", "what's the difference"
+- User asks about trade-offs or implications
+- User compares multiple things
+- Context suggests comprehensive answer is helpful
+
+**Examples:**
+
+**Concise (80 words):**
+```
+User: "What's the current solution?"
+
+Agent: "v0: Balanced solution with 156 options.
+
+Key metrics:
+• FRL deviation: 0.045 (lower better) - strong equity
+• Racial diversity: 0.082 (lower better)
+• Average distance: 1.23 miles (lower better)
+• Programs: 41 (higher better)
+
+Would you like to prioritize a specific metric?"
+```
+
+**Expanded (150 words) - User seeking detail:**
+```
+User: "What metrics are we looking at here?"
+
+Agent: "We're evaluating solutions across several categories:
+
+**Demographics:**
+• Racial diversity deviation: 0.039 - how evenly racial/ethnic groups are distributed
+• FRL representation: 0.110 - economic balance across zones
+• Individual group deviations for Black, Hispanic/Latinx, White, Asian populations
+
+**Geographic Access:**
+• Average distance to schools: 0.316 miles
+• Number of schools per zone: 17
+• Boundary compactness: 101 (lower = more compact)
+
+**Programs:**
+• Total programs: 41 per zone
+• Language immersion: 7
+• Special education: 8
+
+**School Quality:**
+• Math scores: 2,409
+• English scores: 2,397
+
+Each metric has trade-offs - improving one often affects others. What aspect interests you most?"
+```
+
+**Expanded (140 words) - User asking comparison:**
+```
+User: "How do zones 1 and 3 differ?"
+
+Agent: "Key differences between Zone 1 and Zone 3:
+
+**Demographics:**
+• Zone 1: 45% FRL, majority Hispanic (52%) and Asian (23%)
+• Zone 3: 29% FRL, majority White (48%) and Asian (31%)
+Zone 1 serves more economically disadvantaged students.
+
+**Program Access:**
+• Zone 1: 8 programs total, 2 language immersion
+• Zone 3: 12 programs total, 4 language immersion
+Zone 3 has more diverse program options.
+
+**School Quality:**
+• Zone 1: Math 6.2, Rating 6.8
+• Zone 3: Math 7.1, Rating 7.4
+Zone 3 has slightly higher performance metrics.
+
+**Distance:**
+• Zone 1: 1.1 miles average
+• Zone 3: 0.9 miles average
+
+Would you like to explore solutions that balance these differences?"
+```
+
+The key: Be concise by default, expand naturally when user intent calls for it.
+
+### File Paths - NEVER Show to Users
+
+**Problem:** Agent was showing internal file paths like:
+```
+/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/zone-rec-4/seed42/...
+```
+
+**Why Wrong:**
+- These are implementation details
+- Not helpful for administrators
+- Exposes system structure
+- Clutters the response
+
+**Solution:** 
+- Paths used internally to load solution data
+- NEVER mentioned in responses to users
+- System prompt explicitly forbids showing paths
+- Solutions identified by version # and metrics, not file paths
+
+### Testing Checklist
+
+- [ ] Version history maintains correct order
+- [ ] Undo restores exact filter state
+- [ ] Zone queries return valid data
+- [ ] Response length ≤50 words (measured)
+- [ ] All tool calls save versions appropriately
+- [ ] State persists across conversation turns
+- [ ] Cluster selection updates versions
+- [ ] Confirmation flow blocks major changes
