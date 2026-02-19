@@ -543,31 +543,49 @@ Always present these as choices: "Would you like to adjust this mildly, moderate
 
 ## File Paths
 Solutions have internal file paths for loading data. NEVER show these to users.
-They are system implementation details, not user-facing information."""
+They are system implementation details, not user-facing information.
+
+## Solution History & User Feedback
+Users save solutions as they explore. You receive context about their saved solutions and notes.
+
+KEY BEHAVIORS:
+- Reference solutions by number: "Solution #2 had better diversity than your current one"
+- Use feedback patterns: If user liked Solution #2 (diversity focus) but disliked #4 (high distance), infer they want diversity WITHOUT sacrificing distance
+- When recommending changes, relate to past solutions: "This adjustment would move toward something like Solution #2 but with shorter distances"
+- If user is viewing an older solution and asks a question, answer about THAT solution (not the latest)
+- When user provides notes/feedback, acknowledge it and explain how it informs your recommendations
+- Don't list all saved solutions unless asked — reference them naturally when relevant"""
 
 
 class ZoningAgent:
     """Interactive agent for exploring school zoning solutions with state management."""
-    
+
     def __init__(self, csv_path: str | Path):
         """
         Initialize the agent with zoning solution data.
-        
+
         Args:
             csv_path: Path to the CSV file with zoning solutions
         """
         load_dotenv()
-        
+
         # Initialize OpenAI client with Google's compatible endpoint
         api_key = os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY not found in environment")
-        
+
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         )
         self.model = "gemini-2.5-flash"
+
+        # Deferred version saving: when True, filter tool calls accumulate descriptions
+        # instead of saving a new version per call. chat_with_metadata() sets this flag
+        # so that one LLM turn = one version save (matching the frontend's solution #).
+        self._defer_version_save: bool = False
+        self._pending_descriptions: list[str] = []
+        self._pending_solution_path: Optional[str] = None
         
         # Load and process solutions
         self.all_solutions = load_solutions(csv_path)
@@ -879,22 +897,29 @@ class ZoningAgent:
                 # Build response with trade-off information
                 strength_text = {"mild": "mildly", "moderate": "moderately", "aggressive": "aggressively"}[strength]
                 
+                # The pending version ID is the next slot in the versions list
+                pending_version_id = len(self.state.versions)
                 result_lines = [
-                    f"✓ v{self.state.current_version + 1}: Tightened {metric_name} ({strength_text})",
+                    f"✓ v{pending_version_id}: Tightened {metric_name} ({strength_text})",
                     f"• Solutions: {len(filtered)} → {len(actual_filtered)}",
                     f"• {metric_name} improved: {before_val:.3f} → {after_val:.3f}"
                 ]
-                
-                # Save version
+
                 solution_path = after_sol.get('path') if 'path' in after_sol.index else None
-                
-                self.state.save_version(
-                    self.filter_state,
-                    solution_path=solution_path,
-                    solution_count=len(actual_filtered),
-                    description=f"Tightened {metric_name} ({strength})"
-                )
-                
+                desc = f"Tightened {metric_name} ({strength})"
+
+                if self._defer_version_save:
+                    self._pending_descriptions.append(desc)
+                    if solution_path:
+                        self._pending_solution_path = solution_path
+                else:
+                    self.state.save_version(
+                        self.filter_state,
+                        solution_path=solution_path,
+                        solution_count=len(actual_filtered),
+                        description=desc,
+                    )
+
                 return "\n".join(result_lines)
             
             except Exception as e:
@@ -929,15 +954,22 @@ class ZoningAgent:
                     sol, _ = get_centroid_solution(actual_filtered, norm)
                     solution_path = sol.get('path')
                 
-                self.state.save_version(
-                    self.filter_state,
-                    solution_path=solution_path,
-                    solution_count=after_count,
-                    description=f"Loosened {metric_name}"
-                )
-                
-                version_id = self.state.current_version
-                return f"✓ v{version_id}: Loosened {metric_name}\n• {before_count}→{after_count} solutions"
+                pending_version_id = len(self.state.versions)
+                desc = f"Loosened {metric_name}"
+
+                if self._defer_version_save:
+                    self._pending_descriptions.append(desc)
+                    if solution_path:
+                        self._pending_solution_path = solution_path
+                else:
+                    self.state.save_version(
+                        self.filter_state,
+                        solution_path=solution_path,
+                        solution_count=after_count,
+                        description=desc,
+                    )
+
+                return f"✓ v{pending_version_id}: Loosened {metric_name}\n• {before_count}→{after_count} solutions"
             
             except Exception as e:
                 return f"Error loosening filter: {str(e)}"
@@ -1037,15 +1069,22 @@ class ZoningAgent:
                 sol, _ = get_centroid_solution(actual_filtered, norm)
                 solution_path = sol.get('path')
             
-            self.state.save_version(
-                self.filter_state,
-                solution_path=solution_path,
-                solution_count=actual_count,
-                description=f"Selected cluster: {direction_label}"
-            )
-            
-            version_id = self.state.current_version
-            return f"✓ v{version_id}: Cluster {cluster_id + 1} selected\n• {direction_label}\n• {actual_count} solutions"
+            pending_version_id = len(self.state.versions)
+            desc = f"Selected cluster: {direction_label}"
+
+            if self._defer_version_save:
+                self._pending_descriptions.append(desc)
+                if solution_path:
+                    self._pending_solution_path = solution_path
+            else:
+                self.state.save_version(
+                    self.filter_state,
+                    solution_path=solution_path,
+                    solution_count=actual_count,
+                    description=desc,
+                )
+
+            return f"✓ v{pending_version_id}: Cluster {cluster_id + 1} selected\n• {direction_label}\n• {actual_count} solutions"
         
         else:
             return f"Unknown tool: {tool_name}"
@@ -1118,7 +1157,32 @@ class ZoningAgent:
         self.filter_state = FilterState()
         print("Filters reset. All Pareto-optimal solutions are now feasible.")
 
-    def chat_with_metadata(self, user_message: str) -> dict:
+    def _build_solution_context(self, solution_context: dict) -> str:
+        """Build a context string from the user's saved solutions and notes."""
+        lines = []
+
+        current_idx = solution_context.get("current_solution_index")
+        saved = solution_context.get("saved_solutions", [])
+
+        if not saved:
+            return ""
+
+        if current_idx is not None:
+            lines.append(f"The user is currently viewing Solution #{current_idx}.")
+
+        lines.append("Saved solutions:")
+        for sol in saved:
+            idx = sol.get("index", "?")
+            label = sol.get("label", "Untitled")
+            note = sol.get("note", "")
+            viewing = " [CURRENTLY VIEWING]" if idx == current_idx else ""
+
+            note_text = f' — User note: "{note}"' if note else " — No notes"
+            lines.append(f'- #{idx}: "{label}"{note_text}{viewing}')
+
+        return "\n".join(lines)
+
+    def chat_with_metadata(self, user_message: str, solution_context: dict = None) -> dict:
         """
         Process a user message and return the agent's response with metadata.
 
@@ -1127,12 +1191,29 @@ class ZoningAgent:
         - response_type: "text" | "clusters" | "solution_update"
         - clusters: List of cluster info when show_solution_clusters was called
         - solution_path: Path to solution when select_cluster was called
+        - description: Current version description
         """
         tool_calls_made = []
         clusters_data = None
         solution_path = None
 
-        self.history.append({"role": "user", "content": user_message})
+        # Enable deferred version saving so multiple tool calls in one turn
+        # produce exactly one version (matching the frontend's solution numbering).
+        self._defer_version_save = True
+        self._pending_descriptions = []
+        self._pending_solution_path = None
+
+        # Build enhanced message with solution context if provided
+        if solution_context:
+            context_text = self._build_solution_context(solution_context)
+            if context_text:
+                enhanced_message = f"[Context: {context_text}]\n\n{user_message}"
+            else:
+                enhanced_message = user_message
+        else:
+            enhanced_message = user_message
+
+        self.history.append({"role": "user", "content": enhanced_message})
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -1211,6 +1292,27 @@ class ZoningAgent:
         final_content = assistant_message.content or ""
         self.history.append({"role": "assistant", "content": final_content})
 
+        # Flush deferred version: save exactly one version for this entire turn.
+        self._defer_version_save = False
+        if self._pending_descriptions:
+            combined_desc = "; ".join(self._pending_descriptions)
+            filtered = self._get_filtered_solutions()
+            flush_path = self._pending_solution_path
+            if flush_path is None and len(filtered) > 0:
+                normalized = normalize_metrics(filtered)
+                sol, _ = get_centroid_solution(filtered, normalized)
+                flush_path = sol.get("path")
+            self.state.save_version(
+                self.filter_state,
+                solution_path=flush_path,
+                solution_count=len(filtered),
+                description=combined_desc,
+            )
+            if solution_path is None:
+                solution_path = flush_path
+        self._pending_descriptions = []
+        self._pending_solution_path = None
+
         if solution_path is None and clusters_data is None and len(tool_calls_made) > 0:
             filtered = self._get_filtered_solutions()
             if len(filtered) > 0:
@@ -1225,11 +1327,16 @@ class ZoningAgent:
         else:
             response_type = "text"
 
+        # Get description from current version
+        current_version = self.state.get_current_version()
+        description = current_version.description if current_version else ""
+
         return {
             "text": final_content,
             "response_type": response_type,
             "clusters": clusters_data,
             "solution_path": solution_path,
+            "description": description,
         }
 
     def _build_clusters_response(self) -> list:

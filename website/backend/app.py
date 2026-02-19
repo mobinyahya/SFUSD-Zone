@@ -82,6 +82,8 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    current_solution_index: Optional[int] = None
+    saved_solutions: Optional[list] = None  # [{index, label, note, key_metrics}]
 
 
 @app.get("/")
@@ -232,9 +234,17 @@ def chat(request: ChatRequest):
         logger.info(f"Chat request: {request.message[:100]}...")
         session_id, agent = get_or_create_agent(request.session_id)
 
+        # Build solution context from request
+        solution_context = None
+        if request.saved_solutions or request.current_solution_index is not None:
+            solution_context = {
+                "current_solution_index": request.current_solution_index,
+                "saved_solutions": request.saved_solutions or [],
+            }
+
         # Call agent with metadata tracking
         logger.info("Calling agent.chat_with_metadata...")
-        result = agent.chat_with_metadata(request.message)
+        result = agent.chat_with_metadata(request.message, solution_context=solution_context)
         logger.info(f"Agent response type: {result.get('response_type')}")
         logger.info(f"Agent text length: {len(result.get('text', ''))}")
 
@@ -243,6 +253,7 @@ def chat(request: ChatRequest):
             "response_type": result["response_type"],
             "clusters": result.get("clusters"),
             "solution_path": result.get("solution_path"),
+            "description": result.get("description", ""),
             "session_id": session_id,
         }
     except Exception as e:

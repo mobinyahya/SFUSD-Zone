@@ -13,6 +13,11 @@ let sessionId = null;
 let isProcessing = false;
 let posthogApiKey = null;
 
+// Solution history state
+let savedSolutions = [];
+let currentViewedIndex = null;
+const MAX_SAVED_SOLUTIONS = 30;
+
 // Chart instances
 let charts = {};
 let singleChart = null;
@@ -516,6 +521,303 @@ function refreshSingleChart() {
     }
 }
 
+// ============================================================================
+// Solution History Management
+// ============================================================================
+
+let historyExpanded = false;
+
+// Category percentile helpers — compute average percentile per category from solution data
+const HISTORY_CATEGORIES = {
+    'Div': [
+        { key: 'theil_index', short: 'Div' },
+        { key: 'FRL', short: 'FRL' },
+        { key: 'seat_disparity', short: 'Seat' },
+    ],
+    'Dist': [
+        { key: 'avg_closest_zone_school_distance', short: 'Dist' },
+        { key: 'avg_schools_in_attendance_area', short: 'Sch' },
+        { key: 'boundary_cost', short: 'Bnd' },
+    ],
+    'Prog': [
+        { key: 'avg_total_programs_per_zone', short: 'Prg' },
+        { key: 'avg_GE_per_zone', short: 'GE' },
+        { key: 'avg_language_immersion_per_zone', short: 'LI' },
+        { key: 'avg_special_ed_per_zone', short: 'SE' },
+    ],
+    'Perf': [
+        { key: 'avg_math_score', short: 'Math' },
+        { key: 'avg_eng_score', short: 'Eng' },
+    ],
+};
+
+function getCategoryPercentile(ranks, categoryMetrics) {
+    if (!ranks) return null;
+    let sum = 0, count = 0;
+    for (const m of categoryMetrics) {
+        const r = ranks[m.key];
+        if (r && r.percentile !== undefined) {
+            sum += r.percentile;
+            count++;
+        }
+    }
+    return count > 0 ? Math.round(sum / count) : null;
+}
+
+function autoSaveSolution(solutionData, label, agentMessage) {
+    // Don't save duplicates (same solution path)
+    const path = solutionData.path || '';
+    if (path && savedSolutions.some(s => s.path === path)) {
+        const existing = savedSolutions.find(s => s.path === path);
+        if (existing) {
+            currentViewedIndex = existing.index;
+            renderSolutionHistory();
+        }
+        return;
+    }
+
+    // Enforce max cap
+    if (savedSolutions.length >= MAX_SAVED_SOLUTIONS) {
+        savedSolutions.shift();
+        savedSolutions.forEach((s, i) => { s.index = i + 1; });
+    }
+
+    const index = savedSolutions.length + 1;
+
+    // Pre-compute category percentiles for preview badges
+    const ranks = solutionData.percentile_ranks || {};
+    const categoryScores = {};
+    for (const [cat, metrics] of Object.entries(HISTORY_CATEGORIES)) {
+        categoryScores[cat] = getCategoryPercentile(ranks, metrics);
+    }
+
+    const entry = {
+        index,
+        path,
+        solutionData: JSON.parse(JSON.stringify(solutionData)),
+        label: label || `Solution #${index}`,
+        agentMessage: agentMessage || '',
+        note: '',
+        timestamp: new Date().toISOString(),
+        categoryScores,
+    };
+
+    savedSolutions.push(entry);
+    currentViewedIndex = index;
+    renderSolutionHistory();
+
+    trackEvent('solution_saved', {
+        solution_index: index,
+        label: entry.label,
+        solution_path: path,
+    });
+}
+
+function viewSavedSolution(index) {
+    const entry = savedSolutions.find(s => s.index === index);
+    if (!entry) return;
+
+    currentViewedIndex = index;
+    currentSolution = entry.solutionData;
+
+    // Re-render all views from cached data (no API call)
+    loadGeojson().then(geojson => {
+        renderMap(geojson);
+        renderLegend();
+        updateComparisonTable();
+        refreshSingleChart();
+        mapPlaceholder.classList.add('hidden');
+    });
+
+    renderSolutionHistory();
+    updateNotePanel();
+
+    trackEvent('solution_revisited', {
+        solution_index: index,
+        label: entry.label,
+    });
+}
+
+function toggleHistoryExpanded() {
+    const container = document.getElementById('solution-history');
+    const toggleBtn = document.getElementById('solution-history-toggle');
+    if (!container) return;
+
+    historyExpanded = !historyExpanded;
+
+    container.classList.toggle('collapsed', !historyExpanded);
+    container.classList.toggle('expanded', historyExpanded);
+
+    if (toggleBtn) {
+        toggleBtn.innerHTML = historyExpanded ? '&#9660;' : '&#9650;';
+        toggleBtn.title = historyExpanded ? 'Collapse panel' : 'Expand panel';
+    }
+
+    // Show/hide the note panel
+    updateNotePanel();
+
+    // Invalidate map size after panel resize
+    if (map) setTimeout(() => map.invalidateSize(), 300);
+}
+
+function renderSolutionHistory() {
+    const container = document.getElementById('solution-history');
+    const cardsContainer = document.getElementById('solution-cards');
+    if (!container || !cardsContainer) return;
+
+    if (savedSolutions.length === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    // Show and set initial state
+    container.classList.remove('hidden');
+    if (!container.classList.contains('expanded') && !container.classList.contains('collapsed')) {
+        container.classList.add('collapsed');
+    }
+
+    cardsContainer.innerHTML = '';
+
+    savedSolutions.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'solution-card' +
+            (entry.index === currentViewedIndex ? ' active' : '') +
+            (entry.note ? ' has-note' : '');
+        card.dataset.index = entry.index;
+
+        // Top row: number + label + note button
+        const top = document.createElement('div');
+        top.className = 'solution-card-top';
+
+        const number = document.createElement('span');
+        number.className = 'solution-card-number';
+        number.textContent = entry.index;
+
+        const label = document.createElement('span');
+        label.className = 'solution-card-label';
+        label.textContent = entry.label;
+        label.title = entry.label;
+
+        const noteBtn = document.createElement('button');
+        noteBtn.className = 'solution-card-note-btn';
+        noteBtn.innerHTML = '&#9998;';
+        noteBtn.title = entry.note ? 'Edit note' : 'Add note';
+        noteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Expand panel and focus note textarea
+            if (!historyExpanded) toggleHistoryExpanded();
+            currentViewedIndex = entry.index;
+            viewSavedSolution(entry.index);
+            setTimeout(() => {
+                const textarea = document.getElementById('solution-note-textarea');
+                if (textarea) textarea.focus();
+            }, 100);
+        });
+
+        top.appendChild(number);
+        top.appendChild(label);
+        top.appendChild(noteBtn);
+        card.appendChild(top);
+
+        // Metric preview badges (visible only when expanded via CSS)
+        const metricsRow = document.createElement('div');
+        metricsRow.className = 'solution-card-metrics';
+
+        const scores = entry.categoryScores || {};
+        for (const [cat, pct] of Object.entries(scores)) {
+            if (pct === null) continue;
+            const badge = document.createElement('span');
+            const ranking = getPercentileRanking(pct);
+            badge.className = `solution-metric-badge ${ranking}`;
+            badge.innerHTML = `<span class="metric-badge-label">${cat}</span> ${pct}%`;
+            metricsRow.appendChild(badge);
+        }
+
+        card.appendChild(metricsRow);
+
+        card.addEventListener('click', () => viewSavedSolution(entry.index));
+        cardsContainer.appendChild(card);
+    });
+
+    // Auto-scroll to the active card
+    const activeCard = cardsContainer.querySelector('.solution-card.active');
+    if (activeCard) {
+        activeCard.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    }
+
+    // Wire up toggle button (in case it was re-rendered)
+    const toggleBtn = document.getElementById('solution-history-toggle');
+    if (toggleBtn && !toggleBtn._wired) {
+        toggleBtn.addEventListener('click', toggleHistoryExpanded);
+        toggleBtn._wired = true;
+    }
+}
+
+function updateNotePanel() {
+    const notePanel = document.getElementById('solution-note-panel');
+    const textarea = document.getElementById('solution-note-textarea');
+    const targetLabel = document.getElementById('solution-note-target');
+    if (!notePanel || !textarea) return;
+
+    const entry = savedSolutions.find(s => s.index === currentViewedIndex);
+
+    if (!historyExpanded || !entry) {
+        notePanel.classList.add('hidden');
+        return;
+    }
+
+    notePanel.classList.remove('hidden');
+    textarea.value = entry.note || '';
+    if (targetLabel) targetLabel.textContent = `Solution #${entry.index}`;
+
+    // Remove old listeners by replacing the element
+    const newTextarea = textarea.cloneNode(true);
+    textarea.parentNode.replaceChild(newTextarea, textarea);
+    newTextarea.id = 'solution-note-textarea';
+    newTextarea.value = entry.note || '';
+
+    newTextarea.addEventListener('blur', () => {
+        saveNote(entry.index, newTextarea.value.trim());
+    });
+    newTextarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            newTextarea.blur();
+        }
+    });
+}
+
+function saveNote(index, text) {
+    const entry = savedSolutions.find(s => s.index === index);
+    if (!entry) return;
+    if (entry.note === text) return; // no change
+
+    entry.note = text;
+    renderSolutionHistory();
+
+    trackEvent('solution_note_added', {
+        solution_index: index,
+        note_length: text.length,
+    });
+}
+
+function buildSavedSolutionsSummary() {
+    // Build a lightweight summary for the API payload
+    return savedSolutions.map(s => {
+        const metrics = s.solutionData.metrics || {};
+        return {
+            index: s.index,
+            label: s.label,
+            note: s.note,
+            key_metrics: {
+                frl: metrics.FRL,
+                diversity: metrics.theil_index,
+                distance: metrics.avg_closest_zone_school_distance,
+                programs: metrics.avg_total_programs_per_zone,
+            },
+        };
+    });
+}
+
 function updateComparisonTable() {
     const container = document.getElementById('comparison-table-container');
     const ranks = currentSolution && currentSolution.percentile_ranks;
@@ -811,6 +1113,8 @@ async function sendMessageToAgent(message) {
             body: JSON.stringify({
                 message,
                 session_id: sessionId,
+                current_solution_index: currentViewedIndex,
+                saved_solutions: buildSavedSolutionsSummary(),
             }),
             signal: controller.signal,
         });
@@ -848,6 +1152,11 @@ async function sendMessageToAgent(message) {
                 addMessage('assistant', data.text);
             }
             await loadSolution(data.solution_path);
+            // Auto-save the solution after loading
+            if (currentSolution) {
+                const label = data.description || data.text?.substring(0, 50) || 'Solution';
+                autoSaveSolution(currentSolution, label, data.text);
+            }
         } else {
             addMessage('assistant', data.text || 'Agent returned empty response. Please try again.');
         }
