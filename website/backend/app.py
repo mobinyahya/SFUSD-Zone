@@ -83,7 +83,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     current_solution_index: Optional[int] = None
-    saved_solutions: Optional[list] = None  # [{index, label, note, key_metrics}]
+    saved_solutions: Optional[list] = None  # [{index, label, pros, cons, key_metrics}]
 
 
 @app.get("/")

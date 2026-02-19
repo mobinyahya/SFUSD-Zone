@@ -611,7 +611,8 @@ function autoSaveSolution(solutionData, label, agentMessage) {
         solutionData: JSON.parse(JSON.stringify(solutionData)),
         label: label || `Solution #${index}`,
         agentMessage: agentMessage || '',
-        note: '',
+        pros: '',
+        cons: '',
         timestamp: new Date().toISOString(),
         categoryScores,
     };
@@ -644,7 +645,7 @@ function viewSavedSolution(index) {
     });
 
     renderSolutionHistory();
-    updateNotePanel();
+    updateProsConsPanel();
 
     trackEvent('solution_revisited', {
         solution_index: index,
@@ -667,8 +668,7 @@ function toggleHistoryExpanded() {
         toggleBtn.title = historyExpanded ? 'Collapse panel' : 'Expand panel';
     }
 
-    // Show/hide the note panel
-    updateNotePanel();
+    updateProsConsPanel();
 
     // Invalidate map size after panel resize
     if (map) setTimeout(() => map.invalidateSize(), 300);
@@ -696,7 +696,7 @@ function renderSolutionHistory() {
         const card = document.createElement('div');
         card.className = 'solution-card' +
             (entry.index === currentViewedIndex ? ' active' : '') +
-            (entry.note ? ' has-note' : '');
+            ((entry.pros || entry.cons) ? ' has-note' : '');
         card.dataset.index = entry.index;
 
         // Top row: number + label + note button
@@ -715,15 +715,14 @@ function renderSolutionHistory() {
         const noteBtn = document.createElement('button');
         noteBtn.className = 'solution-card-note-btn';
         noteBtn.innerHTML = '&#9998;';
-        noteBtn.title = entry.note ? 'Edit note' : 'Add note';
+        noteBtn.title = (entry.pros || entry.cons) ? 'Edit pros/cons' : 'Add pros/cons';
         noteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // Expand panel and focus note textarea
             if (!historyExpanded) toggleHistoryExpanded();
             currentViewedIndex = entry.index;
             viewSavedSolution(entry.index);
             setTimeout(() => {
-                const textarea = document.getElementById('solution-note-textarea');
+                const textarea = document.getElementById('solution-pros-textarea');
                 if (textarea) textarea.focus();
             }, 100);
         });
@@ -767,51 +766,40 @@ function renderSolutionHistory() {
     }
 }
 
-function updateNotePanel() {
-    const notePanel = document.getElementById('solution-note-panel');
-    const textarea = document.getElementById('solution-note-textarea');
-    const targetLabel = document.getElementById('solution-note-target');
-    if (!notePanel || !textarea) return;
+function updateProsConsPanel() {
+    const panel = document.getElementById('solution-proscons-panel');
+    const prosTextarea = document.getElementById('solution-pros-textarea');
+    const consTextarea = document.getElementById('solution-cons-textarea');
+    const targetLabel = document.getElementById('solution-proscons-target');
+    if (!panel || !prosTextarea || !consTextarea) return;
 
     const entry = savedSolutions.find(s => s.index === currentViewedIndex);
 
     if (!historyExpanded || !entry) {
-        notePanel.classList.add('hidden');
+        panel.classList.add('hidden');
         return;
     }
 
-    notePanel.classList.remove('hidden');
-    textarea.value = entry.note || '';
+    panel.classList.remove('hidden');
     if (targetLabel) targetLabel.textContent = `Solution #${entry.index}`;
 
-    // Remove old listeners by replacing the element
-    const newTextarea = textarea.cloneNode(true);
-    textarea.parentNode.replaceChild(newTextarea, textarea);
-    newTextarea.id = 'solution-note-textarea';
-    newTextarea.value = entry.note || '';
-
-    newTextarea.addEventListener('blur', () => {
-        saveNote(entry.index, newTextarea.value.trim());
-    });
-    newTextarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            newTextarea.blur();
-        }
-    });
+    for (const [id, field] of [['solution-pros-textarea', 'pros'], ['solution-cons-textarea', 'cons']]) {
+        const el = document.getElementById(id);
+        const fresh = el.cloneNode(true);
+        el.parentNode.replaceChild(fresh, el);
+        fresh.id = id;
+        fresh.value = entry[field] || '';
+        fresh.addEventListener('blur', () => saveProsCons(entry.index, field, fresh.value.trim()));
+        fresh.addEventListener('keydown', (e) => { if (e.key === 'Escape') fresh.blur(); });
+    }
 }
 
-function saveNote(index, text) {
+function saveProsCons(index, field, text) {
     const entry = savedSolutions.find(s => s.index === index);
-    if (!entry) return;
-    if (entry.note === text) return; // no change
-
-    entry.note = text;
+    if (!entry || entry[field] === text) return;
+    entry[field] = text;
     renderSolutionHistory();
-
-    trackEvent('solution_note_added', {
-        solution_index: index,
-        note_length: text.length,
-    });
+    trackEvent('solution_proscons_updated', { solution_index: index, field, length: text.length });
 }
 
 function buildSavedSolutionsSummary() {
@@ -821,7 +809,8 @@ function buildSavedSolutionsSummary() {
         return {
             index: s.index,
             label: s.label,
-            note: s.note,
+            pros: s.pros,
+            cons: s.cons,
             key_metrics: {
                 frl: metrics.FRL,
                 diversity: metrics.theil_index,

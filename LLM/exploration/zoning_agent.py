@@ -1174,11 +1174,17 @@ class ZoningAgent:
         for sol in saved:
             idx = sol.get("index", "?")
             label = sol.get("label", "Untitled")
-            note = sol.get("note", "")
+            pros = sol.get("pros", "")
+            cons = sol.get("cons", "")
             viewing = " [CURRENTLY VIEWING]" if idx == current_idx else ""
 
-            note_text = f' — User note: "{note}"' if note else " — No notes"
-            lines.append(f'- #{idx}: "{label}"{note_text}{viewing}')
+            annotations = []
+            if pros:
+                annotations.append(f'Pros: "{pros}"')
+            if cons:
+                annotations.append(f'Cons: "{cons}"')
+            annotation_text = " — " + "; ".join(annotations) if annotations else " — No annotations"
+            lines.append(f'- #{idx}: "{label}"{annotation_text}{viewing}')
 
         return "\n".join(lines)
 

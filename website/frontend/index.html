@@ -31,9 +31,16 @@
                 </div>
                 <div id="solution-cards" class="solution-cards-container">
                 </div>
-                <div id="solution-note-panel" class="solution-note-panel hidden">
-                    <textarea id="solution-note-textarea" placeholder="Add your thoughts on this solution..."></textarea>
-                    <div class="solution-note-panel-hint">Editing note for <span id="solution-note-target"></span> — saves automatically on blur</div>
+                <div id="solution-proscons-panel" class="solution-proscons-panel hidden">
+                    <div class="proscons-section">
+                        <label class="proscons-label proscons-label-pros">Pros</label>
+                        <textarea id="solution-pros-textarea" placeholder="What do you like about this solution?"></textarea>
+                    </div>
+                    <div class="proscons-section">
+                        <label class="proscons-label proscons-label-cons">Cons</label>
+                        <textarea id="solution-cons-textarea" placeholder="What concerns do you have?"></textarea>
+                    </div>
+                    <div class="solution-proscons-hint">Editing <span id="solution-proscons-target"></span> — saves automatically on blur</div>
                 </div>
             </div>
             <section id="comparison-panel">

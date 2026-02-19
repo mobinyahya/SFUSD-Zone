@@ -982,9 +982,9 @@ footer#charts-panel.hidden {
     max-height: 100px;
 }
 
-/* Expanded: show richer cards + note panel */
+/* Expanded: show richer cards + pros/cons panel */
 #solution-history.expanded {
-    max-height: 260px;
+    max-height: 300px;
 }
 
 .solution-history-header {
@@ -1181,39 +1181,60 @@ footer#charts-panel.hidden {
     color: #ffffff;
 }
 
-/* ---- Note panel (bottom, expanded only) ---- */
-.solution-note-panel {
+/* ---- Pros/Cons panel (bottom, expanded only) ---- */
+.solution-proscons-panel {
     padding: 0 12px 8px;
+    display: flex;
+    gap: 12px;
     flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
-.solution-note-panel.hidden {
+.solution-proscons-panel.hidden {
     display: none;
 }
 
-.solution-note-panel textarea {
+.proscons-section {
+    flex: 1;
+    min-width: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.proscons-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.proscons-label-pros { color: #27ae60; }
+.proscons-label-cons { color: #c0392b; }
+
+.proscons-section textarea {
     width: 100%;
     height: 54px;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 10px;
-    font-size: 0.82rem;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
     font-family: inherit;
     resize: vertical;
     outline: none;
-    min-height: 40px;
     max-height: 120px;
 }
 
-.solution-note-panel textarea:focus {
+.proscons-section textarea:focus {
     border-color: var(--secondary-color);
     box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
 }
 
-.solution-note-panel-hint {
+.solution-proscons-hint {
     font-size: 0.65rem;
     color: var(--text-muted);
     margin-top: 3px;
+    width: 100%;
 }
 
 /* ============================================================================
