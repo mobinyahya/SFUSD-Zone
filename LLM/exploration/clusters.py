@@ -19,7 +19,6 @@ from .metrics_config import (
     METRIC_BY_COLUMN,
     get_metric_columns,
 )
-from .pareto import format_solution
 from .filters import FilterBounds
 
 
@@ -293,119 +292,126 @@ def cluster_solutions(
     return labels, centers
 
 
+CATEGORY_THEME = {
+    "diversity": "Equity",
+    "distance": "Proximity",
+    "programs": "Programs",
+    "quality": "Quality",
+}
+
+SHORT_METRIC_NAMES = {
+    "FRL Representation": "FRL balance",
+    "Racial Diversity Index": "racial diversity",
+    "Black Representation": "Black representation",
+    "Hispanic/Latinx Representation": "Hispanic/Latinx representation",
+    "White Representation": "White representation",
+    "Asian Representation": "Asian representation",
+    "Student Seat Imbalance": "seat balance",
+    "Avg Distance to Closest School": "distance",
+    "Schools in Attendance Area": "school access",
+    "Boundary Cost (Compactness)": "compactness",
+    "Total Programs": "total programs",
+    "Language Immersion Programs": "language programs",
+    "Special Education Programs": "special ed",
+    "General Education Programs": "GE programs",
+    "Math Scores": "math scores",
+    "English Scores": "English scores",
+    "GreatSchools Rating": "school ratings",
+    "Suspension Index": "discipline climate",
+}
+
+
 def compute_cluster_directions(
     vectors: np.ndarray,
     cluster_centers: np.ndarray
 ) -> dict[int, dict]:
     """
-    Compute interpretable direction labels for each cluster.
-    
-    The direction is computed as the difference between the cluster center
-    and the overall centroid of all solutions. This shows what each cluster
-    "emphasizes" relative to the average solution.
-    
-    Args:
-        vectors: All solution vectors
-        cluster_centers: Centers of each cluster
-        
-    Returns:
-        Dict mapping cluster_id to {
-            "direction_vector": np.ndarray,
-            "direction_label": str,
-            "normalized_direction": np.ndarray
-        }
+    Compute labels and strength/weakness lists for each cluster.
+
+    Takes the mean of cluster centers as the reference point, then describes
+    each cluster by its direction away from that center-of-centers.
+    Labels use specific metric names (not broad categories) to stay unique.
     """
     metric_cols = get_metric_columns()
-    
-    # Compute overall centroid
-    overall_centroid = vectors.mean(axis=0)
-    
-    # Normalize for direction comparison
-    _, min_vals, max_vals = normalize_vectors(vectors)
-    ranges = max_vals - min_vals
-    ranges[ranges == 0] = 1.0
-    
+    n_clusters = len(cluster_centers)
+    center_of_centers = cluster_centers.mean(axis=0)
+
+    # Per-metric spread across cluster centers (for normalization)
+    spreads = {}
+    for i, col in enumerate(metric_cols):
+        if col not in METRIC_BY_COLUMN:
+            continue
+        vals = cluster_centers[:, i]
+        spread = vals.max() - vals.min()
+        if spread > 0:
+            spreads[i] = (col, spread)
+
+    max_spread = max((s for _, s in spreads.values()), default=1.0)
+
     directions = {}
-    
-    for cluster_id, center in enumerate(cluster_centers):
-        # Direction from overall centroid to cluster center
-        direction = center - overall_centroid
-        
-        # Normalize direction for interpretation
-        normalized_direction = direction / ranges
-        
-        # Generate interpretable label
-        emphasized = []  # Metrics this cluster is BETTER at
-        compromised = []  # Metrics this cluster is WORSE at
-        
-        threshold = 0.1  # 10% of range is significant
-        
-        for i, col in enumerate(metric_cols):
-            if col not in METRIC_BY_COLUMN:
-                continue
-            
+    for cid in range(n_clusters):
+        strengths = []
+        weaknesses = []
+
+        for metric_idx, (col, spread) in spreads.items():
             metric = METRIC_BY_COLUMN[col]
-            norm_dir = normalized_direction[i]
-            short_name = _get_short_metric_name(metric.display_name)
-            
-            # For MINIMIZE metrics: negative = better, positive = worse
-            # For MAXIMIZE metrics: positive = better, negative = worse
+            short_name = SHORT_METRIC_NAMES.get(metric.display_name, metric.display_name)
+
+            # Direction from center-of-centers to this cluster, normalized
+            delta = (cluster_centers[cid, metric_idx] - center_of_centers[metric_idx]) / spread
             if metric.direction == "minimize":
-                if norm_dir < -threshold:
-                    emphasized.append(short_name)
-                elif norm_dir > threshold:
-                    compromised.append(short_name)
-            else:  # maximize
-                if norm_dir > threshold:
-                    emphasized.append(short_name)
-                elif norm_dir < -threshold:
-                    compromised.append(short_name)
-        
-        # Build label
-        if emphasized and compromised:
-            label = f"Better {', '.join(emphasized[:2])}; accepts worse {', '.join(compromised[:2])}"
-        elif emphasized:
-            label = f"Optimizes for {', '.join(emphasized[:3])}"
-        elif compromised:
-            label = f"Accepts worse {', '.join(compromised[:3])}"
-        else:
-            label = "Balanced trade-offs"
-        
-        directions[cluster_id] = {
-            "direction_vector": direction,
-            "normalized_direction": normalized_direction,
-            "direction_label": label,
+                delta = -delta  # positive = better
+
+            importance = spread / max_spread
+            magnitude = abs(delta) * importance
+
+            if delta > 0.15:
+                strengths.append((magnitude, short_name, metric.category))
+            elif delta < -0.15:
+                weaknesses.append((magnitude, short_name, metric.category))
+
+        strengths.sort(reverse=True)
+        weaknesses.sort(reverse=True)
+
+        directions[cid] = {
+            "direction_label": _label_from_strengths(strengths),
+            "strengths": [name for _, name, _ in strengths[:3]],
+            "weaknesses": [name for _, name, _ in weaknesses[:3]],
         }
-    
+
+    _deduplicate_labels(directions)
     return directions
 
 
-def _get_short_metric_name(display_name: str) -> str:
-    """Convert display names to shorter labels for cluster descriptions."""
-    name_map = {
-        # Diversity
-        "FRL Deviation": "economic diversity",
-        "Black Population Deviation": "Black population balance",
-        "Hispanic Population Deviation": "Hispanic population balance",
-        "White Population Deviation": "White population balance",
-        "Asian Population Deviation": "Asian population balance",
-        "Seat Disparity": "seat availability",
-        # Distance
-        "Avg Distance to Closest School": "commute distance",
-        "Schools in Attendance Area": "local school access",
-        "Boundary Cost (Compactness)": "compactness",
-        # Programs
-        "Total Programs": "program variety",
-        "Language Immersion Programs": "language programs",
-        "Special Education Programs": "special ed access",
-        "General Education Programs": "GE programs",
-        # Quality
-        "GreatSchools Rating": "school ratings",
-        "Math Scores": "math scores",
-        "English Scores": "English scores",
-        "Suspension Index": "discipline climate",
-    }
-    return name_map.get(display_name, display_name)
+def _label_from_strengths(strengths: list[tuple]) -> str:
+    """Build a concise label from the top 1-2 specific strength names."""
+    if not strengths:
+        return "Balanced"
+
+    top = strengths[0][1]
+    if len(strengths) > 1 and strengths[1][0] > strengths[0][0] * 0.6:
+        return f"{_cap(top)} & {strengths[1][1]}"
+    return _cap(top)
+
+
+def _cap(s: str) -> str:
+    """Capitalize first letter, preserving acronyms like FRL or GE."""
+    return s[0].upper() + s[1:] if s else s
+
+
+def _deduplicate_labels(directions: dict[int, dict]) -> None:
+    """If two clusters still collide, append their top weakness to disambiguate."""
+    seen: dict[str, list[int]] = {}
+    for cid, info in directions.items():
+        seen.setdefault(info["direction_label"], []).append(cid)
+
+    for label, cids in seen.items():
+        if len(cids) <= 1:
+            continue
+        for cid in cids:
+            weakness = directions[cid]["weaknesses"][0] if directions[cid]["weaknesses"] else None
+            if weakness:
+                directions[cid]["direction_label"] = f"{label} (less {weakness})"
 
 
 def get_representative_solution(
@@ -489,34 +495,24 @@ def format_cluster_summary(
     cluster_centers: np.ndarray,
     directions: dict[int, dict]
 ) -> str:
-    """
-    Format a human-readable summary of all clusters.
-    
-    Shows each cluster's size, direction label, and representative solution.
-    """
-    
+    """Format a compact, scannable summary of all clusters."""
     n_clusters = len(cluster_centers)
-    lines = [f"**Solution Clusters** ({n_clusters} groups found)\n"]
-    lines.append("Each cluster represents a different approach to balancing trade-offs:\n")
-    
+    total = len(df)
+    lines = [f"**{n_clusters} groups** found across {total} solutions:\n"]
+
     for cluster_id in range(n_clusters):
         cluster_size = (labels == cluster_id).sum()
-        direction_info = directions[cluster_id]
-        
-        lines.append(f"---\n")
-        lines.append(f"### Cluster {cluster_id + 1}: {direction_info['direction_label']}")
-        lines.append(f"*({cluster_size} solutions)*\n")
-        
-        # Get representative solution
-        rep_solution, _ = get_representative_solution(
-            df, vectors, cluster_centers, labels, cluster_id
-        )
-        
-        lines.append("**Representative Solution:**")
-        lines.append(format_solution(rep_solution))
+        info = directions[cluster_id]
+        strengths = info.get("strengths", [])
+        weaknesses = info.get("weaknesses", [])
+
+        lines.append(f"**{cluster_id + 1}. {info['direction_label']}** ({cluster_size} solutions)")
+        if strengths:
+            lines.append(f"  Stronger: {', '.join(strengths[:2])}")
+        if weaknesses:
+            lines.append(f"  Weaker: {', '.join(weaknesses[:2])}")
         lines.append("")
-    
-    lines.append("---\n")
-    lines.append("To explore a specific cluster, please tell me which cluster number you'd like (1-{}).".format(n_clusters))
-    
+
+    lines.append(f"Which group would you like to explore? (1-{n_clusters})")
+
     return "\n".join(lines)
