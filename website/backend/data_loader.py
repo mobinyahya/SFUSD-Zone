@@ -66,18 +66,39 @@ def get_school_locations() -> list[dict]:
     G = load_graph()
     school_data = G.graph.get('school_data', {})
 
+    valid_capacity = {}
+    try:
+        from Zone_Generation.Config.Constants import get_dropbox_path
+        csv_path = f"{get_dropbox_path(False)}/Data/Cleaned/stanford_capacities_12.23.21.csv"
+        cap_df = pd.read_csv(csv_path)
+        for _, row in cap_df.iterrows():
+            sch_num = int(row['SchNum'])
+            code = str(row['PathwayCode'])
+            cap = int(row.get('Scenario_A_Capacity', 0))
+            if sch_num not in valid_capacity:
+                valid_capacity[sch_num] = {}
+            if code not in valid_capacity[sch_num]:
+                valid_capacity[sch_num][code] = 0
+            valid_capacity[sch_num][code] += cap
+    except Exception as e:
+        print(f"Failed to load capacity data: {e}")
+
     schools = []
     for school_id, school_info in school_data.items():
         # Only include schools with valid lat/lon
         lat = school_info.get('lat')
         lon = school_info.get('lon')
         if lat is not None and lon is not None:
+            programs_dict = valid_capacity.get(int(school_id), {})
+            total_cap = sum(programs_dict.values())
             schools.append({
                 'school_id': school_id,
                 'name': school_info.get('school_name', f'School {school_id}'),
                 'lat': float(lat),
                 'lon': float(lon),
                 'category': school_info.get('category', 'Unknown'),
+                'total_capacity': total_cap,
+                'programs': programs_dict
             })
 
     _school_locations_cache = schools

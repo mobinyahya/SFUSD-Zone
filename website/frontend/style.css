@@ -842,9 +842,9 @@ footer#charts-panel.hidden {
 .toggle-schools-btn {
     padding: 4px 8px;
     font-size: 0.7rem;
-    background: #f8f9fa;
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
+    background: var(--secondary-color);
+    color: white;
+    border: 1px solid var(--secondary-color);
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -853,19 +853,19 @@ footer#charts-panel.hidden {
 }
 
 .toggle-schools-btn:hover {
-    background: #ecf0f1;
-    border-color: var(--secondary-color);
+    background: #2980b9;
+    border-color: #2980b9;
 }
 
 .toggle-schools-btn.active {
-    background: var(--secondary-color);
-    color: white;
-    border-color: var(--secondary-color);
+    background: #f8f9fa;
+    color: var(--text-color);
+    border-color: var(--border-color);
 }
 
 .toggle-schools-btn.active:hover {
-    background: #2980b9;
-    border-color: #2980b9;
+    background: #ecf0f1;
+    border-color: var(--secondary-color);
 }
 
 .legend-item {
@@ -932,6 +932,30 @@ footer#charts-panel.hidden {
 
 .school-tooltip::before {
     border-top-color: rgba(44, 62, 80, 0.95) !important;
+}
+
+.school-programs-list {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    padding-top: 6px;
+}
+
+.school-programs-list strong {
+    font-size: 0.8rem !important;
+    margin-bottom: 4px !important;
+    opacity: 0.9;
+}
+
+.school-programs-list ul {
+    margin: 0;
+    padding-left: 16px;
+    list-style-type: disc;
+}
+
+.school-programs-list li {
+    font-size: 0.8rem;
+    margin-bottom: 2px;
+    opacity: 0.95;
 }
 
 /* ============================================================================

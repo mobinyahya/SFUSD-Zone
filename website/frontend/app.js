@@ -204,8 +204,22 @@ function renderSchoolMarkers(schools) {
         // Create marker
         const marker = L.marker([school.lat, school.lon], { icon });
 
+        let tooltipContent = `<div class="school-tooltip-content"><strong>${school.name}</strong>`;
+        if (school.total_capacity !== undefined) {
+            tooltipContent += `<br>Capacity: ${school.total_capacity}`;
+        }
+        if (school.programs && Object.keys(school.programs).length > 0) {
+            const activePrograms = Object.entries(school.programs).filter(([p, c]) => c > 0);
+            if (activePrograms.length > 0) {
+                tooltipContent += `<div class="school-programs-list"><strong>Programs:</strong><ul>` + 
+                    activePrograms.map(([p, c]) => `<li>${p}: ${c}</li>`).join('') + 
+                    `</ul></div>`;
+            }
+        }
+        tooltipContent += `</div>`;
+
         // Add tooltip with school name
-        marker.bindTooltip(school.name, {
+        marker.bindTooltip(tooltipContent, {
             direction: 'top',
             offset: [0, -10],
             className: 'school-tooltip',
