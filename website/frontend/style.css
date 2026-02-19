@@ -1237,6 +1237,30 @@ footer#charts-panel.hidden {
     width: 100%;
 }
 
+.generate-feedback-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 7px 14px;
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    letter-spacing: 0.3px;
+}
+
+.generate-feedback-btn:hover {
+    background: var(--secondary-color);
+}
+
+.generate-feedback-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* ============================================================================
    Responsive Design
    ============================================================================ */

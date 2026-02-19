@@ -44,11 +44,10 @@ def main():
     
     print()
     
-    # Start with an initial greeting
-    initial_response = agent.chat(
+    result = agent.chat(
         "Please show me the current balanced solution and explain what each metric means briefly."
     )
-    print(f"\nAgent: {initial_response}\n")
+    print(f"\nAgent: {result['text']}\n")
     
     while True:
         try:
@@ -70,8 +69,8 @@ def main():
             continue
         
         try:
-            response = agent.chat(user_input)
-            print(f"\nAgent: {response}\n")
+            result = agent.chat(user_input)
+            print(f"\nAgent: {result['text']}\n")
         except Exception as e:
             print(f"\nError: {e}\n")
 

@@ -17,17 +17,11 @@ from LLM.exploration.pareto import (
     load_solutions,
     normalize_metrics,
     compute_pareto_frontier,
-    METRIC_CONFIG,
-    get_metric_columns,
+    get_centroid_solution,
 )
-from LLM.exploration.clusters import (
-    vectorize_solutions,
-    cluster_solutions,
-    compute_cluster_directions,
-    get_representative_solution,
-)
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES, zone_colors
-from LLM.exploration.metrics_config import CORE_METRICS, get_core_metric_columns
+from Zone_Generation.Config.Constants import zone_colors
+from LLM.exploration.metrics_config import CORE_METRICS, ALL_METRICS, METRIC_BY_COLUMN
+from LLM.exploration.filters import FilterState, FilterBounds, apply_filters, find_relaxation_needed
 
 # Paths
 CSV_PATH = Path("/share/data/school_choice/local_runs/kumar_website_test/new_benchmarks_test/summary.csv")
@@ -38,9 +32,10 @@ GEOJSON_PATH = Path(__file__).parent.parent / "data" / "sf_blockgroups.geojson"
 # Cache
 _graph_cache = None
 _geojson_cache = None
-_clusters_cache = None
 _solution_space_stats_cache = None
 _school_locations_cache = None
+_pareto_cache = None
+_all_metrics_stats_cache = None
 
 
 def load_graph() -> nx.Graph:
@@ -389,77 +384,140 @@ def compute_percentile_ranks(metrics: dict) -> dict:
     return ranks
 
 
-def get_clusters(n_clusters: int = 5) -> list[dict]:
-    """
-    Get clustered solutions with labels and representative paths.
-
-    Returns list of dicts with:
-    - id: cluster ID (1-indexed)
-    - label: interpretable direction label
-    - count: number of solutions in cluster
-    - path: path to representative solution
-    - metrics: dict of metric values for representative
-    """
-    global _clusters_cache
-    if _clusters_cache is not None:
-        return _clusters_cache
-
-    # Load and process solutions
-    all_solutions = load_solutions(CSV_PATH)
-    normalized = normalize_metrics(all_solutions)
-    pareto = compute_pareto_frontier(normalized)
-
-    # Get original values for Pareto solutions
-    pareto_original = all_solutions.loc[pareto.index].copy()
-
-    if len(pareto_original) < n_clusters * 2:
-        n_clusters = max(2, len(pareto_original) // 2)
-
-    # Cluster
-    vectors = vectorize_solutions(pareto_original)
-    labels, centers = cluster_solutions(vectors, n_clusters)
-    directions = compute_cluster_directions(vectors, centers)
-
-    clusters = []
-    metric_cols = get_metric_columns()
-
-    for cluster_id in range(n_clusters):
-        cluster_size = int((labels == cluster_id).sum())
-        direction_info = directions[cluster_id]
-
-        # Get representative solution
-        rep_solution, _ = get_representative_solution(
-            pareto_original, vectors, centers, labels, cluster_id
-        )
-
-        # Build metrics dict
-        metrics = {}
-        for name, config in METRIC_CONFIG.items():
-            col = config["column"]
-            metrics[name] = float(rep_solution[col])
-
-        clusters.append({
-            "id": cluster_id + 1,
-            "label": direction_info["direction_label"],
-            "count": cluster_size,
-            "path": rep_solution["path"],
-            "metrics": metrics,
-        })
-
-    _clusters_cache = clusters
-    return clusters
-
-
 def get_zone_color(zone_id: int) -> str:
     """Get color for a zone ID."""
     return zone_colors.get(zone_id, "#808080")
 
 
-if __name__ == "__main__":
-    # Generate GeoJSON on first run
-    convert_shapefile_to_geojson()
+# ============================================================================
+# Admin console helpers
+# ============================================================================
 
-    print("\nTesting clusters...")
-    clusters = get_clusters()
-    for c in clusters:
-        print(f"Cluster {c['id']}: {c['label']} ({c['count']} solutions)")
+def get_pareto_solutions() -> pd.DataFrame:
+    """Load solutions, compute Pareto frontier, cache and return original-scale Pareto set."""
+    global _pareto_cache
+    if _pareto_cache is not None:
+        return _pareto_cache
+
+    all_solutions = load_solutions(CSV_PATH)
+    all_solutions = all_solutions.dropna(subset=[m.column for m in ALL_METRICS if m.column in all_solutions.columns])
+    all_solutions = all_solutions.drop_duplicates(subset="path")
+    normalized = normalize_metrics(all_solutions)
+    pareto_norm = compute_pareto_frontier(normalized)
+    _pareto_cache = all_solutions.loc[pareto_norm.index].copy()
+    return _pareto_cache
+
+
+def get_all_metrics_stats() -> dict:
+    """Like get_solution_space_stats but for ALL metrics (not just core)."""
+    global _all_metrics_stats_cache
+    if _all_metrics_stats_cache is not None:
+        return _all_metrics_stats_cache
+
+    pareto = get_pareto_solutions()
+    stats = {}
+    for metric in ALL_METRICS:
+        col = metric.column
+        if col not in pareto.columns:
+            continue
+        values = pareto[col].dropna()
+        if len(values) == 0:
+            continue
+        stats[col] = {
+            "min": float(values.min()),
+            "max": float(values.max()),
+            "p25": float(values.quantile(0.25)),
+            "p50": float(values.quantile(0.50)),
+            "p75": float(values.quantile(0.75)),
+            "direction": metric.direction,
+            "display_name": metric.display_name,
+            "description": metric.description,
+            "category": metric.category,
+            "is_core": metric.is_core,
+        }
+
+    _all_metrics_stats_cache = stats
+    return stats
+
+
+def filter_and_centroid(bounds: dict) -> dict:
+    """
+    Apply filter bounds to Pareto solutions and return centroid + feasible stats.
+
+    Args:
+        bounds: {metric_column: {min_bound, max_bound}} where values can be None.
+
+    Returns dict with solution_count, centroid_path, centroid_metrics, feasible_stats.
+    """
+    pareto = get_pareto_solutions()
+
+    fs = FilterState()
+    for col, b in bounds.items():
+        metric = METRIC_BY_COLUMN.get(col)
+        if not metric:
+            continue
+        fb = FilterBounds(
+            min_bound=b.get("min_bound"),
+            max_bound=b.get("max_bound"),
+        )
+        fs.bounds[metric.display_name] = fb
+
+    filtered = apply_filters(pareto, fs)
+
+    result = {"solution_count": len(filtered), "total_pareto": len(pareto)}
+
+    if len(filtered) == 0:
+        result["centroid_path"] = None
+        result["centroid_metrics"] = None
+        result["feasible_stats"] = {}
+        return result
+
+    norm_filtered = normalize_metrics(filtered)
+    centroid_row, _ = get_centroid_solution(filtered, norm_filtered)
+
+    result["centroid_path"] = centroid_row["path"]
+    result["centroid_metrics"] = {
+        m.column: float(centroid_row[m.column])
+        for m in ALL_METRICS if m.column in centroid_row.index
+    }
+
+    fstats = {}
+    for m in ALL_METRICS:
+        col = m.column
+        if col not in filtered.columns:
+            continue
+        vals = filtered[col].dropna()
+        if len(vals) == 0:
+            continue
+        fstats[col] = {"min": float(vals.min()), "max": float(vals.max())}
+    result["feasible_stats"] = fstats
+
+    return result
+
+
+def suggest_relaxation(bounds: dict) -> dict:
+    """Find minimal relaxations to restore feasibility."""
+    pareto = get_pareto_solutions()
+
+    fs = FilterState()
+    for col, b in bounds.items():
+        metric = METRIC_BY_COLUMN.get(col)
+        if not metric:
+            continue
+        fb = FilterBounds(min_bound=b.get("min_bound"), max_bound=b.get("max_bound"))
+        fs.bounds[metric.display_name] = fb
+
+    suggestions_by_name = find_relaxation_needed(pareto, fs)
+
+    # Convert display_name keys back to column keys
+    result = {}
+    for display_name, bound_val in suggestions_by_name.items():
+        for m in ALL_METRICS:
+            if m.display_name == display_name:
+                result[m.column] = bound_val
+                break
+    return result
+
+
+if __name__ == "__main__":
+    convert_shapefile_to_geojson()

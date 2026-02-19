@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFUSD Admin Console</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <!-- Password Gate -->
+    <div id="auth-gate">
+        <div class="auth-card">
+            <h1>SFUSD Admin Console</h1>
+            <p>Enter the admin password to continue.</p>
+            <input type="password" id="auth-password" placeholder="Password" autofocus>
+            <button id="auth-submit">Enter</button>
+            <div id="auth-error" class="hidden">Invalid password</div>
+        </div>
+    </div>
+
+    <!-- Main App (hidden until auth) -->
+    <div id="admin-app" class="hidden">
+        <header>
+            <h1>SFUSD Admin Console</h1>
+            <div class="header-stats">
+                <span id="solution-count-badge">-- / -- Pareto solutions</span>
+            </div>
+        </header>
+
+        <main>
+            <section id="map-area">
+                <div id="map-panel">
+                    <div id="map"></div>
+                    <div id="map-placeholder" class="placeholder">
+                        <p>Adjust filters to explore zoning solutions</p>
+                    </div>
+                    <div id="map-loading-overlay" class="map-loading hidden">
+                        <div class="spinner"></div>
+                    </div>
+                    <div id="zone-legend" class="hidden"></div>
+                </div>
+
+                <!-- Solution History -->
+                <div id="solution-history" class="hidden">
+                    <div class="solution-history-header">
+                        <span>Saved Solutions</span>
+                        <button id="solution-history-toggle" class="solution-history-toggle" title="Expand panel">&#9650;</button>
+                    </div>
+                    <div id="solution-cards" class="solution-cards-container"></div>
+                    <div id="solution-proscons-panel" class="solution-proscons-panel hidden">
+                        <div class="proscons-section">
+                            <label class="proscons-label proscons-label-pros">Pros</label>
+                            <textarea id="solution-pros-textarea" placeholder="What do you like about this solution?"></textarea>
+                        </div>
+                        <div class="proscons-section">
+                            <label class="proscons-label proscons-label-cons">Cons</label>
+                            <textarea id="solution-cons-textarea" placeholder="What concerns do you have?"></textarea>
+                        </div>
+                        <div class="solution-proscons-hint">Editing <span id="solution-proscons-target"></span> -- saves on blur</div>
+                    </div>
+                </div>
+
+                <!-- Comparison Panel -->
+                <section id="comparison-panel">
+                    <div class="panel-header">
+                        <h3>Solution Metrics</h3>
+                    </div>
+                    <div id="comparison-table-container">
+                        <p class="no-solution-msg">Adjust filters to see a solution</p>
+                    </div>
+                </section>
+            </section>
+
+            <div id="resize-handle-right" class="resize-handle"></div>
+
+            <!-- Filter Panel (replaces chat) -->
+            <section id="filter-panel">
+                <div id="filter-header">
+                    <div class="filter-header-row">
+                        <h2>Metric Filters</h2>
+                        <button id="reset-all-btn" class="btn-secondary" title="Remove all filters">Reset All</button>
+                    </div>
+                    <div class="filter-search-row">
+                        <input type="text" id="metric-search" placeholder="Search metrics to add...">
+                        <div id="metric-search-results" class="hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Zero-state alert -->
+                <div id="zero-state-alert" class="hidden">
+                    <div class="zero-alert-header">No feasible solutions</div>
+                    <div class="zero-alert-body">
+                        <p>Current filters are too restrictive. Suggested relaxations:</p>
+                        <div id="relaxation-suggestions"></div>
+                    </div>
+                </div>
+
+                <div id="filter-sliders">
+                    <!-- Populated dynamically by category -->
+                </div>
+
+                <!-- Current Solution Summary -->
+                <div id="centroid-summary" class="hidden">
+                    <div class="centroid-header">
+                        <h3>Current Centroid Solution</h3>
+                        <button id="save-solution-btn" class="btn-primary">Save Solution</button>
+                    </div>
+                    <div id="centroid-metrics"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Chart footer -->
+        <footer id="charts-panel" class="hidden">
+            <div id="charts-header-bar">
+                <div>
+                    <h3 id="charts-header">Distribution by Zone</h3>
+                    <p id="charts-subtitle"></p>
+                </div>
+                <button id="charts-close" title="Close chart">&#9660;</button>
+            </div>
+            <div id="single-chart-container">
+                <canvas id="chart-single"></canvas>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/admin.js"></script>
+</body>
+</html>

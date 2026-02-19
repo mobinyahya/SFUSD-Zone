@@ -1,11 +1,12 @@
 """FastAPI server for SFUSD Zoning Dashboard."""
+import json
 import os
+import secrets
 import uuid
 import logging
 import traceback
 import sys
-from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -19,7 +20,6 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from data_loader import (
-    get_clusters,
     load_zone_dict,
     get_zone_demographics,
     load_geojson,
@@ -27,6 +27,10 @@ from data_loader import (
     load_solution_result,
     compute_percentile_ranks,
     get_school_locations,
+    get_all_metrics_stats,
+    get_pareto_solutions,
+    filter_and_centroid,
+    suggest_relaxation,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 
@@ -44,8 +48,13 @@ DEFAULT_CSV_PATH = "/share/data/school_choice/local_runs/kumar_website_test/new_
 # Session storage for ZoningAgent instances
 agent_sessions: dict[str, ZoningAgent] = {}
 
-# Thread pool for running blocking agent calls
-executor = ThreadPoolExecutor(max_workers=4)
+# Admin auth
+ADMIN_CONFIG_PATH = Path(__file__).parent / "admin_config.json"
+_admin_password = "sfusd-admin-2026"
+if ADMIN_CONFIG_PATH.exists():
+    with open(ADMIN_CONFIG_PATH) as f:
+        _admin_password = json.load(f).get("password", _admin_password)
+_admin_tokens: set[str] = set()
 
 app = FastAPI(title="SFUSD Zoning Dashboard API")
 
@@ -86,6 +95,14 @@ class ChatRequest(BaseModel):
     saved_solutions: Optional[list] = None  # [{index, label, pros, cons, key_metrics}]
 
 
+class AdminAuthRequest(BaseModel):
+    password: str
+
+
+class AdminFilterRequest(BaseModel):
+    bounds: dict  # {metric_column: {min_bound, max_bound}}
+
+
 @app.get("/")
 async def root():
     """Serve the frontend."""
@@ -112,17 +129,6 @@ def health_check():
 async def get_config():
     """Serve frontend configuration including PostHog API key."""
     return {"posthog_api_key": os.getenv("POSTHOG_API_KEY", "")}
-
-
-@app.get("/api/clusters")
-async def get_solution_clusters():
-    """Get clustered solutions with labels and representatives."""
-    try:
-        clusters = get_clusters()
-        return {"clusters": clusters}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.get("/api/solution/{path:path}")
@@ -242,9 +248,8 @@ def chat(request: ChatRequest):
                 "saved_solutions": request.saved_solutions or [],
             }
 
-        # Call agent with metadata tracking
-        logger.info("Calling agent.chat_with_metadata...")
-        result = agent.chat_with_metadata(request.message, solution_context=solution_context)
+        logger.info("Calling agent.chat...")
+        result = agent.chat(request.message, solution_context=solution_context)
         logger.info(f"Agent response type: {result.get('response_type')}")
         logger.info(f"Agent text length: {len(result.get('text', ''))}")
 
@@ -260,6 +265,64 @@ def chat(request: ChatRequest):
         logger.error(f"Chat error: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Admin console endpoints
+# ============================================================================
+
+def _verify_admin(authorization: Optional[str]) -> None:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    if token not in _admin_tokens:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@app.get("/admin")
+async def admin_page():
+    """Serve the admin console."""
+    return FileResponse(FRONTEND_DIR / "admin.html")
+
+
+@app.post("/api/admin/auth")
+async def admin_auth(request: AdminAuthRequest):
+    if request.password != _admin_password:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    token = secrets.token_urlsafe(32)
+    _admin_tokens.add(token)
+    return {"token": token}
+
+
+@app.get("/api/admin/solution-space")
+async def admin_solution_space(authorization: Optional[str] = Header(None)):
+    _verify_admin(authorization)
+    stats = get_all_metrics_stats()
+    pareto = get_pareto_solutions()
+    return {
+        "metrics": stats,
+        "total_pareto": len(pareto),
+        "categories": {
+            k: v for k, v in {
+                "diversity": "Demographics & Economic Balance",
+                "distance": "Geographic Access & Proximity",
+                "programs": "Educational Program Availability",
+                "quality": "School Quality Indicators",
+            }.items()
+        },
+    }
+
+
+@app.post("/api/admin/filter")
+async def admin_filter(request: AdminFilterRequest, authorization: Optional[str] = Header(None)):
+    _verify_admin(authorization)
+    result = filter_and_centroid(request.bounds)
+    return result
+
+
+@app.post("/api/admin/suggest-relaxation")
+async def admin_suggest_relaxation(request: AdminFilterRequest, authorization: Optional[str] = Header(None)):
+    _verify_admin(authorization)
+    suggestions = suggest_relaxation(request.bounds)
+    return {"suggestions": suggestions}
 
 
 if __name__ == "__main__":

@@ -821,6 +821,29 @@ function buildSavedSolutionsSummary() {
     });
 }
 
+async function generateFromFeedback() {
+    const hasFeedback = savedSolutions.some(s => s.pros || s.cons);
+    if (!hasFeedback) {
+        addMessage('system', 'Add pros/cons notes to your saved solutions first so the agent knows your preferences.');
+        return;
+    }
+
+    const feedbackLines = savedSolutions
+        .filter(s => s.pros || s.cons)
+        .map(s => {
+            const parts = [`Solution #${s.index} ("${s.label}")`];
+            if (s.pros) parts.push(`Pros: ${s.pros}`);
+            if (s.cons) parts.push(`Cons: ${s.cons}`);
+            return parts.join(' - ');
+        });
+
+    const message = `[GENERATE_FROM_FEEDBACK] Here is ALL of my feedback across saved solutions:\n${feedbackLines.join('\n')}\n\nAnalyze every piece of feedback above, aggressively apply constraints to match my preferences, and find me a new solution.`;
+
+    addMessage('user', 'Generate a new solution based on all my feedback');
+    trackEvent('generate_from_feedback', { solution_count: savedSolutions.length, feedback_count: feedbackLines.length });
+    await sendMessageToAgent(message);
+}
+
 function updateComparisonTable() {
     const container = document.getElementById('comparison-table-container');
     const ranks = currentSolution && currentSolution.percentile_ranks;
@@ -994,6 +1017,11 @@ function setupEventListeners() {
         });
     } else {
         console.error('[setupEventListeners] chatInput element not found!');
+    }
+
+    const generateFeedbackBtn = document.getElementById('generate-from-feedback-btn');
+    if (generateFeedbackBtn) {
+        generateFeedbackBtn.addEventListener('click', () => generateFromFeedback());
     }
 
     const chartsClose = document.getElementById('charts-close');
