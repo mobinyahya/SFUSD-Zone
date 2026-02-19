@@ -620,6 +620,7 @@ function autoSaveSolution(solutionData, label, agentMessage) {
     savedSolutions.push(entry);
     currentViewedIndex = index;
     renderSolutionHistory();
+    updateProsConsPanel();
 
     trackEvent('solution_saved', {
         solution_index: index,
