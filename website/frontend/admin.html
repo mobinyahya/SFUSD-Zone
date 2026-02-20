@@ -74,33 +74,35 @@
 
             <div id="resize-handle-right" class="resize-handle"></div>
 
-            <!-- Filter Panel (replaces chat) -->
-            <section id="filter-panel">
-                <div id="filter-header">
-                    <div class="filter-header-row">
-                        <h2>Metric Filters</h2>
-                        <button id="reset-all-btn" class="btn-secondary" title="Remove all filters">Reset All</button>
+            <div id="right-panel">
+                <!-- Filter Panel -->
+                <section id="filter-panel">
+                    <div id="filter-header">
+                        <div class="filter-header-row">
+                            <h2>Metric Filters</h2>
+                            <button id="reset-all-btn" class="btn-secondary" title="Remove all filters">Reset All</button>
+                        </div>
+                        <div class="filter-search-row">
+                            <input type="text" id="metric-search" placeholder="Search metrics to add...">
+                            <div id="metric-search-results" class="hidden"></div>
+                        </div>
                     </div>
-                    <div class="filter-search-row">
-                        <input type="text" id="metric-search" placeholder="Search metrics to add...">
-                        <div id="metric-search-results" class="hidden"></div>
+
+                    <!-- Zero-state alert -->
+                    <div id="zero-state-alert" class="hidden">
+                        <div class="zero-alert-header">No feasible solutions</div>
+                        <div class="zero-alert-body">
+                            <p>Current filters are too restrictive. Suggested relaxations:</p>
+                            <div id="relaxation-suggestions"></div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Zero-state alert -->
-                <div id="zero-state-alert" class="hidden">
-                    <div class="zero-alert-header">No feasible solutions</div>
-                    <div class="zero-alert-body">
-                        <p>Current filters are too restrictive. Suggested relaxations:</p>
-                        <div id="relaxation-suggestions"></div>
+                    <div id="filter-sliders">
+                        <!-- Populated dynamically by category -->
                     </div>
-                </div>
+                </section>
 
-                <div id="filter-sliders">
-                    <!-- Populated dynamically by category -->
-                </div>
-
-                <!-- Current Solution Summary -->
+                <!-- Current Solution Summary (separate from filters) -->
                 <div id="centroid-summary" class="hidden">
                     <div class="centroid-header">
                         <h3>Current Centroid Solution</h3>
@@ -108,7 +110,7 @@
                     </div>
                     <div id="centroid-metrics"></div>
                 </div>
-            </section>
+            </div>
         </main>
 
         <!-- Chart footer -->

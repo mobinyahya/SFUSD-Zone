@@ -629,10 +629,10 @@ function renderFilterSliders() {
         const catLabel = categories[cat] || cat;
         catDiv.innerHTML = `
             <div class="filter-category-header" data-cat="${cat}">
-                <span class="filter-category-title"><span class="chevron">&#9660;</span> ${catLabel}</span>
+                <span class="filter-category-title"><span class="chevron">&#9654;</span> ${catLabel}</span>
                 <span class="filter-category-count">${cols.length} metrics</span>
             </div>
-            <div class="filter-category-metrics" data-cat="${cat}"></div>
+            <div class="filter-category-metrics collapsed" data-cat="${cat}"></div>
         `;
 
         const metricsDiv = catDiv.querySelector('.filter-category-metrics');
@@ -1074,7 +1074,7 @@ function setupResizeHandle() {
     handle.addEventListener('mousedown', e => {
         e.preventDefault();
         startX = e.clientX;
-        startWidth = document.getElementById('filter-panel').offsetWidth;
+        startWidth = document.getElementById('right-panel').offsetWidth;
         handle.classList.add('dragging');
 
         const onMove = ev => {

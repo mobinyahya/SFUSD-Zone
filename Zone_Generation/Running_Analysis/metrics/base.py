@@ -6,15 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Program type groupings based on metrics_plan.md
-LANGUAGE_IMMERSION = {
-    'CB', 'FB', 'IMMC', 'IMMK', 'IMMM', 'IMMS', 'JB',
-    'NC', 'NS', 'NX', 'SB', 'SDLC', 'SDLM', 'SDLS'
-}
-SPECIAL_EDUCATION = {
-    'AF', 'AO', 'CA', 'SOAR', 'MM', 'MS', 'RSP', 'SA', 'TC'
-}
-
 # Color to numeric mapping for school quality metrics
 COLOR_TO_INDEX = {
     'Blue': 5,

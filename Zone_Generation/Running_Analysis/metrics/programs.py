@@ -8,10 +8,10 @@ import functools
 import pandas as pd
 import networkx as nx
 
-from Zone_Generation.Config.Constants import get_sfusd_path
-from Zone_Generation.Running_Analysis.metrics.base import (
-    LANGUAGE_IMMERSION, SPECIAL_EDUCATION
-)
+from Zone_Generation.Config.Constants import get_sfusd_path, PROGRAM_CATEGORIES
+
+LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
+SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])
 
 
 @functools.lru_cache(maxsize=1)
@@ -69,7 +69,7 @@ def compute_program_metrics(
                 for ptype in school_programs[sid]:
                     zone_programs[ptype] = zone_programs.get(ptype, 0) + 1
                     
-                    if ptype in LANGUAGE_IMMERSION:
+                    if ptype in LANGUAGE_PROGRAMS:
                         lang_count += 1
                     if ptype in SPECIAL_EDUCATION:
                         sped_count += 1

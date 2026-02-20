@@ -2,6 +2,35 @@
 
 const API_BASE = '';
 
+const PROGRAM_NAMES = {
+    "GE": "General Education",
+    "AF": "Autism Focus",
+    "DA": "Deaf and Hard of Hearing - Auditory/Oral",
+    "DT": "Deaf and Hard of Hearing - Total Communication",
+    "ED": "Emotionally Disturbed",
+    "MM": "Mild-Moderate (autism)",
+    "MS": "Moderate-Severe (autism)",
+    "SA": "Severe Autism",
+    "TC": "Total Communication (deaf and hard of hearing)",
+    "AO": "Auditory/Oral (deaf and hard of hearing)",
+    "CB": "Cantonese Biliteracy",
+    "CE": "Cantonese Immersion - English/Non-Native Speaker",
+    "CN": "Cantonese Immersion - Native Speaker",
+    "CT": "Cantonese Immersion",
+    "FB": "Filipino Biliteracy",
+    "JE": "Japanese Immersion - English/Non-Native Speaker",
+    "JN": "Japanese Immersion - Native Speaker",
+    "KE": "Korean Immersion - English/Non-Native Speaker",
+    "KN": "Korean Immersion - Native Speaker",
+    "ME": "Mandarin Immersion - English/Non-Native Speaker",
+    "MN": "Mandarin Immersion - Native Speaker",
+    "NC": "Newcomer Cantonese",
+    "NS": "Newcomer Spanish",
+    "SB": "Spanish Biliteracy",
+    "SE": "Spanish Immersion - English/Non-Native Speaker",
+    "SN": "Spanish Immersion - Native Speaker",
+};
+
 // State
 let map = null;
 let geojsonLayer = null;
@@ -218,11 +247,34 @@ function renderSchoolMarkers(schools) {
         }
         tooltipContent += `</div>`;
 
-        // Add tooltip with school name
+        let popupContent = `<div class="school-popup-content"><strong>${school.name}</strong>`;
+        if (school.total_capacity !== undefined) {
+            popupContent += `<br>Capacity: ${school.total_capacity}`;
+        }
+        if (school.programs && Object.keys(school.programs).length > 0) {
+            const activePrograms = Object.entries(school.programs).filter(([p, c]) => c > 0);
+            if (activePrograms.length > 0) {
+                popupContent += `<div class="school-programs-list"><strong>Programs:</strong><ul>` +
+                    activePrograms.map(([p, c]) => {
+                        const fullName = PROGRAM_NAMES[p] || p;
+                        return `<li><span class="program-abbr" data-full="${fullName}">${p}</span>: ${c}</li>`;
+                    }).join('') +
+                    `</ul></div>`;
+            }
+        }
+        popupContent += `</div>`;
+
         marker.bindTooltip(tooltipContent, {
             direction: 'top',
             offset: [0, -10],
             className: 'school-tooltip',
+        });
+
+        marker.bindPopup(popupContent, {
+            offset: [0, -10],
+            className: 'school-popup',
+            closeButton: true,
+            autoPan: false,
         });
 
         // Add to layer group
