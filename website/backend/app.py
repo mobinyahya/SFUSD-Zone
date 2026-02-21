@@ -34,6 +34,8 @@ from data_loader import (
     suggest_relaxation,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
+from LLM.exploration.metrics_config import ALL_METRICS, CATEGORIES, CATEGORY_DESCRIPTIONS
+from Zone_Generation.Config.Constants import PROGRAM_NAMES, AREA_ETHNICITIES
 
 # Add project root to path for LLM imports
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -270,6 +272,70 @@ def chat(request: ChatRequest):
         logger.error(f"Chat error: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Metrics config endpoint (single source of truth for frontend)
+# ============================================================================
+
+METRIC_CHART_HINTS = {
+    "theil_index": {"type": "ethnicity", "title": "Ethnic Composition by Zone"},
+    "FRL": {"type": "bar", "field": "FRL_pct", "title": "FRL % by Zone", "unit": "%", "max": 100},
+    "seat_disparity": {"type": "bar", "field": "seat_disparity", "title": "Seat Disparity by Zone", "unit": ""},
+    "avg_closest_zone_school_distance": {"type": "bar", "field": "avg_closest_school_distance", "title": "Avg Distance to Closest School", "unit": "miles"},
+    "avg_schools_in_attendance_area": {"type": "bar", "field": "schools_in_attendance_area", "title": "Schools in Attendance Area", "unit": "Count"},
+    "boundary_cost": {"type": "none"},
+    "avg_total_programs_per_zone": {"type": "bar", "field": "total_programs", "title": "Total Programs by Zone", "unit": "Count"},
+    "avg_GE_per_zone": {"type": "bar", "field": "GE_programs", "title": "General Education by Zone", "unit": "Count"},
+    "avg_language_immersion_per_zone": {"type": "bar", "field": "language_immersion_count", "title": "Language Immersion by Zone", "unit": "Count"},
+    "avg_special_ed_per_zone": {"type": "bar", "field": "special_ed_count", "title": "Special Ed by Zone", "unit": "Count"},
+    "avg_greatschools_rating": {"type": "bar", "field": "avg_greatschools_rating", "title": "GreatSchools Rating by Zone", "unit": "Rating", "max": 10},
+    "avg_math_score": {"type": "bar", "field": "avg_math_score", "title": "Math Scores by Zone", "unit": "Score"},
+    "avg_eng_score": {"type": "bar", "field": "avg_eng_score", "title": "English Scores by Zone", "unit": "Score"},
+    "avg_suspension_index": {"type": "bar", "field": "avg_suspension_index", "title": "Suspension Index by Zone", "unit": "Index", "max": 5},
+}
+
+ETHNICITY_DISPLAY_LABELS = {
+    "Ethnicity_Black_or_African_American": "Black/African American",
+    "Ethnicity_Hispanic/Latinx": "Hispanic/Latinx",
+    "Ethnicity_White": "White",
+    "Ethnicity_Asian": "Asian",
+}
+
+
+@app.get("/api/metrics-config")
+async def get_metrics_config():
+    """Serve centralized metrics configuration for frontend consumption."""
+    categories = {
+        key: {"name": name, "description": CATEGORY_DESCRIPTIONS.get(key, "")}
+        for key, name in CATEGORIES.items()
+    }
+
+    metrics = []
+    for m in ALL_METRICS:
+        entry = {
+            "column": m.column,
+            "display_name": m.display_name,
+            "description": m.description,
+            "category": m.category,
+            "direction": m.direction,
+            "is_core": m.is_core,
+            "short_name": m.short_name or m.display_name[:4],
+            "chart": METRIC_CHART_HINTS.get(m.column, {"type": "none"}),
+        }
+        metrics.append(entry)
+
+    ethnicities_display = [
+        {"key": key, "label": ETHNICITY_DISPLAY_LABELS.get(key, key.replace("Ethnicity_", "").replace("_", " "))}
+        for key in AREA_ETHNICITIES
+    ]
+
+    return {
+        "categories": categories,
+        "metrics": metrics,
+        "programs": PROGRAM_NAMES,
+        "ethnicities": {"display": ethnicities_display},
+    }
 
 
 # ============================================================================

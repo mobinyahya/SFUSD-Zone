@@ -18,6 +18,7 @@ class MetricSpec:
     category: str                            # diversity/distance/programs/quality
     direction: Literal["minimize", "maximize"]
     is_core: bool = True                     # Show in main prompt vs on-demand
+    short_name: str = ""                     # Short label for badges/compact display
 
 
 # ============================================================================
@@ -51,6 +52,7 @@ DIVERSITY_METRICS = [
         category="diversity",
         direction="minimize",
         is_core=True,
+        short_name="Div",
     ),
     MetricSpec(
         column="FRL",
@@ -59,6 +61,7 @@ DIVERSITY_METRICS = [
         category="diversity",
         direction="minimize",
         is_core=True,
+        short_name="FRL",
     ),
     MetricSpec(
         column="Ethnicity_Black_or_African_American",
@@ -107,6 +110,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="minimize",
         is_core=True,
+        short_name="Dist",
     ),
     MetricSpec(
         column="avg_schools_in_attendance_area",
@@ -115,6 +119,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="maximize",
         is_core=True,
+        short_name="Sch",
     ),
     MetricSpec(
         column="boundary_cost",
@@ -123,6 +128,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="minimize",
         is_core=True,
+        short_name="Bnd",
     ),
 ]
 
@@ -164,6 +170,7 @@ PROGRAM_METRICS = [
         category="programs",
         direction="minimize",
         is_core=True,
+        short_name="Seat",
     ),
     # MetricSpec(
     #     column="avg_GE_per_zone",
@@ -305,6 +312,7 @@ QUALITY_METRICS = [
         category="quality",
         direction="maximize",
         is_core=True,
+        short_name="Math",
     ),
     MetricSpec(
         column="avg_eng_score",
@@ -313,6 +321,7 @@ QUALITY_METRICS = [
         category="quality",
         direction="maximize",
         is_core=True,
+        short_name="Eng",
     ),
 
 #     MetricSpec(

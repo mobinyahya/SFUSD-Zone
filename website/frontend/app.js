@@ -2,34 +2,8 @@
 
 const API_BASE = '';
 
-const PROGRAM_NAMES = {
-    "GE": "General Education",
-    "AF": "Autism Focus",
-    "DA": "Deaf and Hard of Hearing - Auditory/Oral",
-    "DT": "Deaf and Hard of Hearing - Total Communication",
-    "ED": "Emotionally Disturbed",
-    "MM": "Mild-Moderate (autism)",
-    "MS": "Moderate-Severe (autism)",
-    "SA": "Severe Autism",
-    "TC": "Total Communication (deaf and hard of hearing)",
-    "AO": "Auditory/Oral (deaf and hard of hearing)",
-    "CB": "Cantonese Biliteracy",
-    "CE": "Cantonese Immersion - English/Non-Native Speaker",
-    "CN": "Cantonese Immersion - Native Speaker",
-    "CT": "Cantonese Immersion",
-    "FB": "Filipino Biliteracy",
-    "JE": "Japanese Immersion - English/Non-Native Speaker",
-    "JN": "Japanese Immersion - Native Speaker",
-    "KE": "Korean Immersion - English/Non-Native Speaker",
-    "KN": "Korean Immersion - Native Speaker",
-    "ME": "Mandarin Immersion - English/Non-Native Speaker",
-    "MN": "Mandarin Immersion - Native Speaker",
-    "NC": "Newcomer Cantonese",
-    "NS": "Newcomer Spanish",
-    "SB": "Spanish Biliteracy",
-    "SE": "Spanish Immersion - English/Non-Native Speaker",
-    "SN": "Spanish Immersion - Native Speaker",
-};
+// Populated from /api/metrics-config on startup
+let metricsConfig = null;
 
 // State
 let map = null;
@@ -164,6 +138,16 @@ function initPostHog(participantId) {
 }
 
 async function initApp() {
+    // Fetch centralized metrics config from backend
+    try {
+        const mcResponse = await fetch(`${API_BASE}/api/metrics-config`);
+        if (mcResponse.ok) {
+            metricsConfig = await mcResponse.json();
+        }
+    } catch (error) {
+        console.warn('Failed to fetch metrics config:', error);
+    }
+
     // Set up event listeners FIRST - these are critical and should work even if other things fail
     setupEventListeners();
     try {
@@ -256,28 +240,21 @@ function renderSchoolMarkers(schools) {
     }
 }
 
-// Metric-to-chart-data mapping
-const METRIC_CHART_CONFIG = {
-    'theil_index': { type: 'ethnicity', title: 'Ethnic Composition by Zone', color: null },
-    'FRL': { type: 'bar', field: 'FRL_pct', title: 'FRL % by Zone', color: CHART_COLORS.primary, unit: '%', max: 100 },
-    'seat_disparity': { type: 'bar', field: 'seat_disparity', title: 'Seat Disparity by Zone', color: CHART_COLORS.quaternary, unit: '' },
-    'avg_closest_zone_school_distance': { type: 'bar', field: 'avg_closest_school_distance', title: 'Avg Distance to Closest School', color: CHART_COLORS.secondary, unit: 'miles' },
-    'avg_schools_in_attendance_area': { type: 'bar', field: 'schools_in_attendance_area', title: 'Schools in Attendance Area', color: CHART_COLORS.primary, unit: 'Count' },
-    'boundary_cost': { type: 'none' },
-    'avg_total_programs_per_zone': { type: 'bar', field: 'total_programs', title: 'Total Programs by Zone', color: CHART_COLORS.primary, unit: 'Count' },
-    'avg_GE_per_zone': { type: 'bar', field: 'GE_programs', title: 'General Education by Zone', color: CHART_COLORS.secondary, unit: 'Count' },
-    'avg_language_immersion_per_zone': { type: 'bar', field: 'language_immersion_count', title: 'Language Immersion by Zone', color: CHART_COLORS.tertiary, unit: 'Count' },
-    'avg_special_ed_per_zone': { type: 'bar', field: 'special_ed_count', title: 'Special Ed by Zone', color: CHART_COLORS.quaternary, unit: 'Count' },
-    'avg_greatschools_rating': { type: 'bar', field: 'avg_greatschools_rating', title: 'GreatSchools Rating by Zone', color: CHART_COLORS.secondary, unit: 'Rating', max: 10 },
-    'avg_math_score': { type: 'bar', field: 'avg_math_score', title: 'Math Scores by Zone', color: CHART_COLORS.primary, unit: 'Score' },
-    'avg_eng_score': { type: 'bar', field: 'avg_eng_score', title: 'English Scores by Zone', color: CHART_COLORS.tertiary, unit: 'Score' },
-    'avg_suspension_index': { type: 'bar', field: 'avg_suspension_index', title: 'Suspension Index by Zone', color: CHART_COLORS.quinary, unit: 'Index', max: 5 },
-};
+// Build chart config dynamically from metricsConfig
+function getChartConfig() {
+    if (!metricsConfig) return {};
+    const config = {};
+    for (const m of metricsConfig.metrics) {
+        config[m.column] = m.chart || { type: 'none' };
+    }
+    return config;
+}
 
 function showSingleChart(metricKey) {
     if (!currentSolution || !currentSolution.zone_data) return;
 
-    const config = METRIC_CHART_CONFIG[metricKey];
+    const chartConfigs = getChartConfig();
+    const config = chartConfigs[metricKey];
     if (!config || config.type === 'none') return;
 
     const zoneData = currentSolution.zone_data;
@@ -303,8 +280,15 @@ function showSingleChart(metricKey) {
     };
 
     if (config.type === 'ethnicity') {
-        // Stacked ethnicity bar chart
-        const ethnicityKeys = ['Ethnicity_Black_or_African_American', 'Ethnicity_Hispanic/Latinx', 'Ethnicity_White', 'Ethnicity_Asian'];
+        // Stacked ethnicity bar chart - use dynamic ethnicity config
+        const ethnicityDisplay = metricsConfig ? metricsConfig.ethnicities.display : [
+            { key: 'Ethnicity_Black_or_African_American', label: 'Black/African American' },
+            { key: 'Ethnicity_Hispanic/Latinx', label: 'Hispanic/Latinx' },
+            { key: 'Ethnicity_White', label: 'White' },
+            { key: 'Ethnicity_Asian', label: 'Asian' },
+        ];
+        const ethnicityKeys = ethnicityDisplay.map(e => e.key);
+        const ethnicityLabels = ethnicityDisplay.map(e => e.label);
         const ethnicityData = ethnicityKeys.map(key =>
             zoneIds.map(id => {
                 const pcts = zoneData[id].ethnicity_pcts || {};
@@ -316,18 +300,16 @@ function showSingleChart(metricKey) {
             return Math.max(0, 100 - sum);
         });
 
+        const datasets = ethnicityLabels.map((label, i) => ({
+            label,
+            data: ethnicityData[i],
+            backgroundColor: CHART_COLORS.ethnicities[label] || CHART_COLORS.primary,
+        }));
+        datasets.push({ label: 'Other', data: otherData, backgroundColor: CHART_COLORS.ethnicities['Other'] });
+
         singleChart = new Chart(canvas.getContext('2d'), {
             type: 'bar',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'Black/African American', data: ethnicityData[0], backgroundColor: CHART_COLORS.ethnicities['Black/African American'] },
-                    { label: 'Hispanic/Latinx', data: ethnicityData[1], backgroundColor: CHART_COLORS.ethnicities['Hispanic/Latinx'] },
-                    { label: 'White', data: ethnicityData[2], backgroundColor: CHART_COLORS.ethnicities['White'] },
-                    { label: 'Asian', data: ethnicityData[3], backgroundColor: CHART_COLORS.ethnicities['Asian'] },
-                    { label: 'Other', data: otherData, backgroundColor: CHART_COLORS.ethnicities['Other'] },
-                ]
-            },
+            data: { labels, datasets },
             options: {
                 ...defaultOptions,
                 plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
@@ -343,7 +325,7 @@ function showSingleChart(metricKey) {
 
         singleChart = new Chart(canvas.getContext('2d'), {
             type: 'bar',
-            data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color }] },
+            data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
             options: { ...defaultOptions, scales: { y: scaleOpts } }
         });
     }
@@ -562,29 +544,35 @@ function refreshSingleChart() {
 
 let historyExpanded = false;
 
-// Category percentile helpers — compute average percentile per category from solution data
-const HISTORY_CATEGORIES = {
-    'Div': [
-        { key: 'theil_index', short: 'Div' },
-        { key: 'FRL', short: 'FRL' },
-        { key: 'seat_disparity', short: 'Seat' },
-    ],
-    'Dist': [
-        { key: 'avg_closest_zone_school_distance', short: 'Dist' },
-        { key: 'avg_schools_in_attendance_area', short: 'Sch' },
-        { key: 'boundary_cost', short: 'Bnd' },
-    ],
-    'Prog': [
-        { key: 'avg_total_programs_per_zone', short: 'Prg' },
-        { key: 'avg_GE_per_zone', short: 'GE' },
-        { key: 'avg_language_immersion_per_zone', short: 'LI' },
-        { key: 'avg_special_ed_per_zone', short: 'SE' },
-    ],
-    'Perf': [
-        { key: 'avg_math_score', short: 'Math' },
-        { key: 'avg_eng_score', short: 'Eng' },
-    ],
-};
+// Build history categories dynamically from metricsConfig
+const HISTORY_CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf' };
+
+function getHistoryCategories() {
+    if (!metricsConfig) return {};
+    const result = {};
+    for (const [catKey, catShort] of Object.entries(HISTORY_CATEGORY_SHORT)) {
+        const metrics = metricsConfig.metrics
+            .filter(m => m.category === catKey)
+            .map(m => ({ key: m.column, short: m.short_name || m.display_name.substring(0, 4) }));
+        if (metrics.length > 0) result[catShort] = metrics;
+    }
+    return result;
+}
+
+// Build comparison table categories dynamically from metricsConfig
+const COMPARISON_CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance' };
+
+function getComparisonCategories() {
+    if (!metricsConfig) return {};
+    const result = {};
+    for (const [catKey, catDisplay] of Object.entries(COMPARISON_CATEGORY_DISPLAY)) {
+        const metrics = metricsConfig.metrics
+            .filter(m => m.category === catKey && m.is_core)
+            .map(m => ({ key: m.column, name: m.display_name }));
+        if (metrics.length > 0) result[catDisplay] = metrics;
+    }
+    return result;
+}
 
 function getCategoryPercentile(ranks, categoryMetrics) {
     if (!ranks) return null;
@@ -626,7 +614,7 @@ function autoSaveSolution(solutionData, label, agentMessage) {
         : (() => {
             const ranks = solutionData.percentile_ranks || {};
             const scores = {};
-            for (const [cat, metrics] of Object.entries(HISTORY_CATEGORIES)) {
+            for (const [cat, metrics] of Object.entries(getHistoryCategories())) {
                 scores[cat] = getCategoryPercentile(ranks, metrics);
             }
             return scores;
@@ -883,24 +871,8 @@ function updateComparisonTable() {
 
     const metrics = currentSolution.metrics;
 
-    // Define metric categories and their metrics
-    const categories = {
-        'Diversity': [
-            { key: 'theil_index', name: 'Ethnic Diversity Index' },
-            { key: 'FRL', name: 'FRL Representation' },
-        ],
-        'Distance': [
-            { key: 'avg_closest_zone_school_distance', name: 'Avg Distance' },
-            { key: 'avg_schools_in_attendance_area', name: 'Schools in Area' },
-        ],
-        'Programs': [
-            { key: 'seat_disparity', name: 'Student Seat Imbalance' },
-        ],
-        'Performance': [
-            { key: 'avg_math_score', name: 'Math Scores' },
-            { key: 'avg_eng_score', name: 'English Scores' },
-        ],
-    };
+    // Build comparison categories dynamically from metricsConfig
+    const categories = getComparisonCategories();
 
     let html = '<div class="category-list">';
 
@@ -937,7 +909,8 @@ function updateComparisonTable() {
 
             const displayPercentile = `${rank.percentile}%`;
             const rawValue = rank.raw_value !== undefined ? formatValue(rank.raw_value, key) : formatValue(value, key);
-            const clickable = METRIC_CHART_CONFIG[key] && METRIC_CHART_CONFIG[key].type !== 'none';
+            const chartConfigs = getChartConfig();
+            const clickable = chartConfigs[key] && chartConfigs[key].type !== 'none';
             const selectedClass = key === selectedMetricKey ? ' selected' : '';
 
             html += `<tr class="metric-row${selectedClass}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
