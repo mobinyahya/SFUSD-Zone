@@ -26,6 +26,7 @@ from data_loader import (
     get_zone_color,
     load_solution_result,
     compute_percentile_ranks,
+    get_category_percentiles,
     get_school_locations,
     get_all_metrics_stats,
     get_pareto_solutions,
@@ -165,13 +166,17 @@ async def get_solution(path: str):
         zone_index_map_json = {str(k): v for k, v in zone_index_map.items()}
 
         solution_metrics = result.get("metrics", {})
+        pct_ranks = compute_percentile_ranks(solution_metrics, solution_path=decoded_path)
         return {
             "zones": zones,
             "zone_data": zone_data_json,
             "metrics": solution_metrics,
-            "percentile_ranks": compute_percentile_ranks(solution_metrics),
+            "percentile_ranks": pct_ranks,
+            "category_percentiles": get_category_percentiles(
+                solution_path=decoded_path, percentile_ranks=pct_ranks
+            ),
             "status": result.get("status", "UNKNOWN"),
-            
+
             "boundary_cost": result.get("boundary_cost"),
             "total_wall_time": result.get("total_wall_time"),
             "colors": colors,

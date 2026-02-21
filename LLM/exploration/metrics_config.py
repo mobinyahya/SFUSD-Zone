@@ -91,15 +91,7 @@ DIVERSITY_METRICS = [
         category="diversity",
         direction="minimize",
         is_core=False,
-    ),
-    MetricSpec(
-        column="seat_disparity",
-        display_name="Student Seat Imbalance",
-        description="Average percentage that the number of seats deviates from the number of students per zone. Lower indicates that zones are more balanced in terms of seat-student imbalance.",
-        category="diversity",
-        direction="minimize",
-        is_core=True,
-    ),
+    )
 ]
 
 
@@ -140,38 +132,47 @@ DISTANCE_METRICS = [
 # ============================================================================
 
 PROGRAM_METRICS = [
+    # MetricSpec(
+    #     column="avg_total_programs_per_zone",
+    #     display_name="Total Programs",
+    #     description="Average total program count per zone",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=True,
+    # ),
+    # MetricSpec(
+    #     column="avg_language_immersion_per_zone",
+    #     display_name="Language Immersion Programs",
+    #     description="Avg language immersion programs per zone.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=True,
+    # ),
+    # MetricSpec(
+    #     column="avg_special_ed_per_zone",
+    #     display_name="Special Education Programs",
+    #     description="Avg special education programs per zone",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=True,
+    # ),
+
     MetricSpec(
-        column="avg_total_programs_per_zone",
-        display_name="Total Programs",
-        description="Average total program count per zone",
+        column="seat_disparity",
+        display_name="Student Seat Imbalance",
+        description="Average percentage that the number of seats deviates from the number of students per zone. Lower indicates that zones are more balanced in terms of seat-student imbalance.",
         category="programs",
-        direction="maximize",
+        direction="minimize",
         is_core=True,
     ),
-    MetricSpec(
-        column="avg_language_immersion_per_zone",
-        display_name="Language Immersion Programs",
-        description="Avg language immersion programs per zone.",
-        category="programs",
-        direction="maximize",
-        is_core=True,
-    ),
-    MetricSpec(
-        column="avg_special_ed_per_zone",
-        display_name="Special Education Programs",
-        description="Avg special education programs per zone",
-        category="programs",
-        direction="maximize",
-        is_core=True,
-    ),
-    MetricSpec(
-        column="avg_GE_per_zone",
-        display_name="General Education Programs",
-        description="Avg general education (GE) programs per zone",
-        category="programs",
-        direction="maximize",
-        is_core=True,
-    ),
+    # MetricSpec(
+    #     column="avg_GE_per_zone",
+    #     display_name="General Education Programs",
+    #     description="Avg general education (GE) programs per zone",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=True,
+    # ),
     # Individual program types (non-core, available on demand)\
     # MetricSpec(
     #     column="avg_CA_per_zone",
@@ -197,14 +198,14 @@ PROGRAM_METRICS = [
     #     direction="maximize",
     #     is_core=False,
     # ),
-    MetricSpec(
-        column="avg_SA_per_zone",
-        display_name="Extensive Services Autism (SA)",
-        description="Extensive Services Autism Focus programs per zone",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
+    # MetricSpec(
+    #     column="avg_SA_per_zone",
+    #     display_name="Extensive Services Autism (SA)",
+    #     description="Extensive Services Autism Focus programs per zone",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
     # MetricSpec(
     #     column="avg_CN_per_zone",
     #     display_name="Cantonese Immersion (CN)",
@@ -213,82 +214,82 @@ PROGRAM_METRICS = [
     #     direction="maximize",
     #     is_core=False,
     # ),
-    MetricSpec(
-        column="avg_AF_per_zone",
-        display_name="Autism Focus (AF)",
-        description="Autism Focus programs per zone. These are programs for students with autism spectrum disorder (ASD).",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_CB_per_zone",
-        display_name="Cantonese Biliteracy (CB)",
-        description="Cantonese biliteracy programs per zone. These programs are targeted for english language learners.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_MM_per_zone",
-        display_name="Mild-Moderate (MM)",
-        description="Mild-moderate special education programs per zone. These are programs for students with mild to moderate autism spectrum disorder (ASD) needs or other developmental disabilities.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_SB_per_zone",
-        display_name="Spanish Biliteracy (SB)",
-        description="Spanish biliteracy programs per zone. These programs are targeted for english language learners.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_FB_per_zone",
-        display_name="Filipino Biliteracy (FB)",
-        description="Filipino biliteracy programs per zone. These programs are targeted for english language learners.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_NC_per_zone",
-        display_name="Newcomer Chinese (NC)",
-        description="Newcomer Chinese programs per zone. These programs are targeted for students who are recent immigrants to the US and need extra support.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_MS_per_zone",
-        display_name="Moderate-Severe (MS)",
-        description="Moderate-severe special education programs per zone. These are programs for students with moderate to severe autism spectrum disorder (ASD) or other developmental disabilities.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_TC_per_zone",
-        display_name="Total Communication (TC)",
-        description="Deaf/Hard of Hearing, Total Communication programs per zone. " + \
-                    "Total Communication employs a multi-modal approach that simultaneously combines speech, formal signs, and gestures " + \
-                    "to ensure the child has every tool available to understand and express themselves.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
-    MetricSpec(
-        column="avg_AO_per_zone",
-        display_name="Auditory Oral (AO)",
-        description="Deaf/Hard of Hearing, Auditory Oral programs per zone. " + \
-                    "Auditory-Oral programs focus exclusively on developing spoken language and listening skills " + \
-                    "by utilizing residual hearing and lip-reading while strictly avoiding sign language.",
-        category="programs",
-        direction="maximize",
-        is_core=False,
-    ),
+    # MetricSpec(
+    #     column="avg_AF_per_zone",
+    #     display_name="Autism Focus (AF)",
+    #     description="Autism Focus programs per zone. These are programs for students with autism spectrum disorder (ASD).",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_CB_per_zone",
+    #     display_name="Cantonese Biliteracy (CB)",
+    #     description="Cantonese biliteracy programs per zone. These programs are targeted for english language learners.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_MM_per_zone",
+    #     display_name="Mild-Moderate (MM)",
+    #     description="Mild-moderate special education programs per zone. These are programs for students with mild to moderate autism spectrum disorder (ASD) needs or other developmental disabilities.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_SB_per_zone",
+    #     display_name="Spanish Biliteracy (SB)",
+    #     description="Spanish biliteracy programs per zone. These programs are targeted for english language learners.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_FB_per_zone",
+    #     display_name="Filipino Biliteracy (FB)",
+    #     description="Filipino biliteracy programs per zone. These programs are targeted for english language learners.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_NC_per_zone",
+    #     display_name="Newcomer Chinese (NC)",
+    #     description="Newcomer Chinese programs per zone. These programs are targeted for students who are recent immigrants to the US and need extra support.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_MS_per_zone",
+    #     display_name="Moderate-Severe (MS)",
+    #     description="Moderate-severe special education programs per zone. These are programs for students with moderate to severe autism spectrum disorder (ASD) or other developmental disabilities.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_TC_per_zone",
+    #     display_name="Total Communication (TC)",
+    #     description="Deaf/Hard of Hearing, Total Communication programs per zone. " + \
+    #                 "Total Communication employs a multi-modal approach that simultaneously combines speech, formal signs, and gestures " + \
+    #                 "to ensure the child has every tool available to understand and express themselves.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
+    # MetricSpec(
+    #     column="avg_AO_per_zone",
+    #     display_name="Auditory Oral (AO)",
+    #     description="Deaf/Hard of Hearing, Auditory Oral programs per zone. " + \
+    #                 "Auditory-Oral programs focus exclusively on developing spoken language and listening skills " + \
+    #                 "by utilizing residual hearing and lip-reading while strictly avoiding sign language.",
+    #     category="programs",
+    #     direction="maximize",
+    #     is_core=False,
+    # ),
 ]
 
 

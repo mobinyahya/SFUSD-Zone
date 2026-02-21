@@ -576,7 +576,43 @@ class ZoningAgent:
         
         self._centroid_dirty = False
         return self._cached_centroid, self._cached_centroid_path, self._cached_filtered_count
-    
+
+    def _compute_percentile_for_solution(self, solution_series) -> dict:
+        """Compute true empirical percentiles for a solution against the Pareto set.
+
+        Uses pandas rank to determine where each metric value falls among all
+        Pareto solutions. For 'minimize' metrics the percentile is inverted so
+        higher always means better.
+
+        Returns dict mapping metric column -> {percentile, raw_value}.
+        """
+        import pandas as pd
+
+        ranks = {}
+        for metric in CORE_METRICS:
+            col = metric.column
+            if col not in self.pareto_original.columns or col not in solution_series.index:
+                continue
+            value = solution_series[col]
+            if pd.isna(value):
+                continue
+
+            all_values = self.pareto_original[col].dropna()
+            if len(all_values) == 0:
+                continue
+
+            raw_pct = (all_values <= value).sum() / len(all_values) * 100
+            if metric.direction == 'minimize':
+                normalized = 100 - raw_pct
+            else:
+                normalized = raw_pct
+
+            ranks[col] = {
+                'percentile': round(normalized),
+                'raw_value': float(value),
+            }
+        return ranks
+
     def _execute_tool(self, tool_name: str, arguments: dict) -> ToolResult:
         """Execute a tool and return a ToolResult."""
         
@@ -692,13 +728,16 @@ class ZoningAgent:
         
         elif tool_name == "get_current_solution":
             centroid, path, count = self._get_current_centroid()
-            
+
             if centroid is None:
                 return ToolResult("No solutions match the current filters. Use find_feasible_relaxation to see which constraints to relax.")
-            
+
             show_all = arguments.get("show_all_metrics", False)
             metrics_to_show = ALL_METRICS if show_all else CORE_METRICS
-            
+
+            # Compute empirical percentiles for the centroid solution
+            percentile_ranks = self._compute_percentile_for_solution(centroid)
+
             if show_all:
                 lines = [f"v{self.state.current_version}: Complete metrics for current solution ({count} solutions available)\n"]
                 for category_key, category_name in CATEGORIES.items():
@@ -711,7 +750,9 @@ class ZoningAgent:
                             continue
                         value = centroid[metric.column]
                         direction_text = "(lower better)" if metric.direction == "minimize" else "(higher better)"
-                        lines.append(f"- {metric.display_name}: {value:.3f} {direction_text}")
+                        pct_info = percentile_ranks.get(metric.column)
+                        pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
+                        lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
                 lines.append("\nWould you like to adjust any of these metrics?")
             else:
                 lines = [f"v{self.state.current_version}: {count} solutions\n"]
@@ -720,9 +761,11 @@ class ZoningAgent:
                         continue
                     value = centroid[metric.column]
                     direction_text = "(lower better)" if metric.direction == "minimize" else "(higher better)"
-                    lines.append(f"- {metric.display_name}: {value:.3f} {direction_text}")
+                    pct_info = percentile_ranks.get(metric.column)
+                    pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
+                    lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
                 lines.append("\nAdjust metrics?")
-            
+
             return ToolResult("\n".join(lines), solution_path=path)
         
         elif tool_name == "list_all_metrics":

@@ -32,10 +32,11 @@ GEOJSON_PATH = Path(__file__).parent.parent / "data" / "sf_blockgroups.geojson"
 # Cache
 _graph_cache = None
 _geojson_cache = None
-_solution_space_stats_cache = None
 _school_locations_cache = None
 _pareto_cache = None
 _all_metrics_stats_cache = None
+_pareto_percentiles_cache = None
+_category_percentiles_cache = None
 
 
 def load_graph() -> nx.Graph:
@@ -258,94 +259,6 @@ def load_geojson() -> dict:
     return _geojson_cache
 
 
-def get_solution_space_stats() -> dict:
-    """
-    Get statistics for core metrics across all solutions in the solution space.
-
-    Returns dict mapping metric column name to:
-    - min: minimum value
-    - max: maximum value
-    - p10: 10th percentile
-    - p25: 25th percentile
-    - p50: median (50th percentile)
-    - p75: 75th percentile
-    - p90: 90th percentile
-    - direction: 'minimize' or 'maximize'
-    - display_name: user-friendly name
-    - description: brief description
-    - category: metric category
-    """
-    global _solution_space_stats_cache
-    if _solution_space_stats_cache is not None:
-        return _solution_space_stats_cache
-
-    # Load all solutions
-    all_solutions = load_solutions(CSV_PATH)
-
-    # Filter to only valid solutions (OPTIMAL or FEASIBLE)
-    if 'status' in all_solutions.columns:
-        valid_solutions = all_solutions[
-            all_solutions['status'].isin(['OPTIMAL', 'FEASIBLE'])
-        ]
-    else:
-        valid_solutions = all_solutions
-
-    stats = {}
-    for metric in CORE_METRICS:
-        col = metric.column
-        if col not in valid_solutions.columns:
-            continue
-
-        values = valid_solutions[col].dropna()
-        if len(values) == 0:
-            continue
-
-        stats[col] = {
-            'min': float(values.min()),
-            'max': float(values.max()),
-            'p10': float(values.quantile(0.10)),
-            'p25': float(values.quantile(0.25)),
-            'p50': float(values.quantile(0.50)),
-            'p75': float(values.quantile(0.75)),
-            'p90': float(values.quantile(0.90)),
-            'direction': metric.direction,
-            'display_name': metric.display_name,
-            'description': metric.description,
-            'category': metric.category,
-        }
-
-    _solution_space_stats_cache = stats
-    return stats
-
-
-def _interpolate_percentile(value: float, stats: dict) -> float:
-    """Interpolate where a value falls in the distribution (0-100 raw percentile)."""
-    min_val = stats['min']
-    max_val = stats['max']
-    p10 = stats['p10']
-    p25 = stats['p25']
-    p50 = stats['p50']
-    p75 = stats['p75']
-    p90 = stats['p90']
-
-    if value <= min_val:
-        return 0.0
-    if value >= max_val:
-        return 100.0
-
-    if value <= p10:
-        return 10 * (value - min_val) / (p10 - min_val) if p10 != min_val else 0.0
-    if value <= p25:
-        return 10 + 15 * (value - p10) / (p25 - p10) if p25 != p10 else 10.0
-    if value <= p50:
-        return 25 + 25 * (value - p25) / (p50 - p25) if p50 != p25 else 25.0
-    if value <= p75:
-        return 50 + 25 * (value - p50) / (p75 - p50) if p75 != p50 else 50.0
-    if value <= p90:
-        return 75 + 15 * (value - p75) / (p90 - p75) if p90 != p75 else 75.0
-    return 90 + 10 * (value - p90) / (max_val - p90) if max_val != p90 else 90.0
-
-
 def _get_ranking_class(normalized_percentile: float) -> str:
     """Map a normalized percentile (higher=better) to a CSS ranking class."""
     if normalized_percentile >= 80:
@@ -359,29 +272,244 @@ def _get_ranking_class(normalized_percentile: float) -> str:
     return 'poor'
 
 
-def compute_percentile_ranks(metrics: dict) -> dict:
+def precompute_pareto_percentiles() -> dict:
+    """Pre-compute true empirical percentiles for all Pareto solutions.
+
+    Called once (lazy, on first access). For each core metric column, uses
+    pandas rank(pct=True) to compute the true empirical percentile for every
+    solution. For 'minimize' metrics, the percentile is inverted so that
+    higher percentile always means 'better'.
+
+    Returns dict mapping solution_path -> {metric_col -> {percentile, raw_value,
+    ranking, display_name, category}}.
+    """
+    global _pareto_percentiles_cache
+    if _pareto_percentiles_cache is not None:
+        return _pareto_percentiles_cache
+
+    pareto = get_pareto_solutions()
+    cache = {}
+
+    # Pre-compute ranks for each metric column
+    metric_ranks = {}
+    for metric in CORE_METRICS:
+        col = metric.column
+        if col not in pareto.columns:
+            continue
+        values = pareto[col]
+        # rank(pct=True) gives fraction 0-1; multiply by 100 for percentile
+        raw_pct = values.rank(pct=True) * 100
+        if metric.direction == 'minimize':
+            # Invert so higher percentile = better (lower raw value)
+            raw_pct = 100 - raw_pct
+        metric_ranks[col] = raw_pct
+
+    # Build per-solution cache
+    for idx, row in pareto.iterrows():
+        path = row.get('path', '')
+        if not path:
+            continue
+        solution_ranks = {}
+        for metric in CORE_METRICS:
+            col = metric.column
+            if col not in metric_ranks:
+                continue
+            raw_value = row[col]
+            if pd.isna(raw_value):
+                continue
+            pct = round(metric_ranks[col].loc[idx])
+            solution_ranks[col] = {
+                'percentile': pct,
+                'raw_value': float(raw_value),
+                'ranking': _get_ranking_class(pct),
+                'display_name': metric.display_name,
+                'category': metric.category,
+            }
+        cache[path] = solution_ranks
+
+    _pareto_percentiles_cache = cache
+    return cache
+
+
+def precompute_category_percentiles() -> dict:
+    """Pre-compute category-level percentiles for all Pareto solutions.
+
+    For each category (diversity, distance, programs, quality), computes the
+    average of the individual metric percentiles, then takes the percentile
+    rank of that average across all solutions. This gives a true percentile
+    for each category rather than a raw average of percentiles.
+
+    These are display-only metrics and must NOT be used for Pareto filtering.
+
+    Returns dict mapping solution_path -> {category_short -> percentile (0-100)}.
+    """
+    global _category_percentiles_cache
+    if _category_percentiles_cache is not None:
+        return _category_percentiles_cache
+
+    per_solution_ranks = precompute_pareto_percentiles()
+
+    # Map metric category to short display key
+    CATEGORY_SHORT = {
+        'diversity': 'Div',
+        'distance': 'Dist',
+        'programs': 'Prog',
+        'quality': 'Perf',
+    }
+
+    # Group core metric columns by category
+    category_metrics = {}
+    for metric in CORE_METRICS:
+        short = CATEGORY_SHORT.get(metric.category)
+        if short:
+            category_metrics.setdefault(short, []).append(metric.column)
+
+    # Step 1: Compute raw average-of-percentiles per category per solution
+    solution_cat_avgs = {}  # {path: {cat_short: avg_percentile}}
+    for path, ranks in per_solution_ranks.items():
+        cat_avgs = {}
+        for cat_short, columns in category_metrics.items():
+            pcts = [ranks[col]['percentile'] for col in columns if col in ranks]
+            if pcts:
+                cat_avgs[cat_short] = sum(pcts) / len(pcts)
+        solution_cat_avgs[path] = cat_avgs
+
+    # Step 2: For each category, rank the averages across all solutions
+    all_paths = list(solution_cat_avgs.keys())
+    cache = {path: {} for path in all_paths}
+
+    for cat_short in category_metrics:
+        # Collect all average values for this category
+        values = []
+        paths_with_values = []
+        for path in all_paths:
+            avg = solution_cat_avgs[path].get(cat_short)
+            if avg is not None:
+                values.append(avg)
+                paths_with_values.append(path)
+
+        if not values:
+            continue
+
+        # Compute percentile rank of each average
+        series = pd.Series(values, index=paths_with_values)
+        ranked = series.rank(pct=True) * 100
+
+        for path in paths_with_values:
+            cache[path][cat_short] = round(ranked[path])
+
+    _category_percentiles_cache = cache
+    return cache
+
+
+def compute_percentile_ranks(metrics: dict, solution_path: str = None) -> dict:
     """Compute normalized percentile ranks for a solution's metrics.
 
-    Returns dict mapping metric column -> {percentile, ranking, display_name, category}
-    where percentile is 0-100 (higher = better) and ranking is the CSS class.
+    If solution_path is provided and found in the precomputed Pareto cache,
+    returns the cached true empirical percentiles (with raw_value included).
+    Otherwise falls back to rank-based computation against the Pareto set.
+
+    Returns dict mapping metric column -> {percentile, raw_value, ranking,
+    display_name, category} where percentile is 0-100 (higher = better).
     """
-    stats = get_solution_space_stats()
+    # Try precomputed cache first
+    if solution_path:
+        cache = precompute_pareto_percentiles()
+        if solution_path in cache:
+            return cache[solution_path]
+
+    # Fallback: compute empirical percentile against Pareto set
+    pareto = get_pareto_solutions()
     ranks = {}
-    for col, stat in stats.items():
-        if col not in metrics:
+    for metric in CORE_METRICS:
+        col = metric.column
+        if col not in metrics or col not in pareto.columns:
             continue
         value = metrics[col]
         if value is None:
             continue
-        raw = _interpolate_percentile(value, stat)
-        normalized = (100 - raw) if stat['direction'] == 'minimize' else raw
+
+        all_values = pareto[col].dropna()
+        if len(all_values) == 0:
+            continue
+
+        # percentileofscore equivalent: fraction of values <= this value
+        raw_pct = (all_values <= value).sum() / len(all_values) * 100
+        if metric.direction == 'minimize':
+            normalized = 100 - raw_pct
+        else:
+            normalized = raw_pct
+
         ranks[col] = {
             'percentile': round(normalized),
+            'raw_value': float(value),
             'ranking': _get_ranking_class(normalized),
-            'display_name': stat['display_name'],
-            'category': stat['category'],
+            'display_name': metric.display_name,
+            'category': metric.category,
         }
     return ranks
+
+
+def get_category_percentiles(solution_path: str = None, percentile_ranks: dict = None) -> dict:
+    """Get category-level percentiles for a solution.
+
+    If solution_path is in the precomputed cache, returns cached values.
+    Otherwise computes from the given percentile_ranks using a fallback
+    that ranks the average against all Pareto solutions.
+
+    Returns dict mapping category short name -> percentile (0-100).
+    """
+    # Try precomputed cache first
+    if solution_path:
+        cache = precompute_category_percentiles()
+        if solution_path in cache:
+            return cache[solution_path]
+
+    # Fallback: compute from percentile_ranks against Pareto distribution
+    if not percentile_ranks:
+        return {}
+
+    CATEGORY_SHORT = {
+        'diversity': 'Div',
+        'distance': 'Dist',
+        'programs': 'Prog',
+        'quality': 'Perf',
+    }
+
+    # Group metrics by category
+    category_metrics = {}
+    for metric in CORE_METRICS:
+        short = CATEGORY_SHORT.get(metric.category)
+        if short:
+            category_metrics.setdefault(short, []).append(metric.column)
+
+    # Compute this solution's category averages
+    result = {}
+    pareto_cache = precompute_category_percentiles()
+
+    for cat_short, columns in category_metrics.items():
+        pcts = [percentile_ranks[col]['percentile'] for col in columns
+                if col in percentile_ranks]
+        if not pcts:
+            continue
+        avg = sum(pcts) / len(pcts)
+
+        # Rank against all Pareto solutions' category averages
+        all_cat_values = [v.get(cat_short, 0) for v in precompute_pareto_percentiles().values()]
+        # Get all raw category averages to rank against
+        all_raw_avgs = []
+        for path_ranks in precompute_pareto_percentiles().values():
+            cat_pcts = [path_ranks[col]['percentile'] for col in columns if col in path_ranks]
+            if cat_pcts:
+                all_raw_avgs.append(sum(cat_pcts) / len(cat_pcts))
+
+        if all_raw_avgs:
+            rank_pct = sum(1 for v in all_raw_avgs if v <= avg) / len(all_raw_avgs) * 100
+            result[cat_short] = round(rank_pct)
+        else:
+            result[cat_short] = round(avg)
+
+    return result
 
 
 def get_zone_color(zone_id: int) -> str:

@@ -233,48 +233,17 @@ function renderSchoolMarkers(schools) {
         // Create marker
         const marker = L.marker([school.lat, school.lon], { icon });
 
+        const geCapacity = school.programs && school.programs['GE'] !== undefined ? school.programs['GE'] : school.total_capacity;
         let tooltipContent = `<div class="school-tooltip-content"><strong>${school.name}</strong>`;
-        if (school.total_capacity !== undefined) {
-            tooltipContent += `<br>Capacity: ${school.total_capacity}`;
-        }
-        if (school.programs && Object.keys(school.programs).length > 0) {
-            const activePrograms = Object.entries(school.programs).filter(([p, c]) => c > 0);
-            if (activePrograms.length > 0) {
-                tooltipContent += `<div class="school-programs-list"><strong>Programs:</strong><ul>` + 
-                    activePrograms.map(([p, c]) => `<li>${p}: ${c}</li>`).join('') + 
-                    `</ul></div>`;
-            }
+        if (geCapacity !== undefined) {
+            tooltipContent += `<br>GE Seats: ${geCapacity}`;
         }
         tooltipContent += `</div>`;
-
-        let popupContent = `<div class="school-popup-content"><strong>${school.name}</strong>`;
-        if (school.total_capacity !== undefined) {
-            popupContent += `<br>Capacity: ${school.total_capacity}`;
-        }
-        if (school.programs && Object.keys(school.programs).length > 0) {
-            const activePrograms = Object.entries(school.programs).filter(([p, c]) => c > 0);
-            if (activePrograms.length > 0) {
-                popupContent += `<div class="school-programs-list"><strong>Programs:</strong><ul>` +
-                    activePrograms.map(([p, c]) => {
-                        const fullName = PROGRAM_NAMES[p] || p;
-                        return `<li><span class="program-abbr" data-full="${fullName}">${p}</span>: ${c}</li>`;
-                    }).join('') +
-                    `</ul></div>`;
-            }
-        }
-        popupContent += `</div>`;
 
         marker.bindTooltip(tooltipContent, {
             direction: 'top',
             offset: [0, -10],
             className: 'school-tooltip',
-        });
-
-        marker.bindPopup(popupContent, {
-            offset: [0, -10],
-            className: 'school-popup',
-            closeButton: true,
-            autoPan: false,
         });
 
         // Add to layer group
@@ -650,12 +619,18 @@ function autoSaveSolution(solutionData, label, agentMessage) {
 
     const index = savedSolutions.length + 1;
 
-    // Pre-compute category percentiles for preview badges
-    const ranks = solutionData.percentile_ranks || {};
-    const categoryScores = {};
-    for (const [cat, metrics] of Object.entries(HISTORY_CATEGORIES)) {
-        categoryScores[cat] = getCategoryPercentile(ranks, metrics);
-    }
+    // Use backend-provided category percentiles (percentile-of-average-percentile)
+    // Falls back to local average-of-percentiles if backend data unavailable
+    const categoryScores = solutionData.category_percentiles
+        ? { ...solutionData.category_percentiles }
+        : (() => {
+            const ranks = solutionData.percentile_ranks || {};
+            const scores = {};
+            for (const [cat, metrics] of Object.entries(HISTORY_CATEGORIES)) {
+                scores[cat] = getCategoryPercentile(ranks, metrics);
+            }
+            return scores;
+        })();
 
     const entry = {
         index,
@@ -913,24 +888,17 @@ function updateComparisonTable() {
         'Diversity': [
             { key: 'theil_index', name: 'Ethnic Diversity Index' },
             { key: 'FRL', name: 'FRL Representation' },
-            { key: 'seat_disparity', name: 'Student Seat Imbalance' },
         ],
         'Distance': [
             { key: 'avg_closest_zone_school_distance', name: 'Avg Distance' },
             { key: 'avg_schools_in_attendance_area', name: 'Schools in Area' },
-            { key: 'boundary_cost', name: 'Boundary Cost' },
         ],
         'Programs': [
-            { key: 'avg_total_programs_per_zone', name: 'Total Programs' },
-            { key: 'avg_GE_per_zone', name: 'General Education' },
-            { key: 'avg_language_immersion_per_zone', name: 'Language Immersion' },
-            { key: 'avg_special_ed_per_zone', name: 'Special Ed' },
+            { key: 'seat_disparity', name: 'Student Seat Imbalance' },
         ],
         'Performance': [
-            // { key: 'avg_greatschools_rating', name: 'GreatSchools' },
             { key: 'avg_math_score', name: 'Math Scores' },
             { key: 'avg_eng_score', name: 'English Scores' },
-            // { key: 'avg_suspension_index', name: 'Suspension Index' },
         ],
     };
 
@@ -968,11 +936,13 @@ function updateComparisonTable() {
             if (value === undefined || !rank) continue;
 
             const displayPercentile = `${rank.percentile}%`;
+            const rawValue = rank.raw_value !== undefined ? formatValue(rank.raw_value, key) : formatValue(value, key);
             const clickable = METRIC_CHART_CONFIG[key] && METRIC_CHART_CONFIG[key].type !== 'none';
             const selectedClass = key === selectedMetricKey ? ' selected' : '';
 
             html += `<tr class="metric-row${selectedClass}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
             html += `<td class="metric-name">${name}</td>`;
+            html += `<td class="metric-value">${rawValue}</td>`;
             html += `<td class="metric-rank"><span class="percentile-indicator ${rank.ranking}">${displayPercentile}</span></td>`;
             html += `</tr>`;
         }
