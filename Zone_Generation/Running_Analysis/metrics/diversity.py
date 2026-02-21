@@ -82,16 +82,21 @@ def compute_diversity_metrics(
 def compute_seat_disparity(
     zone_blocks: dict[int, list[int]],
     G: nx.Graph
-) -> float:
+) -> tuple[float, dict[int, dict]]:
     """
     Compute average % shortage/overage across zones.
+
+    Returns:
+        Tuple of (solution_level_value, per_zone_data) where per_zone_data maps
+        zone_id -> {'seat_disparity': float | None}
     """
     if not zone_blocks:
-        return 0.0
-    
+        return 0.0, {}
+
     total_diff = 0.0
     valid_zones = 0
-    
+    per_zone_data: dict[int, dict] = {}
+
     for zone_id, blocks in zone_blocks.items():
         seats = 0.0
         students = 0.0
@@ -100,15 +105,18 @@ def compute_seat_disparity(
                 continue
             seats += G.nodes[block]['ge_capacity']
             students += G.nodes[block]['ge_students']
-        
+
         if students == 0:
+            per_zone_data[zone_id] = {'seat_disparity': None}
             continue
-        
+
         diff = abs(seats - students) / students
         total_diff += diff
         valid_zones += 1
+        per_zone_data[zone_id] = {'seat_disparity': diff}
 
-    return total_diff / valid_zones if valid_zones > 0 else 0.0
+    solution_value = total_diff / valid_zones if valid_zones > 0 else 0.0
+    return solution_value, per_zone_data
 
 
 def compute_theil_index(

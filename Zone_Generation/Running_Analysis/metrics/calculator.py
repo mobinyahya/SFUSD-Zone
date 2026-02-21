@@ -86,9 +86,12 @@ class ZoneMetricsCalculator:
         )
         result.update(diversity_metrics)
         
-        # Add seat disparity
-        seat_disparity = compute_seat_disparity(self.zone_blocks, self.G)
+        # Add seat disparity (solution-level and per-zone)
+        seat_disparity, per_zone_seat = compute_seat_disparity(self.zone_blocks, self.G)
         result.update({'seat_disparity': seat_disparity})
+        for zone_id, sd_data in per_zone_seat.items():
+            if zone_id in result.zone_data:
+                result.zone_data[zone_id].seat_disparity = sd_data.get('seat_disparity')
 
         # Add Theil segregation index
         theil_metrics, per_zone_entropy = compute_theil_index(

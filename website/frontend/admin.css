@@ -1170,6 +1170,14 @@ main {
     max-height: 200px;
 }
 
+.no-zone-data-msg {
+    color: var(--text-muted, #888);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 24px 12px;
+    font-style: italic;
+}
+
 /* ============================================================================
    Responsive
    ============================================================================ */

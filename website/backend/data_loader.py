@@ -186,6 +186,16 @@ def get_zone_demographics(solution_path: str) -> dict[int, dict]:
         # result.json has zone_data with string keys, convert to int
         zone_data = result.get("zone_data", {})
 
+        # Quality metric fields where 0.0 means "no data" (not a real value).
+        # Scores like avg_math_score are in the 2400+ range; 0 means the zone has
+        # no schools with score data. Convert to None so the frontend can distinguish
+        # "no data" from an actual zero. This also handles older result.json files
+        # that stored 0.0 instead of null for missing values.
+        _QUALITY_ZERO_MEANS_NO_DATA = {
+            'avg_math_score', 'avg_eng_score',
+            'avg_greatschools_rating', 'avg_suspension_index',
+        }
+
         # Normalize field names for frontend compatibility
         normalized_data = {}
         for zone_id, data in zone_data.items():
@@ -194,6 +204,10 @@ def get_zone_demographics(solution_path: str) -> dict[int, dict]:
             # result.json has frl_pct in 0-1 range (lowercase frl)
             if "frl_pct" in zone_dict:
                 zone_dict["FRL_pct"] = zone_dict["frl_pct"] * 100
+            # Convert quality 0.0 → None so frontend knows there is no data
+            for field in _QUALITY_ZERO_MEANS_NO_DATA:
+                if zone_dict.get(field) == 0:
+                    zone_dict[field] = None
             normalized_data[int(zone_id)] = zone_dict
 
         return normalized_data

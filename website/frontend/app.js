@@ -317,17 +317,39 @@ function showSingleChart(metricKey) {
             }
         });
     } else {
-        // Simple bar chart
-        const data = zoneIds.map(id => zoneData[id][config.field] || 0);
-        const scaleOpts = { beginAtZero: true };
-        if (config.max) scaleOpts.max = config.max;
-        if (config.unit) scaleOpts.title = { display: true, text: config.unit };
-
-        singleChart = new Chart(canvas.getContext('2d'), {
-            type: 'bar',
-            data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
-            options: { ...defaultOptions, scales: { y: scaleOpts } }
+        // Simple bar chart; null means no zone-level data for that zone
+        const data = zoneIds.map(id => {
+            const val = zoneData[id] ? zoneData[id][config.field] : undefined;
+            return (val === undefined || val === null) ? null : val;
         });
+
+        const chartContainer = document.getElementById('single-chart-container');
+        let noDataMsg = chartContainer.querySelector('.no-zone-data-msg');
+
+        if (data.every(v => v === null)) {
+            // No per-zone data available — show message instead of chart
+            canvas.style.display = 'none';
+            if (!noDataMsg) {
+                noDataMsg = document.createElement('p');
+                noDataMsg.className = 'no-zone-data-msg';
+                chartContainer.appendChild(noDataMsg);
+            }
+            noDataMsg.textContent = 'Zone-level breakdown not available for this metric.';
+            noDataMsg.style.display = 'block';
+        } else {
+            canvas.style.display = '';
+            if (noDataMsg) noDataMsg.style.display = 'none';
+
+            const scaleOpts = { beginAtZero: true };
+            if (config.max) scaleOpts.max = config.max;
+            if (config.unit) scaleOpts.title = { display: true, text: config.unit };
+
+            singleChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
+                options: { ...defaultOptions, scales: { y: scaleOpts } }
+            });
+        }
     }
 
     // Update header and subtitle with district-wide value
@@ -905,10 +927,14 @@ function updateComparisonTable() {
         for (const { key, name } of metricList) {
             const value = metrics[key];
             const rank = ranks[key];
-            if (value === undefined || !rank) continue;
+            if (value === undefined || value === null) continue;
 
-            const displayPercentile = `${rank.percentile}%`;
-            const rawValue = rank.raw_value !== undefined ? formatValue(rank.raw_value, key) : formatValue(value, key);
+            const rawValue = rank && rank.raw_value !== undefined
+                ? formatValue(rank.raw_value, key)
+                : formatValue(value, key);
+            const rankBadge = rank
+                ? `<span class="percentile-indicator ${rank.ranking}">${rank.percentile}%</span>`
+                : `<span class="percentile-indicator">—</span>`;
             const chartConfigs = getChartConfig();
             const clickable = chartConfigs[key] && chartConfigs[key].type !== 'none';
             const selectedClass = key === selectedMetricKey ? ' selected' : '';
@@ -916,7 +942,7 @@ function updateComparisonTable() {
             html += `<tr class="metric-row${selectedClass}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
             html += `<td class="metric-name">${name}</td>`;
             html += `<td class="metric-value">${rawValue}</td>`;
-            html += `<td class="metric-rank"><span class="percentile-indicator ${rank.ranking}">${displayPercentile}</span></td>`;
+            html += `<td class="metric-rank">${rankBadge}</td>`;
             html += `</tr>`;
         }
         html += `</table>`;

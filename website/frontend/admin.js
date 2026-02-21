@@ -333,13 +333,16 @@ function updateComparisonTable() {
         ml.forEach(({ key, name }) => {
             const v = metrics[key];
             const r = ranks[key];
-            if (v === undefined || !r) return;
+            if (v === undefined || v === null) return;
             const chartConfigs = getChartConfig();
             const clickable = chartConfigs[key] && chartConfigs[key].type !== 'none';
             const sel = key === selectedMetricKey ? ' selected' : '';
+            const rankBadge = r
+                ? `<span class="percentile-indicator ${r.ranking}">${r.percentile}%</span>`
+                : `<span class="percentile-indicator">—</span>`;
             html += `<tr class="metric-row${sel}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
             html += `<td class="metric-name">${name}</td>`;
-            html += `<td class="metric-rank"><span class="percentile-indicator ${r.ranking}">${r.percentile}%</span></td></tr>`;
+            html += `<td class="metric-rank">${rankBadge}</td></tr>`;
         });
         html += `</table></div>`;
     }
@@ -420,15 +423,37 @@ function showSingleChart(metricKey) {
             }
         });
     } else {
-        const data = zoneIds.map(id => zoneData[id][config.field] || 0);
-        const scaleOpts = { beginAtZero: true };
-        if (config.max) scaleOpts.max = config.max;
-        if (config.unit) scaleOpts.title = { display: true, text: config.unit };
-        singleChart = new Chart(canvas.getContext('2d'), {
-            type: 'bar',
-            data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
-            options: { ...defaultOpts, scales: { y: scaleOpts } }
+        // Simple bar chart; null means no zone-level data for that zone
+        const data = zoneIds.map(id => {
+            const val = zoneData[id] ? zoneData[id][config.field] : undefined;
+            return (val === undefined || val === null) ? null : val;
         });
+
+        const chartContainer = document.getElementById('single-chart-container');
+        let noDataMsg = chartContainer.querySelector('.no-zone-data-msg');
+
+        if (data.every(v => v === null)) {
+            canvas.style.display = 'none';
+            if (!noDataMsg) {
+                noDataMsg = document.createElement('p');
+                noDataMsg.className = 'no-zone-data-msg';
+                chartContainer.appendChild(noDataMsg);
+            }
+            noDataMsg.textContent = 'Zone-level breakdown not available for this metric.';
+            noDataMsg.style.display = 'block';
+        } else {
+            canvas.style.display = '';
+            if (noDataMsg) noDataMsg.style.display = 'none';
+
+            const scaleOpts = { beginAtZero: true };
+            if (config.max) scaleOpts.max = config.max;
+            if (config.unit) scaleOpts.title = { display: true, text: config.unit };
+            singleChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
+                options: { ...defaultOpts, scales: { y: scaleOpts } }
+            });
+        }
     }
 
     document.getElementById('charts-header').textContent = config.title;

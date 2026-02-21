@@ -74,17 +74,11 @@ def compute_quality_metrics(
             if susp_idx > 0:
                 weighted_susp += susp_idx * cap
         
-        # Compute averages
-        if total_cap > 0:
-            avg_gs = weighted_gs / total_cap
-            avg_math = weighted_math / total_cap
-            avg_eng = weighted_eng / total_cap
-            avg_susp = weighted_susp / total_cap
-        else:
-            avg_gs = 0.0
-            avg_math = 0.0
-            avg_eng = 0.0
-            avg_susp = 0.0
+        # Compute averages; use None if no schools in zone had the relevant data
+        avg_gs = weighted_gs / total_cap if total_cap > 0 and weighted_gs > 0 else None
+        avg_math = weighted_math / total_cap if total_cap > 0 and weighted_math > 0 else None
+        avg_eng = weighted_eng / total_cap if total_cap > 0 and weighted_eng > 0 else None
+        avg_susp = weighted_susp / total_cap if total_cap > 0 and weighted_susp > 0 else None
         
         per_zone_data[zone_id] = {
             'avg_greatschools_rating': avg_gs,
@@ -93,13 +87,13 @@ def compute_quality_metrics(
             'avg_suspension_index': avg_susp
         }
         
-        if avg_gs > 0:
+        if avg_gs is not None:
             all_gs_ratings.append(avg_gs)
-        if avg_math > 0:
+        if avg_math is not None:
             all_math_scores.append(avg_math)
-        if avg_eng > 0:
+        if avg_eng is not None:
             all_eng_scores.append(avg_eng)
-        if avg_susp > 0:
+        if avg_susp is not None:
             all_suspension_indices.append(avg_susp)
     
     # Aggregate across zones
