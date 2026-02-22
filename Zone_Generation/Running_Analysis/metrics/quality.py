@@ -35,12 +35,15 @@ def compute_quality_metrics(
     all_suspension_indices = []
     
     for zone_id, schools in zone_schools.items():
-        # Compute weighted averages for schools in zone
-        total_cap = 0.0
+        # Per-metric capacity-weighted sums (only schools with valid data count)
         weighted_gs = 0.0
         weighted_math = 0.0
         weighted_eng = 0.0
         weighted_susp = 0.0
+        cap_gs = 0.0
+        cap_math = 0.0
+        cap_eng = 0.0
+        cap_susp = 0.0
         
         for sid in schools:
             if sid not in school_data:
@@ -49,36 +52,33 @@ def compute_quality_metrics(
             sdata = school_data[sid]
             cap = sdata.get('cap_lb', 0) or 0
             if cap <= 0:
-                cap = 1  # Fallback weight
+                cap = 1
             
-            total_cap += cap
-            
-            # GreatSchools rating
             gs = sdata.get('greatschools_rating')
             if gs and gs > 0:
                 weighted_gs += gs * cap
+                cap_gs += cap
             
-            # Math scores
             math = sdata.get('math_scores_1819')
             if math and math > 0:
                 weighted_math += math * cap
+                cap_math += cap
             
-            # English scores
             eng = sdata.get('eng_scores_1819')
             if eng and eng > 0:
                 weighted_eng += eng * cap
+                cap_eng += cap
             
-            # Suspension color -> index
             susp_color = sdata.get('suspension_color', '')
             susp_idx = COLOR_TO_INDEX.get(susp_color, 0)
             if susp_idx > 0:
                 weighted_susp += susp_idx * cap
+                cap_susp += cap
         
-        # Compute averages; use None if no schools in zone had the relevant data
-        avg_gs = weighted_gs / total_cap if total_cap > 0 and weighted_gs > 0 else None
-        avg_math = weighted_math / total_cap if total_cap > 0 and weighted_math > 0 else None
-        avg_eng = weighted_eng / total_cap if total_cap > 0 and weighted_eng > 0 else None
-        avg_susp = weighted_susp / total_cap if total_cap > 0 and weighted_susp > 0 else None
+        avg_gs = weighted_gs / cap_gs if cap_gs > 0 else 0
+        avg_math = weighted_math / cap_math if cap_math > 0 else 0
+        avg_eng = weighted_eng / cap_eng if cap_eng > 0 else 0
+        avg_susp = weighted_susp / cap_susp if cap_susp > 0 else 0
         
         per_zone_data[zone_id] = {
             'avg_greatschools_rating': avg_gs,
@@ -87,13 +87,13 @@ def compute_quality_metrics(
             'avg_suspension_index': avg_susp
         }
         
-        if avg_gs is not None:
+        if avg_gs > 0:
             all_gs_ratings.append(avg_gs)
-        if avg_math is not None:
+        if avg_math > 0:
             all_math_scores.append(avg_math)
-        if avg_eng is not None:
+        if avg_eng > 0:
             all_eng_scores.append(avg_eng)
-        if avg_susp is not None:
+        if avg_susp > 0:
             all_suspension_indices.append(avg_susp)
     
     # Aggregate across zones
