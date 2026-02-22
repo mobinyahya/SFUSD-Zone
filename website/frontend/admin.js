@@ -1,86 +1,29 @@
-// SFUSD Admin Console
-
-const API_BASE = '';
-
-// ============================================================================
-// State
-// ============================================================================
+// SFUSD Admin Console - Admin Page (Filter Interface)
+// Depends on shared.js being loaded first.
 
 let authToken = null;
-let map = null;
-let geojsonLayer = null;
-let geojsonData = null;
-let schoolMarkersLayer = null;
-let schoolsVisible = false;
-let currentSolution = null;
-let singleChart = null;
-let selectedMetricKey = null;
-
-// Populated from /api/metrics-config on startup
-let metricsConfig = null;
 
 // Filter state
-let solutionSpaceStats = {};   // {metric_col: {min, max, p25, p50, p75, direction, display_name, ...}}
-let filterBounds = {};          // {metric_col: {min_bound, max_bound}} - null = unconstrained
-let visibleMetrics = new Set(); // metric columns currently shown as sliders
+let solutionSpaceStats = {};
+let filterBounds = {};
+let visibleMetrics = new Set();
 let totalPareto = 0;
 let currentFilteredCount = 0;
-let feasibleStats = {};         // {metric_col: {min, max}} from last filter response
+let feasibleStats = {};
 let categories = {};
-
-// Solution history
-let savedSolutions = [];
-let currentViewedIndex = null;
-let historyExpanded = false;
-const MAX_SAVED_SOLUTIONS = 30;
 
 // Debounce
 let filterTimer = null;
 const FILTER_DEBOUNCE_MS = 300;
 
-// Chart colors
-const CHART_COLORS = {
-    primary: '#3498db',
-    secondary: '#2ecc71',
-    tertiary: '#9b59b6',
-    quaternary: '#e74c3c',
-    quinary: '#f39c12',
-    ethnicities: {
-        'Black/African American': '#e74c3c',
-        'Hispanic/Latinx': '#f39c12',
-        'White': '#3498db',
-        'Asian': '#2ecc71',
-        'Other': '#9b59b6',
-    }
-};
+// ============================================================================
+// Page Hooks (configure shared.js behavior for admin page)
+// ============================================================================
 
-// Build chart config dynamically from metricsConfig
-function getChartConfig() {
-    if (!metricsConfig) return {};
-    const config = {};
-    for (const m of metricsConfig.metrics) {
-        config[m.column] = m.chart || { type: 'none' };
-    }
-    return config;
-}
-
-// Build history categories dynamically from metricsConfig
-const HISTORY_CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf' };
-
-function getHistoryCategories() {
-    if (!metricsConfig) return {};
-    const result = {};
-    for (const [catKey, catShort] of Object.entries(HISTORY_CATEGORY_SHORT)) {
-        const metrics = metricsConfig.metrics
-            .filter(m => m.category === catKey)
-            .map(m => ({ key: m.column, short: m.short_name || m.display_name.substring(0, 4) }));
-        if (metrics.length > 0) result[catShort] = metrics;
-    }
-    return result;
-}
+pageHooks.rightPanelSelector = '#right-panel';
 
 // ============================================================================
-// Init
+// Auth
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -118,17 +61,12 @@ function adminFetch(url, opts = {}) {
     return fetch(url, opts);
 }
 
-async function initAdmin() {
-    // Fetch centralized metrics config from backend
-    try {
-        const mcResponse = await fetch(`${API_BASE}/api/metrics-config`);
-        if (mcResponse.ok) {
-            metricsConfig = await mcResponse.json();
-        }
-    } catch (error) {
-        console.warn('Failed to fetch metrics config:', error);
-    }
+// ============================================================================
+// Init
+// ============================================================================
 
+async function initAdmin() {
+    await fetchMetricsConfig();
     initMap();
     setupResizeHandle();
     setupEventListeners();
@@ -137,340 +75,21 @@ async function initAdmin() {
 }
 
 // ============================================================================
-// Map (adapted from app.js)
+// Event Listeners
 // ============================================================================
 
-function initMap() {
-    map = L.map('map', { center: [37.76, -122.44], zoom: 12, zoomControl: true });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap, &copy; CARTO',
-        maxZoom: 19,
-    }).addTo(map);
-    loadSchoolLocations();
-}
-
-async function loadSchoolLocations() {
-    try {
-        const res = await fetch(`${API_BASE}/api/schools`);
-        if (!res.ok) return;
-        const data = await res.json();
-        renderSchoolMarkers(data.schools);
-    } catch (e) { console.error('Error loading schools:', e); }
-}
-
-function renderSchoolMarkers(schools) {
-    if (!schools || !schools.length) return;
-    if (schoolMarkersLayer) map.removeLayer(schoolMarkersLayer);
-
-    schoolMarkersLayer = L.layerGroup();
-    schools.forEach(s => {
-        const icon = L.divIcon({
-            html: '<div class="school-marker">&#127979;</div>',
-            className: 'school-marker-container',
-            iconSize: [20, 20], iconAnchor: [10, 10],
-        });
-        const marker = L.marker([s.lat, s.lon], { icon });
-        let tip = `<strong>${s.name}</strong>`;
-        if (s.total_capacity) tip += `<br>Capacity: ${s.total_capacity}`;
-        marker.bindTooltip(tip, { direction: 'top', offset: [0, -10], className: 'school-tooltip' });
-        marker.addTo(schoolMarkersLayer);
-    });
-    if (schoolsVisible) schoolMarkersLayer.addTo(map);
-}
-
-async function loadGeojson() {
-    if (geojsonData) return geojsonData;
-    const res = await fetch(`${API_BASE}/api/geojson`);
-    if (!res.ok) throw new Error('Failed to load GeoJSON');
-    geojsonData = await res.json();
-    return geojsonData;
-}
-
-function showMapLoading(show) {
-    document.getElementById('map-loading-overlay').classList.toggle('hidden', !show);
-}
-
-async function loadSolution(path) {
-    showMapLoading(true);
-    try {
-        const [geojson, solRes] = await Promise.all([
-            loadGeojson(),
-            fetch(`${API_BASE}/api/solution/${encodeURIComponent(path)}`),
-        ]);
-        if (!solRes.ok) throw new Error('Failed to load solution');
-        currentSolution = await solRes.json();
-        renderMap(geojson);
-        renderLegend();
-        updateComparisonTable();
-        refreshSingleChart();
-        document.getElementById('map-placeholder').classList.add('hidden');
-    } catch (e) {
-        console.error('Error loading solution:', e);
-    } finally {
-        showMapLoading(false);
-    }
-}
-
-function renderMap(geojson) {
-    if (geojsonLayer) map.removeLayer(geojsonLayer);
-    const { zones, zone_data, colors, zone_index_map } = currentSolution;
-
-    geojsonLayer = L.geoJSON(geojson, {
-        style: feature => {
-            const bgId = String(feature.properties.BlockGroup);
-            const zoneId = zones[bgId];
-            const color = zoneId !== undefined ? (colors[String(zoneId)] || '#808080') : '#cccccc';
-            return { fillColor: color, fillOpacity: 0.6, color: '#333', weight: 0.5 };
-        },
-        onEachFeature: (feature, layer) => {
-            const bgId = String(feature.properties.BlockGroup);
-            const zoneId = zones[bgId];
-            const zd = zoneId !== undefined ? zone_data[String(zoneId)] : null;
-            const zi = zoneId !== undefined && zone_index_map ? zone_index_map[String(zoneId)] : null;
-
-            let tip = `<strong>BlockGroup: ${bgId}</strong>`;
-            if (zi != null) tip += `<br><span>Zone ${zi}</span>`;
-            if (zd) {
-                tip += `<br>Students: ${Math.round(zd.ge_students)}`;
-                tip += `<br>FRL: ${(zd.FRL_pct || 0).toFixed(1)}%`;
-            }
-            layer.bindTooltip(tip, { sticky: true });
-            layer.on({
-                mouseover: e => e.target.setStyle({ weight: 2, fillOpacity: 0.8 }),
-                mouseout: e => geojsonLayer.resetStyle(e.target),
-            });
+function setupEventListeners() {
+    document.getElementById('reset-all-btn').addEventListener('click', () => {
+        for (const col of Object.keys(filterBounds)) {
+            filterBounds[col] = { min_bound: null, max_bound: null };
         }
-    }).addTo(map);
-
-    map.invalidateSize();
-    map.fitBounds(geojsonLayer.getBounds());
-}
-
-function renderLegend() {
-    const el = document.getElementById('zone-legend');
-    if (!el || !currentSolution) return;
-    const { colors, zone_index_map } = currentSolution;
-    if (!colors || !zone_index_map) { el.classList.add('hidden'); return; }
-
-    const entries = Object.entries(zone_index_map)
-        .map(([zoneId, idx]) => ({ zoneId, index: idx, color: colors[zoneId] || '#808080' }))
-        .sort((a, b) => a.index - b.index);
-
-    let html = '<div class="legend-header"><h4>Zones</h4>';
-    if (schoolMarkersLayer) {
-        const txt = schoolsVisible ? 'Hide Schools' : 'Show Schools';
-        const cls = schoolsVisible ? 'active' : '';
-        html += `<button id="toggle-schools-btn" class="toggle-schools-btn ${cls}">${txt}</button>`;
-    }
-    html += '</div>';
-    entries.forEach(e => {
-        html += `<div class="legend-item"><div class="legend-color" style="background:${e.color}"></div><span>${e.index}</span></div>`;
-    });
-    el.innerHTML = html;
-    el.classList.remove('hidden');
-
-    const btn = document.getElementById('toggle-schools-btn');
-    if (btn) btn.addEventListener('click', toggleSchools);
-}
-
-function toggleSchools() {
-    if (!schoolMarkersLayer || !map) return;
-    schoolsVisible = !schoolsVisible;
-    if (schoolsVisible) map.addLayer(schoolMarkersLayer);
-    else map.removeLayer(schoolMarkersLayer);
-    renderLegend();
-}
-
-// ============================================================================
-// Comparison Table
-// ============================================================================
-
-function getPercentileRanking(p) {
-    if (p >= 80) return 'excellent';
-    if (p >= 60) return 'good';
-    if (p >= 40) return 'average';
-    if (p >= 20) return 'below-avg';
-    return 'poor';
-}
-
-function formatValue(value, key) {
-    if (value == null) return '-';
-    if (key.includes('distance')) return value.toFixed(2) + ' mi';
-    if (key === 'boundary_cost') return Math.round(value).toString();
-    return value.toFixed(3);
-}
-
-function updateComparisonTable() {
-    const container = document.getElementById('comparison-table-container');
-    const ranks = currentSolution && currentSolution.percentile_ranks;
-    if (!currentSolution || !currentSolution.metrics || !ranks) {
-        container.innerHTML = '<p class="no-solution-msg">Adjust filters to see a solution</p>';
-        return;
-    }
-
-    const metrics = currentSolution.metrics;
-
-    // Build comparison categories dynamically from metricsConfig
-    const cats = getComparisonCategories();
-
-    let html = '<div class="category-list">';
-    for (const [cat, ml] of Object.entries(cats)) {
-        const catId = cat.toLowerCase();
-        let pSum = 0, pCount = 0;
-        ml.forEach(({ key }) => {
-            const r = ranks[key];
-            if (r && r.percentile != null) { pSum += r.percentile; pCount++; }
-        });
-        const avgP = pCount > 0 ? Math.round(pSum / pCount) : null;
-        const avgR = avgP != null ? getPercentileRanking(avgP) : 'average';
-        const avgBadge = avgP != null ? `<span class="percentile-indicator ${avgR}">${avgP}%</span>` : '';
-
-        html += `<div class="category-card collapsed" data-category="${catId}" data-avg-badge="${encodeURIComponent(avgBadge)}">`;
-        html += `<div class="category-card-header">`;
-        html += `<span class="category-card-title"><span class="chevron">&#9654;</span> ${cat}</span>`;
-        html += `<span class="category-avg-rank">${avgBadge}</span></div>`;
-        html += `<table class="comparison-table category-metrics hidden">`;
-        ml.forEach(({ key, name }) => {
-            const v = metrics[key];
-            const r = ranks[key];
-            if (v === undefined || v === null) return;
-            const chartConfigs = getChartConfig();
-            const clickable = chartConfigs[key] && chartConfigs[key].type !== 'none';
-            const sel = key === selectedMetricKey ? ' selected' : '';
-            const rankBadge = r
-                ? `<span class="percentile-indicator ${r.ranking}">${r.percentile}%</span>`
-                : `<span class="percentile-indicator">—</span>`;
-            html += `<tr class="metric-row${sel}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
-            html += `<td class="metric-name">${name}</td>`;
-            html += `<td class="metric-rank">${rankBadge}</td></tr>`;
-        });
-        html += `</table></div>`;
-    }
-    html += '</div>';
-    container.innerHTML = html;
-
-    container.querySelectorAll('.category-card').forEach(card => {
-        card.querySelector('.category-card-header').addEventListener('click', () => {
-            const collapsed = card.classList.contains('collapsed');
-            if (collapsed) {
-                card.classList.replace('collapsed', 'expanded');
-                card.querySelector('.chevron').innerHTML = '&#9660;';
-                card.querySelector('.category-avg-rank').innerHTML = '';
-                card.querySelector('.category-metrics').classList.remove('hidden');
-            } else {
-                card.classList.replace('expanded', 'collapsed');
-                card.querySelector('.chevron').innerHTML = '&#9654;';
-                card.querySelector('.category-avg-rank').innerHTML = decodeURIComponent(card.dataset.avgBadge);
-                card.querySelector('.category-metrics').classList.add('hidden');
-            }
-        });
+        renderFilterSliders();
+        applyFilters();
     });
 
-    container.querySelectorAll('.metric-row[data-clickable="true"]').forEach(row => {
-        row.addEventListener('click', () => showSingleChart(row.dataset.key));
-    });
-}
-
-// ============================================================================
-// Charts
-// ============================================================================
-
-function showSingleChart(metricKey) {
-    if (!currentSolution || !currentSolution.zone_data) return;
-    const chartConfigs = getChartConfig();
-    const config = chartConfigs[metricKey];
-    if (!config || config.type === 'none') return;
-
-    const zoneData = currentSolution.zone_data;
-    const zoneIndexMap = currentSolution.zone_index_map || {};
-    const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
-    const labels = zoneIds.map(id => `Zone ${zoneIndexMap[id] || id}`);
-
-    const canvas = document.getElementById('chart-single');
-    document.getElementById('charts-panel').classList.remove('hidden');
-    if (singleChart) { singleChart.destroy(); singleChart = null; }
-
-    const defaultOpts = {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
-    };
-
-    if (config.type === 'ethnicity') {
-        // Use dynamic ethnicity config
-        const ethnicityDisplay = metricsConfig ? metricsConfig.ethnicities.display : [
-            { key: 'Ethnicity_Black_or_African_American', label: 'Black/African American' },
-            { key: 'Ethnicity_Hispanic/Latinx', label: 'Hispanic/Latinx' },
-            { key: 'Ethnicity_White', label: 'White' },
-            { key: 'Ethnicity_Asian', label: 'Asian' },
-        ];
-        const eKeys = ethnicityDisplay.map(e => e.key);
-        const eLabels = ethnicityDisplay.map(e => e.label);
-        const eData = eKeys.map(k => zoneIds.map(id => ((zoneData[id].ethnicity_pcts || {})[k] || 0) * 100));
-        const other = zoneIds.map((_, i) => Math.max(0, 100 - eData.reduce((s, a) => s + a[i], 0)));
-        const datasets = eLabels.map((label, i) => ({
-            label,
-            data: eData[i],
-            backgroundColor: CHART_COLORS.ethnicities[label] || CHART_COLORS.primary,
-        }));
-        datasets.push({ label: 'Other', data: other, backgroundColor: CHART_COLORS.ethnicities['Other'] });
-        singleChart = new Chart(canvas.getContext('2d'), {
-            type: 'bar',
-            data: { labels, datasets },
-            options: { ...defaultOpts,
-                plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
-                scales: { x: { stacked: true }, y: { stacked: true, max: 100, title: { display: true, text: '%' } } }
-            }
-        });
-    } else {
-        // Simple bar chart; null means no zone-level data for that zone
-        const data = zoneIds.map(id => {
-            const val = zoneData[id] ? zoneData[id][config.field] : undefined;
-            return (val === undefined || val === null) ? null : val;
-        });
-
-        const chartContainer = document.getElementById('single-chart-container');
-        let noDataMsg = chartContainer.querySelector('.no-zone-data-msg');
-
-        if (data.every(v => v === null)) {
-            canvas.style.display = 'none';
-            if (!noDataMsg) {
-                noDataMsg = document.createElement('p');
-                noDataMsg.className = 'no-zone-data-msg';
-                chartContainer.appendChild(noDataMsg);
-            }
-            noDataMsg.textContent = 'Zone-level breakdown not available for this metric.';
-            noDataMsg.style.display = 'block';
-        } else {
-            canvas.style.display = '';
-            if (noDataMsg) noDataMsg.style.display = 'none';
-
-            const scaleOpts = { beginAtZero: true };
-            if (config.max) scaleOpts.max = config.max;
-            if (config.unit) scaleOpts.title = { display: true, text: config.unit };
-            singleChart = new Chart(canvas.getContext('2d'), {
-                type: 'bar',
-                data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
-                options: { ...defaultOpts, scales: { y: scaleOpts } }
-            });
-        }
-    }
-
-    document.getElementById('charts-header').textContent = config.title;
-    const sub = document.getElementById('charts-subtitle');
-    if (sub) {
-        const mv = currentSolution.metrics[metricKey];
-        sub.textContent = mv != null ? `District-wide: ${formatValue(mv, metricKey)}` : '';
-    }
-
-    document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
-    const sel = document.querySelector(`.metric-row[data-key="${metricKey}"]`);
-    if (sel) sel.classList.add('selected');
-    selectedMetricKey = metricKey;
-}
-
-function refreshSingleChart() {
-    if (selectedMetricKey) showSingleChart(selectedMetricKey);
+    document.getElementById('save-solution-btn').addEventListener('click', saveSolution);
+    setupMetricSearch();
+    setupChartsClose();
 }
 
 // ============================================================================
@@ -484,13 +103,11 @@ async function loadSolutionSpace() {
     totalPareto = data.total_pareto;
     categories = data.categories;
 
-    // Initialize filter bounds (all unconstrained)
     filterBounds = {};
     for (const col of Object.keys(solutionSpaceStats)) {
         filterBounds[col] = { min_bound: null, max_bound: null };
     }
 
-    // Show core metrics by default
     visibleMetrics = new Set();
     for (const [col, stat] of Object.entries(solutionSpaceStats)) {
         if (stat.is_core) visibleMetrics.add(col);
@@ -509,9 +126,7 @@ async function applyFilters() {
     const activeBounds = {};
     for (const col of Object.keys(filterBounds)) {
         const b = filterBounds[col];
-        if (b.min_bound != null || b.max_bound != null) {
-            activeBounds[col] = b;
-        }
+        if (b.min_bound != null || b.max_bound != null) activeBounds[col] = b;
     }
 
     const res = await adminFetch(`${API_BASE}/api/admin/filter`, {
@@ -573,11 +188,8 @@ function showZeroState() {
             btn.className = 'relaxation-btn';
             btn.textContent = `Relax ${stat.display_name} to ${formatMetricVal(col, newBound)}`;
             btn.addEventListener('click', () => {
-                if (stat.direction === 'minimize') {
-                    filterBounds[col].max_bound = newBound;
-                } else {
-                    filterBounds[col].min_bound = newBound;
-                }
+                if (stat.direction === 'minimize') filterBounds[col].max_bound = newBound;
+                else filterBounds[col].min_bound = newBound;
                 updateSliderUI(col);
                 applyFilters();
             });
@@ -597,13 +209,9 @@ function hideZeroState() {
 function updateCentroidSummary(metrics) {
     const panel = document.getElementById('centroid-summary');
     const container = document.getElementById('centroid-metrics');
-    if (!metrics) {
-        panel.classList.add('hidden');
-        return;
-    }
+    if (!metrics) { panel.classList.add('hidden'); return; }
     panel.classList.remove('hidden');
 
-    // Show core metrics
     let html = '';
     for (const [col, stat] of Object.entries(solutionSpaceStats)) {
         if (!stat.is_core || !(col in metrics)) continue;
@@ -616,14 +224,13 @@ function updateCentroidSummary(metrics) {
 }
 
 // ============================================================================
-// Filter Sliders Rendering
+// Filter Sliders
 // ============================================================================
 
 function renderFilterSliders() {
     const container = document.getElementById('filter-sliders');
     container.innerHTML = '';
 
-    // Group visible metrics by category
     const grouped = {};
     for (const col of visibleMetrics) {
         const stat = solutionSpaceStats[col];
@@ -682,7 +289,6 @@ function buildSliderRow(col) {
     row.className = 'metric-slider-row';
     row.dataset.col = col;
 
-    // Determine initial slider positions (full range if unconstrained)
     const b = filterBounds[col] || {};
     const lo = b.min_bound != null ? b.min_bound : gMin;
     const hi = b.max_bound != null ? b.max_bound : gMax;
@@ -712,21 +318,14 @@ function buildSliderRow(col) {
         </div>
     `;
 
-    // Wire up sliders
     const minSlider = row.querySelector('.slider-min');
     const maxSlider = row.querySelector('.slider-max');
 
     const onSliderChange = () => {
         let loVal = parseFloat(minSlider.value);
         let hiVal = parseFloat(maxSlider.value);
+        if (loVal > hiVal) { loVal = hiVal; minSlider.value = loVal; }
 
-        // Ensure min <= max
-        if (loVal > hiVal) {
-            loVal = hiVal;
-            minSlider.value = loVal;
-        }
-
-        // Update filter bounds
         const isMinChanged = Math.abs(loVal - gMin) > step * 0.5;
         const isMaxChanged = Math.abs(hiVal - gMax) > step * 0.5;
         filterBounds[col] = {
@@ -741,7 +340,6 @@ function buildSliderRow(col) {
     minSlider.addEventListener('input', onSliderChange);
     maxSlider.addEventListener('input', onSliderChange);
 
-    // Action buttons
     row.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', e => {
             e.stopPropagation();
@@ -778,14 +376,12 @@ function updateSliderVisuals(row, col) {
     const lo = parseFloat(minSlider.value);
     const hi = parseFloat(maxSlider.value);
 
-    // Active band position
     const activeBand = row.querySelector('.slider-active-band');
     const leftPct = ((lo - gMin) / range) * 100;
     const widthPct = ((hi - lo) / range) * 100;
     activeBand.style.left = leftPct + '%';
     activeBand.style.width = widthPct + '%';
 
-    // Feasible band
     const fBand = row.querySelector('.slider-feasible-band');
     const fs = feasibleStats[col];
     if (fs) {
@@ -798,7 +394,6 @@ function updateSliderVisuals(row, col) {
         fBand.style.width = '100%';
     }
 
-    // Value labels
     const b = filterBounds[col] || {};
     const loLabel = row.querySelector('.sv-lo');
     const hiLabel = row.querySelector('.sv-hi');
@@ -807,7 +402,6 @@ function updateSliderVisuals(row, col) {
     loLabel.classList.toggle('active', b.min_bound != null);
     hiLabel.classList.toggle('active', b.max_bound != null);
 
-    // Show/hide loosen button based on whether filter is active
     const hasFilter = b.min_bound != null || b.max_bound != null;
     const actions = row.querySelector('.metric-slider-actions');
     let loosenBtn = actions.querySelector('.btn-loosen');
@@ -862,7 +456,7 @@ function loosenMetric(col) {
 }
 
 // ============================================================================
-// Metric Search (add non-core metrics)
+// Metric Search
 // ============================================================================
 
 function setupMetricSearch() {
@@ -907,7 +501,7 @@ function setupMetricSearch() {
 }
 
 // ============================================================================
-// Solution History
+// Solution History (admin version)
 // ============================================================================
 
 function saveSolution() {
@@ -927,201 +521,17 @@ function saveSolution() {
     }
 
     savedSolutions.push({
-        index, path,
+        index,
+        path,
         solutionData: JSON.parse(JSON.stringify(currentSolution)),
         label: `Solution #${index}`,
-        pros: '', cons: '',
+        pros: '',
+        cons: '',
         timestamp: new Date().toISOString(),
         categoryScores,
     });
     currentViewedIndex = index;
     renderSolutionHistory();
-}
-
-// Build comparison table categories dynamically from metricsConfig
-const COMPARISON_CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance' };
-
-function getComparisonCategories() {
-    if (!metricsConfig) return {};
-    const result = {};
-    for (const [catKey, catDisplay] of Object.entries(COMPARISON_CATEGORY_DISPLAY)) {
-        const metrics = metricsConfig.metrics
-            .filter(m => m.category === catKey && m.is_core)
-            .map(m => ({ key: m.column, name: m.display_name }));
-        if (metrics.length > 0) result[catDisplay] = metrics;
-    }
-    return result;
-}
-
-function getCategoryPercentile(ranks, categoryMetrics) {
-    if (!ranks) return null;
-    let sum = 0, count = 0;
-    for (const m of categoryMetrics) {
-        const r = ranks[m.key];
-        if (r && r.percentile != null) { sum += r.percentile; count++; }
-    }
-    return count > 0 ? Math.round(sum / count) : null;
-}
-
-function viewSavedSolution(index) {
-    const entry = savedSolutions.find(s => s.index === index);
-    if (!entry) return;
-    currentViewedIndex = index;
-    currentSolution = entry.solutionData;
-    loadGeojson().then(geojson => {
-        renderMap(geojson);
-        renderLegend();
-        updateComparisonTable();
-        refreshSingleChart();
-        document.getElementById('map-placeholder').classList.add('hidden');
-    });
-    renderSolutionHistory();
-    updateProsConsPanel();
-}
-
-function toggleHistoryExpanded() {
-    const container = document.getElementById('solution-history');
-    const toggleBtn = document.getElementById('solution-history-toggle');
-    if (!container) return;
-    historyExpanded = !historyExpanded;
-    container.classList.toggle('collapsed', !historyExpanded);
-    container.classList.toggle('expanded', historyExpanded);
-    if (toggleBtn) {
-        toggleBtn.innerHTML = historyExpanded ? '&#9660;' : '&#9650;';
-        toggleBtn.title = historyExpanded ? 'Collapse' : 'Expand';
-    }
-    updateProsConsPanel();
-}
-
-function renderSolutionHistory() {
-    const container = document.getElementById('solution-history');
-    const cardsContainer = document.getElementById('solution-cards');
-    if (!container || !cardsContainer) return;
-
-    if (savedSolutions.length === 0) {
-        container.classList.add('hidden');
-        return;
-    }
-
-    container.classList.remove('hidden');
-    if (!container.classList.contains('expanded') && !container.classList.contains('collapsed')) {
-        container.classList.add('collapsed');
-    }
-
-    cardsContainer.innerHTML = '';
-    savedSolutions.forEach(entry => {
-        const card = document.createElement('div');
-        card.className = 'solution-card' + (entry.index === currentViewedIndex ? ' active' : '');
-
-        const top = document.createElement('div');
-        top.className = 'solution-card-top';
-        top.innerHTML = `<span class="solution-card-number">${entry.index}</span><span class="solution-card-label">${entry.label}</span>`;
-        card.appendChild(top);
-
-        const metricsRow = document.createElement('div');
-        metricsRow.className = 'solution-card-metrics';
-        const scores = entry.categoryScores || {};
-        for (const [cat, pct] of Object.entries(scores)) {
-            if (pct === null) continue;
-            const ranking = getPercentileRanking(pct);
-            const badge = document.createElement('span');
-            badge.className = `solution-metric-badge percentile-indicator ${ranking}`;
-            badge.innerHTML = `${cat} ${pct}%`;
-            metricsRow.appendChild(badge);
-        }
-        card.appendChild(metricsRow);
-        card.addEventListener('click', () => viewSavedSolution(entry.index));
-        cardsContainer.appendChild(card);
-    });
-
-    const toggleBtn = document.getElementById('solution-history-toggle');
-    if (toggleBtn && !toggleBtn._wired) {
-        toggleBtn.addEventListener('click', toggleHistoryExpanded);
-        toggleBtn._wired = true;
-    }
-}
-
-function updateProsConsPanel() {
-    const panel = document.getElementById('solution-proscons-panel');
-    const prosEl = document.getElementById('solution-pros-textarea');
-    const consEl = document.getElementById('solution-cons-textarea');
-    const targetLabel = document.getElementById('solution-proscons-target');
-    if (!panel || !prosEl || !consEl) return;
-
-    const entry = savedSolutions.find(s => s.index === currentViewedIndex);
-    if (!historyExpanded || !entry) {
-        panel.classList.add('hidden');
-        return;
-    }
-    panel.classList.remove('hidden');
-    if (targetLabel) targetLabel.textContent = `Solution #${entry.index}`;
-
-    [['solution-pros-textarea', 'pros'], ['solution-cons-textarea', 'cons']].forEach(([id, field]) => {
-        const el = document.getElementById(id);
-        const fresh = el.cloneNode(true);
-        el.parentNode.replaceChild(fresh, el);
-        fresh.id = id;
-        fresh.value = entry[field] || '';
-        fresh.addEventListener('blur', () => {
-            const text = fresh.value.trim();
-            if (entry[field] !== text) { entry[field] = text; renderSolutionHistory(); }
-        });
-    });
-}
-
-// ============================================================================
-// Event Listeners & Resize Handle
-// ============================================================================
-
-function setupEventListeners() {
-    document.getElementById('reset-all-btn').addEventListener('click', () => {
-        for (const col of Object.keys(filterBounds)) {
-            filterBounds[col] = { min_bound: null, max_bound: null };
-        }
-        renderFilterSliders();
-        applyFilters();
-    });
-
-    document.getElementById('save-solution-btn').addEventListener('click', saveSolution);
-    setupMetricSearch();
-
-    const chartsClose = document.getElementById('charts-close');
-    if (chartsClose) {
-        chartsClose.addEventListener('click', () => {
-            document.getElementById('charts-panel').classList.add('hidden');
-            if (singleChart) { singleChart.destroy(); singleChart = null; }
-            selectedMetricKey = null;
-            document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
-        });
-    }
-}
-
-function setupResizeHandle() {
-    const handle = document.getElementById('resize-handle-right');
-    const main = document.querySelector('main');
-    if (!handle || !main) return;
-
-    let startX, startWidth;
-    handle.addEventListener('mousedown', e => {
-        e.preventDefault();
-        startX = e.clientX;
-        startWidth = document.getElementById('right-panel').offsetWidth;
-        handle.classList.add('dragging');
-
-        const onMove = ev => {
-            const diff = startX - ev.clientX;
-            const newWidth = Math.max(300, Math.min(700, startWidth + diff));
-            main.style.gridTemplateColumns = `1fr 4px ${newWidth}px`;
-            map && map.invalidateSize();
-        };
-        const onUp = () => {
-            handle.classList.remove('dragging');
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-    });
 }
 
 // ============================================================================
