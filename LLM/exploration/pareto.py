@@ -15,35 +15,10 @@ from .metrics_config import (
     ALL_METRICS,
     CORE_METRICS,
     METRIC_BY_COLUMN,
-    METRIC_BY_NAME,
     get_metric_columns,
     get_core_metric_columns,
     MetricSpec,
 )
-
-
-# ============================================================================
-# BACKWARD COMPATIBILITY: METRIC_CONFIG dict
-# ============================================================================
-
-def _build_metric_config() -> dict[str, dict]:
-    """Build METRIC_CONFIG dict for backward compatibility."""
-    config = {}
-    for m in ALL_METRICS:
-        config[m.display_name] = {
-            "column": m.column,
-            "direction": m.direction,
-            "description": m.description,
-            "category": m.category,
-            "is_core": m.is_core,
-        }
-    return config
-
-
-METRIC_CONFIG = _build_metric_config()
-
-# Reverse mapping: column name -> user-friendly name
-COLUMN_TO_NAME = {m.column: m.display_name for m in ALL_METRICS}
 
 
 # ============================================================================

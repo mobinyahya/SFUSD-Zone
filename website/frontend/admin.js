@@ -10,6 +10,7 @@ let visibleMetrics = new Set();
 let totalPareto = 0;
 let currentFilteredCount = 0;
 let feasibleStats = {};
+let availableStats = {};
 let categories = {};
 
 // Debounce
@@ -138,7 +139,8 @@ async function applyFilters() {
 
     updateSolutionBadge(data.solution_count, data.total_pareto);
     feasibleStats = data.feasible_stats || {};
-    updateFeasibleBands();
+    availableStats = data.available_stats || {};
+    adjustSliderRanges();
 
     if (data.solution_count === 0) {
         showZeroState();
@@ -428,10 +430,12 @@ function updateSliderUI(col) {
     updateSliderVisuals(row, col);
 }
 
-function updateFeasibleBands() {
+function adjustSliderRanges() {
+    if (Object.keys(feasibleStats).length === 0) return;
     for (const col of visibleMetrics) {
         const row = document.querySelector(`.metric-slider-row[data-col="${col}"]`);
-        if (row) updateSliderVisuals(row, col);
+        if (!row) continue;
+        updateSliderVisuals(row, col);
     }
 }
 
@@ -440,15 +444,20 @@ function loosenMetric(col) {
     const b = filterBounds[col];
     if (!b) return;
 
+    const available = availableStats[col];
     const expansionFactor = 0.3;
+    const step = getStep(stat.min, stat.max);
+
     if (stat.direction === 'minimize' && b.max_bound != null) {
-        const globalMax = stat.max;
-        b.max_bound = Math.min(globalMax, b.max_bound + (globalMax - b.max_bound) * expansionFactor);
-        if (Math.abs(b.max_bound - globalMax) < getStep(stat.min, globalMax) * 0.5) b.max_bound = null;
+        const target = available ? available.max : stat.max;
+        if (Math.abs(b.max_bound - target) < step * 0.5) return;
+        b.max_bound = Math.min(target, b.max_bound + (target - b.max_bound) * expansionFactor);
+        if (Math.abs(b.max_bound - target) < step * 0.5) b.max_bound = target;
     } else if (stat.direction === 'maximize' && b.min_bound != null) {
-        const globalMin = stat.min;
-        b.min_bound = Math.max(globalMin, b.min_bound - (b.min_bound - globalMin) * expansionFactor);
-        if (Math.abs(b.min_bound - globalMin) < getStep(globalMin, stat.max) * 0.5) b.min_bound = null;
+        const target = available ? available.min : stat.min;
+        if (Math.abs(b.min_bound - target) < step * 0.5) return;
+        b.min_bound = Math.max(target, b.min_bound - (b.min_bound - target) * expansionFactor);
+        if (Math.abs(b.min_bound - target) < step * 0.5) b.min_bound = target;
     }
 
     updateSliderUI(col);

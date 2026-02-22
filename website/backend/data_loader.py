@@ -612,6 +612,7 @@ def filter_and_centroid(bounds: dict) -> dict:
         result["centroid_path"] = None
         result["centroid_metrics"] = None
         result["feasible_stats"] = {}
+        result["available_stats"] = {}
         return result
 
     norm_filtered = normalize_metrics(filtered)
@@ -633,6 +634,35 @@ def filter_and_centroid(bounds: dict) -> dict:
             continue
         fstats[col] = {"min": float(vals.min()), "max": float(vals.max())}
     result["feasible_stats"] = fstats
+
+    # Available stats: for each active filter, compute metric range without
+    # that filter (but with all others). Tells frontend how far loosening can go.
+    active_cols = [
+        c for c, b in bounds.items()
+        if b.get("min_bound") is not None or b.get("max_bound") is not None
+    ]
+    available = {}
+    for target_col in active_cols:
+        target_metric = METRIC_BY_COLUMN.get(target_col)
+        if not target_metric:
+            continue
+        relaxed_fs = FilterState()
+        for c, b in bounds.items():
+            if c == target_col:
+                continue
+            m = METRIC_BY_COLUMN.get(c)
+            if not m:
+                continue
+            relaxed_fs.bounds[m.display_name] = FilterBounds(
+                min_bound=b.get("min_bound"),
+                max_bound=b.get("max_bound"),
+            )
+        relaxed = apply_filters(pareto, relaxed_fs)
+        if len(relaxed) > 0 and target_col in relaxed.columns:
+            vals = relaxed[target_col].dropna()
+            if len(vals) > 0:
+                available[target_col] = {"min": float(vals.min()), "max": float(vals.max())}
+    result["available_stats"] = available
 
     return result
 
