@@ -34,8 +34,7 @@ from .filters import (
     FilterState,
     apply_filters,
     get_filter_summary,
-    calculate_tightening,
-    calculate_loosening,
+    adjust_filter_bound,
     find_relaxation_needed,
 )
 from .clusters import (
@@ -273,7 +272,7 @@ def build_tools():
                         },
                         "strength": {
                             "type": "string",
-                            "description": "How aggressively to tighten: 'mild' (~20% reduction), 'moderate' (~30%), or 'aggressive' (~50%)",
+                            "description": "How aggressively to tighten: 'mild' (~5% of range), 'moderate' (~10%), or 'aggressive' (~25%)",
                             "enum": ["mild", "moderate", "aggressive"],
                         },
                     },
@@ -293,6 +292,11 @@ def build_tools():
                             "type": "string",
                             "description": "The display name of the metric to loosen.",
                             "enum": all_metric_names,
+                        },
+                        "strength": {
+                            "type": "string",
+                            "description": "How much to loosen: 'mild' (~10% toward unconstrained), 'moderate' (~25%), or 'aggressive' (~50%)",
+                            "enum": ["mild", "moderate", "aggressive"],
                         },
                     },
                     "required": ["metric_name"],
@@ -852,30 +856,33 @@ class ZoningAgent:
         elif tool_name == "tighten_filter":
             metric_name = arguments["metric_name"]
             strength = arguments.get("strength", "moderate")
-            
-            reduction_map = {"mild": 0.2, "moderate": 0.3, "aggressive": 0.5}
-            reduction = reduction_map.get(strength, 0.3)
-            
-            # Get before-state centroid
+
+            pct_map = {"mild": 0.05, "moderate": 0.10, "aggressive": 0.25}
+            pct = pct_map.get(strength, 0.10)
+
             before_centroid, _, before_count = self._get_current_centroid()
             if before_count <= 1:
                 return ToolResult(f"Cannot tighten: only {before_count} solution(s) remaining. Consider loosening other filters first.")
-            
+
             filtered = self._get_filtered_solutions()
             metric = METRIC_BY_NAME[metric_name]
-            new_bound, _ = calculate_tightening(filtered, metric_name, reduction)
-            
+            new_bound = adjust_filter_bound(
+                self.pareto_original, filtered, self.filter_state,
+                metric_name, "tighten", pct,
+                current_value=float(before_centroid[metric.column]),
+            )
+
             if metric.direction == "minimize":
                 self.filter_state.bounds[metric_name].max_bound = new_bound
             else:
                 self.filter_state.bounds[metric_name].min_bound = new_bound
-            
+
             self._invalidate_centroid()
             after_centroid, after_path, after_count = self._get_current_centroid()
-            
+
             before_val = before_centroid[metric.column]
             after_val = after_centroid[metric.column] if after_centroid is not None else before_val
-            
+
             strength_text = {"mild": "mildly", "moderate": "moderately", "aggressive": "aggressively"}[strength]
             pending_version_id = len(self.state.versions)
             result_lines = [
@@ -901,27 +908,33 @@ class ZoningAgent:
         
         elif tool_name == "loosen_filter":
             metric_name = arguments["metric_name"]
-            
-            metric = METRIC_BY_NAME[metric_name]
-            new_bound, _ = calculate_loosening(
-                self.pareto_original, self.filter_state, metric_name
+            strength = arguments.get("strength", "moderate")
+
+            pct_map = {"mild": 0.10, "moderate": 0.25, "aggressive": 0.50}
+            pct = pct_map.get(strength, 0.25)
+
+            filtered = self._get_filtered_solutions()
+            new_bound = adjust_filter_bound(
+                self.pareto_original, filtered, self.filter_state,
+                metric_name, "loosen", pct,
             )
-            
+
             if new_bound is None:
                 return ToolResult(f"'{metric_name}' is already unconstrained.")
-            
+
+            metric = METRIC_BY_NAME[metric_name]
             _, _, before_count = self._get_current_centroid()
-            
+
             if metric.direction == "minimize":
                 self.filter_state.bounds[metric_name].max_bound = new_bound
             else:
                 self.filter_state.bounds[metric_name].min_bound = new_bound
-            
+
             self._invalidate_centroid()
             _, after_path, after_count = self._get_current_centroid()
-            
+
             pending_version_id = len(self.state.versions)
-            desc = f"Loosened {metric_name}"
+            desc = f"Loosened {metric_name} ({strength})"
 
             if self._defer_version_save:
                 self._pending_descriptions.append(desc)
@@ -936,7 +949,7 @@ class ZoningAgent:
                 )
 
             return ToolResult(
-                f"v{pending_version_id}: Loosened {metric_name}\n- {before_count} -> {after_count} solutions",
+                f"v{pending_version_id}: Loosened {metric_name} ({strength})\n- {before_count} -> {after_count} solutions",
                 solution_path=after_path,
             )
         
@@ -1054,7 +1067,8 @@ class ZoningAgent:
             self._invalidate_centroid()
             _, _, before_count = self._get_current_centroid()
 
-            reduction_map = {"mild": 0.2, "moderate": 0.3, "aggressive": 0.5}
+            tighten_pct_map = {"mild": 0.05, "moderate": 0.10, "aggressive": 0.25}
+            loosen_pct_map = {"mild": 0.10, "moderate": 0.25, "aggressive": 0.50}
             applied = []
 
             for adj in adjustments:
@@ -1071,22 +1085,32 @@ class ZoningAgent:
                     applied.append(f"- {metric_name}: skipped (only {len(filtered)} solution left)")
                     break
 
+                centroid_val = None
                 if direction == "tighten":
-                    reduction = reduction_map.get(strength, 0.3)
-                    new_bound, _ = calculate_tightening(filtered, metric_name, reduction)
+                    centroid, _, _ = self._get_current_centroid()
+                    if centroid is not None:
+                        centroid_val = float(centroid[metric.column])
+
+                pct = (tighten_pct_map if direction == "tighten" else loosen_pct_map).get(strength, 0.10)
+                new_bound = adjust_filter_bound(
+                    self.pareto_original, filtered, self.filter_state,
+                    metric_name, direction, pct,
+                    current_value=centroid_val,
+                )
+
+                if new_bound is not None:
                     if metric.direction == "minimize":
-                        self.filter_state.bounds[metric_name].max_bound = new_bound
-                    else:
-                        self.filter_state.bounds[metric_name].min_bound = new_bound
-                    applied.append(f"- Tightened {metric_name} ({strength})")
-                else:
-                    new_bound, _ = calculate_loosening(self.pareto_original, self.filter_state, metric_name)
-                    if new_bound is not None:
-                        if metric.direction == "minimize":
+                        if direction == "tighten":
                             self.filter_state.bounds[metric_name].max_bound = new_bound
                         else:
+                            self.filter_state.bounds[metric_name].max_bound = new_bound
+                    else:
+                        if direction == "tighten":
                             self.filter_state.bounds[metric_name].min_bound = new_bound
-                        applied.append(f"- Loosened {metric_name}")
+                        else:
+                            self.filter_state.bounds[metric_name].min_bound = new_bound
+                    self._invalidate_centroid()
+                    applied.append(f"- {'Tightened' if direction == 'tighten' else 'Loosened'} {metric_name} ({strength})")
 
             self._invalidate_centroid()
             after_centroid, after_path, after_count = self._get_current_centroid()
