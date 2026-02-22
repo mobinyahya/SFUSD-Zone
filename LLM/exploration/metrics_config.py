@@ -52,7 +52,7 @@ DIVERSITY_METRICS = [
         category="diversity",
         direction="minimize",
         is_core=True,
-        short_name="Div",
+        short_name="Racial",
     ),
     MetricSpec(
         column="FRL",
@@ -110,7 +110,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="minimize",
         is_core=True,
-        short_name="Dist",
+        short_name="Distance",
     ),
     MetricSpec(
         column="avg_schools_in_attendance_area",
@@ -119,7 +119,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="maximize",
         is_core=True,
-        short_name="Sch",
+        short_name="Schools",
     ),
     MetricSpec(
         column="boundary_cost",
@@ -128,7 +128,7 @@ DISTANCE_METRICS = [
         category="distance",
         direction="minimize",
         is_core=True,
-        short_name="Bnd",
+        short_name="Compactness",
     ),
 ]
 
@@ -170,7 +170,7 @@ PROGRAM_METRICS = [
         category="programs",
         direction="minimize",
         is_core=True,
-        short_name="Seat",
+        short_name="Seats",
     ),
     # MetricSpec(
     #     column="avg_GE_per_zone",

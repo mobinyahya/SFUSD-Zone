@@ -576,6 +576,7 @@ def get_all_metrics_stats() -> dict:
             "description": metric.description,
             "category": metric.category,
             "is_core": metric.is_core,
+            "short_name": metric.short_name or metric.display_name[:4],
         }
 
     _all_metrics_stats_cache = stats

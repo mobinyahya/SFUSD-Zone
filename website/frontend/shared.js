@@ -94,7 +94,7 @@ function getComparisonCategories() {
     for (const [catKey, catDisplay] of Object.entries(COMPARISON_CATEGORY_DISPLAY)) {
         const metrics = metricsConfig.metrics
             .filter(m => m.category === catKey && m.is_core)
-            .map(m => ({ key: m.column, name: m.display_name }));
+            .map(m => ({ key: m.column, name: m.short_name || m.display_name }));
         if (metrics.length > 0) result[catDisplay] = metrics;
     }
     return result;

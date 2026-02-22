@@ -218,7 +218,7 @@ function updateCentroidSummary(metrics) {
     for (const [col, stat] of Object.entries(solutionSpaceStats)) {
         if (!stat.is_core || !(col in metrics)) continue;
         html += `<div class="centroid-metric">
-            <span class="centroid-metric-name">${stat.display_name}</span>
+            <span class="centroid-metric-name">${stat.short_name || stat.display_name}</span>
             <span class="centroid-metric-value">${formatMetricVal(col, metrics[col])}</span>
         </div>`;
     }
