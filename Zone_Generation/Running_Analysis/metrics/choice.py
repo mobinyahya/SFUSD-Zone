@@ -9,6 +9,7 @@ import networkx as nx
 
 from Zone_Generation.Optimization.utility_evaluation import UtilityEvaluator
 from Zone_Generation.Config.Constants import get_sfusd_path, get_dropbox_path
+from Zone_Generation.Config.metrics_config import MetricColumns
 
 
 @functools.lru_cache(maxsize=1)
@@ -80,8 +81,8 @@ def compute_choice_metrics(
     valid_logsum_all = logsum_utilities['utility'][logsum_utilities['utility'] > -1e9]
     
     aggregated = {
-        'avg_max_utility': valid_max_all.mean() if len(valid_max_all) > 0 else 0.0,
-        'avg_logsum_utility': valid_logsum_all.mean() if len(valid_logsum_all) > 0 else 0.0
+        MetricColumns.AVG_MAX_UTILITY: valid_max_all.mean() if len(valid_max_all) > 0 else 0.0,
+        MetricColumns.AVG_LOGSUM_UTILITY: valid_logsum_all.mean() if len(valid_logsum_all) > 0 else 0.0
     }
     
     return aggregated, per_zone_data

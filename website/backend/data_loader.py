@@ -20,7 +20,7 @@ from LLM.exploration.pareto import (
     get_centroid_solution,
 )
 from Zone_Generation.Config.Constants import zone_colors
-from LLM.exploration.metrics_config import CORE_METRICS, ALL_METRICS, METRIC_BY_COLUMN
+from Zone_Generation.Config.metrics_config import CORE_METRICS, ALL_METRICS, METRIC_BY_COLUMN
 from LLM.exploration.filters import FilterState, FilterBounds, apply_filters, find_relaxation_needed
 
 # Paths

@@ -6,6 +6,7 @@ import math
 import networkx as nx
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
+from Zone_Generation.Config.metrics_config import MetricColumns
 
 
 def compute_diversity_metrics(
@@ -59,10 +60,10 @@ def compute_diversity_metrics(
         
         # Compute deviations from area averages
         if zone_demo['ge_students'] > 0:
-            if 'FRL' not in deviations:
-                deviations['FRL'] = []
+            if MetricColumns.FRL not in deviations:
+                deviations[MetricColumns.FRL] = []
             frl_deviation = abs(frl_pct - area_frl_pct)
-            deviations['FRL'].append(frl_deviation)
+            deviations[MetricColumns.FRL].append(frl_deviation)
             
             for ethnicity in AREA_ETHNICITIES:
                 if ethnicity not in deviations:
@@ -194,4 +195,4 @@ def compute_theil_index(
         for zone_id in zone_blocks
     }
 
-    return {'theil_index': theil_index}, per_zone_data
+    return {MetricColumns.THEIL_INDEX: theil_index}, per_zone_data

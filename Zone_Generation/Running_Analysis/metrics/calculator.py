@@ -5,6 +5,7 @@ Main metrics calculator that combines all metric modules.
 import networkx as nx
 from typing import Optional
 
+from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.Running_Analysis.metrics.base import MetricsResult, ZoneData
 from Zone_Generation.Running_Analysis.metrics.diversity import (
     compute_diversity_metrics, compute_seat_disparity, compute_theil_index
@@ -88,7 +89,7 @@ class ZoneMetricsCalculator:
         
         # Add seat disparity (solution-level and per-zone)
         seat_disparity, per_zone_seat = compute_seat_disparity(self.zone_blocks, self.G)
-        result.update({'seat_disparity': seat_disparity})
+        result.update({MetricColumns.SEAT_DISPARITY: seat_disparity})
         for zone_id, sd_data in per_zone_seat.items():
             if zone_id in result.zone_data:
                 result.zone_data[zone_id].seat_disparity = sd_data.get('seat_disparity')
@@ -177,6 +178,6 @@ class ZoneMetricsCalculator:
                         )
             except Exception as e:
                 print(f"Warning: Could not compute choice metrics: {e}")
-                result.update({'avg_max_utility': 0.0, 'avg_logsum_utility': 0.0})
+                result.update({MetricColumns.AVG_MAX_UTILITY: 0.0, MetricColumns.AVG_LOGSUM_UTILITY: 0.0})
         
         return result

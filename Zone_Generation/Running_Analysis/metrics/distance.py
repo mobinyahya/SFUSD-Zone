@@ -8,6 +8,8 @@ Includes:
 
 import networkx as nx
 
+from Zone_Generation.Config.metrics_config import MetricColumns
+
 
 def compute_distance_metrics(
     zone_dict: dict[int, int],
@@ -100,12 +102,12 @@ def compute_distance_metrics(
     
     # Aggregate metrics
     aggregated = {
-        'avg_closest_zone_school_distance': (
-            sum(all_avg_distances) / len(all_avg_distances) 
+        MetricColumns.AVG_CLOSEST_ZONE_SCHOOL_DISTANCE: (
+            sum(all_avg_distances) / len(all_avg_distances)
             if all_avg_distances else 0.0
         ),
-        'avg_schools_in_attendance_area': (
-            sum(all_aa_counts) / len(all_aa_counts) 
+        MetricColumns.AVG_SCHOOLS_IN_ATTENDANCE_AREA: (
+            sum(all_aa_counts) / len(all_aa_counts)
             if all_aa_counts else 0.0
         )
     }

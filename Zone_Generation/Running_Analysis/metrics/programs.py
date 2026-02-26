@@ -9,6 +9,7 @@ import pandas as pd
 import networkx as nx
 
 from Zone_Generation.Config.Constants import get_sfusd_path, PROGRAM_CATEGORIES
+from Zone_Generation.Config.metrics_config import MetricColumns
 
 LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
 SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])
@@ -96,14 +97,14 @@ def compute_program_metrics(
     # Compute aggregated metrics
     num_zones = len(zone_schools) if zone_schools else 1
     aggregated = {
-        'avg_total_programs_per_zone': sum(all_program_counts) / num_zones if all_program_counts else 0,
-        'avg_language_immersion_per_zone': sum(all_lang_counts) / num_zones if all_lang_counts else 0,
-        'avg_special_ed_per_zone': sum(all_sped_counts) / num_zones if all_sped_counts else 0,
+        MetricColumns.AVG_TOTAL_PROGRAMS: sum(all_program_counts) / num_zones if all_program_counts else 0,
+        MetricColumns.AVG_LANGUAGE_IMMERSION: sum(all_lang_counts) / num_zones if all_lang_counts else 0,
+        MetricColumns.AVG_SPECIAL_ED: sum(all_sped_counts) / num_zones if all_sped_counts else 0,
     }
-    
+
     # Add per-program-type averages
     for ptype, counts in program_type_counts.items():
         avg = sum(counts) / num_zones
-        aggregated[f'avg_{ptype}_per_zone'] = avg
+        aggregated[MetricColumns.program_column(ptype)] = avg
     
     return aggregated, per_zone_data

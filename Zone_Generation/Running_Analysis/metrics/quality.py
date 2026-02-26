@@ -6,6 +6,7 @@ Uses school data from the graph to compute quality metrics per zone.
 
 import networkx as nx
 
+from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.Running_Analysis.metrics.base import COLOR_TO_INDEX
 
 
@@ -98,20 +99,20 @@ def compute_quality_metrics(
     
     # Aggregate across zones
     aggregated = {
-        'avg_greatschools_rating': (
-            sum(all_gs_ratings) / len(all_gs_ratings) 
+        MetricColumns.AVG_GREATSCHOOLS: (
+            sum(all_gs_ratings) / len(all_gs_ratings)
             if all_gs_ratings else 0.0
         ),
-        'avg_math_score': (
-            sum(all_math_scores) / len(all_math_scores) 
+        MetricColumns.AVG_MATH_SCORE: (
+            sum(all_math_scores) / len(all_math_scores)
             if all_math_scores else 0.0
         ),
-        'avg_eng_score': (
-            sum(all_eng_scores) / len(all_eng_scores) 
+        MetricColumns.AVG_ENG_SCORE: (
+            sum(all_eng_scores) / len(all_eng_scores)
             if all_eng_scores else 0.0
         ),
-        'avg_suspension_index': (
-            sum(all_suspension_indices) / len(all_suspension_indices) 
+        MetricColumns.AVG_SUSPENSION: (
+            sum(all_suspension_indices) / len(all_suspension_indices)
             if all_suspension_indices else 0.0
         )
     }
