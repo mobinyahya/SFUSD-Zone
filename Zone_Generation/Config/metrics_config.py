@@ -36,7 +36,11 @@ class MetricSpec:
 class MetricColumns:
     """Column name constants for use in computation modules."""
     THEIL_INDEX = "theil_index"
-    FRL = "FRL"
+    FRL_DISSIM = "frl_dissim"
+    BLACK_DISSIM = "black_dissim"
+    HISPANIC_DISSIM = "hispanic_dissim"
+    WHITE_DISSIM = "white_dissim"
+    ASIAN_DISSIM = "asian_dissim"
     SEAT_DISPARITY = "seat_disparity"
     AVG_CLOSEST_ZONE_SCHOOL_DISTANCE = "avg_closest_zone_school_distance"
     AVG_SCHOOLS_IN_ATTENDANCE_AREA = "avg_schools_in_attendance_area"
@@ -106,9 +110,9 @@ DIVERSITY_METRICS = [
         chart_title="Ethnic Composition by Zone",
     ),
     MetricSpec(
-        column="FRL",
-        display_name="FRL Representation",
-        description="Average percentage that the free/reduced lunch population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of FRL representation.",
+        column="frl_dissim",
+        display_name="FRL Dissimilarity",
+        description="Dissimilarity index for free/reduced lunch students (0=perfectly integrated, 1=completely segregated). Measures the share of FRL students that would need to move between zones for even distribution.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -120,33 +124,33 @@ DIVERSITY_METRICS = [
         chart_title="FRL % by Zone",
     ),
     MetricSpec(
-        column="Ethnicity_Black_or_African_American",
-        display_name="Black Representation",
-        description="Average percentage that the black population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of black representation.",
+        column="black_dissim",
+        display_name="Black Dissimilarity",
+        description="Dissimilarity index for Black/African American students (0=perfectly integrated, 1=completely segregated).",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="Ethnicity_Hispanic/Latinx",
-        display_name="Hispanic/Latinx Representation",
-        description="Average percentage that the Hispanic/Latinx population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of Hispanic/Latinx representation.",
+        column="hispanic_dissim",
+        display_name="Hispanic/Latinx Dissimilarity",
+        description="Dissimilarity index for Hispanic/Latinx students (0=perfectly integrated, 1=completely segregated).",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="Ethnicity_White",
-        display_name="White Representation",
-        description="Average percentage that the white population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of white representation.",
+        column="white_dissim",
+        display_name="White Dissimilarity",
+        description="Dissimilarity index for White students (0=perfectly integrated, 1=completely segregated).",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="Ethnicity_Asian",
-        display_name="Asian Representation",
-        description="Average percentage that the Asian population deviates from the district average across zones. Lower indicates that zones are more balanced in terms of Asian representation.",
+        column="asian_dissim",
+        display_name="Asian Dissimilarity",
+        description="Dissimilarity index for Asian students (0=perfectly integrated, 1=completely segregated).",
         category="diversity",
         direction="minimize",
         is_core=False,

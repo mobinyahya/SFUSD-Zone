@@ -300,12 +300,12 @@ CATEGORY_THEME = {
 }
 
 SHORT_METRIC_NAMES = {
-    "FRL Representation": "FRL balance",
+    "FRL Dissimilarity": "FRL balance",
     "Racial Diversity Index": "racial diversity",
-    "Black Representation": "Black representation",
-    "Hispanic/Latinx Representation": "Hispanic/Latinx representation",
-    "White Representation": "White representation",
-    "Asian Representation": "Asian representation",
+    "Black Dissimilarity": "Black representation",
+    "Hispanic/Latinx Dissimilarity": "Hispanic/Latinx representation",
+    "White Dissimilarity": "White representation",
+    "Asian Dissimilarity": "Asian representation",
     "Student Seat Imbalance": "seat balance",
     "Avg Distance to Closest School": "distance",
     "Schools in Attendance Area": "school access",

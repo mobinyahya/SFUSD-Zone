@@ -363,7 +363,7 @@ function buildSavedSolutionsSummary() {
             pros: s.pros,
             cons: s.cons,
             key_metrics: {
-                frl: metrics.FRL,
+                frl: metrics.frl_dissim,
                 diversity: metrics.theil_index,
                 distance: metrics.avg_closest_zone_school_distance,
                 programs: metrics.avg_total_programs_per_zone,

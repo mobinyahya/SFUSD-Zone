@@ -15,24 +15,36 @@ def compute_diversity_metrics(
     zone_blocks: dict[int, list[int]]
 ) -> tuple[dict[str, float], dict[int, dict]]:
     """
-    Compute demographic deviation metrics.
-    
+    Compute dissimilarity index for FRL and each ethnicity group.
+
+    Dissimilarity index D for a group:
+        D = Σ |n_i - T_i × (n / T)| / (2 × n)
+    where n_i = group count in zone i, T_i = total students in zone i,
+    n = total group students district-wide, T = total students district-wide.
+    Range: 0 (perfectly integrated) to 1 (completely segregated).
+
+    Per-zone demographics (frl_pct, ethnicity_pcts) are unchanged.
+
     Returns:
         Tuple of (aggregated_metrics, per_zone_demographics)
     """
-    # Get area-wide averages from graph
-    area_frl_pct = G.graph['F']
-    area_ethnicities = {eth: G.graph['R'][eth] for eth in AREA_ETHNICITIES}
-    
-    # Track deviations per zone
-    deviations = {}
+    # Map AREA_ETHNICITIES node attributes to MetricColumns dissim keys
+    eth_to_column = {
+        "Ethnicity_Black_or_African_American": MetricColumns.BLACK_DISSIM,
+        "Ethnicity_Hispanic/Latinx": MetricColumns.HISPANIC_DISSIM,
+        "Ethnicity_White": MetricColumns.WHITE_DISSIM,
+        "Ethnicity_Asian": MetricColumns.ASIAN_DISSIM,
+    }
+
+    # Accumulate per-zone counts
     per_zone_demos = {}
-    
+    zone_counts: list[dict] = []  # list of {ge_students, FRL, eth1, eth2, ...}
+
     for zone_id, blocks in zone_blocks.items():
         zone_demo = {'ge_students': 0.0, 'FRL': 0.0}
         for ethnicity in AREA_ETHNICITIES:
             zone_demo[ethnicity] = 0.0
-        
+
         for block in blocks:
             if block not in G.nodes:
                 continue
@@ -40,8 +52,8 @@ def compute_diversity_metrics(
             zone_demo['FRL'] += G.nodes[block]['FRL']
             for ethnicity in AREA_ETHNICITIES:
                 zone_demo[ethnicity] += G.nodes[block][ethnicity]
-        
-        # Store per-zone data
+
+        # Per-zone proportions (unchanged)
         if zone_demo['ge_students'] > 0:
             frl_pct = zone_demo['FRL'] / zone_demo['ge_students']
             ethnicity_pcts = {
@@ -51,33 +63,38 @@ def compute_diversity_metrics(
         else:
             frl_pct = 0.0
             ethnicity_pcts = {eth: 0.0 for eth in AREA_ETHNICITIES}
-        
+
         per_zone_demos[zone_id] = {
             'ge_students': zone_demo['ge_students'],
             'frl_pct': frl_pct,
-            'ethnicity_pcts': ethnicity_pcts
+            'ethnicity_pcts': ethnicity_pcts,
         }
-        
-        # Compute deviations from area averages
-        if zone_demo['ge_students'] > 0:
-            if MetricColumns.FRL not in deviations:
-                deviations[MetricColumns.FRL] = []
-            frl_deviation = abs(frl_pct - area_frl_pct)
-            deviations[MetricColumns.FRL].append(frl_deviation)
-            
-            for ethnicity in AREA_ETHNICITIES:
-                if ethnicity not in deviations:
-                    deviations[ethnicity] = []
-                eth_deviation = abs(ethnicity_pcts[ethnicity] - area_ethnicities[ethnicity])
-                deviations[ethnicity].append(eth_deviation)
-    
-    # Average deviations across zones
-    avg_deviations = {}
-    for key, dev_list in deviations.items():
-        if dev_list:
-            avg_deviations[key] = sum(dev_list) / len(dev_list)
-    
-    return avg_deviations, per_zone_demos
+        zone_counts.append(zone_demo)
+
+    # District totals
+    T = sum(z['ge_students'] for z in zone_counts)
+    total_frl = sum(z['FRL'] for z in zone_counts)
+    total_eth = {eth: sum(z[eth] for z in zone_counts) for eth in AREA_ETHNICITIES}
+
+    # Dissimilarity index: D = Σ |n_i - T_i × (n/T)| / (2 × n)
+    def _dissim(group_counts: list[float], zone_totals: list[float], n: float) -> float:
+        if n <= 0 or T <= 0:
+            return 0.0
+        return sum(abs(ni - ti * (n / T)) for ni, ti in zip(group_counts, zone_totals)) / (2 * n)
+
+    zone_totals = [z['ge_students'] for z in zone_counts]
+
+    metrics: dict[str, float] = {}
+    # FRL dissimilarity
+    frl_counts = [z['FRL'] for z in zone_counts]
+    metrics[MetricColumns.FRL_DISSIM] = _dissim(frl_counts, zone_totals, total_frl)
+
+    # Per-ethnicity dissimilarity
+    for eth, col in eth_to_column.items():
+        eth_counts = [z[eth] for z in zone_counts]
+        metrics[col] = _dissim(eth_counts, zone_totals, total_eth[eth])
+
+    return metrics, per_zone_demos
 
 
 def compute_seat_disparity(
