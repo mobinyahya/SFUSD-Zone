@@ -523,11 +523,9 @@ function saveSolution() {
     }
 
     const index = savedSolutions.length + 1;
-    const ranks = currentSolution.percentile_ranks || {};
-    const categoryScores = {};
-    for (const [cat, metrics] of Object.entries(getHistoryCategories())) {
-        categoryScores[cat] = getCategoryPercentile(ranks, metrics);
-    }
+    const categoryScores = currentSolution.category_percentiles
+        ? { ...currentSolution.category_percentiles }
+        : {};
 
     savedSolutions.push({
         index,

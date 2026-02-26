@@ -6,18 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
-# Color to numeric mapping for school quality metrics
-COLOR_TO_INDEX = {
-    'Blue': 5,
-    'Green': 4,
-    'Yellow': 3,
-    'Orange': 2,
-    'Red': 1,
-    None: 0,
-    '': 0
-}
-
-
 @dataclass
 class ZoneData:
     """Per-zone data storage for all metrics."""
@@ -34,14 +22,15 @@ class ZoneData:
     language_immersion_count: int = 0
     special_ed_count: int = 0
     
+    # GE proximity
+    ge_schools_within_half_mile: float = 0.0
+
     # Seat disparity (per-zone capacity vs enrollment ratio)
     seat_disparity: Optional[float] = None
 
-    # Quality (weighted by school capacity); None means no schools with data in zone
-    avg_greatschools_rating: Optional[float] = None
+    # Quality (capacity-weighted per-zone averages); None means no schools with data
     avg_math_score: Optional[float] = None
     avg_eng_score: Optional[float] = None
-    avg_suspension_index: Optional[float] = None
     
     # Distance
     avg_closest_school_distance: float = 0.0
@@ -65,11 +54,10 @@ class ZoneData:
             'total_programs': self.total_programs,
             'language_immersion_count': self.language_immersion_count,
             'special_ed_count': self.special_ed_count,
+            'ge_schools_within_half_mile': self.ge_schools_within_half_mile,
             'seat_disparity': self.seat_disparity,
-            'avg_greatschools_rating': self.avg_greatschools_rating,
             'avg_math_score': self.avg_math_score,
             'avg_eng_score': self.avg_eng_score,
-            'avg_suspension_index': self.avg_suspension_index,
             'avg_closest_school_distance': self.avg_closest_school_distance,
             'schools_in_attendance_area': self.schools_in_attendance_area,
             'avg_max_utility': self.avg_max_utility,

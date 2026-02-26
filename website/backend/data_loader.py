@@ -172,10 +172,8 @@ def get_zone_demographics(solution_path: str) -> dict[int, dict]:
         - total_programs: total number of programs
         - language_immersion_count: count of language immersion programs
         - special_ed_count: count of special education programs
-        - avg_greatschools_rating: average GreatSchools rating
         - avg_math_score: average math test score
         - avg_eng_score: average English test score
-        - avg_suspension_index: average suspension index
         - avg_closest_school_distance: average distance to closest school
         - schools_in_attendance_area: number of schools in zone
         - avg_max_utility: average maximum utility
@@ -193,7 +191,6 @@ def get_zone_demographics(solution_path: str) -> dict[int, dict]:
         # that stored 0.0 instead of null for missing values.
         _QUALITY_ZERO_MEANS_NO_DATA = {
             'avg_math_score', 'avg_eng_score',
-            'avg_greatschools_rating', 'avg_suspension_index',
         }
 
         # Normalize field names for frontend compatibility

@@ -700,9 +700,9 @@ class ZoningAgent:
                     result_lines.append(f"  - Programs: {progs}, Language immersion: {lang}")
 
                 if not metrics_requested or 'quality' in metrics_requested:
-                    rating = data.get('avg_greatschools_rating', 0)
                     math = data.get('avg_math_score', 0)
-                    result_lines.append(f"  - GreatSchools: {rating:.1f}, Math: {math:.1f}")
+                    eng = data.get('avg_eng_score', 0)
+                    result_lines.append(f"  - Math: {math:.1f}, English: {eng:.1f}")
 
                 if not metrics_requested or 'distance' in metrics_requested:
                     dist = data.get('avg_closest_school_distance', 0)
@@ -752,7 +752,7 @@ class ZoningAgent:
                 ('FRL_pct', 'FRL %', '{:.1f}%'),
                 ('ge_students', 'Students', '{:.0f}'),
                 ('total_programs', 'Programs', '{:.0f}'),
-                ('avg_greatschools_rating', 'Rating', '{:.1f}'),
+                ('avg_math_score', 'Math', '{:.1f}'),
                 ('avg_closest_school_distance', 'Avg Dist', '{:.2f}mi'),
             ]
             for field, label, fmt in metrics_to_compare:

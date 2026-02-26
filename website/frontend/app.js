@@ -319,14 +319,7 @@ function autoSaveSolution(solutionData, label, agentMessage) {
 
     const categoryScores = solutionData.category_percentiles
         ? { ...solutionData.category_percentiles }
-        : (() => {
-            const ranks = solutionData.percentile_ranks || {};
-            const scores = {};
-            for (const [cat, metrics] of Object.entries(getHistoryCategories())) {
-                scores[cat] = getCategoryPercentile(ranks, metrics);
-            }
-            return scores;
-        })();
+        : {};
 
     savedSolutions.push({
         index,

@@ -108,3 +108,76 @@ def compute_program_metrics(
         aggregated[MetricColumns.program_column(ptype)] = avg
     
     return aggregated, per_zone_data
+
+
+def compute_ge_proximity_metrics(
+    _zone_dict: dict[int, int],
+    G: nx.Graph,
+    zone_blocks: dict[int, list[int]],
+    zone_schools: dict[int, list[int]],
+    is_local: bool = False,
+    radius: float = 0.5
+) -> tuple[dict[str, float], dict[int, dict]]:
+    """
+    Count GE schools within a radius (miles) for each block in a zone.
+
+    For each block, counts how many schools in the same zone have a GE program
+    and are within *radius* miles. The per-zone value is the average across
+    blocks (weighted by student count).
+
+    Returns:
+        Tuple of (aggregated_metrics, per_zone_data)
+    """
+    programs_df = load_programs_data(is_local)
+    distance_dict = G.graph.get('distance_dict', {})
+
+    # Build set of school IDs that offer GE
+    ge_schools = set()
+    for _, row in programs_df.iterrows():
+        if row['program_type'] == 'GE':
+            ge_schools.add(row['school_id'])
+
+    # Build school_id -> node lookup
+    school_to_node: dict[int, int] = {}
+    for node in G.nodes():
+        for sid in G.nodes[node].get('school_ids', []):
+            school_to_node[sid] = node
+
+    per_zone_data = {}
+    all_avg_counts: list[float] = []
+
+    for zone_id, blocks in zone_blocks.items():
+        schools_in_zone = zone_schools.get(zone_id, [])
+        # Filter to GE schools in this zone
+        ge_in_zone = [s for s in schools_in_zone if s in ge_schools]
+
+        total_count = 0.0
+        total_students = 0.0
+
+        for block in blocks:
+            if block not in distance_dict:
+                continue
+            block_students = G.nodes[block].get('ge_students', 0)
+            nearby = 0
+            for sid in ge_in_zone:
+                school_node = school_to_node.get(sid)
+                if school_node is not None and school_node in distance_dict[block]:
+                    if distance_dict[block][school_node] <= radius:
+                        nearby += 1
+            total_count += nearby * block_students
+            total_students += block_students
+
+        avg_ge_nearby = total_count / total_students if total_students > 0 else 0.0
+
+        per_zone_data[zone_id] = {
+            'ge_schools_within_half_mile': avg_ge_nearby
+        }
+        all_avg_counts.append(avg_ge_nearby)
+
+    num_zones = len(zone_blocks) if zone_blocks else 1
+    aggregated = {
+        MetricColumns.AVG_GE_SCHOOLS_WITHIN_HALF_MILE: (
+            sum(all_avg_counts) / num_zones if all_avg_counts else 0.0
+        ),
+    }
+    return aggregated, per_zone_data

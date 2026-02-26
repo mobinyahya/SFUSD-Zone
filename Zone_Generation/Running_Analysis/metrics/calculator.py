@@ -11,7 +11,7 @@ from Zone_Generation.Running_Analysis.metrics.diversity import (
     compute_diversity_metrics, compute_seat_disparity, compute_theil_index
 )
 from Zone_Generation.Running_Analysis.metrics.distance import compute_distance_metrics
-from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics
+from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics, compute_ge_proximity_metrics
 from Zone_Generation.Running_Analysis.metrics.quality import compute_quality_metrics
 from Zone_Generation.Running_Analysis.metrics.choice import compute_choice_metrics
 
@@ -142,7 +142,19 @@ class ZoneMetricsCalculator:
                     prog_data['language_immersion_count']
                 )
                 result.zone_data[zone_id].special_ed_count = prog_data['special_ed_count']
-        
+
+        # 3b. GE proximity metrics
+        ge_prox_metrics, per_zone_ge = compute_ge_proximity_metrics(
+            self.zone_dict, self.G, self.zone_blocks, self.zone_schools, is_local
+        )
+        result.update(ge_prox_metrics)
+
+        for zone_id, ge_data in per_zone_ge.items():
+            if zone_id in result.zone_data:
+                result.zone_data[zone_id].ge_schools_within_half_mile = (
+                    ge_data['ge_schools_within_half_mile']
+                )
+
         # 4. Quality metrics
         quality_metrics, per_zone_qual = compute_quality_metrics(
             self.zone_dict, self.G, self.zone_schools
@@ -151,14 +163,8 @@ class ZoneMetricsCalculator:
         
         for zone_id, qual_data in per_zone_qual.items():
             if zone_id in result.zone_data:
-                result.zone_data[zone_id].avg_greatschools_rating = (
-                    qual_data['avg_greatschools_rating']
-                )
                 result.zone_data[zone_id].avg_math_score = qual_data['avg_math_score']
                 result.zone_data[zone_id].avg_eng_score = qual_data['avg_eng_score']
-                result.zone_data[zone_id].avg_suspension_index = (
-                    qual_data['avg_suspension_index']
-                )
         
         # 5. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):

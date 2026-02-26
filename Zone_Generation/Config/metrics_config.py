@@ -49,12 +49,11 @@ class MetricColumns:
     AVG_LANGUAGE_IMMERSION = "avg_language_immersion_per_zone"
     AVG_SPECIAL_ED = "avg_special_ed_per_zone"
     AVG_GE = "avg_GE_per_zone"
-    AVG_GREATSCHOOLS = "avg_greatschools_rating"
-    AVG_MATH_SCORE = "avg_math_score"
-    AVG_ENG_SCORE = "avg_eng_score"
-    AVG_SUSPENSION = "avg_suspension_index"
+    MAD_MATH_SCORE = "mad_math_score"
+    MAD_ENG_SCORE = "mad_eng_score"
     AVG_MAX_UTILITY = "avg_max_utility"
     AVG_LOGSUM_UTILITY = "avg_logsum_utility"
+    AVG_GE_SCHOOLS_WITHIN_HALF_MILE = "avg_ge_schools_within_half_mile"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -89,7 +88,7 @@ CATEGORY_DESCRIPTIONS = {
     "diversity": "Measures how evenly demographics are distributed across zones. Lower deviation = more balanced.",
     "distance": "Measures geographic access to schools within zones.",
     "programs": "Counts of educational programs available in each zone. Higher = more options.",
-    "quality": "Aggregated school quality indicators. Higher = better outcomes.",
+    "quality": "Measures how evenly school quality is distributed across zones. Lower deviation = more equitable.",
 }
 
 
@@ -176,18 +175,19 @@ DISTANCE_METRICS = [
         chart_unit="miles",
         chart_title="Avg Distance to Closest School",
     ),
+
     MetricSpec(
-        column="avg_schools_in_attendance_area",
-        display_name="Schools in Attendance Area",
-        description="Avg number of schools in the a students attendance area and zone. Higher indicates that students have more access to nearby schools.",
+        column="avg_ge_schools_within_half_mile",
+        display_name="GE Schools Within 0.5 Miles",
+        description="Average number of General Education schools within 0.5 miles per block in each zone. Higher means students have more nearby GE school options.",
         category="distance",
         direction="maximize",
         is_core=True,
-        short_name="Schools",
+        short_name="Walkable Schools",
         chart_type="bar",
-        chart_field="schools_in_attendance_area",
+        chart_field="ge_schools_within_half_mile",
         chart_unit="Count",
-        chart_title="Schools in Attendance Area",
+        chart_title="GE Schools Within 0.5 Miles",
     ),
     MetricSpec(
         column="boundary_cost",
@@ -384,16 +384,16 @@ PROGRAM_METRICS = [
 
 
 # ============================================================================
-# QUALITY METRICS (higher = better)
+# QUALITY METRICS (lower MAD = more equitable distribution)
 # ============================================================================
 
 QUALITY_METRICS = [
     MetricSpec(
-        column="avg_math_score",
-        display_name="Math Scores",
-        description="Average math proficiency scores",
+        column="mad_math_score",
+        display_name="Math Score Equity",
+        description="Mean absolute deviation of capacity-weighted math scores across zones. Lower means more equitable math quality distribution.",
         category="quality",
-        direction="maximize",
+        direction="minimize",
         is_core=True,
         short_name="Math",
         chart_type="bar",
@@ -402,11 +402,11 @@ QUALITY_METRICS = [
         chart_title="Math Scores by Zone",
     ),
     MetricSpec(
-        column="avg_eng_score",
-        display_name="English Scores",
-        description="Average English proficiency scores",
+        column="mad_eng_score",
+        display_name="English Score Equity",
+        description="Mean absolute deviation of capacity-weighted English scores across zones. Lower means more equitable English quality distribution.",
         category="quality",
-        direction="maximize",
+        direction="minimize",
         is_core=True,
         short_name="Eng",
         chart_type="bar",
@@ -414,33 +414,6 @@ QUALITY_METRICS = [
         chart_unit="Score",
         chart_title="English Scores by Zone",
     ),
-
-#     MetricSpec(
-#         column="avg_greatschools_rating",
-#         display_name="GreatSchools Rating",
-#         description="Average GreatSchools rating (1-10 scale)",
-#         category="quality",
-#         direction="maximize",
-#         is_core=True,
-#         chart_type="bar",
-#         chart_field="avg_greatschools_rating",
-#         chart_unit="Rating",
-#         chart_max=10,
-#         chart_title="GreatSchools Rating by Zone",
-#     ),
-#     MetricSpec(
-#         column="avg_suspension_index",
-#         display_name="Suspension Index",
-#         description="Suspension index (1-5, higher = fewer suspensions = better)",
-#         category="quality",
-#         direction="maximize",
-#         is_core=True,
-#         chart_type="bar",
-#         chart_field="avg_suspension_index",
-#         chart_unit="Index",
-#         chart_max=5,
-#         chart_title="Suspension Index by Zone",
-#     ),
 ]
 
 

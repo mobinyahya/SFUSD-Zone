@@ -42,8 +42,12 @@ const CHART_COLORS = {
 };
 
 // Category display constants
-const HISTORY_CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf' };
-const COMPARISON_CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance' };
+const CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf' };
+const CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance' };
+// Reverse lookup: display name → category key (e.g. "Performance" → "quality")
+const DISPLAY_TO_CATEGORY = Object.fromEntries(
+    Object.entries(CATEGORY_DISPLAY).map(([k, v]) => [v, k])
+);
 
 // Page-specific hooks (set by app.js or admin.js before calling shared init)
 let pageHooks = {
@@ -76,22 +80,10 @@ function getChartConfig() {
     return config;
 }
 
-function getHistoryCategories() {
+function getCoreCategories() {
     if (!metricsConfig) return {};
     const result = {};
-    for (const [catKey, catShort] of Object.entries(HISTORY_CATEGORY_SHORT)) {
-        const metrics = metricsConfig.metrics
-            .filter(m => m.category === catKey)
-            .map(m => ({ key: m.column, short: m.short_name || m.display_name.substring(0, 4) }));
-        if (metrics.length > 0) result[catShort] = metrics;
-    }
-    return result;
-}
-
-function getComparisonCategories() {
-    if (!metricsConfig) return {};
-    const result = {};
-    for (const [catKey, catDisplay] of Object.entries(COMPARISON_CATEGORY_DISPLAY)) {
+    for (const [catKey, catDisplay] of Object.entries(CATEGORY_DISPLAY)) {
         const metrics = metricsConfig.metrics
             .filter(m => m.category === catKey && m.is_core)
             .map(m => ({ key: m.column, name: m.short_name || m.display_name }));
@@ -100,18 +92,6 @@ function getComparisonCategories() {
     return result;
 }
 
-function getCategoryPercentile(ranks, categoryMetrics) {
-    if (!ranks) return null;
-    let sum = 0, count = 0;
-    for (const m of categoryMetrics) {
-        const r = ranks[m.key];
-        if (r && r.percentile !== undefined) {
-            sum += r.percentile;
-            count++;
-        }
-    }
-    return count > 0 ? Math.round(sum / count) : null;
-}
 
 function getPercentileRanking(percentile) {
     if (percentile >= 80) return 'excellent';
@@ -440,23 +420,21 @@ function updateComparisonTable() {
     }
 
     const metrics = currentSolution.metrics;
-    const categories = getComparisonCategories();
+    const categories = getCoreCategories();
+    const catPercentiles = currentSolution.category_percentiles || {};
 
     let html = '<div class="category-list">';
     for (const [category, metricList] of Object.entries(categories)) {
-        const catId = category.toLowerCase();
-
-        let pSum = 0, pCount = 0;
-        for (const { key } of metricList) {
-            const r = ranks[key];
-            if (r && r.percentile !== undefined) { pSum += r.percentile; pCount++; }
-        }
-        const avgP = pCount > 0 ? Math.round(pSum / pCount) : null;
+        const catKey = DISPLAY_TO_CATEGORY[category];
+        const catShort = CATEGORY_SHORT[catKey];
+        const avgP = catShort && catPercentiles[catShort] != null
+            ? Math.round(catPercentiles[catShort])
+            : null;
         const avgR = avgP !== null ? getPercentileRanking(avgP) : 'average';
         const avgBadge = avgP !== null
             ? `<span class="percentile-indicator ${avgR}">${avgP}%</span>` : '';
 
-        html += `<div class="category-card collapsed" data-category="${catId}" data-avg-badge="${encodeURIComponent(avgBadge)}">`;
+        html += `<div class="category-card collapsed" data-category="${catKey}" data-avg-badge="${encodeURIComponent(avgBadge)}">`;
         html += `<div class="category-card-header">`;
         html += `<span class="category-card-title"><span class="chevron">&#9654;</span> ${category}</span>`;
         html += `<span class="category-avg-rank">${avgBadge}</span>`;
