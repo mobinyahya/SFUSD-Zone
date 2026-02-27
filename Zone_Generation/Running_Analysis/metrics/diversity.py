@@ -128,10 +128,10 @@ def compute_seat_disparity(
             per_zone_data[zone_id] = {'seat_disparity': None}
             continue
 
-        diff = abs(seats - students) / students
-        total_diff += diff
+        signed_diff = (seats - students) / students
+        total_diff += abs(signed_diff)
         valid_zones += 1
-        per_zone_data[zone_id] = {'seat_disparity': diff}
+        per_zone_data[zone_id] = {'seat_disparity': signed_diff}
 
     solution_value = total_diff / valid_zones if valid_zones > 0 else 0.0
     return solution_value, per_zone_data

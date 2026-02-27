@@ -110,7 +110,7 @@ DIVERSITY_METRICS = [
         is_core=True,
         short_name="Racial",
         chart_type="ethnicity",
-        chart_title="Ethnic Composition by Zone",
+        chart_title="Racial Diversity",
     ),
     MetricSpec(
         column="frl_dissim",
@@ -124,7 +124,7 @@ DIVERSITY_METRICS = [
         chart_field="FRL_pct",
         chart_unit="%",
         chart_max=100,
-        chart_title="FRL % by Zone",
+        chart_title="Socioeconomic Diversity",
     ),
     MetricSpec(
         column="black_dissim",
@@ -191,7 +191,7 @@ DISTANCE_METRICS = [
         chart_type="bar",
         chart_field="ge_schools_within_half_mile",
         chart_unit="Count",
-        chart_title="GE Schools Within 0.5 Miles",
+        chart_title="Schools with General Education programs within 0.5 Miles",
     ),
 ]
 
