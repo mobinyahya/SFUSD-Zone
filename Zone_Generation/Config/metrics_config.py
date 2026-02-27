@@ -114,7 +114,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="frl_dissim",
-        display_name="FRL Dissimilarity",
+        display_name="FRL Representation",
         description="Dissimilarity index for free/reduced lunch students. This represents the number of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
@@ -128,7 +128,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="black_dissim",
-        display_name="Black Dissimilarity",
+        display_name="Black Representation",
         description="Dissimilarity index for Black/African American students. This represents the number of Black/African American students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
@@ -136,7 +136,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="hispanic_dissim",
-        display_name="Hispanic/Latinx Dissimilarity",
+        display_name="Hispanic/Latinx Representation",
         description="Dissimilarity index for Hispanic/Latinx students. This represents the number of Hispanic/Latinx students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
@@ -144,7 +144,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="white_dissim",
-        display_name="White Dissimilarity",
+        display_name="White Representation",
         description="Dissimilarity index for White students. This represents the number of white students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
@@ -152,7 +152,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="asian_dissim",
-        display_name="Asian Dissimilarity",
+        display_name="Asian Representation",
         description="Dissimilarity index for Asian students. This represents the number of asian students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
