@@ -24,12 +24,11 @@ def main():
         sys.exit(1)
     
     print("=" * 60)
-    print("     School Zoning Exploration Agent")
+    print("     Understanding Elementary School Zones")
     print("=" * 60)
     print()
-    print("I'll help you explore different school zoning proposals.")
-    print("Tell me what matters most to you, and I'll help find solutions")
-    print("that match your priorities.")
+    print("This tool helps you explore draft zone maps. Your feedback will")
+    print("inform rules and guidelines for the next set of zone maps.")
     print()
     print("Type 'quit' or 'exit' to end the session.")
     print("Type 'reset' to clear all filters and start over.")
@@ -44,11 +43,12 @@ def main():
     
     print()
     
-    # Start with an initial greeting
-    initial_response = agent.chat(
-        "Please show me the current balanced solution and explain what each metric means briefly."
-    )
-    print(f"\nAgent: {initial_response}\n")
+    # Opening: three messages — (1) how the tool works, (2) solution + clusters, (3) choose cluster prompt
+    first_response = agent.chat("Begin.")
+    print(f"\nAgent: {first_response}\n")
+    second_response = agent.chat("Now show me the current solution and the clusters.")
+    print(f"\nAgent: {second_response}\n")
+    print("\nAgent: Which cluster would you like to explore? Just tell me the cluster number (1, 2, or 3).\n")
     
     while True:
         try:

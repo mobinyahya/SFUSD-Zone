@@ -9,6 +9,7 @@ This module handles:
 """
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -295,7 +296,8 @@ def cluster_solutions(
 
 def compute_cluster_directions(
     vectors: np.ndarray,
-    cluster_centers: np.ndarray
+    cluster_centers: np.ndarray,
+    vector_metric_cols: Optional[list[str]] = None,
 ) -> dict[int, dict]:
     """
     Compute interpretable direction labels for each cluster.
@@ -307,6 +309,9 @@ def compute_cluster_directions(
     Args:
         vectors: All solution vectors
         cluster_centers: Centers of each cluster
+        vector_metric_cols: Optional list of metric column names in the same order
+            as vector dimensions (from vectorize_solutions). If None, uses
+            get_metric_columns() and iterates only up to vectors.shape[1].
         
     Returns:
         Dict mapping cluster_id to {
@@ -315,7 +320,13 @@ def compute_cluster_directions(
             "normalized_direction": np.ndarray
         }
     """
-    metric_cols = get_metric_columns()
+    n_dims = vectors.shape[1]
+    if vector_metric_cols is not None and len(vector_metric_cols) == n_dims:
+        metric_cols = vector_metric_cols
+    else:
+        metric_cols = get_metric_columns()
+        # Vectors may have fewer columns than get_metric_columns() (only cols in df)
+        metric_cols = metric_cols[:n_dims]
     
     # Compute overall centroid
     overall_centroid = vectors.mean(axis=0)
@@ -340,7 +351,8 @@ def compute_cluster_directions(
         
         threshold = 0.1  # 10% of range is significant
         
-        for i, col in enumerate(metric_cols):
+        for i in range(min(n_dims, len(metric_cols))):
+            col = metric_cols[i]
             if col not in METRIC_BY_COLUMN:
                 continue
             
@@ -490,33 +502,31 @@ def format_cluster_summary(
     directions: dict[int, dict]
 ) -> str:
     """
-    Format a human-readable summary of all clusters.
-    
-    Shows each cluster's size, direction label, and representative solution.
+    Format a human-readable, natural-language summary of all clusters.
+
+    This should be easy for non-technical users to scan:
+    - Brief context about how many solutions and clusters there are
+    - For each cluster: solution count and plain-language direction label
+    - No detailed metric tables or \"representative solution\" breakdowns
     """
-    
+
     n_clusters = len(cluster_centers)
-    lines = [f"**Solution Clusters** ({n_clusters} groups found)\n"]
-    lines.append("Each cluster represents a different approach to balancing trade-offs:\n")
+    total_solutions = len(df)
+    lines = [
+        f"We have grouped the current {total_solutions} feasible solutions into "
+        f"{n_clusters} clusters, each representing a different way to balance key goals "
+        "(like diversity, proximity, and predictability).",
+        "",
+        "Here are the clusters:",
+    ]
     
     for cluster_id in range(n_clusters):
         cluster_size = (labels == cluster_id).sum()
         direction_info = directions[cluster_id]
         
-        lines.append(f"---\n")
-        lines.append(f"### Cluster {cluster_id + 1}: {direction_info['direction_label']}")
-        lines.append(f"*({cluster_size} solutions)*\n")
-        
-        # Get representative solution
-        rep_solution, _ = get_representative_solution(
-            df, vectors, cluster_centers, labels, cluster_id
+        lines.append(
+            f"- **Cluster {cluster_id + 1} ({cluster_size} solutions)**: "
+            f"{direction_info['direction_label']}."
         )
-        
-        lines.append("**Representative Solution:**")
-        lines.append(format_solution(rep_solution))
-        lines.append("")
-    
-    lines.append("---\n")
-    lines.append("To explore a specific cluster, please tell me which cluster number you'd like (1-{}).".format(n_clusters))
     
     return "\n".join(lines)

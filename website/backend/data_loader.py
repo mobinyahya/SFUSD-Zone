@@ -397,7 +397,8 @@ def get_clusters(n_clusters: int = 5) -> list[dict]:
     # Cluster
     vectors = vectorize_solutions(pareto_original)
     labels, centers = cluster_solutions(vectors, n_clusters)
-    directions = compute_cluster_directions(vectors, centers)
+    vector_metric_cols = [c for c in get_metric_columns() if c in pareto_original.columns]
+    directions = compute_cluster_directions(vectors, centers, vector_metric_cols)
 
     clusters = []
     metric_cols = get_metric_columns()

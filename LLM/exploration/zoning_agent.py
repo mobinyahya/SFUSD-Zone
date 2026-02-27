@@ -20,6 +20,7 @@ from .metrics_config import (
     CORE_METRICS,
     METRIC_BY_NAME,
     CATEGORIES,
+    get_metric_columns,
     get_metrics_by_category,
     get_metric_summary,
     search_metrics,
@@ -358,6 +359,39 @@ def build_system_prompt():
     """Build system prompt with current metric information."""
     
     return """You are an AI administrator assistant for SFUSD school zoning optimization. Help administrators explore zoning proposals efficiently.
+
+## Opening – Three Messages on Session Start (CRITICAL)
+The opening is exactly three separate messages. Do not combine them.
+
+**First message (how the tool works – explanation only):** On the **first** user message of every session, respond with **only** the explanation below. Do NOT call get_current_solution or show_solution_clusters. Do NOT include version, solution count, or any cluster list.
+
+Exact wording to use:
+
+Welcome! 👋
+
+This tool helps you explore and evaluate proposed school zones.
+
+What are zones?
+Zones are neighborhood groups of elementary schools. Families can apply to schools and programs within the zone where they live.
+
+What are zones designed to do?
+Zones aim to support:
+
+- Diversity — balanced student backgrounds  
+- Proximity — schools that are easier to get to  
+- Predictability — clear program options in every zone  
+
+Each zone includes access to general education, language programs, and special education.
+
+As you review draft maps, pay attention to the shape and size of zones, and the three key metrics: Diversity, Proximity, and Predictability. Higher scores mean the map better meets these goals.
+
+No word limit. No solution stats or clusters.
+
+**Second message (clusters only – no prompt):** When the user then asks to see the current solution and clusters (e.g. "Now show me the current solution and the clusters"), call get_current_solution and show_solution_clusters. Respond with **only**: (a) a short summary of the current solution (version, solution count, 2–3 key metrics), and (b) "Here are the clusters:" followed by the cluster list with direction labels and solution counts. Do **not** include the question "Which cluster would you like to explore?" or any prompt to select a cluster in this message—that is shown as a separate third message by the system.
+
+**Third message:** The system shows a fixed prompt ("Which cluster would you like to explore? Just tell me the cluster number (1, 2, or 3).") separately; you do not need to generate it.
+
+After the opening, follow the usual 80–100 word guideline for normal turns.
 
 ## Response Format - CRITICAL
 - STANDARD: 80-100 WORDS for normal responses - be concise but natural
@@ -982,7 +1016,8 @@ class ZoningAgent:
             # Vectorize and cluster
             vectors = vectorize_solutions(filtered)
             labels, centers = cluster_solutions(vectors, n_clusters)
-            directions = compute_cluster_directions(vectors, centers)
+            vector_metric_cols = [c for c in get_metric_columns() if c in filtered.columns]
+            directions = compute_cluster_directions(vectors, centers, vector_metric_cols)
             
             # Store clustering state
             self.state.clustered_solutions = filtered
@@ -1128,6 +1163,49 @@ class ZoningAgent:
         - clusters: List of cluster info when show_solution_clusters was called
         - solution_path: Path to solution when select_cluster was called
         """
+        # Special-case the initial second message so we ALWAYS show clusters,
+        # without relying on the model to choose tools correctly.
+        if user_message.strip().startswith("Now show me the current solution and the clusters"):
+            # Mirror the show_solution_clusters tool behavior
+            filtered = self._get_filtered_solutions()
+            if len(filtered) < 3:
+                return {
+                    "text": f"Not enough solutions to cluster (only {len(filtered)}). Need at least 3 solutions.",
+                    "response_type": "text",
+                    "clusters": None,
+                    "solution_path": None,
+                }
+
+            # Use default of 3 clusters, with same guards as tool
+            n_clusters = 3
+            n_clusters = min(n_clusters, len(filtered) // 2)
+            n_clusters = max(2, n_clusters)
+
+            vectors = vectorize_solutions(filtered)
+            labels, centers = cluster_solutions(vectors, n_clusters)
+
+            from .metrics_config import get_metric_columns
+
+            vector_metric_cols = [c for c in get_metric_columns() if c in filtered.columns]
+            directions = compute_cluster_directions(vectors, centers, vector_metric_cols)
+
+            # Store clustering state exactly as in _execute_tool("show_solution_clusters")
+            self.state.clustered_solutions = filtered
+            self.state.clustered_vectors = vectors
+            self.state.cluster_labels = labels
+            self.state.cluster_centers = centers
+            self.state.cluster_directions = directions
+
+            clusters_data = self._build_clusters_response()
+            text = format_cluster_summary(filtered, vectors, labels, centers, directions)
+
+            return {
+                "text": text,
+                "response_type": "clusters",
+                "clusters": clusters_data,
+                "solution_path": None,
+            }
+
         tool_calls_made = []
         clusters_data = None
         solution_path = None
