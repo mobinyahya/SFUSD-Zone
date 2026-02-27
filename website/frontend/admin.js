@@ -185,7 +185,7 @@ function showZeroState() {
         container.innerHTML = '';
         for (const [col, newBound] of Object.entries(suggestions)) {
             const stat = solutionSpaceStats[col];
-            if (!stat) continue;
+            if (!stat || stat.direction == null) continue;
             const btn = document.createElement('button');
             btn.className = 'relaxation-btn';
             btn.textContent = `Relax ${stat.display_name} to ${formatMetricVal(col, newBound)}`;
@@ -242,7 +242,7 @@ function renderFilterSliders() {
         grouped[cat].push(col);
     }
 
-    const catOrder = ['diversity', 'distance', 'programs', 'quality'];
+    const catOrder = ['diversity', 'distance', 'programs', 'quality', 'structure'];
     for (const cat of catOrder) {
         const cols = grouped[cat];
         if (!cols || !cols.length) continue;
@@ -283,13 +283,39 @@ function buildSliderRow(col) {
     const stat = solutionSpaceStats[col];
     const gMin = stat.min;
     const gMax = stat.max;
-    const dir = stat.direction === 'minimize' ? 'lower is better' : 'higher is better';
+    const isInfoOnly = stat.direction == null;
+    const dir = isInfoOnly ? 'informational' : (stat.direction === 'minimize' ? 'lower is better' : 'higher is better');
     const isCore = stat.is_core;
     const step = getStep(gMin, gMax);
 
     const row = document.createElement('div');
     row.className = 'metric-slider-row';
     row.dataset.col = col;
+
+    if (isInfoOnly) {
+        row.innerHTML = `
+            <div class="metric-slider-header">
+                <span class="metric-slider-name" title="${stat.description}">${stat.display_name}</span>
+                <span class="metric-slider-direction">${dir}</span>
+                <div class="metric-slider-actions">
+                    ${!isCore ? '<button class="btn-remove" data-action="remove" title="Remove this metric">x</button>' : ''}
+                </div>
+            </div>
+            <div class="slider-values" style="text-align:center; padding: 4px 0;">
+                <span class="slider-bound-value">Range: ${formatMetricVal(col, gMin)} &ndash; ${formatMetricVal(col, gMax)}</span>
+            </div>
+        `;
+        row.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                if (btn.dataset.action === 'remove') {
+                    visibleMetrics.delete(col);
+                    renderFilterSliders();
+                }
+            });
+        });
+        return row;
+    }
 
     const b = filterBounds[col] || {};
     const lo = b.min_bound != null ? b.min_bound : gMin;
@@ -441,6 +467,7 @@ function adjustSliderRanges() {
 
 function loosenMetric(col) {
     const stat = solutionSpaceStats[col];
+    if (stat.direction == null) return;
     const b = filterBounds[col];
     if (!b) return;
 

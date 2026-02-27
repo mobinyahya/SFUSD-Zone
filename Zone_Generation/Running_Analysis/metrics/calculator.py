@@ -166,7 +166,10 @@ class ZoneMetricsCalculator:
                 result.zone_data[zone_id].avg_math_score = qual_data['avg_math_score']
                 result.zone_data[zone_id].avg_eng_score = qual_data['avg_eng_score']
         
-        # 5. Choice metrics (optional)
+        # 5. Structure metrics
+        result.update({MetricColumns.NUM_ZONES: len(self.zone_blocks)})
+
+        # 6. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):
             try:
                 choice_metrics, per_zone_choice = compute_choice_metrics(

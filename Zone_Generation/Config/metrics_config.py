@@ -17,8 +17,8 @@ class MetricSpec:
     column: str                              # CSV column name
     display_name: str                        # User-friendly name
     description: str                         # Brief description for LLM
-    category: str                            # diversity/distance/programs/quality
-    direction: Literal["minimize", "maximize"]
+    category: str                            # diversity/distance/programs/quality/structure
+    direction: Literal["minimize", "maximize"] | None = None  # None = informational only
     is_core: bool = True                     # Show in main prompt vs on-demand
     short_name: str = ""                     # Short label for badges/compact display
     # Chart visualization (for website frontend)
@@ -54,6 +54,7 @@ class MetricColumns:
     AVG_MAX_UTILITY = "avg_max_utility"
     AVG_LOGSUM_UTILITY = "avg_logsum_utility"
     AVG_GE_SCHOOLS_WITHIN_HALF_MILE = "avg_ge_schools_within_half_mile"
+    NUM_ZONES = "num_zones"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -82,6 +83,7 @@ CATEGORIES = {
     "distance": "Geographic Access and Proximity",
     "programs": "Educational Program Availability",
     "quality": "School Quality Indicators",
+    "structure": "Zone Structure and Shape",
 }
 
 CATEGORY_DESCRIPTIONS = {
@@ -89,6 +91,7 @@ CATEGORY_DESCRIPTIONS = {
     "distance": "Measures geographic access to schools within zones.",
     "programs": "Counts of educational programs available in each zone. Higher = more options.",
     "quality": "Measures how evenly school quality is distributed across zones. Lower deviation = more equitable.",
+    "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
 }
 
 
@@ -188,15 +191,6 @@ DISTANCE_METRICS = [
         chart_field="ge_schools_within_half_mile",
         chart_unit="Count",
         chart_title="GE Schools Within 0.5 Miles",
-    ),
-    MetricSpec(
-        column="boundary_cost",
-        display_name="Boundary Cost (Compactness)",
-        description="Zone boundary complexity. This basically measures how jagged and weird the zones look. Lower indicates that zones are more compact and \"nicer\" looking.",
-        category="distance",
-        direction="minimize",
-        is_core=True,
-        short_name="Compactness",
     ),
 ]
 
@@ -384,6 +378,31 @@ PROGRAM_METRICS = [
 
 
 # ============================================================================
+# STRUCTURE METRICS (zone shape and configuration)
+# ============================================================================
+
+STRUCTURE_METRICS = [
+    MetricSpec(
+        column="boundary_cost",
+        display_name="Boundary Cost (Compactness)",
+        description="Zone boundary complexity. This basically measures how jagged and weird the zones look. Lower indicates that zones are more compact and \"nicer\" looking.",
+        category="structure",
+        direction="minimize",
+        is_core=True,
+        short_name="Compactness",
+    ),
+    MetricSpec(
+        column="num_zones",
+        display_name="Number of Zones",
+        description="Total number of zones in this solution.",
+        category="structure",
+        is_core=False,
+        short_name="Zones",
+    ),
+]
+
+
+# ============================================================================
 # QUALITY METRICS (lower MAD = more equitable distribution)
 # ============================================================================
 
@@ -422,7 +441,7 @@ QUALITY_METRICS = [
 # ============================================================================
 
 ALL_METRICS: list[MetricSpec] = (
-    DIVERSITY_METRICS + DISTANCE_METRICS + PROGRAM_METRICS + QUALITY_METRICS
+    DIVERSITY_METRICS + DISTANCE_METRICS + PROGRAM_METRICS + QUALITY_METRICS + STRUCTURE_METRICS
 )
 
 # Build lookup dictionaries
@@ -462,7 +481,12 @@ def get_metric_summary() -> str:
         lines.append("")
 
         for m in metrics:
-            direction = "lower is better" if m.direction == "minimize" else "higher is better"
+            if m.direction == "minimize":
+                direction = "lower is better"
+            elif m.direction == "maximize":
+                direction = "higher is better"
+            else:
+                direction = "informational"
             core_marker = "" if m.is_core else " [detailed]"
             lines.append(f"- **{m.display_name}**{core_marker}: {m.description} ({direction})")
 

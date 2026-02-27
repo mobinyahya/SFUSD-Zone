@@ -46,6 +46,14 @@ from .clusters import (
 )
 
 
+def _direction_text(metric) -> str:
+    if metric.direction == "minimize":
+        return "(lower better)"
+    elif metric.direction == "maximize":
+        return "(higher better)"
+    return "(informational)"
+
+
 # ============================================================================
 # TOOL RESULT: STRUCTURED RETURN FROM TOOL EXECUTION
 # ============================================================================
@@ -628,6 +636,9 @@ class ZoningAgent:
             if len(all_values) == 0:
                 continue
 
+            if metric.direction is None:
+                continue
+
             raw_pct = (all_values <= value).sum() / len(all_values) * 100
             if metric.direction == 'minimize':
                 normalized = 100 - raw_pct
@@ -817,7 +828,7 @@ class ZoningAgent:
                         if metric.column not in centroid.index:
                             continue
                         value = centroid[metric.column]
-                        direction_text = "(lower better)" if metric.direction == "minimize" else "(higher better)"
+                        direction_text = _direction_text(metric)
                         pct_info = percentile_ranks.get(metric.column)
                         pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
                         lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
@@ -828,7 +839,7 @@ class ZoningAgent:
                     if metric.column not in centroid.index:
                         continue
                     value = centroid[metric.column]
-                    direction_text = "(lower better)" if metric.direction == "minimize" else "(higher better)"
+                    direction_text = _direction_text(metric)
                     pct_info = percentile_ranks.get(metric.column)
                     pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
                     lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
@@ -848,8 +859,7 @@ class ZoningAgent:
             
             lines = [f"**Metrics matching '{query}':**\n"]
             for m in matches:
-                direction = "lower is better" if m.direction == "minimize" else "higher is better"
-                lines.append(f"- **{m.display_name}** ({m.category}): {m.description} ({direction})")
+                lines.append(f"- **{m.display_name}** ({m.category}): {m.description} ({_direction_text(m)})")
             
             return ToolResult("\n".join(lines))
         
@@ -1023,6 +1033,8 @@ class ZoningAgent:
             for metric_name, bounds in cluster_bounds.items():
                 if metric_name in METRIC_BY_NAME:
                     metric = METRIC_BY_NAME[metric_name]
+                    if metric.direction is None:
+                        continue
                     if metric.direction == "minimize":
                         self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
                     else:
@@ -1080,6 +1092,9 @@ class ZoningAgent:
                     continue
 
                 metric = METRIC_BY_NAME[metric_name]
+                if metric.direction is None:
+                    applied.append(f"- {metric_name}: skipped (informational metric)")
+                    continue
                 filtered = self._get_filtered_solutions()
                 if len(filtered) <= 1:
                     applied.append(f"- {metric_name}: skipped (only {len(filtered)} solution left)")
@@ -1120,8 +1135,7 @@ class ZoningAgent:
                 for m in CORE_METRICS[:6]:
                     if m.column in after_centroid.index:
                         val = after_centroid[m.column]
-                        direction_text = "(lower better)" if m.direction == "minimize" else "(higher better)"
-                        metric_lines.append(f"- {m.display_name}: {val:.3f} {direction_text}")
+                        metric_lines.append(f"- {m.display_name}: {val:.3f} {_direction_text(m)}")
 
             pending_version_id = len(self.state.versions)
             desc = f"Applied {len(applied)} feedback-based filters"

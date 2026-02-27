@@ -358,6 +358,7 @@ async def admin_solution_space(authorization: Optional[str] = Header(None)):
                 "distance": "Geographic Access & Proximity",
                 "programs": "Educational Program Availability",
                 "quality": "School Quality Indicators",
+                "structure": "Zone Structure & Shape",
             }.items()
         },
     }

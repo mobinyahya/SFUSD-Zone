@@ -339,7 +339,7 @@ def compute_cluster_directions(
     # Per-metric spread across cluster centers (for normalization)
     spreads = {}
     for i, col in enumerate(metric_cols):
-        if col not in METRIC_BY_COLUMN:
+        if col not in METRIC_BY_COLUMN or METRIC_BY_COLUMN[col].direction is None:
             continue
         vals = cluster_centers[:, i]
         spread = vals.max() - vals.min()

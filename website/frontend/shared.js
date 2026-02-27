@@ -42,8 +42,8 @@ const CHART_COLORS = {
 };
 
 // Category display constants
-const CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf' };
-const CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance' };
+const CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf', structure: 'Struct' };
+const CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance', structure: 'Structure' };
 // Reverse lookup: display name → category key (e.g. "Performance" → "quality")
 const DISPLAY_TO_CATEGORY = Object.fromEntries(
     Object.entries(CATEGORY_DISPLAY).map(([k, v]) => [v, k])
@@ -446,12 +446,17 @@ function updateComparisonTable() {
             const rank = ranks[key];
             if (value === undefined || value === null) continue;
 
+            const mConfig = metricsConfig && metricsConfig.metrics.find(m => m.column === key);
+            const isInfoOnly = mConfig && mConfig.direction == null;
+
             const rawValue = rank && rank.raw_value !== undefined
                 ? formatValue(rank.raw_value, key)
                 : formatValue(value, key);
-            const rankBadge = rank
-                ? `<span class="percentile-indicator ${rank.ranking}">${rank.percentile}%</span>`
-                : `<span class="percentile-indicator">-</span>`;
+            const rankBadge = isInfoOnly
+                ? ''
+                : (rank
+                    ? `<span class="percentile-indicator ${rank.ranking}">${rank.percentile}%</span>`
+                    : `<span class="percentile-indicator">-</span>`);
             const chartConfigs = getChartConfig();
             const clickable = chartConfigs[key] && chartConfigs[key].type !== 'none';
             const selectedClass = key === selectedMetricKey ? ' selected' : '';

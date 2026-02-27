@@ -304,14 +304,14 @@ def precompute_pareto_percentiles() -> dict:
     # Pre-compute ranks for each metric column
     metric_ranks = {}
     for metric in CORE_METRICS:
+        if metric.direction is None:
+            continue
         col = metric.column
         if col not in pareto.columns:
             continue
         values = pareto[col]
-        # rank(pct=True) gives fraction 0-1; multiply by 100 for percentile
         raw_pct = values.rank(pct=True) * 100
         if metric.direction == 'minimize':
-            # Invert so higher percentile = better (lower raw value)
             raw_pct = 100 - raw_pct
         metric_ranks[col] = raw_pct
 
@@ -366,11 +366,14 @@ def precompute_category_percentiles() -> dict:
         'distance': 'Dist',
         'programs': 'Prog',
         'quality': 'Perf',
+        'structure': 'Struct',
     }
 
-    # Group core metric columns by category
+    # Group core directed metric columns by category
     category_metrics = {}
     for metric in CORE_METRICS:
+        if metric.direction is None:
+            continue
         short = CATEGORY_SHORT.get(metric.category)
         if short:
             category_metrics.setdefault(short, []).append(metric.column)
@@ -433,6 +436,8 @@ def compute_percentile_ranks(metrics: dict, solution_path: str = None) -> dict:
     pareto = get_pareto_solutions()
     ranks = {}
     for metric in CORE_METRICS:
+        if metric.direction is None:
+            continue
         col = metric.column
         if col not in metrics or col not in pareto.columns:
             continue
@@ -444,7 +449,6 @@ def compute_percentile_ranks(metrics: dict, solution_path: str = None) -> dict:
         if len(all_values) == 0:
             continue
 
-        # percentileofscore equivalent: fraction of values <= this value
         raw_pct = (all_values <= value).sum() / len(all_values) * 100
         if metric.direction == 'minimize':
             normalized = 100 - raw_pct
@@ -485,11 +489,14 @@ def get_category_percentiles(solution_path: str = None, percentile_ranks: dict =
         'distance': 'Dist',
         'programs': 'Prog',
         'quality': 'Perf',
+        'structure': 'Struct',
     }
 
-    # Group metrics by category
+    # Group directed metrics by category
     category_metrics = {}
     for metric in CORE_METRICS:
+        if metric.direction is None:
+            continue
         short = CATEGORY_SHORT.get(metric.category)
         if short:
             category_metrics.setdefault(short, []).append(metric.column)

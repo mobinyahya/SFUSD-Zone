@@ -290,6 +290,7 @@ def aggregate_results(
                 "status": result.status,
                 "total_wall_time": result.total_wall_time,
                 "boundary_cost": result.boundary_cost,
+                "num_zones": len(set(result.zone_dict.values())) if result.zone_dict else 0,
             }
             
             # Recompute metrics if requested and we have a zone_dict

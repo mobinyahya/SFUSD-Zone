@@ -40,8 +40,9 @@ class FilterState:
     bounds: dict[str, FilterBounds] = field(default_factory=dict)
     
     def __post_init__(self):
-        # Initialize bounds for all metrics if not provided
         for metric in ALL_METRICS:
+            if metric.direction is None:
+                continue
             if metric.display_name not in self.bounds:
                 self.bounds[metric.display_name] = FilterBounds()
     
@@ -63,7 +64,7 @@ def apply_filters(df: pd.DataFrame, filter_state: FilterState) -> pd.DataFrame:
     mask = pd.Series([True] * len(df), index=df.index)
     
     for metric in ALL_METRICS:
-        if metric.column not in df.columns:
+        if metric.direction is None or metric.column not in df.columns:
             continue
         
         bounds = filter_state.bounds.get(metric.display_name, FilterBounds())
@@ -129,7 +130,12 @@ def get_filter_summary(
             bound_strs.append(f"min ≥ {bounds.min_bound:.4f}")
         
         constraint_str = ", ".join(bound_strs) if bound_strs else "no constraint"
-        direction = "↓ lower is better" if metric.direction == "minimize" else "↑ higher is better"
+        if metric.direction == "minimize":
+            direction = "lower is better"
+        elif metric.direction == "maximize":
+            direction = "higher is better"
+        else:
+            direction = "informational"
         
         lines.append(f"• **{metric.display_name}** ({direction})")
         lines.append(f"    All solutions range: {all_min:.4f} - {all_max:.4f}")
@@ -173,6 +179,8 @@ def adjust_filter_bound(
         raise ValueError(f"Unknown metric: {metric_name}")
 
     metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
     col = metric.column
     bounds = filter_state.bounds.get(metric_name, FilterBounds())
 
@@ -298,6 +306,8 @@ def find_relaxation_needed(
     suggestions = {}
     
     for metric in ALL_METRICS:
+        if metric.direction is None:
+            continue
         col = metric.column
         if col not in all_df.columns:
             continue
