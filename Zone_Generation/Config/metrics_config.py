@@ -88,10 +88,10 @@ CATEGORIES = {
 }
 
 CATEGORY_DESCRIPTIONS = {
-    "diversity": "Measures how evenly demographics are distributed across zones. Lower deviation = more balanced.",
+    "diversity": "Measures how evenly demographics are distributed across zones.",
     "distance": "Measures geographic access to schools within zones.",
-    "programs": "Counts of educational programs available in each zone. Higher = more options.",
-    "quality": "Measures how evenly school quality is distributed across zones. Lower deviation = more equitable.",
+    "programs": "Measure how hard it is for students to access programs within their zone.",
+    "quality": "Measures how evenly school quality is distributed across zones.",
     "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
 }
 
@@ -104,7 +104,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="theil_index",
         display_name="Racial Diversity",
-        description="Theil Entropy index measuring racial diversity (0=Highly-Diverse, 1=Non-Diverse). This uses the following racial groups: Black, Hispanic/Latinx, White, Asian.",
+        description="Theil Entropy index measuring racial diversity. This represents the diversity of the racial groups in the district. 0 = Highly-Diverse, 1 = Non-Diverse. This uses the following racial groups: Black, Hispanic/Latinx, White, Asian.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -115,7 +115,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="frl_dissim",
         display_name="FRL Dissimilarity",
-        description="Dissimilarity index for free/reduced lunch students (0=perfectly integrated, 1=completely segregated). Measures the share of FRL students that would need to move between zones for even distribution.",
+        description="Dissimilarity index for free/reduced lunch students. This represents the number of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -129,7 +129,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="black_dissim",
         display_name="Black Dissimilarity",
-        description="Dissimilarity index for Black/African American students (0=perfectly integrated, 1=completely segregated).",
+        description="Dissimilarity index for Black/African American students. This represents the number of Black/African American students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -137,7 +137,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="hispanic_dissim",
         display_name="Hispanic/Latinx Dissimilarity",
-        description="Dissimilarity index for Hispanic/Latinx students (0=perfectly integrated, 1=completely segregated).",
+        description="Dissimilarity index for Hispanic/Latinx students. This represents the number of Hispanic/Latinx students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -145,7 +145,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="white_dissim",
         display_name="White Dissimilarity",
-        description="Dissimilarity index for White students (0=perfectly integrated, 1=completely segregated).",
+        description="Dissimilarity index for White students. This represents the number of white students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -153,7 +153,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="asian_dissim",
         display_name="Asian Dissimilarity",
-        description="Dissimilarity index for Asian students (0=perfectly integrated, 1=completely segregated).",
+        description="Dissimilarity index for Asian students. This represents the number of asian students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -169,7 +169,7 @@ DISTANCE_METRICS = [
     MetricSpec(
         column="avg_closest_zone_school_distance",
         display_name="Avg Distance to Closest School",
-        description="Average distance to nearest school in zone (miles) across all zones.",
+        description="Average distance to nearest in-zone school (miles) across all students.",
         category="distance",
         direction="minimize",
         is_core=True,
@@ -183,7 +183,7 @@ DISTANCE_METRICS = [
     MetricSpec(
         column="avg_ge_schools_within_half_mile",
         display_name="GE Schools Within 0.5 Miles",
-        description="Average number of General Education schools within 0.5 miles per block in each zone. Higher means students have more nearby GE school options.",
+        description="Average number of General Education schools within 0.5 miles of each student. Higher means students have more nearby GE school options.",
         category="distance",
         direction="maximize",
         is_core=True,
@@ -241,7 +241,7 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="seat_disparity",
         display_name="Student Seat Imbalance",
-        description="Average percentage that the number of seats deviates from the number of students per zone. Lower indicates that zones are more balanced in terms of seat-student imbalance.",
+        description="Mean absolute deviation of the number of seats per zone from the number of students per zone. Lower means more balanced seat-student distribution.",
         category="programs",
         direction="minimize",
         is_core=True,
@@ -395,7 +395,8 @@ STRUCTURE_METRICS = [
     MetricSpec(
         column="compactness",
         display_name="Compactness",
-        description="Boundary cost divided by number of zones. Lower indicates zones are more compact and \"nicer\" looking. Normalizes boundary cost so solutions with different zone counts are comparable.",
+        description="The overall compactness of the zones in this mapping. This basically measures how jagged and weird the zones look. Lower indicates \
+        that zones are more compact and \"nicer\" looking. This is calculated by normalizing the number of neighbors in different zones by the number of zones.",
         category="structure",
         direction="minimize",
         is_core=False,
@@ -404,7 +405,7 @@ STRUCTURE_METRICS = [
     MetricSpec(
         column="num_zones",
         display_name="Number of Zones",
-        description="Total number of zones in this solution.",
+        description="Total number of zones in this mapping.",
         category="structure",
         is_core=False,
         short_name="Zones",
@@ -420,7 +421,7 @@ QUALITY_METRICS = [
     MetricSpec(
         column="mad_math_score",
         display_name="Math Score Equity",
-        description="Mean absolute deviation of capacity-weighted math scores across zones. Lower means more equitable math quality distribution.",
+        description="Mean absolute deviation of average school math scores across zones. Lower means more equitable math quality distribution.",
         category="quality",
         direction="minimize",
         is_core=True,
@@ -433,7 +434,7 @@ QUALITY_METRICS = [
     MetricSpec(
         column="mad_eng_score",
         display_name="English Score Equity",
-        description="Mean absolute deviation of capacity-weighted English scores across zones. Lower means more equitable English quality distribution.",
+        description="Mean absolute deviation of average school English scores across zones. Lower means more equitable English quality distribution.",
         category="quality",
         direction="minimize",
         is_core=True,

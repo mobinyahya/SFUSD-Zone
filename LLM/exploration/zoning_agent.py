@@ -8,12 +8,15 @@ using adjustable filters on a Pareto frontier of solutions.
 import os
 import json
 import copy
+import logging
 from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from .metrics_config import (
     ALL_METRICS,
@@ -151,7 +154,7 @@ def build_tools():
             "type": "function",
             "function": {
                 "name": "query_zone_data",
-                "description": "Query detailed data for specific zones in the current solution. Returns demographics, programs, quality metrics, and distances for requested zones.",
+                "description": "Query detailed data for specific zones in the current mapping. Returns demographics, programs, quality metrics, and distances for requested zones.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -170,30 +173,30 @@ def build_tools():
                 },
             },
         },
-        {
-            "type": "function",
-            "function": {
-                "name": "compare_zones",
-                "description": "Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "zone_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
-                            "minItems": 2,
-                        }
-                    },
-                    "required": ["zone_ids"],
-                },
-            },
-        },
+        # {
+        #     "type": "function",
+        #     "function": {
+        #         "name": "compare_zones",
+        #         "description": "Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
+        #         "parameters": {
+        #             "type": "object",
+        #             "properties": {
+        #                 "zone_ids": {
+        #                     "type": "array",
+        #                     "items": {"type": "integer"},
+        #                     "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
+        #                     "minItems": 2,
+        #                 }
+        #             },
+        #             "required": ["zone_ids"],
+        #         },
+        #     },
+        # },
         {
             "type": "function",
             "function": {
                 "name": "undo_action",
-                "description": "Undo the last filter change and restore the previous solution state. Can undo multiple steps.",
+                "description": "Undo the last filter change and restore the previous mapping. Can undo multiple steps.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -211,7 +214,7 @@ def build_tools():
             "type": "function",
             "function": {
                 "name": "show_version_history",
-                "description": "Show the history of filter changes and solution states in this session.",
+                "description": "Show the history of filter changes and mapping states in this session.",
                 "parameters": {
                     "type": "object",
                     "properties": {},
@@ -223,7 +226,7 @@ def build_tools():
             "type": "function",
             "function": {
                 "name": "get_current_solution",
-                "description": "Get the current 'balanced' centroid solution based on the current filters. Use show_all_metrics based on user intent: if they're asking for overview/details/depth about metrics, set to true. If they just want current status or quick check, set to false.",
+                "description": "Get the current 'balanced' mapping based on the current filters. Use show_all_metrics based on user intent: if they're asking for overview/details/depth about metrics, set to true. If they just want current status or quick check, set to false.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -269,7 +272,7 @@ def build_tools():
             "type": "function",
             "function": {
                 "name": "tighten_filter",
-                "description": "Tighten the constraint for a specific metric to improve it. IMPORTANT: Before calling this tool, ALWAYS explain the trade-offs to the user and ask them to choose a strength level (mild/moderate/aggressive). Only call this tool AFTER the user confirms their choice.",
+                "description": "Tighten the constraint for a specific metric to improve it. Uses moderate strength by default. Infer strength based on user tone and intent, or explicitly ask if unclear.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -280,8 +283,9 @@ def build_tools():
                         },
                         "strength": {
                             "type": "string",
-                            "description": "How aggressively to tighten: 'mild' (~5% of range), 'moderate' (~10%), or 'aggressive' (~25%)",
+                            "description": "How aggressively to tighten: 'mild' (~5% of range), 'moderate' (~10%, default), or 'aggressive' (~25%)",
                             "enum": ["mild", "moderate", "aggressive"],
+                            "default": "moderate",
                         },
                     },
                     "required": ["metric_name"],
@@ -528,6 +532,11 @@ class ZoningAgent:
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         )
         self.model = "gemini-2.5-flash"
+
+        # Session-level token usage tracking
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_api_calls = 0
 
         # Deferred version saving: when True, filter tool calls accumulate descriptions
         # instead of saving a new version per call. One LLM turn = one version save.
@@ -1238,6 +1247,10 @@ class ZoningAgent:
         solution_path = None
         any_tool_called = False
 
+        turn_prompt_tokens = 0
+        turn_completion_tokens = 0
+        turn_api_calls = 0
+
         self._defer_version_save = True
         self._pending_descriptions = []
         self._pending_solution_path = None
@@ -1259,6 +1272,13 @@ class ZoningAgent:
             tools=self.tools,
             tool_choice="auto",
         )
+        turn_api_calls += 1
+        if response.usage:
+            turn_prompt_tokens += response.usage.prompt_tokens
+            turn_completion_tokens += response.usage.completion_tokens
+            logger.info("LLM call #%d: prompt=%d completion=%d total=%d",
+                        turn_api_calls, response.usage.prompt_tokens,
+                        response.usage.completion_tokens, response.usage.total_tokens)
         assistant_message = response.choices[0].message
 
         while assistant_message.tool_calls:
@@ -1285,8 +1305,10 @@ class ZoningAgent:
                 except json.JSONDecodeError:
                     arguments = {}
 
+                logger.info("Tool call: %s args=%s", tool_name, arguments)
                 any_tool_called = True
                 tool_result = self._execute_tool(tool_name, arguments)
+                logger.info("Tool result: %d chars", len(tool_result.text))
 
                 if tool_result.solution_path:
                     solution_path = tool_result.solution_path
@@ -1305,10 +1327,27 @@ class ZoningAgent:
                 tools=self.tools,
                 tool_choice="auto",
             )
+            turn_api_calls += 1
+            if response.usage:
+                turn_prompt_tokens += response.usage.prompt_tokens
+                turn_completion_tokens += response.usage.completion_tokens
+                logger.info("LLM call #%d: prompt=%d completion=%d total=%d",
+                            turn_api_calls, response.usage.prompt_tokens,
+                            response.usage.completion_tokens, response.usage.total_tokens)
             assistant_message = response.choices[0].message
 
         final_content = assistant_message.content or ""
         self.history.append({"role": "assistant", "content": final_content})
+
+        # Accumulate session totals
+        self.total_prompt_tokens += turn_prompt_tokens
+        self.total_completion_tokens += turn_completion_tokens
+        self.total_api_calls += turn_api_calls
+        logger.info("Turn totals: prompt=%d completion=%d api_calls=%d | "
+                     "Session totals: prompt=%d completion=%d api_calls=%d",
+                     turn_prompt_tokens, turn_completion_tokens, turn_api_calls,
+                     self.total_prompt_tokens, self.total_completion_tokens,
+                     self.total_api_calls)
 
         # Flush deferred version: one version per chat turn
         self._defer_version_save = False
@@ -1347,6 +1386,14 @@ class ZoningAgent:
             "clusters": clusters_data,
             "solution_path": solution_path,
             "description": description,
+            "usage": {
+                "prompt_tokens": turn_prompt_tokens,
+                "completion_tokens": turn_completion_tokens,
+                "api_calls": turn_api_calls,
+                "session_total_prompt_tokens": self.total_prompt_tokens,
+                "session_total_completion_tokens": self.total_completion_tokens,
+                "session_total_api_calls": self.total_api_calls,
+            },
         }
 
     def _build_clusters_response(self) -> list:
