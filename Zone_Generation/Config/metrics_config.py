@@ -515,6 +515,20 @@ def search_metrics(query: str) -> list[MetricSpec]:
     ]
 
 
+def resolve_metric_identifiers(identifiers: list[str]) -> list[str]:
+    """Resolve a mix of category names and metric display/column names to column names."""
+    columns = []
+    for ident in identifiers:
+        ident_lower = ident.lower()
+        if ident_lower in CATEGORIES:
+            columns.extend(m.column for m in get_metrics_by_category(ident_lower))
+        elif ident in METRIC_BY_NAME:
+            columns.append(METRIC_BY_NAME[ident].column)
+        elif ident in METRIC_BY_COLUMN:
+            columns.append(ident)
+    return columns
+
+
 def get_chart_hints() -> dict[str, dict]:
     """Build chart hints dict from MetricSpec chart fields (for website API)."""
     hints = {}

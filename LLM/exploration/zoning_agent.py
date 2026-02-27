@@ -26,6 +26,7 @@ from .metrics_config import (
     get_metrics_by_category,
     get_metric_summary,
     search_metrics,
+    resolve_metric_identifiers,
 )
 from .pareto import (
     load_solutions,
@@ -104,6 +105,7 @@ class AgentState:
     cluster_directions: Optional[dict] = None
     clustered_solutions: Optional[object] = None
     clustered_vectors: Optional[object] = None
+    cluster_columns: Optional[list[str]] = None
     
     # Interaction state
     awaiting_confirmation: bool = False
@@ -377,7 +379,7 @@ def build_tools():
             "type": "function",
             "function": {
                 "name": "show_solution_clusters",
-                "description": "Group the current feasible solutions into clusters and show a representative solution from each cluster with an interpretable direction label. Useful when there are many solutions and the user wants to see different 'types' of solutions available.",
+                "description": "Group the current feasible solutions into clusters and show a representative solution from each cluster with an interpretable direction label. Useful when there are many solutions and the user wants to see different 'types' of solutions available. You can focus clustering on specific metrics or categories to find groups that differ along a particular theme (e.g. diversity, distance, quality).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -386,6 +388,11 @@ def build_tools():
                             "description": "Number of clusters to create. Default is automatically chosen based on solution count.",
                             "minimum": 2,
                             "maximum": 8,
+                        },
+                        "metrics": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of metric categories or display names to cluster on. Categories: diversity, distance, programs, quality, structure. Individual metrics: any metric display name (e.g. 'Compactness', 'Math Score Equity'). If omitted, clusters on all metrics.",
                         },
                     },
                     "required": [],
@@ -502,6 +509,15 @@ v3: Increased Asian Diversity. Mappings: 503 -> 350."
 All metrics are about properly balancing resources and tradeoffs within each zone. So, each metric does not actually make the schools better or worse, but rather ensures that the resources are balanced within each zone.
 For each metric, there is a "direction" that is either "minimize" or "maximize". If the direction is "minimize", then a lower value is better, and if the direction is "maximize", then a higher value is better.
 When reporting metric changes, always show the percentage improvement (e.g., "Math improved by 5.6%"), not the raw before/after values. Compute as |(new - old) / old| * 100, rounded to one decimal.
+
+## Clustering
+If the user seems like they are interested in looking at the different types of mappings within the rest of the solution space, you should use the show_solution_clusters tool to group the mappings into clusters and show a representative solution from each cluster.
+When grouping mappings, choose which metrics to cluster on based on the user's focus:
+- If the user is discussing diversity, cluster on diversity metrics only.
+- If discussing distance or compact zones, cluster on distance/structure metrics.
+- If discussing school quality, cluster on quality metrics.
+- If the user has no specific focus or asks generally, cluster on all metrics (omit the metrics parameter).
+You can combine categories and individual metrics (e.g. diversity + Compactness).
 
 ## Feedback Context
 When saved solutions with pros/cons are provided in context, use that feedback as your primary signal.
@@ -1108,15 +1124,23 @@ class ZoningAgent:
             n_clusters = min(n_clusters, len(filtered) // 2)
             n_clusters = max(2, n_clusters)
             
-            vectors = vectorize_solutions(filtered)
+            columns = None
+            raw_metrics = arguments.get("metrics")
+            if raw_metrics:
+                columns = resolve_metric_identifiers(raw_metrics)
+                if not columns:
+                    return ToolResult(f"No recognized metrics in {raw_metrics}. Use category names (diversity, distance, programs, quality, structure) or metric display names.")
+            
+            vectors = vectorize_solutions(filtered, columns=columns)
             labels, centers = cluster_solutions(vectors, n_clusters)
-            directions = compute_cluster_directions(vectors, centers)
+            directions = compute_cluster_directions(vectors, centers, columns=columns)
             
             self.state.clustered_solutions = filtered
             self.state.clustered_vectors = vectors
             self.state.cluster_labels = labels
             self.state.cluster_centers = centers
             self.state.cluster_directions = directions
+            self.state.cluster_columns = columns
             
             clusters_data = self._build_clusters_response()
             return ToolResult(
@@ -1137,7 +1161,8 @@ class ZoningAgent:
             cluster_bounds = get_cluster_bounds(
                 self.state.clustered_solutions,
                 self.state.cluster_labels,
-                cluster_id
+                cluster_id,
+                columns=self.state.cluster_columns,
             )
             
             for metric_name, bounds in cluster_bounds.items():
@@ -1156,6 +1181,7 @@ class ZoningAgent:
             self.state.cluster_directions = None
             self.state.clustered_solutions = None
             self.state.clustered_vectors = None
+            self.state.cluster_columns = None
             
             self._invalidate_centroid()
             _, after_path, after_count = self._get_current_centroid()

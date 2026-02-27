@@ -214,18 +214,20 @@ class SpectralClusterer(ClusteringMethod):
 DEFAULT_CLUSTERING_METHOD = "spectral"
 
 
-def vectorize_solutions(df: pd.DataFrame) -> np.ndarray:
+def vectorize_solutions(df: pd.DataFrame, columns: list[str] | None = None) -> np.ndarray:
     """
     Convert solution DataFrame to numpy array of metric values.
     
     Args:
         df: DataFrame with metric columns
+        columns: Optional subset of metric column names to use.
+                 If None, uses all metric columns.
         
     Returns:
         2D numpy array of shape (n_solutions, n_metrics)
     """
-    # Only use columns that exist in both df and metric config
-    metric_cols = [col for col in get_metric_columns() if col in df.columns]
+    all_cols = columns if columns else get_metric_columns()
+    metric_cols = [col for col in all_cols if col in df.columns]
     return df[metric_cols].values.astype(np.float64)
 
 
@@ -323,7 +325,8 @@ SHORT_METRIC_NAMES = {
 
 def compute_cluster_directions(
     vectors: np.ndarray,
-    cluster_centers: np.ndarray
+    cluster_centers: np.ndarray,
+    columns: list[str] | None = None,
 ) -> dict[int, dict]:
     """
     Compute labels and strength/weakness lists for each cluster.
@@ -331,8 +334,12 @@ def compute_cluster_directions(
     Takes the mean of cluster centers as the reference point, then describes
     each cluster by its direction away from that center-of-centers.
     Labels use specific metric names (not broad categories) to stay unique.
+
+    Args:
+        columns: Optional subset of metric column names matching the vector dimensions.
+                 If None, uses all metric columns.
     """
-    metric_cols = get_metric_columns()
+    metric_cols = columns if columns else get_metric_columns()
     n_clusters = len(cluster_centers)
     center_of_centers = cluster_centers.mean(axis=0)
 
@@ -454,30 +461,32 @@ def get_representative_solution(
 def get_cluster_bounds(
     df: pd.DataFrame,
     labels: np.ndarray,
-    cluster_id: int
+    cluster_id: int,
+    columns: list[str] | None = None,
 ) -> dict[str, FilterBounds]:
     """
     Calculate min/max bounds for each metric within a cluster.
-    
-    These bounds can be used to tighten filters to only include
-    solutions similar to the selected cluster.
     
     Args:
         df: DataFrame with solutions
         labels: Cluster assignments
         cluster_id: Which cluster to get bounds for
+        columns: Optional subset of metric column names to restrict bounds to.
+                 If None, computes bounds for all metrics.
         
     Returns:
         Dict mapping metric display_name to FilterBounds with min/max set
     """
-    # Get solutions in this cluster
     cluster_mask = labels == cluster_id
     cluster_df = df.iloc[np.where(cluster_mask)[0]]
     
+    col_set = set(columns) if columns else None
     bounds = {}
     for metric in ALL_METRICS:
         col = metric.column
         if col not in cluster_df.columns:
+            continue
+        if col_set is not None and col not in col_set:
             continue
         
         bounds[metric.display_name] = FilterBounds(
