@@ -175,25 +175,25 @@ def build_tools():
                 },
             },
         },
-        # {
-        #     "type": "function",
-        #     "function": {
-        #         "name": "compare_zones",
-        #         "description": "Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "zone_ids": {
-        #                     "type": "array",
-        #                     "items": {"type": "integer"},
-        #                     "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
-        #                     "minItems": 2,
-        #                 }
-        #             },
-        #             "required": ["zone_ids"],
-        #         },
-        #     },
-        # },
+        {
+            "type": "function",
+            "function": {
+                "name": "compare_zones",
+                "description": "Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "zone_ids": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
+                            "minItems": 2,
+                        }
+                    },
+                    "required": ["zone_ids"],
+                },
+            },
+        },
         # {
         #     "type": "function",
         #     "function": {
