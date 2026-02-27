@@ -283,11 +283,7 @@ function renderClusterSelector(clusters) {
 
 async function selectCluster(clusterId, clusterLabel) {
     document.querySelectorAll('.cluster-selector').forEach(selector => {
-        selector.classList.add('disabled');
-        selector.querySelectorAll('.cluster-option').forEach(opt => {
-            opt.onclick = null;
-            opt.style.cursor = 'default';
-        });
+        selector.closest('.message')?.remove() || selector.remove();
     });
 
     trackEvent('cluster_selected', { cluster_id: clusterId, cluster_label: clusterLabel });

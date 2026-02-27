@@ -161,8 +161,8 @@ async def get_solution(path: str):
         zone_ids = sorted(set(bg_zone_dict.values()))
         zone_index_map = {zone_id: idx + 1 for idx, zone_id in enumerate(zone_ids)}
 
-        # Build colors map (using original zone IDs for lookup)
-        colors = {zone_id: get_zone_color(zone_id) for zone_id in zone_ids}
+        # Build colors map by zone index (0, 1, 2, ...) so any centroid config gets distinct colors
+        colors = {zone_id: get_zone_color(idx) for idx, zone_id in enumerate(zone_ids)}
 
         # Convert keys to strings for JSON
         zones = {str(k): v for k, v in bg_zone_dict.items()}

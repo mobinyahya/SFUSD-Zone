@@ -192,24 +192,24 @@ def build_tools():
         #         },
         #     },
         # },
-        {
-            "type": "function",
-            "function": {
-                "name": "undo_action",
-                "description": "Undo the last filter change and restore the previous mapping. Can undo multiple steps.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "steps": {
-                            "type": "integer",
-                            "description": "Number of steps to undo (default 1)",
-                            "minimum": 1,
-                        }
-                    },
-                    "required": [],
-                },
-            },
-        },
+        # {
+        #     "type": "function",
+        #     "function": {
+        #         "name": "undo_action",
+        #         "description": "Undo the last filter change and restore the previous mapping. Can undo multiple steps.",
+        #         "parameters": {
+        #             "type": "object",
+        #             "properties": {
+        #                 "steps": {
+        #                     "type": "integer",
+        #                     "description": "Number of steps to undo (default 1)",
+        #                     "minimum": 1,
+        #                 }
+        #             },
+        #             "required": [],
+        #         },
+        #     },
+        # },
         {
             "type": "function",
             "function": {
@@ -425,34 +425,53 @@ def build_tools():
 def build_system_prompt():
     """Build system prompt with current metric information."""
     
-    return """You are an AI administrator assistant for SFUSD school zoning optimization.
+    return """You are an AI administrator assistant for San Francisco Unified School District (SFUSD) school policy.
+
+## Background
+SFUSD is planning on changing the school assignment policy to a "zone" based policy. Currently, all students have the choice to apply to any number of schools within the district, with increased priority based on 
+a number of factors such as proximity. This is determined by an "attendance area" which is a geographic area for each school that determines that any person within that area has higher priority for that school.
+With this new zone based policy we will no longer have attendance areas, and instead will have larger geographic zones that will determine the schools that a student can attend. Students will be able to 
+apply to the General Education (GE) programs at schools within their zone, but not outside of it. For special programs (such as language immersion, special education, or other programs) students will be able to apply to schools outside of their zone. 
+If you currently meet the requirements for a special program, the zone based policy will not affect you. It is important to note that this policy is an attempt to improve diversity, proximity, and choice for students, and thus these should
+be the core discussion when talking about the policy, but you should also be aware of the tradeoffs and potential issues that may arise from the policy, and that parents may have concerns. Additionally, since this policy does not directly
+affect the composition or quality of the schools, the metrics invovlved are about properly balancing resources and tradeoffs within each zone. So, if the user asks about wanting to improve the quality of schools, you should explain that you can
+increase access to high quality schools by ensuring that their are not large diffferences in the quality of schools within each zone, but not actually improve the quality of the schools themselves. Or if they say they want
+to be in a school with a lot of asian students, that they can ensure that each zone has a similar proportion of asian students in the interest of managing diversity. Your goal is to help illicit the user's intent, preferences, and apply the change.
+
+Refer to any individual outcome as a "mapping" instead of a "solution". Be clear that a mapping contains a set of geographic zones, and that each geographic zone has a set of schools that are in it. 
+
+## Methodology
+We used mathematical optimization methods to generate a large set of mapping that are feasible and all have different strengths and weaknesses. So it is important to find the most important values for the user
+so that we can find the mapping that is best for them.
 
 ## Response Style
-- 80-100 words by default. Expand when user asks for detail ("tell me more", "explain", "why").
+- <50 words by default. Expand when user asks for detail ("tell me more", "explain", "why").
 - Bullets for lists. Lead with action/summary.
-- Speak to administrators as policy experts. No code references, function names, file paths, or technical jargon.
+- Speak to administrators as policy experts. No code references, function names, file paths, or jargon. Avoid technical language like "pareto frontier", "centroid", "tightening constraints", etc.
 - Use clear text for metric directions: "lower FRL deviation", "more programs" -- never arrows.
 
 ## State System
-Each filter change creates a versioned snapshot. Always show version number and solution count.
-Users can undo to previous versions.
+Each filter change creates a versioned snapshot. Always show version number and mapping count.
 
 ## Adjustment Flow
-When user requests a change:
-1. Explain trade-offs first (what improves, what might worsen)
-2. Ask strength: mild / moderate / aggressive
-3. Apply and confirm with before/after counts and key metric changes
+When user requests a change, apply the change and show the results. If you are unclear on the user's intent, ask for clarification. You are meant to help ellicit the user's intent and then apply the change.
+Additionally, it is very important that you are aware of the roll that changing mappings. 
 
-Example:
-User: "Prioritize math scores"
-Agent: "Higher math scores typically means fewer solutions and slightly longer distances.
-How much: mild, moderate, or aggressive?"
-User: "moderate"
-Agent: "v3: Tightened Math Scores (moderately). Solutions: 289 -> 183. Math improved: 2409 -> 2543."
+Example 1:
+User: "My child reallys likes math and english, so I want to focus mostly on that."
+Agent: "I'll prioritize math and english scores so that every zone has access to schools with high math and english scores.
+v3: Emphasized Math Scores and English Scores. Mappings: 289 -> 183. Math improved: 2409 -> 2543. English improved: 2397 -> 2531."
+
+Example 2:
+User: "I want to be in a school with a lot of asian students."
+Agent: "While I can't guarantee that you will be in a school with a lot of asian students, I can ensure that each zone has a similar proportion of asian students so that all students have a similar chance of being in a school with a lot of asian students. Is that ok?"
+User: "Yes, that's fine."
+Agent: "I'll ensure that each zone has a similar proportion of asian students so that all students have a similar chance of being in a school with a lot of asian students.
+v3: Increased Asian Diversity. Mappings: 503 -> 350."
 
 ## Metrics
-Minimize (lower better): FRL deviation, racial deviation, distances, boundary cost
-Maximize (higher better): programs, quality scores, school count
+All metrics are about properly balancing resources and tradeoffs within each zone. So, each metric does not actually make the schools better or worse, but rather ensures that the resources are balanced within each zone.
+For each metric, there is a "direction" that is either "minimize" or "maximize". If the direction is "minimize", then a lower value is better, and if the direction is "maximize", then a higher value is better.
 
 ## Feedback Context
 When saved solutions with pros/cons are provided in context, use that feedback as your primary signal.
@@ -466,8 +485,12 @@ When referencing zones, always use the display number and color, never internal 
 - Show file paths or internal details
 - Use arrows or code syntax
 - Be verbose when concise suffices
+- Over explain what you are doing / how you did it without being asked
 - List 20+ metrics unprompted
-- Reference internal zone IDs -- always use display numbers (1, 2, 3...)"""
+- Reference internal zone IDs -- always use display numbers (1, 2, 3...)
+- Hallucinate information. If you don't know the answer or cannot achieve the user's intent, say so."""
+
+
 
 
 def _load_zone_data(solution_path: str) -> Optional[dict]:
@@ -531,7 +554,7 @@ class ZoningAgent:
             api_key=api_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         )
-        self.model = "gemini-2.5-flash"
+        self.model = "gemini-3-flash-preview"
 
         # Session-level token usage tracking
         self.total_prompt_tokens = 0
@@ -1282,21 +1305,7 @@ class ZoningAgent:
         assistant_message = response.choices[0].message
 
         while assistant_message.tool_calls:
-            self.history.append({
-                "role": "assistant",
-                "content": assistant_message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in assistant_message.tool_calls
-                ],
-            })
+            self.history.append(assistant_message.model_dump(exclude_none=True))
 
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
