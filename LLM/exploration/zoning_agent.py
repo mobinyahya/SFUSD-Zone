@@ -39,6 +39,8 @@ from .filters import (
     get_filter_summary,
     adjust_filter_bound,
     find_relaxation_needed,
+    percentile_to_value,
+    set_filter_bound,
 )
 from .clusters import (
     vectorize_solutions,
@@ -309,6 +311,32 @@ def build_tools():
                             "type": "string",
                             "description": "How much to loosen: 'mild' (~10% toward unconstrained), 'moderate' (~25%), or 'aggressive' (~50%)",
                             "enum": ["mild", "moderate", "aggressive"],
+                        },
+                    },
+                    "required": ["metric_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_filter",
+                "description": "Set an explicit filter bound for a metric by raw value, percentile, or clear it. Use when the user has a specific target (e.g. 'FRL deviation under 0.05' or 'top 25% for distance'). If neither value nor percentile is provided, the filter is cleared (unconstrained). Prefer tighten_filter/loosen_filter for relative adjustments.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "metric_name": {
+                            "type": "string",
+                            "description": "The display name of the metric.",
+                            "enum": all_metric_names,
+                        },
+                        "value": {
+                            "type": "number",
+                            "description": "Exact raw metric value to use as the bound. For 'minimize' metrics this sets an upper bound; for 'maximize' metrics a lower bound.",
+                        },
+                        "percentile": {
+                            "type": "number",
+                            "description": "Quality percentile 0-100 (higher = better). E.g. 75 keeps only solutions better than 75% of all Pareto solutions for this metric.",
                         },
                     },
                     "required": ["metric_name"],
@@ -994,7 +1022,55 @@ class ZoningAgent:
                 f"v{pending_version_id}: Loosened {metric_name} ({strength})\n- {before_count} -> {after_count} solutions",
                 solution_path=after_path,
             )
-        
+
+        elif tool_name == "set_filter":
+            metric_name = arguments["metric_name"]
+            raw_value = arguments.get("value")
+            pctl = arguments.get("percentile")
+
+            if raw_value is not None and pctl is not None:
+                return ToolResult("Provide either 'value' or 'percentile', not both.")
+
+            metric = METRIC_BY_NAME[metric_name]
+            _, _, before_count = self._get_current_centroid()
+
+            if pctl is not None:
+                bound_value = percentile_to_value(self.pareto_original, metric_name, pctl)
+            else:
+                bound_value = raw_value
+
+            set_filter_bound(self.filter_state, metric_name, bound_value)
+            self._invalidate_centroid()
+            _, after_path, after_count = self._get_current_centroid()
+
+            pending_version_id = len(self.state.versions)
+            if bound_value is None:
+                desc = f"Cleared filter on {metric_name}"
+                detail = f"Filter removed (unconstrained)"
+            elif pctl is not None:
+                desc = f"Set {metric_name} to {pctl:.0f}th percentile ({bound_value:.4f})"
+                detail = f"Bound set to {bound_value:.4f} ({pctl:.0f}th percentile)"
+            else:
+                desc = f"Set {metric_name} to {bound_value:.4f}"
+                detail = f"Bound set to {bound_value:.4f}"
+
+            if self._defer_version_save:
+                self._pending_descriptions.append(desc)
+                if after_path:
+                    self._pending_solution_path = after_path
+            else:
+                self.state.save_version(
+                    self.filter_state,
+                    solution_path=after_path,
+                    solution_count=after_count,
+                    description=desc,
+                )
+
+            return ToolResult(
+                f"v{pending_version_id}: {desc}\n- {detail}\n- Solutions: {before_count} -> {after_count}",
+                solution_path=after_path,
+            )
+
         elif tool_name == "get_filter_bounds":
             filtered = self._get_filtered_solutions()
             category = arguments.get("category")

@@ -216,6 +216,70 @@ def adjust_filter_bound(
     raise ValueError(f"Unknown direction: {direction}")
 
 
+def percentile_to_value(
+    all_df: pd.DataFrame,
+    metric_name: str,
+    percentile: float,
+) -> float:
+    """Convert a quality percentile (higher=better) to a raw metric value.
+
+    For "minimize" metrics the percentile is inverted so that requesting the
+    75th quality percentile returns the value at the 25th raw quantile (i.e.
+    a low value, which is good for minimize metrics).
+
+    Args:
+        all_df: All Pareto solutions.
+        metric_name: Display name of metric.
+        percentile: Quality percentile 0-100 where higher means better.
+
+    Returns:
+        The raw metric value corresponding to the requested percentile.
+    """
+    if metric_name not in METRIC_BY_NAME:
+        raise ValueError(f"Unknown metric: {metric_name}")
+    metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
+
+    col = metric.column
+    if col not in all_df.columns:
+        raise ValueError(f"Metric column '{col}' not in DataFrame")
+
+    if metric.direction == "minimize":
+        raw_quantile = (100 - percentile) / 100
+    else:
+        raw_quantile = percentile / 100
+
+    return float(all_df[col].quantile(raw_quantile))
+
+
+def set_filter_bound(
+    filter_state: FilterState,
+    metric_name: str,
+    value: Optional[float] = None,
+) -> None:
+    """Set or clear the filter bound for a metric.
+
+    Sets the appropriate bound based on metric direction:
+    - "minimize" -> max_bound
+    - "maximize" -> min_bound
+
+    If value is None, the bound is cleared (unconstrained).
+    """
+    if metric_name not in METRIC_BY_NAME:
+        raise ValueError(f"Unknown metric: {metric_name}")
+    metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
+
+    bounds = filter_state.bounds.get(metric_name, FilterBounds())
+    if metric.direction == "minimize":
+        bounds.max_bound = value
+    else:
+        bounds.min_bound = value
+    filter_state.bounds[metric_name] = bounds
+
+
 # --- Old solution-count-based tightening/loosening (replaced by adjust_filter_bound) ---
 #
 # def calculate_tightening(
