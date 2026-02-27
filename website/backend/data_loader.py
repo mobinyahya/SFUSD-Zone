@@ -114,7 +114,7 @@ def load_solution_result(solution_path: str) -> dict:
         solution_path: Path to solution folder containing result.json
 
     Returns:
-        Dict with keys: status, metrics, zone_data, boundary_cost, total_wall_time, etc.
+        Dict with keys: status, metrics, zone_data, total_wall_time, etc.
     """
     result_path = os.path.join(solution_path, "result.json")
     with open(result_path, "r") as f:

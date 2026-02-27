@@ -64,6 +64,17 @@ class ZoneMetricsCalculator:
                 school_ids = self.G.nodes[node_id].get('school_ids', [])
                 self.zone_schools[zone_id].extend(school_ids)
     
+    def _compute_boundary_cost(self) -> int:
+        """Count edges crossing zone boundaries."""
+        cost = 0
+        for i in range(len(self.G)):
+            for j in self.G.neighbors(i):
+                if i < j:
+                    continue
+                if self.zone_dict.get(i) != self.zone_dict.get(j):
+                    cost += 1
+        return cost
+
     def compute_all(self, include_choice: bool = True) -> MetricsResult:
         """
         Compute all metrics.
@@ -167,7 +178,13 @@ class ZoneMetricsCalculator:
                 result.zone_data[zone_id].avg_eng_score = qual_data['avg_eng_score']
         
         # 5. Structure metrics
-        result.update({MetricColumns.NUM_ZONES: len(self.zone_blocks)})
+        num_zones = len(self.zone_blocks)
+        boundary_cost = self._compute_boundary_cost()
+        result.update({
+            MetricColumns.NUM_ZONES: num_zones,
+            MetricColumns.BOUNDARY_COST: boundary_cost,
+            MetricColumns.COMPACTNESS: boundary_cost / num_zones if num_zones else 0,
+        })
 
         # 6. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):

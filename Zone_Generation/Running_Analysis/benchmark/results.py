@@ -62,7 +62,6 @@ class BenchmarkResult:
     level_results: list[LevelResult] = field(default_factory=list)
     
     # Final solution quality (from last level)
-    boundary_cost: float = -1
     zone_dict: dict[int, int] = field(default_factory=dict)
     metrics: dict[str, float] = field(default_factory=dict)
     zone_data: dict = field(default_factory=dict)  # Per-zone detailed data
@@ -74,9 +73,7 @@ class BenchmarkResult:
         """Add a level result and update aggregates."""
         self.level_results.append(level_result)
         self.total_wall_time += level_result.wall_time
-        # Update final values from latest level
         self.status = level_result.status
-        self.boundary_cost = level_result.boundary_cost
         self.zone_dict = level_result.zone_dict
     
     def compute_metrics(self, G, config: dict | None = None) -> None:
@@ -161,7 +158,6 @@ class BenchmarkResult:
             "level_wall_times": {
                 lr.level: lr.wall_time for lr in self.level_results
             },
-            "boundary_cost": self.boundary_cost,
             "metrics": self.metrics,
             "zone_data": self.zone_data,
             "config": self.config,
@@ -179,7 +175,6 @@ class BenchmarkResult:
                 "level": final_level.level,
                 "status": self.status,
                 "wall_time": self.total_wall_time,
-                "boundary_cost": self.boundary_cost,
                 "config": self.config,
             }
             info_file = os.path.join(save_path, "solution_info.json")
@@ -208,7 +203,6 @@ class BenchmarkResult:
             status=data["status"],
             error_message=data.get("error_message"),
             total_wall_time=data["total_wall_time"],
-            boundary_cost=data["boundary_cost"],
             metrics=data.get("metrics", {}),
             zone_data=data.get("zone_data", {}),
             config=data.get("config", {}),
@@ -289,7 +283,6 @@ def aggregate_results(
                 "path": root,
                 "status": result.status,
                 "total_wall_time": result.total_wall_time,
-                "boundary_cost": result.boundary_cost,
                 "num_zones": len(set(result.zone_dict.values())) if result.zone_dict else 0,
             }
             

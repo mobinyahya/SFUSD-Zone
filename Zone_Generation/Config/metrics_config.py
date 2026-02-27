@@ -45,6 +45,7 @@ class MetricColumns:
     AVG_CLOSEST_ZONE_SCHOOL_DISTANCE = "avg_closest_zone_school_distance"
     AVG_SCHOOLS_IN_ATTENDANCE_AREA = "avg_schools_in_attendance_area"
     BOUNDARY_COST = "boundary_cost"
+    COMPACTNESS = "compactness"
     AVG_TOTAL_PROGRAMS = "avg_total_programs_per_zone"
     AVG_LANGUAGE_IMMERSION = "avg_language_immersion_per_zone"
     AVG_SPECIAL_ED = "avg_special_ed_per_zone"
@@ -384,11 +385,20 @@ PROGRAM_METRICS = [
 STRUCTURE_METRICS = [
     MetricSpec(
         column="boundary_cost",
-        display_name="Boundary Cost (Compactness)",
-        description="Zone boundary complexity. This basically measures how jagged and weird the zones look. Lower indicates that zones are more compact and \"nicer\" looking.",
+        display_name="Boundary Cost",
+        description="Total number of edges that cross zone boundaries in the graph. Higher means more complex, jagged zone borders.",
         category="structure",
         direction="minimize",
-        is_core=True,
+        is_core=False,
+        short_name="Boundary",
+    ),
+    MetricSpec(
+        column="compactness",
+        display_name="Compactness",
+        description="Boundary cost divided by number of zones. Lower indicates zones are more compact and \"nicer\" looking. Normalizes boundary cost so solutions with different zone counts are comparable.",
+        category="structure",
+        direction="minimize",
+        is_core=False,
         short_name="Compactness",
     ),
     MetricSpec(

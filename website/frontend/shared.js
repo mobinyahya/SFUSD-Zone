@@ -106,6 +106,7 @@ function formatValue(value, key) {
     if (key.includes('distance')) return value.toFixed(2) + ' miles';
     if (key.includes('rating')) return value.toFixed(1);
     if (key === 'boundary_cost') return Math.round(value).toString();
+    if (key === 'compactness') return value.toFixed(1);
     if (key.includes('index') || key.includes('Index')) return value.toFixed(2);
     return value.toFixed(2);
 }

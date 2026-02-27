@@ -94,7 +94,7 @@ def cmd_run_single(args):
     result = run_benchmark(config, args.output)
     print(f"\nResult: {result.status}")
     print(f"Wall time: {result.total_wall_time:.1f}s")
-    print(f"Boundary cost: {result.boundary_cost}")
+    print(f"Boundary cost: {result.metrics.get('boundary_cost', 'N/A')}")
 
 
 def cmd_run_batch(args):
@@ -156,7 +156,7 @@ def cmd_aggregate(args):
     print(f"Aggregated {len(df)} results")
     if not df.empty:
         print("\nSummary:")
-        print(df[['status', 'total_wall_time', 'boundary_cost']].describe())
+        print(df[['status', 'total_wall_time']].describe())
 
 
 def cmd_regenerate(args):

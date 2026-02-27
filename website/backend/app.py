@@ -182,7 +182,6 @@ async def get_solution(path: str):
             ),
             "status": result.get("status", "UNKNOWN"),
 
-            "boundary_cost": result.get("boundary_cost"),
             "total_wall_time": result.get("total_wall_time"),
             "colors": colors,
             "zone_index_map": zone_index_map_json,

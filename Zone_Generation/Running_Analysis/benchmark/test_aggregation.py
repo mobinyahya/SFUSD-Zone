@@ -35,7 +35,6 @@ def test_aggregation():
             result = BenchmarkResult(
                 status="OPTIMAL",
                 total_wall_time=10.5 + i,
-                boundary_cost=100 - i,
                 config=config,
                 metrics={"metric_a": 0.5, "metric_b": 0.8},
                 zone_data={
