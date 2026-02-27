@@ -131,11 +131,14 @@ def compute_ge_proximity_metrics(
     programs_df = load_programs_data(is_local)
     distance_dict = G.graph.get('distance_dict', {})
 
-    # Build set of school IDs that offer GE
+    # Build set of school IDs that offer GE (must also have capacity in the graph)
+    school_data = G.graph.get('school_data', {})
     ge_schools = set()
     for _, row in programs_df.iterrows():
         if row['program_type'] == 'GE':
-            ge_schools.add(row['school_id'])
+            sid = row['school_id']
+            if school_data.get(sid, {}).get('ge_capacity', 0) > 0:
+                ge_schools.add(sid)
 
     # Build school_id -> node lookup
     school_to_node: dict[int, int] = {}

@@ -86,6 +86,8 @@ def get_school_locations() -> list[dict]:
         lon = school_info.get('lon')
         if lat is not None and lon is not None:
             programs_dict = valid_capacity.get(int(school_id), {})
+            if programs_dict.get('GE', 0) <= 0:
+                continue
             total_cap = sum(programs_dict.values())
             schools.append({
                 'school_id': school_id,

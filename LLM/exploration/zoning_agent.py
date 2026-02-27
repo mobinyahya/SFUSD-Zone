@@ -342,6 +342,11 @@ class ZoningAgent:
         if self._initial_clusters is not None:
             result = self._initial_clusters
             self._initial_clusters = None  # Only serve once
+
+            # Record in history so the LLM knows clusters were already shown
+            self.history.append({"role": "user", "content": user_message})
+            self.history.append({"role": "assistant", "content": result["text"]})
+
             result["usage"] = {
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
