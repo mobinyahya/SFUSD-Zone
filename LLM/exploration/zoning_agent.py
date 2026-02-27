@@ -551,7 +551,7 @@ def _load_zone_data(solution_path: str) -> Optional[dict]:
         sorted_ids = sorted(normalized.keys())
         zone_index_map = {zid: idx + 1 for idx, zid in enumerate(sorted_ids)}
         reverse_map = {idx + 1: zid for idx, zid in enumerate(sorted_ids)}
-        colors_map = {zid: zone_colors.get(zid, "#808080") for zid in sorted_ids}
+        colors_map = {zid: zone_colors.get(idx, "#808080") for idx, zid in enumerate(sorted_ids)}
 
         return {
             "zone_data": normalized,
