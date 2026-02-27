@@ -52,10 +52,10 @@ const DISPLAY_TO_CATEGORY = Object.fromEntries(
 // Page-specific hooks (set by app.js or admin.js before calling shared init)
 let pageHooks = {
     rightPanelSelector: '#chat-panel',
-    onSolutionLoaded: () => {},
+    onSolutionLoaded: () => { },
     onSolutionLoadError: (err) => console.error('Solution load error:', err),
-    buildCardExtras: (card, entry) => {},
-    trackEvent: (name, props) => {},
+    buildCardExtras: (card, entry) => { },
+    trackEvent: (name, props) => { },
 };
 
 // ============================================================================
@@ -450,9 +450,6 @@ function updateComparisonTable() {
             const mConfig = metricsConfig && metricsConfig.metrics.find(m => m.column === key);
             const isInfoOnly = mConfig && mConfig.direction == null;
 
-            const rawValue = rank && rank.raw_value !== undefined
-                ? formatValue(rank.raw_value, key)
-                : formatValue(value, key);
             const rankBadge = isInfoOnly
                 ? ''
                 : (rank
@@ -464,7 +461,6 @@ function updateComparisonTable() {
 
             html += `<tr class="metric-row${selectedClass}" data-key="${key}"${clickable ? ' data-clickable="true"' : ''}>`;
             html += `<td class="metric-name">${name}</td>`;
-            html += `<td class="metric-value">${rawValue}</td>`;
             html += `<td class="metric-rank">${rankBadge}</td>`;
             html += `</tr>`;
         }

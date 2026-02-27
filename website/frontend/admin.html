@@ -81,7 +81,14 @@
                     <div id="filter-header">
                         <div class="filter-header-row">
                             <h2>Metric Filters</h2>
-                            <button id="reset-all-btn" class="btn-secondary" title="Remove all filters">Reset All</button>
+                            <div class="filter-header-actions">
+                                <label class="toggle-switch" title="Show additional metrics for filtering">
+                                    <input type="checkbox" id="non-core-toggle">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">More metrics</span>
+                                </label>
+                                <button id="reset-all-btn" class="btn-secondary" title="Remove all filters">Reset All</button>
+                            </div>
                         </div>
                         <div class="filter-search-row">
                             <input type="text" id="metric-search" placeholder="Search metrics to add...">

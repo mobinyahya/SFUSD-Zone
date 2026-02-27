@@ -7,6 +7,7 @@ let authToken = null;
 let solutionSpaceStats = {};
 let filterBounds = {};
 let visibleMetrics = new Set();
+let showNonCore = false;
 let totalPareto = 0;
 let currentFilteredCount = 0;
 let feasibleStats = {};
@@ -84,11 +85,36 @@ function setupEventListeners() {
         for (const col of Object.keys(filterBounds)) {
             filterBounds[col] = { min_bound: null, max_bound: null };
         }
+        showNonCore = false;
+        document.getElementById('non-core-toggle').checked = false;
+        visibleMetrics = new Set();
+        for (const [col, stat] of Object.entries(solutionSpaceStats)) {
+            if (stat.is_core) visibleMetrics.add(col);
+        }
         renderFilterSliders();
         applyFilters();
     });
 
     document.getElementById('save-solution-btn').addEventListener('click', saveSolution);
+
+    document.getElementById('non-core-toggle').addEventListener('change', e => {
+        showNonCore = e.target.checked;
+        if (showNonCore) {
+            for (const [col, stat] of Object.entries(solutionSpaceStats)) {
+                if (!stat.is_core) visibleMetrics.add(col);
+            }
+        } else {
+            for (const [col, stat] of Object.entries(solutionSpaceStats)) {
+                if (!stat.is_core) {
+                    visibleMetrics.delete(col);
+                    filterBounds[col] = { min_bound: null, max_bound: null };
+                }
+            }
+        }
+        renderFilterSliders();
+        applyFilters();
+    });
+
     setupMetricSearch();
     setupChartsClose();
 }
@@ -460,7 +486,7 @@ function adjustSliderRanges() {
     if (Object.keys(feasibleStats).length === 0) return;
     for (const col of visibleMetrics) {
         const row = document.querySelector(`.metric-slider-row[data-col="${col}"]`);
-        if (!row) continue;
+        if (!row || !row.querySelector('.slider-min')) continue;
         updateSliderVisuals(row, col);
     }
 }

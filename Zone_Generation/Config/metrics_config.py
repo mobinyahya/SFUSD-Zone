@@ -383,15 +383,15 @@ PROGRAM_METRICS = [
 # ============================================================================
 
 STRUCTURE_METRICS = [
-    MetricSpec(
-        column="boundary_cost",
-        display_name="Boundary Cost",
-        description="Total number of edges that cross zone boundaries in the graph. Higher means more complex, jagged zone borders.",
-        category="structure",
-        direction="minimize",
-        is_core=False,
-        short_name="Boundary",
-    ),
+    # MetricSpec(
+    #     column="boundary_cost",
+    #     display_name="Boundary Cost",
+    #     description="Total number of edges that cross zone boundaries in the graph. Higher means more complex, jagged zone borders.",
+    #     category="structure",
+    #     direction="minimize",
+    #     is_core=False,
+    #     short_name="Boundary",
+    # ),
     MetricSpec(
         column="compactness",
         display_name="Compactness",
