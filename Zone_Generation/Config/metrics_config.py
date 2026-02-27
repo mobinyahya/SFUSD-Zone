@@ -114,7 +114,7 @@ DIVERSITY_METRICS = [
     ),
     MetricSpec(
         column="frl_dissim",
-        display_name="FRL Representation",
+        display_name="Soceconomic Diversity",
         description="Dissimilarity index for free/reduced lunch students. This represents the number of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
