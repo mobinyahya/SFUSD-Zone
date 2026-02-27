@@ -328,6 +328,15 @@ class ZoningAgent:
 
         return "\n".join(lines)
 
+    def _compress_history(self):
+        """Strip tool call/response entries from past turns, keeping only user and model text."""
+        compressed = []
+        for content in self.history:
+            text_parts = [p for p in content.parts if p.text is not None]
+            if text_parts:
+                compressed.append(types.Content(role=content.role, parts=text_parts))
+        self.history = compressed
+
     def chat(self, user_message: str, solution_context: dict = None) -> dict:
         """Process a user message and return structured response.
 
@@ -451,6 +460,7 @@ class ZoningAgent:
 
         final_content = response.text or ""
         self.history.append(types.Content(role="model", parts=[types.Part.from_text(text=final_content)]))
+        self._compress_history()
 
         # Accumulate session totals
         self.total_prompt_tokens += turn_prompt_tokens
