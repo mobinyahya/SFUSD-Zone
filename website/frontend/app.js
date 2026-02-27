@@ -156,7 +156,7 @@ function setupEventListeners() {
 // ============================================================================
 
 async function sendInitialMessage() {
-    await sendMessageToAgent('Show me the available zoning options grouped by their trade-offs.');
+    await sendMessageToAgent('Show me the initial overview of available zoning approaches.');
 }
 
 async function sendMessage() {

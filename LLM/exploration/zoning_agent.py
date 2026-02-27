@@ -48,6 +48,11 @@ from .solution_handlers import (
     handle_select_cluster,
     build_clusters_response,
 )
+from .clusters import (
+    themed_cluster_solutions,
+    vectorize_solutions,
+    format_cluster_summary,
+)
 
 
 # ============================================================================
@@ -148,9 +153,47 @@ class ZoningAgent:
         self.tools = build_tools()
         self.history = [{"role": "system", "content": build_system_prompt()}]
 
+        # Pre-compute themed clusters for instant initial display
+        self._initial_clusters = self._compute_initial_clusters()
+
         print(f"Loaded {len(self.all_solutions)} total solutions")
         print(f"Computed Pareto frontier with {len(self.pareto_frontier)} solutions")
         print(f"Available metrics: {len(ALL_METRICS)}")
+
+    def _compute_initial_clusters(self) -> dict | None:
+        """Pre-compute themed clusters for instant initial display.
+
+        Returns a response dict with clusters data, or None if not enough solutions.
+        """
+        filtered = self._get_filtered_solutions()
+        if len(filtered) < 3:
+            return None
+
+        try:
+            labels, centers, directions, columns = themed_cluster_solutions(filtered)
+            vectors = vectorize_solutions(filtered, columns=columns)
+
+            # Store clustering state so select_cluster works
+            self.state.clustered_solutions = filtered
+            self.state.clustered_vectors = vectors
+            self.state.cluster_labels = labels
+            self.state.cluster_centers = centers
+            self.state.cluster_directions = directions
+            self.state.cluster_columns = columns
+
+            clusters_data = build_clusters_response(self)
+            text = format_cluster_summary(filtered, vectors, labels, centers, directions)
+
+            return {
+                "text": text,
+                "response_type": "clusters",
+                "clusters": clusters_data,
+                "solution_path": None,
+                "description": "Initial state",
+            }
+        except Exception as e:
+            logger.error("Failed to compute initial clusters: %s", e)
+            return None
 
     def _get_filtered_solutions(self):
         """Get currently filtered solutions from Pareto frontier."""
@@ -295,6 +338,20 @@ class ZoningAgent:
         - solution_path: Path to solution (if applicable)
         - description: Current version description
         """
+        # Return pre-computed themed clusters on first call (no LLM needed)
+        if self._initial_clusters is not None:
+            result = self._initial_clusters
+            self._initial_clusters = None  # Only serve once
+            result["usage"] = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "api_calls": 0,
+                "session_total_prompt_tokens": 0,
+                "session_total_completion_tokens": 0,
+                "session_total_api_calls": 0,
+            }
+            return result
+
         clusters_data = None
         solution_path = None
         any_tool_called = False

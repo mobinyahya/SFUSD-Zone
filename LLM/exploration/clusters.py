@@ -18,6 +18,8 @@ from .metrics_config import (
     ALL_METRICS,
     METRIC_BY_COLUMN,
     get_metric_columns,
+    get_metrics_by_category,
+    resolve_metric_identifiers,
 )
 from .filters import FilterBounds
 
@@ -495,6 +497,120 @@ def get_cluster_bounds(
         )
     
     return bounds
+
+
+# ============================================================================
+# THEMED CLUSTERING (category-based assignment)
+# ============================================================================
+
+# Theme definitions: label -> list of metric category keys
+CLUSTER_THEMES = {
+    "Diversity & Equity": ["diversity"],
+    "Distance": ["distance"],
+    "School Quality": ["quality"],
+    "Programs": ["programs"],
+}
+
+
+def themed_cluster_solutions(
+    df: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, dict[int, dict], list[str] | None]:
+    """
+    Assign solutions to predefined thematic clusters based on category scores.
+
+    Each solution is assigned to the theme (diversity, distance, quality+programs)
+    where it performs best relative to other solutions.
+
+    Args:
+        df: DataFrame with metric columns.
+
+    Returns:
+        Tuple of (labels, centers, directions, columns) where:
+        - labels: array of cluster assignments (0 to n_themes-1)
+        - centers: array of shape (n_themes, n_metrics) in original scale
+        - directions: dict of direction info per cluster
+        - columns: None (uses all metric columns)
+    """
+    theme_names = list(CLUSTER_THEMES.keys())
+    n_themes = len(theme_names)
+
+    # Compute a composite percentile score per theme for each solution
+    # Higher score = better performance in that theme
+    theme_scores = np.zeros((len(df), n_themes))
+
+    for theme_idx, (theme_label, categories) in enumerate(CLUSTER_THEMES.items()):
+        theme_cols = []
+        for cat in categories:
+            theme_cols.extend(
+                m.column for m in get_metrics_by_category(cat)
+                if m.column in df.columns and m.direction is not None
+            )
+
+        if not theme_cols:
+            continue
+
+        for col in theme_cols:
+            metric = METRIC_BY_COLUMN[col]
+            values = df[col].values
+            # Rank: higher rank = better for that metric
+            from scipy.stats import rankdata
+            ranks = rankdata(values, method="average")
+            if metric.direction == "minimize":
+                ranks = len(values) + 1 - ranks  # Invert: lower raw value = higher rank
+            # Normalize ranks to [0, 1]
+            normalized_ranks = (ranks - 1) / max(len(values) - 1, 1)
+            theme_scores[:, theme_idx] += normalized_ranks
+
+        # Average across metrics in this theme
+        if theme_cols:
+            theme_scores[:, theme_idx] /= len(theme_cols)
+
+    # Assign each solution to the theme where it scores highest
+    labels = np.argmax(theme_scores, axis=1)
+
+    # Handle edge case: if a theme has no solutions, reassign from largest cluster
+    for theme_idx in range(n_themes):
+        if np.sum(labels == theme_idx) == 0:
+            # Find solutions in the largest cluster
+            largest = np.argmax([np.sum(labels == i) for i in range(n_themes)])
+            largest_mask = np.where(labels == largest)[0]
+            # Move the solution with highest score for the empty theme
+            best_for_empty = largest_mask[np.argmax(theme_scores[largest_mask, theme_idx])]
+            labels[best_for_empty] = theme_idx
+
+    # Vectorize all solutions for center computation
+    vectors = vectorize_solutions(df)
+    centers = np.array([
+        vectors[labels == i].mean(axis=0) for i in range(n_themes)
+    ])
+
+    # Build direction info with predefined labels
+    directions = {}
+    for theme_idx, theme_label in enumerate(theme_names):
+        categories = CLUSTER_THEMES[theme_label]
+        # Strengths are the theme's own categories
+        strengths = []
+        for cat in categories:
+            cat_theme = CATEGORY_THEME.get(cat, cat.capitalize())
+            strengths.append(cat_theme)
+
+        # Weaknesses: find which other themes this cluster is weakest on
+        weaknesses = []
+        for other_idx, other_label in enumerate(theme_names):
+            if other_idx == theme_idx:
+                continue
+            other_cats = CLUSTER_THEMES[other_label]
+            for cat in other_cats:
+                cat_theme = CATEGORY_THEME.get(cat, cat.capitalize())
+                weaknesses.append(cat_theme)
+
+        directions[theme_idx] = {
+            "direction_label": theme_label,
+            "strengths": strengths[:3],
+            "weaknesses": weaknesses[:3],
+        }
+
+    return labels, centers, directions, None
 
 
 def format_cluster_summary(
