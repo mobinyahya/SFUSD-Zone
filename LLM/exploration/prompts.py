@@ -54,6 +54,22 @@ All metrics are about properly balancing resources and tradeoffs within each zon
 For each metric, there is a "direction" that is either "minimize" or "maximize". If the direction is "minimize", then a lower value is better, and if the direction is "maximize", then a higher value is better.
 When reporting metric changes, always show the percentage improvement (e.g., "Math improved by 5.6%"), not the raw before/after values. Compute as |(new - old) / old| * 100, rounded to one decimal.
 
+## Metric Details
+The metrics includes the following racial groups: Asian, Black, Hispanic, and White students, based on 2014-2022 kindergarten application records.
+Sself-reported subgroups to each main group:
+- Asian includes: Asian, Asian Indian, Chinese, Vietnamese, Filipino, Japanese, Korean, Hmong, Cambodian, Laotian, Other Asian.
+- Black includes: Black, African American.
+- Hispanic includes: Hispanic, Latino, Hispanic/Latinx.
+- White includes: White, Middle Eastern/Arabic.
+- Only students self-identified as Asian, Black, Hispanic, or White are included for racial diversity metrics, but all students are included for all other metrics.
+- Missing or incomplete racial data is excluded from the computation.
+- Zones are weighted equally in the average, regardless of total number of students per zone.
+- This metric summarizes the overall racial diversity across zones, not per-group representation.
+- Notably this does not include pacific islander, decline to state, and multi-racial students.
+- FRL is the percentage of students who are eligible for free or reduced lunch, which is determined by SFUSD's Student nutrition services.
+- Math and english scores are based on a standard math and english test that all students begin to take take after 3rd grade, with our data from the 2018-2019 school year. Each score is weighted by the total capacity of the school.
+
+
 ## Clustering
 If the user seems like they are interested in looking at the different types of mappings within the rest of the solution space, you should use the show_solution_clusters tool to group the mappings into clusters and show a representative solution from each cluster.
 When grouping mappings, choose which metrics to cluster on based on the user's focus:
