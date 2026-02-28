@@ -40,8 +40,9 @@ class FilterState:
     bounds: dict[str, FilterBounds] = field(default_factory=dict)
     
     def __post_init__(self):
-        # Initialize bounds for all metrics if not provided
         for metric in ALL_METRICS:
+            if metric.direction is None:
+                continue
             if metric.display_name not in self.bounds:
                 self.bounds[metric.display_name] = FilterBounds()
     
@@ -63,7 +64,7 @@ def apply_filters(df: pd.DataFrame, filter_state: FilterState) -> pd.DataFrame:
     mask = pd.Series([True] * len(df), index=df.index)
     
     for metric in ALL_METRICS:
-        if metric.column not in df.columns:
+        if metric.direction is None or metric.column not in df.columns:
             continue
         
         bounds = filter_state.bounds.get(metric.display_name, FilterBounds())
@@ -129,7 +130,12 @@ def get_filter_summary(
             bound_strs.append(f"min ≥ {bounds.min_bound:.4f}")
         
         constraint_str = ", ".join(bound_strs) if bound_strs else "no constraint"
-        direction = "↓ lower is better" if metric.direction == "minimize" else "↑ higher is better"
+        if metric.direction == "minimize":
+            direction = "lower is better"
+        elif metric.direction == "maximize":
+            direction = "higher is better"
+        else:
+            direction = "informational"
         
         lines.append(f"• **{metric.display_name}** ({direction})")
         lines.append(f"    All solutions range: {all_min:.4f} - {all_max:.4f}")
@@ -139,118 +145,213 @@ def get_filter_summary(
     return "\n".join(lines)
 
 
-def calculate_tightening(
-    df: pd.DataFrame,
-    metric_name: str,
-    reduction_factor: float = 0.3
-) -> tuple[float, int]:
-    """
-    Calculate how much to tighten a filter to reduce solutions by ~reduction_factor.
-    
-    For "minimize" metrics, we lower the max_bound.
-    For "maximize" metrics, we raise the min_bound.
-    
-    Args:
-        df: Current filtered DataFrame
-        metric_name: Display name of metric to tighten
-        reduction_factor: Target fraction of solutions to eliminate (0.3 = 30%)
-        
-    Returns:
-        Tuple of (new_bound, expected_remaining_solutions)
-    """
-    if metric_name not in METRIC_BY_NAME:
-        raise ValueError(f"Unknown metric: {metric_name}")
-    
-    metric = METRIC_BY_NAME[metric_name]
-    col = metric.column
-    
-    if col not in df.columns:
-        raise ValueError(f"Metric column '{col}' not in DataFrame")
-    
-    if len(df) == 0:
-        raise ValueError("No solutions to filter")
-    
-    # Calculate target number of remaining solutions
-    target_remaining = int(len(df) * (1 - reduction_factor))
-    target_remaining = max(1, target_remaining)  # Keep at least 1
-    
-    sorted_values = df[col].sort_values()
-    
-    if metric.direction == "minimize":
-        # Tighten by lowering max bound (keep the lowest values)
-        if target_remaining >= len(sorted_values):
-            new_bound = float(sorted_values.iloc[-1])
-        else:
-            new_bound = float(sorted_values.iloc[target_remaining - 1])
-        expected_remaining = (df[col] <= new_bound).sum()
-    else:
-        # Maximize: tighten by raising min bound (keep the highest values)
-        sorted_desc = sorted_values.iloc[::-1]
-        if target_remaining >= len(sorted_desc):
-            new_bound = float(sorted_desc.iloc[-1])
-        else:
-            new_bound = float(sorted_desc.iloc[target_remaining - 1])
-        expected_remaining = (df[col] >= new_bound).sum()
-    
-    return new_bound, expected_remaining
-
-
-def calculate_loosening(
+def adjust_filter_bound(
     all_df: pd.DataFrame,
+    filtered_df: pd.DataFrame,
     filter_state: FilterState,
     metric_name: str,
-    expansion_factor: float = 0.3
-) -> tuple[Optional[float], int]:
+    direction: str,
+    pct: float = 0.10,
+    current_value: Optional[float] = None,
+) -> Optional[float]:
     """
-    Calculate how much to loosen a filter.
-    
-    For "minimize" metrics, we raise the max_bound.
-    For "maximize" metrics, we lower the min_bound.
-    
+    Calculate a new filter bound by moving it a percentage of the remaining range.
+
+    For tightening, the reference point is the current solution's value (not the
+    filter bound). The bound moves pct of the gap between that value and the
+    best reachable value. This produces meaningful improvements even with very
+    few solutions remaining.
+
     Args:
-        all_df: All solutions (unfiltered)
+        all_df: All Pareto solutions (used as reference for loosening)
+        filtered_df: Currently filtered solutions
         filter_state: Current filter state
-        metric_name: Display name of metric to loosen
-        expansion_factor: How much to expand (0.3 = 30% toward global extreme)
-        
+        metric_name: Display name of metric
+        direction: "tighten" or "loosen"
+        pct: Fraction of the remaining range to move (0.10 = 10%)
+        current_value: The current solution's value for this metric (used for
+            tightening). If None, falls back to the filtered set's worst value.
+
     Returns:
-        Tuple of (new_bound or None to remove, expected_new_solutions)
+        New bound value, or None if the metric is already unconstrained (loosen only).
     """
     if metric_name not in METRIC_BY_NAME:
         raise ValueError(f"Unknown metric: {metric_name}")
-    
+
     metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
     col = metric.column
     bounds = filter_state.bounds.get(metric_name, FilterBounds())
-    
+
+    if direction == "tighten":
+        if len(filtered_df) == 0:
+            raise ValueError("No solutions to tighten")
+
+        if metric.direction == "minimize":
+            best = filtered_df[col].min()
+            ref = current_value if current_value is not None else filtered_df[col].max()
+            new_bound = ref - pct * (ref - best)
+        else:
+            best = filtered_df[col].max()
+            ref = current_value if current_value is not None else filtered_df[col].min()
+            new_bound = ref + pct * (best - ref)
+
+        return float(new_bound)
+
+    elif direction == "loosen":
+        if metric.direction == "minimize":
+            if bounds.max_bound is None:
+                return None
+            global_worst = all_df[col].max()
+            new_bound = bounds.max_bound + pct * (global_worst - bounds.max_bound)
+            return float(min(new_bound, global_worst))
+        else:
+            if bounds.min_bound is None:
+                return None
+            global_worst = all_df[col].min()
+            new_bound = bounds.min_bound - pct * (bounds.min_bound - global_worst)
+            return float(max(new_bound, global_worst))
+
+    raise ValueError(f"Unknown direction: {direction}")
+
+
+def percentile_to_value(
+    all_df: pd.DataFrame,
+    metric_name: str,
+    percentile: float,
+) -> float:
+    """Convert a quality percentile (higher=better) to a raw metric value.
+
+    For "minimize" metrics the percentile is inverted so that requesting the
+    75th quality percentile returns the value at the 25th raw quantile (i.e.
+    a low value, which is good for minimize metrics).
+
+    Args:
+        all_df: All Pareto solutions.
+        metric_name: Display name of metric.
+        percentile: Quality percentile 0-100 where higher means better.
+
+    Returns:
+        The raw metric value corresponding to the requested percentile.
+    """
+    if metric_name not in METRIC_BY_NAME:
+        raise ValueError(f"Unknown metric: {metric_name}")
+    metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
+
+    col = metric.column
+    if col not in all_df.columns:
+        raise ValueError(f"Metric column '{col}' not in DataFrame")
+
     if metric.direction == "minimize":
-        # Loosen by raising max_bound
-        if bounds.max_bound is None:
-            return None, len(all_df)  # Already unconstrained
-        
-        global_max = all_df[col].max()
-        current_max = bounds.max_bound
-        
-        new_bound = current_max + (global_max - current_max) * expansion_factor
-        new_bound = min(new_bound, global_max)
-        
-        currently_included = (all_df[col] <= current_max).sum()
-        new_included = (all_df[col] <= new_bound).sum()
+        raw_quantile = (100 - percentile) / 100
     else:
-        # Maximize: loosen by lowering min_bound
-        if bounds.min_bound is None:
-            return None, len(all_df)  # Already unconstrained
-        
-        global_min = all_df[col].min()
-        current_min = bounds.min_bound
-        
-        new_bound = current_min - (current_min - global_min) * expansion_factor
-        new_bound = max(new_bound, global_min)
-        
-        currently_included = (all_df[col] >= current_min).sum()
-        new_included = (all_df[col] >= new_bound).sum()
-    
-    return new_bound, new_included - currently_included
+        raw_quantile = percentile / 100
+
+    return float(all_df[col].quantile(raw_quantile))
+
+
+def set_filter_bound(
+    filter_state: FilterState,
+    metric_name: str,
+    value: Optional[float] = None,
+) -> None:
+    """Set or clear the filter bound for a metric.
+
+    Sets the appropriate bound based on metric direction:
+    - "minimize" -> max_bound
+    - "maximize" -> min_bound
+
+    If value is None, the bound is cleared (unconstrained).
+    """
+    if metric_name not in METRIC_BY_NAME:
+        raise ValueError(f"Unknown metric: {metric_name}")
+    metric = METRIC_BY_NAME[metric_name]
+    if metric.direction is None:
+        raise ValueError(f"Cannot filter informational metric: {metric_name}")
+
+    bounds = filter_state.bounds.get(metric_name, FilterBounds())
+    if metric.direction == "minimize":
+        bounds.max_bound = value
+    else:
+        bounds.min_bound = value
+    filter_state.bounds[metric_name] = bounds
+
+
+# --- Old solution-count-based tightening/loosening (replaced by adjust_filter_bound) ---
+#
+# def calculate_tightening(
+#     df: pd.DataFrame,
+#     metric_name: str,
+#     reduction_factor: float = 0.3
+# ) -> tuple[float, int]:
+#     """
+#     Calculate how much to tighten a filter to reduce solutions by ~reduction_factor.
+#     Problem: when few solutions remain, eliminating 30% barely moves the bound.
+#     """
+#     if metric_name not in METRIC_BY_NAME:
+#         raise ValueError(f"Unknown metric: {metric_name}")
+#     metric = METRIC_BY_NAME[metric_name]
+#     col = metric.column
+#     if col not in df.columns:
+#         raise ValueError(f"Metric column '{col}' not in DataFrame")
+#     if len(df) == 0:
+#         raise ValueError("No solutions to filter")
+#     target_remaining = int(len(df) * (1 - reduction_factor))
+#     target_remaining = max(1, target_remaining)
+#     sorted_values = df[col].sort_values()
+#     if metric.direction == "minimize":
+#         if target_remaining >= len(sorted_values):
+#             new_bound = float(sorted_values.iloc[-1])
+#         else:
+#             new_bound = float(sorted_values.iloc[target_remaining - 1])
+#         expected_remaining = (df[col] <= new_bound).sum()
+#     else:
+#         sorted_desc = sorted_values.iloc[::-1]
+#         if target_remaining >= len(sorted_desc):
+#             new_bound = float(sorted_desc.iloc[-1])
+#         else:
+#             new_bound = float(sorted_desc.iloc[target_remaining - 1])
+#         expected_remaining = (df[col] >= new_bound).sum()
+#     return new_bound, expected_remaining
+#
+#
+# def calculate_loosening(
+#     all_df: pd.DataFrame,
+#     filter_state: FilterState,
+#     metric_name: str,
+#     expansion_factor: float = 0.3
+# ) -> tuple[Optional[float], int]:
+#     """
+#     Calculate how much to loosen a filter.
+#     Problem: same percentage-of-solutions approach as tightening.
+#     """
+#     if metric_name not in METRIC_BY_NAME:
+#         raise ValueError(f"Unknown metric: {metric_name}")
+#     metric = METRIC_BY_NAME[metric_name]
+#     col = metric.column
+#     bounds = filter_state.bounds.get(metric_name, FilterBounds())
+#     if metric.direction == "minimize":
+#         if bounds.max_bound is None:
+#             return None, len(all_df)
+#         global_max = all_df[col].max()
+#         current_max = bounds.max_bound
+#         new_bound = current_max + (global_max - current_max) * expansion_factor
+#         new_bound = min(new_bound, global_max)
+#         currently_included = (all_df[col] <= current_max).sum()
+#         new_included = (all_df[col] <= new_bound).sum()
+#     else:
+#         if bounds.min_bound is None:
+#             return None, len(all_df)
+#         global_min = all_df[col].min()
+#         current_min = bounds.min_bound
+#         new_bound = current_min - (current_min - global_min) * expansion_factor
+#         new_bound = max(new_bound, global_min)
+#         currently_included = (all_df[col] >= current_min).sum()
+#         new_included = (all_df[col] >= new_bound).sum()
+#     return new_bound, new_included - currently_included
 
 
 def find_relaxation_needed(
@@ -269,6 +370,8 @@ def find_relaxation_needed(
     suggestions = {}
     
     for metric in ALL_METRICS:
+        if metric.direction is None:
+            continue
         col = metric.column
         if col not in all_df.columns:
             continue

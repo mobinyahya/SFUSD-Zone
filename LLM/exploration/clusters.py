@@ -19,8 +19,9 @@ from .metrics_config import (
     ALL_METRICS,
     METRIC_BY_COLUMN,
     get_metric_columns,
+    get_metrics_by_category,
+    resolve_metric_identifiers,
 )
-from .pareto import format_solution
 from .filters import FilterBounds
 
 
@@ -216,18 +217,20 @@ class SpectralClusterer(ClusteringMethod):
 DEFAULT_CLUSTERING_METHOD = "spectral"
 
 
-def vectorize_solutions(df: pd.DataFrame) -> np.ndarray:
+def vectorize_solutions(df: pd.DataFrame, columns: list[str] | None = None) -> np.ndarray:
     """
     Convert solution DataFrame to numpy array of metric values.
     
     Args:
         df: DataFrame with metric columns
+        columns: Optional subset of metric column names to use.
+                 If None, uses all metric columns.
         
     Returns:
         2D numpy array of shape (n_solutions, n_metrics)
     """
-    # Only use columns that exist in both df and metric config
-    metric_cols = [col for col in get_metric_columns() if col in df.columns]
+    all_cols = columns if columns else get_metric_columns()
+    metric_cols = [col for col in all_cols if col in df.columns]
     return df[metric_cols].values.astype(np.float64)
 
 
@@ -294,18 +297,48 @@ def cluster_solutions(
     return labels, centers
 
 
+CATEGORY_THEME = {
+    "diversity": "Equity",
+    "distance": "Proximity",
+    "programs": "Programs",
+    "quality": "Quality",
+}
+
+SHORT_METRIC_NAMES = {
+    "FRL Dissimilarity": "FRL balance",
+    "Racial Diversity Index": "racial diversity",
+    "Black Dissimilarity": "Black representation",
+    "Hispanic/Latinx Dissimilarity": "Hispanic/Latinx representation",
+    "White Dissimilarity": "White representation",
+    "Asian Dissimilarity": "Asian representation",
+    "Student Seat Imbalance": "seat balance",
+    "Avg Distance to Closest School": "distance",
+    "Schools in Attendance Area": "school access",
+    "Boundary Cost (Compactness)": "compactness",
+    "Total Programs": "total programs",
+    "Language Immersion Programs": "language programs",
+    "Special Education Programs": "special ed",
+    "General Education Programs": "GE programs",
+    "Math Scores": "math scores",
+    "English Scores": "English scores",
+    "GreatSchools Rating": "school ratings",
+    "Suspension Index": "discipline climate",
+}
+
+
 def compute_cluster_directions(
     vectors: np.ndarray,
     cluster_centers: np.ndarray,
     vector_metric_cols: Optional[list[str]] = None,
+    columns: list[str] | None = None,
 ) -> dict[int, dict]:
     """
-    Compute interpretable direction labels for each cluster.
-    
-    The direction is computed as the difference between the cluster center
-    and the overall centroid of all solutions. This shows what each cluster
-    "emphasizes" relative to the average solution.
-    
+    Compute labels and strength/weakness lists for each cluster.
+
+    Takes the mean of cluster centers as the reference point, then describes
+    each cluster by its direction away from that center-of-centers.
+    Labels use specific metric names (not broad categories) to stay unique.
+
     Args:
         vectors: All solution vectors
         cluster_centers: Centers of each cluster
@@ -357,67 +390,63 @@ def compute_cluster_directions(
                 continue
             
             metric = METRIC_BY_COLUMN[col]
-            norm_dir = normalized_direction[i]
-            short_name = _get_short_metric_name(metric.display_name)
-            
-            # For MINIMIZE metrics: negative = better, positive = worse
-            # For MAXIMIZE metrics: positive = better, negative = worse
+            short_name = SHORT_METRIC_NAMES.get(metric.display_name, metric.display_name)
+
+            # Direction from center-of-centers to this cluster, normalized
+            delta = (cluster_centers[cid, metric_idx] - center_of_centers[metric_idx]) / spread
             if metric.direction == "minimize":
-                if norm_dir < -threshold:
-                    emphasized.append(short_name)
-                elif norm_dir > threshold:
-                    compromised.append(short_name)
-            else:  # maximize
-                if norm_dir > threshold:
-                    emphasized.append(short_name)
-                elif norm_dir < -threshold:
-                    compromised.append(short_name)
-        
-        # Build label
-        if emphasized and compromised:
-            label = f"Better {', '.join(emphasized[:2])}; accepts worse {', '.join(compromised[:2])}"
-        elif emphasized:
-            label = f"Optimizes for {', '.join(emphasized[:3])}"
-        elif compromised:
-            label = f"Accepts worse {', '.join(compromised[:3])}"
-        else:
-            label = "Balanced trade-offs"
-        
-        directions[cluster_id] = {
-            "direction_vector": direction,
-            "normalized_direction": normalized_direction,
-            "direction_label": label,
+                delta = -delta  # positive = better
+
+            importance = spread / max_spread
+            magnitude = abs(delta) * importance
+
+            if delta > 0.15:
+                strengths.append((magnitude, short_name, metric.category))
+            elif delta < -0.15:
+                weaknesses.append((magnitude, short_name, metric.category))
+
+        strengths.sort(reverse=True)
+        weaknesses.sort(reverse=True)
+
+        directions[cid] = {
+            "direction_label": _label_from_strengths(strengths),
+            "strengths": [name for _, name, _ in strengths[:3]],
+            "weaknesses": [name for _, name, _ in weaknesses[:3]],
         }
-    
+
+    _deduplicate_labels(directions)
     return directions
 
 
-def _get_short_metric_name(display_name: str) -> str:
-    """Convert display names to shorter labels for cluster descriptions."""
-    name_map = {
-        # Diversity
-        "FRL Deviation": "economic diversity",
-        "Black Population Deviation": "Black population balance",
-        "Hispanic Population Deviation": "Hispanic population balance",
-        "White Population Deviation": "White population balance",
-        "Asian Population Deviation": "Asian population balance",
-        "Seat Disparity": "seat availability",
-        # Distance
-        "Avg Distance to Closest School": "commute distance",
-        "Schools in Attendance Area": "local school access",
-        "Boundary Cost (Compactness)": "compactness",
-        # Programs
-        "Total Programs": "program variety",
-        "Language Immersion Programs": "language programs",
-        "Special Education Programs": "special ed access",
-        "General Education Programs": "GE programs",
-        # Quality
-        "GreatSchools Rating": "school ratings",
-        "Math Scores": "math scores",
-        "English Scores": "English scores",
-        "Suspension Index": "discipline climate",
-    }
-    return name_map.get(display_name, display_name)
+def _label_from_strengths(strengths: list[tuple]) -> str:
+    """Build a concise label from the top 1-2 specific strength names."""
+    if not strengths:
+        return "Balanced"
+
+    top = strengths[0][1]
+    if len(strengths) > 1 and strengths[1][0] > strengths[0][0] * 0.6:
+        return f"{_cap(top)} & {strengths[1][1]}"
+    return _cap(top)
+
+
+def _cap(s: str) -> str:
+    """Capitalize first letter, preserving acronyms like FRL or GE."""
+    return s[0].upper() + s[1:] if s else s
+
+
+def _deduplicate_labels(directions: dict[int, dict]) -> None:
+    """If two clusters still collide, append their top weakness to disambiguate."""
+    seen: dict[str, list[int]] = {}
+    for cid, info in directions.items():
+        seen.setdefault(info["direction_label"], []).append(cid)
+
+    for label, cids in seen.items():
+        if len(cids) <= 1:
+            continue
+        for cid in cids:
+            weakness = directions[cid]["weaknesses"][0] if directions[cid]["weaknesses"] else None
+            if weakness:
+                directions[cid]["direction_label"] = f"{label} (less {weakness})"
 
 
 def get_representative_solution(
@@ -460,30 +489,32 @@ def get_representative_solution(
 def get_cluster_bounds(
     df: pd.DataFrame,
     labels: np.ndarray,
-    cluster_id: int
+    cluster_id: int,
+    columns: list[str] | None = None,
 ) -> dict[str, FilterBounds]:
     """
     Calculate min/max bounds for each metric within a cluster.
-    
-    These bounds can be used to tighten filters to only include
-    solutions similar to the selected cluster.
     
     Args:
         df: DataFrame with solutions
         labels: Cluster assignments
         cluster_id: Which cluster to get bounds for
+        columns: Optional subset of metric column names to restrict bounds to.
+                 If None, computes bounds for all metrics.
         
     Returns:
         Dict mapping metric display_name to FilterBounds with min/max set
     """
-    # Get solutions in this cluster
     cluster_mask = labels == cluster_id
     cluster_df = df.iloc[np.where(cluster_mask)[0]]
     
+    col_set = set(columns) if columns else None
     bounds = {}
     for metric in ALL_METRICS:
         col = metric.column
         if col not in cluster_df.columns:
+            continue
+        if col_set is not None and col not in col_set:
             continue
         
         bounds[metric.display_name] = FilterBounds(
@@ -492,6 +523,120 @@ def get_cluster_bounds(
         )
     
     return bounds
+
+
+# ============================================================================
+# THEMED CLUSTERING (category-based assignment)
+# ============================================================================
+
+# Theme definitions: label -> list of metric category keys
+CLUSTER_THEMES = {
+    "Diversity & Equity": ["diversity"],
+    "Distance": ["distance"],
+    "School Quality": ["quality"],
+    "Programs": ["programs"],
+}
+
+
+def themed_cluster_solutions(
+    df: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, dict[int, dict], list[str] | None]:
+    """
+    Assign solutions to predefined thematic clusters based on category scores.
+
+    Each solution is assigned to the theme (diversity, distance, quality+programs)
+    where it performs best relative to other solutions.
+
+    Args:
+        df: DataFrame with metric columns.
+
+    Returns:
+        Tuple of (labels, centers, directions, columns) where:
+        - labels: array of cluster assignments (0 to n_themes-1)
+        - centers: array of shape (n_themes, n_metrics) in original scale
+        - directions: dict of direction info per cluster
+        - columns: None (uses all metric columns)
+    """
+    theme_names = list(CLUSTER_THEMES.keys())
+    n_themes = len(theme_names)
+
+    # Compute a composite percentile score per theme for each solution
+    # Higher score = better performance in that theme
+    theme_scores = np.zeros((len(df), n_themes))
+
+    for theme_idx, (theme_label, categories) in enumerate(CLUSTER_THEMES.items()):
+        theme_cols = []
+        for cat in categories:
+            theme_cols.extend(
+                m.column for m in get_metrics_by_category(cat)
+                if m.column in df.columns and m.direction is not None
+            )
+
+        if not theme_cols:
+            continue
+
+        for col in theme_cols:
+            metric = METRIC_BY_COLUMN[col]
+            values = df[col].values
+            # Rank: higher rank = better for that metric
+            from scipy.stats import rankdata
+            ranks = rankdata(values, method="average")
+            if metric.direction == "minimize":
+                ranks = len(values) + 1 - ranks  # Invert: lower raw value = higher rank
+            # Normalize ranks to [0, 1]
+            normalized_ranks = (ranks - 1) / max(len(values) - 1, 1)
+            theme_scores[:, theme_idx] += normalized_ranks
+
+        # Average across metrics in this theme
+        if theme_cols:
+            theme_scores[:, theme_idx] /= len(theme_cols)
+
+    # Assign each solution to the theme where it scores highest
+    labels = np.argmax(theme_scores, axis=1)
+
+    # Handle edge case: if a theme has no solutions, reassign from largest cluster
+    for theme_idx in range(n_themes):
+        if np.sum(labels == theme_idx) == 0:
+            # Find solutions in the largest cluster
+            largest = np.argmax([np.sum(labels == i) for i in range(n_themes)])
+            largest_mask = np.where(labels == largest)[0]
+            # Move the solution with highest score for the empty theme
+            best_for_empty = largest_mask[np.argmax(theme_scores[largest_mask, theme_idx])]
+            labels[best_for_empty] = theme_idx
+
+    # Vectorize all solutions for center computation
+    vectors = vectorize_solutions(df)
+    centers = np.array([
+        vectors[labels == i].mean(axis=0) for i in range(n_themes)
+    ])
+
+    # Build direction info with predefined labels
+    directions = {}
+    for theme_idx, theme_label in enumerate(theme_names):
+        categories = CLUSTER_THEMES[theme_label]
+        # Strengths are the theme's own categories
+        strengths = []
+        for cat in categories:
+            cat_theme = CATEGORY_THEME.get(cat, cat.capitalize())
+            strengths.append(cat_theme)
+
+        # Weaknesses: find which other themes this cluster is weakest on
+        weaknesses = []
+        for other_idx, other_label in enumerate(theme_names):
+            if other_idx == theme_idx:
+                continue
+            other_cats = CLUSTER_THEMES[other_label]
+            for cat in other_cats:
+                cat_theme = CATEGORY_THEME.get(cat, cat.capitalize())
+                weaknesses.append(cat_theme)
+
+        directions[theme_idx] = {
+            "direction_label": theme_label,
+            "strengths": strengths[:3],
+            "weaknesses": weaknesses[:3],
+        }
+
+    return labels, centers, directions, None
 
 
 def format_cluster_summary(

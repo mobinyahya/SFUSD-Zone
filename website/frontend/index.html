@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SFUSD Zoning Dashboard</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/shared.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -23,6 +24,26 @@
                     <div class="spinner"></div>
                 </div>
                 <div id="zone-legend" class="hidden"></div>
+            </div>
+            <div id="solution-history" class="hidden">
+                <div class="solution-history-header">
+                    <span>Saved Solutions</span>
+                    <button id="solution-history-toggle" class="solution-history-toggle" title="Expand panel">&#9650;</button>
+                </div>
+                <div id="solution-cards" class="solution-cards-container">
+                </div>
+                <div id="solution-proscons-panel" class="solution-proscons-panel hidden">
+                    <div class="proscons-section">
+                        <label class="proscons-label proscons-label-pros">Pros</label>
+                        <textarea id="solution-pros-textarea" placeholder="What do you like about this solution?"></textarea>
+                    </div>
+                    <div class="proscons-section">
+                        <label class="proscons-label proscons-label-cons">Cons</label>
+                        <textarea id="solution-cons-textarea" placeholder="What concerns do you have?"></textarea>
+                    </div>
+                    <div class="solution-proscons-hint">Editing <span id="solution-proscons-target"></span> — saves automatically on blur</div>
+                    <button id="generate-from-feedback-btn" class="generate-feedback-btn" title="Generate a new solution based on all your feedback">Generate New Solution From Feedback</button>
+                </div>
             </div>
             <section id="comparison-panel">
                 <div class="panel-header">
@@ -94,6 +115,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <script src="https://us-assets.i.posthog.com/static/array.js"></script>
+    <script src="/static/shared.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

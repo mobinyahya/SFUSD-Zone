@@ -8,10 +8,11 @@ import functools
 import pandas as pd
 import networkx as nx
 
-from Zone_Generation.Config.Constants import get_sfusd_path
-from Zone_Generation.Running_Analysis.metrics.base import (
-    LANGUAGE_IMMERSION, SPECIAL_EDUCATION
-)
+from Zone_Generation.Config.Constants import get_sfusd_path, PROGRAM_CATEGORIES
+from Zone_Generation.Config.metrics_config import MetricColumns
+
+LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
+SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])
 
 
 @functools.lru_cache(maxsize=1)
@@ -69,7 +70,7 @@ def compute_program_metrics(
                 for ptype in school_programs[sid]:
                     zone_programs[ptype] = zone_programs.get(ptype, 0) + 1
                     
-                    if ptype in LANGUAGE_IMMERSION:
+                    if ptype in LANGUAGE_PROGRAMS:
                         lang_count += 1
                     if ptype in SPECIAL_EDUCATION:
                         sped_count += 1
@@ -96,14 +97,87 @@ def compute_program_metrics(
     # Compute aggregated metrics
     num_zones = len(zone_schools) if zone_schools else 1
     aggregated = {
-        'avg_total_programs_per_zone': sum(all_program_counts) / num_zones if all_program_counts else 0,
-        'avg_language_immersion_per_zone': sum(all_lang_counts) / num_zones if all_lang_counts else 0,
-        'avg_special_ed_per_zone': sum(all_sped_counts) / num_zones if all_sped_counts else 0,
+        MetricColumns.AVG_TOTAL_PROGRAMS: sum(all_program_counts) / num_zones if all_program_counts else 0,
+        MetricColumns.AVG_LANGUAGE_IMMERSION: sum(all_lang_counts) / num_zones if all_lang_counts else 0,
+        MetricColumns.AVG_SPECIAL_ED: sum(all_sped_counts) / num_zones if all_sped_counts else 0,
     }
-    
+
     # Add per-program-type averages
     for ptype, counts in program_type_counts.items():
         avg = sum(counts) / num_zones
-        aggregated[f'avg_{ptype}_per_zone'] = avg
+        aggregated[MetricColumns.program_column(ptype)] = avg
     
+    return aggregated, per_zone_data
+
+
+def compute_ge_proximity_metrics(
+    _zone_dict: dict[int, int],
+    G: nx.Graph,
+    zone_blocks: dict[int, list[int]],
+    zone_schools: dict[int, list[int]],
+    is_local: bool = False,
+    radius: float = 0.5
+) -> tuple[dict[str, float], dict[int, dict]]:
+    """
+    Count GE schools within a radius (miles) for each block in a zone.
+
+    For each block, counts how many schools in the same zone have a GE program
+    and are within *radius* miles. The per-zone value is the average across
+    blocks (weighted by student count).
+
+    Returns:
+        Tuple of (aggregated_metrics, per_zone_data)
+    """
+    programs_df = load_programs_data(is_local)
+    distance_dict = G.graph.get('distance_dict', {})
+
+    # Build set of school IDs that offer GE
+    ge_schools = set()
+    for _, row in programs_df.iterrows():
+        if row['program_type'] == 'GE':
+            ge_schools.add(row['school_id'])
+
+    # Build school_id -> node lookup
+    school_to_node: dict[int, int] = {}
+    for node in G.nodes():
+        for sid in G.nodes[node].get('school_ids', []):
+            school_to_node[sid] = node
+
+    per_zone_data = {}
+    all_avg_counts: list[float] = []
+
+    for zone_id, blocks in zone_blocks.items():
+        schools_in_zone = zone_schools.get(zone_id, [])
+        # Filter to GE schools in this zone
+        ge_in_zone = [s for s in schools_in_zone if s in ge_schools]
+
+        total_count = 0.0
+        total_students = 0.0
+
+        for block in blocks:
+            if block not in distance_dict:
+                continue
+            block_students = G.nodes[block].get('ge_students', 0)
+            nearby = 0
+            for sid in ge_in_zone:
+                school_node = school_to_node.get(sid)
+                if school_node is not None and school_node in distance_dict[block]:
+                    if distance_dict[block][school_node] <= radius:
+                        nearby += 1
+            total_count += nearby * block_students
+            total_students += block_students
+
+        avg_ge_nearby = total_count / total_students if total_students > 0 else 0.0
+
+        per_zone_data[zone_id] = {
+            'ge_schools_within_half_mile': avg_ge_nearby
+        }
+        all_avg_counts.append(avg_ge_nearby)
+
+    num_zones = len(zone_blocks) if zone_blocks else 1
+    aggregated = {
+        MetricColumns.AVG_GE_SCHOOLS_WITHIN_HALF_MILE: (
+            sum(all_avg_counts) / num_zones if all_avg_counts else 0.0
+        ),
+    }
     return aggregated, per_zone_data

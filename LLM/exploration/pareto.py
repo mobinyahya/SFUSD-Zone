@@ -15,35 +15,10 @@ from .metrics_config import (
     ALL_METRICS,
     CORE_METRICS,
     METRIC_BY_COLUMN,
-    METRIC_BY_NAME,
     get_metric_columns,
     get_core_metric_columns,
     MetricSpec,
 )
-
-
-# ============================================================================
-# BACKWARD COMPATIBILITY: METRIC_CONFIG dict
-# ============================================================================
-
-def _build_metric_config() -> dict[str, dict]:
-    """Build METRIC_CONFIG dict for backward compatibility."""
-    config = {}
-    for m in ALL_METRICS:
-        config[m.display_name] = {
-            "column": m.column,
-            "direction": m.direction,
-            "description": m.description,
-            "category": m.category,
-            "is_core": m.is_core,
-        }
-    return config
-
-
-METRIC_CONFIG = _build_metric_config()
-
-# Reverse mapping: column name -> user-friendly name
-COLUMN_TO_NAME = {m.column: m.display_name for m in ALL_METRICS}
 
 
 # ============================================================================
@@ -97,31 +72,36 @@ def get_available_metrics(df: pd.DataFrame) -> list[MetricSpec]:
 # NORMALIZATION
 # ============================================================================
 
+def _directed_metric_cols(df: pd.DataFrame) -> list[str]:
+    """Return columns that have a direction (minimize/maximize), excluding informational."""
+    return [
+        c for c in df.columns
+        if c in METRIC_BY_COLUMN and METRIC_BY_COLUMN[c].direction is not None
+    ]
+
+
 def normalize_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalize all metrics to [0, 1] range where 0 = best.
+    Normalize directed metrics to [0, 1] range where 0 = best.
     
     For "minimize" metrics, 0 = lowest value (best).
     For "maximize" metrics, 0 = highest value (best), inverted.
+    Informational metrics (direction=None) are left unchanged.
     """
     normalized = df.copy()
-    metric_cols = [c for c in df.columns if c in METRIC_BY_COLUMN]
     
-    for col in metric_cols:
+    for col in _directed_metric_cols(df):
         metric = METRIC_BY_COLUMN[col]
         min_val = df[col].min()
         max_val = df[col].max()
         
         if max_val - min_val > 0:
-            # Normalize to [0, 1]
             col_vals = (df[col] - min_val) / (max_val - min_val)
-            
-            # For maximize metrics, invert so 0 is still best
             if metric.direction == "maximize":
                 col_vals = 1 - col_vals
             normalized[col] = col_vals
         else:
-            normalized[col] = 0.0  # All values are the same
+            normalized[col] = 0.0
     
     return normalized
 
@@ -156,7 +136,7 @@ def compute_pareto_frontier(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame containing only Pareto-optimal solutions
     """
-    metric_cols = [c for c in df.columns if c in METRIC_BY_COLUMN]
+    metric_cols = _directed_metric_cols(df)
     if not metric_cols:
         return df.copy()
         
@@ -223,7 +203,7 @@ def get_centroid_solution(
     Returns:
         Tuple of (solution row from original df, index)
     """
-    metric_cols = [c for c in normalized_df.columns if c in METRIC_BY_COLUMN]
+    metric_cols = _directed_metric_cols(normalized_df)
     
     # Compute centroid of normalized values
     centroid = normalized_df[metric_cols].mean()
@@ -277,7 +257,12 @@ def format_solution(row: pd.Series, show_all: bool = False) -> str:
             continue
         
         value = row[metric.column]
-        direction = "lower is better" if metric.direction == "minimize" else "higher is better"
+        if metric.direction == "minimize":
+            direction = "lower is better"
+        elif metric.direction == "maximize":
+            direction = "higher is better"
+        else:
+            direction = "informational"
         lines.append(f"  • {metric.display_name}: {value:.4f} ({direction})")
     
     return "\n".join(lines)

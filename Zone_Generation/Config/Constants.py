@@ -2,6 +2,45 @@ import os
 
 SCALING_CONST = 100
 
+PROGRAM_NAMES = {
+    # General Education
+    "GE": "General Education",
+    # Special Education
+    "AF": "Autism Focus",
+    "DA": "Deaf and Hard of Hearing - Auditory/Oral",
+    "DT": "Deaf and Hard of Hearing - Total Communication",
+    "ED": "Emotionally Disturbed",
+    "MM": "Mild-Moderate (autism)",
+    "MS": "Moderate-Severe (autism)",
+    "SA": "Severe Autism",
+    "TC": "Total Communication (deaf and hard of hearing)",
+    "AO": "Auditory/Oral (deaf and hard of hearing)",
+    # Language Programs
+    "CB": "Cantonese Biliteracy",
+    "CE": "Cantonese Immersion - English/Non-Native Speaker",
+    "CN": "Cantonese Immersion - Native Speaker",
+    "CT": "Cantonese Immersion",
+    "FB": "Filipino Biliteracy",
+    "JE": "Japanese Immersion - English/Non-Native Speaker",
+    "JN": "Japanese Immersion - Native Speaker",
+    "KE": "Korean Immersion - English/Non-Native Speaker",
+    "KN": "Korean Immersion - Native Speaker",
+    "ME": "Mandarin Immersion - English/Non-Native Speaker",
+    "MN": "Mandarin Immersion - Native Speaker",
+    "NC": "Newcomer Cantonese",
+    "NS": "Newcomer Spanish",
+    "SB": "Spanish Biliteracy",
+    "SE": "Spanish Immersion - English/Non-Native Speaker",
+    "SN": "Spanish Immersion - Native Speaker",
+}
+
+PROGRAM_CATEGORIES = {
+    "General Education": ["GE"],
+    "Special Education": ["AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"],
+    "Language Programs": ["CB", "CE", "CN", "CT", "FB", "JE", "JN", "KE", "KN",
+                          "ME", "MN", "NC", "NS", "SB", "SE", "SN"],
+}
+
 
 def get_sfusd_path(is_local):
     if is_local:

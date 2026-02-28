@@ -5,12 +5,13 @@ Main metrics calculator that combines all metric modules.
 import networkx as nx
 from typing import Optional
 
+from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.Running_Analysis.metrics.base import MetricsResult, ZoneData
 from Zone_Generation.Running_Analysis.metrics.diversity import (
     compute_diversity_metrics, compute_seat_disparity, compute_theil_index
 )
 from Zone_Generation.Running_Analysis.metrics.distance import compute_distance_metrics
-from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics
+from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics, compute_ge_proximity_metrics
 from Zone_Generation.Running_Analysis.metrics.quality import compute_quality_metrics
 from Zone_Generation.Running_Analysis.metrics.choice import compute_choice_metrics
 
@@ -63,6 +64,17 @@ class ZoneMetricsCalculator:
                 school_ids = self.G.nodes[node_id].get('school_ids', [])
                 self.zone_schools[zone_id].extend(school_ids)
     
+    def _compute_boundary_cost(self) -> int:
+        """Count edges crossing zone boundaries."""
+        cost = 0
+        for i in range(len(self.G)):
+            for j in self.G.neighbors(i):
+                if i < j:
+                    continue
+                if self.zone_dict.get(i) != self.zone_dict.get(j):
+                    cost += 1
+        return cost
+
     def compute_all(self, include_choice: bool = True) -> MetricsResult:
         """
         Compute all metrics.
@@ -86,9 +98,12 @@ class ZoneMetricsCalculator:
         )
         result.update(diversity_metrics)
         
-        # Add seat disparity
-        seat_disparity = compute_seat_disparity(self.zone_blocks, self.G)
-        result.update({'seat_disparity': seat_disparity})
+        # Add seat disparity (solution-level and per-zone)
+        seat_disparity, per_zone_seat = compute_seat_disparity(self.zone_blocks, self.G)
+        result.update({MetricColumns.SEAT_DISPARITY: seat_disparity})
+        for zone_id, sd_data in per_zone_seat.items():
+            if zone_id in result.zone_data:
+                result.zone_data[zone_id].seat_disparity = sd_data.get('seat_disparity')
 
         # Add Theil segregation index
         theil_metrics, per_zone_entropy = compute_theil_index(
@@ -138,7 +153,19 @@ class ZoneMetricsCalculator:
                     prog_data['language_immersion_count']
                 )
                 result.zone_data[zone_id].special_ed_count = prog_data['special_ed_count']
-        
+
+        # 3b. GE proximity metrics
+        ge_prox_metrics, per_zone_ge = compute_ge_proximity_metrics(
+            self.zone_dict, self.G, self.zone_blocks, self.zone_schools, is_local
+        )
+        result.update(ge_prox_metrics)
+
+        for zone_id, ge_data in per_zone_ge.items():
+            if zone_id in result.zone_data:
+                result.zone_data[zone_id].ge_schools_within_half_mile = (
+                    ge_data['ge_schools_within_half_mile']
+                )
+
         # 4. Quality metrics
         quality_metrics, per_zone_qual = compute_quality_metrics(
             self.zone_dict, self.G, self.zone_schools
@@ -147,16 +174,19 @@ class ZoneMetricsCalculator:
         
         for zone_id, qual_data in per_zone_qual.items():
             if zone_id in result.zone_data:
-                result.zone_data[zone_id].avg_greatschools_rating = (
-                    qual_data['avg_greatschools_rating']
-                )
                 result.zone_data[zone_id].avg_math_score = qual_data['avg_math_score']
                 result.zone_data[zone_id].avg_eng_score = qual_data['avg_eng_score']
-                result.zone_data[zone_id].avg_suspension_index = (
-                    qual_data['avg_suspension_index']
-                )
         
-        # 5. Choice metrics (optional)
+        # 5. Structure metrics
+        num_zones = len(self.zone_blocks)
+        boundary_cost = self._compute_boundary_cost()
+        result.update({
+            MetricColumns.NUM_ZONES: num_zones,
+            MetricColumns.BOUNDARY_COST: boundary_cost,
+            MetricColumns.COMPACTNESS: boundary_cost / num_zones if num_zones else 0,
+        })
+
+        # 6. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):
             try:
                 choice_metrics, per_zone_choice = compute_choice_metrics(
@@ -174,6 +204,6 @@ class ZoneMetricsCalculator:
                         )
             except Exception as e:
                 print(f"Warning: Could not compute choice metrics: {e}")
-                result.update({'avg_max_utility': 0.0, 'avg_logsum_utility': 0.0})
+                result.update({MetricColumns.AVG_MAX_UTILITY: 0.0, MetricColumns.AVG_LOGSUM_UTILITY: 0.0})
         
         return result

@@ -1,278 +1,7 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-:root {
-    --primary-color: #2c3e50;
-    --secondary-color: #3498db;
-    --bg-color: #f5f6fa;
-    --panel-bg: #ffffff;
-    --border-color: #dcdde1;
-    --text-color: #2c3e50;
-    --text-muted: #7f8c8d;
-    --success-color: #27ae60;
-    --warning-color: #f39c12;
-    --danger-color: #e74c3c;
-    --sidebar-width: 280px;
-}
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
-
-header {
-    background: var(--primary-color);
-    color: white;
-    padding: 12px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-header h1 {
-    font-size: 1.4rem;
-    font-weight: 600;
-}
-
-
-main {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1fr 4px 350px;
-    gap: 0;
-    min-height: 0;
-    overflow: hidden;
-    position: relative;
-}
-
-#map-area {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-}
-
-#map-panel {
-    position: relative;
-    background: var(--panel-bg);
-    overflow: hidden;
-    flex: 1;
-    min-height: 0;
-}
-
-#map {
-    width: 100%;
-    height: 100%;
-}
-
-.resize-handle {
-    background: var(--border-color);
-    cursor: col-resize;
-    position: relative;
-    transition: background 0.2s;
-}
-
-.resize-handle:hover {
-    background: var(--secondary-color);
-}
-
-.resize-handle.resizing {
-    background: var(--secondary-color);
-}
-
-.placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--panel-bg);
-    color: var(--text-muted);
-    font-size: 1.1rem;
-}
-
-.placeholder.hidden {
-    display: none;
-}
-
 /* ============================================================================
-   Comparison Panel (Horizontal below map)
+   SFUSD Zoning Dashboard - User Page Styles (Chat, Consent, Clusters)
+   Depends on shared.css being loaded first.
    ============================================================================ */
-
-#comparison-panel {
-    background: var(--panel-bg);
-    border-top: 1px solid var(--border-color);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 8px;
-}
-
-.panel-header {
-    padding: 10px 16px 6px;
-    flex-shrink: 0;
-}
-
-.panel-header h3 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--primary-color);
-    margin-bottom: 0;
-}
-
-#comparison-table-container {
-    flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px 16px 12px;
-}
-
-.no-solution-msg {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    text-align: center;
-    padding: 12px;
-}
-
-/* Horizontal category list */
-.category-list {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-}
-
-.category-card {
-    flex: 1;
-    min-width: 160px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    overflow: hidden;
-}
-
-.category-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: #f8f9fa;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.15s;
-    gap: 8px;
-}
-
-.category-card-header:hover {
-    background: #ecf0f1;
-}
-
-.category-card-title {
-    font-weight: 600;
-    font-size: 0.8rem;
-    color: var(--primary-color);
-    white-space: nowrap;
-}
-
-.category-card-title .chevron {
-    font-size: 0.65rem;
-    display: inline-block;
-    margin-right: 3px;
-}
-
-.category-avg-rank {
-    flex-shrink: 0;
-}
-
-/* Metric table inside each category card */
-.comparison-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.75rem;
-    white-space: nowrap;
-}
-
-.comparison-table.hidden {
-    display: none;
-}
-
-.comparison-table td {
-    padding: 5px 8px;
-    text-align: left;
-    border-top: 1px solid var(--border-color);
-}
-
-.comparison-table .metric-name {
-    font-weight: 500;
-}
-
-.comparison-table .metric-value {
-    text-align: right;
-    font-family: 'Courier New', monospace;
-}
-
-.comparison-table .metric-rank {
-    text-align: center;
-    width: 50px;
-}
-
-/* Percentile indicator */
-.percentile-indicator {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    min-width: 40px;
-    text-align: center;
-}
-
-/* 5-tier color coding based on percentile performance */
-.percentile-indicator.excellent {
-    background: #1e7e34;
-    color: #ffffff;
-}
-
-.percentile-indicator.good {
-    background: #a8e6a3;
-    color: #155724;
-}
-
-.percentile-indicator.average {
-    background: #fff3cd;
-    color: #856404;
-}
-
-.percentile-indicator.below-avg {
-    background: #ffc8a0;
-    color: #8b4513;
-}
-
-.percentile-indicator.poor {
-    background: #e74c3c;
-    color: #ffffff;
-}
-
-/* Metric rows - clickable */
-.comparison-table .metric-row[data-clickable="true"] {
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.comparison-table .metric-row[data-clickable="true"]:hover {
-    background: #f0f7ff;
-}
-
-.comparison-table .metric-row.selected {
-    background: #e3f2fd;
-}
 
 /* ============================================================================
    Chat Panel
@@ -342,21 +71,11 @@ main {
     font-weight: 600;
 }
 
-.message.assistant h1 {
-    font-size: 1.1rem;
-}
+.message.assistant h1 { font-size: 1.1rem; }
+.message.assistant h2 { font-size: 1.0rem; }
+.message.assistant h3 { font-size: 0.95rem; }
 
-.message.assistant h2 {
-    font-size: 1.0rem;
-}
-
-.message.assistant h3 {
-    font-size: 0.95rem;
-}
-
-.message.assistant p {
-    margin: 4px 0;
-}
+.message.assistant p { margin: 4px 0; }
 
 .message.assistant ul,
 .message.assistant ol {
@@ -364,9 +83,7 @@ main {
     padding-left: 20px;
 }
 
-.message.assistant li {
-    margin: 2px 0;
-}
+.message.assistant li { margin: 2px 0; }
 
 .message.assistant code {
     background: #f5f6fa;
@@ -391,13 +108,8 @@ main {
     color: inherit;
 }
 
-.message.assistant strong {
-    font-weight: 600;
-}
-
-.message.assistant em {
-    font-style: italic;
-}
+.message.assistant strong { font-weight: 600; }
+.message.assistant em { font-style: italic; }
 
 .message.assistant blockquote {
     border-left: 3px solid var(--border-color);
@@ -445,134 +157,36 @@ main {
     background: #2980b9;
 }
 
-/* ============================================================================
-   Charts Panel - Single Chart
-   ============================================================================ */
-
-footer#charts-panel {
-    display: flex;
-    flex-direction: column;
-    background: var(--panel-bg);
-    border-top: 3px solid var(--border-color);
-    margin-top: 4px;
-    height: 240px;
+/* Processing state */
+#chat-input-area.processing #chat-input,
+#chat-input-area.processing #chat-send {
+    opacity: 0.6;
+    pointer-events: none;
 }
 
-footer#charts-panel.hidden {
-    display: none;
-}
-
-#charts-header-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px 0;
-}
-
-#charts-header {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin: 0;
-}
-
-#charts-subtitle {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin: 2px 0 0;
-    font-weight: 400;
-}
-
-#charts-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
-    color: var(--text-muted);
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: background 0.15s, color 0.15s;
-}
-
-#charts-close:hover {
+/* Loading/thinking message */
+.message.loading {
     background: #ecf0f1;
-    color: var(--text-color);
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-#single-chart-container {
-    flex: 1;
-    padding: 8px 16px 12px;
-    position: relative;
-    min-height: 0;
-}
-
-#chart-single {
-    width: 100%;
-    max-height: 180px;
+.message.loading::after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--secondary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
 }
 
 /* ============================================================================
-   Loading Overlays
+   Cluster Selector (in-chat)
    ============================================================================ */
 
-#loading-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    z-index: 9999;
-}
-
-#loading-overlay.hidden {
-    display: none;
-}
-
-#loading-overlay p {
-    color: white;
-    font-size: 1.1rem;
-}
-
-.spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-/* Leaflet tooltip styling */
-.leaflet-tooltip {
-    background: white;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 0.85rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.leaflet-tooltip strong {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 0.9rem;
-}
-
-.leaflet-tooltip .zone-info {
-    color: var(--secondary-color);
-    font-weight: 500;
-}
-
-/* In-chat cluster selector */
 .cluster-selector {
     display: flex;
     flex-direction: column;
@@ -633,52 +247,29 @@ footer#charts-panel.hidden {
     color: var(--text-muted);
 }
 
-/* Loading/thinking message */
-.message.loading {
-    background: #ecf0f1;
-    align-self: flex-start;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
+/* ============================================================================
+   Full-screen Loading Overlay
+   ============================================================================ */
 
-.message.loading::after {
-    content: '';
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--secondary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-/* Map loading overlay */
-.map-loading {
-    position: absolute;
+#loading-overlay {
+    position: fixed;
     inset: 0;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    gap: 16px;
+    z-index: 9999;
 }
 
-.map-loading.hidden {
+#loading-overlay.hidden {
     display: none;
 }
 
-.map-loading .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(0, 0, 0, 0.1);
-    border-top-color: var(--secondary-color);
-}
-
-/* Chat input disabled state during processing */
-#chat-input-area.processing #chat-input,
-#chat-input-area.processing #chat-send {
-    opacity: 0.6;
-    pointer-events: none;
+#loading-overlay p {
+    color: white;
+    font-size: 1.1rem;
 }
 
 /* ============================================================================
@@ -799,172 +390,39 @@ footer#charts-panel.hidden {
 }
 
 /* ============================================================================
-   Zone Legend
+   Generate from Feedback Button
    ============================================================================ */
 
-#zone-legend {
-    position: absolute;
-    bottom: 20px;
-    left: 10px;
-    background: rgba(255, 255, 255, 0.95);
-    padding: 10px 14px;
+.generate-feedback-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 7px 14px;
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
     border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
-    font-size: 0.8rem;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-#zone-legend.hidden {
-    display: none;
-}
-
-#zone-legend h4 {
-    margin: 0 0 8px 0;
-    font-size: 0.85rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    color: var(--primary-color);
-}
-
-.legend-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.legend-header h4 {
-    margin: 0;
-}
-
-.toggle-schools-btn {
-    padding: 4px 8px;
-    font-size: 0.7rem;
-    background: #f8f9fa;
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    font-weight: 500;
+    transition: background 0.15s, opacity 0.15s;
+    letter-spacing: 0.3px;
 }
 
-.toggle-schools-btn:hover {
-    background: #ecf0f1;
-    border-color: var(--secondary-color);
-}
-
-.toggle-schools-btn.active {
+.generate-feedback-btn:hover {
     background: var(--secondary-color);
-    color: white;
-    border-color: var(--secondary-color);
 }
 
-.toggle-schools-btn.active:hover {
-    background: #2980b9;
-    border-color: #2980b9;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.legend-item:last-child {
-    margin-bottom: 0;
-}
-
-.legend-color {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    flex-shrink: 0;
-}
-
-.legend-label {
-    color: var(--text-color);
-    white-space: nowrap;
+.generate-feedback-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* ============================================================================
-   School Markers
+   Responsive - Chat-specific
    ============================================================================ */
-
-/* Container for school marker icon - transparent, no border */
-.school-marker-container {
-    background: transparent !important;
-    border: none !important;
-}
-
-/* School marker emoji styling */
-.school-marker {
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
-}
-
-.school-marker:hover {
-    transform: scale(1.2);
-}
-
-/* Tooltip styling for schools */
-.school-tooltip {
-    background: rgba(44, 62, 80, 0.95) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 4px !important;
-    padding: 6px 10px !important;
-    font-size: 0.85rem !important;
-    font-weight: 500 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-    white-space: nowrap !important;
-}
-
-.school-tooltip::before {
-    border-top-color: rgba(44, 62, 80, 0.95) !important;
-}
-
-/* ============================================================================
-   Responsive Design
-   ============================================================================ */
-
-@media (max-width: 1200px) {
-    main {
-        grid-template-columns: 1fr 4px 300px;
-    }
-}
 
 @media (max-width: 900px) {
-    main {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr 4px 300px;
-    }
-
-    #resize-handle-right {
-        cursor: row-resize;
-    }
-
-    #map-panel {
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-
     #chat-panel {
         border-left: none;
-    }
-
-    footer#charts-panel {
-        height: auto;
-        min-height: 240px;
     }
 }
