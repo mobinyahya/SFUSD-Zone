@@ -36,22 +36,22 @@ def build_tools():
                 "required": [],
             },
         ),
-        types.FunctionDeclaration(
-            name="compare_zones",
-            description="Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "zone_ids": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
-                        "minItems": 2,
-                    }
-                },
-                "required": ["zone_ids"],
-            },
-        ),
+        # types.FunctionDeclaration(
+        #     name="compare_zones",
+        #     description="Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
+        #     parameters_json_schema={
+        #         "type": "object",
+        #         "properties": {
+        #             "zone_ids": {
+        #                 "type": "array",
+        #                 "items": {"type": "integer"},
+        #                 "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
+        #                 "minItems": 2,
+        #             }
+        #         },
+        #         "required": ["zone_ids"],
+        #     },
+        # ),
         types.FunctionDeclaration(
             name="show_version_history",
             description="Show the history of filter changes and mapping states in this session.",
