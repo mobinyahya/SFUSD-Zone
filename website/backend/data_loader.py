@@ -589,9 +589,11 @@ def get_all_metrics_stats() -> dict:
     return stats
 
 
-def filter_and_centroid(bounds: dict) -> dict:
-    """
-    Apply filter bounds to Pareto solutions and return centroid + feasible stats.
+    # Cluster
+    vectors = vectorize_solutions(pareto_original)
+    labels, centers = cluster_solutions(vectors, n_clusters)
+    vector_metric_cols = [c for c in get_metric_columns() if c in pareto_original.columns]
+    directions = compute_cluster_directions(vectors, centers, vector_metric_cols)
 
     Args:
         bounds: {metric_column: {min_bound, max_bound}} where values can be None.

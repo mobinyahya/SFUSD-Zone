@@ -155,8 +155,12 @@ function setupEventListeners() {
 // Chat
 // ============================================================================
 
+const CLUSTER_PROMPT = 'Which cluster would you like to explore? Just tell me the cluster number (1, 2, or 3).';
+
 async function sendInitialMessage() {
-    await sendMessageToAgent('Show me the initial overview of available zoning approaches.');
+    await sendMessageToAgent('Begin.');
+    await sendMessageToAgent('Now show me the current solution and the clusters.');
+    addMessage('assistant', CLUSTER_PROMPT);
 }
 
 async function sendMessage() {

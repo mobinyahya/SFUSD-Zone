@@ -9,6 +9,7 @@ This module handles:
 """
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -328,6 +329,7 @@ SHORT_METRIC_NAMES = {
 def compute_cluster_directions(
     vectors: np.ndarray,
     cluster_centers: np.ndarray,
+    vector_metric_cols: Optional[list[str]] = None,
     columns: list[str] | None = None,
 ) -> dict[int, dict]:
     """
@@ -338,31 +340,55 @@ def compute_cluster_directions(
     Labels use specific metric names (not broad categories) to stay unique.
 
     Args:
-        columns: Optional subset of metric column names matching the vector dimensions.
-                 If None, uses all metric columns.
+        vectors: All solution vectors
+        cluster_centers: Centers of each cluster
+        vector_metric_cols: Optional list of metric column names in the same order
+            as vector dimensions (from vectorize_solutions). If None, uses
+            get_metric_columns() and iterates only up to vectors.shape[1].
+        
+    Returns:
+        Dict mapping cluster_id to {
+            "direction_vector": np.ndarray,
+            "direction_label": str,
+            "normalized_direction": np.ndarray
+        }
     """
-    metric_cols = columns if columns else get_metric_columns()
-    n_clusters = len(cluster_centers)
-    center_of_centers = cluster_centers.mean(axis=0)
-
-    # Per-metric spread across cluster centers (for normalization)
-    spreads = {}
-    for i, col in enumerate(metric_cols):
-        if col not in METRIC_BY_COLUMN or METRIC_BY_COLUMN[col].direction is None:
-            continue
-        vals = cluster_centers[:, i]
-        spread = vals.max() - vals.min()
-        if spread > 0:
-            spreads[i] = (col, spread)
-
-    max_spread = max((s for _, s in spreads.values()), default=1.0)
-
+    n_dims = vectors.shape[1]
+    if vector_metric_cols is not None and len(vector_metric_cols) == n_dims:
+        metric_cols = vector_metric_cols
+    else:
+        metric_cols = get_metric_columns()
+        # Vectors may have fewer columns than get_metric_columns() (only cols in df)
+        metric_cols = metric_cols[:n_dims]
+    
+    # Compute overall centroid
+    overall_centroid = vectors.mean(axis=0)
+    
+    # Normalize for direction comparison
+    _, min_vals, max_vals = normalize_vectors(vectors)
+    ranges = max_vals - min_vals
+    ranges[ranges == 0] = 1.0
+    
     directions = {}
-    for cid in range(n_clusters):
-        strengths = []
-        weaknesses = []
-
-        for metric_idx, (col, spread) in spreads.items():
+    
+    for cluster_id, center in enumerate(cluster_centers):
+        # Direction from overall centroid to cluster center
+        direction = center - overall_centroid
+        
+        # Normalize direction for interpretation
+        normalized_direction = direction / ranges
+        
+        # Generate interpretable label
+        emphasized = []  # Metrics this cluster is BETTER at
+        compromised = []  # Metrics this cluster is WORSE at
+        
+        threshold = 0.1  # 10% of range is significant
+        
+        for i in range(min(n_dims, len(metric_cols))):
+            col = metric_cols[i]
+            if col not in METRIC_BY_COLUMN:
+                continue
+            
             metric = METRIC_BY_COLUMN[col]
             short_name = SHORT_METRIC_NAMES.get(metric.display_name, metric.display_name)
 
@@ -620,24 +646,32 @@ def format_cluster_summary(
     cluster_centers: np.ndarray,
     directions: dict[int, dict]
 ) -> str:
-    """Format a compact, scannable summary of all clusters."""
-    n_clusters = len(cluster_centers)
-    total = len(df)
-    lines = [f"**{n_clusters} groups** found across {total} solutions:\n"]
+    """
+    Format a human-readable, natural-language summary of all clusters.
 
+    This should be easy for non-technical users to scan:
+    - Brief context about how many solutions and clusters there are
+    - For each cluster: solution count and plain-language direction label
+    - No detailed metric tables or \"representative solution\" breakdowns
+    """
+
+    n_clusters = len(cluster_centers)
+    total_solutions = len(df)
+    lines = [
+        f"We have grouped the current {total_solutions} feasible solutions into "
+        f"{n_clusters} clusters, each representing a different way to balance key goals "
+        "(like diversity, proximity, and predictability).",
+        "",
+        "Here are the clusters:",
+    ]
+    
     for cluster_id in range(n_clusters):
         cluster_size = (labels == cluster_id).sum()
-        info = directions[cluster_id]
-        strengths = info.get("strengths", [])
-        weaknesses = info.get("weaknesses", [])
-
-        lines.append(f"**{cluster_id + 1}. {info['direction_label']}** ({cluster_size} solutions)")
-        if strengths:
-            lines.append(f"  Stronger: {', '.join(strengths[:2])}")
-        if weaknesses:
-            lines.append(f"  Weaker: {', '.join(weaknesses[:2])}")
-        lines.append("")
-
-    lines.append(f"Which group would you like to explore? (1-{n_clusters})")
-
+        direction_info = directions[cluster_id]
+        
+        lines.append(
+            f"- **Cluster {cluster_id + 1} ({cluster_size} solutions)**: "
+            f"{direction_info['direction_label']}."
+        )
+    
     return "\n".join(lines)
