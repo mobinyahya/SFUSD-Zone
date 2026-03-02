@@ -5,7 +5,6 @@ An LLM-powered agent that helps users iteratively explore school zoning proposal
 using adjustable filters on a Pareto frontier of solutions.
 """
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -24,7 +23,8 @@ from .metrics_config import (
 )
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ from .clusters import (
     vectorize_solutions,
     format_cluster_summary,
 )
+
+DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
 # ============================================================================
@@ -608,16 +610,13 @@ class ZoningAgent:
         """
         load_dotenv()
 
-        # Initialize OpenAI client with Google's compatible endpoint
+        # Initialize native Google GenAI client
         api_key = os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY not found in environment")
 
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        )
-        self.model = "gemini-3-flash-preview"
+        self.client = genai.Client(api_key=api_key)
+        self.model = DEFAULT_MODEL
 
         # Session-level token usage tracking
         self.total_prompt_tokens = 0
@@ -669,7 +668,8 @@ class ZoningAgent:
         )
 
         self.tools = build_tools()
-        self.history = [{"role": "system", "content": build_system_prompt()}]
+        self.system_instruction = build_system_prompt()
+        self.history: list[types.Content] = []
 
         # Pre-compute themed clusters for instant initial display
         self._initial_clusters = self._compute_initial_clusters()
@@ -1197,6 +1197,15 @@ class ZoningAgent:
 
         return "\n".join(lines)
 
+    def _compress_history(self):
+        """Strip tool call/response entries from past turns, keeping only user and model text."""
+        compressed = []
+        for content in self.history:
+            text_parts = [p for p in content.parts if p.text is not None]
+            if text_parts:
+                compressed.append(types.Content(role=content.role, parts=text_parts))
+        self.history = compressed
+
     def chat(self, user_message: str, solution_context: dict = None) -> dict:
         """Process a user message and return structured response.
 
@@ -1272,32 +1281,41 @@ class ZoningAgent:
         else:
             enhanced_message = user_message
 
-        self.history.append({"role": "user", "content": enhanced_message})
+        self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=enhanced_message)]))
 
-        response = self.client.chat.completions.create(
+        config = types.GenerateContentConfig(
+            tools=[self.tools],
+            system_instruction=self.system_instruction,
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(mode="AUTO")
+            ),
+        )
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=self.history,
-            tools=self.tools,
-            tool_choice="auto",
+            contents=self.history,
+            config=config,
         )
         turn_api_calls += 1
-        if response.usage:
-            turn_prompt_tokens += response.usage.prompt_tokens
-            turn_completion_tokens += response.usage.completion_tokens
+        if response.usage_metadata:
+            turn_prompt_tokens += response.usage_metadata.prompt_token_count
+            turn_completion_tokens += response.usage_metadata.candidates_token_count
             logger.info("LLM call #%d: prompt=%d completion=%d total=%d",
-                        turn_api_calls, response.usage.prompt_tokens,
-                        response.usage.completion_tokens, response.usage.total_tokens)
-        assistant_message = response.choices[0].message
+                        turn_api_calls, response.usage_metadata.prompt_token_count,
+                        response.usage_metadata.candidates_token_count,
+                        response.usage_metadata.total_token_count)
 
-        while assistant_message.tool_calls:
-            self.history.append(assistant_message.model_dump(exclude_none=True))
+        # Check for function calls in the response
+        function_calls = response.function_calls
 
-            for tool_call in assistant_message.tool_calls:
-                tool_name = tool_call.function.name
-                try:
-                    arguments = json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError:
-                    arguments = {}
+        while function_calls:
+            # Append model's response (with function call parts) to history
+            self.history.append(response.candidates[0].content)
+
+            function_response_parts = []
+            for fc in function_calls:
+                tool_name = fc.name
+                arguments = dict(fc.args) if fc.args else {}
 
                 logger.info("Tool call: %s args=%s", tool_name, arguments)
                 any_tool_called = True
@@ -1309,29 +1327,34 @@ class ZoningAgent:
                 if tool_result.clusters:
                     clusters_data = tool_result.clusters
 
-                self.history.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_result.text,
-                })
+                function_response_parts.append(
+                    types.Part.from_function_response(
+                        name=tool_name,
+                        response={"result": tool_result.text},
+                    )
+                )
 
-            response = self.client.chat.completions.create(
+            # Append all function responses as a single user turn
+            self.history.append(types.Content(role="user", parts=function_response_parts))
+
+            response = self.client.models.generate_content(
                 model=self.model,
-                messages=self.history,
-                tools=self.tools,
-                tool_choice="auto",
+                contents=self.history,
+                config=config,
             )
             turn_api_calls += 1
-            if response.usage:
-                turn_prompt_tokens += response.usage.prompt_tokens
-                turn_completion_tokens += response.usage.completion_tokens
+            if response.usage_metadata:
+                turn_prompt_tokens += response.usage_metadata.prompt_token_count
+                turn_completion_tokens += response.usage_metadata.candidates_token_count
                 logger.info("LLM call #%d: prompt=%d completion=%d total=%d",
-                            turn_api_calls, response.usage.prompt_tokens,
-                            response.usage.completion_tokens, response.usage.total_tokens)
-            assistant_message = response.choices[0].message
+                            turn_api_calls, response.usage_metadata.prompt_token_count,
+                            response.usage_metadata.candidates_token_count,
+                            response.usage_metadata.total_token_count)
+            function_calls = response.function_calls
 
-        final_content = assistant_message.content or ""
-        self.history.append({"role": "assistant", "content": final_content})
+        final_content = response.text or ""
+        self.history.append(types.Content(role="model", parts=[types.Part.from_text(text=final_content)]))
+        self._compress_history()
 
         # Accumulate session totals
         self.total_prompt_tokens += turn_prompt_tokens

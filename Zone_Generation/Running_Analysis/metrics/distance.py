@@ -43,7 +43,9 @@ def compute_distance_metrics(
             school_to_node[sid] = node
     
     for zone_id, blocks in zone_blocks.items():
-        schools_in_zone = zone_schools.get(zone_id, [])
+        all_schools = zone_schools.get(zone_id, [])
+        schools_in_zone = [s for s in all_schools
+                           if school_data.get(s, {}).get('ge_capacity', 0) > 0]
         
         # 1. Average closest school distance WITHIN ZONE
         if schools_in_zone and blocks:

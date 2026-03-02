@@ -97,7 +97,10 @@ def handle_query_zone_data(agent: ZoningAgent, arguments: dict) -> ToolResult:
         if not metrics_requested or 'demographics' in metrics_requested:
             frl = data.get('FRL_pct', 0)
             students = data.get('ge_students', 0)
+            seat_disp = data.get('seat_disparity')
             result_lines.append(f"  - Students: {students:.0f}, FRL: {frl:.1f}%")
+            if seat_disp is not None:
+                result_lines.append(f"  - Seat disparity: {seat_disp:.2f}")
             eth = data.get('ethnicity_pcts', {})
             if eth:
                 top_eth = sorted(eth.items(), key=lambda x: x[1], reverse=True)[:2]
@@ -117,7 +120,8 @@ def handle_query_zone_data(agent: ZoningAgent, arguments: dict) -> ToolResult:
         if not metrics_requested or 'distance' in metrics_requested:
             dist = data.get('avg_closest_school_distance', 0)
             schools = data.get('schools_in_attendance_area', 0)
-            result_lines.append(f"  - Avg distance: {dist:.2f}mi, Schools: {schools}")
+            ge_nearby = data.get('ge_schools_within_half_mile', 0)
+            result_lines.append(f"  - Avg distance: {dist:.2f}mi, Schools: {schools}, Avg GE schools within 0.5mi: {ge_nearby:.1f}")
 
     return ToolResult("\n".join(result_lines), solution_path=path)
 

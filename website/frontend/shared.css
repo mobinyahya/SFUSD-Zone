@@ -362,6 +362,15 @@ footer#charts-panel.hidden,
     margin: 0;
 }
 
+#charts-description {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+    font-weight: 400;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
 #charts-subtitle {
     font-size: 0.8rem;
     color: var(--text-muted);

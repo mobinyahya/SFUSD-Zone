@@ -7,6 +7,7 @@ dependencies = [
     "descartes>=1.1.0",
     "fastapi>=0.128.2",
     "geopandas>=1.1.2",
+    "google-genai>=1.0.0",
     "gerrychain>=0.3.2",
     "gurobipy>=13.0.0",
     "httpx>=0.28.1",

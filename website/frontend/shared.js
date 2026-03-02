@@ -385,12 +385,19 @@ function showSingleChart(metricKey) {
         }
     }
 
-    document.getElementById('charts-header').textContent = config.title;
+    const mConfig = metricsConfig && metricsConfig.metrics.find(m => m.column === metricKey);
+    document.getElementById('charts-header').textContent = (mConfig && mConfig.display_name) || config.title;
+
+    const descEl = document.getElementById('charts-description');
+    if (descEl) {
+        descEl.textContent = (mConfig && mConfig.description) || '';
+    }
+
     const subtitle = document.getElementById('charts-subtitle');
     if (subtitle) {
         const mv = currentSolution.metrics[metricKey];
         const displayValue = mv !== undefined ? formatValue(mv, metricKey) : null;
-        subtitle.textContent = displayValue ? `District-wide value: ${displayValue}` : '';
+        subtitle.textContent = displayValue ? `Metric value for this map: ${displayValue}` : '';
     }
 
     document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
