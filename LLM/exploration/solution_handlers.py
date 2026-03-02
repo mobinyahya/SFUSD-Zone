@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from .state import ToolResult, _direction_text, save_or_defer_version
+from .state import ToolResult, _direction_text
 from .metrics_config import (
     ALL_METRICS,
     CATEGORIES,
@@ -33,21 +33,36 @@ if TYPE_CHECKING:
 # Solution display
 # ============================================================================
 
-def handle_get_current_solution(agent: ZoningAgent, arguments: dict) -> ToolResult:
-    """Get the current balanced mapping based on the current filters."""
-    centroid, path, count = agent._get_current_centroid()
+def handle_get_solution(agent: ZoningAgent, arguments: dict) -> ToolResult:
+    """Get the balanced mapping for a given version (defaults to current)."""
+    version = arguments.get("version")
 
-    if centroid is None:
-        return ToolResult("No solutions match the current filters. Use find_feasible_relaxation to see which constraints to relax.")
+    if version is not None:
+        if version < 0 or version >= len(agent.state.versions):
+            return ToolResult(f"Invalid version {version}. Valid versions: 0-{len(agent.state.versions) - 1}.")
+        ver = agent.state.versions[version]
+        path = ver.solution_path
+        count = ver.solution_count
+        version_id = ver.version_id
+        if path is None:
+            return ToolResult(f"Version {version} has no solution path.")
+        match = agent.pareto_original[agent.pareto_original["path"] == path]
+        if match.empty:
+            return ToolResult(f"Could not load solution for version {version}.")
+        centroid = match.iloc[0]
+    else:
+        centroid, path, count = agent._get_current_centroid()
+        version_id = agent.state.current_version
+        if centroid is None:
+            return ToolResult("No solutions match the current filters. Use find_feasible_relaxation to see which constraints to relax.")
 
     show_all = arguments.get("show_all_metrics", False)
     metrics_to_show = ALL_METRICS if show_all else CORE_METRICS
 
-    # Compute empirical percentiles for the centroid solution
     percentile_ranks = agent._compute_percentile_for_solution(centroid)
 
     if show_all:
-        lines = [f"v{agent.state.current_version}: Complete metrics for current solution ({count} solutions available)\n"]
+        lines = [f"v{version_id}: Complete metrics ({count} solutions available)\n"]
         for category_key, category_name in CATEGORIES.items():
             category_metrics = get_metrics_by_category(category_key)
             if not category_metrics:
@@ -63,7 +78,7 @@ def handle_get_current_solution(agent: ZoningAgent, arguments: dict) -> ToolResu
                 lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
         lines.append("\nWould you like to adjust any of these metrics?")
     else:
-        lines = [f"v{agent.state.current_version}: {count} solutions\n"]
+        lines = [f"v{version_id}: {count} solutions\n"]
         for metric in metrics_to_show[:8]:
             if metric.column not in centroid.index:
                 continue
@@ -214,8 +229,12 @@ def handle_select_cluster(agent: ZoningAgent, arguments: dict) -> ToolResult:
     pending_version_id = len(agent.state.versions)
     desc = f"Selected cluster: {direction_label}"
 
-    save_or_defer_version(agent, description=desc, solution_path=after_path,
-                          solution_count=after_count)
+    agent.state.save_version(
+        agent.filter_state,
+        solution_path=after_path,
+        solution_count=after_count,
+        description=desc,
+    )
 
     return ToolResult(
         f"v{pending_version_id}: Cluster {cluster_id + 1} selected\n- {direction_label}\n- {after_count} solutions",

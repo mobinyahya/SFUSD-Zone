@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from .state import ToolResult, _direction_text, save_or_defer_version
 from .filters import (
+    NUM_ZONES_NAME,
     FilterState,
     adjust_filter_bound,
     find_relaxation_needed,
@@ -111,14 +112,41 @@ def handle_loosen_filter(agent: ZoningAgent, arguments: dict) -> ToolResult:
 def handle_set_filter(agent: ZoningAgent, arguments: dict) -> ToolResult:
     """Set an explicit filter bound for a metric."""
     metric_name = arguments["metric_name"]
+    metric = METRIC_BY_NAME[metric_name]
+    _, _, before_count = agent._get_current_centroid()
+
+    if metric.display_name == NUM_ZONES_NAME:
+        min_val = arguments.get("min_value")
+        max_val = arguments.get("max_value")
+        set_filter_bound(agent.filter_state, metric_name, min_value=min_val, max_value=max_val)
+        agent._invalidate_centroid()
+        _, after_path, after_count = agent._get_current_centroid()
+
+        pending_version_id = len(agent.state.versions)
+        if min_val is None and max_val is None:
+            desc = f"Cleared filter on {metric_name}"
+            detail = "Filter removed (unconstrained)"
+        elif min_val == max_val:
+            desc = f"Set {metric_name} to exactly {int(min_val)}"
+            detail = f"Range: exactly {int(min_val)}"
+        else:
+            lo = int(min_val) if min_val is not None else "any"
+            hi = int(max_val) if max_val is not None else "any"
+            desc = f"Set {metric_name} to {lo}-{hi}"
+            detail = f"Range: {lo} to {hi}"
+
+        save_or_defer_version(agent, description=desc, solution_path=after_path,
+                              solution_count=after_count)
+        return ToolResult(
+            f"v{pending_version_id}: {desc}\n- {detail}\n- Solutions: {before_count} -> {after_count}",
+            solution_path=after_path,
+        )
+
     raw_value = arguments.get("value")
     pctl = arguments.get("percentile")
 
     if raw_value is not None and pctl is not None:
         return ToolResult("Provide either 'value' or 'percentile', not both.")
-
-    metric = METRIC_BY_NAME[metric_name]
-    _, _, before_count = agent._get_current_centroid()
 
     if pctl is not None:
         bound_value = percentile_to_value(agent.pareto_original, metric_name, pctl)

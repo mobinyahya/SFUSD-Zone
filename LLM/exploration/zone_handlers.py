@@ -53,13 +53,21 @@ def _load_zone_data(solution_path: str) -> Optional[dict]:
 
 
 def handle_query_zone_data(agent: ZoningAgent, arguments: dict) -> ToolResult:
-    """Query detailed data for specific zones in the current mapping."""
+    """Query detailed data for specific zones in a given version's mapping."""
     display_ids = arguments.get("zone_ids", [])
     metrics_requested = arguments.get("metrics", [])
+    version = arguments.get("version")
 
-    centroid, path, count = agent._get_current_centroid()
-    if centroid is None:
-        return ToolResult("No current solution. Apply filters first.")
+    if version is not None:
+        if version < 0 or version >= len(agent.state.versions):
+            return ToolResult(f"Invalid version {version}. Valid versions: 0-{len(agent.state.versions) - 1}.")
+        path = agent.state.versions[version].solution_path
+        if path is None:
+            return ToolResult(f"Version {version} has no solution path.")
+    else:
+        _, path, _ = agent._get_current_centroid()
+        if path is None:
+            return ToolResult("No current solution. Apply filters first.")
 
     loaded = _load_zone_data(path)
     if loaded is None:

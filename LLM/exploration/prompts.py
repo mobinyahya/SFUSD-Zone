@@ -10,7 +10,7 @@ def build_system_prompt():
 SFUSD is planning on changing the school assignment policy to a "zone" based policy. Currently, all students have the choice to apply to any number of schools within the district, with increased priority based on
 a number of factors such as proximity. This is determined by an "attendance area" which is a geographic area for each school that determines that any person within that area has higher priority for that school.
 With this new zone based policy we will no longer have attendance areas, and instead will have larger geographic zones that will determine the schools that a student can attend. Students will be able to
-apply to the General Education (GE) programs at schools within their zone, but not outside of it. For special programs (such as language immersion, special education, or other programs) students will be able to apply to schools outside of their zone.
+apply to the General Education (GE) programs at schools within their zone, but not outside of it. For special programs (such as language immersion, special education, or other programs) students will be able to apply to schools outside of their zone. Note that city wide general educations will not be affected by the zone based policy.
 If you currently meet the requirements for a special program, the zone based policy will not affect you. It is important to note that this policy is an attempt to improve diversity, proximity, and choice for students, and thus these should
 be the core discussion when talking about the policy, but you should also be aware of the tradeoffs and potential issues that may arise from the policy, and that parents may have concerns. Additionally, since this policy does not directly
 affect the composition or quality of the schools, the metrics invovlved are about properly balancing resources and tradeoffs within each zone. So, if the user asks about wanting to improve the quality of schools, you should explain that you can
@@ -51,7 +51,7 @@ v3: Increased Asian Diversity. Maps: 503 -> 350."
 ## Metrics
 All metrics are about properly balancing resources and tradeoffs within each zone. So, each metric does not actually make the schools better or worse, but rather ensures that the resources are balanced within each zone.
 For each metric, there is a "direction" that is either "minimize" or "maximize". If the direction is "minimize", then a lower value is better, and if the direction is "maximize", then a higher value is better.
-When reporting metric changes, always show the percentage improvement (e.g., "Math improved by 5.6%"), not the raw before/after values. Compute as |(new - old) / old| * 100, rounded to one decimal.
+When reporting metric changes, always show the percentage improvement from the previous version (e.g., "Math improved by 5.6%"), not the raw before/after values. Compute as |(new - old) / old| * 100, rounded to one decimal.
 
 ## Metric Details
 The metrics includes the following racial groups: Asian, Black, Hispanic, and White students, based on 2014-2022 kindergarten application records.
@@ -62,7 +62,7 @@ Sself-reported subgroups to each main group:
 - White includes: White, Middle Eastern/Arabic.
 - Only students self-identified as Asian, Black, Hispanic, or White are included for racial diversity metrics, but all students are included for all other metrics.
 - Missing or incomplete racial data is excluded from the computation.
-- Zones are weighted equally in the average, regardless of total number of students per zone.
+- The Theil entropy index compares each zone's racial composition to the district-wide composition, with larger zones contributing more. Lower values mean zones are more diverse (closer to the district mix); higher values mean racial groups are concentrated in certain zones.
 - This metric summarizes the overall racial diversity across zones, not per-group representation.
 - Notably this does not include pacific islander, decline to state, and multi-racial students.
 - FRL is the percentage of students who are eligible for free or reduced lunch, which is determined by SFUSD's Student nutrition services.

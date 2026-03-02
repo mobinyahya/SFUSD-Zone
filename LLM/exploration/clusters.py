@@ -507,8 +507,7 @@ def get_cluster_bounds(
 CLUSTER_THEMES = {
     "Diversity & Equity": ["diversity"],
     "Distance": ["distance"],
-    "School Quality": ["quality"],
-    "Programs": ["programs"],
+    "School Performance": ["quality"],
 }
 
 
@@ -518,7 +517,7 @@ def themed_cluster_solutions(
     """
     Assign solutions to predefined thematic clusters based on category scores.
 
-    Each solution is assigned to the theme (diversity, distance, quality+programs)
+    Each solution is assigned to the theme (diversity, distance, school performance)
     where it performs best relative to other solutions.
 
     Args:

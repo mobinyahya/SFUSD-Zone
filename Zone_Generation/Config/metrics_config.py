@@ -27,6 +27,7 @@ class MetricSpec:
     chart_unit: str = ""                     # "%", "miles", "Count", "Score", etc.
     chart_max: float | None = None           # max value for chart scale
     chart_title: str = ""                    # chart title override
+    chart_normalize: bool = False            # show as % deviation from zone average
 
 
 # ============================================================================
@@ -97,14 +98,14 @@ CATEGORY_DESCRIPTIONS = {
 
 
 # ============================================================================
-# DIVERSITY METRICS (minimize deviation from district average)
+# DIVERSITY METRICS
 # ============================================================================
 
 DIVERSITY_METRICS = [
     MetricSpec(
         column="theil_index",
         display_name="Racial Diversity",
-        description="Theil Entropy index measuring racial diversity. This represents the diversity of the racial groups in the district. 0 = Highly-Diverse, 1 = Non-Diverse. This uses the following racial groups: Black, Hispanic/Latinx, White, Asian.",
+        description="Theil Entropy index measuring racial diversity across zones. Compares the racial composition (Black, Hispanic/Latinx, White, Asian) within each zone to the district-wide composition, weighted by zone population. Lower = more diverse (zones reflect the district mix), higher = less diverse (racial groups concentrated in certain zones). Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -115,7 +116,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="frl_dissim",
         display_name="Soceconomic Diversity",
-        description="Dissimilarity index for free/reduced lunch students. This represents the number of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Dissimilarity index for free/reduced lunch students. This represents the proportion of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -129,7 +130,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="black_dissim",
         display_name="Black Representation",
-        description="Dissimilarity index for Black/African American students. This represents the number of Black/African American students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Dissimilarity index for Black/African American students. This represents the proportion of Black/African American students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -137,7 +138,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="hispanic_dissim",
         display_name="Hispanic/Latinx Representation",
-        description="Dissimilarity index for Hispanic/Latinx students. This represents the number of Hispanic/Latinx students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Dissimilarity index for Hispanic/Latinx students. This represents the proportion of Hispanic/Latinx students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -145,7 +146,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="white_dissim",
         display_name="White Representation",
-        description="Dissimilarity index for White students. This represents the number of white students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Dissimilarity index for White students. This represents the proportion of white students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -153,7 +154,7 @@ DIVERSITY_METRICS = [
     MetricSpec(
         column="asian_dissim",
         display_name="Asian Representation",
-        description="Dissimilarity index for Asian students. This represents the number of asian students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Dissimilarity index for Asian students. This represents the proportion of asian students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
         category="diversity",
         direction="minimize",
         is_core=False,
@@ -430,6 +431,7 @@ QUALITY_METRICS = [
         chart_field="avg_math_score",
         chart_unit="Score",
         chart_title="Math Scores by Zone",
+        chart_normalize=True,
     ),
     MetricSpec(
         column="mad_eng_score",
@@ -443,6 +445,7 @@ QUALITY_METRICS = [
         chart_field="avg_eng_score",
         chart_unit="Score",
         chart_title="English Scores by Zone",
+        chart_normalize=True,
     ),
 ]
 
@@ -543,5 +546,7 @@ def get_chart_hints() -> dict[str, dict]:
                 hint["unit"] = m.chart_unit
             if m.chart_max is not None:
                 hint["max"] = m.chart_max
+            if m.chart_normalize:
+                hint["normalize"] = True
             hints[m.column] = hint
     return hints

@@ -18,6 +18,7 @@ let currentSolution = null;
 // Chart state
 let singleChart = null;
 let selectedMetricKey = null;
+const normalizeOverrides = {};
 
 // Solution history state
 let savedSolutions = [];
@@ -103,12 +104,13 @@ function getPercentileRanking(percentile) {
 
 function formatValue(value, key) {
     if (value === undefined || value === null) return '-';
-    if (key.includes('distance')) return value.toFixed(2) + ' miles';
-    if (key.includes('rating')) return value.toFixed(1);
+    if (key.includes('dissim')) return (value * 100).toFixed(1) + '%';
+    if (key.includes('distance')) return value.toFixed(3) + ' miles';
+    if (key.includes('rating')) return value.toFixed(2);
     if (key === 'boundary_cost') return Math.round(value).toString();
     if (key === 'compactness') return value.toFixed(1);
     if (key.includes('index') || key.includes('Index')) return value.toFixed(2);
-    return value.toFixed(2);
+    return value.toFixed(3);
 }
 
 // ============================================================================
@@ -135,7 +137,8 @@ async function loadSchoolLocations() {
         const res = await fetch(`${API_BASE}/api/schools`);
         if (!res.ok) return;
         const data = await res.json();
-        renderSchoolMarkers(data.schools);
+        const zoneSchools = data.schools.filter(s => s.category !== 'Citywide');
+        renderSchoolMarkers(zoneSchools);
     } catch (e) {
         console.error('Error loading school locations:', e);
     }
@@ -322,6 +325,17 @@ function showSingleChart(metricKey) {
         scales: { y: { beginAtZero: true } }
     };
 
+    const isNormalized = metricKey in normalizeOverrides
+        ? normalizeOverrides[metricKey]
+        : !!config.normalize;
+
+    const normBtn = document.getElementById('charts-normalize-toggle');
+    if (normBtn) {
+        normBtn.style.display = config.type === 'ethnicity' ? 'none' : '';
+        normBtn.textContent = isNormalized ? 'Raw' : '%Dev';
+        normBtn.classList.toggle('active', isNormalized);
+    }
+
     if (config.type === 'ethnicity') {
         const ethnicityDisplay = metricsConfig ? metricsConfig.ethnicities.display : [
             { key: 'Ethnicity_Black_or_African_American', label: 'Black/African American' },
@@ -352,7 +366,7 @@ function showSingleChart(metricKey) {
             }
         });
     } else {
-        const data = zoneIds.map(id => {
+        let data = zoneIds.map(id => {
             const val = zoneData[id] ? zoneData[id][config.field] : undefined;
             return (val === undefined || val === null) ? null : val;
         });
@@ -373,13 +387,23 @@ function showSingleChart(metricKey) {
             canvas.style.display = '';
             if (noDataMsg) noDataMsg.style.display = 'none';
 
-            const scaleOpts = { beginAtZero: true };
-            if (config.max) scaleOpts.max = config.max;
-            if (config.unit) scaleOpts.title = { display: true, text: config.unit };
+            let scaleOpts = { beginAtZero: true };
+            if (isNormalized) {
+                const valid = data.filter(v => v !== null);
+                const mean = valid.reduce((s, v) => s + v, 0) / valid.length;
+                if (mean !== 0) {
+                    data = data.map(v => v === null ? null : ((v - mean) / mean) * 100);
+                }
+                scaleOpts = { title: { display: true, text: '% Deviation from Avg' } };
+            } else {
+                if (config.max) scaleOpts.max = config.max;
+                if (config.unit) scaleOpts.title = { display: true, text: config.unit };
+            }
 
+            const zoneColors = zoneIds.map(id => (currentSolution.colors || {})[id] || CHART_COLORS.primary);
             singleChart = new Chart(canvas.getContext('2d'), {
                 type: 'bar',
-                data: { labels, datasets: [{ label: config.title, data, backgroundColor: config.color || CHART_COLORS.primary }] },
+                data: { labels, datasets: [{ label: config.title, data, backgroundColor: zoneColors }] },
                 options: { ...defaultOpts, scales: { y: scaleOpts } }
             });
         }
@@ -721,6 +745,20 @@ function setupChartsClose() {
             document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
             selectedMetricKey = null;
             if (singleChart) { singleChart.destroy(); singleChart = null; }
+        });
+    }
+
+    const normToggle = document.getElementById('charts-normalize-toggle');
+    if (normToggle) {
+        normToggle.addEventListener('click', () => {
+            if (!selectedMetricKey) return;
+            const chartConfigs = getChartConfig();
+            const config = chartConfigs[selectedMetricKey];
+            const current = selectedMetricKey in normalizeOverrides
+                ? normalizeOverrides[selectedMetricKey]
+                : !!config?.normalize;
+            normalizeOverrides[selectedMetricKey] = !current;
+            refreshSingleChart();
         });
     }
 }

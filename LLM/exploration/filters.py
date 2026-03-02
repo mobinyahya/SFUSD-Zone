@@ -21,6 +21,8 @@ from .metrics_config import (
     MetricSpec,
 )
 
+NUM_ZONES_NAME = "Number of Zones"
+
 
 @dataclass
 class FilterBounds:
@@ -41,7 +43,7 @@ class FilterState:
     
     def __post_init__(self):
         for metric in ALL_METRICS:
-            if metric.direction is None:
+            if metric.direction is None and metric.display_name != NUM_ZONES_NAME:
                 continue
             if metric.display_name not in self.bounds:
                 self.bounds[metric.display_name] = FilterBounds()
@@ -64,7 +66,9 @@ def apply_filters(df: pd.DataFrame, filter_state: FilterState) -> pd.DataFrame:
     mask = pd.Series([True] * len(df), index=df.index)
     
     for metric in ALL_METRICS:
-        if metric.direction is None or metric.column not in df.columns:
+        if metric.column not in df.columns:
+            continue
+        if metric.direction is None and metric.display_name != NUM_ZONES_NAME:
             continue
         
         bounds = filter_state.bounds.get(metric.display_name, FilterBounds())
@@ -257,18 +261,31 @@ def set_filter_bound(
     filter_state: FilterState,
     metric_name: str,
     value: Optional[float] = None,
+    *,
+    min_value: Optional[float] = None,
+    max_value: Optional[float] = None,
 ) -> None:
     """Set or clear the filter bound for a metric.
 
     Sets the appropriate bound based on metric direction:
     - "minimize" -> max_bound
     - "maximize" -> min_bound
+    - "Number of Zones" (range) -> min_bound and max_bound from min_value/max_value
 
-    If value is None, the bound is cleared (unconstrained).
+    If value is None (directional) or both min/max are None (num_zones),
+    the bound is cleared (unconstrained).
     """
     if metric_name not in METRIC_BY_NAME:
         raise ValueError(f"Unknown metric: {metric_name}")
     metric = METRIC_BY_NAME[metric_name]
+
+    if metric.display_name == NUM_ZONES_NAME:
+        bounds = filter_state.bounds.get(metric_name, FilterBounds())
+        bounds.min_bound = min_value
+        bounds.max_bound = max_value
+        filter_state.bounds[metric_name] = bounds
+        return
+
     if metric.direction is None:
         raise ValueError(f"Cannot filter informational metric: {metric_name}")
 

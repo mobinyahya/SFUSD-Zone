@@ -39,7 +39,7 @@ from .filter_handlers import (
     handle_apply_feedback_filters,
 )
 from .solution_handlers import (
-    handle_get_current_solution,
+    handle_get_solution,
     handle_list_all_metrics,
     handle_search_metrics,
     handle_undo_action,
@@ -70,7 +70,7 @@ TOOL_HANDLERS = {
     "get_filter_bounds": handle_get_filter_bounds,
     "find_feasible_relaxation": handle_find_feasible_relaxation,
     "apply_feedback_filters": handle_apply_feedback_filters,
-    "get_current_solution": handle_get_current_solution,
+    "get_solution": handle_get_solution,
     "list_all_metrics": handle_list_all_metrics,
     "search_metrics": handle_search_metrics,
     "undo_action": handle_undo_action,

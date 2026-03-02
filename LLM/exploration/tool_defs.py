@@ -11,8 +11,8 @@ def build_tools():
     Returns a ``types.Tool`` containing all function declarations
     for the Google GenAI native SDK.
     """
-    # Get all metric display names for enum
     all_metric_names = [m.display_name for m in ALL_METRICS]
+    filterable_metric_names = [m.display_name for m in ALL_METRICS if m.direction is not None]
     category_names = list(CATEGORIES.keys())
 
     declarations = [
@@ -31,7 +31,11 @@ def build_tools():
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Which metric categories to include: 'demographics', 'programs', 'quality', 'distance'. If empty, returns all.",
-                    }
+                    },
+                    "version": {
+                        "type": "integer",
+                        "description": "Version number to query (e.g. 0, 1, 2). Defaults to the current version.",
+                    },
                 },
                 "required": [],
             },
@@ -62,15 +66,19 @@ def build_tools():
             },
         ),
         types.FunctionDeclaration(
-            name="get_current_solution",
-            description="Get the current 'balanced' mapping based on the current filters. Use show_all_metrics based on user intent: if they're asking for overview/details/depth about metrics, set to true. If they just want current status or quick check, set to false.",
+            name="get_solution",
+            description="Get the 'balanced' mapping for a given version. Defaults to the current version. Use show_all_metrics based on user intent: if they're asking for overview/details/depth about metrics, set to true. If they just want current status or quick check, set to false.",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "show_all_metrics": {
                         "type": "boolean",
                         "description": "Set to true when user is asking for detailed information, comprehensive view, or wants to understand all available metrics. Set to false for quick status checks. Use your judgment based on user intent, not specific trigger phrases.",
-                    }
+                    },
+                    "version": {
+                        "type": "integer",
+                        "description": "Version number to query (e.g. 0, 1, 2). Defaults to the current version.",
+                    },
                 },
                 "required": [],
             },
@@ -100,14 +108,14 @@ def build_tools():
         ),
         types.FunctionDeclaration(
             name="tighten_filter",
-            description="Tighten the constraint for a specific metric to improve it. Uses moderate strength by default. Infer strength based on user tone and intent, or explicitly ask if unclear.",
+            description="Tighten the constraint for a specific metric to improve it. Uses moderate strength by default. Infer strength based on user tone and intent, or explicitly ask if unclear. Not available for 'Number of Zones' (use set_filter with min_value/max_value instead).",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "metric_name": {
                         "type": "string",
                         "description": "The display name of the metric to tighten.",
-                        "enum": all_metric_names,
+                        "enum": filterable_metric_names,
                     },
                     "strength": {
                         "type": "string",
@@ -121,14 +129,14 @@ def build_tools():
         ),
         types.FunctionDeclaration(
             name="loosen_filter",
-            description="Loosen the constraint for a specific metric to allow more diverse solutions. IMPORTANT: Before calling this tool, ALWAYS explain what loosening this constraint will enable (more solutions, ability to improve other metrics) and what the trade-off is (accepting worse values for this metric).",
+            description="Loosen the constraint for a specific metric to allow more diverse solutions. IMPORTANT: Before calling this tool, ALWAYS explain what loosening this constraint will enable (more solutions, ability to improve other metrics) and what the trade-off is (accepting worse values for this metric). Not available for 'Number of Zones' (use set_filter with min_value/max_value instead).",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "metric_name": {
                         "type": "string",
                         "description": "The display name of the metric to loosen.",
-                        "enum": all_metric_names,
+                        "enum": filterable_metric_names,
                     },
                     "strength": {
                         "type": "string",
@@ -141,7 +149,7 @@ def build_tools():
         ),
         types.FunctionDeclaration(
             name="set_filter",
-            description="Set an explicit filter bound for a metric by raw value, percentile, or clear it. Use when the user has a specific target (e.g. 'FRL deviation under 0.05' or 'top 25% for distance'). If neither value nor percentile is provided, the filter is cleared (unconstrained). Prefer tighten_filter/loosen_filter for relative adjustments.",
+            description="Set an explicit filter bound for a metric by raw value, percentile, or clear it. Use when the user has a specific target (e.g. 'FRL deviation under 0.05' or 'top 25% for distance'). If neither value nor percentile is provided, the filter is cleared (unconstrained). Prefer tighten_filter/loosen_filter for relative adjustments. SPECIAL CASE: 'Number of Zones' has no optimization direction. For this metric only, use min_value and max_value to set an inclusive range (e.g. min_value=5, max_value=5 for exactly 5 zones, or min_value=5, max_value=7 for 5-7 zones). The value/percentile parameters do not apply to 'Number of Zones'. All other metrics work the same as before.",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
@@ -152,11 +160,19 @@ def build_tools():
                     },
                     "value": {
                         "type": "number",
-                        "description": "Exact raw metric value to use as the bound. For 'minimize' metrics this sets an upper bound; for 'maximize' metrics a lower bound.",
+                        "description": "Exact raw metric value to use as the bound. For 'minimize' metrics this sets an upper bound; for 'maximize' metrics a lower bound. Not used for 'Number of Zones'.",
                     },
                     "percentile": {
                         "type": "number",
-                        "description": "Quality percentile 0-100 (higher = better). E.g. 75 keeps only solutions better than 75% of all Pareto solutions for this metric.",
+                        "description": "Quality percentile 0-100 (higher = better). E.g. 75 keeps only solutions better than 75% of all Pareto solutions for this metric. Not used for 'Number of Zones'.",
+                    },
+                    "min_value": {
+                        "type": "number",
+                        "description": "Minimum of the range (inclusive). Only used for 'Number of Zones'.",
+                    },
+                    "max_value": {
+                        "type": "number",
+                        "description": "Maximum of the range (inclusive). Only used for 'Number of Zones'.",
                     },
                 },
                 "required": ["metric_name"],
@@ -235,7 +251,7 @@ def build_tools():
                                 "metric_name": {
                                     "type": "string",
                                     "description": "The display name of the metric to adjust.",
-                                    "enum": all_metric_names,
+                                    "enum": filterable_metric_names,
                                 },
                                 "direction": {
                                     "type": "string",
