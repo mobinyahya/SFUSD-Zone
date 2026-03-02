@@ -488,18 +488,19 @@ main {
 
 #charts-close {
     background: none;
-    border: none;
+    border: 1px solid var(--text-muted);
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
-    padding: 2px 6px;
+    padding: 3px 10px;
     border-radius: 4px;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 #charts-close:hover {
     background: #ecf0f1;
     color: var(--text-color);
+    border-color: var(--text-color);
 }
 
 #single-chart-container {
