@@ -378,6 +378,52 @@ footer#charts-panel.hidden,
     font-weight: 400;
 }
 
+#charts-help {
+    background: none;
+    border: 1.5px solid var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+    position: relative;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+#charts-help:hover {
+    background: #ecf0f1;
+    color: var(--text-color);
+    border-color: var(--text-color);
+}
+
+#charts-help::after {
+    content: 'Confused by this chart? Ask for an explanation in the chat window.';
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    background: var(--text-color, #2c3e50);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 400;
+    padding: 6px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+
+#charts-help:hover::after {
+    opacity: 1;
+}
+
 #charts-close {
     background: none;
     border: none;

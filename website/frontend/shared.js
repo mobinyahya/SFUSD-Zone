@@ -397,7 +397,7 @@ function showSingleChart(metricKey) {
     if (subtitle) {
         const mv = currentSolution.metrics[metricKey];
         const displayValue = mv !== undefined ? formatValue(mv, metricKey) : null;
-        subtitle.textContent = displayValue ? `Metric value for this map: ${displayValue}` : '';
+        subtitle.textContent = displayValue ? `Value for this map: ${displayValue}` : '';
     }
 
     document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
