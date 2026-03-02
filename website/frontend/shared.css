@@ -163,10 +163,40 @@ main {
 #comparison-panel {
     background: var(--panel-bg);
     border-top: 1px solid var(--border-color);
-    overflow: hidden;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+#comparison-panel.chart-active {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto 1fr;
+    min-height: 240px;
+    overflow-y: hidden;
+}
+
+#comparison-panel.chart-active .panel-header {
+    grid-column: 1 / -1;
+}
+
+#comparison-panel.chart-active #comparison-table-container {
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-width: 180px;
+}
+
+#comparison-panel.chart-active .category-list {
+    flex-direction: column;
+    gap: 0;
+}
+
+#comparison-panel.chart-active #inline-chart-area {
+    height: auto;
+    border-top: none;
+    border-left: 1px solid var(--border-color);
 }
 
 .panel-header {
@@ -211,6 +241,16 @@ main {
     border: 1px solid var(--border-color);
     border-radius: 6px;
     overflow: hidden;
+    transition: opacity 0.3s ease, flex 0.3s ease, min-width 0.3s ease,
+                border-width 0.3s ease;
+}
+
+.category-card.chart-hidden {
+    opacity: 0;
+    flex: 0 0 0 !important;
+    min-width: 0 !important;
+    border-width: 0;
+    pointer-events: none;
 }
 
 .category-card-header {
@@ -332,19 +372,16 @@ main {
    Charts Panel - Single Chart
    ============================================================================ */
 
-footer#charts-panel,
-#charts-panel {
+#inline-chart-area {
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
-    border-top: 3px solid var(--border-color);
-    margin-top: 4px;
+    border-top: 1px solid var(--border-color);
+    padding: 0;
     height: 240px;
     flex-shrink: 0;
 }
 
-footer#charts-panel.hidden,
-#charts-panel.hidden {
+#inline-chart-area.hidden {
     display: none;
 }
 
@@ -1013,7 +1050,7 @@ footer#charts-panel.hidden,
         border-bottom: 1px solid var(--border-color);
     }
 
-    footer#charts-panel {
+    #inline-chart-area {
         height: auto;
         min-height: 240px;
     }

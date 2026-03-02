@@ -70,6 +70,23 @@
                     <div id="comparison-table-container">
                         <p class="no-solution-msg">Adjust filters to see a solution</p>
                     </div>
+                    <div id="inline-chart-area" class="hidden">
+                        <div id="charts-header-bar">
+                            <div>
+                                <h3 id="charts-header">Distribution by Zone</h3>
+                                <p id="charts-description"></p>
+                                <p id="charts-subtitle"></p>
+                            </div>
+                            <div>
+                                <button id="charts-normalize-toggle" title="Toggle normalized view"></button>
+                                <button id="charts-help" title="Need help understanding this chart?">?</button>
+                                <button id="charts-close" title="Close chart">&times;</button>
+                            </div>
+                        </div>
+                        <div id="single-chart-container">
+                            <canvas id="chart-single"></canvas>
+                        </div>
+                    </div>
                 </section>
             </section>
 
@@ -121,24 +138,6 @@
             </div>
         </main>
 
-        <!-- Chart footer -->
-        <footer id="charts-panel" class="hidden">
-            <div id="charts-header-bar">
-                <div>
-                    <h3 id="charts-header">Distribution by Zone</h3>
-                    <p id="charts-description"></p>
-                    <p id="charts-subtitle"></p>
-                </div>
-                <div>
-                    <button id="charts-normalize-toggle" title="Toggle normalized view"></button>
-                    <button id="charts-help" title="Need help understanding this chart? Ask in the chat!">?</button>
-                    <button id="charts-close" title="Close chart">&#9660;</button>
-                </div>
-            </div>
-            <div id="single-chart-container">
-                <canvas id="chart-single"></canvas>
-            </div>
-        </footer>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

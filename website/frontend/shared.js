@@ -309,13 +309,30 @@ function showSingleChart(metricKey) {
     const config = chartConfigs[metricKey];
     if (!config || config.type === 'none') return;
 
+    // Activate side-by-side layout: selected card on left, chart on right
+    document.getElementById('comparison-panel').classList.add('chart-active');
+
+    // Hide non-selected cards, expand the selected one
+    document.querySelectorAll('.category-card').forEach(card => {
+        const containsMetric = card.querySelector(`.metric-row[data-key="${metricKey}"]`);
+        if (!containsMetric) {
+            card.classList.add('chart-hidden');
+        } else {
+            card.classList.remove('chart-hidden', 'collapsed');
+            card.classList.add('expanded');
+            card.querySelector('.chevron').innerHTML = '&#9660;';
+            card.querySelector('.category-avg-rank').innerHTML = '';
+            card.querySelector('.category-metrics').classList.remove('hidden');
+        }
+    });
+
     const zoneData = currentSolution.zone_data;
     const zoneIndexMap = currentSolution.zone_index_map || {};
     const zoneIds = Object.keys(zoneData).sort((a, b) => Number(a) - Number(b));
     const labels = zoneIds.map(id => `Zone ${zoneIndexMap[id] || id}`);
 
     const canvas = document.getElementById('chart-single');
-    document.getElementById('charts-panel').classList.remove('hidden');
+    document.getElementById('inline-chart-area').classList.remove('hidden');
     if (singleChart) { singleChart.destroy(); singleChart = null; }
 
     const defaultOpts = {
@@ -741,10 +758,22 @@ function setupChartsClose() {
     const chartsClose = document.getElementById('charts-close');
     if (chartsClose) {
         chartsClose.addEventListener('click', () => {
-            document.getElementById('charts-panel').classList.add('hidden');
+            document.getElementById('inline-chart-area').classList.add('hidden');
             document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
             selectedMetricKey = null;
             if (singleChart) { singleChart.destroy(); singleChart = null; }
+
+            // Remove side-by-side layout
+            document.getElementById('comparison-panel').classList.remove('chart-active');
+
+            // Restore all category cards to collapsed state
+            document.querySelectorAll('.category-card').forEach(card => {
+                card.classList.remove('expanded', 'chart-hidden');
+                card.classList.add('collapsed');
+                card.querySelector('.chevron').innerHTML = '&#9654;';
+                card.querySelector('.category-avg-rank').innerHTML = decodeURIComponent(card.dataset.avgBadge);
+                card.querySelector('.category-metrics').classList.add('hidden');
+            });
         });
     }
 
