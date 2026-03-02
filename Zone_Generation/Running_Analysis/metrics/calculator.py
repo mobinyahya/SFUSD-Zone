@@ -104,6 +104,7 @@ class ZoneMetricsCalculator:
         for zone_id, sd_data in per_zone_seat.items():
             if zone_id in result.zone_data:
                 result.zone_data[zone_id].seat_disparity = sd_data.get('seat_disparity')
+                result.zone_data[zone_id].ge_capacity = sd_data.get('ge_capacity', 0.0)
 
         # Add Theil segregation index
         theil_metrics, per_zone_entropy = compute_theil_index(

@@ -125,13 +125,13 @@ def compute_seat_disparity(
             students += G.nodes[block]['ge_students']
 
         if students == 0:
-            per_zone_data[zone_id] = {'seat_disparity': None}
+            per_zone_data[zone_id] = {'seat_disparity': None, 'ge_capacity': seats}
             continue
 
         signed_diff = (seats - students) / students
         total_diff += abs(signed_diff)
         valid_zones += 1
-        per_zone_data[zone_id] = {'seat_disparity': signed_diff}
+        per_zone_data[zone_id] = {'seat_disparity': signed_diff, 'ge_capacity': seats}
 
     solution_value = total_diff / valid_zones if valid_zones > 0 else 0.0
     return solution_value, per_zone_data

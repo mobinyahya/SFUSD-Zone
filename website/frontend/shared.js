@@ -104,8 +104,8 @@ function getPercentileRanking(percentile) {
 
 function formatValue(value, key) {
     if (value === undefined || value === null) return '-';
-    if (key.includes('dissim')) return (value * 100).toFixed(1) + '%';
-    if (key.includes('distance')) return value.toFixed(3) + ' miles';
+    if (key.includes('dissim') || key === 'seat_disparity') return (value * 100).toFixed(1);
+    if (key.includes('distance')) return value.toFixed(3);
     if (key.includes('rating')) return value.toFixed(2);
     if (key === 'boundary_cost') return Math.round(value).toString();
     if (key === 'compactness') return value.toFixed(1);
@@ -243,16 +243,70 @@ function renderMap(geojson) {
     map.fitBounds(geojsonLayer.getBounds());
 }
 
+function formatEthnicityName(key) {
+    return key.replace('Ethnicity_', '').replace(/_/g, ' ').replace('/', '/');
+}
+
 function createTooltip(bgId, zoneIndex, demographics) {
-    let content = `<strong>BlockGroup: ${bgId}</strong>`;
-    if (zoneIndex !== undefined && zoneIndex !== null) {
-        content += `<br><span class="zone-info">Zone ${zoneIndex}</span>`;
+    if (!demographics) {
+        return `<strong>BlockGroup: ${bgId}</strong><br>Unassigned`;
     }
-    if (demographics) {
-        content += `<br>Students: ${Math.round(demographics.ge_students)}`;
-        content += `<br>FRL: ${(demographics.FRL_pct || 0).toFixed(1)}%`;
+
+    const d = demographics;
+    const pct = v => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
+    const num = (v, dec = 0) => v != null ? v.toFixed(dec) : 'N/A';
+
+    let html = `<div class="tooltip-header">Zone ${zoneIndex ?? '?'}</div>`;
+
+    // Demographics
+    html += `<div class="tooltip-section"><div class="tooltip-section-label">Demographics</div>`;
+    html += `<div class="tooltip-row"><span>Students</span><span>${Math.round(d.ge_students)}</span></div>`;
+    html += `<div class="tooltip-row"><span>FRL</span><span>${num(d.FRL_pct, 1)}%</span></div>`;
+    if (d.ethnicity_pcts) {
+        for (const [key, val] of Object.entries(d.ethnicity_pcts)) {
+            html += `<div class="tooltip-row tooltip-sub"><span>${formatEthnicityName(key)}</span><span>${pct(val)}</span></div>`;
+        }
     }
-    return content;
+    if (d.seat_disparity != null) {
+        html += `<div class="tooltip-row"><span>Seat Disparity</span><span>${pct(d.seat_disparity)}</span></div>`;
+    }
+    html += `</div>`;
+
+    // Capacity
+    html += `<div class="tooltip-section"><div class="tooltip-section-label">Capacity</div>`;
+    html += `<div class="tooltip-row"><span>GE Students</span><span>${Math.round(d.ge_students)}</span></div>`;
+    if (d.ge_capacity != null) {
+        html += `<div class="tooltip-row"><span>GE Capacity</span><span>${Math.round(d.ge_capacity)}</span></div>`;
+    }
+    html += `</div>`;
+
+    // Quality
+    html += `<div class="tooltip-section"><div class="tooltip-section-label">Quality</div>`;
+    if (d.avg_math_score != null) {
+        html += `<div class="tooltip-row"><span>Avg Math</span><span>${num(d.avg_math_score, 2)}</span></div>`;
+    }
+    if (d.avg_eng_score != null) {
+        html += `<div class="tooltip-row"><span>Avg English</span><span>${num(d.avg_eng_score, 2)}</span></div>`;
+    }
+    if (d.ethnicity_entropy != null) {
+        html += `<div class="tooltip-row"><span>Diversity Entropy</span><span>${num(d.ethnicity_entropy, 3)}</span></div>`;
+    }
+    html += `</div>`;
+
+    // Access
+    html += `<div class="tooltip-section"><div class="tooltip-section-label">Access</div>`;
+    if (d.avg_closest_school_distance != null) {
+        html += `<div class="tooltip-row"><span>Avg Nearest School</span><span>${num(d.avg_closest_school_distance, 2)} mi</span></div>`;
+    }
+    if (d.schools_in_attendance_area != null) {
+        html += `<div class="tooltip-row"><span>Schools in Zone</span><span>${d.schools_in_attendance_area}</span></div>`;
+    }
+    if (d.ge_schools_within_half_mile != null) {
+        html += `<div class="tooltip-row"><span>GE Schools &lt;0.5 mi</span><span>${num(d.ge_schools_within_half_mile, 2)}</span></div>`;
+    }
+    html += `</div>`;
+
+    return html;
 }
 
 function renderLegend() {
@@ -385,7 +439,8 @@ function showSingleChart(metricKey) {
     } else {
         let data = zoneIds.map(id => {
             const val = zoneData[id] ? zoneData[id][config.field] : undefined;
-            return (val === undefined || val === null) ? null : val;
+            if (val === undefined || val === null) return null;
+            return config.unit === '%' ? val * 100 : val;
         });
 
         const chartContainer = document.getElementById('single-chart-container');
@@ -438,7 +493,8 @@ function showSingleChart(metricKey) {
     if (subtitle) {
         const mv = currentSolution.metrics[metricKey];
         const displayValue = mv !== undefined ? formatValue(mv, metricKey) : null;
-        subtitle.textContent = displayValue ? `Value for this map: ${displayValue}` : '';
+        const unit = mConfig && mConfig.chart && mConfig.chart.unit;
+        subtitle.textContent = displayValue ? `Value for this map: ${displayValue}${unit ? ' ' + unit : ''}` : '';
     }
 
     document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));

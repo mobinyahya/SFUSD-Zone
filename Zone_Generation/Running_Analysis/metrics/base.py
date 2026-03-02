@@ -13,6 +13,7 @@ class ZoneData:
     
     # Demographics
     ge_students: float = 0.0
+    ge_capacity: float = 0.0
     frl_pct: float = 0.0
     ethnicity_pcts: dict[str, float] = field(default_factory=dict)
     
@@ -48,6 +49,7 @@ class ZoneData:
         return {
             'zone_id': self.zone_id,
             'ge_students': self.ge_students,
+            'ge_capacity': self.ge_capacity,
             'frl_pct': self.frl_pct,
             'ethnicity_pcts': self.ethnicity_pcts,
             'programs': self.programs,

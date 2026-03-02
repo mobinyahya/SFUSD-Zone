@@ -733,21 +733,57 @@ main {
 .leaflet-tooltip {
     background: white;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 0.85rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    padding: 0;
+    font-size: 0.8rem;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+    max-width: 280px;
+    line-height: 1.4;
 }
 
-.leaflet-tooltip strong {
-    display: block;
-    margin-bottom: 4px;
+.leaflet-tooltip .tooltip-header {
+    background: var(--primary-color);
+    color: white;
+    padding: 6px 12px;
+    font-weight: 600;
     font-size: 0.9rem;
+    border-radius: 5px 5px 0 0;
 }
 
-.leaflet-tooltip .zone-info {
-    color: var(--secondary-color);
+.leaflet-tooltip .tooltip-section {
+    padding: 6px 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.leaflet-tooltip .tooltip-section:first-of-type {
+    border-top: none;
+}
+
+.leaflet-tooltip .tooltip-section-label {
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.leaflet-tooltip .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.leaflet-tooltip .tooltip-row span:last-child {
     font-weight: 500;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.leaflet-tooltip .tooltip-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding-left: 6px;
 }
 
 /* ============================================================================

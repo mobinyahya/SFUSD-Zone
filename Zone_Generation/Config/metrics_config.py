@@ -191,7 +191,7 @@ DISTANCE_METRICS = [
         short_name="Walkable Schools",
         chart_type="bar",
         chart_field="ge_schools_within_half_mile",
-        chart_unit="Count",
+        chart_unit="Schools",
         chart_title="Schools with General Education programs within 0.5 Miles",
     ),
 ]
@@ -250,6 +250,7 @@ PROGRAM_METRICS = [
         chart_type="bar",
         chart_field="seat_disparity",
         chart_title="Seat Disparity by Zone",
+        chart_unit="%",
     ),
     # MetricSpec(
     #     column="avg_GE_per_zone",
