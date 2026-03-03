@@ -365,7 +365,7 @@ def precompute_category_percentiles() -> dict:
     # Map metric category to short display key
     CATEGORY_SHORT = {
         'diversity': 'Div',
-        'distance': 'Dist',
+        'proximity': 'Prox',
         'programs': 'Prog',
         'quality': 'Perf',
         'structure': 'Struct',
@@ -488,7 +488,7 @@ def get_category_percentiles(solution_path: str = None, percentile_ranks: dict =
 
     CATEGORY_SHORT = {
         'diversity': 'Div',
-        'distance': 'Dist',
+        'proximity': 'Prox',
         'programs': 'Prog',
         'quality': 'Perf',
         'structure': 'Struct',

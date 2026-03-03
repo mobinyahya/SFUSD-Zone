@@ -25,26 +25,6 @@
                 </div>
                 <div id="zone-legend" class="hidden"></div>
             </div>
-            <div id="solution-history" class="hidden">
-                <div class="solution-history-header">
-                    <span>Saved Solutions</span>
-                    <button id="solution-history-toggle" class="solution-history-toggle" title="Expand panel">&#9650;</button>
-                </div>
-                <div id="solution-cards" class="solution-cards-container">
-                </div>
-                <div id="solution-proscons-panel" class="solution-proscons-panel hidden">
-                    <div class="proscons-section">
-                        <label class="proscons-label proscons-label-pros">Pros</label>
-                        <textarea id="solution-pros-textarea" placeholder="What do you like about this solution?"></textarea>
-                    </div>
-                    <div class="proscons-section">
-                        <label class="proscons-label proscons-label-cons">Cons</label>
-                        <textarea id="solution-cons-textarea" placeholder="What concerns do you have?"></textarea>
-                    </div>
-                    <div class="solution-proscons-hint">Editing <span id="solution-proscons-target"></span> — saves automatically on blur</div>
-                    <button id="generate-from-feedback-btn" class="generate-feedback-btn" title="Generate a new solution based on all your feedback">Generate New Solution From Feedback</button>
-                </div>
-            </div>
             <section id="comparison-panel">
                 <div class="panel-header">
                     <h3>Solution Comparison</h3>
@@ -78,6 +58,7 @@
             <div id="chat-header">
                 <h2>Chat with Zoning Agent</h2>
             </div>
+            <div id="version-tabs"></div>
             <div id="chat-messages">
                 <div class="message system">
                     Welcome! I'll help you explore school zoning options. Let me show you what's available...
@@ -86,6 +67,7 @@
             <div id="chat-input-area">
                 <input type="text" id="chat-input" placeholder="Ask about zoning options...">
                 <button id="chat-send">Send</button>
+                <button id="generate-btn" class="generate-btn" title="Generate a new map based on your feedback">New Map</button>
             </div>
         </section>
     </main>

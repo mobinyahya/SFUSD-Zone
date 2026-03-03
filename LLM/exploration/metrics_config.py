@@ -12,7 +12,7 @@ from Zone_Generation.Config.metrics_config import (  # noqa: F401
     CATEGORIES,
     CATEGORY_DESCRIPTIONS,
     DIVERSITY_METRICS,
-    DISTANCE_METRICS,
+    PROXIMITY_METRICS,
     PROGRAM_METRICS,
     QUALITY_METRICS,
     ALL_METRICS,

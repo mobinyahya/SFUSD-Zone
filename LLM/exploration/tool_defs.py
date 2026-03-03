@@ -5,10 +5,20 @@ from google.genai import types
 from .metrics_config import ALL_METRICS, CATEGORIES
 
 
-def build_tools():
+FILTER_TOOLS = {
+    "tighten_filter", "loosen_filter", "set_filter",
+    "find_feasible_relaxation", "apply_feedback_filters",
+}
+
+
+def build_tools(mode: str = "all"):
     """Build tool definitions with current metric names.
 
-    Returns a ``types.Tool`` containing all function declarations
+    Args:
+        mode: "all" includes every tool, "feedback" excludes filter tools,
+              "generate" includes all tools.
+
+    Returns a ``types.Tool`` containing function declarations
     for the Google GenAI native SDK.
     """
     all_metric_names = [m.display_name for m in ALL_METRICS]
@@ -16,6 +26,40 @@ def build_tools():
     category_names = list(CATEGORIES.keys())
 
     declarations = [
+        types.FunctionDeclaration(
+            name="save_feedback",
+            description="Save structured user feedback (likes and dislikes). Call this EVERY time the user expresses a preference, opinion, or concern about the current map. Each entry captures one distinct preference.",
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "sentiment": {
+                                    "type": "string",
+                                    "description": "'positive' for things user likes, 'negative' for things they want improved.",
+                                    "enum": ["positive", "negative"],
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": "Brief description of the preference (e.g., 'schools are close to home', 'math scores are uneven').",
+                                },
+                                "related_metrics": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": f"Metric display names related to this feedback. Choose from: {[m.display_name for m in ALL_METRICS if m.direction is not None]}",
+                                },
+                            },
+                            "required": ["sentiment", "text"],
+                        },
+                        "description": "List of feedback entries to save.",
+                    },
+                },
+                "required": ["entries"],
+            },
+        ),
         types.FunctionDeclaration(
             name="query_zone_data",
             description="Query detailed data for specific zones in the current mapping. Returns demographics, programs, quality metrics, and distances for requested zones.",
@@ -30,7 +74,7 @@ def build_tools():
                     "metrics": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Which metric categories to include: 'demographics', 'programs', 'quality', 'distance'. If empty, returns all.",
+                        "description": "Which metric categories to include: 'demographics', 'programs', 'quality', 'proximity'. If empty, returns all.",
                     },
                     "version": {
                         "type": "integer",
@@ -40,22 +84,6 @@ def build_tools():
                 "required": [],
             },
         ),
-        # types.FunctionDeclaration(
-        #     name="compare_zones",
-        #     description="Compare two or more zones side-by-side on key metrics. Useful for understanding differences between zones.",
-        #     parameters_json_schema={
-        #         "type": "object",
-        #         "properties": {
-        #             "zone_ids": {
-        #                 "type": "array",
-        #                 "items": {"type": "integer"},
-        #                 "description": "List of 2+ zone display numbers as shown on the map (e.g., [1, 3]).",
-        #                 "minItems": 2,
-        #             }
-        #         },
-        #         "required": ["zone_ids"],
-        #     },
-        # ),
         types.FunctionDeclaration(
             name="show_version_history",
             description="Show the history of filter changes and mapping states in this session.",
@@ -238,5 +266,8 @@ def build_tools():
             },
         ),
     ]
+
+    if mode == "feedback":
+        declarations = [d for d in declarations if d.name not in FILTER_TOOLS]
 
     return types.Tool(function_declarations=declarations)

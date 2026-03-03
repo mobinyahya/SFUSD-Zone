@@ -44,6 +44,7 @@ from .solution_handlers import (
     handle_search_metrics,
     handle_undo_action,
     handle_show_version_history,
+    handle_save_feedback,
     build_clusters_response,
 )
 from .clusters import (
@@ -75,6 +76,7 @@ TOOL_HANDLERS = {
     "search_metrics": handle_search_metrics,
     "undo_action": handle_undo_action,
     "show_version_history": handle_show_version_history,
+    "save_feedback": handle_save_feedback,
 }
 
 
@@ -147,8 +149,10 @@ class ZoningAgent:
             description="Initial state"
         )
 
-        self.tools = build_tools()
-        self.system_instruction = build_system_prompt()
+        self.tools = build_tools(mode="all")
+        self.feedback_tools = build_tools(mode="feedback")
+        self.generate_tools = build_tools(mode="generate")
+        self.system_instruction = build_system_prompt(mode="feedback")
         self.history: list[types.Content] = []
 
         # Pre-compute themed clusters for instant initial display
@@ -354,55 +358,9 @@ class ZoningAgent:
         self.filter_state = FilterState()
         self._invalidate_centroid()
 
-    def _build_solution_context(self, solution_context: dict) -> str:
-        """Build a context string from the user's saved solutions and notes."""
-        lines = []
-
-        current_idx = solution_context.get("current_solution_index")
-        saved = solution_context.get("saved_solutions", [])
-
-        if not saved:
-            return ""
-
-        if current_idx is not None:
-            lines.append(f"The user is currently viewing Solution #{current_idx}.")
-
-        lines.append("\nSaved solutions:")
-        for sol in saved:
-            idx = sol.get("index", "?")
-            label = sol.get("label", "Untitled")
-            pros = sol.get("pros", "")
-            cons = sol.get("cons", "")
-            viewing = " [CURRENTLY VIEWING]" if idx == current_idx else ""
-
-            annotations = []
-            if pros:
-                annotations.append(f'LIKES: "{pros}"')
-            if cons:
-                annotations.append(f'DISLIKES: "{cons}"')
-            annotation_text = " -- " + "; ".join(annotations) if annotations else ""
-            lines.append(f'- #{idx}: "{label}"{annotation_text}{viewing}')
-
-        all_pros = []
-        all_cons = []
-        for sol in saved:
-            if sol.get("pros"):
-                all_pros.append(f'Solution #{sol.get("index", "?")}: {sol["pros"]}')
-            if sol.get("cons"):
-                all_cons.append(f'Solution #{sol.get("index", "?")}: {sol["cons"]}')
-
-        if all_pros or all_cons:
-            lines.append("\n== USER FEEDBACK (use this to drive recommendations) ==")
-            lines.append("Map feedback to metric adjustments: complaints = tighten, praise = maintain/improve.")
-            lines.append("For generate-from-feedback requests, call apply_feedback_filters with ALL identified preferences.")
-            if all_pros:
-                lines.append("LIKES (maintain or improve):")
-                lines.extend(f"  + {p}" for p in all_pros)
-            if all_cons:
-                lines.append("DISLIKES (aggressively fix):")
-                lines.extend(f"  - {c}" for c in all_cons)
-
-        return "\n".join(lines)
+    def _build_feedback_context(self) -> str:
+        """Return accumulated feedback summary from state."""
+        return self.state.get_feedback_summary()
 
     def _compress_history(self):
         """Strip tool call/response entries from past turns, keeping only user and model text."""
@@ -413,8 +371,12 @@ class ZoningAgent:
                 compressed.append(types.Content(role=content.role, parts=text_parts))
         self.history = compressed
 
-    def chat(self, user_message: str, solution_context: dict = None) -> dict:
+    def chat(self, user_message: str, mode: str = "feedback") -> dict:
         """Process a user message and return structured response.
+
+        Args:
+            user_message: The user's message text
+            mode: "feedback" (info tools only) or "generate" (filter tools available)
 
         Returns a dict with:
         - text: The LLM response text
@@ -433,20 +395,15 @@ class ZoningAgent:
         self._pending_descriptions = []
         self._pending_solution_path = None
 
-        if solution_context:
-            context_text = self._build_solution_context(solution_context)
-            if context_text:
-                enhanced_message = f"[Context: {context_text}]\n\n{user_message}"
-            else:
-                enhanced_message = user_message
-        else:
-            enhanced_message = user_message
+        self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
 
-        self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=enhanced_message)]))
+        tools = self.generate_tools if mode == "generate" else self.feedback_tools
+        feedback_summary = self._build_feedback_context()
+        system_instruction = build_system_prompt(mode=mode, feedback_summary=feedback_summary)
 
         config = types.GenerateContentConfig(
-            tools=[self.tools],
-            system_instruction=self.system_instruction,
+            tools=[tools],
+            system_instruction=system_instruction,
             tool_config=types.ToolConfig(
                 function_calling_config=types.FunctionCallingConfig(mode="AUTO")
             ),

@@ -629,6 +629,154 @@
 }
 
 /* ============================================================================
+   Solution History Panel (admin)
+   ============================================================================ */
+
+#solution-history {
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: max-height 0.25s ease;
+    overflow: hidden;
+}
+
+#solution-history.hidden { display: none; }
+#solution-history.collapsed { max-height: 100px; }
+#solution-history.expanded { max-height: 300px; }
+
+.solution-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    flex-shrink: 0;
+}
+
+.solution-history-header span {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.solution-history-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    line-height: 1;
+}
+
+.solution-history-toggle:hover {
+    background: #ecf0f1;
+    color: var(--text-color);
+}
+
+.solution-cards-container {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 0 12px 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+    flex-shrink: 0;
+}
+
+.solution-card {
+    display: flex;
+    flex-direction: column;
+    background: #f8f9fa;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+}
+
+.solution-card:hover {
+    border-color: var(--secondary-color);
+    background: #f0f7ff;
+}
+
+.solution-card.active {
+    border-color: var(--secondary-color);
+    background: #e3f2fd;
+}
+
+.solution-card-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    white-space: nowrap;
+}
+
+.solution-card-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: var(--secondary-color);
+    color: white;
+    border-radius: 50%;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.solution-card.active .solution-card-number {
+    background: var(--primary-color);
+}
+
+.solution-card-label {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.solution-card-metrics {
+    display: flex;
+    padding: 0 10px 6px;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.solution-metric-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.solution-metric-badge .metric-badge-label {
+    opacity: 0.75;
+    font-weight: 500;
+}
+
+.solution-metric-badge.excellent { background: #1e7e34; color: #fff; }
+.solution-metric-badge.good { background: #a8e6a3; color: #155724; }
+.solution-metric-badge.average { background: #fff3cd; color: #856404; }
+.solution-metric-badge.below-avg { background: #ffc8a0; color: #8b4513; }
+.solution-metric-badge.poor { background: #e74c3c; color: #fff; }
+
+/* ============================================================================
    Responsive - Admin-specific
    ============================================================================ */
 

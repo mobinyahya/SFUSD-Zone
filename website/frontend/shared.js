@@ -20,11 +20,10 @@ let singleChart = null;
 let selectedMetricKey = null;
 const normalizeOverrides = {};
 
-// Solution history state
-let savedSolutions = [];
-let currentViewedIndex = null;
-let historyExpanded = false;
-const MAX_SAVED_SOLUTIONS = 30;
+// Version state
+let versions = [];
+let currentVersionId = null;
+const MAX_VERSIONS = 30;
 
 // Chart colors
 const CHART_COLORS = {
@@ -43,8 +42,8 @@ const CHART_COLORS = {
 };
 
 // Category display constants
-const CATEGORY_SHORT = { diversity: 'Div', distance: 'Dist', programs: 'Prog', quality: 'Perf', structure: 'Struct' };
-const CATEGORY_DISPLAY = { diversity: 'Diversity', distance: 'Distance', programs: 'Programs', quality: 'Performance', structure: 'Structure' };
+const CATEGORY_SHORT = { diversity: 'Div', proximity: 'Prox', programs: 'Prog', quality: 'Perf', structure: 'Struct' };
+const CATEGORY_DISPLAY = { diversity: 'Diversity', proximity: 'Proximity', programs: 'Programs', quality: 'Performance', structure: 'Structure' };
 // Reverse lookup: display name → category key (e.g. "Performance" → "quality")
 const DISPLAY_TO_CATEGORY = Object.fromEntries(
     Object.entries(CATEGORY_DISPLAY).map(([k, v]) => [v, k])
@@ -282,9 +281,6 @@ function createTooltip(bgId, zoneIndex, demographics) {
     html += `<div class="tooltip-section"><div class="tooltip-section-label">Access</div>`;
     if (d.avg_closest_school_distance != null) {
         html += `<div class="tooltip-row"><span>Avg Nearest School</span><span>${num(d.avg_closest_school_distance, 2)} mi</span></div>`;
-    }
-    if (d.schools_in_attendance_area != null) {
-        html += `<div class="tooltip-row"><span>Schools in Zone</span><span>${d.schools_in_attendance_area}</span></div>`;
     }
     if (d.ge_schools_within_half_mile != null) {
         html += `<div class="tooltip-row"><span>GE Schools &lt;0.5 mi</span><span>${num(d.ge_schools_within_half_mile, 2)}</span></div>`;
@@ -588,14 +584,14 @@ function updateComparisonTable() {
 }
 
 // ============================================================================
-// Solution History
+// Version Management
 // ============================================================================
 
-function viewSavedSolution(index) {
-    const entry = savedSolutions.find(s => s.index === index);
-    if (!entry) return;
+function viewVersion(versionId) {
+    const entry = versions.find(v => v.id === versionId);
+    if (!entry || !entry.solutionData) return;
 
-    currentViewedIndex = index;
+    currentVersionId = versionId;
     currentSolution = entry.solutionData;
 
     loadGeojson().then(geojson => {
@@ -606,138 +602,19 @@ function viewSavedSolution(index) {
         document.getElementById('map-placeholder').classList.add('hidden');
     });
 
-    renderSolutionHistory();
-    updateProsConsPanel();
-
-    pageHooks.trackEvent('solution_revisited', {
-        solution_index: index,
+    pageHooks.trackEvent('version_switched', {
+        version_id: versionId,
         label: entry.label,
     });
 }
 
-function toggleHistoryExpanded() {
-    const container = document.getElementById('solution-history');
-    const toggleBtn = document.getElementById('solution-history-toggle');
-    if (!container) return;
-
-    historyExpanded = !historyExpanded;
-    container.classList.toggle('collapsed', !historyExpanded);
-    container.classList.toggle('expanded', historyExpanded);
-
-    if (toggleBtn) {
-        toggleBtn.innerHTML = historyExpanded ? '&#9660;' : '&#9650;';
-        toggleBtn.title = historyExpanded ? 'Collapse panel' : 'Expand panel';
-    }
-
-    updateProsConsPanel();
-    if (map) setTimeout(() => map.invalidateSize(), 300);
+function getLatestVersionId() {
+    if (versions.length === 0) return null;
+    return versions[versions.length - 1].id;
 }
 
-function renderSolutionHistory() {
-    const container = document.getElementById('solution-history');
-    const cardsContainer = document.getElementById('solution-cards');
-    if (!container || !cardsContainer) return;
-
-    if (savedSolutions.length === 0) {
-        container.classList.add('hidden');
-        return;
-    }
-
-    container.classList.remove('hidden');
-    if (!container.classList.contains('expanded') && !container.classList.contains('collapsed')) {
-        container.classList.add('collapsed');
-    }
-
-    cardsContainer.innerHTML = '';
-    savedSolutions.forEach(entry => {
-        const card = document.createElement('div');
-        card.className = 'solution-card' +
-            (entry.index === currentViewedIndex ? ' active' : '') +
-            ((entry.pros || entry.cons) ? ' has-note' : '');
-        card.dataset.index = entry.index;
-
-        const top = document.createElement('div');
-        top.className = 'solution-card-top';
-
-        const number = document.createElement('span');
-        number.className = 'solution-card-number';
-        number.textContent = entry.index;
-
-        const label = document.createElement('span');
-        label.className = 'solution-card-label';
-        label.textContent = entry.label;
-        label.title = entry.label;
-
-        top.appendChild(number);
-        top.appendChild(label);
-
-        // Let page-specific code add extras (e.g. note button)
-        pageHooks.buildCardExtras(top, entry);
-
-        card.appendChild(top);
-
-        const metricsRow = document.createElement('div');
-        metricsRow.className = 'solution-card-metrics';
-        const scores = entry.categoryScores || {};
-        for (const [cat, pct] of Object.entries(scores)) {
-            if (pct === null) continue;
-            const badge = document.createElement('span');
-            const ranking = getPercentileRanking(pct);
-            badge.className = `solution-metric-badge ${ranking}`;
-            badge.innerHTML = `<span class="metric-badge-label">${cat}</span> ${pct}%`;
-            metricsRow.appendChild(badge);
-        }
-        card.appendChild(metricsRow);
-
-        card.addEventListener('click', () => viewSavedSolution(entry.index));
-        cardsContainer.appendChild(card);
-    });
-
-    const activeCard = cardsContainer.querySelector('.solution-card.active');
-    if (activeCard) {
-        activeCard.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
-    }
-
-    const toggleBtn = document.getElementById('solution-history-toggle');
-    if (toggleBtn && !toggleBtn._wired) {
-        toggleBtn.addEventListener('click', toggleHistoryExpanded);
-        toggleBtn._wired = true;
-    }
-}
-
-function updateProsConsPanel() {
-    const panel = document.getElementById('solution-proscons-panel');
-    const prosTextarea = document.getElementById('solution-pros-textarea');
-    const consTextarea = document.getElementById('solution-cons-textarea');
-    const targetLabel = document.getElementById('solution-proscons-target');
-    if (!panel || !prosTextarea || !consTextarea) return;
-
-    const entry = savedSolutions.find(s => s.index === currentViewedIndex);
-
-    if (!historyExpanded || !entry) {
-        panel.classList.add('hidden');
-        return;
-    }
-
-    panel.classList.remove('hidden');
-    if (targetLabel) targetLabel.textContent = `Solution #${entry.index}`;
-
-    for (const [id, field] of [['solution-pros-textarea', 'pros'], ['solution-cons-textarea', 'cons']]) {
-        const el = document.getElementById(id);
-        const fresh = el.cloneNode(true);
-        el.parentNode.replaceChild(fresh, el);
-        fresh.id = id;
-        fresh.value = entry[field] || '';
-        fresh.addEventListener('blur', () => {
-            const text = fresh.value.trim();
-            if (entry[field] !== text) {
-                entry[field] = text;
-                renderSolutionHistory();
-                pageHooks.trackEvent('solution_proscons_updated', { solution_index: entry.index, field, length: text.length });
-            }
-        });
-        fresh.addEventListener('keydown', (e) => { if (e.key === 'Escape') fresh.blur(); });
-    }
+function isLatestVersion(versionId) {
+    return versionId === getLatestVersionId();
 }
 
 // ============================================================================

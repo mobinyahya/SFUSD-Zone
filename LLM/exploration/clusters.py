@@ -38,7 +38,7 @@ def vectorize_solutions(df: pd.DataFrame, columns: list[str] | None = None) -> n
 
 CATEGORY_THEME = {
     "diversity": "Equity",
-    "distance": "Proximity",
+    "proximity": "Proximity",
     "programs": "Programs",
     "quality": "Quality",
 }
@@ -89,7 +89,7 @@ def get_cluster_bounds(
 # Theme definitions: label -> list of metric category keys
 CLUSTER_THEMES = {
     "Diversity & Equity": ["diversity"],
-    "Distance": ["distance"],
+    "Proximity": ["proximity"],
     "School Performance": ["quality"],
 }
 

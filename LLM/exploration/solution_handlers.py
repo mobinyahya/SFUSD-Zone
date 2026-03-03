@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from .state import ToolResult, _direction_text
+from .state import ToolResult, FeedbackEntry, _direction_text
 from .metrics_config import (
     ALL_METRICS,
     CATEGORIES,
@@ -136,6 +136,31 @@ def handle_show_version_history(agent: ZoningAgent, arguments: dict) -> ToolResu
         lines.append(f"{marker} v{v.version_id}: {v.description} ({v.solution_count} solutions)")
 
     return ToolResult("\n".join(lines))
+
+
+# ============================================================================
+# Feedback
+# ============================================================================
+
+def handle_save_feedback(agent: ZoningAgent, arguments: dict) -> ToolResult:
+    """Save structured user feedback entries."""
+    raw_entries = arguments.get("entries", [])
+    if not raw_entries:
+        return ToolResult("No feedback entries provided.")
+
+    version_id = agent.state.current_version
+    entries = []
+    for raw in raw_entries:
+        entries.append(FeedbackEntry(
+            version_id=version_id,
+            sentiment=raw.get("sentiment", "positive"),
+            text=raw.get("text", ""),
+            related_metrics=raw.get("related_metrics", []),
+        ))
+
+    total = agent.state.add_feedback(entries)
+    saved_count = len(entries)
+    return ToolResult(f"Saved {saved_count} feedback item(s). Total accumulated: {total}.")
 
 
 def build_clusters_response(agent: ZoningAgent) -> list:

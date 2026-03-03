@@ -268,7 +268,7 @@ function renderFilterSliders() {
         grouped[cat].push(col);
     }
 
-    const catOrder = ['diversity', 'distance', 'programs', 'quality', 'structure'];
+    const catOrder = ['diversity', 'proximity', 'programs', 'quality', 'structure'];
     for (const cat of catOrder) {
         const cols = grouped[cat];
         if (!cols || !cols.length) continue;
@@ -569,29 +569,79 @@ function setupMetricSearch() {
 function saveSolution() {
     if (!currentSolution) return;
     const path = currentSolution.path || '';
-    if (path && savedSolutions.some(s => s.path === path)) return;
-    if (savedSolutions.length >= MAX_SAVED_SOLUTIONS) {
-        savedSolutions.shift();
-        savedSolutions.forEach((s, i) => { s.index = i + 1; });
+    if (path && versions.some(s => s.solutionPath === path)) return;
+    if (versions.length >= MAX_VERSIONS) {
+        versions.shift();
+        versions.forEach((s, i) => { s.id = i + 1; });
     }
 
-    const index = savedSolutions.length + 1;
+    const id = versions.length + 1;
     const categoryScores = currentSolution.category_percentiles
         ? { ...currentSolution.category_percentiles }
         : {};
 
-    savedSolutions.push({
-        index,
-        path,
+    versions.push({
+        id,
+        solutionPath: path,
         solutionData: JSON.parse(JSON.stringify(currentSolution)),
-        label: `Solution #${index}`,
-        pros: '',
-        cons: '',
+        label: `Solution #${id}`,
+        chatMessages: [],
         timestamp: new Date().toISOString(),
         categoryScores,
     });
-    currentViewedIndex = index;
-    renderSolutionHistory();
+    currentVersionId = id;
+    renderAdminSolutionHistory();
+}
+
+function renderAdminSolutionHistory() {
+    const container = document.getElementById('solution-history');
+    const cardsContainer = document.getElementById('solution-cards');
+    if (!container || !cardsContainer) return;
+
+    if (versions.length === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+    container.classList.remove('hidden');
+    if (!container.classList.contains('expanded') && !container.classList.contains('collapsed')) {
+        container.classList.add('collapsed');
+    }
+
+    cardsContainer.innerHTML = '';
+    versions.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'solution-card' + (entry.id === currentVersionId ? ' active' : '');
+        const top = document.createElement('div');
+        top.className = 'solution-card-top';
+        const number = document.createElement('span');
+        number.className = 'solution-card-number';
+        number.textContent = entry.id;
+        const label = document.createElement('span');
+        label.className = 'solution-card-label';
+        label.textContent = entry.label;
+        top.appendChild(number);
+        top.appendChild(label);
+        card.appendChild(top);
+
+        const metricsRow = document.createElement('div');
+        metricsRow.className = 'solution-card-metrics';
+        const scores = entry.categoryScores || {};
+        for (const [cat, pct] of Object.entries(scores)) {
+            if (pct === null) continue;
+            const badge = document.createElement('span');
+            const ranking = getPercentileRanking(pct);
+            badge.className = `solution-metric-badge ${ranking}`;
+            badge.innerHTML = `<span class="metric-badge-label">${cat}</span> ${pct}%`;
+            metricsRow.appendChild(badge);
+        }
+        card.appendChild(metricsRow);
+        card.addEventListener('click', () => {
+            currentVersionId = entry.id;
+            viewVersion(entry.id);
+            renderAdminSolutionHistory();
+        });
+        cardsContainer.appendChild(card);
+    });
 }
 
 // ============================================================================

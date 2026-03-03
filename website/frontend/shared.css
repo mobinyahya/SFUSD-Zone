@@ -787,279 +787,112 @@ main {
 }
 
 /* ============================================================================
-   Solution History Panel (collapsible / expandable)
+   Version Tabs (inside chat panel)
    ============================================================================ */
 
-#solution-history {
-    background: var(--panel-bg);
-    border-top: 1px solid var(--border-color);
+#version-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    transition: max-height 0.25s ease;
-    overflow: hidden;
-}
-
-#solution-history.hidden {
-    display: none;
-}
-
-#solution-history.collapsed {
-    max-height: 100px;
-}
-
-#solution-history.expanded {
-    max-height: 300px;
-}
-
-.solution-history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    flex-shrink: 0;
-}
-
-.solution-history-header span {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.solution-history-toggle {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: all 0.15s;
-    line-height: 1;
-}
-
-.solution-history-toggle:hover {
-    background: #ecf0f1;
-    color: var(--text-color);
-}
-
-/* Card strip row */
-.solution-cards-container {
-    display: flex;
-    gap: 8px;
+    background: #f8f9fa;
     overflow-x: auto;
-    padding: 0 12px 6px;
     scrollbar-width: thin;
     scrollbar-color: var(--border-color) transparent;
     flex-shrink: 0;
 }
 
-.solution-cards-container::-webkit-scrollbar {
-    height: 4px;
+#version-tabs.hidden {
+    display: none;
 }
 
-.solution-cards-container::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 2px;
-}
-
-/* Solution card */
-.solution-card {
+.version-tab {
     display: flex;
     flex-direction: column;
-    background: #f8f9fa;
-    border: 1.5px solid var(--border-color);
-    border-radius: 8px;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 6px 10px;
+    min-width: 80px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--panel-bg);
     cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
     transition: all 0.15s ease;
     flex-shrink: 0;
-    position: relative;
-    font-size: 0.75rem;
 }
 
-.solution-card:hover {
+.version-tab:hover {
+    background: #ecf0f1;
+    color: var(--text-color);
+    border-color: #bdc3c7;
+}
+
+.version-tab.active {
+    background: var(--panel-bg);
+    color: var(--text-color);
     border-color: var(--secondary-color);
-    background: #f0f7ff;
+    box-shadow: 0 0 0 1px var(--secondary-color);
 }
 
-.solution-card.active {
-    border-color: var(--secondary-color);
-    background: #e3f2fd;
-}
-
-/* Top row: number + label */
-.solution-card-top {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    white-space: nowrap;
-}
-
-.solution-card-number {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    background: var(--secondary-color);
-    color: white;
-    border-radius: 50%;
-    font-size: 0.65rem;
+.version-tab-label {
     font-weight: 700;
-    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: inherit;
 }
 
-.solution-card.active .solution-card-number {
-    background: var(--primary-color);
-}
-
-.solution-card-label {
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-color);
-    font-weight: 500;
-}
-
-.solution-card.active .solution-card-label {
-    font-weight: 600;
-}
-
-.solution-card-note-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    border-radius: 50%;
-    padding: 0;
-    margin-left: auto;
-    transition: all 0.15s;
-    flex-shrink: 0;
-}
-
-.solution-card-note-btn:hover {
-    background: rgba(0,0,0,0.08);
-    color: var(--text-color);
-}
-
-.solution-card.has-note .solution-card-note-btn {
+.version-tab.active .version-tab-label {
     color: var(--secondary-color);
 }
 
-/* Metric preview row */
-.solution-card-metrics {
+.version-tab-badges {
     display: flex;
-    padding: 0 10px 6px;
-    gap: 4px;
     flex-wrap: wrap;
+    gap: 2px;
 }
 
-.solution-metric-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-size: 0.62rem;
+.version-badge {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.6rem;
     font-weight: 600;
-    line-height: 1.5;
     white-space: nowrap;
 }
 
-.solution-metric-badge .metric-badge-label {
-    opacity: 0.75;
-    font-weight: 500;
-}
-
-.solution-metric-badge.excellent {
+.version-badge.excellent {
     background: #1e7e34;
     color: #ffffff;
 }
 
-.solution-metric-badge.good {
+.version-badge.good {
     background: #a8e6a3;
     color: #155724;
 }
 
-.solution-metric-badge.average {
+.version-badge.average {
     background: #fff3cd;
     color: #856404;
 }
 
-.solution-metric-badge.below-avg {
+.version-badge.below-avg {
     background: #ffc8a0;
     color: #8b4513;
 }
 
-.solution-metric-badge.poor {
+.version-badge.poor {
     background: #e74c3c;
     color: #ffffff;
 }
 
-/* Pros/Cons panel (expanded only) */
-.solution-proscons-panel {
-    padding: 0 12px 8px;
-    display: flex;
-    gap: 12px;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-}
-
-.solution-proscons-panel.hidden {
-    display: none;
-}
-
-.proscons-section {
-    flex: 1;
-    min-width: 120px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.proscons-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.proscons-label-pros { color: #27ae60; }
-.proscons-label-cons { color: #c0392b; }
-
-.proscons-section textarea {
-    width: 100%;
-    height: 54px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 6px 8px;
-    font-size: 0.75rem;
-    font-family: inherit;
-    resize: vertical;
-    outline: none;
-    max-height: 120px;
-}
-
-.proscons-section textarea:focus {
-    border-color: var(--secondary-color);
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
-}
-
-.solution-proscons-hint {
+.version-tab-desc {
     font-size: 0.65rem;
     color: var(--text-muted);
-    margin-top: 3px;
-    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
 }
 
 /* ============================================================================

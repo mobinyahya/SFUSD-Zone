@@ -97,8 +97,9 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    mode: str = "feedback"  # "feedback" or "generate"
     current_solution_index: Optional[int] = None
-    saved_solutions: Optional[list] = None  # [{index, label, pros, cons, key_metrics}]
+    saved_solutions: Optional[list] = None  # kept for backward compat, ignored
 
 
 class ClusterSelectRequest(BaseModel):
@@ -254,16 +255,8 @@ def chat(request: ChatRequest):
         logger.info(f"Chat request: {request.message[:100]}...")
         session_id, agent = get_or_create_agent(request.session_id)
 
-        # Build solution context from request
-        solution_context = None
-        if request.saved_solutions or request.current_solution_index is not None:
-            solution_context = {
-                "current_solution_index": request.current_solution_index,
-                "saved_solutions": request.saved_solutions or [],
-            }
-
-        logger.info("Calling agent.chat...")
-        result = agent.chat(request.message, solution_context=solution_context)
+        logger.info("Calling agent.chat (mode=%s)...", request.mode)
+        result = agent.chat(request.message, mode=request.mode)
         logger.info(f"Agent response type: {result.get('response_type')}")
         logger.info(f"Agent text length: {len(result.get('text', ''))}")
 
@@ -388,7 +381,7 @@ async def admin_solution_space(authorization: Optional[str] = Header(None)):
         "categories": {
             k: v for k, v in {
                 "diversity": "Demographics & Economic Balance",
-                "distance": "Geographic Access & Proximity",
+                "proximity": "Geographic Access & Proximity",
                 "programs": "Educational Program Availability",
                 "quality": "School Quality Indicators",
                 "structure": "Zone Structure & Shape",

@@ -82,7 +82,7 @@ ETHNICITY_DISPLAY_LABELS = {
 
 CATEGORIES = {
     "diversity": "Demographics and Economic Balance",
-    "distance": "Geographic Access and Proximity",
+    "proximity": "Geographic Access and Proximity",
     "programs": "Educational Program Availability",
     "quality": "School Quality Indicators",
     "structure": "Zone Structure and Shape",
@@ -90,7 +90,7 @@ CATEGORIES = {
 
 CATEGORY_DESCRIPTIONS = {
     "diversity": "Measures how evenly demographics are distributed across zones.",
-    "distance": "Measures geographic access to schools within zones.",
+    "proximity": "Measures geographic access to schools within zones.",
     "programs": "Measure how hard it is for students to access programs within their zone.",
     "quality": "Measures how evenly school quality is distributed across zones.",
     "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
@@ -163,29 +163,29 @@ DIVERSITY_METRICS = [
 
 
 # ============================================================================
-# DISTANCE METRICS
+# PROXIMITY METRICS
 # ============================================================================
 
-DISTANCE_METRICS = [
+PROXIMITY_METRICS = [
     MetricSpec(
         column="avg_closest_zone_school_distance",
-        display_name="Avg Distance to Closest School",
+        display_name="Avg Proximity to Closest School",
         description="Average distance to nearest in-zone school (miles) across all students.",
-        category="distance",
+        category="proximity",
         direction="minimize",
         is_core=True,
-        short_name="Distance",
+        short_name="Proximity",
         chart_type="bar",
         chart_field="avg_closest_school_distance",
         chart_unit="miles",
-        chart_title="Avg Distance to Closest School",
+        chart_title="Avg Proximity to Closest School",
     ),
 
     MetricSpec(
         column="avg_ge_schools_within_half_mile",
         display_name="GE Schools Within 0.5 Miles",
         description="Average number of General Education schools within 0.5 miles of each student. Higher means students have more nearby GE school options.",
-        category="distance",
+        category="proximity",
         direction="maximize",
         is_core=True,
         short_name="Walkable Schools",
@@ -456,7 +456,7 @@ QUALITY_METRICS = [
 # ============================================================================
 
 ALL_METRICS: list[MetricSpec] = (
-    DIVERSITY_METRICS + DISTANCE_METRICS + PROGRAM_METRICS + QUALITY_METRICS + STRUCTURE_METRICS
+    DIVERSITY_METRICS + PROXIMITY_METRICS + PROGRAM_METRICS + QUALITY_METRICS + STRUCTURE_METRICS
 )
 
 # Build lookup dictionaries

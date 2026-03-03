@@ -390,31 +390,49 @@
 }
 
 /* ============================================================================
-   Generate from Feedback Button
+   Generate New Solution Button
    ============================================================================ */
 
-.generate-feedback-btn {
-    width: 100%;
-    margin-top: 6px;
-    padding: 7px 14px;
+.generate-btn {
+    padding: 10px 16px;
     background: var(--primary-color);
-    color: #fff;
+    color: white;
     border: none;
-    border-radius: 6px;
-    font-size: 0.72rem;
-    font-weight: 600;
+    border-radius: 4px;
     cursor: pointer;
-    transition: background 0.15s, opacity 0.15s;
-    letter-spacing: 0.3px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.15s;
 }
 
-.generate-feedback-btn:hover {
-    background: var(--secondary-color);
+.generate-btn:hover:not(:disabled) {
+    background: #1a252f;
 }
 
-.generate-feedback-btn:disabled {
-    opacity: 0.5;
+.generate-btn:disabled {
+    background: #bdc3c7;
     cursor: not-allowed;
+}
+
+/* Read-only state for past version chats */
+#chat-input-area.read-only {
+    opacity: 0.5;
+    pointer-events: none;
+    position: relative;
+}
+
+#chat-input-area.read-only::after {
+    content: 'Viewing past version';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(245, 246, 250, 0.85);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
 }
 
 /* ============================================================================

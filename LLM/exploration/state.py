@@ -27,6 +27,16 @@ def _direction_text(metric) -> str:
 # ============================================================================
 
 @dataclass
+class FeedbackEntry:
+    """A single piece of user feedback (like or dislike)."""
+    version_id: int
+    sentiment: str  # "positive" or "negative"
+    text: str
+    related_metrics: list[str] = field(default_factory=list)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
 class ToolResult:
     """Structured result from a tool execution.
 
@@ -67,10 +77,41 @@ class AgentState:
     clustered_vectors: Optional[object] = None
     cluster_columns: Optional[list[str]] = None
 
+    # Feedback state
+    feedback: list[FeedbackEntry] = field(default_factory=list)
+
     # Interaction state
     awaiting_confirmation: bool = False
     pending_action: Optional[dict] = None
     last_action: str = ""
+
+    def add_feedback(self, entries: list[FeedbackEntry]) -> int:
+        """Append feedback entries and return total count."""
+        self.feedback.extend(entries)
+        return len(self.feedback)
+
+    def get_feedback_summary(self) -> str:
+        """Return formatted string of all feedback grouped by sentiment."""
+        if not self.feedback:
+            return ""
+
+        positives = [f for f in self.feedback if f.sentiment == "positive"]
+        negatives = [f for f in self.feedback if f.sentiment == "negative"]
+
+        lines = ["== ACCUMULATED USER FEEDBACK =="]
+        if positives:
+            lines.append("LIKES (maintain or mildly improve):")
+            for f in positives:
+                metrics_hint = f" [metrics: {', '.join(f.related_metrics)}]" if f.related_metrics else ""
+                lines.append(f"  + v{f.version_id}: {f.text}{metrics_hint}")
+        if negatives:
+            lines.append("DISLIKES (fix aggressively):")
+            for f in negatives:
+                metrics_hint = f" [metrics: {', '.join(f.related_metrics)}]" if f.related_metrics else ""
+                lines.append(f"  - v{f.version_id}: {f.text}{metrics_hint}")
+
+        lines.append(f"Total feedback items: {len(self.feedback)}")
+        return "\n".join(lines)
 
     def save_version(self, filter_state: FilterState, solution_path: str = None,
                      solution_count: int = 0, description: str = "") -> int:

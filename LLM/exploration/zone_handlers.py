@@ -125,11 +125,11 @@ def handle_query_zone_data(agent: ZoningAgent, arguments: dict) -> ToolResult:
             eng = data.get('avg_eng_score', 0)
             result_lines.append(f"  - Math: {math:.1f}, English: {eng:.1f}")
 
-        if not metrics_requested or 'distance' in metrics_requested:
+        if not metrics_requested or 'proximity' in metrics_requested:
             dist = data.get('avg_closest_school_distance', 0)
             schools = data.get('schools_in_attendance_area', 0)
             ge_nearby = data.get('ge_schools_within_half_mile', 0)
-            result_lines.append(f"  - Avg distance: {dist:.2f}mi, Schools: {schools}, Avg GE schools within 0.5mi: {ge_nearby:.1f}")
+            result_lines.append(f"  - Avg proximity: {dist:.2f}mi, Schools: {schools}, Avg GE schools within 0.5mi: {ge_nearby:.1f}")
 
     return ToolResult("\n".join(result_lines), solution_path=path)
 
