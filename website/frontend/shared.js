@@ -224,12 +224,23 @@ function renderMap(geojson) {
         onEachFeature: (feature, layer) => {
             const bgId = String(feature.properties.BlockGroup);
             const zoneId = zones[bgId];
+            layer._zoneId = zoneId;
             const zd = zoneId !== undefined ? zone_data[String(zoneId)] : null;
             const zi = zoneId !== undefined && zone_index_map ? zone_index_map[String(zoneId)] : null;
             layer.bindTooltip(createTooltip(bgId, zi, zd), { sticky: true });
             layer.on({
-                mouseover: e => e.target.setStyle({ weight: 2, fillOpacity: 0.8 }),
-                mouseout: e => geojsonLayer.resetStyle(e.target),
+                mouseover: () => {
+                    if (zoneId === undefined) return;
+                    geojsonLayer.eachLayer(l => {
+                        if (l._zoneId === zoneId) l.setStyle({ weight: 2, fillOpacity: 0.8 });
+                    });
+                },
+                mouseout: () => {
+                    if (zoneId === undefined) return;
+                    geojsonLayer.eachLayer(l => {
+                        if (l._zoneId === zoneId) geojsonLayer.resetStyle(l);
+                    });
+                },
             });
         }
     }).addTo(map);
