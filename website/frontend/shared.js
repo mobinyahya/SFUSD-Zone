@@ -158,11 +158,7 @@ function renderSchoolMarkers(schools) {
         });
         const marker = L.marker([school.lat, school.lon], { icon });
 
-        const geCapacity = school.programs && school.programs['GE'] !== undefined
-            ? school.programs['GE'] : school.total_capacity;
-        let tip = `<div class="school-tooltip-content"><strong>${school.name}</strong>`;
-        if (geCapacity !== undefined) tip += `<br>GE Seats: ${geCapacity}`;
-        tip += `</div>`;
+        const tip = `<div class="school-tooltip-content"><strong>${school.name}</strong></div>`;
 
         marker.bindTooltip(tip, { direction: 'top', offset: [0, -10], className: 'school-tooltip' });
         marker.addTo(schoolMarkersLayer);
@@ -261,22 +257,14 @@ function createTooltip(bgId, zoneIndex, demographics) {
     // Demographics
     html += `<div class="tooltip-section"><div class="tooltip-section-label">Demographics</div>`;
     html += `<div class="tooltip-row"><span>Students</span><span>${Math.round(d.ge_students)}</span></div>`;
-    html += `<div class="tooltip-row"><span>FRL</span><span>${num(d.FRL_pct, 1)}%</span></div>`;
     if (d.ethnicity_pcts) {
         for (const [key, val] of Object.entries(d.ethnicity_pcts)) {
             html += `<div class="tooltip-row tooltip-sub"><span>${formatEthnicityName(key)}</span><span>${pct(val)}</span></div>`;
         }
     }
+    html += `<div class="tooltip-row"><span>FRL</span><span>${num(d.FRL_pct, 1)}%</span></div>`;
     if (d.seat_disparity != null) {
         html += `<div class="tooltip-row"><span>Seat Disparity</span><span>${pct(d.seat_disparity)}</span></div>`;
-    }
-    html += `</div>`;
-
-    // Capacity
-    html += `<div class="tooltip-section"><div class="tooltip-section-label">Capacity</div>`;
-    html += `<div class="tooltip-row"><span>GE Students</span><span>${Math.round(d.ge_students)}</span></div>`;
-    if (d.ge_capacity != null) {
-        html += `<div class="tooltip-row"><span>GE Capacity</span><span>${Math.round(d.ge_capacity)}</span></div>`;
     }
     html += `</div>`;
 
@@ -287,9 +275,6 @@ function createTooltip(bgId, zoneIndex, demographics) {
     }
     if (d.avg_eng_score != null) {
         html += `<div class="tooltip-row"><span>Avg English</span><span>${num(d.avg_eng_score, 2)}</span></div>`;
-    }
-    if (d.ethnicity_entropy != null) {
-        html += `<div class="tooltip-row"><span>Diversity Entropy</span><span>${num(d.ethnicity_entropy, 3)}</span></div>`;
     }
     html += `</div>`;
 
