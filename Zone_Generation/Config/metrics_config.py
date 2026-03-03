@@ -169,7 +169,7 @@ DIVERSITY_METRICS = [
 PROXIMITY_METRICS = [
     MetricSpec(
         column="avg_closest_zone_school_distance",
-        display_name="Avg Proximity to Closest School",
+        display_name="Avg Distance to Closest In-Zone School",
         description="Average distance to nearest in-zone school (miles) across all students.",
         category="proximity",
         direction="minimize",
@@ -183,8 +183,8 @@ PROXIMITY_METRICS = [
 
     MetricSpec(
         column="avg_ge_schools_within_half_mile",
-        display_name="GE Schools Within 0.5 Miles",
-        description="Average number of General Education schools within 0.5 miles of each student. Higher means students have more nearby GE school options.",
+        display_name="In-Zone GE Programs Within 0.5 Miles",
+        description="Average number of General Education programs within 0.5 miles of each student. Higher means students have more nearby GE program options.",
         category="proximity",
         direction="maximize",
         is_core=True,
@@ -242,7 +242,9 @@ PROGRAM_METRICS = [
     MetricSpec(
         column="seat_disparity",
         display_name="Student Seat Imbalance",
-        description="Mean absolute deviation of the number of seats per zone from the number of students per zone. Lower means more balanced seat-student distribution.",
+        description="Average % difference in GE seats over students in each zone. Negative numbers for each zone show that this zone have more students than seats, \
+        positive numbers show that this zone have more seats than students. The overall value for this mapping is the average % total difference in GE seats over students across all zones. \
+         Lower indicates that no one zone has a large imbalance of either having too few students or too few seats.",
         category="programs",
         direction="minimize",
         is_core=True,
@@ -407,7 +409,7 @@ STRUCTURE_METRICS = [
     MetricSpec(
         column="num_zones",
         display_name="Number of Zones",
-        description="Total number of zones in this mapping.",
+        description="Total number of zones in this map.",
         category="structure",
         is_core=False,
         short_name="Zones",
