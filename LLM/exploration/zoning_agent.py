@@ -44,15 +44,15 @@ from .solution_handlers import (
     handle_search_metrics,
     handle_undo_action,
     handle_show_version_history,
-    handle_show_solution_clusters,
-    handle_select_cluster,
     build_clusters_response,
 )
 from .clusters import (
     themed_cluster_solutions,
     vectorize_solutions,
     format_cluster_summary,
+    get_cluster_bounds,
 )
+from .metrics_config import METRIC_BY_NAME
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
 
@@ -75,8 +75,6 @@ TOOL_HANDLERS = {
     "search_metrics": handle_search_metrics,
     "undo_action": handle_undo_action,
     "show_version_history": handle_show_version_history,
-    "show_solution_clusters": handle_show_solution_clusters,
-    "select_cluster": handle_select_cluster,
 }
 
 
@@ -194,6 +192,84 @@ class ZoningAgent:
         except Exception as e:
             logger.error("Failed to compute initial clusters: %s", e)
             return None
+
+    def get_initial_clusters(self) -> dict | None:
+        """Return pre-computed clusters and consume them (one-shot)."""
+        result = self._initial_clusters
+        self._initial_clusters = None
+        return result
+
+    def select_cluster(self, cluster_id: int) -> dict:
+        """Select a cluster by 1-based ID and tighten filters to match it.
+
+        This is a pure-code path -- no LLM involved.
+        """
+        if self.state.cluster_labels is None:
+            return {"text": "No clustering results available.", "response_type": "text",
+                    "solution_path": None, "description": ""}
+
+        cluster_idx = cluster_id - 1
+        n_clusters = len(self.state.cluster_centers)
+        if cluster_idx < 0 or cluster_idx >= n_clusters:
+            return {"text": f"Invalid cluster ID. Choose between 1 and {n_clusters}.",
+                    "response_type": "text", "solution_path": None, "description": ""}
+
+        cluster_bounds = get_cluster_bounds(
+            self.state.clustered_solutions,
+            self.state.cluster_labels,
+            cluster_idx,
+            columns=self.state.cluster_columns,
+        )
+
+        for metric_name, bounds in cluster_bounds.items():
+            if metric_name in METRIC_BY_NAME:
+                metric = METRIC_BY_NAME[metric_name]
+                if metric.direction is None:
+                    continue
+                if metric.direction == "minimize":
+                    self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
+                else:
+                    self.filter_state.bounds[metric_name].min_bound = bounds.min_bound
+
+        direction_label = self.state.cluster_directions[cluster_idx]["direction_label"]
+
+        self.state.cluster_labels = None
+        self.state.cluster_centers = None
+        self.state.cluster_directions = None
+        self.state.clustered_solutions = None
+        self.state.clustered_vectors = None
+        self.state.cluster_columns = None
+
+        self._invalidate_centroid()
+        _, after_path, after_count = self._get_current_centroid()
+
+        version_id = len(self.state.versions)
+        desc = f"Selected cluster: {direction_label}"
+        self.state.save_version(
+            self.filter_state,
+            solution_path=after_path,
+            solution_count=after_count,
+            description=desc,
+        )
+
+        text = f"v{version_id}: Cluster {cluster_id} selected -- {direction_label} ({after_count} solutions)"
+
+        # Record in history so the LLM has context for subsequent turns
+        self.history.append(types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=f"I selected the {direction_label} cluster.")],
+        ))
+        self.history.append(types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=text)],
+        ))
+
+        return {
+            "text": text,
+            "response_type": "solution_update",
+            "solution_path": after_path,
+            "description": desc,
+        }
 
     def _get_filtered_solutions(self):
         """Get currently filtered solutions from Pareto frontier."""
@@ -342,31 +418,10 @@ class ZoningAgent:
 
         Returns a dict with:
         - text: The LLM response text
-        - response_type: "text" | "clusters" | "solution_update"
-        - clusters: List of cluster info (if applicable)
+        - response_type: "text" | "solution_update"
         - solution_path: Path to solution (if applicable)
         - description: Current version description
         """
-        # Return pre-computed themed clusters on first call (no LLM needed)
-        if self._initial_clusters is not None:
-            result = self._initial_clusters
-            self._initial_clusters = None  # Only serve once
-
-            # Record in history so the LLM knows clusters were already shown
-            self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
-            self.history.append(types.Content(role="model", parts=[types.Part.from_text(text=result["text"])]))
-
-            result["usage"] = {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "api_calls": 0,
-                "session_total_prompt_tokens": 0,
-                "session_total_completion_tokens": 0,
-                "session_total_api_calls": 0,
-            }
-            return result
-
-        clusters_data = None
         solution_path = None
         any_tool_called = False
 
@@ -430,8 +485,6 @@ class ZoningAgent:
 
                 if tool_result.solution_path:
                     solution_path = tool_result.solution_path
-                if tool_result.clusters:
-                    clusters_data = tool_result.clusters
 
                 function_response_parts.append(
                     types.Part.from_function_response(
@@ -490,15 +543,10 @@ class ZoningAgent:
         self._pending_solution_path = None
 
         # Fallback: if tools were called but no path captured, get from cache
-        if solution_path is None and clusters_data is None and any_tool_called:
+        if solution_path is None and any_tool_called:
             _, solution_path, _ = self._get_current_centroid()
 
-        if clusters_data is not None:
-            response_type = "clusters"
-        elif solution_path is not None:
-            response_type = "solution_update"
-        else:
-            response_type = "text"
+        response_type = "solution_update" if solution_path is not None else "text"
 
         current_version = self.state.get_current_version()
         description = current_version.description if current_version else ""
@@ -506,7 +554,6 @@ class ZoningAgent:
         return {
             "text": final_content,
             "response_type": response_type,
-            "clusters": clusters_data,
             "solution_path": solution_path,
             "description": description,
             "usage": {

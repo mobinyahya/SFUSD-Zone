@@ -1,4 +1,4 @@
-"""Solution display, versioning, and clustering tool handlers."""
+"""Solution display and versioning tool handlers."""
 
 from __future__ import annotations
 
@@ -10,20 +10,11 @@ from .metrics_config import (
     ALL_METRICS,
     CATEGORIES,
     CORE_METRICS,
-    METRIC_BY_NAME,
     get_metrics_by_category,
     get_metric_summary,
     search_metrics as search_metrics_func,
-    resolve_metric_identifiers,
 )
 from .pareto import normalize_metrics, get_centroid_solution
-from .clusters import (
-    vectorize_solutions,
-    cluster_solutions,
-    compute_cluster_directions,
-    get_cluster_bounds,
-    format_cluster_summary,
-)
 
 if TYPE_CHECKING:
     from .zoning_agent import ZoningAgent
@@ -145,101 +136,6 @@ def handle_show_version_history(agent: ZoningAgent, arguments: dict) -> ToolResu
         lines.append(f"{marker} v{v.version_id}: {v.description} ({v.solution_count} solutions)")
 
     return ToolResult("\n".join(lines))
-
-
-# ============================================================================
-# Clustering
-# ============================================================================
-
-def handle_show_solution_clusters(agent: ZoningAgent, arguments: dict) -> ToolResult:
-    """Group feasible solutions into clusters."""
-    filtered = agent._get_filtered_solutions()
-
-    if len(filtered) < 3:
-        return ToolResult(f"Not enough solutions to cluster (only {len(filtered)}). Need at least 3 solutions.")
-
-    n_clusters = arguments.get("n_clusters", 3)
-    n_clusters = min(n_clusters, len(filtered) // 2)
-    n_clusters = max(2, n_clusters)
-
-    columns = None
-    raw_metrics = arguments.get("metrics")
-    if raw_metrics:
-        columns = resolve_metric_identifiers(raw_metrics)
-        if not columns:
-            return ToolResult(f"No recognized metrics in {raw_metrics}. Use category names (diversity, distance, programs, quality, structure) or metric display names.")
-
-    vectors = vectorize_solutions(filtered, columns=columns)
-    labels, centers = cluster_solutions(vectors, n_clusters)
-    directions = compute_cluster_directions(vectors, centers, columns=columns)
-
-    agent.state.clustered_solutions = filtered
-    agent.state.clustered_vectors = vectors
-    agent.state.cluster_labels = labels
-    agent.state.cluster_centers = centers
-    agent.state.cluster_directions = directions
-    agent.state.cluster_columns = columns
-
-    clusters_data = build_clusters_response(agent)
-    return ToolResult(
-        format_cluster_summary(filtered, vectors, labels, centers, directions),
-        clusters=clusters_data,
-    )
-
-
-def handle_select_cluster(agent: ZoningAgent, arguments: dict) -> ToolResult:
-    """Select a cluster and tighten filters to match it."""
-    if agent.state.cluster_labels is None:
-        return ToolResult("No clustering results available. Call show_solution_clusters first.")
-
-    cluster_id = arguments["cluster_id"] - 1
-
-    n_clusters = len(agent.state.cluster_centers)
-    if cluster_id < 0 or cluster_id >= n_clusters:
-        return ToolResult(f"Invalid cluster ID. Please choose between 1 and {n_clusters}.")
-
-    cluster_bounds = get_cluster_bounds(
-        agent.state.clustered_solutions,
-        agent.state.cluster_labels,
-        cluster_id,
-        columns=agent.state.cluster_columns,
-    )
-
-    for metric_name, bounds in cluster_bounds.items():
-        if metric_name in METRIC_BY_NAME:
-            metric = METRIC_BY_NAME[metric_name]
-            if metric.direction is None:
-                continue
-            if metric.direction == "minimize":
-                agent.filter_state.bounds[metric_name].max_bound = bounds.max_bound
-            else:
-                agent.filter_state.bounds[metric_name].min_bound = bounds.min_bound
-
-    direction_label = agent.state.cluster_directions[cluster_id]["direction_label"]
-    agent.state.cluster_labels = None
-    agent.state.cluster_centers = None
-    agent.state.cluster_directions = None
-    agent.state.clustered_solutions = None
-    agent.state.clustered_vectors = None
-    agent.state.cluster_columns = None
-
-    agent._invalidate_centroid()
-    _, after_path, after_count = agent._get_current_centroid()
-
-    pending_version_id = len(agent.state.versions)
-    desc = f"Selected cluster: {direction_label}"
-
-    agent.state.save_version(
-        agent.filter_state,
-        solution_path=after_path,
-        solution_count=after_count,
-        description=desc,
-    )
-
-    return ToolResult(
-        f"v{pending_version_id}: Cluster {cluster_id + 1} selected\n- {direction_label}\n- {after_count} solutions",
-        solution_path=after_path,
-    )
 
 
 def build_clusters_response(agent: ZoningAgent) -> list:

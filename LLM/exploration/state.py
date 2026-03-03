@@ -32,11 +32,9 @@ class ToolResult:
 
     text: The string sent to the LLM as tool output
     solution_path: If the tool produced/changed a solution, the path to it
-    clusters: If the tool produced cluster data, the list of cluster dicts
     """
     text: str
     solution_path: Optional[str] = None
-    clusters: Optional[list] = None
 
 
 # ============================================================================

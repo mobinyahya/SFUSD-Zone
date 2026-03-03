@@ -203,41 +203,6 @@ def build_tools():
             },
         ),
         types.FunctionDeclaration(
-            name="show_solution_clusters",
-            description="Group the current feasible solutions into clusters and show a representative solution from each cluster with an interpretable direction label. Useful when there are many solutions and the user wants to see different 'types' of solutions available. You can focus clustering on specific metrics or categories to find groups that differ along a particular theme (e.g. diversity, distance, quality).",
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "n_clusters": {
-                        "type": "integer",
-                        "description": "Number of clusters to create. Default is automatically chosen based on solution count.",
-                        "minimum": 2,
-                        "maximum": 8,
-                    },
-                    "metrics": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of metric categories or display names to cluster on. Categories: diversity, distance, programs, quality, structure. Individual metrics: any metric display name (e.g. 'Compactness', 'Math Score Equity'). If omitted, clusters on all metrics.",
-                    },
-                },
-                "required": [],
-            },
-        ),
-        types.FunctionDeclaration(
-            name="select_cluster",
-            description="Select a cluster from the previous show_solution_clusters results. This will tighten all metric filters to only include solutions within that cluster.",
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "cluster_id": {
-                        "type": "integer",
-                        "description": "The cluster number to select (1 to N, as shown in show_solution_clusters)",
-                    },
-                },
-                "required": ["cluster_id"],
-            },
-        ),
-        types.FunctionDeclaration(
             name="apply_feedback_filters",
             description="Reset all filters and apply multiple metric constraints in one batch based on analysis of user feedback. Use this when the user asks to generate a new solution from their feedback, or when you identify clear metric preferences from their pros/cons notes. Be aggressive - apply a constraint for every identifiable preference.",
             parameters_json_schema={

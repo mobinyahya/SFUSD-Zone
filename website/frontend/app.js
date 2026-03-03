@@ -156,7 +156,31 @@ function setupEventListeners() {
 // ============================================================================
 
 async function sendInitialMessage() {
-    await sendMessageToAgent('Show me the initial overview of available zoning approaches.');
+    setProcessing(true);
+    showMapLoading(true);
+    try {
+        const url = sessionId
+            ? `${API_BASE}/api/initial-clusters?session_id=${sessionId}`
+            : `${API_BASE}/api/initial-clusters`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch clusters: ${response.status}`);
+        const data = await response.json();
+        sessionId = data.session_id;
+
+        if (data.clusters && data.clusters.length > 0) {
+            if (data.text) addMessage('assistant', data.text);
+            renderClusterSelector(data.clusters);
+        } else {
+            addMessage('assistant', 'No clusters available. You can start chatting directly.');
+            setProcessing(false);
+        }
+    } catch (e) {
+        console.error('Failed to fetch initial clusters:', e);
+        addMessage('system', 'Failed to load initial clusters. Please refresh.');
+        setProcessing(false);
+    } finally {
+        showMapLoading(false);
+    }
 }
 
 async function sendMessage() {
@@ -212,15 +236,11 @@ async function sendMessageToAgent(message) {
         trackEvent('agent_response_received', {
             response_type: data.response_type,
             response_text: data.text,
-            has_clusters: !!(data.clusters && data.clusters.length > 0),
             has_solution: !!data.solution_path,
             session_id: sessionId,
         });
 
-        if (data.response_type === 'clusters' && data.clusters && data.clusters.length > 0) {
-            if (data.text) addMessage('assistant', data.text);
-            renderClusterSelector(data.clusters);
-        } else if (data.response_type === 'solution_update' && data.solution_path) {
+        if (data.response_type === 'solution_update' && data.solution_path) {
             if (data.text) addMessage('assistant', data.text);
             await loadSolution(data.solution_path);
             if (currentSolution) {
@@ -283,12 +303,40 @@ function renderClusterSelector(clusters) {
 
 async function selectCluster(clusterId, clusterLabel) {
     document.querySelectorAll('.cluster-selector').forEach(selector => {
-        selector.closest('.message')?.remove() || selector.remove();
+        selector.classList.add('disabled');
     });
 
     trackEvent('cluster_selected', { cluster_id: clusterId, cluster_label: clusterLabel });
     addMessage('user', `Select cluster ${clusterId}: ${clusterLabel}`);
-    await sendMessageToAgent(`Select cluster ${clusterId}`);
+    setProcessing(true);
+    showMapLoading(true);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/select-cluster`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, cluster_id: clusterId }),
+        });
+        if (!response.ok) throw new Error(`Select cluster failed: ${response.status}`);
+        const data = await response.json();
+
+        document.querySelectorAll('.cluster-selector').forEach(s => {
+            s.closest('.message')?.remove() || s.remove();
+        });
+
+        if (data.text) addMessage('assistant', data.text);
+        if (data.solution_path) {
+            await loadSolution(data.solution_path);
+            if (currentSolution) {
+                autoSaveSolution(currentSolution, data.description || clusterLabel, data.text);
+            }
+        }
+    } catch (error) {
+        addMessage('system', `Error selecting cluster: ${error.message}`);
+    } finally {
+        setProcessing(false);
+        showMapLoading(false);
+    }
 }
 
 // ============================================================================

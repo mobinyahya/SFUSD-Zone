@@ -43,12 +43,25 @@ def main():
         sys.exit(1)
     
     print()
-    
-    result = agent.chat(
-        "Please show me the current balanced solution and explain what each metric means briefly."
-    )
-    print(f"\nAgent: {result['text']}\n")
-    
+
+    clusters_result = agent.get_initial_clusters()
+    if clusters_result:
+        print(f"Agent: {clusters_result['text']}\n")
+        while True:
+            try:
+                choice = input("You (enter cluster number): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\n\nGoodbye!")
+                sys.exit(0)
+            if choice.isdigit():
+                result = agent.select_cluster(int(choice))
+                print(f"\nAgent: {result['text']}\n")
+                break
+            print("Please enter a cluster number.")
+    else:
+        result = agent.chat("Show me the current balanced solution.")
+        print(f"\nAgent: {result['text']}\n")
+
     while True:
         try:
             user_input = input("You: ").strip()

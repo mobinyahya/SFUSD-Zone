@@ -101,6 +101,11 @@ class ChatRequest(BaseModel):
     saved_solutions: Optional[list] = None  # [{index, label, pros, cons, key_metrics}]
 
 
+class ClusterSelectRequest(BaseModel):
+    session_id: str
+    cluster_id: int
+
+
 class AdminAuthRequest(BaseModel):
     password: str
 
@@ -265,7 +270,6 @@ def chat(request: ChatRequest):
         return {
             "text": result["text"],
             "response_type": result["response_type"],
-            "clusters": result.get("clusters"),
             "solution_path": result.get("solution_path"),
             "description": result.get("description", ""),
             "session_id": session_id,
@@ -274,6 +278,36 @@ def chat(request: ChatRequest):
         logger.error(f"Chat error: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/initial-clusters")
+def initial_clusters(session_id: Optional[str] = None):
+    """Return pre-computed themed clusters (no LLM involved)."""
+    sid, agent = get_or_create_agent(session_id)
+    result = agent.get_initial_clusters()
+    if result is None:
+        return {"clusters": None, "text": None, "session_id": sid}
+    return {
+        "clusters": result["clusters"],
+        "text": result["text"],
+        "session_id": sid,
+    }
+
+
+@app.post("/api/select-cluster")
+def select_cluster(request: ClusterSelectRequest):
+    """Select a cluster and tighten filters (no LLM involved)."""
+    if request.session_id not in agent_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    agent = agent_sessions[request.session_id]
+    result = agent.select_cluster(request.cluster_id)
+    return {
+        "text": result["text"],
+        "response_type": result["response_type"],
+        "solution_path": result.get("solution_path"),
+        "description": result.get("description", ""),
+        "session_id": request.session_id,
+    }
 
 
 # ============================================================================
