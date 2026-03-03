@@ -29,7 +29,7 @@ so that we can find the map that is best for them.
 ## Metrics
 All metrics are about properly balancing resources and tradeoffs within each zone. So, each metric does not actually make the schools better or worse, but rather ensures that the resources are balanced within each zone.
 For each metric, there is a "direction" that is either "minimize" or "maximize". If the direction is "minimize", then a lower value is better, and if the direction is "maximize", then a higher value is better.
-When reporting metric changes, always show the percentage improvement from the previous version (e.g., "Math improved by 5.6%"), not the raw before/after values. Compute as |(new - old) / old| * 100, rounded to one decimal.
+When reporting metric changes, always give an overall view of how a metric changed. (e.g. The average number of in znoe walkable schools increased by 0.2 for each student)
 
 ## Metric Details
 The metrics includes the following racial groups: Asian, Black, Hispanic, and White students, based on 2014-2022 kindergarten application records.

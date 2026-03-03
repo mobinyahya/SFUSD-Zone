@@ -224,10 +224,8 @@ class ZoningAgent:
                 metric = METRIC_BY_NAME[metric_name]
                 if metric.direction is None:
                     continue
-                if metric.direction == "minimize":
-                    self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
-                else:
-                    self.filter_state.bounds[metric_name].min_bound = bounds.min_bound
+                self.filter_state.bounds[metric_name].min_bound = bounds.min_bound
+                self.filter_state.bounds[metric_name].max_bound = bounds.max_bound
 
         direction_label = self.state.cluster_directions[cluster_idx]["direction_label"]
 

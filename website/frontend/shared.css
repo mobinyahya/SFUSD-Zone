@@ -59,7 +59,7 @@ header h1 {
 main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr 4px 350px;
+    grid-template-columns: 1fr 4px 450px;
     gap: 0;
     min-height: 0;
     overflow: hidden;
@@ -901,7 +901,7 @@ main {
 
 @media (max-width: 1200px) {
     main {
-        grid-template-columns: 1fr 4px 300px;
+        grid-template-columns: 1fr 4px 380px;
     }
 }
 

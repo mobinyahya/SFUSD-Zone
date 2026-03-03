@@ -25,6 +25,13 @@ CLUSTER_THEMES = {
     "Proximity": ["proximity"],
 }
 
+# Themes with percentile cutoffs: only solutions scoring above this percentile
+# on the theme's metrics qualify. Others fall back to Balanced Approach.
+THEME_PERCENTILE_CUTOFF = {
+    "Diversity": 0.75,
+    "Proximity": 0.75,
+}
+
 
 def vectorize_solutions(df: pd.DataFrame, columns: list[str] | None = None) -> np.ndarray:
     """Convert solution DataFrame to numpy array of metric values."""
@@ -89,6 +96,14 @@ def themed_cluster_solutions(
         theme_scores[:, theme_idx] /= len(theme_cols)
 
     labels = np.argmax(theme_scores, axis=1)
+
+    # Enforce percentile cutoffs: reassign below-threshold solutions to Balanced
+    balanced_idx = theme_names.index("Balanced Approach")
+    for theme_name, cutoff in THEME_PERCENTILE_CUTOFF.items():
+        theme_idx = theme_names.index(theme_name)
+        threshold = np.percentile(theme_scores[:, theme_idx], cutoff * 100)
+        below = (labels == theme_idx) & (theme_scores[:, theme_idx] < threshold)
+        labels[below] = balanced_idx
 
     # If a theme has no solutions, steal one from the largest cluster
     for theme_idx in range(n_themes):
