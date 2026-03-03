@@ -83,8 +83,7 @@ The user clicked "New Map". Use ALL accumulated feedback below to drive filter a
 4. Report metric improvements as percentage change from previous version.
 
 Example:
-"Based on your feedback, I prioritized closer schools and better math scores while maintaining diversity.
-v3: Proximity improved by 12.3%. Math improved by 8.1%. 187 maps remaining."
+"Based on your feedback, I prioritized closer schools and better math scores while maintaining diversity."
 """
     else:
         return _SHARED_CONTEXT + f"""
