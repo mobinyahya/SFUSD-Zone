@@ -49,7 +49,7 @@ def main():
         print(f"Agent: {clusters_result['text']}\n")
         while True:
             try:
-                choice = input("You (enter cluster number): ").strip()
+                choice = input("You (enter group number): ").strip()
             except (KeyboardInterrupt, EOFError):
                 print("\n\nGoodbye!")
                 sys.exit(0)
@@ -57,7 +57,7 @@ def main():
                 result = agent.select_cluster(int(choice))
                 print(f"\nAgent: {result['text']}\n")
                 break
-            print("Please enter a cluster number.")
+            print("Please enter a group number.")
     else:
         result = agent.chat("Show me the current balanced solution.")
         print(f"\nAgent: {result['text']}\n")

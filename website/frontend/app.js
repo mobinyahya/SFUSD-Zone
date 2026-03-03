@@ -435,7 +435,7 @@ async function selectCluster(clusterId, clusterLabel) {
 
             // Ask the agent to prompt for initial feedback
             const feedbackPrompt = await sendMessageToAgent(
-                `I just selected the "${clusterLabel}" cluster. Ask me what I think of this map.`,
+                `I just selected the "${clusterLabel}" group. Ask me what I think of this map.`,
                 'feedback',
             );
             if (feedbackPrompt && feedbackPrompt.text) {
@@ -443,7 +443,7 @@ async function selectCluster(clusterId, clusterLabel) {
             }
         }
     } catch (error) {
-        addMessage('system', `Error selecting cluster: ${error.message}`);
+        addMessage('system', `Error selecting group: ${error.message}`);
     } finally {
         setProcessing(false);
         showMapLoading(false);

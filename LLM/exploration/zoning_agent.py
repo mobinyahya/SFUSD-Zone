@@ -248,7 +248,7 @@ class ZoningAgent:
         _, after_path, after_count = self._get_current_centroid()
 
         version_id = len(self.state.versions)
-        desc = f"Selected cluster: {direction_label}"
+        desc = f"Selected group: {direction_label}"
         self.state.save_version(
             self.filter_state,
             solution_path=after_path,
@@ -256,12 +256,12 @@ class ZoningAgent:
             description=desc,
         )
 
-        text = f"v{version_id}: Cluster {cluster_id} selected -- {direction_label} ({after_count} solutions)"
+        text = f"v{version_id}: Group {cluster_id} selected -- {direction_label} ({after_count} solutions)"
 
         # Record in history so the LLM has context for subsequent turns
         self.history.append(types.Content(
             role="user",
-            parts=[types.Part.from_text(text=f"I selected the {direction_label} cluster.")],
+            parts=[types.Part.from_text(text=f"I selected the {direction_label} group.")],
         ))
         self.history.append(types.Content(
             role="model",
