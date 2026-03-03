@@ -74,8 +74,6 @@ class AgentState:
     cluster_centers: Optional[list] = None
     cluster_directions: Optional[dict] = None
     clustered_solutions: Optional[object] = None
-    clustered_vectors: Optional[object] = None
-    cluster_columns: Optional[list[str]] = None
 
     # Feedback state
     feedback: list[FeedbackEntry] = field(default_factory=list)

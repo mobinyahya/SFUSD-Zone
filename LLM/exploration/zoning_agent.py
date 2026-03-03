@@ -49,7 +49,6 @@ from .solution_handlers import (
 )
 from .clusters import (
     themed_cluster_solutions,
-    vectorize_solutions,
     format_cluster_summary,
     get_cluster_bounds,
 )
@@ -172,19 +171,15 @@ class ZoningAgent:
             return None
 
         try:
-            labels, centers, directions, columns = themed_cluster_solutions(filtered)
-            vectors = vectorize_solutions(filtered, columns=columns)
+            labels, centers, directions = themed_cluster_solutions(filtered)
 
-            # Store clustering state so select_cluster works
             self.state.clustered_solutions = filtered
-            self.state.clustered_vectors = vectors
             self.state.cluster_labels = labels
             self.state.cluster_centers = centers
             self.state.cluster_directions = directions
-            self.state.cluster_columns = columns
 
             clusters_data = build_clusters_response(self)
-            text = format_cluster_summary(filtered, vectors, labels, centers, directions)
+            text = format_cluster_summary(filtered, labels, centers, directions)
 
             return {
                 "text": text,
@@ -222,7 +217,6 @@ class ZoningAgent:
             self.state.clustered_solutions,
             self.state.cluster_labels,
             cluster_idx,
-            columns=self.state.cluster_columns,
         )
 
         for metric_name, bounds in cluster_bounds.items():
@@ -241,8 +235,6 @@ class ZoningAgent:
         self.state.cluster_centers = None
         self.state.cluster_directions = None
         self.state.clustered_solutions = None
-        self.state.clustered_vectors = None
-        self.state.cluster_columns = None
 
         self._invalidate_centroid()
         _, after_path, after_count = self._get_current_centroid()
