@@ -202,6 +202,10 @@ main {
 .panel-header {
     padding: 10px 16px 6px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .panel-header h3 {
@@ -388,7 +392,7 @@ main {
 #charts-header-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 10px;
     padding: 8px 16px 0;
 }
 
@@ -397,68 +401,85 @@ main {
     font-weight: 600;
     color: var(--text-muted);
     margin: 0;
+    flex: 1;
+    min-width: 0;
 }
 
-#charts-description {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin: 4px 0 0;
-    font-weight: 400;
-    line-height: 1.4;
-    opacity: 0.85;
+.charts-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
 }
 
-#charts-subtitle {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin: 2px 0 0;
-    font-weight: 400;
-}
-
-#charts-help {
+.charts-back-arrow {
     background: none;
-    border: 1.5px solid var(--text-muted);
+    border: none;
+    cursor: pointer;
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    padding: 4px 6px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.charts-back-arrow:hover {
+    background: #ecf0f1;
+    color: var(--text-color);
+}
+
+.charts-info-wrap {
+    position: relative;
+}
+
+.charts-info-btn {
+    background: #b8d4e8;
+    border: none;
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 700;
-    color: var(--text-muted);
+    color: #1a5276;
     width: 20px;
     height: 20px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-right: 4px;
-    position: relative;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition: background 0.15s, color 0.15s;
 }
 
-#charts-help:hover {
-    background: #ecf0f1;
-    color: var(--text-color);
-    border-color: var(--text-color);
+.charts-info-btn:hover {
+    background: #9bc4e4;
+    color: #0d3d56;
 }
 
-#charts-help::after {
-    content: 'Confused by this chart? Ask for an explanation in the chat window.';
-    position: absolute;
-    bottom: calc(100% + 8px);
-    right: 0;
-    background: var(--text-color, #2c3e50);
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 400;
-    padding: 6px 10px;
-    border-radius: 6px;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
+.charts-info-popover {
+    position: fixed;
+    min-width: 260px;
+    max-width: 360px;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    padding: 10px 12px;
+    z-index: 10000;
 }
 
-#charts-help:hover::after {
-    opacity: 1;
+.charts-info-popover.hidden {
+    display: none;
+}
+
+.charts-info-popover p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+    margin: 0 0 6px;
+}
+
+.charts-info-popover p:last-child {
+    margin-bottom: 0;
 }
 
 #charts-normalize-toggle {
@@ -486,22 +507,6 @@ main {
     border-color: var(--text-color, #2c3e50);
 }
 
-#charts-close {
-    background: none;
-    border: 1px solid var(--text-muted);
-    cursor: pointer;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    padding: 3px 10px;
-    border-radius: 4px;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-#charts-close:hover {
-    background: #ecf0f1;
-    color: var(--text-color);
-    border-color: var(--text-color);
-}
 
 #single-chart-container {
     flex: 1;

@@ -131,6 +131,7 @@ function setupEventListeners() {
     if (generateBtn) generateBtn.addEventListener('click', () => generateNewSolution());
 
     setupChartsClose();
+    setupSolutionComparisonHelp();
     setupResizeHandle();
 }
 

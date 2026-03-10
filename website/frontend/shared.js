@@ -367,7 +367,6 @@ function showSingleChart(metricKey) {
             card.classList.remove('chart-hidden', 'collapsed');
             card.classList.add('expanded');
             card.querySelector('.chevron').innerHTML = '&#9660;';
-            card.querySelector('.category-avg-rank').innerHTML = '';
             card.querySelector('.category-metrics').classList.remove('hidden');
         }
     });
@@ -476,17 +475,21 @@ function showSingleChart(metricKey) {
     const mConfig = metricsConfig && metricsConfig.metrics.find(m => m.column === metricKey);
     document.getElementById('charts-header').textContent = (mConfig && mConfig.display_name) || config.title;
 
-    const descEl = document.getElementById('charts-description');
-    if (descEl) {
-        descEl.textContent = (mConfig && mConfig.description) || '';
-    }
-
-    const subtitle = document.getElementById('charts-subtitle');
-    if (subtitle) {
-        const mv = currentSolution.metrics[metricKey];
-        const displayValue = mv !== undefined ? formatValue(mv, metricKey) : null;
-        const unit = mConfig && mConfig.chart && mConfig.chart.unit;
-        subtitle.textContent = displayValue ? `Value for this map: ${displayValue}${unit ? ' ' + unit : ''}` : '';
+    const popover = document.getElementById('charts-info-popover');
+    const popoverContent = document.getElementById('charts-info-popover-content');
+    if (popover && popoverContent) {
+        popover.classList.add('hidden');
+        const interpretation = (mConfig && mConfig.interpretation) || (mConfig && mConfig.description) || '';
+        popoverContent.innerHTML = '';
+        if (interpretation) {
+            const el = document.createElement('p');
+            el.textContent = interpretation;
+            popoverContent.appendChild(el);
+        } else {
+            const el = document.createElement('p');
+            el.textContent = 'No description available.';
+            popoverContent.appendChild(el);
+        }
     }
 
     document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
@@ -572,7 +575,6 @@ function updateComparisonTable() {
                 card.classList.remove('collapsed');
                 card.classList.add('expanded');
                 card.querySelector('.chevron').innerHTML = '&#9660;';
-                card.querySelector('.category-avg-rank').innerHTML = '';
                 card.querySelector('.category-metrics').classList.remove('hidden');
             } else {
                 card.classList.remove('expanded');
@@ -687,6 +689,8 @@ function setupChartsClose() {
     const chartsClose = document.getElementById('charts-close');
     if (chartsClose) {
         chartsClose.addEventListener('click', () => {
+            const popover = document.getElementById('charts-info-popover');
+            if (popover) popover.classList.add('hidden');
             document.getElementById('inline-chart-area').classList.add('hidden');
             document.querySelectorAll('.metric-row.selected').forEach(r => r.classList.remove('selected'));
             selectedMetricKey = null;
@@ -706,6 +710,34 @@ function setupChartsClose() {
         });
     }
 
+    const chartsHelp = document.getElementById('charts-help');
+    const chartsInfoPopover = document.getElementById('charts-info-popover');
+    const chartsInfoWrap = chartsHelp && chartsHelp.closest('.charts-info-wrap');
+    if (chartsHelp && chartsInfoPopover && chartsInfoWrap) {
+        function positionPopoverAboveButton() {
+            const rect = chartsHelp.getBoundingClientRect();
+            chartsInfoPopover.style.top = '';
+            chartsInfoPopover.style.right = '';
+            chartsInfoPopover.style.bottom = '';
+            chartsInfoPopover.style.left = '';
+            requestAnimationFrame(() => {
+                const height = chartsInfoPopover.offsetHeight;
+                const gap = 6;
+                chartsInfoPopover.style.right = `${window.innerWidth - rect.right}px`;
+                chartsInfoPopover.style.bottom = `${window.innerHeight - rect.top + gap}px`;
+            });
+        }
+        function showPopover() {
+            chartsInfoPopover.classList.remove('hidden');
+            positionPopoverAboveButton();
+        }
+        function hidePopover() {
+            chartsInfoPopover.classList.add('hidden');
+        }
+        chartsInfoWrap.addEventListener('mouseenter', showPopover);
+        chartsInfoWrap.addEventListener('mouseleave', hidePopover);
+    }
+
     const normToggle = document.getElementById('charts-normalize-toggle');
     if (normToggle) {
         normToggle.addEventListener('click', () => {
@@ -720,3 +752,47 @@ function setupChartsClose() {
         });
     }
 }
+
+function setupSolutionComparisonHelp() {
+    const btn = document.getElementById('solution-comparison-help');
+    const popover = document.getElementById('solution-comparison-help-popover');
+    const content = document.getElementById('solution-comparison-help-popover-content');
+    const wrap = btn && btn.closest('.charts-info-wrap');
+    if (!btn || !popover || !content || !wrap) return;
+
+    content.innerHTML = '';
+    [
+        "Solution Comparison helps you evaluate how a zoning proposal performs across several planning goals such as diversity, proximity, program access, and academic equity.",
+        "Click any category (e.g., Diversity or Proximity) to expand it and view the specific metrics used to evaluate the current plan.",
+        "Each chart shows how the proposed zones compare across those metrics so you can understand tradeoffs.",
+        "If you would like to improve a result, simply tell the agent what you want to change (for example: reduce travel distance, improve diversity balance, or add more nearby schools).",
+    ].forEach(t => {
+        const p = document.createElement('p');
+        p.textContent = t;
+        content.appendChild(p);
+    });
+
+    function positionPopoverAboveButton() {
+        const rect = btn.getBoundingClientRect();
+        popover.style.top = '';
+        popover.style.right = '';
+        popover.style.bottom = '';
+        popover.style.left = '';
+        requestAnimationFrame(() => {
+            const gap = 6;
+            popover.style.right = `${window.innerWidth - rect.right}px`;
+            popover.style.bottom = `${window.innerHeight - rect.top + gap}px`;
+        });
+    }
+
+    function show() {
+        popover.classList.remove('hidden');
+        positionPopoverAboveButton();
+    }
+    function hide() {
+        popover.classList.add('hidden');
+    }
+
+    wrap.addEventListener('mouseenter', show);
+    wrap.addEventListener('mouseleave', hide);
+ }
