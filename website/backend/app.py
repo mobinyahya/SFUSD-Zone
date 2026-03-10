@@ -324,6 +324,7 @@ async def get_metrics_config():
             "column": m.column,
             "display_name": m.display_name,
             "description": m.description,
+            "interpretation": getattr(m, "interpretation", "") or "",
             "category": m.category,
             "direction": m.direction,
             "is_core": m.is_core,
