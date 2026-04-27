@@ -174,11 +174,11 @@ PROXIMITY_METRICS = [
         category="proximity",
         direction="minimize",
         is_core=True,
-        short_name="Proximity",
+        short_name="Avg Distance",
         chart_type="bar",
         chart_field="avg_closest_school_distance",
         chart_unit="miles",
-        chart_title="Avg Proximity to Closest School",
+        chart_title="Avg Distance to Closest School",
     ),
 
     MetricSpec(
