@@ -110,6 +110,12 @@ def compute_program_metrics(
     return aggregated, per_zone_data
 
 
+def get_ge_schools(is_local: bool = False) -> set[int]:
+    """Return the set of school IDs that have a GE program."""
+    programs_df = load_programs_data(is_local)
+    return {row['school_id'] for _, row in programs_df.iterrows() if row['program_type'] == 'GE'}
+
+
 def compute_ge_proximity_metrics(
     _zone_dict: dict[int, int],
     G: nx.Graph,

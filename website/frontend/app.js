@@ -506,9 +506,9 @@ function buildVersionsSummary() {
             index: v.id,
             label: v.label,
             key_metrics: {
-                frl: metrics.frl_dissim,
-                diversity: metrics.theil_index,
-                proximity: metrics.avg_closest_zone_school_distance,
+                frl: metrics.frl_mad,
+                diversity: metrics.aalpi_mad,
+                proximity: metrics.avg_any_zone_ge_school_distance,
                 programs: metrics.avg_total_programs_per_zone,
             },
         };

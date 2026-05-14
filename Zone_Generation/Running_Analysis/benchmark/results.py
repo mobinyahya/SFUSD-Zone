@@ -298,8 +298,10 @@ def aggregate_results(
                 try:
                     G = get_graph(level, is_local)
                     calc = ZoneMetricsCalculator(
-                        result.zone_dict, G, 
-                        {'is_local': is_local, 'compute_choice': include_choice}
+                        result.zone_dict, G,
+                        {'is_local': is_local,
+                         'compute_choice': include_choice,
+                         'centroids_type': result.config.get('centroids_type')}
                     )
                     metrics_result = calc.compute_all(include_choice=include_choice)
                     row.update(metrics_result.to_flat_dict())

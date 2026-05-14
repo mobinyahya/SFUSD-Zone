@@ -216,7 +216,9 @@ def aggregate_local_runs(
             try:
                 calc = ZoneMetricsCalculator(
                     zone_dict, G,
-                    {'is_local': False, 'compute_choice': include_choice}
+                    {'is_local': False,
+                     'compute_choice': include_choice,
+                     'centroids_type': config.get('centroids_type')}
                 )
                 metrics_result = calc.compute_all(include_choice=include_choice)
                 row.update(metrics_result.to_flat_dict())

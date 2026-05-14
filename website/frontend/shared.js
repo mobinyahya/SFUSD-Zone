@@ -13,7 +13,60 @@ let geojsonLayer = null;
 let geojsonData = null;
 let schoolMarkersLayer = null;
 let schoolsVisible = false;
+let schoolsControl = null;
+let highwaysLayer = null;
+let highwaysVisible = true;
+let highwaysControl = null;
 let currentSolution = null;
+let currentSolutionPath = null;
+
+// SES (FRL) overlay state
+let sesOverlayActive = false;
+let blockgroupFrl = null;          // { bgId: frlPct(0-100) }
+let zoneBoundariesLayer = null;
+let zoneBoundariesGeneration = 0;
+let sesOverlayControl = null;
+
+// Sequential color ramp for FRL % (low → high). ColorBrewer OrRd-style.
+const FRL_RAMP = [
+    { max: 20,  color: '#fff7ec', label: '< 20%' },
+    { max: 40,  color: '#fdd49e', label: '20–40%' },
+    { max: 60,  color: '#fdbb84', label: '40–60%' },
+    { max: 75,  color: '#fc8d59', label: '60–75%' },
+    { max: 90,  color: '#e34a33', label: '75–90%' },
+    { max: 101, color: '#b30000', label: '≥ 90%' },
+];
+
+function frlColor(pct) {
+    if (pct == null || isNaN(pct)) return '#dddddd';
+    for (const bin of FRL_RAMP) {
+        if (pct < bin.max) return bin.color;
+    }
+    return FRL_RAMP[FRL_RAMP.length - 1].color;
+}
+
+// AALPI (racial) overlay state
+let aalpiOverlayActive = false;
+let blockgroupAalpi = null;        // { bgId: aalpiPct(0-100) }
+let aalpiOverlayControl = null;
+
+// Sequential color ramp for AALPI % (low → high). ColorBrewer Purples-style.
+const AALPI_RAMP = [
+    { max: 20,  color: '#fcfbfd', label: '< 20%' },
+    { max: 40,  color: '#dadaeb', label: '20–40%' },
+    { max: 60,  color: '#bcbddc', label: '40–60%' },
+    { max: 75,  color: '#9e9ac8', label: '60–75%' },
+    { max: 90,  color: '#756bb1', label: '75–90%' },
+    { max: 101, color: '#54278f', label: '≥ 90%' },
+];
+
+function aalpiColor(pct) {
+    if (pct == null || isNaN(pct)) return '#dddddd';
+    for (const bin of AALPI_RAMP) {
+        if (pct < bin.max) return bin.color;
+    }
+    return AALPI_RAMP[AALPI_RAMP.length - 1].color;
+}
 
 // Chart state
 let singleChart = null;
@@ -43,7 +96,7 @@ const CHART_COLORS = {
 
 // Category display constants
 const CATEGORY_SHORT = { diversity: 'Div', proximity: 'Prox', programs: 'Prog', quality: 'Perf', structure: 'Struct' };
-const CATEGORY_DISPLAY = { diversity: 'Diversity', proximity: 'Proximity', programs: 'Programs', quality: 'Performance', structure: 'Structure' };
+const CATEGORY_DISPLAY = { diversity: 'Diversity', proximity: 'Proximity', programs: 'Availability', quality: 'Performance', structure: 'Structure' };
 // Reverse lookup: display name → category key (e.g. "Performance" → "quality")
 const DISPLAY_TO_CATEGORY = Object.fromEntries(
     Object.entries(CATEGORY_DISPLAY).map(([k, v]) => [v, k])
@@ -103,7 +156,7 @@ function getPercentileRanking(percentile) {
 
 function formatValue(value, key) {
     if (value === undefined || value === null) return '-';
-    if (key.includes('dissim') || key === 'seat_disparity') return (value * 100).toFixed(1);
+    if (key.endsWith('_mad') || key === 'seat_disparity') return (value * 100).toFixed(1);
     if (key.includes('distance')) return value.toFixed(3);
     if (key.includes('rating')) return value.toFixed(2);
     if (key === 'boundary_cost') return Math.round(value).toString();
@@ -123,12 +176,113 @@ function initMap() {
         zoomControl: true,
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap, &copy; CARTO',
         maxZoom: 19,
     }).addTo(map);
 
+    map.createPane('highwaysPane');
+    map.getPane('highwaysPane').style.zIndex = 675;
+    map.getPane('highwaysPane').style.pointerEvents = 'none';
+
+    map.getPane('tooltipPane').style.zIndex = 690;
+
+    addSesOverlayControl();
+    addAalpiOverlayControl();
+    addHighwaysToggleControl();
+    addSchoolsToggleControl();
     loadSchoolLocations();
+    loadHighwaysOverlay();
+}
+
+function addSchoolsToggleControl() {
+    if (schoolsControl) return;
+    const Control = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const div = L.DomUtil.create('div', 'schools-toggle-control');
+            div.innerHTML = renderSchoolsToggleHtml();
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            div.querySelector('.schools-toggle-btn').addEventListener('click', toggleSchoolMarkers);
+            return div;
+        }
+    });
+    schoolsControl = new Control();
+    schoolsControl.addTo(map);
+}
+
+function renderSchoolsToggleHtml() {
+    const active = schoolsVisible ? 'active' : '';
+    const label = schoolsVisible ? 'Hide schools' : 'Show schools';
+    return `
+        <button class="schools-toggle-btn ${active}" title="Toggle school markers">
+            <span class="schools-toggle-dot">&#127979;</span>${label}
+        </button>
+    `;
+}
+
+async function loadHighwaysOverlay() {
+    try {
+        const res = await fetch('/static/sf_highways.geojson');
+        if (!res.ok) return;
+        const data = await res.json();
+        highwaysLayer = L.geoJSON(data, {
+            pane: 'highwaysPane',
+            interactive: false,
+            style: {
+                color: '#555',
+                weight: 2.5,
+                opacity: 0.55,
+                dashArray: '2 6',
+                lineCap: 'round',
+            },
+        });
+        if (highwaysVisible) highwaysLayer.addTo(map);
+    } catch (e) {
+        console.error('Error loading highways overlay:', e);
+    }
+}
+
+function addHighwaysToggleControl() {
+    if (highwaysControl) return;
+    const Control = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const div = L.DomUtil.create('div', 'highways-toggle-control');
+            div.innerHTML = renderHighwaysToggleHtml();
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            div.querySelector('.highways-toggle-btn').addEventListener('click', toggleHighways);
+            return div;
+        }
+    });
+    highwaysControl = new Control();
+    highwaysControl.addTo(map);
+}
+
+function renderHighwaysToggleHtml() {
+    const active = highwaysVisible ? 'active' : '';
+    const label = highwaysVisible ? 'Hide highways' : 'Show highways';
+    return `
+        <button class="highways-toggle-btn ${active}" title="Toggle highway overlay">
+            <span class="highways-toggle-dot"></span>${label}
+        </button>
+    `;
+}
+
+function toggleHighways() {
+    highwaysVisible = !highwaysVisible;
+    if (highwaysLayer) {
+        if (highwaysVisible) highwaysLayer.addTo(map);
+        else map.removeLayer(highwaysLayer);
+    }
+    const root = highwaysControl && highwaysControl.getContainer();
+    if (root) {
+        root.innerHTML = renderHighwaysToggleHtml();
+        root.querySelector('.highways-toggle-btn').addEventListener('click', toggleHighways);
+    }
+    pageHooks.trackEvent('highways_toggled', { visible: highwaysVisible });
 }
 
 async function loadSchoolLocations() {
@@ -187,8 +341,12 @@ async function loadSolution(path) {
         ]);
         if (!solRes.ok) throw new Error('Failed to load solution');
         currentSolution = await solRes.json();
+        currentSolutionPath = path;
 
         renderMap(geojson);
+        refreshZoneBoundaries();
+        loadBlockgroupFrl();
+        loadBlockgroupAalpi();
         renderLegend();
         updateComparisonTable();
         refreshSingleChart();
@@ -210,29 +368,55 @@ async function loadSolution(path) {
     }
 }
 
+function blockgroupStyle(feature) {
+    const { zones, colors } = currentSolution;
+    const bgId = String(feature.properties.BlockGroup);
+    const zoneId = zones[bgId];
+
+    if (sesOverlayActive) {
+        const pct = blockgroupFrl ? blockgroupFrl[bgId] : null;
+        return {
+            fillColor: frlColor(pct),
+            fillOpacity: zoneId !== undefined ? 0.85 : 0.25,
+            color: '#999',
+            weight: 0.3,
+        };
+    }
+
+    if (aalpiOverlayActive) {
+        const pct = blockgroupAalpi ? blockgroupAalpi[bgId] : null;
+        return {
+            fillColor: aalpiColor(pct),
+            fillOpacity: zoneId !== undefined ? 0.85 : 0.25,
+            color: '#999',
+            weight: 0.3,
+        };
+    }
+    const color = zoneId !== undefined ? (colors[String(zoneId)] || '#808080') : '#cccccc';
+    return { fillColor: color, fillOpacity: 0.6, color: '#333', weight: 0.5 };
+}
+
 function renderMap(geojson) {
     if (geojsonLayer) map.removeLayer(geojsonLayer);
-    const { zones, zone_data, colors, zone_index_map } = currentSolution;
+    const { zones, zone_data, zone_index_map } = currentSolution;
 
     geojsonLayer = L.geoJSON(geojson, {
-        style: feature => {
-            const bgId = String(feature.properties.BlockGroup);
-            const zoneId = zones[bgId];
-            const color = zoneId !== undefined ? (colors[String(zoneId)] || '#808080') : '#cccccc';
-            return { fillColor: color, fillOpacity: 0.6, color: '#333', weight: 0.5 };
-        },
+        style: blockgroupStyle,
         onEachFeature: (feature, layer) => {
             const bgId = String(feature.properties.BlockGroup);
             const zoneId = zones[bgId];
             layer._zoneId = zoneId;
             const zd = zoneId !== undefined ? zone_data[String(zoneId)] : null;
             const zi = zoneId !== undefined && zone_index_map ? zone_index_map[String(zoneId)] : null;
-            layer.bindTooltip(createTooltip(bgId, zi, zd), { sticky: true });
+            layer.bindTooltip(() => createTooltip(bgId, zi, zd), { sticky: true });
             layer.on({
                 mouseover: () => {
                     if (zoneId === undefined) return;
                     geojsonLayer.eachLayer(l => {
-                        if (l._zoneId === zoneId) l.setStyle({ weight: 2, fillOpacity: 0.8 });
+                        if (l._zoneId === zoneId) {
+                            const base = blockgroupStyle(l.feature);
+                            l.setStyle({ weight: Math.max(2, base.weight), fillOpacity: Math.min(1, base.fillOpacity + 0.15) });
+                        }
                     });
                 },
                 mouseout: () => {
@@ -249,13 +433,239 @@ function renderMap(geojson) {
     map.fitBounds(geojsonLayer.getBounds());
 }
 
+// ============================================================================
+// SES Overlay (FRL choropleth + bold zone borders)
+// ============================================================================
+
+function addSesOverlayControl() {
+    if (sesOverlayControl) return;
+    const Control = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const div = L.DomUtil.create('div', 'ses-overlay-control');
+            div.innerHTML = renderSesControlHtml();
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            div.querySelector('.ses-toggle-btn').addEventListener('click', toggleSesOverlay);
+            return div;
+        }
+    });
+    sesOverlayControl = new Control();
+    sesOverlayControl.addTo(map);
+}
+
+function renderSesControlHtml() {
+    const active = sesOverlayActive ? 'active' : '';
+    const label = sesOverlayActive ? 'Hide SES overlay' : 'Show SES overlay';
+    let legend = '';
+    if (sesOverlayActive) {
+        legend = '<div class="ses-legend"><div class="ses-legend-title">FRL %</div>';
+        for (const bin of FRL_RAMP) {
+            legend += `<div class="ses-legend-row">
+                <span class="ses-legend-swatch" style="background:${bin.color}"></span>
+                <span class="ses-legend-label">${bin.label}</span>
+            </div>`;
+        }
+        legend += '</div>';
+    }
+    return `
+        <button class="ses-toggle-btn ${active}" title="Toggle Free/Reduced Lunch overlay">
+            <span class="ses-toggle-dot"></span>${label}
+        </button>
+        ${legend}
+    `;
+}
+
+function refreshSesOverlayControl() {
+    const root = sesOverlayControl && sesOverlayControl.getContainer();
+    if (!root) return;
+    root.innerHTML = renderSesControlHtml();
+    root.querySelector('.ses-toggle-btn').addEventListener('click', toggleSesOverlay);
+}
+
+function toggleSesOverlay() {
+    sesOverlayActive = !sesOverlayActive;
+
+    if (sesOverlayActive && aalpiOverlayActive) {
+        aalpiOverlayActive = false;
+        refreshAalpiOverlayControl();
+    }
+
+    refreshSesOverlayControl();
+
+    if (geojsonLayer) {
+        geojsonLayer.setStyle(blockgroupStyle);
+    }
+
+    if (zoneBoundariesLayer) {
+        if (sesOverlayActive) zoneBoundariesLayer.addTo(map);
+        else map.removeLayer(zoneBoundariesLayer);
+    }
+
+    if (sesOverlayActive && !blockgroupFrl) {
+        loadBlockgroupFrl().then(() => {
+            if (sesOverlayActive && geojsonLayer) geojsonLayer.setStyle(blockgroupStyle);
+        });
+    }
+
+    pageHooks.trackEvent('ses_overlay_toggled', { visible: sesOverlayActive });
+}
+
+async function loadBlockgroupFrl() {
+    if (blockgroupFrl) return blockgroupFrl;
+    try {
+        const res = await fetch(`${API_BASE}/api/blockgroup-frl`);
+        if (!res.ok) throw new Error('Failed to load FRL data');
+        const data = await res.json();
+        blockgroupFrl = data.frl_pct || {};
+    } catch (e) {
+        console.error(e);
+    }
+    return blockgroupFrl;
+}
+
+// ============================================================================
+// AALPI (Racial) Overlay (choropleth + bold zone borders)
+// ============================================================================
+
+function addAalpiOverlayControl() {
+    if (aalpiOverlayControl) return;
+    const Control = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const div = L.DomUtil.create('div', 'aalpi-overlay-control');
+            div.innerHTML = renderAalpiControlHtml();
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            div.querySelector('.aalpi-toggle-btn').addEventListener('click', toggleAalpiOverlay);
+            return div;
+        }
+    });
+    aalpiOverlayControl = new Control();
+    aalpiOverlayControl.addTo(map);
+}
+
+function renderAalpiControlHtml() {
+    const active = aalpiOverlayActive ? 'active' : '';
+    const label = aalpiOverlayActive ? 'Hide racial overlay' : 'Show racial overlay';
+    let legend = '';
+    if (aalpiOverlayActive) {
+        legend = '<div class="aalpi-legend"><div class="aalpi-legend-title">AALPI %</div>';
+        for (const bin of AALPI_RAMP) {
+            legend += `<div class="aalpi-legend-row">
+                <span class="aalpi-legend-swatch" style="background:${bin.color}"></span>
+                <span class="aalpi-legend-label">${bin.label}</span>
+            </div>`;
+        }
+        legend += '</div>';
+    }
+    return `
+        <button class="aalpi-toggle-btn ${active}" title="Toggle AALPI (Black + Hispanic/Latinx + Pacific Islander) overlay">
+            <span class="aalpi-toggle-dot"></span>${label}
+        </button>
+        ${legend}
+    `;
+}
+
+function refreshAalpiOverlayControl() {
+    const root = aalpiOverlayControl && aalpiOverlayControl.getContainer();
+    if (!root) return;
+    root.innerHTML = renderAalpiControlHtml();
+    root.querySelector('.aalpi-toggle-btn').addEventListener('click', toggleAalpiOverlay);
+}
+
+function toggleAalpiOverlay() {
+    aalpiOverlayActive = !aalpiOverlayActive;
+
+    if (aalpiOverlayActive && sesOverlayActive) {
+        sesOverlayActive = false;
+        refreshSesOverlayControl();
+    }
+
+    refreshAalpiOverlayControl();
+
+    if (geojsonLayer) {
+        geojsonLayer.setStyle(blockgroupStyle);
+    }
+
+    if (zoneBoundariesLayer) {
+        if (aalpiOverlayActive || sesOverlayActive) zoneBoundariesLayer.addTo(map);
+        else map.removeLayer(zoneBoundariesLayer);
+    }
+
+    if (aalpiOverlayActive && !blockgroupAalpi) {
+        loadBlockgroupAalpi().then(() => {
+            if (aalpiOverlayActive && geojsonLayer) geojsonLayer.setStyle(blockgroupStyle);
+        });
+    }
+
+    pageHooks.trackEvent('aalpi_overlay_toggled', { visible: aalpiOverlayActive });
+}
+
+async function loadBlockgroupAalpi() {
+    if (blockgroupAalpi) return blockgroupAalpi;
+    try {
+        const res = await fetch(`${API_BASE}/api/blockgroup-aalpi`);
+        if (!res.ok) throw new Error('Failed to load AALPI data');
+        const data = await res.json();
+        blockgroupAalpi = data.aalpi_pct || {};
+    } catch (e) {
+        console.error(e);
+    }
+    return blockgroupAalpi;
+}
+
+async function refreshZoneBoundaries() {
+    const gen = ++zoneBoundariesGeneration;
+    if (zoneBoundariesLayer) {
+        map.removeLayer(zoneBoundariesLayer);
+        zoneBoundariesLayer = null;
+    }
+    if (!currentSolutionPath) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/zone-boundaries/${encodeURIComponent(currentSolutionPath)}`);
+        if (gen !== zoneBoundariesGeneration) return;
+        if (!res.ok) return;
+        const fc = await res.json();
+        if (gen !== zoneBoundariesGeneration) return;
+        if (zoneBoundariesLayer) {
+            map.removeLayer(zoneBoundariesLayer);
+            zoneBoundariesLayer = null;
+        }
+        zoneBoundariesLayer = L.geoJSON(fc, {
+            interactive: false,
+            style: () => ({
+                color: '#1a1a1a',
+                weight: 2.5,
+                opacity: 0.95,
+                fillOpacity: 0,
+            }),
+        });
+        if (sesOverlayActive) zoneBoundariesLayer.addTo(map);
+    } catch (e) {
+        console.error('Failed to load zone boundaries:', e);
+    }
+}
+
 function formatEthnicityName(key) {
     return key.replace('Ethnicity_', '').replace(/_/g, ' ').replace('/', '/');
 }
 
 function createTooltip(bgId, zoneIndex, demographics) {
+    const bgFrl = (sesOverlayActive && blockgroupFrl) ? blockgroupFrl[bgId] : null;
+    const bgFrlRow = bgFrl != null
+        ? `<div class="tooltip-row tooltip-bg-frl"><span>This blockgroup FRL</span><span>${bgFrl.toFixed(1)}%</span></div>`
+        : '';
+
+    const bgAalpi = (aalpiOverlayActive && blockgroupAalpi) ? blockgroupAalpi[bgId] : null;
+    const bgAalpiRow = bgAalpi != null
+        ? `<div class="tooltip-row tooltip-bg-aalpi"><span>This blockgroup AALPI</span><span>${bgAalpi.toFixed(1)}%</span></div>`
+        : '';
+
+    const overlayRow = bgFrlRow || bgAalpiRow;
+
     if (!demographics) {
-        return `<strong>BlockGroup: ${bgId}</strong><br>Unassigned`;
+        return `<strong>BlockGroup: ${bgId}</strong><br>Unassigned${overlayRow}`;
     }
 
     const d = demographics;
@@ -263,6 +673,7 @@ function createTooltip(bgId, zoneIndex, demographics) {
     const num = (v, dec = 0) => v != null ? v.toFixed(dec) : 'N/A';
 
     let html = `<div class="tooltip-header">Zone ${zoneIndex ?? '?'}</div>`;
+    if (overlayRow) html += `<div class="tooltip-section">${overlayRow}</div>`;
 
     // Demographics
     html += `<div class="tooltip-section"><div class="tooltip-section-label">Demographics</div>`;
@@ -290,8 +701,8 @@ function createTooltip(bgId, zoneIndex, demographics) {
 
     // Access
     html += `<div class="tooltip-section"><div class="tooltip-section-label">Access</div>`;
-    if (d.avg_closest_school_distance != null) {
-        html += `<div class="tooltip-row"><span>Avg Nearest School</span><span>${num(d.avg_closest_school_distance, 2)} mi</span></div>`;
+    if (d.avg_any_ge_school_distance != null) {
+        html += `<div class="tooltip-row"><span>Avg GE School Dist</span><span>${num(d.avg_any_ge_school_distance, 2)} mi</span></div>`;
     }
     if (d.ge_schools_within_half_mile != null) {
         html += `<div class="tooltip-row"><span>GE Schools &lt;0.5 mi</span><span>${num(d.ge_schools_within_half_mile, 2)}</span></div>`;
@@ -311,13 +722,7 @@ function renderLegend() {
         .map(([zoneId, idx]) => ({ zoneId, index: idx, color: colors[zoneId] || '#808080' }))
         .sort((a, b) => a.index - b.index);
 
-    let html = '<div class="legend-header"><h4>Zones</h4>';
-    if (schoolMarkersLayer) {
-        const txt = schoolsVisible ? 'Hide Schools' : 'Show Schools';
-        const cls = schoolsVisible ? 'active' : '';
-        html += `<button id="toggle-schools-btn" class="toggle-schools-btn ${cls}" title="Toggle school markers">${txt}</button>`;
-    }
-    html += '</div>';
+    let html = '<h4>Zones</h4>';
     for (const entry of entries) {
         html += `<div class="legend-item">
             <div class="legend-color" style="background-color: ${entry.color}"></div>
@@ -326,9 +731,6 @@ function renderLegend() {
     }
     el.innerHTML = html;
     el.classList.remove('hidden');
-
-    const btn = document.getElementById('toggle-schools-btn');
-    if (btn) btn.addEventListener('click', toggleSchoolMarkers);
 }
 
 function toggleSchoolMarkers() {
@@ -337,10 +739,10 @@ function toggleSchoolMarkers() {
     if (schoolsVisible) map.addLayer(schoolMarkersLayer);
     else map.removeLayer(schoolMarkersLayer);
 
-    const btn = document.getElementById('toggle-schools-btn');
-    if (btn) {
-        btn.textContent = schoolsVisible ? 'Hide Schools' : 'Show Schools';
-        btn.classList.toggle('active', schoolsVisible);
+    const root = schoolsControl && schoolsControl.getContainer();
+    if (root) {
+        root.innerHTML = renderSchoolsToggleHtml();
+        root.querySelector('.schools-toggle-btn').addEventListener('click', toggleSchoolMarkers);
     }
     pageHooks.trackEvent('schools_toggled', { visible: schoolsVisible });
 }
@@ -604,9 +1006,13 @@ function viewVersion(versionId) {
 
     currentVersionId = versionId;
     currentSolution = entry.solutionData;
+    currentSolutionPath = entry.solutionPath || currentSolutionPath;
 
     loadGeojson().then(geojson => {
         renderMap(geojson);
+        refreshZoneBoundaries();
+        loadBlockgroupFrl();
+        loadBlockgroupAalpi();
         renderLegend();
         updateComparisonTable();
         refreshSingleChart();

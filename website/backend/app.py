@@ -32,6 +32,9 @@ from data_loader import (
     get_pareto_solutions,
     filter_and_centroid,
     suggest_relaxation,
+    get_blockgroup_frl,
+    get_blockgroup_aalpi,
+    get_zone_boundaries,
 )
 from LLM.exploration.zoning_agent import ZoningAgent
 from Zone_Generation.Config.metrics_config import (
@@ -208,6 +211,44 @@ async def get_geojson_data():
         geojson = load_geojson()
         return JSONResponse(content=geojson)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/blockgroup-frl")
+async def get_blockgroup_frl_endpoint():
+    """Get FRL percentage (0-100) per blockgroup for the SES overlay."""
+    try:
+        data = get_blockgroup_frl()
+        return {"frl_pct": data}
+    except Exception as e:
+        logger.error(f"Error loading blockgroup FRL: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/blockgroup-aalpi")
+async def get_blockgroup_aalpi_endpoint():
+    """Get AALPI percentage (0-100) per blockgroup for the racial overlay."""
+    try:
+        data = get_blockgroup_aalpi()
+        return {"aalpi_pct": data}
+    except Exception as e:
+        logger.error(f"Error loading blockgroup AALPI: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/zone-boundaries/{solution_path:path}")
+async def get_zone_boundaries_endpoint(solution_path: str):
+    """Dissolved zone polygons used to render bold zone borders on overlays."""
+    try:
+        decoded_path = unquote(solution_path)
+        return JSONResponse(content=get_zone_boundaries(decoded_path))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error loading zone boundaries: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

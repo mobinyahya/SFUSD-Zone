@@ -15,6 +15,7 @@ class ZoneData:
     ge_students: float = 0.0
     ge_capacity: float = 0.0
     frl_pct: float = 0.0
+    aalpi_pct: float = 0.0
     ethnicity_pcts: dict[str, float] = field(default_factory=dict)
     
     # Programs available in zone
@@ -34,15 +35,14 @@ class ZoneData:
     avg_eng_score: Optional[float] = None
     
     # Distance
-    avg_closest_school_distance: float = 0.0
+    avg_any_ge_school_distance: float = 0.0
+    avg_farthest_ge_school_distance: float = 0.0
+    avg_out_of_zone_ge_schools: float = 0.0
     schools_in_attendance_area: int = 0
     
     # Utility
     avg_max_utility: float = 0.0
     avg_logsum_utility: float = 0.0
-
-    # Segregation
-    ethnicity_entropy: float = 0.0  # Shannon entropy of zone ethnic composition
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -51,6 +51,7 @@ class ZoneData:
             'ge_students': self.ge_students,
             'ge_capacity': self.ge_capacity,
             'frl_pct': self.frl_pct,
+            'aalpi_pct': self.aalpi_pct,
             'ethnicity_pcts': self.ethnicity_pcts,
             'programs': self.programs,
             'total_programs': self.total_programs,
@@ -60,11 +61,12 @@ class ZoneData:
             'seat_disparity': self.seat_disparity,
             'avg_math_score': self.avg_math_score,
             'avg_eng_score': self.avg_eng_score,
-            'avg_closest_school_distance': self.avg_closest_school_distance,
+            'avg_any_ge_school_distance': self.avg_any_ge_school_distance,
+            'avg_farthest_ge_school_distance': self.avg_farthest_ge_school_distance,
+            'avg_out_of_zone_ge_schools': self.avg_out_of_zone_ge_schools,
             'schools_in_attendance_area': self.schools_in_attendance_area,
             'avg_max_utility': self.avg_max_utility,
             'avg_logsum_utility': self.avg_logsum_utility,
-            'ethnicity_entropy': self.ethnicity_entropy,
         }
 
 

@@ -12,6 +12,7 @@ let totalPareto = 0;
 let currentFilteredCount = 0;
 let feasibleStats = {};
 let availableStats = {};
+let centroidMetrics = {};
 let categories = {};
 
 // Debounce
@@ -171,11 +172,19 @@ async function applyFilters() {
     if (data.solution_count === 0) {
         showZeroState();
         updateCentroidSummary(null);
+        centroidMetrics = {};
     } else {
         hideZeroState();
         updateCentroidSummary(data.centroid_metrics);
+        centroidMetrics = data.centroid_metrics || {};
         if (data.centroid_path) loadSolution(data.centroid_path);
     }
+    document.querySelectorAll('.metric-slider-row').forEach(row => {
+        const col = row.dataset.col;
+        if (col && solutionSpaceStats[col] && solutionSpaceStats[col].direction != null) {
+            updateSliderVisuals(row, col);
+        }
+    });
 }
 
 function debouncedApplyFilters() {
@@ -365,6 +374,7 @@ function buildSliderRow(col) {
             </div>
             <input type="range" class="slider-min" min="${gMin}" max="${gMax}" step="${step}" value="${lo}">
             <input type="range" class="slider-max" min="${gMin}" max="${gMax}" step="${step}" value="${hi}">
+            <div class="slider-current-marker" title=""></div>
         </div>
         <div class="slider-values">
             <span class="slider-bound-value sv-lo">${formatMetricVal(col, lo)}</span>
@@ -446,6 +456,23 @@ function updateSliderVisuals(row, col) {
     } else {
         fBand.style.left = '0%';
         fBand.style.width = '100%';
+    }
+
+    const marker = row.querySelector('.slider-current-marker');
+    if (marker) {
+        const cv = centroidMetrics[col];
+        if (cv != null && isFinite(cv)) {
+            const pct = ((cv - gMin) / range) * 100;
+            if (pct >= 0 && pct <= 100) {
+                marker.style.display = '';
+                marker.style.left = pct + '%';
+                marker.title = `Current solution: ${formatMetricVal(col, cv)}`;
+            } else {
+                marker.style.display = 'none';
+            }
+        } else {
+            marker.style.display = 'none';
+        }
     }
 
     const b = filterBounds[col] || {};

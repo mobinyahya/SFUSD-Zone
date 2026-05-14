@@ -526,6 +526,19 @@
     pointer-events: none;
 }
 
+.slider-current-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: #e74c3c;
+    transform: translateX(-1px);
+    pointer-events: auto;
+    z-index: 3;
+    cursor: help;
+    border-radius: 1px;
+}
+
 .slider-track-container input[type="range"] {
     position: absolute;
     width: 100%;

@@ -36,14 +36,24 @@ class MetricSpec:
 
 class MetricColumns:
     """Column name constants for use in computation modules."""
-    THEIL_INDEX = "theil_index"
-    FRL_DISSIM = "frl_dissim"
-    BLACK_DISSIM = "black_dissim"
-    HISPANIC_DISSIM = "hispanic_dissim"
-    WHITE_DISSIM = "white_dissim"
-    ASIAN_DISSIM = "asian_dissim"
+    AALPI_MAD = "aalpi_mad"
+    FRL_MAD = "frl_mad"
+    BLACK_MAD = "black_mad"
+    HISPANIC_MAD = "hispanic_mad"
+    WHITE_MAD = "white_mad"
+    ASIAN_MAD = "asian_mad"
+    PACIFIC_ISLANDER_MAD = "pacific_islander_mad"
+    AALPI_RANGE = "aalpi_range"
+    FRL_RANGE = "frl_range"
+    BLACK_RANGE = "black_range"
+    HISPANIC_RANGE = "hispanic_range"
+    WHITE_RANGE = "white_range"
+    ASIAN_RANGE = "asian_range"
+    PACIFIC_ISLANDER_RANGE = "pacific_islander_range"
     SEAT_DISPARITY = "seat_disparity"
-    AVG_CLOSEST_ZONE_SCHOOL_DISTANCE = "avg_closest_zone_school_distance"
+    AVG_ANY_ZONE_GE_SCHOOL_DISTANCE = "avg_any_zone_ge_school_distance"
+    AVG_FARTHEST_ZONE_GE_SCHOOL_DISTANCE = "avg_farthest_zone_ge_school_distance"
+    AVG_OUT_OF_ZONE_GE_SCHOOLS = "avg_out_of_zone_ge_schools_within_half_mile"
     AVG_SCHOOLS_IN_ATTENDANCE_AREA = "avg_schools_in_attendance_area"
     BOUNDARY_COST = "boundary_cost"
     COMPACTNESS = "compactness"
@@ -53,10 +63,13 @@ class MetricColumns:
     AVG_GE = "avg_GE_per_zone"
     MAD_MATH_SCORE = "mad_math_score"
     MAD_ENG_SCORE = "mad_eng_score"
+    MATH_SCORE_RANGE = "math_score_range"
+    ENG_SCORE_RANGE = "eng_score_range"
     AVG_MAX_UTILITY = "avg_max_utility"
     AVG_LOGSUM_UTILITY = "avg_logsum_utility"
     AVG_GE_SCHOOLS_WITHIN_HALF_MILE = "avg_ge_schools_within_half_mile"
     NUM_ZONES = "num_zones"
+    CONTIGUOUS = "contiguous"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -103,20 +116,22 @@ CATEGORY_DESCRIPTIONS = {
 
 DIVERSITY_METRICS = [
     MetricSpec(
-        column="theil_index",
+        column="aalpi_mad",
         display_name="Racial Diversity",
-        description="Theil Entropy index measuring racial diversity across zones. Compares the racial composition (Black, Hispanic/Latinx, White, Asian) within each zone to the district-wide composition, weighted by zone population. Lower = more diverse (zones reflect the district mix), higher = less diverse (racial groups concentrated in certain zones). Range 0-1.",
+        description="Mean absolute deviation of zone-level AALPI share (Black + Hispanic/Latinx + Pacific Islander) from the district-wide AALPI share. For each non-empty zone we compute |zone_AALPI_proportion - district_AALPI_proportion|, then average across zones. 0 = every zone matches the district AALPI composition; higher = AALPI students concentrated in fewer zones. Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=True,
         short_name="Racial",
         chart_type="ethnicity",
         chart_title="Racial Diversity",
+        chart_unit="%",
+        chart_max=100,
     ),
     MetricSpec(
-        column="frl_dissim",
-        display_name="Soceconomic Diversity",
-        description="Dissimilarity index for free/reduced lunch students. This represents the proportion of FRL students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        column="frl_mad",
+        display_name="Socioeconomic Diversity",
+        description="Mean absolute deviation of zone-level FRL share from the district-wide FRL share. For each zone we compute |zone_FRL_proportion - district_FRL_proportion|, then average across zones. 0 = every zone matches the district FRL composition, higher = larger imbalance. Range 0-1 (proportion points).",
         category="diversity",
         direction="minimize",
         is_core=True,
@@ -128,37 +143,102 @@ DIVERSITY_METRICS = [
         chart_title="Socioeconomic Diversity",
     ),
     MetricSpec(
-        column="black_dissim",
+        column="black_mad",
         display_name="Black Representation",
-        description="Dissimilarity index for Black/African American students. This represents the proportion of Black/African American students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Mean absolute deviation of zone-level Black/African American share from the district-wide share. For each zone we compute |zone_proportion - district_proportion|, then average across zones. 0 = every zone matches the district Black/African American composition, higher = larger imbalance. Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="hispanic_dissim",
+        column="hispanic_mad",
         display_name="Hispanic/Latinx Representation",
-        description="Dissimilarity index for Hispanic/Latinx students. This represents the proportion of Hispanic/Latinx students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Mean absolute deviation of zone-level Hispanic/Latinx share from the district-wide share. For each zone we compute |zone_proportion - district_proportion|, then average across zones. 0 = every zone matches the district Hispanic/Latinx composition, higher = larger imbalance. Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="white_dissim",
+        column="white_mad",
         display_name="White Representation",
-        description="Dissimilarity index for White students. This represents the proportion of white students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Mean absolute deviation of zone-level White share from the district-wide share. For each zone we compute |zone_proportion - district_proportion|, then average across zones. 0 = every zone matches the district White composition, higher = larger imbalance. Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=False,
     ),
     MetricSpec(
-        column="asian_dissim",
+        column="asian_mad",
         display_name="Asian Representation",
-        description="Dissimilarity index for Asian students. This represents the proportion of asian students that would need to move between zones for even distribution. 0 = perfectly integrated, 1 = completely segregated.",
+        description="Mean absolute deviation of zone-level Asian share from the district-wide share. For each zone we compute |zone_proportion - district_proportion|, then average across zones. 0 = every zone matches the district Asian composition, higher = larger imbalance. Range 0-1.",
         category="diversity",
         direction="minimize",
         is_core=False,
-    )
+    ),
+    MetricSpec(
+        column="pacific_islander_mad",
+        display_name="Pacific Islander Representation",
+        description="Mean absolute deviation of zone-level Pacific Islander share from the district-wide share. For each zone we compute |zone_proportion - district_proportion|, then average across zones. 0 = every zone matches the district Pacific Islander composition, higher = larger imbalance. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    # Range metrics (max - min percentage across zones)
+    MetricSpec(
+        column="aalpi_range",
+        display_name="AALPI Range",
+        description="Range (max - min) of zone-level AALPI share (Black + Hispanic/Latinx + Pacific Islander) across all non-empty zones. Shows the full spread of AALPI representation. 0 = all zones identical; higher = wider gap between most and least AALPI-concentrated zones. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="frl_range",
+        display_name="SES Range",
+        description="Range (max - min) of zone-level Free/Reduced Lunch share across all non-empty zones. Shows the full spread of socioeconomic composition. 0 = all zones identical; higher = wider gap between most and least FRL-concentrated zones. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="black_range",
+        display_name="Black Range",
+        description="Range (max - min) of zone-level Black/African American share across all non-empty zones. 0 = all zones identical; higher = wider gap. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="hispanic_range",
+        display_name="Hispanic/Latinx Range",
+        description="Range (max - min) of zone-level Hispanic/Latinx share across all non-empty zones. 0 = all zones identical; higher = wider gap. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="white_range",
+        display_name="White Range",
+        description="Range (max - min) of zone-level White share across all non-empty zones. 0 = all zones identical; higher = wider gap. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="asian_range",
+        display_name="Asian Range",
+        description="Range (max - min) of zone-level Asian share across all non-empty zones. 0 = all zones identical; higher = wider gap. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="pacific_islander_range",
+        display_name="Pacific Islander Range",
+        description="Range (max - min) of zone-level Pacific Islander share across all non-empty zones. 0 = all zones identical; higher = wider gap. Range 0-1.",
+        category="diversity",
+        direction="minimize",
+        is_core=False,
+    ),
 ]
 
 
@@ -168,17 +248,43 @@ DIVERSITY_METRICS = [
 
 PROXIMITY_METRICS = [
     MetricSpec(
-        column="avg_closest_zone_school_distance",
-        display_name="Avg Distance to Closest In-Zone School",
-        description="Average distance to nearest in-zone school (miles) across all students.",
+        column="avg_any_zone_ge_school_distance",
+        display_name="Avg Distance to Any In-Zone GE School",
+        description="Average distance (miles) from each area to all GE schools in its zone, averaged across all areas. Lower means GE schools are closer on average.",
         category="proximity",
         direction="minimize",
         is_core=True,
-        short_name="Avg Distance",
+        short_name="Avg GE Distance",
         chart_type="bar",
-        chart_field="avg_closest_school_distance",
+        chart_field="avg_any_ge_school_distance",
         chart_unit="miles",
-        chart_title="Avg Distance to Closest School",
+        chart_title="Avg Distance to Any In-Zone GE School",
+    ),
+    MetricSpec(
+        column="avg_farthest_zone_ge_school_distance",
+        display_name="Avg Distance to Farthest In-Zone GE School",
+        description="Average distance (miles) from each area to the farthest GE school in its zone, averaged across all areas. Lower means zones are more compact around GE schools.",
+        category="proximity",
+        direction="minimize",
+        is_core=True,
+        short_name="Farthest GE Distance",
+        chart_type="bar",
+        chart_field="avg_farthest_ge_school_distance",
+        chart_unit="miles",
+        chart_title="Avg Distance to Farthest In-Zone GE School",
+    ),
+    MetricSpec(
+        column="avg_out_of_zone_ge_schools_within_half_mile",
+        display_name="Nearby Out-of-Zone GE Schools",
+        description="Average number of GE schools within 0.5 miles of each area that are in a different zone. Lower means nearby GE schools are in the same zone as the area.",
+        category="proximity",
+        direction="minimize",
+        is_core=True,
+        short_name="Out-of-Zone GE",
+        chart_type="bar",
+        chart_field="avg_out_of_zone_ge_schools",
+        chart_unit="Schools",
+        chart_title="Out-of-Zone GE Schools Within 0.5 Miles",
     ),
 
     MetricSpec(
@@ -414,6 +520,15 @@ STRUCTURE_METRICS = [
         is_core=False,
         short_name="Zones",
     ),
+    MetricSpec(
+        column="contiguous",
+        display_name="Contiguous",
+        description="1 if every zone forms a single connected geographic region anchored on its centroid school; 0 otherwise. A non-contiguous solution typically means the solver returned a relaxed or partially infeasible result.",
+        category="structure",
+        direction="maximize",
+        is_core=False,
+        short_name="Contig",
+    ),
 ]
 
 
@@ -449,6 +564,23 @@ QUALITY_METRICS = [
         chart_unit="Score",
         chart_title="English Scores by Zone",
         chart_normalize=True,
+    ),
+    # Range metrics for quality scores
+    MetricSpec(
+        column="math_score_range",
+        display_name="Math Score Range",
+        description="Range (max - min) of capacity-weighted average math scores across zones. Shows the full spread of math quality. Lower means more equitable distribution.",
+        category="quality",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="eng_score_range",
+        display_name="English Score Range",
+        description="Range (max - min) of capacity-weighted average English scores across zones. Shows the full spread of English quality. Lower means more equitable distribution.",
+        category="quality",
+        direction="minimize",
+        is_core=False,
     ),
 ]
 

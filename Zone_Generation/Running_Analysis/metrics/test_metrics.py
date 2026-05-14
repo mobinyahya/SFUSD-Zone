@@ -59,7 +59,9 @@ def test_metrics_calculator():
         print(f"  Special ed: {zd.special_ed_count}")
         print(f"  Avg GS rating: {zd.avg_greatschools_rating:.2f}")
         print(f"  Avg math score: {zd.avg_math_score:.0f}")
-        print(f"  Avg closest school dist: {zd.avg_closest_school_distance:.3f}")
+        print(f"  Avg any GE school dist: {zd.avg_any_ge_school_distance:.3f}")
+        print(f"  Avg farthest GE school dist: {zd.avg_farthest_ge_school_distance:.3f}")
+        print(f"  Avg out-of-zone GE schools: {zd.avg_out_of_zone_ge_schools:.3f}")
     
     print("\n✓ All tests passed!")
     return True

@@ -113,6 +113,16 @@ class ZoningAgent:
         # Load and process solutions
         self.all_solutions = load_solutions(csv_path)
 
+        import pandas as pd
+        raw = pd.read_csv(csv_path, usecols=["path", "contiguous"])
+        if "contiguous" not in raw.columns:
+            raise ValueError(f"CSV at {csv_path} is missing required 'contiguous' column.")
+        contiguous_paths = set(raw.loc[raw["contiguous"] == True, "path"])
+        before_count = len(self.all_solutions)
+        self.all_solutions = self.all_solutions[self.all_solutions["path"].isin(contiguous_paths)]
+        if before_count > len(self.all_solutions):
+            print(f"Dropped {before_count - len(self.all_solutions)} non-contiguous solutions")
+
         metric_cols = [m.column for m in ALL_METRICS if m.column in self.all_solutions.columns]
         before_count = len(self.all_solutions)
         self.all_solutions = self.all_solutions.dropna(subset=metric_cols)

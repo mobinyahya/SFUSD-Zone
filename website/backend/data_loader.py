@@ -19,7 +19,7 @@ from LLM.exploration.pareto import (
     compute_pareto_frontier,
     get_centroid_solution,
 )
-from Zone_Generation.Config.Constants import zone_colors
+from Zone_Generation.Config.Constants import zone_colors, AREA_ETHNICITIES, AALPI_ETHNICITIES
 from Zone_Generation.Config.metrics_config import CORE_METRICS, ALL_METRICS, METRIC_BY_COLUMN
 from LLM.exploration.filters import FilterState, FilterBounds, apply_filters, find_relaxation_needed
 
@@ -37,6 +37,9 @@ _pareto_cache = None
 _all_metrics_stats_cache = None
 _pareto_percentiles_cache = None
 _category_percentiles_cache = None
+_blockgroup_frl_cache = None
+_blockgroup_aalpi_cache = None
+_zone_boundaries_cache: dict[str, dict] = {}
 
 
 def load_graph() -> nx.Graph:
@@ -176,7 +179,9 @@ def get_zone_demographics(solution_path: str) -> dict[int, dict]:
         - special_ed_count: count of special education programs
         - avg_math_score: average math test score
         - avg_eng_score: average English test score
-        - avg_closest_school_distance: average distance to closest school
+        - avg_any_ge_school_distance: average distance to any in-zone GE school
+        - avg_farthest_ge_school_distance: average distance to farthest in-zone GE school
+        - avg_out_of_zone_ge_schools: average number of out-of-zone GE schools within 0.5 miles
         - schools_in_attendance_area: number of schools in zone
         - avg_max_utility: average maximum utility
         - avg_logsum_utility: average logsum utility
@@ -255,6 +260,80 @@ def convert_shapefile_to_geojson():
     gdf.to_file(GEOJSON_PATH, driver="GeoJSON")
     print(f"Saved GeoJSON to {GEOJSON_PATH}")
     return gdf
+
+
+def get_blockgroup_frl() -> dict[int, float]:
+    """Return {blockgroup_id: FRL_pct (0-100)} for every node in the graph.
+
+    Computed from node FRL count / ge_students; cached after first call.
+    """
+    global _blockgroup_frl_cache
+    if _blockgroup_frl_cache is not None:
+        return _blockgroup_frl_cache
+
+    G = load_graph()
+    out: dict[int, float] = {}
+    for _, data in G.nodes(data=True):
+        bg_id = data.get("area_id")
+        if bg_id is None:
+            continue
+        students = data.get("ge_students") or 0
+        frl = data.get("FRL") or 0
+        pct = (frl / students * 100.0) if students > 0 else 0.0
+        out[int(bg_id)] = float(pct)
+
+    _blockgroup_frl_cache = out
+    return out
+
+
+def get_blockgroup_aalpi() -> dict[int, float]:
+    """Return {blockgroup_id: AALPI_pct (0-100)} for every node in the graph.
+
+    AALPI = Black/African American + Hispanic/Latinx + Pacific Islander, expressed
+    as a share of the blockgroup's total ethnicity counts. Cached after first call.
+    """
+    global _blockgroup_aalpi_cache
+    if _blockgroup_aalpi_cache is not None:
+        return _blockgroup_aalpi_cache
+
+    G = load_graph()
+    out: dict[int, float] = {}
+    for _, data in G.nodes(data=True):
+        bg_id = data.get("area_id")
+        if bg_id is None:
+            continue
+        aalpi = sum((data.get(k) or 0) for k in AALPI_ETHNICITIES)
+        total = sum((data.get(k) or 0) for k in AREA_ETHNICITIES)
+        pct = (aalpi / total * 100.0) if total > 0 else 0.0
+        out[int(bg_id)] = float(pct)
+
+    _blockgroup_aalpi_cache = out
+    return out
+
+
+def get_zone_boundaries(solution_path: str) -> dict:
+    """Return a GeoJSON FeatureCollection with one polygon per zone (dissolved).
+
+    Used to overlay bold zone borders on top of the per-blockgroup FRL choropleth.
+    Cached per solution_path.
+    """
+    if solution_path in _zone_boundaries_cache:
+        return _zone_boundaries_cache[solution_path]
+
+    bg_zone = load_zone_dict(solution_path)  # {bg_id: zone_id}
+    geojson = load_geojson()
+
+    gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
+    gdf["BlockGroup"] = gdf["BlockGroup"].astype("int64")
+    gdf["zone_id"] = gdf["BlockGroup"].map(bg_zone)
+    gdf = gdf.dropna(subset=["zone_id"]).copy()
+    gdf["zone_id"] = gdf["zone_id"].astype("int64")
+
+    dissolved = gdf.dissolve(by="zone_id", as_index=False)[["zone_id", "geometry"]]
+    result = json.loads(dissolved.to_json())
+
+    _zone_boundaries_cache[solution_path] = result
+    return result
 
 
 def load_geojson() -> dict:
@@ -548,6 +627,15 @@ def get_pareto_solutions() -> pd.DataFrame:
         return _pareto_cache
 
     all_solutions = load_solutions(CSV_PATH)
+
+    raw = pd.read_csv(CSV_PATH, usecols=["path", "contiguous"])
+    if "contiguous" not in raw.columns:
+        raise ValueError(f"CSV at {CSV_PATH} is missing required 'contiguous' column.")
+    contiguous_paths = set(raw.loc[raw["contiguous"] == True, "path"])
+    before = len(all_solutions)
+    all_solutions = all_solutions[all_solutions["path"].isin(contiguous_paths)]
+    print(f"Dropped {before - len(all_solutions)} non-contiguous solutions ({len(all_solutions)} remain)")
+
     all_solutions = all_solutions.dropna(subset=[m.column for m in ALL_METRICS if m.column in all_solutions.columns])
     all_solutions = all_solutions.drop_duplicates(subset="path")
     normalized = normalize_metrics(all_solutions)

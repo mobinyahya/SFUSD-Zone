@@ -2,10 +2,9 @@
 Diversity and demographic metrics for zoning.
 """
 
-import math
 import networkx as nx
 
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES
+from Zone_Generation.Config.Constants import AALPI_ETHNICITIES, AREA_ETHNICITIES
 from Zone_Generation.Config.metrics_config import MetricColumns
 
 
@@ -15,30 +14,29 @@ def compute_diversity_metrics(
     zone_blocks: dict[int, list[int]]
 ) -> tuple[dict[str, float], dict[int, dict]]:
     """
-    Compute dissimilarity index for FRL and each ethnicity group.
+    Compute mean absolute deviation (MAD) of zone-level group shares from the
+    district-wide share, for FRL, each individual ethnicity, and AALPI
+    (Black + Hispanic/Latinx + Pacific Islander).
 
-    Dissimilarity index D for a group:
-        D = Σ |n_i - T_i × (n / T)| / (2 × n)
-    where n_i = group count in zone i, T_i = total students in zone i,
-    n = total group students district-wide, T = total students district-wide.
-    Range: 0 (perfectly integrated) to 1 (completely segregated).
+        MAD_g = mean over non-empty zones of |zone_g_proportion - district_g_proportion|
 
-    Per-zone demographics (frl_pct, ethnicity_pcts) are unchanged.
+    Lower = zones match the district composition for group g. Range 0-1.
 
     Returns:
-        Tuple of (aggregated_metrics, per_zone_demographics)
+        Tuple of (aggregated_metrics, per_zone_demographics) where per-zone
+        demographics include frl_pct, ethnicity_pcts (per individual ethnicity),
+        and aalpi_pct (combined AALPI share).
     """
-    # Map AREA_ETHNICITIES node attributes to MetricColumns dissim keys
     eth_to_column = {
-        "Ethnicity_Black_or_African_American": MetricColumns.BLACK_DISSIM,
-        "Ethnicity_Hispanic/Latinx": MetricColumns.HISPANIC_DISSIM,
-        "Ethnicity_White": MetricColumns.WHITE_DISSIM,
-        "Ethnicity_Asian": MetricColumns.ASIAN_DISSIM,
+        "Ethnicity_Black_or_African_American": MetricColumns.BLACK_MAD,
+        "Ethnicity_Hispanic/Latinx": MetricColumns.HISPANIC_MAD,
+        "Ethnicity_White": MetricColumns.WHITE_MAD,
+        "Ethnicity_Asian": MetricColumns.ASIAN_MAD,
+        "Ethnicity_PacificIslander": MetricColumns.PACIFIC_ISLANDER_MAD,
     }
 
-    # Accumulate per-zone counts
     per_zone_demos = {}
-    zone_counts: list[dict] = []  # list of {ge_students, FRL, eth1, eth2, ...}
+    zone_counts: list[dict] = []
 
     for zone_id, blocks in zone_blocks.items():
         zone_demo = {'ge_students': 0.0, 'FRL': 0.0}
@@ -53,46 +51,69 @@ def compute_diversity_metrics(
             for ethnicity in AREA_ETHNICITIES:
                 zone_demo[ethnicity] += G.nodes[block][ethnicity]
 
-        # Per-zone proportions (unchanged)
+        zone_demo['AALPI'] = sum(zone_demo[eth] for eth in AALPI_ETHNICITIES)
+
         if zone_demo['ge_students'] > 0:
             frl_pct = zone_demo['FRL'] / zone_demo['ge_students']
             ethnicity_pcts = {
                 eth: zone_demo[eth] / zone_demo['ge_students']
                 for eth in AREA_ETHNICITIES
             }
+            aalpi_pct = zone_demo['AALPI'] / zone_demo['ge_students']
         else:
             frl_pct = 0.0
             ethnicity_pcts = {eth: 0.0 for eth in AREA_ETHNICITIES}
+            aalpi_pct = 0.0
 
         per_zone_demos[zone_id] = {
             'ge_students': zone_demo['ge_students'],
             'frl_pct': frl_pct,
             'ethnicity_pcts': ethnicity_pcts,
+            'aalpi_pct': aalpi_pct,
         }
         zone_counts.append(zone_demo)
 
-    # District totals
+    # District-wide shares (student-weighted)
     T = sum(z['ge_students'] for z in zone_counts)
-    total_frl = sum(z['FRL'] for z in zone_counts)
-    total_eth = {eth: sum(z[eth] for z in zone_counts) for eth in AREA_ETHNICITIES}
+    district_frl_pct = (sum(z['FRL'] for z in zone_counts) / T) if T > 0 else 0.0
+    district_eth_pct = {
+        eth: G.graph['R'][eth] for eth in AREA_ETHNICITIES
+    }
+    district_aalpi_pct = sum(district_eth_pct[eth] for eth in AALPI_ETHNICITIES)
 
-    # Dissimilarity index: D = Σ |n_i - T_i × (n/T)| / (2 × n)
-    def _dissim(group_counts: list[float], zone_totals: list[float], n: float) -> float:
-        if n <= 0 or T <= 0:
+    nonempty = [z for z in zone_counts if z['ge_students'] > 0]
+
+    def _mad(zone_props: list[float], district_prop: float) -> float:
+        if not zone_props:
             return 0.0
-        return sum(abs(ni - ti * (n / T)) for ni, ti in zip(group_counts, zone_totals)) / (2 * n)
+        return sum(abs(p - district_prop) for p in zone_props) / len(zone_props)
 
-    zone_totals = [z['ge_students'] for z in zone_counts]
+    def _range(zone_props: list[float]) -> float:
+        if len(zone_props) < 2:
+            return 0.0
+        return max(zone_props) - min(zone_props)
+
+    eth_to_range_column = {
+        "Ethnicity_Black_or_African_American": MetricColumns.BLACK_RANGE,
+        "Ethnicity_Hispanic/Latinx": MetricColumns.HISPANIC_RANGE,
+        "Ethnicity_White": MetricColumns.WHITE_RANGE,
+        "Ethnicity_Asian": MetricColumns.ASIAN_RANGE,
+        "Ethnicity_PacificIslander": MetricColumns.PACIFIC_ISLANDER_RANGE,
+    }
 
     metrics: dict[str, float] = {}
-    # FRL dissimilarity
-    frl_counts = [z['FRL'] for z in zone_counts]
-    metrics[MetricColumns.FRL_DISSIM] = _dissim(frl_counts, zone_totals, total_frl)
+    frl_props = [z['FRL'] / z['ge_students'] for z in nonempty]
+    metrics[MetricColumns.FRL_MAD] = _mad(frl_props, district_frl_pct)
+    metrics[MetricColumns.FRL_RANGE] = _range(frl_props)
 
-    # Per-ethnicity dissimilarity
     for eth, col in eth_to_column.items():
-        eth_counts = [z[eth] for z in zone_counts]
-        metrics[col] = _dissim(eth_counts, zone_totals, total_eth[eth])
+        eth_props = [z[eth] / z['ge_students'] for z in nonempty]
+        metrics[col] = _mad(eth_props, district_eth_pct[eth])
+        metrics[eth_to_range_column[eth]] = _range(eth_props)
+
+    aalpi_props = [z['AALPI'] / z['ge_students'] for z in nonempty]
+    metrics[MetricColumns.AALPI_MAD] = _mad(aalpi_props, district_aalpi_pct)
+    metrics[MetricColumns.AALPI_RANGE] = _range(aalpi_props)
 
     return metrics, per_zone_demos
 
@@ -135,81 +156,3 @@ def compute_seat_disparity(
 
     solution_value = total_diff / valid_zones if valid_zones > 0 else 0.0
     return solution_value, per_zone_data
-
-
-def compute_theil_index(
-    zone_dict: dict[int, int],
-    G: nx.Graph,
-    zone_blocks: dict[int, list[int]]
-) -> tuple[dict[str, float], dict[int, dict]]:
-    """
-    Compute Theil's Information Theory Index for ethnic segregation.
-
-    The Theil Index measures segregation by comparing zone-level entropy
-    to district-wide entropy:
-
-        T = Σ (t_j / T) × (E - E_j) / E
-
-    where:
-        - T = total students, t_j = zone j students
-        - E = district-wide Shannon entropy, E_j = zone j entropy
-
-    Lower values indicate less segregation (zones match district composition).
-    Range: 0 (no segregation) to ~1 (high segregation)
-
-    Returns:
-        Tuple of (aggregated_metrics, per_zone_data)
-    """
-    # 1. Calculate district-wide entropy E using 4 main ethnic groups
-    district_eth_props = {eth: G.graph['R'][eth] for eth in AREA_ETHNICITIES}
-    E_district = -sum(
-        p * math.log(p) for p in district_eth_props.values() if p > 0
-    )
-
-    # 2. Calculate per-zone entropy and populations
-    zone_entropies = {}
-    zone_populations = {}
-    total_students = 0.0
-
-    for zone_id, blocks in zone_blocks.items():
-        zone_demo = {eth: 0.0 for eth in AREA_ETHNICITIES}
-        zone_demo['ge_students'] = 0.0
-
-        for block in blocks:
-            if block not in G.nodes:
-                continue
-            zone_demo['ge_students'] += G.nodes[block]['ge_students']
-            for eth in AREA_ETHNICITIES:
-                zone_demo[eth] += G.nodes[block][eth]
-
-        zone_populations[zone_id] = zone_demo['ge_students']
-        total_students += zone_demo['ge_students']
-
-        # Zone entropy
-        if zone_demo['ge_students'] > 0:
-            zone_eth_props = {
-                eth: zone_demo[eth] / zone_demo['ge_students']
-                for eth in AREA_ETHNICITIES
-            }
-            zone_entropies[zone_id] = -sum(
-                p * math.log(p) for p in zone_eth_props.values() if p > 0
-            )
-        else:
-            zone_entropies[zone_id] = 0.0
-
-    # 3. Compute Theil Index (student-weighted)
-    theil_index = 0.0
-    if E_district > 0 and total_students > 0:
-        for zone_id in zone_blocks:
-            t_j = zone_populations.get(zone_id, 0)
-            E_j = zone_entropies.get(zone_id, 0)
-            weight = t_j / total_students
-            theil_index += weight * (E_district - E_j) / E_district
-
-    # 4. Build per-zone data
-    per_zone_data = {
-        zone_id: {'entropy': zone_entropies.get(zone_id, 0.0)}
-        for zone_id in zone_blocks
-    }
-
-    return {MetricColumns.THEIL_INDEX: theil_index}, per_zone_data

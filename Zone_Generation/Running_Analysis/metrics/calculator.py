@@ -8,12 +8,13 @@ from typing import Optional
 from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.Running_Analysis.metrics.base import MetricsResult, ZoneData
 from Zone_Generation.Running_Analysis.metrics.diversity import (
-    compute_diversity_metrics, compute_seat_disparity, compute_theil_index
+    compute_diversity_metrics, compute_seat_disparity
 )
 from Zone_Generation.Running_Analysis.metrics.distance import compute_distance_metrics
-from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics, compute_ge_proximity_metrics
+from Zone_Generation.Running_Analysis.metrics.programs import compute_program_metrics, compute_ge_proximity_metrics, get_ge_schools
 from Zone_Generation.Running_Analysis.metrics.quality import compute_quality_metrics
 from Zone_Generation.Running_Analysis.metrics.choice import compute_choice_metrics
+from Zone_Generation.Running_Analysis.metrics.contiguity import compute_contiguity_metrics
 
 
 class ZoneMetricsCalculator:
@@ -106,41 +107,38 @@ class ZoneMetricsCalculator:
                 result.zone_data[zone_id].seat_disparity = sd_data.get('seat_disparity')
                 result.zone_data[zone_id].ge_capacity = sd_data.get('ge_capacity', 0.0)
 
-        # Add Theil segregation index
-        theil_metrics, per_zone_entropy = compute_theil_index(
-            self.zone_dict, self.G, self.zone_blocks
-        )
-        result.update(theil_metrics)
-
         # Update zone data with demographics
         for zone_id, demos in per_zone_demos.items():
             if zone_id in result.zone_data:
                 result.zone_data[zone_id].ge_students = demos['ge_students']
                 result.zone_data[zone_id].frl_pct = demos['frl_pct']
+                result.zone_data[zone_id].aalpi_pct = demos['aalpi_pct']
                 result.zone_data[zone_id].ethnicity_pcts = demos['ethnicity_pcts']
 
-        # Update zone data with entropy from Theil calculation
-        for zone_id, ent_data in per_zone_entropy.items():
-            if zone_id in result.zone_data:
-                result.zone_data[zone_id].ethnicity_entropy = ent_data['entropy']
-
         # 2. Distance metrics
+        is_local = self.config.get('is_local', False)
+        ge_schools = get_ge_schools(is_local)
         distance_metrics, per_zone_dist = compute_distance_metrics(
-            self.zone_dict, self.G, self.zone_blocks, self.zone_schools
+            self.zone_dict, self.G, self.zone_blocks, self.zone_schools, ge_schools
         )
         result.update(distance_metrics)
-        
+
         for zone_id, dist_data in per_zone_dist.items():
             if zone_id in result.zone_data:
-                result.zone_data[zone_id].avg_closest_school_distance = (
-                    dist_data['avg_closest_school_distance']
+                result.zone_data[zone_id].avg_any_ge_school_distance = (
+                    dist_data['avg_any_ge_school_distance']
+                )
+                result.zone_data[zone_id].avg_farthest_ge_school_distance = (
+                    dist_data['avg_farthest_ge_school_distance']
+                )
+                result.zone_data[zone_id].avg_out_of_zone_ge_schools = (
+                    dist_data['avg_out_of_zone_ge_schools']
                 )
                 result.zone_data[zone_id].schools_in_attendance_area = (
                     dist_data['schools_in_attendance_area']
                 )
         
         # 3. Program metrics
-        is_local = self.config.get('is_local', False)
         program_metrics, per_zone_prog = compute_program_metrics(
             self.zone_dict, self.G, self.zone_schools, is_local
         )
@@ -186,6 +184,12 @@ class ZoneMetricsCalculator:
             MetricColumns.BOUNDARY_COST: boundary_cost,
             MetricColumns.COMPACTNESS: boundary_cost / num_zones if num_zones else 0,
         })
+
+        # 5b. Contiguity
+        contiguity_metrics = compute_contiguity_metrics(
+            self.zone_dict, self.G, self.config.get('centroids_type')
+        )
+        result.update(contiguity_metrics)
 
         # 6. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):

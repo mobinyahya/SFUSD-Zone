@@ -87,7 +87,13 @@ AREA_ETHNICITIES = [
     "Ethnicity_Black_or_African_American",
     "Ethnicity_Hispanic/Latinx",
     "Ethnicity_White",
-    "Ethnicity_Asian"]
+    "Ethnicity_Asian",
+    "Ethnicity_PacificIslander"]
+
+AALPI_ETHNICITIES = [
+    "Ethnicity_Black_or_African_American",
+    "Ethnicity_Hispanic/Latinx",
+    "Ethnicity_PacificIslander"]
 ETHNICITY_COLS = [
     "resolved_ethnicity_American Indian",
     "resolved_ethnicity_Asian",

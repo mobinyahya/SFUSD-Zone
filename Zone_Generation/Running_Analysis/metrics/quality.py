@@ -74,10 +74,17 @@ def compute_quality_metrics(
             return 0.0
         mean = sum(values) / len(values)
         return sum(abs(v - mean) for v in values) / len(values)
+
+    def val_range(values: list[float]) -> float:
+        if len(values) < 2:
+            return 0.0
+        return max(values) - min(values)
     
     aggregated = {
         MetricColumns.MAD_MATH_SCORE: mad(zone_math_avgs),
         MetricColumns.MAD_ENG_SCORE: mad(zone_eng_avgs),
+        MetricColumns.MATH_SCORE_RANGE: val_range(zone_math_avgs),
+        MetricColumns.ENG_SCORE_RANGE: val_range(zone_eng_avgs),
     }
     
     return aggregated, per_zone_data

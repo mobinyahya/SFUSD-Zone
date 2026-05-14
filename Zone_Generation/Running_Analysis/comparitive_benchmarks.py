@@ -149,8 +149,9 @@ def cmd_aggregate(args):
         print(f"No output specified. Defaulting to: {output}")
         
     df = aggregate_results(
-        args.input, 
-        output, 
+        args.input,
+        output,
+        recompute_metrics=not args.no_recompute,
         zone_data_folder=args.zone_data_dir
     )
     print(f"Aggregated {len(df)} results")
@@ -213,8 +214,10 @@ def cmd_regenerate(args):
             # Load graph and recompute metrics
             G = get_graph(level, is_local)
             calc = ZoneMetricsCalculator(
-                result.zone_dict.copy(), G, 
-                {'is_local': is_local, 'compute_choice': args.include_choice}
+                result.zone_dict.copy(), G,
+                {'is_local': is_local,
+                 'compute_choice': args.include_choice,
+                 'centroids_type': result.config.get('centroids_type')}
             )
             metrics_result = calc.compute_all(include_choice=args.include_choice)
             
@@ -286,6 +289,8 @@ def main():
     agg_parser.add_argument('--input', '-i', required=True, help='Root folder with results')
     agg_parser.add_argument('--output', '-o', help='Output CSV file')
     agg_parser.add_argument('--zone-data-dir', '-z', help='Folder to export detailed per-zone CSVs')
+    agg_parser.add_argument('--no-recompute', action='store_true',
+                             help='Read metrics from existing result.json instead of recomputing (fast)')
     agg_parser.set_defaults(func=cmd_aggregate)
     
     # Regenerate

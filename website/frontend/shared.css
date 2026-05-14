@@ -541,6 +541,280 @@ main {
     overflow-y: auto;
 }
 
+/* --- Schools toggle control --- */
+.schools-toggle-control {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    font-size: 0.8rem;
+    min-width: 150px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.schools-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: #ffffff;
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.schools-toggle-btn:hover {
+    background: #f4f6f8;
+}
+
+.schools-toggle-btn.active {
+    background: #1a1a1a;
+    color: #ffffff;
+}
+
+.schools-toggle-dot {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* --- Highways toggle control --- */
+.highways-toggle-control {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    font-size: 0.8rem;
+    min-width: 150px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.highways-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: #ffffff;
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.highways-toggle-btn:hover {
+    background: #f4f6f8;
+}
+
+.highways-toggle-btn.active {
+    background: #1a1a1a;
+    color: #ffffff;
+}
+
+.highways-toggle-dot {
+    width: 14px;
+    height: 0;
+    border-top: 2px dotted #555;
+    flex-shrink: 0;
+}
+
+.highways-toggle-btn.active .highways-toggle-dot {
+    border-top-color: #ffffff;
+}
+
+/* --- SES (FRL) overlay control --- */
+.ses-overlay-control {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    font-size: 0.8rem;
+    min-width: 150px;
+    overflow: hidden;
+}
+
+.ses-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: #ffffff;
+    border: none;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.ses-toggle-btn:hover {
+    background: #f4f6f8;
+}
+
+.ses-toggle-btn.active {
+    background: #1a1a1a;
+    color: #ffffff;
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.ses-toggle-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fdd49e 0%, #b30000 100%);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.ses-legend {
+    padding: 8px 12px 10px;
+    background: #ffffff;
+}
+
+.ses-legend-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+
+.ses-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+
+.ses-legend-row:last-child {
+    margin-bottom: 0;
+}
+
+.ses-legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+.ses-legend-label {
+    font-size: 0.72rem;
+    color: var(--text-color);
+    white-space: nowrap;
+}
+
+.tooltip-bg-frl {
+    font-weight: 600;
+    color: #b30000;
+}
+
+/* --- AALPI (racial) overlay control --- */
+.aalpi-overlay-control {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    font-size: 0.8rem;
+    min-width: 150px;
+    overflow: hidden;
+}
+
+.aalpi-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: #ffffff;
+    border: none;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.aalpi-toggle-btn:hover {
+    background: #f4f6f8;
+}
+
+.aalpi-toggle-btn.active {
+    background: #1a1a1a;
+    color: #ffffff;
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.aalpi-toggle-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #dadaeb 0%, #54278f 100%);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.aalpi-legend {
+    padding: 8px 12px 10px;
+    background: #ffffff;
+}
+
+.aalpi-legend-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+
+.aalpi-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+
+.aalpi-legend-row:last-child {
+    margin-bottom: 0;
+}
+
+.aalpi-legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+.aalpi-legend-label {
+    font-size: 0.72rem;
+    color: var(--text-color);
+    white-space: nowrap;
+}
+
+.tooltip-bg-aalpi {
+    font-weight: 600;
+    color: #54278f;
+}
+
 #zone-legend.hidden {
     display: none;
 }
@@ -550,47 +824,6 @@ main {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--primary-color);
-}
-
-.legend-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.legend-header h4 {
-    margin: 0;
-}
-
-.toggle-schools-btn {
-    padding: 4px 8px;
-    font-size: 0.7rem;
-    background: var(--secondary-color);
-    color: white;
-    border: 1px solid var(--secondary-color);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    font-weight: 500;
-}
-
-.toggle-schools-btn:hover {
-    background: #2980b9;
-    border-color: #2980b9;
-}
-
-.toggle-schools-btn.active {
-    background: #f8f9fa;
-    color: var(--text-color);
-    border-color: var(--border-color);
-}
-
-.toggle-schools-btn.active:hover {
-    background: #ecf0f1;
-    border-color: var(--secondary-color);
 }
 
 .legend-item {
