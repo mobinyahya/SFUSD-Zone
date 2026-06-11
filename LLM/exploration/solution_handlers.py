@@ -66,7 +66,8 @@ def handle_get_solution(agent: ZoningAgent, arguments: dict) -> ToolResult:
                 direction_text = _direction_text(metric)
                 pct_info = percentile_ranks.get(metric.column)
                 pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
-                lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
+                value_text = f"{value:.3f}" if metric.direction is not None else str(value)
+                lines.append(f"- {metric.display_name}: {value_text}{pct_text} {direction_text}")
         lines.append("\nWould you like to adjust any of these metrics?")
     else:
         lines = [f"v{version_id}: {count} solutions\n"]
@@ -77,7 +78,8 @@ def handle_get_solution(agent: ZoningAgent, arguments: dict) -> ToolResult:
             direction_text = _direction_text(metric)
             pct_info = percentile_ranks.get(metric.column)
             pct_text = f" ({pct_info['percentile']}th percentile)" if pct_info else ""
-            lines.append(f"- {metric.display_name}: {value:.3f}{pct_text} {direction_text}")
+            value_text = f"{value:.3f}" if metric.direction is not None else str(value)
+            lines.append(f"- {metric.display_name}: {value_text}{pct_text} {direction_text}")
         lines.append("\nAdjust metrics?")
 
     return ToolResult("\n".join(lines), solution_path=path)

@@ -74,17 +74,17 @@ class ZoneData:
 class MetricsResult:
     """Aggregated metrics result with per-zone data."""
     
-    # Aggregated metrics (averages across zones)
-    metrics: dict[str, float] = field(default_factory=dict)
-    
+    # Aggregated metrics (averages across zones; string values allowed for ids)
+    metrics: dict[str, float | str] = field(default_factory=dict)
+
     # Per-zone detailed data
     zone_data: dict[int, ZoneData] = field(default_factory=dict)
-    
-    def update(self, new_metrics: dict[str, float]) -> None:
+
+    def update(self, new_metrics: dict[str, float | str]) -> None:
         """Update aggregated metrics."""
         self.metrics.update(new_metrics)
-    
-    def to_flat_dict(self) -> dict[str, float]:
+
+    def to_flat_dict(self) -> dict[str, float | str]:
         """Return flat dictionary of aggregated metrics for backward compatibility."""
         return self.metrics.copy()
     

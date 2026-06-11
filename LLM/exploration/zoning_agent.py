@@ -386,6 +386,7 @@ class ZoningAgent:
         """
         solution_path = None
         any_tool_called = False
+        tool_calls_log: list[dict] = []
 
         turn_prompt_tokens = 0
         turn_completion_tokens = 0
@@ -439,6 +440,12 @@ class ZoningAgent:
                 any_tool_called = True
                 tool_result = self._execute_tool(tool_name, arguments)
                 logger.info("Tool result: %d chars", len(tool_result.text))
+
+                tool_calls_log.append({
+                    "name": tool_name,
+                    "args": arguments,
+                    "solution_path": tool_result.solution_path,
+                })
 
                 if tool_result.solution_path:
                     solution_path = tool_result.solution_path
@@ -513,6 +520,7 @@ class ZoningAgent:
             "response_type": response_type,
             "solution_path": solution_path,
             "description": description,
+            "tool_calls": tool_calls_log,
             "usage": {
                 "prompt_tokens": turn_prompt_tokens,
                 "completion_tokens": turn_completion_tokens,

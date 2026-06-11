@@ -130,8 +130,60 @@ function setupEventListeners() {
     }
     if (generateBtn) generateBtn.addEventListener('click', () => generateNewSolution());
 
+    setupLoadByCode();
     setupChartsClose();
     setupResizeHandle();
+}
+
+function setupLoadByCode() {
+    const input = document.getElementById('load-by-code-input');
+    const btn = document.getElementById('load-by-code-btn');
+    const errEl = document.getElementById('load-by-code-error');
+    if (!input || !btn) return;
+
+    const showError = (msg) => {
+        if (!errEl) return;
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+    };
+    const clearError = () => {
+        if (!errEl) return;
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+    };
+
+    const submit = async () => {
+        const code = (input.value || '').trim().toLowerCase();
+        if (!/^[0-9a-z]{7}$/.test(code)) {
+            showError('Solution IDs are 7 characters (letters and digits).');
+            return;
+        }
+        clearError();
+        btn.disabled = true;
+        try {
+            const path = await loadSolutionByCode(code);
+            if (!path) {
+                showError(`No solution found for code ${code}.`);
+                return;
+            }
+            if (currentSolution) {
+                createVersion(currentSolution, path, `Map (code ${code})`);
+                renderVersionTabs();
+            }
+            input.value = '';
+        } catch (err) {
+            showError('Error loading solution.');
+            console.error(err);
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    btn.addEventListener('click', submit);
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') submit();
+    });
+    input.addEventListener('input', clearError);
 }
 
 // ============================================================================
@@ -177,11 +229,14 @@ function renderVersionTabs() {
             tab.appendChild(badges);
         }
 
-        // Description
-        if (v.label) {
+        // Solution code
+        const code = v.solutionData && v.solutionData.metrics
+            ? v.solutionData.metrics.solution_code
+            : null;
+        if (code) {
             const desc = document.createElement('span');
             desc.className = 'version-tab-desc';
-            desc.textContent = v.label;
+            desc.textContent = code;
             tab.appendChild(desc);
         }
 
@@ -265,8 +320,13 @@ async function sendInitialMessage() {
     setProcessing(true);
     showMapLoading(true);
     try {
-        const url = sessionId
-            ? `${API_BASE}/api/initial-clusters?session_id=${sessionId}`
+        const pid = localStorage.getItem('participant_id') || '';
+        const params = new URLSearchParams();
+        if (sessionId) params.set('session_id', sessionId);
+        if (pid) params.set('participant_id', pid);
+        const qs = params.toString();
+        const url = qs
+            ? `${API_BASE}/api/initial-clusters?${qs}`
             : `${API_BASE}/api/initial-clusters`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to fetch clusters: ${response.status}`);
@@ -333,6 +393,7 @@ async function sendMessageToAgent(message, mode = 'feedback') {
                 mode,
                 current_solution_index: currentVersionId,
                 saved_solutions: buildVersionsSummary(),
+                participant_id: localStorage.getItem('participant_id') || null,
             }),
             signal: controller.signal,
         });
@@ -417,7 +478,11 @@ async function selectCluster(clusterId, clusterLabel) {
         const response = await fetch(`${API_BASE}/api/select-cluster`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, cluster_id: clusterId }),
+            body: JSON.stringify({
+                session_id: sessionId,
+                cluster_id: clusterId,
+                participant_id: localStorage.getItem('participant_id') || null,
+            }),
         });
         if (!response.ok) throw new Error(`Select cluster failed: ${response.status}`);
         const data = await response.json();

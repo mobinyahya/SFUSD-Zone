@@ -98,6 +98,8 @@ function setupEventListeners() {
 
     document.getElementById('save-solution-btn').addEventListener('click', saveSolution);
 
+    setupLoadByCode();
+
     document.getElementById('non-core-toggle').addEventListener('change', e => {
         showNonCore = e.target.checked;
         if (showNonCore) {
@@ -593,6 +595,54 @@ function setupMetricSearch() {
 // Solution History (admin version)
 // ============================================================================
 
+function setupLoadByCode() {
+    const input = document.getElementById('load-by-code-input');
+    const btn = document.getElementById('load-by-code-btn');
+    const errEl = document.getElementById('load-by-code-error');
+    if (!input || !btn) return;
+
+    const showError = (msg) => {
+        if (!errEl) return;
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+    };
+    const clearError = () => {
+        if (!errEl) return;
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+    };
+
+    const submit = async () => {
+        const code = (input.value || '').trim().toLowerCase();
+        if (!/^[0-9a-z]{7}$/.test(code)) {
+            showError('Solution IDs are 7 characters (letters and digits).');
+            return;
+        }
+        clearError();
+        btn.disabled = true;
+        try {
+            const path = await loadSolutionByCode(code);
+            if (!path) {
+                showError(`No solution found for code ${code}.`);
+                return;
+            }
+            saveSolution();
+            input.value = '';
+        } catch (err) {
+            showError('Error loading solution.');
+            console.error(err);
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    btn.addEventListener('click', submit);
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') submit();
+    });
+    input.addEventListener('input', clearError);
+}
+
 function saveSolution() {
     if (!currentSolution) return;
     const path = currentSolution.path || '';
@@ -662,6 +712,17 @@ function renderAdminSolutionHistory() {
             metricsRow.appendChild(badge);
         }
         card.appendChild(metricsRow);
+
+        const code = entry.solutionData && entry.solutionData.metrics
+            ? entry.solutionData.metrics.solution_code
+            : null;
+        if (code) {
+            const codeEl = document.createElement('div');
+            codeEl.className = 'solution-card-code';
+            codeEl.textContent = code;
+            card.appendChild(codeEl);
+        }
+
         card.addEventListener('click', () => {
             currentVersionId = entry.id;
             viewVersion(entry.id);

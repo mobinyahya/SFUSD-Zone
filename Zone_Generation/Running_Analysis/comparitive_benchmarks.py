@@ -243,6 +243,25 @@ def cmd_regenerate(args):
     print(f"  Skipped: {skip_count}")
     print(f"  Errors:  {error_count}")
 
+    # Refresh the code -> solution mapping
+    from Zone_Generation.Running_Analysis.metrics.solution_code import (
+        build_solution_code_index, INDEX_FILENAME,
+    )
+    index = build_solution_code_index(root_path)
+    print(f"  Wrote {INDEX_FILENAME} with {len(index)} codes "
+          f"({sum(len(v) for v in index.values())} solutions)")
+
+
+def cmd_index(args):
+    """Build/refresh the solution-code -> folder mapping file."""
+    from Zone_Generation.Running_Analysis.metrics.solution_code import (
+        build_solution_code_index, INDEX_FILENAME,
+    )
+    root = os.path.expanduser(args.input)
+    index = build_solution_code_index(root)
+    print(f"Wrote {os.path.join(root, INDEX_FILENAME)} with {len(index)} codes "
+          f"({sum(len(v) for v in index.values())} solutions)")
+
 
 # ============================================================================
 # Main
@@ -303,7 +322,14 @@ def main():
     regen_parser.add_argument('--fail-fast', action='store_true',
                                help='Stop on first error')
     regen_parser.set_defaults(func=cmd_regenerate)
-    
+
+    # Index (build code -> solution mapping)
+    idx_parser = subparsers.add_parser('index',
+                                        help='Build/refresh solution_codes.json mapping')
+    idx_parser.add_argument('--input', '-i', required=True,
+                             help='Root folder containing benchmark results')
+    idx_parser.set_defaults(func=cmd_index)
+
     args = parser.parse_args()
     
     if args.command is None:

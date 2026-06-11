@@ -15,6 +15,7 @@ from Zone_Generation.Running_Analysis.metrics.programs import compute_program_me
 from Zone_Generation.Running_Analysis.metrics.quality import compute_quality_metrics
 from Zone_Generation.Running_Analysis.metrics.choice import compute_choice_metrics
 from Zone_Generation.Running_Analysis.metrics.contiguity import compute_contiguity_metrics
+from Zone_Generation.Running_Analysis.metrics.solution_code import compute_solution_code
 
 
 class ZoneMetricsCalculator:
@@ -190,6 +191,9 @@ class ZoneMetricsCalculator:
             self.zone_dict, self.G, self.config.get('centroids_type')
         )
         result.update(contiguity_metrics)
+
+        # 5c. Solution code (deterministic 7-char base36 id for the partition)
+        result.update({MetricColumns.SOLUTION_CODE: compute_solution_code(self.zone_dict)})
 
         # 6. Choice metrics (optional)
         if include_choice and self.config.get('compute_choice', True):

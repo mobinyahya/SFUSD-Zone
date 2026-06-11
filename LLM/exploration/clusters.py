@@ -34,9 +34,17 @@ THEME_PERCENTILE_CUTOFF = {
 
 
 def vectorize_solutions(df: pd.DataFrame, columns: list[str] | None = None) -> np.ndarray:
-    """Convert solution DataFrame to numpy array of metric values."""
+    """Convert solution DataFrame to numpy array of metric values.
+
+    Skips non-numeric metrics (direction is None), e.g. solution_code.
+    """
     all_cols = columns if columns else get_metric_columns()
-    metric_cols = [col for col in all_cols if col in df.columns]
+    metric_cols = [
+        col for col in all_cols
+        if col in df.columns
+        and METRIC_BY_COLUMN.get(col) is not None
+        and METRIC_BY_COLUMN[col].direction is not None
+    ]
     return df[metric_cols].values.astype(np.float64)
 
 
@@ -52,6 +60,8 @@ def get_cluster_bounds(
     for metric in ALL_METRICS:
         col = metric.column
         if col not in cluster_df.columns:
+            continue
+        if metric.direction is None:
             continue
         bounds[metric.display_name] = FilterBounds(
             min_bound=float(cluster_df[col].min()),

@@ -173,12 +173,13 @@ main {
 #comparison-panel.chart-active {
     display: grid;
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
     min-height: 240px;
     overflow-y: hidden;
 }
 
-#comparison-panel.chart-active .panel-header {
+#comparison-panel.chart-active .panel-header,
+#comparison-panel.chart-active .comparison-help {
     grid-column: 1 / -1;
 }
 
@@ -226,6 +227,14 @@ main {
     font-size: 0.85rem;
     text-align: center;
     padding: 12px;
+}
+
+.comparison-help {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    margin: 0 0 8px;
+    padding: 0 4px;
 }
 
 /* Horizontal category list */
@@ -1123,9 +1132,7 @@ main {
     font-size: 0.65rem;
     color: var(--text-muted);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100px;
+    font-family: var(--font-mono, monospace);
 }
 
 /* ============================================================================
@@ -1157,4 +1164,55 @@ main {
         height: auto;
         min-height: 240px;
     }
+}
+
+/* ============================================================================
+   Load-by-solution-ID
+   ============================================================================ */
+
+#load-by-code-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    flex-wrap: wrap;
+}
+
+#load-by-code-input {
+    flex: 1 1 140px;
+    min-width: 0;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-color, #fff);
+}
+
+#load-by-code-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--button-bg, #f3f4f6);
+    cursor: pointer;
+}
+
+#load-by-code-btn:hover:not(:disabled) {
+    background: var(--button-hover-bg, #e5e7eb);
+}
+
+#load-by-code-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#load-by-code-error {
+    flex-basis: 100%;
+    font-size: 11px;
+    color: #b91c1c;
+}
+
+#load-by-code-error.hidden {
+    display: none;
 }

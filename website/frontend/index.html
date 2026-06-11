@@ -29,6 +29,7 @@
                 <div class="panel-header">
                     <h3>Solution Comparison</h3>
                 </div>
+                <p class="comparison-help">Each percentage shows the share of generated solutions that the current mapping outperforms on that metric.</p>
                 <div id="comparison-table-container">
                     <p class="no-solution-msg">Select a solution to see comparison</p>
                 </div>
@@ -57,6 +58,11 @@
         <section id="chat-panel">
             <div id="chat-header">
                 <h2>Chat with Zoning Agent</h2>
+            </div>
+            <div id="load-by-code-row">
+                <input type="text" id="load-by-code-input" placeholder="Load by solution ID (e.g. a1b2c3d)" maxlength="7" autocomplete="off" spellcheck="false">
+                <button id="load-by-code-btn">Load</button>
+                <span id="load-by-code-error" class="hidden"></span>
             </div>
             <div id="version-tabs"></div>
             <div id="chat-messages">

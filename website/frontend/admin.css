@@ -766,6 +766,13 @@
     flex-wrap: wrap;
 }
 
+.solution-card-code {
+    padding: 0 10px 8px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
 .solution-metric-badge {
     display: inline-flex;
     align-items: center;

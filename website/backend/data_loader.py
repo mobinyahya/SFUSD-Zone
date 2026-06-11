@@ -656,6 +656,8 @@ def get_all_metrics_stats() -> dict:
         col = metric.column
         if col not in pareto.columns:
             continue
+        if metric.direction is None:
+            continue
         values = pareto[col].dropna()
         if len(values) == 0:
             continue
@@ -716,13 +718,16 @@ def filter_and_centroid(bounds: dict) -> dict:
     result["centroid_path"] = centroid_row["path"]
     result["centroid_metrics"] = {
         m.column: float(centroid_row[m.column])
-        for m in ALL_METRICS if m.column in centroid_row.index
+        for m in ALL_METRICS
+        if m.column in centroid_row.index and m.direction is not None
     }
 
     fstats = {}
     for m in ALL_METRICS:
         col = m.column
         if col not in filtered.columns:
+            continue
+        if m.direction is None:
             continue
         vals = filtered[col].dropna()
         if len(vals) == 0:

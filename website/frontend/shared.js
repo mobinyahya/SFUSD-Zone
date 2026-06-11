@@ -332,12 +332,21 @@ function showMapLoading(show) {
     document.getElementById('map-loading-overlay').classList.toggle('hidden', !show);
 }
 
+function buildActivityQuery() {
+    const params = new URLSearchParams();
+    const pid = localStorage.getItem('participant_id') || '';
+    if (pid) params.set('participant_id', pid);
+    if (typeof sessionId !== 'undefined' && sessionId) params.set('session_id', sessionId);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+}
+
 async function loadSolution(path) {
     showMapLoading(true);
     try {
         const [geojson, solRes] = await Promise.all([
             loadGeojson(),
-            fetch(`${API_BASE}/api/solution/${encodeURIComponent(path)}`),
+            fetch(`${API_BASE}/api/solution/${encodeURIComponent(path)}${buildActivityQuery()}`),
         ]);
         if (!solRes.ok) throw new Error('Failed to load solution');
         currentSolution = await solRes.json();
@@ -366,6 +375,14 @@ async function loadSolution(path) {
     } finally {
         showMapLoading(false);
     }
+}
+
+async function loadSolutionByCode(code) {
+    const res = await fetch(`${API_BASE}/api/solution-by-code/${encodeURIComponent(code)}${buildActivityQuery()}`);
+    if (!res.ok) return null;
+    const { path } = await res.json();
+    await loadSolution(path);
+    return path;
 }
 
 function blockgroupStyle(feature) {

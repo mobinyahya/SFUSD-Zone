@@ -263,6 +263,7 @@ def format_solution(row: pd.Series, show_all: bool = False) -> str:
             direction = "higher is better"
         else:
             direction = "informational"
-        lines.append(f"  • {metric.display_name}: {value:.4f} ({direction})")
+        value_text = f"{value:.4f}" if metric.direction is not None else str(value)
+        lines.append(f"  • {metric.display_name}: {value_text} ({direction})")
     
     return "\n".join(lines)

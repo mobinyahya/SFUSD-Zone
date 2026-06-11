@@ -70,6 +70,7 @@ class MetricColumns:
     AVG_GE_SCHOOLS_WITHIN_HALF_MILE = "avg_ge_schools_within_half_mile"
     NUM_ZONES = "num_zones"
     CONTIGUOUS = "contiguous"
+    SOLUTION_CODE = "solution_code"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -528,6 +529,15 @@ STRUCTURE_METRICS = [
         direction="maximize",
         is_core=False,
         short_name="Contig",
+    ),
+    MetricSpec(
+        column="solution_code",
+        display_name="Solution Code",
+        description="7-character base36 hash uniquely identifying this zoning partition. Deterministic from the area-to-zone mapping; useful for citing or comparing specific solutions.",
+        category="structure",
+        direction=None,
+        is_core=False,
+        short_name="Code",
     ),
 ]
 

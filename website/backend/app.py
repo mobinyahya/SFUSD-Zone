@@ -1,6 +1,7 @@
 """FastAPI server for SFUSD Zoning Dashboard."""
 import json
 import os
+import re
 import secrets
 import uuid
 import logging
@@ -42,6 +43,7 @@ from Zone_Generation.Config.metrics_config import (
     ETHNICITY_DISPLAY_LABELS, get_chart_hints,
 )
 from Zone_Generation.Config.Constants import PROGRAM_NAMES, AREA_ETHNICITIES
+from session_logger import log_event, serialize_filter_state
 
 # Add project root to path for LLM imports
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -79,6 +81,8 @@ def startup_event():
     try:
         _preloaded_agent = ZoningAgent(DEFAULT_CSV_PATH)
         logger.info("ZoningAgent pre-loaded successfully")
+        _get_solution_code_index()
+        logger.info(f"Solution-code index built ({len(_solution_code_index)} entries)")
     except Exception as e:
         logger.error(f"Failed to pre-load agent: {e}")
         logger.error(traceback.format_exc())
@@ -103,11 +107,13 @@ class ChatRequest(BaseModel):
     mode: str = "feedback"  # "feedback" or "generate"
     current_solution_index: Optional[int] = None
     saved_solutions: Optional[list] = None  # kept for backward compat, ignored
+    participant_id: Optional[str] = None
 
 
 class ClusterSelectRequest(BaseModel):
     session_id: str
     cluster_id: int
+    participant_id: Optional[str] = None
 
 
 class AdminAuthRequest(BaseModel):
@@ -147,7 +153,11 @@ async def get_config():
 
 
 @app.get("/api/solution/{path:path}")
-async def get_solution(path: str):
+async def get_solution(
+    path: str,
+    participant_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
     """
     Get zone assignments, demographics, and metrics for a specific solution.
 
@@ -181,6 +191,14 @@ async def get_solution(path: str):
 
         solution_metrics = result.get("metrics", {})
         pct_ranks = compute_percentile_ranks(solution_metrics, solution_path=decoded_path)
+
+        if participant_id:
+            agent = agent_sessions.get(session_id) if session_id else None
+            log_event(participant_id, session_id, "solution_loaded", {
+                "solution_path": decoded_path,
+                "filter_state": serialize_filter_state(agent.filter_state) if agent else {},
+            })
+
         return {
             "zones": zones,
             "zone_data": zone_data_json,
@@ -202,6 +220,49 @@ async def get_solution(path: str):
         logger.error(f"Error loading solution: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Lazily-built {solution_code: path} map from the preloaded summary.csv.
+_solution_code_index: Optional[dict[str, str]] = None
+_SOLUTION_CODE_RE = re.compile(r"^[0-9a-z]{7}$")
+
+
+def _get_solution_code_index() -> dict[str, str]:
+    global _solution_code_index
+    if _solution_code_index is not None:
+        return _solution_code_index
+    if _preloaded_agent is None or "solution_code" not in _preloaded_agent.all_solutions.columns:
+        _solution_code_index = {}
+        return _solution_code_index
+    df = _preloaded_agent.all_solutions[["solution_code", "path"]].dropna()
+    # First occurrence wins on the off chance two solutions hash to the same 7-char code.
+    _solution_code_index = dict(zip(df["solution_code"].astype(str), df["path"].astype(str)))
+    return _solution_code_index
+
+
+@app.get("/api/solution-by-code/{code}")
+async def get_solution_path_by_code(
+    code: str,
+    participant_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
+    """Resolve a 7-char solution_code to its folder path."""
+    normalized = code.strip().lower()
+    if not _SOLUTION_CODE_RE.match(normalized):
+        raise HTTPException(status_code=400, detail="Invalid solution code format")
+    path = _get_solution_code_index().get(normalized)
+    if not path:
+        raise HTTPException(status_code=404, detail=f"No solution found for code {normalized}")
+
+    if participant_id:
+        agent = agent_sessions.get(session_id) if session_id else None
+        log_event(participant_id, session_id, "solution_loaded_by_code", {
+            "code": normalized,
+            "resolved_path": path,
+            "filter_state": serialize_filter_state(agent.filter_state) if agent else {},
+        })
+
+    return {"path": path, "solution_code": normalized}
 
 
 @app.get("/api/geojson")
@@ -264,8 +325,14 @@ async def get_schools():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def get_or_create_agent(session_id: Optional[str]) -> tuple[str, ZoningAgent]:
-    """Get existing agent for session or create a new one."""
+def get_or_create_agent(
+    session_id: Optional[str], participant_id: Optional[str] = None
+) -> tuple[str, ZoningAgent]:
+    """Get existing agent for session or create a new one.
+
+    If a new session is minted and participant_id is provided, write a
+    `session_started` marker to that participant's activity log.
+    """
     global _preloaded_agent
 
     if session_id and session_id in agent_sessions:
@@ -286,6 +353,11 @@ def get_or_create_agent(session_id: Optional[str]) -> tuple[str, ZoningAgent]:
         logger.info(f"Agent created for session {new_session_id}")
 
     agent_sessions[new_session_id] = agent
+
+    log_event(participant_id, new_session_id, "session_started", {
+        "filter_state": serialize_filter_state(agent.filter_state),
+    })
+
     return new_session_id, agent
 
 
@@ -294,12 +366,25 @@ def chat(request: ChatRequest):
     """Chat with the ZoningAgent (sync endpoint for blocking LLM calls)."""
     try:
         logger.info(f"Chat request: {request.message[:100]}...")
-        session_id, agent = get_or_create_agent(request.session_id)
+        session_id, agent = get_or_create_agent(request.session_id, request.participant_id)
+
+        filter_state_before = serialize_filter_state(agent.filter_state)
 
         logger.info("Calling agent.chat (mode=%s)...", request.mode)
         result = agent.chat(request.message, mode=request.mode)
         logger.info(f"Agent response type: {result.get('response_type')}")
         logger.info(f"Agent text length: {len(result.get('text', ''))}")
+
+        log_event(request.participant_id, session_id, "chat_message", {
+            "user_message": request.message,
+            "agent_text": result.get("text", ""),
+            "response_type": result.get("response_type"),
+            "solution_path": result.get("solution_path"),
+            "description": result.get("description", ""),
+            "tool_calls": result.get("tool_calls", []),
+            "filter_state_before": filter_state_before,
+            "filter_state_after": serialize_filter_state(agent.filter_state),
+        })
 
         return {
             "text": result["text"],
@@ -315,12 +400,22 @@ def chat(request: ChatRequest):
 
 
 @app.get("/api/initial-clusters")
-def initial_clusters(session_id: Optional[str] = None):
+def initial_clusters(
+    session_id: Optional[str] = None,
+    participant_id: Optional[str] = None,
+):
     """Return pre-computed themed clusters (no LLM involved)."""
-    sid, agent = get_or_create_agent(session_id)
+    sid, agent = get_or_create_agent(session_id, participant_id)
     result = agent.get_initial_clusters()
     if result is None:
         return {"clusters": None, "text": None, "session_id": sid}
+
+    cluster_names = [c.get("direction_label") or c.get("label") or str(i)
+                     for i, c in enumerate(result.get("clusters") or [])]
+    log_event(participant_id, sid, "initial_clusters_loaded", {
+        "cluster_names": cluster_names,
+    })
+
     return {
         "clusters": result["clusters"],
         "text": result["text"],
@@ -335,6 +430,14 @@ def select_cluster(request: ClusterSelectRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     agent = agent_sessions[request.session_id]
     result = agent.select_cluster(request.cluster_id)
+
+    log_event(request.participant_id, request.session_id, "cluster_selected", {
+        "cluster_id": request.cluster_id,
+        "solution_path": result.get("solution_path"),
+        "description": result.get("description", ""),
+        "filter_state": serialize_filter_state(agent.filter_state),
+    })
+
     return {
         "text": result["text"],
         "response_type": result["response_type"],
