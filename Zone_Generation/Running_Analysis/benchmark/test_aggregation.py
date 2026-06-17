@@ -1,107 +1,191 @@
-"""
-Test script for benchmark result aggregation and zone data export.
-"""
 import os
-import shutil
-import tempfile
-import pandas as pd
-import sys
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+import pytest
 
-from Zone_Generation.Running_Analysis.benchmark.results import BenchmarkResult, LevelResult, aggregate_results
+from Zone_Generation.pipeline.config import PipelineConfig
+from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.pipeline.tests.synthetic import FakeDataset, make_grid_problem
+from Zone_Generation.Running_Analysis.benchmark.config import (
+    BenchmarkTask,
+    SimulationSweep,
+    pipeline_config_to_dict,
+    stable_hash,
+)
+from Zone_Generation.Running_Analysis.benchmark.regenerate import regenerate_metrics
+from Zone_Generation.Running_Analysis.benchmark.results import aggregate_results
+from Zone_Generation.Running_Analysis.benchmark.runner import (
+    MANIFEST_FILENAME,
+    RESULT_FILENAME,
+    load_solutions,
+    manifest_for,
+    result_payload_for,
+    save_stage_artifacts,
+    stage_names_for,
+    write_json,
+)
+from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
 
-def test_aggregation():
-    """Test the aggregation of benchmark results including per-zone export."""
-    # Create a temporary directory for tests
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        print(f"Working in temp dir: {tmp_dir}")
-        
-        # 1. Create dummy results
-        results_dir = os.path.join(tmp_dir, "results")
-        os.makedirs(results_dir)
-        
-        configs = [
-            {"centroids_type": "4-zone", "random_seed": 42, "level": "BlockGroup_0"},
-            {"centroids_type": "8-zone", "random_seed": 14, "level": "BlockGroup_0"}
-        ]
-        
-        for i, config in enumerate(configs):
-            run_dir = os.path.join(results_dir, f"run_{i}")
-            os.makedirs(run_dir)
-            
-            # Create a simple result
-            result = BenchmarkResult(
-                status="OPTIMAL",
-                total_wall_time=10.5 + i,
-                config=config,
-                metrics={"metric_a": 0.5, "metric_b": 0.8},
-                zone_data={
-                    1: {
-                        "ge_students": 100, 
-                        "frl_pct": 0.5, 
-                        "ethnicity_pcts": {"Asian": 0.3, "White": 0.4},
-                        "programs": {"GE": 10, "SA": 2}
-                    },
-                    2: {
-                        "ge_students": 150, 
-                        "frl_pct": 0.4,
-                        "ethnicity_pcts": {"Asian": 0.2, "White": 0.5},
-                        "programs": {"GE": 12}
-                    }
-                }
-            )
-            
-            # Save it
-            result.save(run_dir)
-        
-        print("Created dummy results.")
-        
-        # 2. Run aggregation
-        summary_csv = os.path.join(tmp_dir, "summary.csv")
-        zone_data_dir = os.path.join(tmp_dir, "export")
-        
-        print("Running aggregation...")
-        df = aggregate_results(
-            results_dir, 
-            output_file=summary_csv,
-            recompute_metrics=False,  # Don't need real graph for this test
-            zone_data_folder=zone_data_dir
-        )
-        
-        # 3. Verify results
-        print("\nVerifying...")
-        
-        # Check summary CSV
-        assert os.path.exists(summary_csv), "Summary CSV not created"
-        df_loaded = pd.read_csv(summary_csv)
-        assert len(df_loaded) == 2, f"Expected 2 results, got {len(df_loaded)}"
-        assert "metric_a" in df_loaded.columns
-        assert "config_centroids_type" in df_loaded.columns
-        print("✓ Summary CSV verified")
-        
-        # Check zone data export
-        assert os.path.exists(zone_data_dir), "Zone data folder not created"
-        exported_files = os.listdir(zone_data_dir)
-        assert len(exported_files) == 2, f"Expected 2 exported CSVs, got {len(exported_files)}"
-        
-        # Check content of one exported file
-        sample_csv = os.path.join(zone_data_dir, exported_files[0])
-        df_zone = pd.read_csv(sample_csv)
-        assert len(df_zone) == 2, "Expected 2 zones in exported file"
-        assert "ge_students" in df_zone.columns
-        assert "eth_Asian" in df_zone.columns, "Ethnicity flattening failed"
-        assert "prog_GE" in df_zone.columns, "Programs flattening failed"
-        print("✓ Per-zone data export verified")
-        
-        print("\n✓ SUCCESS: Aggregation test passed!")
 
-if __name__ == "__main__":
-    try:
-        test_aggregation()
-    except Exception as e:
-        print(f"\n✗ FAILURE: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+def test_sweep_yaml_generates_cartesian_pipeline_tasks(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        f"""
+name: unit-test
+mode: run
+pipeline_defaults:
+  centroids_type: '5-zone-AF'
+  levels: ['BlockGroup_1', 'BlockGroup_0']
+  solver: 'cp_int'
+  strategy: 'recursive'
+  solve_time_limits: [1, 2]
+  gap_limits: [0, 0]
+  workers: 4
+  graphs_dir: '{tmp_path / "graphs"}'
+sweep:
+  frl_dev: [0.1, 0.2]
+  seed: [1, 2]
+execution:
+  output_dir: '{tmp_path / "out"}'
+  task_capacity: 3
+  max_workers: 2
+metrics:
+  strict: true
+""",
+        encoding="utf-8",
+    )
+
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    tasks = sweep.generate_tasks()
+
+    assert len(tasks) == 4
+    assert {task.config["frl_dev"] for task in tasks} == {0.1, 0.2}
+    assert {task.config["seed"] for task in tasks} == {1, 2}
+    assert all(task.capacity_slots == 3 for task in tasks)
+    assert all(task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks)
+    assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
+
+
+def test_sweep_yaml_rejects_aggregate_only_mode(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        """
+mode: aggregate
+pipeline_defaults:
+  levels: ['BlockGroup_0']
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="run, metrics"):
+        SimulationSweep.from_yaml(str(config_path))
+
+
+def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+
+    loaded, _, manifest = load_solutions(str(run_dir), dataset=FakeDataset(problem))
+    assert manifest["stages"][0]["name"] == "stage_00_BlockGroup_0"
+    assert loaded[0].assignment == _assignment()
+
+    summary, stages = aggregate_results(
+        str(tmp_path),
+        summary_csv="summary.csv",
+        stages_csv="stages.csv",
+    )
+    assert len(summary) == 1
+    assert len(stages) == 1
+    assert summary.loc[0, "status"] == "FEASIBLE"
+    assert summary.loc[0, "num_zones"] == 2
+    assert stages.loc[0, "stage_name"] == "stage_00_BlockGroup_0"
+    assert (tmp_path / "summary.csv").exists()
+    assert (tmp_path / "stages.csv").exists()
+
+
+def test_regenerate_metrics_rewrites_result_payload(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    write_json(os.path.join(run_dir, RESULT_FILENAME), {"status": "STALE", "metrics": {}})
+
+    result = regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    assert result.regenerated == 1
+    summary, _ = aggregate_results(str(tmp_path))
+    assert summary.loc[0, "status"] == "FEASIBLE"
+    assert summary.loc[0, "num_zones"] == 2
+
+
+def _write_synthetic_run(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    problem = make_grid_problem(3, 3)
+    solution = ZoneSolution(
+        problem=problem,
+        assignment=_assignment(),
+        status="FEASIBLE",
+        objective=7.0,
+        wall_time=1.25,
+        metadata={"solver": "test"},
+    )
+    config = PipelineConfig(
+        centroids_type="5-zone-AF",
+        levels=["BlockGroup_0"],
+        solver="local_search",
+        strategy="single",
+        frl_dev=1.0,
+        racial_dev=1.0,
+        overage=5.0,
+        shortage=0.0,
+        workers=1,
+        graphs_dir=str(tmp_path / "graphs"),
+    )
+    config_dict = pipeline_config_to_dict(config)
+    config_hash = stable_hash(config_dict)
+    task = BenchmarkTask(
+        task_id=config_hash[:12],
+        config_hash=config_hash,
+        config=config_dict,
+        output_dir=str(run_dir),
+        capacity_slots=1,
+    )
+    solutions = [solution]
+    stage_records = save_stage_artifacts(
+        solutions,
+        str(run_dir),
+        stage_names_for(solutions, config),
+    )
+    metrics = MetricsCalculator(solutions, config=config).compute()
+    solution.save(str(run_dir))
+    write_json(
+        os.path.join(run_dir, RESULT_FILENAME),
+        result_payload_for(metrics=metrics, config=config, solutions=solutions, task=task),
+    )
+    write_json(
+        os.path.join(run_dir, MANIFEST_FILENAME),
+        manifest_for(
+            task=task,
+            config=config,
+            status="FEASIBLE",
+            started_at="2026-01-01T00:00:00+00:00",
+            completed_at="2026-01-01T00:00:01+00:00",
+            stages=stage_records,
+            final_stage="stage_00_BlockGroup_0",
+            error_message=None,
+        ),
+    )
+    return run_dir, problem
+
+
+def _assignment():
+    return {
+        0: 0,
+        1: 0,
+        3: 0,
+        4: 0,
+        2: 1,
+        5: 1,
+        6: 1,
+        7: 1,
+        8: 1,
+    }

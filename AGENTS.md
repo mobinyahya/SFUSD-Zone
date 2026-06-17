@@ -11,10 +11,8 @@ uv sync                          # Install dependencies
 uv run python -m Zone_Generation.Optimization.optimizer  # Single optimization run (uses Zone_Generation/Config/config.yaml)
 
 # Benchmarking (from project root)
-uv run python -m Zone_Generation.Running_Analysis.comparitive_benchmarks run -o /path/to/output
-uv run python -m Zone_Generation.Running_Analysis.comparitive_benchmarks batch --mode recursive -o /path/to/output -w 5
-uv run python -m Zone_Generation.Running_Analysis.comparitive_benchmarks aggregate -i /path/to/results
-uv run python -m Zone_Generation.Running_Analysis.comparitive_benchmarks regenerate -i /path/to/results
+uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml
+uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml --mode metrics
 
 # Website
 cd website/backend && uv run uvicorn app:app --reload --port 8000
@@ -99,32 +97,33 @@ for orig_node, agg_node in G.graph['partition'].items():
 
 ### CLI Commands
 
-- `run` - Single benchmark. Key flags: `--output`, `--centroids`, `--frl-dev`, `--racial-dev`, `--seed`, `--recursive`
-- `batch` - Parameter sweep. Key flags: `--mode recursive|single`, `--output`, `--workers`, `--skip-existing`, `--sequential`
-- `aggregate` - Collect results into CSV. Key flags: `--input`, `--output`, `--zone-data-dir`
-- `regenerate` - Recompute metrics for existing results. Key flags: `--input`, `--include-choice`
+Benchmarking is configured from one simulation sweep YAML file. The same entrypoint can run the full sweep or recalculate metrics from saved stage results. Aggregation always runs after either mode.
 
-### Predefined Sweeps
+- `mode: run` - Generate tasks from YAML and run the full pipeline sweep.
+- `mode: metrics` - Reconstruct saved `ZoneSolution` stages, rewrite `result.json` with updated metrics, and aggregate outputs.
 
-Recursive sweep: 14 centroid types x 4 FRL devs (0.12-0.25) x 4 racial devs x 3 seeds x overages/shortages. Default 5 parallel workers.
+See `Zone_Generation/Running_Analysis/benchmark/sweep.example.yaml` for the YAML shape.
 
 ### Output Structure
 
 Each run produces a folder at `{centroids_type}/seed{seed}/frl{frl}_racial{racial}/...`:
 ```
-result.json              # Status, metrics (40+), zone_data (per-zone demographics/programs/quality), config
-zone_dict_BlockGroup_0.json  # {area_id: zone_id} mapping
-solution_info.json       # Solver metadata
+benchmark_manifest.json  # Task id, config hash, stage paths, status, timing
+result.json              # Status, metrics, zone_data, config, run metadata
+zone_dict_<level>.json   # Final root-level assignment alias
+zone_dict_area_<level>.json
+solution_<level>.json
+stages/<stage>/<files>   # Every recursive/iterative level result
 ```
 
-`aggregate` produces `summary.csv`: one row per solution, columns for all metrics + config values prefixed `config_`.
+Aggregation produces `summary.csv` with one row per run and `stages.csv` with one row per saved stage.
 
 ### Key Classes
 
-- `BenchmarkConfig` (benchmark/config.py) - Single run configuration
-- `ScenarioSweep` (benchmark/config.py) - Parameter sweep generator
-- `ParallelRunner` (benchmark/parallel.py) - Process pool executor with worker recycling
-- `ZoneMetricsCalculator` (metrics/calculator.py) - Computes diversity, distance, program, quality, structure metrics
+- `SimulationSweep` (benchmark/config.py) - YAML-backed sweep definition
+- `BenchmarkTask` (benchmark/config.py) - Concrete pipeline task
+- `run_sweep` (benchmark/parallel.py) - Capacity-aware process executor with worker recycling
+- `MetricsCalculator` (metrics/calculator.py) - Pipeline-native metrics over `ZoneSolution` stages
 
 ## Website
 

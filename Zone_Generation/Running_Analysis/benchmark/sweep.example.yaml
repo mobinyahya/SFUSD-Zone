@@ -1,0 +1,49 @@
+# Pipeline-native benchmark sweep.
+# Run: uv run python -m Zone_Generation.Running_Analysis.benchmark.run Zone_Generation/Running_Analysis/benchmark/sweep.example.yaml
+
+name: recursive-blockgroup-sweep
+mode: run  # run | metrics
+
+pipeline_defaults:
+  centroids_type: '7-zone-14'
+  levels: ['BlockGroup_1', 'BlockGroup_0']
+  solver: 'cp_int'
+  strategy: 'recursive'
+  frl_dev: 0.3
+  racial_dev: 0.3
+  overage: 0.8
+  shortage: 0.2
+  max_distance: 5
+  solve_time_limits: [45, 60]
+  gap_limits: [0, 0]
+  use_hints: true
+  seed: 42
+  workers: 8
+  years: [14, 15, 16, 17, 18, 21, 22]
+  population_type: 'GE'
+  capacity_scenario: 'A'
+  new_schools: true
+  include_k8: false
+  level_to_split: {1: 2, 2: 1}
+
+sweep:
+  centroids_type: ['5-zone-AF', '6-zone-3']
+  frl_dev: [0.12, 0.15, 0.2, 0.25]
+  racial_dev: [0.12, 0.15, 0.2, 0.25]
+  seed: [42, 14, 20]
+  overage: [0.7, 0.8, 0.9]
+  shortage: [0.15, 0.2, 0.25]
+
+execution:
+  output_dir: './benchmark_output'
+  capacity: 32              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'

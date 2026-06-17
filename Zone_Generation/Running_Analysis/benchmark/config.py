@@ -1,207 +1,299 @@
-"""
-Benchmark configuration module.
+"""Simulation sweep configuration for pipeline-native benchmarks."""
 
-Provides unified configuration classes for both recursive and non-recursive
-zoning optimization runs, with support for batch scenario generation.
-"""
-from dataclasses import dataclass, field, fields, asdict
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+from dataclasses import asdict, dataclass, field, fields
 from itertools import product
-from typing import Iterator
+from pathlib import Path
+from typing import Any, Iterator, Mapping
+
 import yaml
 
+from Zone_Generation.pipeline.config import PipelineConfig
 
-@dataclass
-class BenchmarkConfig:
-    """
-    Unified configuration for zoning optimization benchmarks.
-    
-    Supports both recursive (multi-level) and non-recursive (single-level) modes.
-    Use `generate_scenarios()` to create multiple configs from parameter sweeps.
-    """
-    # Core settings
-    centroids_type: str
-    frl_dev: float
-    racial_dev: float
-    random_seed: int = 42
-    
-    # Recursive settings - if recursive_levels is set, runs in recursive mode
-    recursive_levels: list[str] | None = None
-    solve_time_limits: list[int] | None = None
-    relative_gap_limits: list[float] | None = None
-    
-    # Single-level settings (used when not recursive)
-    level: str = "BlockGroup_0"
-    solve_time_limit: int = 600
-    relative_gap_limit: float = 0.0
-    
-    # Common settings
-    overage: float = 0.8
-    shortage: float = 0.2
-    optimizer: str = "cp_int"
-    use_hints: bool = True
-    is_local: bool = False
-    
-    # Output settings
-    log_folder: str | None = None
-    
-    # Additional settings from config.yaml
-    years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
-    population_type: str = "GE"
-    drop_optout: bool = True
-    capacity_scenario: str = "A"
-    new_schools: bool = True
-    include_k8: bool = False
-    all_cap_shortage: float = float('inf')
-    max_distance: float = 5.0
-    population_dev: float = float('inf')
-    
-    @property
-    def is_recursive(self) -> bool:
-        """Check if this config uses recursive (multi-level) zoning."""
-        return self.recursive_levels is not None and len(self.recursive_levels) > 1
-    
-    @property
-    def num_zones(self) -> int:
-        """Extract the number of zones from centroids_type (e.g., '5-zone-AF' -> 5)."""
-        parts = self.centroids_type.split('-')
-        if parts and parts[0].isdigit():
-            return int(parts[0])
-        return 0
-    
-    def to_optimizer_config(self) -> dict:
-        """Convert to the dict format expected by Optimizer class."""
-        config = asdict(self)
-        # Remove None values for cleaner config
-        return {k: v for k, v in config.items() if v is not None}
-    
-    def get_output_folder_name(self) -> str:
-        """Generate a descriptive folder name for this config's output."""
-        if self.is_recursive:
-            levels_str = '-'.join(self.recursive_levels)
-            times_str = '-'.join(str(t) for t in self.solve_time_limits)
-            return (
-                f"{self.centroids_type}/seed{self.random_seed}/"
-                f"frl{self.frl_dev}_racial{self.racial_dev}/"
-                f"overage{self.overage}_shortage{self.shortage}/"
-                f"{levels_str}_tl_{times_str}"
-            )
-        else:
-            return (
-                f"time{self.solve_time_limit}_seed{self.random_seed}_"
-                f"centroids{self.centroids_type}_level{self.level}_"
-                f"frl{self.frl_dev}_racial{self.racial_dev}_opt{self.optimizer}"
-            )
-    
+
+SEQUENCE_PIPELINE_FIELDS = {"levels", "solve_time_limits", "gap_limits", "years"}
+SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
+
+
+@dataclass(frozen=True)
+class ExecutionConfig:
+    """How a simulation sweep should be executed."""
+
+    output_dir: str = "./benchmark_output"
+    capacity: int | None = None
+    max_workers: int | None = None
+    max_tasks_per_worker: int | None = 25
+    queue_multiplier: int = 2
+    skip_existing: bool = True
+    rerun_failed: bool = True
+    sequential: bool = False
+    fail_fast: bool = False
+    task_capacity: int | None = None
+    output_template: str | None = None
+
     @classmethod
-    def from_yaml(cls, yaml_path: str) -> "BenchmarkConfig":
-        """Load config from a YAML file."""
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        field_names = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in field_names})
-    
-    def to_yaml(self, yaml_path: str) -> None:
-        """Save config to a YAML file."""
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.dump(asdict(self), f, default_flow_style=False)
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "ExecutionConfig":
+        return _dataclass_from_dict(cls, data or {})
 
 
-@dataclass
-class ScenarioSweep:
-    """
-    Define parameter sweeps for generating multiple benchmark scenarios.
-    
-    Example:
-        sweep = ScenarioSweep(
-            centroids_types=['5-zone-AF', '6-zone-3'],
-            frl_devs=[0.15, 0.2, 0.25],
-            racial_devs=[0.15, 0.2, 0.25],
-            random_seeds=[42, 14],
+@dataclass(frozen=True)
+class MetricsRunConfig:
+    """Metric and aggregation settings for a simulation sweep."""
+
+    strict: bool = True
+    summary_csv: str = "summary.csv"
+    stages_csv: str = "stages.csv"
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "MetricsRunConfig":
+        return _dataclass_from_dict(cls, data or {})
+
+
+@dataclass(frozen=True)
+class BenchmarkTask:
+    """One concrete pipeline run generated from a simulation sweep."""
+
+    task_id: str
+    config_hash: str
+    config: dict[str, Any]
+    output_dir: str
+    capacity_slots: int
+
+    def pipeline_config(self) -> PipelineConfig:
+        return pipeline_config_from_dict(self.config)
+
+
+@dataclass(frozen=True)
+class SimulationSweep:
+    """Top-level YAML-backed benchmark description."""
+
+    name: str = "simulation_sweep"
+    mode: str = "run"
+    pipeline_defaults: dict[str, Any] = field(default_factory=dict)
+    sweep: dict[str, Any] = field(default_factory=dict)
+    tasks: list[dict[str, Any]] = field(default_factory=list)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    metrics: MetricsRunConfig = field(default_factory=MetricsRunConfig)
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "SimulationSweep":
+        with open(path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        if not isinstance(raw, Mapping):
+            raise ValueError("Simulation sweep YAML must be a mapping.")
+        allowed_top_level = {
+            "name",
+            "mode",
+            "pipeline_defaults",
+            "sweep",
+            "tasks",
+            "execution",
+            "metrics",
+        }
+        unknown_top_level = set(raw) - allowed_top_level
+        if unknown_top_level:
+            raise ValueError(f"Unknown sweep YAML keys: {sorted(unknown_top_level)}")
+
+        name = str(raw.get("name") or Path(path).stem)
+        mode = str(raw.get("mode", "run"))
+        if mode not in {"run", "metrics"}:
+            raise ValueError("mode must be one of: run, metrics")
+
+        pipeline_defaults = dict(raw.get("pipeline_defaults") or {})
+        sweep = dict(raw.get("sweep") or {})
+        tasks = list(raw.get("tasks") or [])
+        _validate_pipeline_keys(pipeline_defaults, "pipeline_defaults")
+        _validate_pipeline_keys(sweep, "sweep")
+        for idx, task in enumerate(tasks):
+            if not isinstance(task, Mapping):
+                raise ValueError(f"tasks[{idx}] must be a mapping.")
+            _validate_pipeline_keys(task, f"tasks[{idx}]")
+
+        return cls(
+            name=name,
+            mode=mode,
+            pipeline_defaults=_restore_special_values(pipeline_defaults),
+            sweep=_restore_special_values(sweep),
+            tasks=[_restore_special_values(dict(task)) for task in tasks],
+            execution=ExecutionConfig.from_dict(raw.get("execution")),
+            metrics=MetricsRunConfig.from_dict(raw.get("metrics")),
         )
-        for config in sweep.generate_configs():
-            run_benchmark(config)
-    """
-    centroids_types: list[str]
-    frl_devs: list[float]
-    racial_devs: list[float]
-    random_seeds: list[int] = field(default_factory=lambda: [42])
-    
-    # Recursive mode parameters (optional)
-    recursive_computations: list[list[tuple[str, float]]] | None = None
-    total_times: list[int] | None = None
-    overages: list[float] = field(default_factory=lambda: [0.8])
-    shortages: list[float] = field(default_factory=lambda: [0.2])
-    
-    # Non-recursive mode parameters (optional)
-    levels: list[str] | None = None
-    solve_time_limits: list[int] | None = None
-    
-    # Common settings
-    optimizer: str = "cp_int"
-    is_local: bool = False
-    
-    def generate_configs(self) -> Iterator[BenchmarkConfig]:
-        """Generate all config combinations from the sweep parameters."""
-        if self.recursive_computations is not None:
-            yield from self._generate_recursive_configs()
-        else:
-            yield from self._generate_single_level_configs()
-    
-    def _generate_recursive_configs(self) -> Iterator[BenchmarkConfig]:
-        """Generate configs for recursive (multi-level) runs."""
-        for (centroids, frl, racial, overage, shortage, 
-             total_time, seed, computation) in product(
-            self.centroids_types,
-            self.frl_devs,
-            self.racial_devs,
-            self.overages,
-            self.shortages,
-            self.total_times or [240],
-            self.random_seeds,
-            self.recursive_computations,
-        ):
-            levels = [level for level, _ in computation]
-            time_limits = [int(total_time * proportion) for _, proportion in computation]
-            gap_limits = [0.05] * len(computation)
-            
-            yield BenchmarkConfig(
-                centroids_type=centroids,
-                frl_dev=frl,
-                racial_dev=racial,
-                random_seed=seed,
-                recursive_levels=levels,
-                solve_time_limits=time_limits,
-                relative_gap_limits=gap_limits,
-                overage=overage,
-                shortage=shortage,
-                optimizer=self.optimizer,
-                is_local=self.is_local,
+
+    def generate_tasks(self) -> list[BenchmarkTask]:
+        overrides = list(_sweep_overrides(self.sweep)) or [{}]
+        explicit_tasks = self.tasks or [{}]
+        tasks: list[BenchmarkTask] = []
+        for sweep_values, task_values in product(overrides, explicit_tasks):
+            config_data = dict(self.pipeline_defaults)
+            config_data.update(sweep_values)
+            config_data.update(task_values)
+            config = pipeline_config_from_dict(config_data)
+            config_dict = pipeline_config_to_dict(config)
+            config_hash = stable_hash(config_dict)
+            output_dir = os.path.join(
+                os.path.expanduser(self.execution.output_dir),
+                format_output_path(config_dict, config_hash, self.execution.output_template),
             )
-    
-    def _generate_single_level_configs(self) -> Iterator[BenchmarkConfig]:
-        """Generate configs for single-level runs."""
-        levels = self.levels or ["BlockGroup_0"]
-        time_limits = self.solve_time_limits or [600]
-        
-        for centroids, frl, racial, level, time_limit, seed in product(
-            self.centroids_types,
-            self.frl_devs,
-            self.racial_devs,
-            levels,
-            time_limits,
-            self.random_seeds,
-        ):
-            yield BenchmarkConfig(
-                centroids_type=centroids,
-                frl_dev=frl,
-                racial_dev=racial,
-                random_seed=seed,
-                level=level,
-                solve_time_limit=time_limit,
-                optimizer=self.optimizer,
-                is_local=self.is_local,
+            tasks.append(
+                BenchmarkTask(
+                    task_id=config_hash[:12],
+                    config_hash=config_hash,
+                    config=config_dict,
+                    output_dir=output_dir,
+                    capacity_slots=capacity_slots(config_dict, self.execution),
+                )
             )
-    
-    def count_scenarios(self) -> int:
-        """Count total number of scenarios without generating them."""
-        return sum(1 for _ in self.generate_configs())
+        return tasks
+
+
+def pipeline_config_from_dict(data: Mapping[str, Any]) -> PipelineConfig:
+    """Construct a :class:`PipelineConfig` from a saved config snapshot."""
+
+    restored = _restore_special_values(dict(data))
+    field_names = _pipeline_field_names()
+    unknown = set(restored) - field_names - {"unit"}
+    if unknown:
+        raise ValueError(f"Unknown pipeline config keys: {sorted(unknown)}")
+    kwargs = {k: v for k, v in restored.items() if k in field_names}
+    return PipelineConfig(**kwargs)
+
+
+def pipeline_config_to_dict(config: PipelineConfig | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(config, PipelineConfig):
+        data = asdict(config)
+    else:
+        data = dict(config)
+        data.pop("unit", None)
+    return _restore_special_values(data)
+
+
+def config_snapshot(config: PipelineConfig | Mapping[str, Any]) -> dict[str, Any]:
+    pipeline = pipeline_config_to_dict(config)
+    cfg = pipeline_config_from_dict(pipeline)
+    snapshot = pipeline_config_to_dict(cfg)
+    snapshot["unit"] = cfg.unit
+    return snapshot
+
+
+def stable_hash(value: Any) -> str:
+    payload = json.dumps(json_ready(value), sort_keys=True, separators=(",", ":"))
+    return hashlib.blake2b(payload.encode("utf-8"), digest_size=16).hexdigest()
+
+
+def json_ready(value: Any) -> Any:
+    """Return a JSON-safe value while preserving infinity round-trips."""
+
+    if isinstance(value, Mapping):
+        return {str(k): json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_ready(v) for v in value]
+    if hasattr(value, "item"):
+        return json_ready(value.item())
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
+    return value
+
+
+def capacity_slots(config: Mapping[str, Any], execution: ExecutionConfig) -> int:
+    if execution.task_capacity is not None:
+        return max(1, int(execution.task_capacity))
+    return max(1, int(config.get("workers", 1) or 1))
+
+
+def format_output_path(
+    config: Mapping[str, Any], config_hash: str, template: str | None = None
+) -> str:
+    levels_key = "-".join(str(v) for v in config.get("levels", []))
+    times_key = "-".join(str(v) for v in config.get("solve_time_limits", []))
+    format_values = {
+        **config,
+        "config_hash": config_hash[:12],
+        "levels_key": levels_key,
+        "solve_time_limits_key": times_key,
+    }
+    if template:
+        return _safe_path(template.format(**format_values))
+
+    parts = [
+        _safe_path(str(config.get("centroids_type", "centroids"))),
+        f"seed{_safe_path(str(config.get('seed', 'na')))}",
+        (
+            f"frl{_safe_path(str(config.get('frl_dev', 'na')))}_"
+            f"racial{_safe_path(str(config.get('racial_dev', 'na')))}"
+        ),
+        (
+            f"overage{_safe_path(str(config.get('overage', 'na')))}_"
+            f"shortage{_safe_path(str(config.get('shortage', 'na')))}"
+        ),
+        _safe_path(
+            f"{config.get('strategy', 'strategy')}_{config.get('solver', 'solver')}_"
+            f"{levels_key}_tl_{times_key}_{config_hash[:8]}"
+        ),
+    ]
+    return os.path.join(*parts)
+
+
+def _sweep_overrides(sweep: Mapping[str, Any]) -> Iterator[dict[str, Any]]:
+    if not sweep:
+        return
+    keys = list(sweep)
+    value_lists = [_normalize_sweep_values(key, sweep[key]) for key in keys]
+    for combo in product(*value_lists):
+        yield dict(zip(keys, combo))
+
+
+def _normalize_sweep_values(key: str, value: Any) -> list[Any]:
+    if key in SEQUENCE_PIPELINE_FIELDS:
+        if not isinstance(value, list):
+            return [value]
+        if not value or all(not isinstance(v, list) for v in value):
+            return [value]
+        return value
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _dataclass_from_dict(cls, data: Mapping[str, Any]):
+    field_names = {f.name for f in fields(cls)}
+    unknown = set(data) - field_names
+    if unknown:
+        raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
+    return cls(**{k: v for k, v in data.items() if k in field_names})
+
+
+def _validate_pipeline_keys(data: Mapping[str, Any], section: str) -> None:
+    unknown = set(data) - _pipeline_field_names()
+    if unknown:
+        raise ValueError(f"Unknown keys in {section}: {sorted(unknown)}")
+
+
+def _pipeline_field_names() -> set[str]:
+    return {f.name for f in fields(PipelineConfig)}
+
+
+def _restore_special_values(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {k: _restore_special_values(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_restore_special_values(v) for v in value]
+    if isinstance(value, str) and value in SPECIAL_FLOATS:
+        return SPECIAL_FLOATS[value]
+    return value
+
+
+def _safe_path(value: str) -> str:
+    parts = []
+    for part in value.split(os.sep):
+        clean = re.sub(r"[^A-Za-z0-9_.=-]+", "-", part).strip("-.")
+        parts.append(clean or "value")
+    return os.sep.join(parts)

@@ -1,198 +1,300 @@
-"""
-Benchmark runner module.
+"""Pipeline-native benchmark task runner."""
 
-Provides a unified entry point for running zoning optimization benchmarks.
-"""
-import copy
-import datetime
+from __future__ import annotations
+
+import json
 import os
-from typing import Callable
+import traceback
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Sequence
 
-from Zone_Generation.Optimization.optimizer import Optimizer
-from Zone_Generation.Optimization.recursive_zoning import solve_level
-from Zone_Generation.Running_Analysis.benchmark.config import BenchmarkConfig
-from Zone_Generation.Running_Analysis.benchmark.results import (
-    BenchmarkResult,
-    LevelResult,
+from Zone_Generation.pipeline.config import PipelineConfig
+from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.Running_Analysis.benchmark.config import (
+    BenchmarkTask,
+    config_snapshot,
+    json_ready,
+    pipeline_config_from_dict,
 )
+from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
 
 
-def run_benchmark(
-    config: BenchmarkConfig,
-    output_folder: str | None = None,
-    progress_callback: Callable[[str], None] | None = None,
-) -> BenchmarkResult:
-    """
-    Run a complete benchmark with unified handling for both modes.
-    
-    Args:
-        config: Benchmark configuration
-        output_folder: Where to save results (optional, uses config if not set)
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        BenchmarkResult with all level results and aggregated metrics
-    """
-    # Determine output folder
-    if output_folder is None:
-        output_folder = config.log_folder
-    if output_folder is None:
-        output_folder = f"/tmp/benchmark_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
-    output_folder = os.path.expanduser(output_folder)
-    os.makedirs(output_folder, exist_ok=True)
-    
-    # Convert to optimizer config format
-    opt_config = config.to_optimizer_config()
-    opt_config['log_folder'] = output_folder
-    
-    def log(msg: str):
-        if progress_callback:
-            progress_callback(msg)
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
-    
+SCHEMA_VERSION = 1
+MANIFEST_FILENAME = "benchmark_manifest.json"
+RESULT_FILENAME = "result.json"
+
+
+@dataclass(frozen=True)
+class TaskResult:
+    task_id: str
+    output_dir: str
+    status: str
+    total_wall_time: float = 0.0
+    error_message: str | None = None
+    skipped: bool = False
+
+
+def run_pipeline_task(task: BenchmarkTask, *, strict_metrics: bool = True) -> TaskResult:
+    """Run one benchmark task through the new optimization pipeline."""
+
+    output_dir = os.path.expanduser(task.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    started_at = _now()
+    config = task.pipeline_config()
+    solutions: list[ZoneSolution] = []
+    stage_records: list[dict[str, Any]] = []
+
     try:
-        if config.is_recursive:
-            result = _run_recursive(config, opt_config, output_folder, log)
-        else:
-            result = _run_single_level(config, opt_config, output_folder, log)
-        
-        # Compute metrics on final solution
-        if result.zone_dict:
-            optimizer = Optimizer.get_optimizer(opt_config)
-            result.compute_metrics(optimizer.G, opt_config)
-        
-        # Save results
-        result.save(output_folder)
-        log(f"Results saved to {output_folder}")
-        
-        return result
-        
-    except Exception as e:
-        log(f"Error: {e}")
-        result = BenchmarkResult.from_error(e, opt_config)
-        result.save(output_folder)
-        return result
+        dataset = config.make_dataset()
+        solver = config.make_solver()
+        strategy = config.make_strategy()
+        solutions = strategy.run(dataset, solver)
+        stage_names = stage_names_for(solutions, config)
+        stage_records = save_stage_artifacts(solutions, output_dir, stage_names)
 
-
-def _run_recursive(
-    config: BenchmarkConfig,
-    opt_config: dict,
-    output_folder: str,
-    log: Callable[[str], None],
-) -> BenchmarkResult:
-    """Run recursive (multi-level) zoning optimization."""
-    result = BenchmarkResult(status="RUNNING", config=opt_config)
-    cur_block_zone_dict = None
-    
-    for i, level in enumerate(config.recursive_levels):
-        log(f"Solving level {i+1}/{len(config.recursive_levels)}: {level}")
-        
-        # Create level-specific config
-        level_config = copy.deepcopy(opt_config)
-        level_config['level'] = level
-        level_config['solve_time_limit'] = config.solve_time_limits[i]
-        level_config['relative_gap_limit'] = config.relative_gap_limits[i]
-        
-        # Solve this level
-        solution_output = solve_level(level_config, config.is_local, cur_block_zone_dict)
-        
-        # Create level result
-        level_result = LevelResult(
-            level=level,
-            status=solution_output.status,
-            wall_time=solution_output.wall_time,
-            boundary_cost=solution_output.get_boundary_cost(),
-            zone_dict=solution_output.zone_dict or {},
-            config=level_config,
+        calculator = MetricsCalculator(
+            solutions,
+            config=config,
+            strict=strict_metrics,
         )
-        result.add_level_result(level_result)
-        
-        # Update for next iteration
-        cur_block_zone_dict = solution_output.block_zone_dict
-        
-        log(f"  Status: {solution_output.status}, Time: {solution_output.wall_time:.1f}s, "
-            f"Boundary: {level_result.boundary_cost}")
-        
-        # Stop if infeasible
-        if solution_output.status in ['INFEASIBLE', 'MODEL_INVALID', 'UNKNOWN']:
-            log(f"Stopping: {solution_output.status} at level {level}")
-            break
-    
-    return result
+        metrics = calculator.compute()
+        final_solution = calculator.context.solution
+        final_solution.save(output_dir)
 
-
-def _run_single_level(
-    config: BenchmarkConfig,
-    opt_config: dict,
-    output_folder: str,
-    log: Callable[[str], None],
-) -> BenchmarkResult:
-    """Run single-level zoning optimization."""
-    result = BenchmarkResult(status="RUNNING", config=opt_config)
-    
-    log(f"Solving single level: {config.level}")
-    
-    optimizer = Optimizer.get_optimizer(opt_config)
-    optimizer.add_variables()
-    optimizer.add_constraints()
-    optimizer.add_boundary_objective()
-    
-    solution_output = optimizer.solve()
-    
-    level_result = LevelResult(
-        level=config.level,
-        status=solution_output.status,
-        wall_time=solution_output.wall_time,
-        boundary_cost=solution_output.get_boundary_cost(),
-        zone_dict=solution_output.zone_dict or {},
-        config=opt_config,
-    )
-    result.add_level_result(level_result)
-    
-    log(f"Status: {solution_output.status}, Time: {solution_output.wall_time:.1f}s, "
-        f"Boundary: {level_result.boundary_cost}")
-    
-    return result
-
-
-def run_batch(
-    configs: list[BenchmarkConfig],
-    base_output_folder: str,
-    continue_on_error: bool = True,
-) -> list[BenchmarkResult]:
-    """
-    Run multiple benchmark configurations.
-    
-    Args:
-        configs: List of benchmark configurations
-        base_output_folder: Base folder for all outputs
-        continue_on_error: Whether to continue if a run fails
-        
-    Returns:
-        List of BenchmarkResults
-    """
-    results = []
-    total = len(configs)
-    
-    for i, config in enumerate(configs):
-        print(f"\n{'='*60}")
-        print(f"Running benchmark {i+1}/{total}")
-        print(f"Config: {config.centroids_type}, frl={config.frl_dev}, racial={config.racial_dev}")
-        print(f"{'='*60}")
-        
-        output_folder = os.path.join(
-            os.path.expanduser(base_output_folder),
-            config.get_output_folder_name()
+        result_payload = result_payload_for(
+            metrics=metrics,
+            config=config,
+            solutions=solutions,
+            task=task,
         )
-        
+        write_json(os.path.join(output_dir, RESULT_FILENAME), result_payload)
+
+        manifest = manifest_for(
+            task=task,
+            config=config,
+            status=result_payload.get("status") or "UNKNOWN",
+            started_at=started_at,
+            completed_at=_now(),
+            stages=stage_records,
+            final_stage=metrics.run.get("final_stage"),
+            error_message=None,
+        )
+        write_json(os.path.join(output_dir, MANIFEST_FILENAME), manifest)
+        return TaskResult(
+            task_id=task.task_id,
+            output_dir=output_dir,
+            status=str(result_payload.get("status") or "UNKNOWN"),
+            total_wall_time=float(result_payload.get("total_wall_time") or 0.0),
+        )
+    except Exception as exc:
+        if solutions and not stage_records:
+            stage_records = save_stage_artifacts(
+                solutions,
+                output_dir,
+                stage_names_for(solutions, config),
+            )
+        error_message = str(exc) or exc.__class__.__name__
+        manifest = manifest_for(
+            task=task,
+            config=config,
+            status="ERROR",
+            started_at=started_at,
+            completed_at=_now(),
+            stages=stage_records,
+            final_stage=None,
+            error_message=error_message,
+        )
+        manifest["traceback"] = traceback.format_exc()
+        write_json(os.path.join(output_dir, MANIFEST_FILENAME), manifest)
+        write_json(
+            os.path.join(output_dir, RESULT_FILENAME),
+            {
+                "status": "ERROR",
+                "error_message": error_message,
+                "total_wall_time": 0.0,
+                "metrics": {},
+                "zone_data": {},
+                "run": {},
+                "levels": [stage["level"] for stage in stage_records],
+                "config": config_snapshot(config),
+                "benchmark": {
+                    "schema_version": SCHEMA_VERSION,
+                    "task_id": task.task_id,
+                    "config_hash": task.config_hash,
+                },
+            },
+        )
+        return TaskResult(
+            task_id=task.task_id,
+            output_dir=output_dir,
+            status="ERROR",
+            error_message=error_message,
+        )
+
+
+def save_stage_artifacts(
+    solutions: Sequence[ZoneSolution], output_dir: str, stage_names: Sequence[str]
+) -> list[dict[str, Any]]:
+    stages_dir = Path(output_dir) / "stages"
+    stages_dir.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
+    for idx, (solution, stage_name) in enumerate(zip(solutions, stage_names)):
+        stage_dir = stages_dir / stage_name
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        solution.save(str(stage_dir))
+        records.append(stage_record(solution, idx, stage_name, stage_dir, output_dir))
+    return records
+
+
+def stage_record(
+    solution: ZoneSolution,
+    index: int,
+    stage_name: str,
+    stage_dir: Path,
+    output_dir: str,
+) -> dict[str, Any]:
+    contiguous = None
+    if solution.assignment and solution.feasible:
         try:
-            result = run_benchmark(config, output_folder)
-            results.append(result)
-        except Exception as e:
-            print(f"Error in benchmark {i+1}: {e}")
-            if not continue_on_error:
-                raise
-            results.append(BenchmarkResult.from_error(e, config.to_optimizer_config()))
-    
-    return results
+            contiguous = solution.is_contiguous()
+        except Exception:
+            contiguous = None
+    return {
+        "name": stage_name,
+        "index": index,
+        "level": solution.level.name,
+        "path": os.path.relpath(stage_dir, output_dir),
+        "status": solution.status,
+        "objective": solution.objective,
+        "wall_time": solution.wall_time,
+        "num_zones": solution.problem.Z,
+        "contiguous": contiguous,
+        "metadata": dict(solution.metadata),
+    }
+
+
+def result_payload_for(
+    *,
+    metrics,
+    config: PipelineConfig,
+    solutions: Sequence[ZoneSolution],
+    task: BenchmarkTask,
+) -> dict[str, Any]:
+    payload = metrics.to_full_dict()
+    run = payload.get("run", {})
+    payload.update(
+        {
+            "status": run.get("final_status"),
+            "error_message": None,
+            "total_wall_time": run.get("total_wall_time", 0.0),
+            "levels": [solution.level.name for solution in solutions],
+            "config": config_snapshot(config),
+            "benchmark": {
+                "schema_version": SCHEMA_VERSION,
+                "task_id": task.task_id,
+                "config_hash": task.config_hash,
+            },
+        }
+    )
+    return payload
+
+
+def manifest_for(
+    *,
+    task: BenchmarkTask,
+    config: PipelineConfig,
+    status: str,
+    started_at: str,
+    completed_at: str,
+    stages: Sequence[dict[str, Any]],
+    final_stage: str | None,
+    error_message: str | None,
+) -> dict[str, Any]:
+    total_wall_time = sum(float(stage.get("wall_time") or 0.0) for stage in stages)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "config_hash": task.config_hash,
+        "status": status,
+        "error_message": error_message,
+        "output_dir": os.path.expanduser(task.output_dir),
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "total_wall_time": total_wall_time,
+        "capacity_slots": task.capacity_slots,
+        "config": config_snapshot(config),
+        "stages": list(stages),
+        "final_stage": final_stage,
+        "result_path": RESULT_FILENAME,
+    }
+
+
+def stage_names_for(
+    solutions: Sequence[ZoneSolution], config: PipelineConfig | dict[str, Any]
+) -> list[str]:
+    strategy = _config_value(config, "strategy", "")
+    prefix = "iteration" if "iterative" in str(strategy).lower() else "stage"
+    return [
+        f"{prefix}_{idx:02d}_{solution.level.name}"
+        for idx, solution in enumerate(solutions)
+    ]
+
+
+def load_solutions(
+    output_dir: str,
+    *,
+    dataset=None,
+) -> tuple[list[ZoneSolution], PipelineConfig, dict[str, Any]]:
+    """Reconstruct saved stage solutions for metric regeneration."""
+
+    output_dir = os.path.expanduser(output_dir)
+    manifest = load_manifest(output_dir)
+    config = pipeline_config_from_dict(manifest["config"])
+    dataset = dataset or config.make_dataset()
+    solutions: list[ZoneSolution] = []
+    for stage in manifest.get("stages", []):
+        level = stage["level"]
+        stage_dir = os.path.join(output_dir, stage["path"])
+        zone_dict_path = os.path.join(stage_dir, f"zone_dict_{level}.json")
+        solution_path = os.path.join(stage_dir, f"solution_{level}.json")
+        with open(zone_dict_path, "r", encoding="utf-8") as f:
+            assignment = {int(k): int(v) for k, v in json.load(f).items()}
+        info: dict[str, Any] = {}
+        if os.path.exists(solution_path):
+            with open(solution_path, "r", encoding="utf-8") as f:
+                info = json.load(f)
+        problem = dataset.problem_for(level)
+        solutions.append(
+            ZoneSolution(
+                problem=problem,
+                assignment=assignment,
+                status=str(info.get("status") or stage.get("status") or "UNKNOWN"),
+                objective=info.get("objective", stage.get("objective")),
+                wall_time=info.get("wall_time", stage.get("wall_time")),
+                metadata=dict(info.get("metadata") or stage.get("metadata") or {}),
+            )
+        )
+    return solutions, config, manifest
+
+
+def load_manifest(output_dir: str) -> dict[str, Any]:
+    path = os.path.join(os.path.expanduser(output_dir), MANIFEST_FILENAME)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_json(path: str, data: Any) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(json_ready(data), f, indent=2, sort_keys=True)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _config_value(config: PipelineConfig | dict[str, Any], key: str, default=None):
+    if isinstance(config, dict):
+        return config.get(key, default)
+    return getattr(config, key, default)

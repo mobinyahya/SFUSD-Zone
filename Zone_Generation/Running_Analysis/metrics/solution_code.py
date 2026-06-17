@@ -129,8 +129,8 @@ def resolve_solution_code(
 
 
 def load_solution_by_code(code: str, root_folder: str):
-    """Convenience: resolve `code` to a folder and return its `BenchmarkResult`."""
-    from Zone_Generation.Running_Analysis.benchmark.results import BenchmarkResult
+    """Convenience: resolve `code` to a folder and return its result payload."""
+    from Zone_Generation.Running_Analysis.benchmark.results import load_run_result
 
     folder = resolve_solution_code(code, root_folder)
-    return BenchmarkResult.load(folder)
+    return load_run_result(folder)

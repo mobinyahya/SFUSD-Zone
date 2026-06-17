@@ -15,7 +15,7 @@ class SolutionOutput:
     """
     Output from a single optimization solve.
     
-    Can be converted to LevelResult for use with BenchmarkResult.
+    Legacy optimizer output object.
     """
     def __init__(self, zone_dict, objective_value, status, wall_time, G, config):
         self.zone_dict = zone_dict
