@@ -48,6 +48,24 @@ independently.
 uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out
 ```
 
+Save a PNG visualization of the final solution:
+
+```bash
+uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out --visualize
+```
+
+For recursive zoning or iterative choice, save every produced stage:
+
+```bash
+uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out --visualize --viz-stages all
+```
+
+Visualization artifacts are written under
+`/share/data/school_choice/Data/Computed/visualization_artifacts/`:
+`geometry_<level>_<fingerprint>.pkl` caches dissolved node geometries, and
+`visualization_<stage>.png` stores the rendered map. This does not use
+benchmark, website, choice, or heatmap code.
+
 Switch granularity, solver, or strategy purely in the config:
 
 ```yaml

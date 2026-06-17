@@ -6,3 +6,5 @@ SFUSD
 output/*
 .env
 .venv
+/pipeline_output/
+/pipeline_output/*

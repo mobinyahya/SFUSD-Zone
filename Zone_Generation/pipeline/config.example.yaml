@@ -15,7 +15,7 @@ racial_dev: 0.3
 overage: 0.8
 shortage: 0.2
 max_distance: 5
-solve_time_limits: [30, 60]   # one per level
+solve_time_limits: [45, 60]   # one per level
 gap_limits: [0, 0]
 use_hints: true
 seed: 42
