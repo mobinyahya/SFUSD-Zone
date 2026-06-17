@@ -3,7 +3,7 @@
 This module deliberately does not reuse ``Graphic_Visualization``. The old
 visualizers re-read and re-dissolved shapefiles for every plot and mixed legacy
 output formats. Here the expensive geometry work is cached in a shared artifact
-folder and rendering always writes PNG file artifacts.
+folder and rendered PNGs are written to the pipeline output directory.
 """
 
 from __future__ import annotations
@@ -159,6 +159,7 @@ def graph_geometry_fingerprint(G) -> str:
 
 def visualize_solutions(
     solutions: Sequence[ZoneSolution],
+    output_dir: str | Path,
     is_local: bool,
     stages: str = "final",
     geometry_loader: GeometryLoader | None = None,
@@ -166,6 +167,8 @@ def visualize_solutions(
 ) -> list[RenderResult]:
     """Render selected solution stages and save PNG artifacts."""
 
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
     store = VisualizationArtifactStore(
         is_local=is_local,
         artifact_dir=artifact_dir,
@@ -186,7 +189,7 @@ def visualize_solutions(
         geometry, geometry_path = store.geometry_for(solution.level, solution.problem.G)
         result.geometry_artifact = geometry_path
         fig = render_solution_map(solution, geometry, stage)
-        result.figure_paths = [_save_figure(fig, store.artifact_dir, stage)]
+        result.figure_paths = [_save_figure(fig, output_path, stage)]
         plt.close(fig)
 
         results.append(result)

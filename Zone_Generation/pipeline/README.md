@@ -60,11 +60,11 @@ For recursive zoning or iterative choice, save every produced stage:
 uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out --visualize --viz-stages all
 ```
 
-Visualization artifacts are written under
-`/share/data/school_choice/Data/Computed/visualization_artifacts/`:
-`geometry_<level>_<fingerprint>.pkl` caches dissolved node geometries, and
-`visualization_<stage>.png` stores the rendered map. This does not use
-benchmark, website, choice, or heatmap code.
+Rendered maps are written to the pipeline output directory as
+`visualization_<stage>.png`. Cached geometry artifacts are written under
+`/share/data/school_choice/Data/Computed/visualization_artifacts/` as
+`geometry_<level>_<fingerprint>.pkl` and `.json`. This does not use benchmark,
+website, choice, or heatmap code.
 
 Switch granularity, solver, or strategy purely in the config:
 

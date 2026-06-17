@@ -65,6 +65,8 @@ def test_geometry_artifact_is_cached(tmp_path):
 
 
 def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
+    output_dir = tmp_path / "pipeline_output"
+    artifact_dir = tmp_path / "visualization_artifacts"
     solutions = [
         _solution({0: 0, 1: 0, 2: 1, 3: 1}),
         _solution({0: 0, 1: 1, 2: 1, 3: 1}),
@@ -72,10 +74,11 @@ def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
 
     results = visualize_solutions(
         solutions,
+        output_dir=output_dir,
         is_local=False,
         stages="all",
         geometry_loader=_geometry_loader,
-        artifact_dir=tmp_path,
+        artifact_dir=artifact_dir,
     )
 
     assert [result.stage for result in results] == [
@@ -84,16 +87,21 @@ def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
     ]
     for result in results:
         assert result.geometry_artifact.exists()
+        assert result.geometry_artifact.parent == artifact_dir
         assert len(result.figure_paths) == 1
         assert result.figure_paths[0].exists()
         assert result.figure_paths[0].suffix == ".png"
-    assert sorted(path.name for path in tmp_path.glob("*.png")) == [
+        assert result.figure_paths[0].parent == output_dir
+    assert sorted(path.name for path in output_dir.glob("*.png")) == [
         "visualization_stage_00_BlockGroup_0.png",
         "visualization_stage_01_BlockGroup_0.png",
     ]
+    assert not list(artifact_dir.glob("*.png"))
 
 
 def test_visualize_defaults_to_png_and_never_shows(tmp_path, monkeypatch):
+    output_dir = tmp_path / "pipeline_output"
+    artifact_dir = tmp_path / "visualization_artifacts"
     monkeypatch.setattr(
         plt,
         "show",
@@ -103,13 +111,16 @@ def test_visualize_defaults_to_png_and_never_shows(tmp_path, monkeypatch):
     )
     results = visualize_solutions(
         [_solution()],
+        output_dir=output_dir,
         is_local=False,
         geometry_loader=_geometry_loader,
-        artifact_dir=tmp_path,
+        artifact_dir=artifact_dir,
     )
 
     assert results[0].geometry_artifact.exists()
+    assert results[0].geometry_artifact.parent == artifact_dir
     assert len(results[0].figure_paths) == 1
     assert results[0].figure_paths[0].suffix == ".png"
     assert results[0].figure_paths[0].exists()
+    assert results[0].figure_paths[0].parent == output_dir
     plt.close("all")
