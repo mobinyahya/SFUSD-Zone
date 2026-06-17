@@ -53,9 +53,8 @@ class MNLChoiceModel(ChoiceModel):
     and is constructed lazily.
     """
 
-    def __init__(self, method: str = "logsum", is_local: bool = False):
+    def __init__(self, method: str = "logsum"):
         self.method = method
-        self.is_local = is_local
         self._utilities = None  # populated on first evaluate()
 
     def _ensure_loaded(self, problem: ZoneProblem):

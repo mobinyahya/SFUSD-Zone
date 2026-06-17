@@ -63,7 +63,6 @@ def main(argv: list[str] | None = None) -> None:
         viz_results = visualize_solutions(
             solutions,
             output_dir=args.output,
-            is_local=config.is_local,
             stages=args.viz_stages,
         )
         for result in viz_results:

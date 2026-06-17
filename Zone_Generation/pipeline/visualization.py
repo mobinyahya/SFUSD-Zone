@@ -25,11 +25,15 @@ from Zone_Generation.Config.Constants import zone_colors
 from Zone_Generation.pipeline.levels import LevelSpec
 from Zone_Generation.pipeline.solution import ZoneSolution
 
-GeometryLoader = Callable[[str, bool], gpd.GeoDataFrame]
+GeometryLoader = Callable[[str], gpd.GeoDataFrame]
 
 DEFAULT_ARTIFACT_DIR = Path(
     "/share/data/school_choice/Data/Computed/visualization_artifacts"
 )
+
+
+def _load_geometry(unit: str) -> gpd.GeoDataFrame:
+    return load_census_shapefile(unit, False)
 
 
 @dataclass
@@ -65,13 +69,11 @@ class VisualizationArtifactStore:
 
     def __init__(
         self,
-        is_local: bool,
         artifact_dir: str | Path | None = None,
         geometry_loader: GeometryLoader | None = None,
     ):
         self.artifact_dir = Path(artifact_dir or DEFAULT_ARTIFACT_DIR)
-        self.is_local = is_local
-        self.geometry_loader = geometry_loader or load_census_shapefile
+        self.geometry_loader = geometry_loader or _load_geometry
         self._memory_cache: dict[Path, gpd.GeoDataFrame] = {}
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -110,7 +112,7 @@ class VisualizationArtifactStore:
         return geometry.copy(), path
 
     def _build_geometry(self, level: LevelSpec, G) -> gpd.GeoDataFrame:
-        base = self.geometry_loader(level.unit, self.is_local)
+        base = self.geometry_loader(level.unit)
         if level.unit not in base.columns:
             raise ValueError(
                 f"Base geometry for {level.unit!r} must include a {level.unit!r} column."
@@ -160,7 +162,6 @@ def graph_geometry_fingerprint(G) -> str:
 def visualize_solutions(
     solutions: Sequence[ZoneSolution],
     output_dir: str | Path,
-    is_local: bool,
     stages: str = "final",
     geometry_loader: GeometryLoader | None = None,
     artifact_dir: str | Path | None = None,
@@ -170,7 +171,6 @@ def visualize_solutions(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     store = VisualizationArtifactStore(
-        is_local=is_local,
         artifact_dir=artifact_dir,
         geometry_loader=geometry_loader,
     )

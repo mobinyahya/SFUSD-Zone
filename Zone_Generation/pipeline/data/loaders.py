@@ -44,6 +44,8 @@ from Zone_Generation.Config.Constants import (
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "Config")
 CENTROIDS_YAML = os.path.abspath(os.path.join(CONFIG_DIR, "centroids.yaml"))
+SFUSD_PATH = get_sfusd_path(False)
+DROPBOX_PATH = get_dropbox_path(False)
 
 # Maps the post-dummies ethnicity columns to the canonical Ethnicity_* names.
 _ETHNICITY_RENAME = {
@@ -63,7 +65,6 @@ class IngestConfig:
     """Everything ingestion needs to locate and shape the raw data."""
 
     unit: str  # 'Block' or 'BlockGroup'
-    is_local: bool = False
     years: list[int] = field(
         default_factory=lambda: [14, 15, 16, 17, 18, 21, 22]
     )
@@ -90,7 +91,7 @@ def load_students(cfg: IngestConfig) -> pd.DataFrame:
     matching the legacy behavior.
     """
     cache = os.path.join(
-        f"{get_sfusd_path(cfg.is_local)}/Data/Cleaned",
+        f"{SFUSD_PATH}/Data/Cleaned",
         "Cleaned_Students_" + "_".join(str(y) for y in cfg.years) + ".csv",
     )
     if os.path.exists(cache):
@@ -103,11 +104,10 @@ def load_students(cfg: IngestConfig) -> pd.DataFrame:
 
 
 def _load_students_for_year(cfg: IngestConfig, year: int) -> pd.DataFrame:
-    sfusd = get_sfusd_path(cfg.is_local)
     if cfg.drop_optout:
-        path = f"{sfusd}/Data/Cleaned/enrolled_{year}{year + 1}.csv"
+        path = f"{SFUSD_PATH}/Data/Cleaned/enrolled_{year}{year + 1}.csv"
     else:
-        path = f"{sfusd}/Data/Cleaned/student_{year}{year + 1}.csv"
+        path = f"{SFUSD_PATH}/Data/Cleaned/student_{year}{year + 1}.csv"
     df = pd.read_csv(path, low_memory=False)
 
     df = df.loc[df["grade"] == "KG"].copy()
@@ -226,14 +226,13 @@ def _filter_to_population(
 # ====================================================================== #
 def load_schools(cfg: IngestConfig) -> pd.DataFrame:
     """Per-school rows with capacities, quality scores and the unit column."""
-    dropbox = get_dropbox_path(cfg.is_local)
     if cfg.new_schools:
         df = pd.read_csv(
-            f"{dropbox}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+            f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
         )
     else:
         df = pd.read_csv(
-            f"{get_sfusd_path(cfg.is_local)}/Data/Cleaned/schools_rehauled_1819.csv"
+            f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv"
         )
 
     df[cfg.unit] = df[cfg.unit].astype("Int64")
@@ -251,8 +250,9 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
 
 
 def _attach_capacity(df: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
-    dropbox = get_dropbox_path(cfg.is_local)
-    programs = pd.read_csv(f"{dropbox}/Data/Cleaned/stanford_capacities_12.23.21.csv")
+    programs = pd.read_csv(
+        f"{DROPBOX_PATH}/Data/Cleaned/stanford_capacities_12.23.21.csv"
+    )
     programs.rename(
         columns={
             "SchNum": "school_id",
@@ -360,10 +360,10 @@ def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     """Append census areas that had neither students nor schools."""
     valid = set(
         pd.read_csv(
-            f"{get_dropbox_path(cfg.is_local)}/Optimization/block_blockgroup_tract.csv"
+            f"{DROPBOX_PATH}/Optimization/block_blockgroup_tract.csv"
         )[cfg.unit]
     )
-    census = set(load_census_shapefile(cfg.unit, cfg.is_local)[cfg.unit]) - set(AUX_BG)
+    census = set(load_census_shapefile(cfg.unit, False)[cfg.unit]) - set(AUX_BG)
     have = set(area[cfg.unit].astype(int))
     missing = (census & valid) - have
     if missing:
@@ -391,7 +391,7 @@ def _apply_closure_scaling(area: pd.DataFrame) -> pd.DataFrame:
 # ====================================================================== #
 def load_area_latlon(cfg: IngestConfig) -> pd.DataFrame:
     """Centroid Lat/Lon per area, indexed by the unit id."""
-    census = load_census_shapefile(cfg.unit, cfg.is_local)
+    census = load_census_shapefile(cfg.unit, False)
     dissolved = census.dissolve(by=cfg.unit, as_index=False)
     dissolved["centroid"] = dissolved.centroid
     dissolved["Lat"] = dissolved["centroid"].apply(lambda p: p.y)
@@ -406,7 +406,7 @@ def load_distance_dict(cfg: IngestConfig, area2idx: dict[int, int]) -> dict:
 
     Delegates to the shared euclidean-distance loader (which caches CSVs).
     """
-    return load_euc_distance_data(cfg.unit, area2idx, cfg.is_local)
+    return load_euc_distance_data(cfg.unit, area2idx, False)
 
 
 def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, list[int]]:
@@ -414,7 +414,7 @@ def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, lis
     import csv
 
     fname = "adjacency_matrix_b.csv" if cfg.unit == "Block" else "adjacency_matrix_bg.csv"
-    path = os.path.expanduser(f"{get_dropbox_path(cfg.is_local)}/Optimization/{fname}")
+    path = os.path.expanduser(f"{DROPBOX_PATH}/Optimization/{fname}")
     with open(path, "r") as f:
         rows = list(csv.reader(f))
 

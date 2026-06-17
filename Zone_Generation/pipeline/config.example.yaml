@@ -27,7 +27,6 @@ max_iterations: 5             # iterative_choice
 choice_model: 'distance'      # distance | mnl
 
 # --- data ingestion ---
-is_local: false
 years: [14, 15, 16, 17, 18, 21, 22]
 population_type: 'GE'
 capacity_scenario: 'A'

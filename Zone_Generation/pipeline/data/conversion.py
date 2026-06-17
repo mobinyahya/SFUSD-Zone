@@ -48,8 +48,7 @@ def _node_base_ids(G: nx.Graph, node: int) -> list[int]:
 class LevelConverter:
     """Translate zone assignments between levels."""
 
-    def __init__(self, is_local: bool = False):
-        self.is_local = is_local
+    def __init__(self):
         self._b2bg: dict | None = None
         self._bg2blocks: dict | None = None
 
@@ -58,7 +57,7 @@ class LevelConverter:
     # ------------------------------------------------------------------ #
     def b2bg(self) -> dict:
         if self._b2bg is None:
-            self._b2bg = load_b2bg(self.is_local)
+            self._b2bg = load_b2bg(False)
         return self._b2bg
 
     def bg2blocks(self) -> dict:

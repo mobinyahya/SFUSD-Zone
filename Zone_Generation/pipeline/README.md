@@ -83,7 +83,7 @@ uv run python -m pytest Zone_Generation/pipeline/tests
 ```
 
 End-to-end runs require the SFUSD source data (census shapefiles, student/
-school/distance/adjacency files) on the configured `is_local` path.
+school/distance/adjacency files) on the shared non-local data paths.
 
 ## Status / follow-ups
 

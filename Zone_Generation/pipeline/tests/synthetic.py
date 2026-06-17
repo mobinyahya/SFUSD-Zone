@@ -8,7 +8,6 @@ source data.
 from __future__ import annotations
 
 import math
-from types import SimpleNamespace
 
 import networkx as nx
 
@@ -117,9 +116,8 @@ def make_path_graphs():
 class FakeDataset:
     """Minimal Dataset stand-in returning a single synthetic problem/graph."""
 
-    def __init__(self, problem: ZoneProblem, is_local: bool = False):
+    def __init__(self, problem: ZoneProblem):
         self._problem = problem
-        self.config = SimpleNamespace(is_local=is_local)
 
     def graph_for(self, level):
         return self._problem.G

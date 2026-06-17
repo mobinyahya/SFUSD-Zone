@@ -44,7 +44,6 @@ class PipelineConfig:
     tolerance: float = 1e-6
 
     # --- data ingestion ----------------------------------------------- #
-    is_local: bool = False
     years: list[int] = field(
         default_factory=lambda: [14, 15, 16, 17, 18, 21, 22]
     )
@@ -68,7 +67,7 @@ class PipelineConfig:
         self.unit = units.pop()
         if not self.graphs_dir:
             self.graphs_dir = os.path.join(
-                get_dropbox_path(self.is_local),
+                get_dropbox_path(False),
                 "Optimization",
                 "Zones",
                 "Graphs",
@@ -121,6 +120,5 @@ class PipelineConfig:
             boundary_radius=self.boundary_radius,
             max_iterations=self.max_iterations,
             choice_model=self.choice_model,
-            choice_model_options={"is_local": self.is_local},
             tolerance=self.tolerance,
         )

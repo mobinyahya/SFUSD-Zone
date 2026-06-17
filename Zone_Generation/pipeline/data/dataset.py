@@ -30,7 +30,6 @@ class Dataset:
         self.config = config
         self.ingest = IngestConfig(
             unit=config.unit,
-            is_local=config.is_local,
             years=list(config.years),
             population_type=config.population_type,
             drop_optout=config.drop_optout,

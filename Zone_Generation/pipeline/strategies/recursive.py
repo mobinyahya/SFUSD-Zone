@@ -27,7 +27,7 @@ class RecursiveStrategy(Strategy):
         gap_limits = self.options.get("gap_limits")
         use_hints = self.options.get("use_hints", True)
         radius = self.options.get("boundary_radius", 1)
-        converter = LevelConverter(dataset.config.is_local)
+        converter = LevelConverter()
 
         solutions: list[ZoneSolution] = []
         prev: ZoneSolution | None = None

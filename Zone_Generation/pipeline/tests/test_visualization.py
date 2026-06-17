@@ -24,7 +24,7 @@ def _solution(assignment=None):
     )
 
 
-def _geometry_loader(unit, is_local):
+def _geometry_loader(unit):
     assert unit == "BlockGroup"
     records = []
     for idx in range(4):
@@ -41,14 +41,13 @@ def _geometry_loader(unit, is_local):
 def test_geometry_artifact_is_cached(tmp_path):
     calls = 0
 
-    def loader(unit, is_local):
+    def loader(unit):
         nonlocal calls
         calls += 1
-        return _geometry_loader(unit, is_local)
+        return _geometry_loader(unit)
 
     solution = _solution()
     store = VisualizationArtifactStore(
-        is_local=False,
         artifact_dir=tmp_path,
         geometry_loader=loader,
     )
@@ -75,7 +74,6 @@ def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
     results = visualize_solutions(
         solutions,
         output_dir=output_dir,
-        is_local=False,
         stages="all",
         geometry_loader=_geometry_loader,
         artifact_dir=artifact_dir,
@@ -112,7 +110,6 @@ def test_visualize_defaults_to_png_and_never_shows(tmp_path, monkeypatch):
     results = visualize_solutions(
         [_solution()],
         output_dir=output_dir,
-        is_local=False,
         geometry_loader=_geometry_loader,
         artifact_dir=artifact_dir,
     )
