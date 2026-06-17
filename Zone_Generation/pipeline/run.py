@@ -9,9 +9,12 @@ the strategy, and saves each produced :class:`ZoneSolution`.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+from dataclasses import asdict
 
 from Zone_Generation.pipeline.config import PipelineConfig
+from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
 
 DEFAULT_CONFIG = os.path.join(os.path.dirname(__file__), "config.example.yaml")
 
@@ -57,6 +60,12 @@ def main(argv: list[str] | None = None) -> None:
             f"contiguous={contig} ({sol.wall_time:.1f}s)"
         )
 
+    metrics = MetricsCalculator(solutions, config=config).compute()
+    result_path = os.path.join(args.output, "result.json")
+    with open(result_path, "w") as f:
+        json.dump(_result_payload(metrics, config, solutions), f, indent=2)
+    print(f"  metrics: saved {result_path}")
+
     if args.visualize:
         from Zone_Generation.pipeline.visualization import visualize_solutions
 
@@ -80,6 +89,27 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 print(f"  visualization {result.stage}: no figure saved{artifact_info}")
     print(f"Saved {len(solutions)} solution(s) to {args.output}")
+
+
+def _result_payload(metrics, config: PipelineConfig, solutions) -> dict:
+    payload = metrics.to_full_dict()
+    run = payload.get("run", {})
+    payload.update(
+        {
+            "status": run.get("final_status"),
+            "error_message": None,
+            "total_wall_time": run.get("total_wall_time", 0.0),
+            "levels": [sol.level.name for sol in solutions],
+            "config": _config_snapshot(config),
+        }
+    )
+    return payload
+
+
+def _config_snapshot(config: PipelineConfig) -> dict:
+    snapshot = asdict(config)
+    snapshot["unit"] = config.unit
+    return snapshot
 
 
 if __name__ == "__main__":

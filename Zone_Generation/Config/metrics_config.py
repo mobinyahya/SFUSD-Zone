@@ -71,6 +71,13 @@ class MetricColumns:
     NUM_ZONES = "num_zones"
     CONTIGUOUS = "contiguous"
     SOLUTION_CODE = "solution_code"
+    FINAL_OBJECTIVE = "final_objective"
+    FINAL_BOUNDARY_COST = "final_boundary_cost"
+    FINAL_STATUS = "final_status"
+    FINAL_WALL_TIME = "final_wall_time"
+    TOTAL_WALL_TIME = "total_wall_time"
+    FINAL_STAGE_INDEX = "final_stage_index"
+    FINAL_CHOICE_UTILITY = "final_choice_utility"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -100,6 +107,7 @@ CATEGORIES = {
     "programs": "Educational Program Availability",
     "quality": "School Quality Indicators",
     "structure": "Zone Structure and Shape",
+    "run": "Optimization Run Metadata",
 }
 
 CATEGORY_DESCRIPTIONS = {
@@ -108,6 +116,7 @@ CATEGORY_DESCRIPTIONS = {
     "programs": "Measure how hard it is for students to access programs within their zone.",
     "quality": "Measures how evenly school quality is distributed across zones.",
     "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
+    "run": "Solver and strategy outputs for the optimization run, including objectives and timing.",
 }
 
 
@@ -494,15 +503,15 @@ PROGRAM_METRICS = [
 # ============================================================================
 
 STRUCTURE_METRICS = [
-    # MetricSpec(
-    #     column="boundary_cost",
-    #     display_name="Boundary Cost",
-    #     description="Total number of edges that cross zone boundaries in the graph. Higher means more complex, jagged zone borders.",
-    #     category="structure",
-    #     direction="minimize",
-    #     is_core=False,
-    #     short_name="Boundary",
-    # ),
+    MetricSpec(
+        column="boundary_cost",
+        display_name="Boundary Cost",
+        description="Total number of graph edges that cross zone boundaries in the selected final solution. Higher means more complex, jagged zone borders.",
+        category="structure",
+        direction="minimize",
+        is_core=False,
+        short_name="Boundary",
+    ),
     MetricSpec(
         column="compactness",
         display_name="Compactness",
@@ -596,11 +605,75 @@ QUALITY_METRICS = [
 
 
 # ============================================================================
+# RUN METRICS (solver/strategy metadata)
+# ============================================================================
+
+RUN_METRICS = [
+    MetricSpec(
+        column="final_objective",
+        display_name="Final Objective",
+        description="Objective value reported by the solver for the selected final solution. For current solvers this is the boundary-minimization objective.",
+        category="run",
+        direction="minimize",
+        is_core=False,
+        short_name="Obj",
+    ),
+    MetricSpec(
+        column="final_boundary_cost",
+        display_name="Final Boundary Cost",
+        description="Boundary cost recomputed from the selected final solution assignment. This is useful for comparing solver-reported objectives against the realized map.",
+        category="run",
+        direction="minimize",
+        is_core=False,
+        short_name="Final Boundary",
+    ),
+    MetricSpec(
+        column="total_wall_time",
+        display_name="Total Wall Time",
+        description="Total solver wall time across all stages in the run.",
+        category="run",
+        direction="minimize",
+        is_core=False,
+        short_name="Time",
+    ),
+    MetricSpec(
+        column="final_wall_time",
+        display_name="Final Stage Wall Time",
+        description="Solver wall time for the selected final stage.",
+        category="run",
+        direction="minimize",
+        is_core=False,
+    ),
+    MetricSpec(
+        column="final_status",
+        display_name="Final Status",
+        description="Solver status for the selected final solution.",
+        category="run",
+        direction=None,
+        is_core=False,
+    ),
+    MetricSpec(
+        column="final_choice_utility",
+        display_name="Final Choice Utility",
+        description="Choice utility attached by an iterative choice strategy, when available. Higher means better according to that strategy's choice model.",
+        category="run",
+        direction="maximize",
+        is_core=False,
+    ),
+]
+
+
+# ============================================================================
 # AGGREGATED METRIC REGISTRY
 # ============================================================================
 
 ALL_METRICS: list[MetricSpec] = (
-    DIVERSITY_METRICS + PROXIMITY_METRICS + PROGRAM_METRICS + QUALITY_METRICS + STRUCTURE_METRICS
+    DIVERSITY_METRICS
+    + PROXIMITY_METRICS
+    + PROGRAM_METRICS
+    + QUALITY_METRICS
+    + STRUCTURE_METRICS
+    + RUN_METRICS
 )
 
 # Build lookup dictionaries

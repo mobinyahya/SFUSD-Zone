@@ -1,77 +1,97 @@
-"""
-Tests for the new metrics package.
-"""
-
-import json
-import pickle
-import sys
-import os
-
-# Ensure imports work
-sys.path.insert(0, '/home/kumarc/sfusd/SFUSD-Zone')
-
-from Zone_Generation.Running_Analysis.metrics import ZoneMetricsCalculator, MetricsResult, ZoneData
-from Zone_Generation.Config.Constants import get_dropbox_path
+from Zone_Generation.pipeline.data.contiguity import boundary_edges
+from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.pipeline.tests.synthetic import make_grid_problem
+from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
 
 
-def test_metrics_calculator():
-    """Test the full metrics calculator with real data."""
-    print("Loading graph...")
-    graph_path = f'{get_dropbox_path(False)}/Optimization/Zones/Graphs/BlockGroup_0.pickle'
-    with open(graph_path, 'rb') as f:
-        G = pickle.load(f)
-    print(f"Graph loaded: {len(G.nodes)} nodes, {len(G.edges)} edges")
-    
-    # Load test zone dict
-    zd_path = '/home/kumarc/sfusd-local-data/zones/SFUSD/local_runs/new_benchmarks_test/4-zone-rec-4/seed42/frl0.12_racial0.12/overage0.7_shortage0.15/BlockGroup_1-BlockGroup_0_tl_120-120/zone_dict_BlockGroup_0.json'
-    print(f"Loading zone dict from {zd_path}...")
-    with open(zd_path) as f:
-        zone_dict = {int(k): v for k, v in json.load(f).items()}
-    print(f"Zone dict loaded: {len(zone_dict)} areas, {len(set(zone_dict.values()))} zones")
-    
-    # Create calculator
-    print("\nCreating ZoneMetricsCalculator...")
-    calc = ZoneMetricsCalculator(zone_dict, G, {'is_local': False, 'compute_choice': False})
-    
-    # Compute all metrics (without choice for speed)
-    print("Computing all metrics (excluding choice for speed)...")
-    result = calc.compute_all(include_choice=False)
-    
-    print("\n" + "="*60)
-    print("AGGREGATED METRICS:")
-    print("="*60)
-    for key, value in sorted(result.metrics.items()):
-        if isinstance(value, float):
-            print(f"  {key}: {value:.4f}")
-        else:
-            print(f"  {key}: {value}")
-    
-    print("\n" + "="*60)
-    print("PER-ZONE DATA (first 3 zones):")
-    print("="*60)
-    for zone_id, zone_data in list(result.zone_data.items())[:3]:
-        print(f"\nZone {zone_id}:")
-        zd = zone_data
-        print(f"  Students: {zd.ge_students:.0f}")
-        print(f"  FRL %: {zd.frl_pct:.3f}")
-        print(f"  Programs: {zd.total_programs}")
-        print(f"  Language immersion: {zd.language_immersion_count}")
-        print(f"  Special ed: {zd.special_ed_count}")
-        print(f"  Avg GS rating: {zd.avg_greatschools_rating:.2f}")
-        print(f"  Avg math score: {zd.avg_math_score:.0f}")
-        print(f"  Avg any GE school dist: {zd.avg_any_ge_school_distance:.3f}")
-        print(f"  Avg farthest GE school dist: {zd.avg_farthest_ge_school_distance:.3f}")
-        print(f"  Avg out-of-zone GE schools: {zd.avg_out_of_zone_ge_schools:.3f}")
-    
-    print("\n✓ All tests passed!")
-    return True
+def _problem():
+    problem = make_grid_problem(3, 3)
+    problem.G.graph["school_data"] = {
+        100: {
+            "program_types": ["GE", "SB"],
+            "math_score": 2500,
+            "english_score": 2450,
+            "ge_capacity": 1,
+            "attendance_area": 100,
+        },
+        200: {
+            "program_types": ["GE", "SA"],
+            "math_score": 2600,
+            "english_score": 2550,
+            "ge_capacity": 1,
+            "attendance_area": 200,
+        },
+    }
+    return problem
 
 
-if __name__ == "__main__":
-    try:
-        test_metrics_calculator()
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+def _assignment():
+    return {
+        0: 0,
+        1: 0,
+        3: 0,
+        4: 0,
+        2: 1,
+        5: 1,
+        6: 1,
+        7: 1,
+        8: 1,
+    }
+
+
+def _solution(objective=10.0, wall_time=1.5, metadata=None):
+    return ZoneSolution(
+        problem=_problem(),
+        assignment=_assignment(),
+        status="FEASIBLE",
+        objective=objective,
+        wall_time=wall_time,
+        metadata=metadata or {"solver": "test"},
+    )
+
+
+def test_pipeline_metrics_on_single_solution():
+    solution = _solution(objective=12.0)
+    result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
+
+    expected_boundary = boundary_edges(solution.problem.G, solution.assignment)
+    assert result.metrics["num_zones"] == 2
+    assert result.metrics["boundary_cost"] == expected_boundary
+    assert result.metrics["final_boundary_cost"] == expected_boundary
+    assert result.metrics["final_objective"] == 12.0
+    assert result.metrics["contiguous"] == 1
+    assert result.metrics["avg_total_programs_per_zone"] == 2.0
+    assert result.metrics["solution_code"]
+    assert set(result.zone_data) == {0, 1}
+    assert result.zone_data[0]["ge_students"] == 4.0
+    assert result.zone_data[0]["avg_math_score"] == 2500.0
+
+
+def test_recursive_stage_metrics_are_preserved():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(objective=10.0, wall_time=3.0)
+    result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
+
+    assert result.run["strategy"] == "recursive"
+    assert result.run["selection"] == "last_solution_with_assignment"
+    assert result.run["final_stage"] == "stage_01_BlockGroup_0"
+    assert result.metrics["total_wall_time"] == 5.0
+    assert result.metrics["objective_stage_00_BlockGroup_0"] == 20.0
+    assert result.metrics["objective_stage_01_BlockGroup_0"] == 10.0
+    assert len(result.run["stages"]) == 2
+
+
+def test_iterative_metrics_select_best_choice_utility():
+    low = _solution(objective=30.0, metadata={"choice_utility": 1.0})
+    best = _solution(objective=25.0, metadata={"choice_utility": 2.5})
+    later = _solution(objective=20.0, metadata={"choice_utility": 2.0})
+
+    result = MetricsCalculator(
+        [low, best, later], config={"strategy": "iterative_choice"}
+    ).compute()
+
+    assert result.run["selection"] == "best_choice_utility"
+    assert result.run["final_stage"] == "iteration_01_BlockGroup_0"
+    assert result.metrics["final_objective"] == 25.0
+    assert result.metrics["final_choice_utility"] == 2.5
+    assert result.run["stages"][2]["choice_utility"] == 2.0

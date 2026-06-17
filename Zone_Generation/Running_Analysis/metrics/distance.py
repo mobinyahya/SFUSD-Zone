@@ -1,160 +1,152 @@
-"""
-Distance metrics for zoning.
+"""Distance and GE proximity metrics."""
 
-Includes:
-- Average distance to any GE school in zone (mean of all pairwise distances)
-- Average distance to farthest GE school in zone (mean of per-area max distances)
-- Average number of out-of-zone GE schools within 0.5 miles
-- Schools in attendance area metric
-"""
-
-import networkx as nx
+from __future__ import annotations
 
 from Zone_Generation.Config.metrics_config import MetricColumns
+from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.Running_Analysis.metrics.programs import ge_schools
 
-GE_PROXIMITY_RADIUS = 0.5  # miles, matches the in-zone GE proximity metric
+GE_PROXIMITY_RADIUS = 0.5
 
 
-def compute_distance_metrics(
-    zone_dict: dict[int, int],
-    G: nx.Graph,
-    zone_blocks: dict[int, list[int]],
-    zone_schools: dict[int, list[int]],
-    ge_schools: set[int]
-) -> tuple[dict[str, float], dict[int, dict]]:
-    """
-    Compute distance-related metrics.
+def compute(context: MetricsContext) -> MetricOutput:
+    distance_dict = context.G.graph.get("distance_dict", {})
+    school_data = context.G.graph.get("school_data", {})
+    ge_school_ids = ge_schools(context)
+    ge_school_to_zone = _ge_school_zones(context, ge_school_ids)
 
-    Args:
-        zone_dict: Area to zone mapping
-        G: Graph with distance_dict and school_data
-        zone_blocks: Zone to list of blocks mapping
-        zone_schools: Zone to list of school IDs mapping
-        ge_schools: Set of school IDs that have a GE program
+    zone_data: dict[int, dict] = {}
+    avg_any_values: list[float] = []
+    avg_farthest_values: list[float] = []
+    out_of_zone_values: list[float] = []
+    attendance_area_values: list[int] = []
+    nearby_ge_values: list[float] = []
 
-    Returns:
-        Tuple of (aggregated_metrics, per_zone_distance_data)
-    """
-    distance_dict = G.graph.get('distance_dict', {})
-    school_data = G.graph.get('school_data', {})
+    for zone_id, nodes in context.zone_nodes.items():
+        schools = context.zone_schools.get(zone_id, [])
+        ge_in_zone = [sid for sid in schools if sid in ge_school_ids]
 
-    per_zone_data = {}
-    all_avg_any: list[float] = []
-    all_avg_farthest: list[float] = []
-    all_avg_out_of_zone: list[float] = []
-    all_aa_counts: list[int] = []
+        avg_any, avg_farthest = _in_zone_distances(
+            nodes, ge_in_zone, context.school_to_node, distance_dict
+        )
+        out_of_zone = _nearby_out_of_zone_ge(
+            nodes, zone_id, ge_school_to_zone, context.school_to_node, distance_dict
+        )
+        nearby_ge = _student_weighted_nearby_ge(
+            context, nodes, ge_in_zone, context.school_to_node, distance_dict
+        )
+        attendance_area = _schools_in_attendance_area(schools, school_data)
 
-    # Build school_id -> node lookup
-    school_to_node: dict[int, int] = {}
-    for node in G.nodes():
-        for sid in G.nodes[node].get('school_ids', []):
-            school_to_node[sid] = node
-
-    # Build GE school -> zone lookup (for out-of-zone metric)
-    ge_school_to_zone: dict[int, int] = {}
-    for zone_id, schools in zone_schools.items():
-        for sid in schools:
-            if sid in ge_schools:
-                ge_school_to_zone[sid] = zone_id
-
-    for zone_id, blocks in zone_blocks.items():
-        schools_in_zone = zone_schools.get(zone_id, [])
-        ge_in_zone = [s for s in schools_in_zone if s in ge_schools]
-
-        # --- Metric 1: avg distance to any in-zone GE school ---
-        # --- Metric 2: avg distance to farthest in-zone GE school ---
-        if ge_in_zone and blocks:
-            sum_avg_any = 0.0
-            sum_max_dist = 0.0
-            count_blocks = 0
-
-            for block in blocks:
-                if block not in distance_dict:
-                    continue
-
-                dists = []
-                for sid in ge_in_zone:
-                    school_node = school_to_node.get(sid)
-                    if school_node is not None and school_node in distance_dict[block]:
-                        dists.append(distance_dict[block][school_node])
-
-                if dists:
-                    sum_avg_any += sum(dists) / len(dists)
-                    sum_max_dist += max(dists)
-                    count_blocks += 1
-
-            avg_any = sum_avg_any / count_blocks if count_blocks > 0 else 0.0
-            avg_farthest = sum_max_dist / count_blocks if count_blocks > 0 else 0.0
-        else:
-            avg_any = 0.0
-            avg_farthest = 0.0
-
-        # --- Metric 3: avg out-of-zone GE schools within 0.5 miles ---
-        if blocks:
-            total_out_of_zone = 0.0
-            count_blocks_ooz = 0
-
-            for block in blocks:
-                if block not in distance_dict:
-                    continue
-
-                out_of_zone_count = 0
-                for sid, sid_zone in ge_school_to_zone.items():
-                    if sid_zone == zone_id:
-                        continue
-                    school_node = school_to_node.get(sid)
-                    if school_node is not None and school_node in distance_dict[block]:
-                        if distance_dict[block][school_node] <= GE_PROXIMITY_RADIUS:
-                            out_of_zone_count += 1
-
-                total_out_of_zone += out_of_zone_count
-                count_blocks_ooz += 1
-
-            avg_out_of_zone = total_out_of_zone / count_blocks_ooz if count_blocks_ooz > 0 else 0.0
-        else:
-            avg_out_of_zone = 0.0
-
-        # --- Schools in attendance area (unchanged) ---
-        zone_attendance_areas = set()
-        for sid in schools_in_zone:
-            if sid in school_data:
-                aa = school_data[sid].get('attendance_area')
-                if aa:
-                    zone_attendance_areas.add(aa)
-
-        schools_in_aa = 0
-        for sid in schools_in_zone:
-            if sid in school_data:
-                school_aa = school_data[sid].get('attendance_area')
-                if school_aa in [s for s in schools_in_zone]:
-                    schools_in_aa += 1
-
-        per_zone_data[zone_id] = {
-            'avg_any_ge_school_distance': avg_any,
-            'avg_farthest_ge_school_distance': avg_farthest,
-            'avg_out_of_zone_ge_schools': avg_out_of_zone,
-            'schools_in_attendance_area': schools_in_aa,
+        zone_data[zone_id] = {
+            "avg_any_ge_school_distance": avg_any,
+            "avg_farthest_ge_school_distance": avg_farthest,
+            "avg_out_of_zone_ge_schools": out_of_zone,
+            "schools_in_attendance_area": attendance_area,
+            "ge_schools_within_half_mile": nearby_ge,
         }
+        avg_any_values.append(avg_any)
+        avg_farthest_values.append(avg_farthest)
+        out_of_zone_values.append(out_of_zone)
+        attendance_area_values.append(attendance_area)
+        nearby_ge_values.append(nearby_ge)
 
-        all_avg_any.append(avg_any)
-        all_avg_farthest.append(avg_farthest)
-        all_avg_out_of_zone.append(avg_out_of_zone)
-        all_aa_counts.append(schools_in_aa)
-
-    n = len(zone_blocks) if zone_blocks else 1
-    aggregated = {
-        MetricColumns.AVG_ANY_ZONE_GE_SCHOOL_DISTANCE: (
-            sum(all_avg_any) / n if all_avg_any else 0.0
-        ),
-        MetricColumns.AVG_FARTHEST_ZONE_GE_SCHOOL_DISTANCE: (
-            sum(all_avg_farthest) / n if all_avg_farthest else 0.0
-        ),
-        MetricColumns.AVG_OUT_OF_ZONE_GE_SCHOOLS: (
-            sum(all_avg_out_of_zone) / n if all_avg_out_of_zone else 0.0
-        ),
-        MetricColumns.AVG_SCHOOLS_IN_ATTENDANCE_AREA: (
-            sum(all_aa_counts) / n if all_aa_counts else 0.0
-        ),
+    metrics = {
+        MetricColumns.AVG_ANY_ZONE_GE_SCHOOL_DISTANCE: _mean(avg_any_values),
+        MetricColumns.AVG_FARTHEST_ZONE_GE_SCHOOL_DISTANCE: _mean(avg_farthest_values),
+        MetricColumns.AVG_OUT_OF_ZONE_GE_SCHOOLS: _mean(out_of_zone_values),
+        MetricColumns.AVG_SCHOOLS_IN_ATTENDANCE_AREA: _mean(attendance_area_values),
+        MetricColumns.AVG_GE_SCHOOLS_WITHIN_HALF_MILE: _mean(nearby_ge_values),
     }
+    return MetricOutput(metrics=metrics, zone_data=zone_data)
 
-    return aggregated, per_zone_data
+
+def _ge_school_zones(context: MetricsContext, ge_school_ids: set[int]) -> dict[int, int]:
+    out: dict[int, int] = {}
+    for zone_id, schools in context.zone_schools.items():
+        for sid in schools:
+            if sid in ge_school_ids:
+                out[sid] = zone_id
+    return out
+
+
+def _in_zone_distances(
+    nodes: list[int],
+    ge_in_zone: list[int],
+    school_to_node: dict[int, int],
+    distance_dict: dict,
+) -> tuple[float, float]:
+    avg_any_values = []
+    farthest_values = []
+    for node in nodes:
+        distances = [
+            distance_dict[node][school_to_node[sid]]
+            for sid in ge_in_zone
+            if node in distance_dict
+            and sid in school_to_node
+            and school_to_node[sid] in distance_dict[node]
+        ]
+        if distances:
+            avg_any_values.append(sum(distances) / len(distances))
+            farthest_values.append(max(distances))
+    return _mean(avg_any_values), _mean(farthest_values)
+
+
+def _nearby_out_of_zone_ge(
+    nodes: list[int],
+    zone_id: int,
+    ge_school_to_zone: dict[int, int],
+    school_to_node: dict[int, int],
+    distance_dict: dict,
+) -> float:
+    counts = []
+    for node in nodes:
+        if node not in distance_dict:
+            continue
+        nearby = 0
+        for school_id, school_zone in ge_school_to_zone.items():
+            if school_zone == zone_id or school_id not in school_to_node:
+                continue
+            school_node = school_to_node[school_id]
+            if distance_dict[node].get(school_node, float("inf")) <= GE_PROXIMITY_RADIUS:
+                nearby += 1
+        counts.append(nearby)
+    return _mean(counts)
+
+
+def _student_weighted_nearby_ge(
+    context: MetricsContext,
+    nodes: list[int],
+    ge_in_zone: list[int],
+    school_to_node: dict[int, int],
+    distance_dict: dict,
+) -> float:
+    weighted_count = 0.0
+    total_students = 0.0
+    for node in nodes:
+        if node not in distance_dict:
+            continue
+        students = float(context.G.nodes[node].get("ge_students", 0.0))
+        nearby = 0
+        for school_id in ge_in_zone:
+            if school_id not in school_to_node:
+                continue
+            school_node = school_to_node[school_id]
+            if distance_dict[node].get(school_node, float("inf")) <= GE_PROXIMITY_RADIUS:
+                nearby += 1
+        weighted_count += nearby * students
+        total_students += students
+    return weighted_count / total_students if total_students > 0 else 0.0
+
+
+def _schools_in_attendance_area(schools: list[int], school_data: dict) -> int:
+    school_set = set(schools)
+    count = 0
+    for school_id in schools:
+        attendance_area = school_data.get(school_id, {}).get("attendance_area")
+        if attendance_area in school_set:
+            count += 1
+    return count
+
+
+def _mean(values) -> float:
+    return sum(values) / len(values) if values else 0.0
