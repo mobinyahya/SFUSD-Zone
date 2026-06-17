@@ -1,0 +1,20 @@
+{
+  "level": "BlockGroup_0",
+  "status": "OPTIMAL",
+  "objective": 178.0,
+  "wall_time": 0.1232597827911377,
+  "num_zones": 7,
+  "centroids": [
+    37,
+    537,
+    159,
+    365,
+    458,
+    320,
+    352
+  ],
+  "contiguous": true,
+  "metadata": {
+    "solver": "cp_int"
+  }
+}
