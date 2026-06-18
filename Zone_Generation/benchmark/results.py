@@ -111,7 +111,7 @@ def _stage_rows(
             "status": stage.get("status"),
             "objective": stage.get("objective"),
             "cut_edges": metrics_stage.get("cut_edges"),
-            "fractional_cut_edges": metrics_stage.get("fractional_cut_edges"),
+            "normalized_cut_edges": metrics_stage.get("normalized_cut_edges"),
             "avg_reock_score": metrics_stage.get("avg_reock_score"),
             "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
             "wall_time": stage.get("wall_time"),

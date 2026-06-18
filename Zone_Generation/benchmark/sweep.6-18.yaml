@@ -1,5 +1,5 @@
 # Optimization-native benchmark sweep.
-# Run: uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml
+# Run: uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.6-18.yaml
 
 name: 6-18-block-group-sweep
 mode: run  # run | metrics

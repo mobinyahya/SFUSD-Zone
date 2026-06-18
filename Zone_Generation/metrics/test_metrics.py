@@ -67,8 +67,8 @@ def test_optimization_metrics_on_single_solution():
     assert result.metrics["num_zones"] == 2
     assert result.metrics["cut_edges"] == expected_cut_edges
     assert result.metrics["final_cut_edges"] == expected_cut_edges
-    assert result.metrics["fractional_cut_edges"] == (
-        expected_cut_edges / solution.problem.G.number_of_edges()
+    assert result.metrics["normalized_cut_edges"] == (
+        expected_cut_edges / solution.problem.Z
     )
     assert 0 < result.metrics["avg_reock_score"] <= 1
     assert 0 < result.metrics["avg_polsby_popper_score"] <= 1
@@ -126,7 +126,7 @@ def test_recursive_stage_metrics_are_preserved():
     assert result.metrics["objective_stage_00_Block_0"] == 20.0
     assert result.metrics["objective_stage_01_Block_0"] == 10.0
     assert result.metrics["cut_edges_stage_01_Block_0"] > 0
-    assert result.metrics["fractional_cut_edges_stage_01_Block_0"] > 0
+    assert result.metrics["normalized_cut_edges_stage_01_Block_0"] > 0
     assert len(result.run["stages"]) == 2
 
 
