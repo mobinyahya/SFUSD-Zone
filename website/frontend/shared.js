@@ -159,8 +159,9 @@ function formatValue(value, key) {
     if (key.endsWith('_mad') || key === 'seat_disparity') return (value * 100).toFixed(1);
     if (key.includes('distance')) return value.toFixed(3);
     if (key.includes('rating')) return value.toFixed(2);
-    if (key === 'boundary_cost') return Math.round(value).toString();
-    if (key === 'compactness') return value.toFixed(1);
+    if (key === 'cut_edges' || key === 'final_cut_edges') return Math.round(value).toString();
+    if (key === 'fractional_cut_edges') return value.toFixed(3);
+    if (key === 'avg_reock_score' || key === 'avg_polsby_popper_score') return value.toFixed(3);
     if (key.includes('index') || key.includes('Index')) return value.toFixed(2);
     return value.toFixed(3);
 }

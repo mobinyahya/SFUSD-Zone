@@ -3,6 +3,7 @@ import os
 import pytest
 
 from Zone_Generation.pipeline.config import PipelineConfig
+from Zone_Generation.pipeline.levels import LevelSpec
 from Zone_Generation.pipeline.solution import ZoneSolution
 from Zone_Generation.pipeline.tests.synthetic import FakeDataset, make_grid_problem
 from Zone_Generation.Running_Analysis.benchmark.config import (
@@ -84,7 +85,7 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     run_dir, problem = _write_synthetic_run(tmp_path)
 
     loaded, _, manifest = load_solutions(str(run_dir), dataset=FakeDataset(problem))
-    assert manifest["stages"][0]["name"] == "stage_00_BlockGroup_0"
+    assert manifest["stages"][0]["name"] == "stage_00_Block_0"
     assert loaded[0].assignment == _assignment()
 
     summary, stages = aggregate_results(
@@ -96,7 +97,7 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert len(stages) == 1
     assert summary.loc[0, "status"] == "FEASIBLE"
     assert summary.loc[0, "num_zones"] == 2
-    assert stages.loc[0, "stage_name"] == "stage_00_BlockGroup_0"
+    assert stages.loc[0, "stage_name"] == "stage_00_Block_0"
     assert (tmp_path / "summary.csv").exists()
     assert (tmp_path / "stages.csv").exists()
 
@@ -120,6 +121,7 @@ def _write_synthetic_run(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     problem = make_grid_problem(3, 3)
+    problem.level = LevelSpec("Block", 0)
     solution = ZoneSolution(
         problem=problem,
         assignment=_assignment(),
@@ -130,7 +132,7 @@ def _write_synthetic_run(tmp_path):
     )
     config = PipelineConfig(
         centroids_type="5-zone-AF",
-        levels=["BlockGroup_0"],
+        levels=["Block_0"],
         solver="local_search",
         strategy="single",
         frl_dev=1.0,
@@ -170,7 +172,7 @@ def _write_synthetic_run(tmp_path):
             started_at="2026-01-01T00:00:00+00:00",
             completed_at="2026-01-01T00:00:01+00:00",
             stages=stage_records,
-            final_stage="stage_00_BlockGroup_0",
+            final_stage="stage_00_Block_0",
             error_message=None,
         ),
     )

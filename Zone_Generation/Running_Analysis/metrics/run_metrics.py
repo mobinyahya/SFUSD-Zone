@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from Zone_Generation.Config.metrics_config import MetricColumns
-from Zone_Generation.pipeline.data.contiguity import boundary_edges
 from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.Running_Analysis.metrics.spatial import compute_spatial_metrics
 
 
 def compute(context: MetricsContext) -> MetricOutput:
@@ -25,11 +25,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         level_counts[stage.level.name] = level_counts.get(stage.level.name, 0) + 1
 
     for idx, (name, solution) in enumerate(zip(context.stage_names, context.stages)):
-        boundary_cost = (
-            boundary_edges(solution.problem.G, solution.assignment)
-            if solution.assignment
-            else None
-        )
+        spatial = compute_spatial_metrics(solution, context.config) if solution.assignment else None
         contiguous = solution.is_contiguous() if solution.assignment else None
         row = {
             "name": name,
@@ -37,7 +33,10 @@ def compute(context: MetricsContext) -> MetricOutput:
             "level": solution.level.name,
             "status": solution.status,
             "objective": solution.objective,
-            "boundary_cost": boundary_cost,
+            "cut_edges": spatial.cut_edges if spatial else None,
+            "fractional_cut_edges": spatial.fractional_cut_edges if spatial else None,
+            "avg_reock_score": spatial.avg_reock_score if spatial else None,
+            "avg_polsby_popper_score": spatial.avg_polsby_popper_score if spatial else None,
             "wall_time": solution.wall_time,
             "contiguous": contiguous,
             "num_nodes": solution.problem.A,
@@ -49,15 +48,21 @@ def compute(context: MetricsContext) -> MetricOutput:
         stage_rows.append(row)
 
         flat[f"objective_{name}"] = solution.objective
-        flat[f"boundary_cost_{name}"] = boundary_cost
+        flat[f"cut_edges_{name}"] = row["cut_edges"]
+        flat[f"fractional_cut_edges_{name}"] = row["fractional_cut_edges"]
+        flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
+        flat[f"avg_polsby_popper_score_{name}"] = row["avg_polsby_popper_score"]
         flat[f"wall_time_{name}"] = solution.wall_time
         if level_counts[solution.level.name] == 1:
             flat[f"objective_{solution.level.name}"] = solution.objective
-            flat[f"boundary_cost_{solution.level.name}"] = boundary_cost
+            flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
+            flat[f"fractional_cut_edges_{solution.level.name}"] = row["fractional_cut_edges"]
+            flat[f"avg_reock_score_{solution.level.name}"] = row["avg_reock_score"]
+            flat[f"avg_polsby_popper_score_{solution.level.name}"] = row["avg_polsby_popper_score"]
             flat[f"wall_time_{solution.level.name}"] = solution.wall_time
 
     final_stage = stage_rows[context.final_stage_index]
-    flat[MetricColumns.FINAL_BOUNDARY_COST] = final_stage["boundary_cost"]
+    flat[MetricColumns.FINAL_CUT_EDGES] = final_stage["cut_edges"]
 
     run = {
         "strategy": _strategy_name(context),
@@ -66,7 +71,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         "final_stage_index": context.final_stage_index,
         "final_status": context.solution.status,
         "final_objective": context.solution.objective,
-        "final_boundary_cost": final_stage["boundary_cost"],
+        "final_cut_edges": final_stage["cut_edges"],
         "total_wall_time": flat[MetricColumns.TOTAL_WALL_TIME],
         "stages": stage_rows,
     }

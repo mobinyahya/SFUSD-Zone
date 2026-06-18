@@ -55,8 +55,10 @@ class MetricColumns:
     AVG_FARTHEST_ZONE_GE_SCHOOL_DISTANCE = "avg_farthest_zone_ge_school_distance"
     AVG_OUT_OF_ZONE_GE_SCHOOLS = "avg_out_of_zone_ge_schools_within_half_mile"
     AVG_SCHOOLS_IN_ATTENDANCE_AREA = "avg_schools_in_attendance_area"
-    BOUNDARY_COST = "boundary_cost"
-    COMPACTNESS = "compactness"
+    CUT_EDGES = "cut_edges"
+    FRACTIONAL_CUT_EDGES = "fractional_cut_edges"
+    AVG_REOCK_SCORE = "avg_reock_score"
+    AVG_POLSBY_POPPER_SCORE = "avg_polsby_popper_score"
     AVG_TOTAL_PROGRAMS = "avg_total_programs_per_zone"
     AVG_LANGUAGE_IMMERSION = "avg_language_immersion_per_zone"
     AVG_SPECIAL_ED = "avg_special_ed_per_zone"
@@ -72,7 +74,7 @@ class MetricColumns:
     CONTIGUOUS = "contiguous"
     SOLUTION_CODE = "solution_code"
     FINAL_OBJECTIVE = "final_objective"
-    FINAL_BOUNDARY_COST = "final_boundary_cost"
+    FINAL_CUT_EDGES = "final_cut_edges"
     FINAL_STATUS = "final_status"
     FINAL_WALL_TIME = "final_wall_time"
     TOTAL_WALL_TIME = "total_wall_time"
@@ -504,23 +506,40 @@ PROGRAM_METRICS = [
 
 STRUCTURE_METRICS = [
     MetricSpec(
-        column="boundary_cost",
-        display_name="Boundary Cost",
-        description="Total number of graph edges that cross zone boundaries in the selected final solution. Higher means more complex, jagged zone borders.",
+        column="cut_edges",
+        display_name="Cut Edges",
+        description="Number of Block_0 graph edges whose endpoints are assigned to different zones after converting the selected final solution to Block_0. Lower means fewer boundaries between adjacent base areas.",
         category="structure",
         direction="minimize",
         is_core=False,
-        short_name="Boundary",
+        short_name="Cuts",
     ),
     MetricSpec(
-        column="compactness",
-        display_name="Compactness",
-        description="The overall compactness of the zones in this mapping. This basically measures how jagged and weird the zones look. Lower indicates \
-        that zones are more compact and \"nicer\" looking. This is calculated by normalizing the number of neighbors in different zones by the number of zones.",
+        column="fractional_cut_edges",
+        display_name="Fractional Cut Edges",
+        description="Proportion of Block_0 graph edges cut by zone boundaries after converting the selected final solution to Block_0. Computed as cut_edges divided by total Block_0 edges. Lower is better.",
         category="structure",
         direction="minimize",
         is_core=False,
-        short_name="Compactness",
+        short_name="Cut %",
+    ),
+    MetricSpec(
+        column="avg_reock_score",
+        display_name="Average Reock Score",
+        description="Average Reock compactness score across zones. For each zone, area is divided by the area of its minimum enclosing circle. Higher means zones are more compact. Range 0-1.",
+        category="structure",
+        direction="maximize",
+        is_core=False,
+        short_name="Reock",
+    ),
+    MetricSpec(
+        column="avg_polsby_popper_score",
+        display_name="Average Polsby-Popper Score",
+        description="Average Polsby-Popper compactness score across zones. For each zone, 4*pi*area/perimeter^2 is computed from projected zone geometry. Higher means zones are more compact. Range 0-1.",
+        category="structure",
+        direction="maximize",
+        is_core=False,
+        short_name="PP",
     ),
     MetricSpec(
         column="num_zones",
@@ -612,20 +631,20 @@ RUN_METRICS = [
     MetricSpec(
         column="final_objective",
         display_name="Final Objective",
-        description="Objective value reported by the solver for the selected final solution. For current solvers this is the boundary-minimization objective.",
+        description="Objective value reported by the solver for the selected final solution. This is solver metadata; use cut_edges for the normalized structural boundary metric.",
         category="run",
-        direction="minimize",
+        direction=None,
         is_core=False,
         short_name="Obj",
     ),
     MetricSpec(
-        column="final_boundary_cost",
-        display_name="Final Boundary Cost",
-        description="Boundary cost recomputed from the selected final solution assignment. This is useful for comparing solver-reported objectives against the realized map.",
+        column="final_cut_edges",
+        display_name="Final Cut Edges",
+        description="Block_0-normalized cut edge count for the selected final solution, repeated in run metadata for comparing against solver-reported objectives.",
         category="run",
-        direction="minimize",
+        direction=None,
         is_core=False,
-        short_name="Final Boundary",
+        short_name="Final Cuts",
     ),
     MetricSpec(
         column="total_wall_time",

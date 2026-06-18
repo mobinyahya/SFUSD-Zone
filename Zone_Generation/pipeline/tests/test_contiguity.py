@@ -1,3 +1,5 @@
+import networkx as nx
+
 from Zone_Generation.pipeline.data import contiguity
 from Zone_Generation.pipeline.tests.synthetic import make_grid_graph
 
@@ -44,3 +46,25 @@ def test_boundary_candidates_pins_interior():
     # every candidate set contains the node's current zone
     for node, zones in cands.items():
         assert assignment[node] in zones
+
+
+def test_boundary_candidates_anchors_centroids_before_relaxing_neighbors():
+    G = make_grid_graph(3, 3)
+    centroids = [0, 8]
+    assignment = {i: 1 for i in G.nodes()}
+
+    cands = contiguity.boundary_candidates(G, assignment, centroids, radius=1)
+
+    assert cands[0] == {0}
+    assert cands[8] == {1}
+    assert 0 in cands[1]
+    assert 0 in cands[3]
+
+
+def test_contiguity_supports_allow_distance_local_minimum():
+    G = nx.path_graph(3)
+    G.graph["distance_dict"] = {0: {0: 0.0, 1: 2.0, 2: 1.0}}
+
+    supports = contiguity.contiguity_supports(G, [0], lambda node: {0})
+
+    assert supports[(2, 0)] == [1]

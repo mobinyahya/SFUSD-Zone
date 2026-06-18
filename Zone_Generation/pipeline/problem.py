@@ -136,9 +136,21 @@ class ZoneProblem:
     def candidate_zones(self, node: int) -> set[int]:
         """Set of zone indices ``node`` may be assigned to.
 
-        Priority: an explicit per-node ``candidates`` entry, then a forced
-        ``fixed`` assignment, then the distance-derived default.
+        Priority: centroid anchors, then an explicit per-node ``candidates``
+        entry, then a forced ``fixed`` assignment, then the distance-derived
+        default. Centroids are checked first so strategy-level relaxations can
+        never unassign an anchor node.
         """
+        centroid_zones = {
+            z for z, centroid in enumerate(self.centroids) if centroid == node
+        }
+        if len(centroid_zones) > 1:
+            raise ValueError(
+                f"Node {node} is used as multiple centroids: "
+                f"{sorted(centroid_zones)}."
+            )
+        if centroid_zones:
+            return centroid_zones
         if self.candidates is not None and node in self.candidates:
             return set(self.candidates[node])
         if self.fixed is not None and node in self.fixed:

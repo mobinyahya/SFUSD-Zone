@@ -1,17 +1,15 @@
-"""Strict contiguity primitives.
+"""Contiguity primitives.
 
 A zone is *contiguous* if the subgraph it induces is connected. We enforce this
-with the classic shortest-path-tree formulation: a non-centroid node may belong
-to zone ``z`` only if at least one of its neighbors that is *strictly closer to
-``z``'s centroid* also belongs to ``z``. Because every such "support" edge moves
-strictly closer to the centroid (whose distance is 0, the unique minimum), the
-support relation cannot cycle, so every node in a zone has a strictly-decreasing
-path to the centroid -- i.e. the zone is connected.
+with a centroid-rooted support formulation: a non-centroid node may belong to
+zone ``z`` only if at least one supported neighbor also belongs to ``z``. The
+preferred support moves strictly closer to the centroid; a fallback handles
+fine-graph local minima where a physically adjacent block is the only way out.
 
 This module provides:
 
-* :func:`closer_supports` -- the per-(node, zone) support sets the solvers turn
-  into linear constraints,
+* :func:`contiguity_supports` -- the per-(node, zone) support sets the solvers
+  turn into linear constraints,
 * :func:`is_contiguous` / :func:`boundary_edges` -- validators / objective
   helpers,
 * :func:`repair` -- a post-hoc fixer used by local search,
@@ -61,6 +59,53 @@ def closer_supports(
                 if _distance(G, centroid, nb) < d_node
                 and z in candidate_zones(nb)
             ]
+    return supports
+
+
+def contiguity_supports(
+    G: nx.Graph,
+    centroids: list[int],
+    candidate_zones,
+) -> dict[tuple[int, int], list[int]]:
+    """Support sets with a fallback for fine-graph distance local minima.
+
+    The preferred support for ``(node, zone)`` is a same-zone candidate neighbor
+    that is strictly closer to the zone centroid and can itself continue toward
+    the centroid. Some fine Block-level geometries have small local minima where
+    every adjacent block is slightly farther from the centroid even though the
+    area is physically connected. For those cases, fall back to any same-zone
+    candidate neighbor that can continue toward the centroid. This mirrors the
+    legacy CP contiguity behavior and avoids forbidding otherwise valid leaf
+    blocks.
+    """
+    closer = closer_supports(G, centroids, candidate_zones)
+    adjacent: dict[tuple[int, int], list[int]] = {}
+    for node in G.nodes():
+        for z in candidate_zones(node):
+            centroid = centroids[z]
+            if node == centroid:
+                continue
+            adjacent[(node, z)] = [
+                nb for nb in G.neighbors(node) if z in candidate_zones(nb)
+            ]
+
+    supports: dict[tuple[int, int], list[int]] = {}
+    for key, closer_nodes in closer.items():
+        node, z = key
+        centroid = centroids[z]
+        good = [
+            nb
+            for nb in closer_nodes
+            if nb == centroid or closer.get((nb, z), [])
+        ]
+        if good:
+            supports[key] = good
+            continue
+        supports[key] = [
+            nb
+            for nb in adjacent[key]
+            if nb == centroid or closer.get((nb, z), [])
+        ]
     return supports
 
 
@@ -154,9 +199,13 @@ def boundary_candidates(
     ``trim_noncontiguity`` heuristics, used to seed a finer level from a coarser
     solution in the recursive strategy.
     """
+    anchored = dict(assignment)
+    for z, centroid in enumerate(centroids):
+        anchored[centroid] = z
+
     boundary: set[int] = set()
     for u, v in G.edges():
-        if assignment.get(u) != assignment.get(v):
+        if anchored.get(u) != anchored.get(v):
             boundary.add(u)
             boundary.add(v)
 
@@ -172,18 +221,18 @@ def boundary_candidates(
 
     candidates: dict[int, set[int]] = {}
     for node in G.nodes():
-        if node not in assignment:
+        if node not in anchored:
             # Not covered by the projection: leave it out so the problem falls
             # back to its distance-based candidacy.
             continue
         if node in band:
-            candidates[node] = {assignment[node]} | {
-                assignment[nb]
+            candidates[node] = {anchored[node]} | {
+                anchored[nb]
                 for nb in G.neighbors(node)
-                if nb in assignment
+                if nb in anchored
             }
         else:
-            candidates[node] = {assignment[node]}
+            candidates[node] = {anchored[node]}
     # Pin centroids regardless of coverage.
     for z, centroid in enumerate(centroids):
         candidates[centroid] = {z}

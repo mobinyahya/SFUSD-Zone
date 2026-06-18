@@ -58,12 +58,12 @@ Default modules are registered in `calculator.py` through `DEFAULT_MODULES`.
 
 | Module | Capabilities |
 |---|---|
-| `run_metrics.py` | Final status, objectives, wall time, boundary cost, and per-stage metadata. |
+| `run_metrics.py` | Final status, objectives, wall time, cut edges, compactness scores, and per-stage metadata. |
 | `diversity.py` | FRL, race and ethnicity balance, AALPI balance, and seat disparity. |
 | `programs.py` | Program counts by zone, language programs, special education, and GE access. |
 | `distance.py` | In-zone GE school distances and nearby out-of-zone GE school access. |
 | `quality.py` | School quality balance using math and English score attributes. |
-| `structure.py` | Zone count, boundary cost, compactness, contiguity, and solution code. |
+| `structure.py` | Zone count, Block_0-normalized cut edges, fractional cut edges, Reock/Polsby-Popper compactness, contiguity, and solution code. |
 
 ## Per-Zone Data
 

@@ -35,6 +35,13 @@ def test_local_search_stub():
     _check_valid(problem, solution)
 
 
+def test_explicit_candidates_cannot_unassign_centroids():
+    problem = make_grid_problem(3, 3, candidates={0: {1}, 8: {0}})
+
+    assert problem.candidate_zones(0) == {0}
+    assert problem.candidate_zones(8) == {1}
+
+
 def test_area_assignment_and_save(tmp_path):
     problem = make_grid_problem(3, 3)
     solution = get_solver("cp_int", solve_time_limit=10, workers=1).solve(problem)

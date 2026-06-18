@@ -2,10 +2,10 @@
 #   uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml
 
 # --- what to solve ---
-centroids_type: '7-zone-14'
+centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
-levels: ['BlockGroup_1', 'BlockGroup_0']
+levels: ['Block_1', 'Block_0']
 solver: 'cp_int'        # cp_int | cp_bool | mip | local_search
 strategy: 'recursive'   # single | recursive | iterative_choice
 
@@ -15,14 +15,14 @@ racial_dev: 0.3
 overage: 0.8
 shortage: 0.2
 max_distance: 5
-solve_time_limits: [45, 60]   # one per level
+solve_time_limits: [45, 45]   # one per level
 gap_limits: [0, 0]
 use_hints: true
 seed: 42
 workers: 8
 
 # --- strategy-specific ---
-boundary_radius: 1            # recursive/iterative: how far from borders to relax
+boundary_radius: 2            # recursive/iterative: how far from borders to relax
 max_iterations: 5             # iterative_choice
 choice_model: 'distance'      # distance | mnl
 

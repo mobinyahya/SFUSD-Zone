@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 
 import networkx as nx
+from shapely.geometry import box
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
 from Zone_Generation.pipeline.levels import LevelSpec
@@ -51,6 +52,7 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
             school_ids=schools,
             lat=float(r),
             lon=float(c),
+            geometry=box(c, r, c + 1, r + 1),
             **eth,
         )
 

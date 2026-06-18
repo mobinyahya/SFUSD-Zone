@@ -61,14 +61,22 @@ def centroids(problem: ZoneProblem, backend: ModelBackend) -> None:
 
 
 def contiguity_constraints(problem: ZoneProblem, backend: ModelBackend) -> None:
-    """Strict contiguity via the shortest-path-tree support relation."""
-    supports = contiguity.closer_supports(
+    """Contiguity via a centroid-rooted support relation."""
+    supports = contiguity.contiguity_supports(
         problem.G, problem.centroids, problem.candidate_zones
     )
+    forbidden_by_node: dict[int, set[int]] = {}
     for (node, z), support_nodes in supports.items():
         if not support_nodes:
-            # No strictly-closer candidate neighbor -> cannot be reached.
-            backend.forbid(z, node)
+            # No candidate support. If another zone is available, forbid this
+            # one; if this is the only candidate, leaving it unconstrained keeps
+            # boundary-relaxed models from becoming contradictory on harmless
+            # fine-graph edge cases.
+            forbidden = forbidden_by_node.setdefault(node, set())
+            remaining = problem.candidate_zones(node) - forbidden
+            if len(remaining) > 1:
+                backend.forbid(z, node)
+                forbidden.add(z)
             continue
         # x[z][node] <= sum(x[z][n] for n in support_nodes)
         terms: list[Term] = [(1.0, z, node)]
