@@ -1,0 +1,52 @@
+# Pipeline-native benchmark sweep.
+# Run: uv run python -m Zone_Generation.Running_Analysis.benchmark.run Zone_Generation/Running_Analysis/benchmark/sweep.example.yaml
+
+name: 6-18-block-group-sweep
+mode: run  # run | metrics
+
+pipeline_defaults:
+  max_distance: 5
+  use_hints: true
+  years: [14, 15, 16, 17, 18, 21, 22]
+  population_type: 'GE'
+  capacity_scenario: 'A'
+  boundary_radius: 1
+  gap_limits: [0, 0, 0]
+  workers: 8
+
+sweep:
+  centroids_type: ['5-zone-2', '6-zone-3', '7-zone-14', '8-zone-24']
+  frl_dev: [0.15, 0.2]
+  racial_dev: [0.15, 0.2]
+  seed: [42]
+  overage: [0.7, 0.8]
+  shortage: [0.15, 0.2]
+  solver: ['mip', 'cp_int', 'cp_bool']
+
+tasks:
+- strategy: 'single'
+  levels: ['Block_0']
+  solve_time_limits: [300]
+
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_0']
+  solve_time_limits: [150, 150]
+
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_1', 'Block_0']
+  solve_time_limits: [100, 100, 100]
+
+
+execution:
+  output_dir: '/share/data/school_choice/local_runs/6-18-test/'
+  capacity: 32              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
