@@ -28,3 +28,8 @@ dependencies = [
     "seaborn>=0.13.2",
     "uvicorn[standard]>=0.40.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
