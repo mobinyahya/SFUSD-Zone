@@ -21,6 +21,7 @@ import ast
 import os
 from dataclasses import dataclass, field
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
@@ -46,6 +47,8 @@ CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "Config")
 CENTROIDS_YAML = os.path.abspath(os.path.join(CONFIG_DIR, "centroids.yaml"))
 SFUSD_PATH = get_sfusd_path(False)
 DROPBOX_PATH = get_dropbox_path(False)
+PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
+OUTPUT_LATLON_CRS = "EPSG:4326"
 
 # Maps the post-dummies ethnicity columns to the canonical Ethnicity_* names.
 _ETHNICITY_RENAME = {
@@ -393,12 +396,22 @@ def load_area_latlon(cfg: IngestConfig) -> pd.DataFrame:
     """Centroid Lat/Lon per area, indexed by the unit id."""
     census = load_census_shapefile(cfg.unit, False)
     dissolved = census.dissolve(by=cfg.unit, as_index=False)
-    dissolved["centroid"] = dissolved.centroid
-    dissolved["Lat"] = dissolved["centroid"].apply(lambda p: p.y)
-    dissolved["Lon"] = dissolved["centroid"].apply(lambda p: p.x)
+    centroids = _projected_centroids_latlon(dissolved)
+    dissolved["Lat"] = centroids.y
+    dissolved["Lon"] = centroids.x
     out = dissolved[[cfg.unit, "Lat", "Lon"]].copy()
     out[cfg.unit] = out[cfg.unit].astype("int64")
     return out.set_index(cfg.unit)
+
+
+def _projected_centroids_latlon(gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    """Return centroids computed in a projected CRS, expressed as WGS84 points."""
+    if gdf.crs is None:
+        gdf = gdf.set_crs(OUTPUT_LATLON_CRS)
+    projected_centroids = gdf.to_crs(PROJECTED_CENTROID_CRS).centroid
+    return gpd.GeoSeries(projected_centroids, crs=PROJECTED_CENTROID_CRS).to_crs(
+        OUTPUT_LATLON_CRS
+    )
 
 
 def load_distance_dict(cfg: IngestConfig, area2idx: dict[int, int]) -> dict:

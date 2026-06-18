@@ -174,13 +174,7 @@ def _recursive_split(
     """METIS recursive partition; returns ``({node: part}, next_part_id)``."""
     if depth == 0 or cur_size <= 4:
         return {node: offset for node in G.nodes()}, offset + 1
-    # Imported lazily: METIS is only needed when actually building a hierarchy,
-    # so the package (and its tests) import without pymetis installed.
-    from Zone_Generation.Optimization.graph_utils import (
-        partition_graph_metis_partial_constraint,
-    )
-
-    supers = partition_graph_metis_partial_constraint(G, cur_size)
+    supers = _partition_graph_metis_partial_constraint(G, cur_size)
     zone_dict: dict[int, int] = {}
     cur = offset
     for nodes in supers.values():
@@ -188,6 +182,59 @@ def _recursive_split(
         sub_zones, cur = _recursive_split(sub, cur_size // 3, depth - 1, cur)
         zone_dict.update(sub_zones)
     return zone_dict, cur
+
+
+def _partition_graph_metis_partial_constraint(
+    G: nx.Graph, target_partition_count: int
+) -> dict[int, list[int]]:
+    """Partition ``G`` with the legacy school/student METIS weights.
+
+    This is the only graph utility the lowercase optimization package needs
+    from the deleted legacy ``Zone_Generation.Optimization`` package.
+    """
+    # Imported lazily: METIS is only needed when actually building a hierarchy,
+    # so base graph generation and most tests do not require pymetis import-time
+    # availability.
+    import pymetis
+
+    nodes = list(G.nodes())
+    if not nodes:
+        return {}
+    if target_partition_count <= 1:
+        return {0: nodes}
+    if target_partition_count >= len(nodes):
+        return {idx: [node] for idx, node in enumerate(nodes)}
+
+    k = target_partition_count
+    node_to_idx = {node: idx for idx, node in enumerate(nodes)}
+    adjacency = [
+        [node_to_idx[neighbor] for neighbor in G.neighbors(node)]
+        for node in nodes
+    ]
+
+    vertex_weights = []
+    for node in nodes:
+        attrs = G.nodes[node]
+        schools = int(attrs["num_schools"] * 100) + 1
+        students = int(attrs["ge_students"] * 10) + 2
+        vertex_weights.extend([schools, students])
+
+    options = pymetis.Options()
+    options.niter = 30
+    options.ncuts = 10
+    options.contig = True
+
+    _, membership = pymetis.part_graph(
+        k,
+        adjacency=adjacency,
+        vweights=vertex_weights,
+        options=options,
+    )
+
+    super_nodes: dict[int, list[int]] = {}
+    for node_idx, partition_id in enumerate(membership):
+        super_nodes.setdefault(partition_id, []).append(nodes[node_idx])
+    return super_nodes
 
 
 def aggregate_level(
