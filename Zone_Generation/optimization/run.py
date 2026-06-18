@@ -1,8 +1,8 @@
-"""Pipeline entry point.
+"""Optimization entry point.
 
-    uv run python -m Zone_Generation.pipeline.run [config.yaml] [--output DIR]
+    uv run python -m Zone_Generation.optimization.run [config.yaml] [--output DIR]
 
-Loads a :class:`PipelineConfig`, builds the dataset / solver / strategy, runs
+Loads a :class:`OptimizationConfig`, builds the dataset / solver / strategy, runs
 the strategy, and saves each produced :class:`ZoneSolution`.
 """
 
@@ -13,19 +13,19 @@ import json
 import os
 from dataclasses import asdict
 
-from Zone_Generation.pipeline.config import PipelineConfig
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.optimization.config import OptimizationConfig
+from Zone_Generation.metrics import MetricsCalculator
 
 DEFAULT_CONFIG = os.path.join(os.path.dirname(__file__), "config.example.yaml")
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Run the SFUSD zoning pipeline.")
+    parser = argparse.ArgumentParser(description="Run the SFUSD zoning optimization.")
     parser.add_argument(
         "config", nargs="?", default=DEFAULT_CONFIG, help="Path to a config YAML."
     )
     parser.add_argument(
-        "-o", "--output", default="./pipeline_output", help="Output directory."
+        "-o", "--output", default="./optimization_output", help="Output directory."
     )
     parser.add_argument(
         "--visualize",
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    config = PipelineConfig.from_yaml(args.config)
+    config = OptimizationConfig.from_yaml(args.config)
     dataset = config.make_dataset()
     solver = config.make_solver()
     strategy = config.make_strategy()
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  metrics: saved {result_path}")
 
     if args.visualize:
-        from Zone_Generation.pipeline.visualization import visualize_solutions
+        from Zone_Generation.optimization.visualization import visualize_solutions
 
         viz_results = visualize_solutions(
             solutions,
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Saved {len(solutions)} solution(s) to {args.output}")
 
 
-def _result_payload(metrics, config: PipelineConfig, solutions) -> dict:
+def _result_payload(metrics, config: OptimizationConfig, solutions) -> dict:
     payload = metrics.to_full_dict()
     run = payload.get("run", {})
     payload.update(
@@ -106,7 +106,7 @@ def _result_payload(metrics, config: PipelineConfig, solutions) -> dict:
     return payload
 
 
-def _config_snapshot(config: PipelineConfig) -> dict:
+def _config_snapshot(config: OptimizationConfig) -> dict:
     snapshot = asdict(config)
     snapshot["unit"] = config.unit
     return snapshot

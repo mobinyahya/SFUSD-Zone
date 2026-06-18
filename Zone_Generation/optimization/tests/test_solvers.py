@@ -2,9 +2,9 @@
 
 import pytest
 
-from Zone_Generation.pipeline.solvers import get_solver
-from Zone_Generation.pipeline.solvers.base import available_solvers
-from Zone_Generation.pipeline.tests.synthetic import make_grid_problem
+from Zone_Generation.optimization.solvers import get_solver
+from Zone_Generation.optimization.solvers.base import available_solvers
+from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 
 
 def _check_valid(problem, solution):

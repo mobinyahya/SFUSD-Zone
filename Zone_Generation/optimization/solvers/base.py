@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from Zone_Generation.pipeline.problem import ZoneProblem
-from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.optimization.problem import ZoneProblem
+from Zone_Generation.optimization.solution import ZoneSolution
 
 
 class Solver(ABC):

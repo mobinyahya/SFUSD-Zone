@@ -1,10 +1,10 @@
-# Pipeline-native benchmark sweep.
-# Run: uv run python -m Zone_Generation.Running_Analysis.benchmark.run Zone_Generation/Running_Analysis/benchmark/sweep.example.yaml
+# Optimization-native benchmark sweep.
+# Run: uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml
 
 name: recursive-blockgroup-sweep
 mode: run  # run | metrics
 
-pipeline_defaults:
+optimization_defaults:
   centroids_type: '7-zone-14'
   levels: ['BlockGroup_1', 'BlockGroup_0']
   solver: 'cp_int'

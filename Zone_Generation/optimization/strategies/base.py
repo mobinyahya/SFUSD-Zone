@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from Zone_Generation.pipeline.data.dataset import Dataset
-from Zone_Generation.pipeline.solvers.base import Solver
-from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.optimization.data.dataset import Dataset
+from Zone_Generation.optimization.solvers.base import Solver
+from Zone_Generation.optimization.solution import ZoneSolution
 
 
 class Strategy(ABC):

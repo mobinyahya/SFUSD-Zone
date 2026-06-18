@@ -1,6 +1,6 @@
 import pytest
 
-from Zone_Generation.pipeline.levels import LevelSpec
+from Zone_Generation.optimization.levels import LevelSpec
 
 
 @pytest.mark.parametrize(

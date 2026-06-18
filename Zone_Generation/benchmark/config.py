@@ -1,4 +1,4 @@
-"""Simulation sweep configuration for pipeline-native benchmarks."""
+"""Simulation sweep configuration for optimization-native benchmarks."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
-from Zone_Generation.pipeline.config import PipelineConfig
+from Zone_Generation.optimization.config import OptimizationConfig
 
 
-SEQUENCE_PIPELINE_FIELDS = {"levels", "solve_time_limits", "gap_limits", "years"}
+SEQUENCE_OPTIMIZATION_FIELDS = {"levels", "solve_time_limits", "gap_limits", "years"}
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
 
 
@@ -57,7 +57,7 @@ class MetricsRunConfig:
 
 @dataclass(frozen=True)
 class BenchmarkTask:
-    """One concrete pipeline run generated from a simulation sweep."""
+    """One concrete optimization run generated from a simulation sweep."""
 
     task_id: str
     config_hash: str
@@ -65,8 +65,8 @@ class BenchmarkTask:
     output_dir: str
     capacity_slots: int
 
-    def pipeline_config(self) -> PipelineConfig:
-        return pipeline_config_from_dict(self.config)
+    def optimization_config(self) -> OptimizationConfig:
+        return optimization_config_from_dict(self.config)
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ class SimulationSweep:
 
     name: str = "simulation_sweep"
     mode: str = "run"
-    pipeline_defaults: dict[str, Any] = field(default_factory=dict)
+    optimization_defaults: dict[str, Any] = field(default_factory=dict)
     sweep: dict[str, Any] = field(default_factory=dict)
     tasks: list[dict[str, Any]] = field(default_factory=list)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
@@ -90,7 +90,7 @@ class SimulationSweep:
         allowed_top_level = {
             "name",
             "mode",
-            "pipeline_defaults",
+            "optimization_defaults",
             "sweep",
             "tasks",
             "execution",
@@ -105,20 +105,20 @@ class SimulationSweep:
         if mode not in {"run", "metrics"}:
             raise ValueError("mode must be one of: run, metrics")
 
-        pipeline_defaults = dict(raw.get("pipeline_defaults") or {})
+        optimization_defaults = dict(raw.get("optimization_defaults") or {})
         sweep = dict(raw.get("sweep") or {})
         tasks = list(raw.get("tasks") or [])
-        _validate_pipeline_keys(pipeline_defaults, "pipeline_defaults")
-        _validate_pipeline_keys(sweep, "sweep")
+        _validate_optimization_keys(optimization_defaults, "optimization_defaults")
+        _validate_optimization_keys(sweep, "sweep")
         for idx, task in enumerate(tasks):
             if not isinstance(task, Mapping):
                 raise ValueError(f"tasks[{idx}] must be a mapping.")
-            _validate_pipeline_keys(task, f"tasks[{idx}]")
+            _validate_optimization_keys(task, f"tasks[{idx}]")
 
         return cls(
             name=name,
             mode=mode,
-            pipeline_defaults=_restore_special_values(pipeline_defaults),
+            optimization_defaults=_restore_special_values(optimization_defaults),
             sweep=_restore_special_values(sweep),
             tasks=[_restore_special_values(dict(task)) for task in tasks],
             execution=ExecutionConfig.from_dict(raw.get("execution")),
@@ -130,11 +130,11 @@ class SimulationSweep:
         explicit_tasks = self.tasks or [{}]
         tasks: list[BenchmarkTask] = []
         for sweep_values, task_values in product(overrides, explicit_tasks):
-            config_data = dict(self.pipeline_defaults)
+            config_data = dict(self.optimization_defaults)
             config_data.update(sweep_values)
             config_data.update(task_values)
-            config = pipeline_config_from_dict(config_data)
-            config_dict = pipeline_config_to_dict(config)
+            config = optimization_config_from_dict(config_data)
+            config_dict = optimization_config_to_dict(config)
             config_hash = stable_hash(config_dict)
             output_dir = os.path.join(
                 os.path.expanduser(self.execution.output_dir),
@@ -152,20 +152,20 @@ class SimulationSweep:
         return tasks
 
 
-def pipeline_config_from_dict(data: Mapping[str, Any]) -> PipelineConfig:
-    """Construct a :class:`PipelineConfig` from a saved config snapshot."""
+def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig:
+    """Construct a :class:`OptimizationConfig` from a saved config snapshot."""
 
     restored = _restore_special_values(dict(data))
-    field_names = _pipeline_field_names()
+    field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:
-        raise ValueError(f"Unknown pipeline config keys: {sorted(unknown)}")
+        raise ValueError(f"Unknown optimization config keys: {sorted(unknown)}")
     kwargs = {k: v for k, v in restored.items() if k in field_names}
-    return PipelineConfig(**kwargs)
+    return OptimizationConfig(**kwargs)
 
 
-def pipeline_config_to_dict(config: PipelineConfig | Mapping[str, Any]) -> dict[str, Any]:
-    if isinstance(config, PipelineConfig):
+def optimization_config_to_dict(config: OptimizationConfig | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(config, OptimizationConfig):
         data = asdict(config)
     else:
         data = dict(config)
@@ -173,10 +173,10 @@ def pipeline_config_to_dict(config: PipelineConfig | Mapping[str, Any]) -> dict[
     return _restore_special_values(data)
 
 
-def config_snapshot(config: PipelineConfig | Mapping[str, Any]) -> dict[str, Any]:
-    pipeline = pipeline_config_to_dict(config)
-    cfg = pipeline_config_from_dict(pipeline)
-    snapshot = pipeline_config_to_dict(cfg)
+def config_snapshot(config: OptimizationConfig | Mapping[str, Any]) -> dict[str, Any]:
+    optimization = optimization_config_to_dict(config)
+    cfg = optimization_config_from_dict(optimization)
+    snapshot = optimization_config_to_dict(cfg)
     snapshot["unit"] = cfg.unit
     return snapshot
 
@@ -252,7 +252,7 @@ def _sweep_overrides(sweep: Mapping[str, Any]) -> Iterator[dict[str, Any]]:
 
 
 def _normalize_sweep_values(key: str, value: Any) -> list[Any]:
-    if key in SEQUENCE_PIPELINE_FIELDS:
+    if key in SEQUENCE_OPTIMIZATION_FIELDS:
         if not isinstance(value, list):
             return [value]
         if not value or all(not isinstance(v, list) for v in value):
@@ -271,14 +271,14 @@ def _dataclass_from_dict(cls, data: Mapping[str, Any]):
     return cls(**{k: v for k, v in data.items() if k in field_names})
 
 
-def _validate_pipeline_keys(data: Mapping[str, Any], section: str) -> None:
-    unknown = set(data) - _pipeline_field_names()
+def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:
+    unknown = set(data) - _optimization_field_names()
     if unknown:
         raise ValueError(f"Unknown keys in {section}: {sorted(unknown)}")
 
 
-def _pipeline_field_names() -> set[str]:
-    return {f.name for f in fields(PipelineConfig)}
+def _optimization_field_names() -> set[str]:
+    return {f.name for f in fields(OptimizationConfig)}
 
 
 def _restore_special_values(value: Any) -> Any:

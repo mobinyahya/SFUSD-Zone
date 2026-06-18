@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from Zone_Generation.Config.Constants import AALPI_ETHNICITIES, AREA_ETHNICITIES
 from Zone_Generation.Config.metrics_config import MetricColumns
-from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.metrics.base import MetricOutput, MetricsContext
 
 _ETH_MAD_COLUMNS = {
     "Ethnicity_Black_or_African_American": MetricColumns.BLACK_MAD,

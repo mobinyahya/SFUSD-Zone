@@ -10,13 +10,13 @@ solver before each solve.
 
 from __future__ import annotations
 
-from Zone_Generation.pipeline.data import contiguity
-from Zone_Generation.pipeline.data.conversion import LevelConverter
-from Zone_Generation.pipeline.data.dataset import Dataset
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.solvers.base import Solver
-from Zone_Generation.pipeline.strategies.base import Strategy, register
+from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.data.conversion import LevelConverter
+from Zone_Generation.optimization.data.dataset import Dataset
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.solvers.base import Solver
+from Zone_Generation.optimization.strategies.base import Strategy, register
 
 
 @register("recursive")

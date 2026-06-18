@@ -7,18 +7,18 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 
-from Zone_Generation.Running_Analysis.benchmark.config import (
+from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
     MetricsRunConfig,
     SimulationSweep,
 )
-from Zone_Generation.Running_Analysis.benchmark.runner import (
+from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     TaskResult,
     load_manifest,
-    run_pipeline_task,
+    run_optimization_task,
 )
 
 
@@ -74,7 +74,7 @@ def run_tasks(
 
     if execution.sequential:
         for task in pending:
-            result = run_pipeline_task(task, strict_metrics=metrics.strict)
+            result = run_optimization_task(task, strict_metrics=metrics.strict)
             batch.add(result)
             _print_progress(batch)
             if result.status == "ERROR" and execution.fail_fast:
@@ -144,7 +144,7 @@ def _run_parallel(
 
 
 def _worker_run_task(task: BenchmarkTask, strict_metrics: bool) -> TaskResult:
-    return run_pipeline_task(task, strict_metrics=strict_metrics)
+    return run_optimization_task(task, strict_metrics=strict_metrics)
 
 
 def _valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:

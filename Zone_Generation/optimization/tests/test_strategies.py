@@ -1,8 +1,8 @@
 """Strategy tests using a FakeDataset (no SFUSD data required)."""
 
-from Zone_Generation.pipeline.solvers import get_solver
-from Zone_Generation.pipeline.strategies import get_strategy
-from Zone_Generation.pipeline.tests.synthetic import FakeDataset, make_grid_problem
+from Zone_Generation.optimization.solvers import get_solver
+from Zone_Generation.optimization.strategies import get_strategy
+from Zone_Generation.optimization.tests.synthetic import FakeDataset, make_grid_problem
 
 
 def test_single_strategy():

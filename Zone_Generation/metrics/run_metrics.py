@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from Zone_Generation.Config.metrics_config import MetricColumns
-from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
-from Zone_Generation.Running_Analysis.metrics.spatial import compute_spatial_metrics
+from Zone_Generation.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.metrics.spatial import compute_spatial_metrics
 
 
 def compute(context: MetricsContext) -> MetricOutput:

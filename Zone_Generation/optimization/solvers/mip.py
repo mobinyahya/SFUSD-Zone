@@ -12,10 +12,10 @@ import time
 import gurobipy as gp
 from gurobipy import GRB
 
-from Zone_Generation.pipeline.problem import ZoneProblem
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.solvers import constraints
-from Zone_Generation.pipeline.solvers.base import Solver, register
+from Zone_Generation.optimization.problem import ZoneProblem
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.solvers import constraints
+from Zone_Generation.optimization.solvers.base import Solver, register
 
 
 class _GurobiBackend(constraints.ModelBackend):

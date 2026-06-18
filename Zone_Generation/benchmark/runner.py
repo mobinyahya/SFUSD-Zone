@@ -1,4 +1,4 @@
-"""Pipeline-native benchmark task runner."""
+"""Optimization-native benchmark task runner."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from Zone_Generation.pipeline.config import PipelineConfig
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.Running_Analysis.benchmark.config import (
+from Zone_Generation.optimization.config import OptimizationConfig
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     config_snapshot,
     json_ready,
-    pipeline_config_from_dict,
+    optimization_config_from_dict,
 )
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.metrics import MetricsCalculator
 
 
 SCHEMA_VERSION = 1
@@ -36,13 +36,13 @@ class TaskResult:
     skipped: bool = False
 
 
-def run_pipeline_task(task: BenchmarkTask, *, strict_metrics: bool = True) -> TaskResult:
-    """Run one benchmark task through the new optimization pipeline."""
+def run_optimization_task(task: BenchmarkTask, *, strict_metrics: bool = True) -> TaskResult:
+    """Run one benchmark task through the new optimization optimization."""
 
     output_dir = os.path.expanduser(task.output_dir)
     os.makedirs(output_dir, exist_ok=True)
     started_at = _now()
-    config = task.pipeline_config()
+    config = task.optimization_config()
     solutions: list[ZoneSolution] = []
     stage_records: list[dict[str, Any]] = []
 
@@ -178,7 +178,7 @@ def stage_record(
 def result_payload_for(
     *,
     metrics,
-    config: PipelineConfig,
+    config: OptimizationConfig,
     solutions: Sequence[ZoneSolution],
     task: BenchmarkTask,
 ) -> dict[str, Any]:
@@ -204,7 +204,7 @@ def result_payload_for(
 def manifest_for(
     *,
     task: BenchmarkTask,
-    config: PipelineConfig,
+    config: OptimizationConfig,
     status: str,
     started_at: str,
     completed_at: str,
@@ -232,7 +232,7 @@ def manifest_for(
 
 
 def stage_names_for(
-    solutions: Sequence[ZoneSolution], config: PipelineConfig | dict[str, Any]
+    solutions: Sequence[ZoneSolution], config: OptimizationConfig | dict[str, Any]
 ) -> list[str]:
     strategy = _config_value(config, "strategy", "")
     prefix = "iteration" if "iterative" in str(strategy).lower() else "stage"
@@ -246,12 +246,12 @@ def load_solutions(
     output_dir: str,
     *,
     dataset=None,
-) -> tuple[list[ZoneSolution], PipelineConfig, dict[str, Any]]:
+) -> tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]]:
     """Reconstruct saved stage solutions for metric regeneration."""
 
     output_dir = os.path.expanduser(output_dir)
     manifest = load_manifest(output_dir)
-    config = pipeline_config_from_dict(manifest["config"])
+    config = optimization_config_from_dict(manifest["config"])
     dataset = dataset or config.make_dataset()
     solutions: list[ZoneSolution] = []
     for stage in manifest.get("stages", []):
@@ -294,7 +294,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _config_value(config: PipelineConfig | dict[str, Any], key: str, default=None):
+def _config_value(config: OptimizationConfig | dict[str, Any], key: str, default=None):
     if isinstance(config, dict):
         return config.get(key, default)
     return getattr(config, key, default)

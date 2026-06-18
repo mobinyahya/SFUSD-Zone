@@ -21,8 +21,8 @@ import networkx as nx
 
 from Helper_Functions.util import calculate_euc_distance
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
-from Zone_Generation.pipeline.data import loaders
-from Zone_Generation.pipeline.data.loaders import IngestConfig
+from Zone_Generation.optimization.data import loaders
+from Zone_Generation.optimization.data.loaders import IngestConfig
 
 # Node attributes summed when aggregating.
 _SUM_ATTRS = [

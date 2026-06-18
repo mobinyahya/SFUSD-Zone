@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 
-from Zone_Generation.pipeline.problem import ZoneProblem
+from Zone_Generation.optimization.problem import ZoneProblem
 
 
 class ChoiceModel(ABC):

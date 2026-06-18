@@ -1,9 +1,9 @@
-"""Pipeline-native zoning visualizations.
+"""Optimization-native zoning visualizations.
 
 This module deliberately does not reuse ``Graphic_Visualization``. The old
 visualizers re-read and re-dissolved shapefiles for every plot and mixed legacy
 output formats. Here the expensive geometry work is cached in a shared artifact
-folder and rendered PNGs are written to the pipeline output directory.
+folder and rendered PNGs are written to the optimization output directory.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ import pandas as pd
 
 from Helper_Functions.util import load_census_shapefile
 from Zone_Generation.Config.Constants import zone_colors
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.solution import ZoneSolution
 
 GeometryLoader = Callable[[str], gpd.GeoDataFrame]
 

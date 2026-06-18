@@ -1,4 +1,4 @@
-"""Result discovery and aggregation for pipeline-native benchmarks."""
+"""Result discovery and aggregation for optimization-native benchmarks."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from Zone_Generation.Running_Analysis.benchmark.config import json_ready
-from Zone_Generation.Running_Analysis.benchmark.runner import (
+from Zone_Generation.benchmark.config import json_ready
+from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     load_manifest,

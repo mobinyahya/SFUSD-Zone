@@ -16,9 +16,9 @@ from shapely.geometry.base import BaseGeometry
 
 from Helper_Functions.util import load_census_shapefile
 from Zone_Generation.Config.Constants import get_dropbox_path
-from Zone_Generation.pipeline.data.conversion import LevelConverter
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.optimization.data.conversion import LevelConverter
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.solution import ZoneSolution
 
 try:  # Shapely 2.x
     from shapely import minimum_bounding_circle
@@ -128,7 +128,7 @@ def _block0_graph_path(config: Mapping[str, Any]) -> Path | None:
             / "Optimization"
             / "Zones"
             / "Graphs"
-            / "pipeline"
+            / "optimization"
             / "Block_0.pickle",
         ]
     )

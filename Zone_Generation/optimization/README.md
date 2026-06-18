@@ -1,11 +1,11 @@
-# Zoning Optimization Pipeline
+# Zoning Optimization Optimization
 
 A standalone, three-layer rewrite of the zone-generation optimizer. Every layer
 is swappable in isolation, levels are first-class, and graph generation, level
 conversion, and contiguity all live inside the package.
 
 ```
-PipelineConfig ──▶ Dataset ──build──▶ ZoneProblem ──┐
+OptimizationConfig ──▶ Dataset ──build──▶ ZoneProblem ──┐
                   (Data layer)                       │
                                                      ▼
               Strategy ◀── composes ──▶ Solver ──▶ ZoneSolution ──▶ JSON
@@ -45,22 +45,22 @@ independently.
 ## Running
 
 ```bash
-uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out
+uv run python -m Zone_Generation.optimization.run Zone_Generation/optimization/config.example.yaml -o ./out
 ```
 
 Save a PNG visualization of the final solution:
 
 ```bash
-uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out --visualize
+uv run python -m Zone_Generation.optimization.run Zone_Generation/optimization/config.example.yaml -o ./out --visualize
 ```
 
 For recursive zoning or iterative choice, save every produced stage:
 
 ```bash
-uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml -o ./out --visualize --viz-stages all
+uv run python -m Zone_Generation.optimization.run Zone_Generation/optimization/config.example.yaml -o ./out --visualize --viz-stages all
 ```
 
-Rendered maps are written to the pipeline output directory as
+Rendered maps are written to the optimization output directory as
 `visualization_<stage>.png`. Cached geometry artifacts are written under
 `/share/data/school_choice/Data/Computed/visualization_artifacts/` as
 `geometry_<level>_<fingerprint>.pkl` and `.json`. This does not use benchmark,
@@ -79,7 +79,7 @@ strategy: 'recursive'
 `tests/` holds data-free unit tests for the level/contiguity/conversion logic:
 
 ```bash
-uv run python -m pytest Zone_Generation/pipeline/tests
+uv run python -m pytest Zone_Generation/optimization/tests
 ```
 
 End-to-end runs require the SFUSD source data (census shapefiles, student/

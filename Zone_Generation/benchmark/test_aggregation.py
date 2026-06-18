@@ -2,19 +2,19 @@ import os
 
 import pytest
 
-from Zone_Generation.pipeline.config import PipelineConfig
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.tests.synthetic import FakeDataset, make_grid_problem
-from Zone_Generation.Running_Analysis.benchmark.config import (
+from Zone_Generation.optimization.config import OptimizationConfig
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.tests.synthetic import FakeDataset, make_grid_problem
+from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     SimulationSweep,
-    pipeline_config_to_dict,
+    optimization_config_to_dict,
     stable_hash,
 )
-from Zone_Generation.Running_Analysis.benchmark.regenerate import regenerate_metrics
-from Zone_Generation.Running_Analysis.benchmark.results import aggregate_results
-from Zone_Generation.Running_Analysis.benchmark.runner import (
+from Zone_Generation.benchmark.regenerate import regenerate_metrics
+from Zone_Generation.benchmark.results import aggregate_results
+from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     load_solutions,
@@ -24,16 +24,16 @@ from Zone_Generation.Running_Analysis.benchmark.runner import (
     stage_names_for,
     write_json,
 )
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.metrics import MetricsCalculator
 
 
-def test_sweep_yaml_generates_cartesian_pipeline_tasks(tmp_path):
+def test_sweep_yaml_generates_cartesian_optimization_tasks(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(
         f"""
 name: unit-test
 mode: run
-pipeline_defaults:
+optimization_defaults:
   centroids_type: '5-zone-AF'
   levels: ['BlockGroup_1', 'BlockGroup_0']
   solver: 'cp_int'
@@ -71,7 +71,7 @@ def test_sweep_yaml_rejects_aggregate_only_mode(tmp_path):
     config_path.write_text(
         """
 mode: aggregate
-pipeline_defaults:
+optimization_defaults:
   levels: ['BlockGroup_0']
 """,
         encoding="utf-8",
@@ -130,7 +130,7 @@ def _write_synthetic_run(tmp_path):
         wall_time=1.25,
         metadata={"solver": "test"},
     )
-    config = PipelineConfig(
+    config = OptimizationConfig(
         centroids_type="5-zone-AF",
         levels=["Block_0"],
         solver="local_search",
@@ -142,7 +142,7 @@ def _write_synthetic_run(tmp_path):
         workers=1,
         graphs_dir=str(tmp_path / "graphs"),
     )
-    config_dict = pipeline_config_to_dict(config)
+    config_dict = optimization_config_to_dict(config)
     config_hash = stable_hash(config_dict)
     task = BenchmarkTask(
         task_id=config_hash[:12],

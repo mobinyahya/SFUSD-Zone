@@ -22,7 +22,7 @@ from collections import Counter
 import networkx as nx
 
 from Helper_Functions.util import load_b2bg
-from Zone_Generation.pipeline.levels import LevelSpec
+from Zone_Generation.optimization.levels import LevelSpec
 
 
 def base_area_assignment(G: nx.Graph, assignment: dict[int, int]) -> dict[int, int]:

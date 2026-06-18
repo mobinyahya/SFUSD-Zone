@@ -1,6 +1,6 @@
-"""Pipeline configuration and factories.
+"""Optimization configuration and factories.
 
-``PipelineConfig`` is the single typed description of a run: which levels, which
+``OptimizationConfig`` is the single typed description of a run: which levels, which
 solver, which strategy, and all the data/optimization parameters. Its factory
 methods build the concrete :class:`Dataset`, :class:`Solver` and
 :class:`Strategy`, wiring the three layers together from a string config.
@@ -14,11 +14,11 @@ from dataclasses import dataclass, field, fields
 import yaml
 
 from Zone_Generation.Config.Constants import get_dropbox_path
-from Zone_Generation.pipeline.levels import LevelSpec
+from Zone_Generation.optimization.levels import LevelSpec
 
 
 @dataclass
-class PipelineConfig:
+class OptimizationConfig:
     # --- what to solve ------------------------------------------------- #
     centroids_type: str = "5-zone-AF"
     levels: list[str] = field(default_factory=lambda: ["BlockGroup_0"])
@@ -71,7 +71,7 @@ class PipelineConfig:
                 "Optimization",
                 "Zones",
                 "Graphs",
-                "pipeline",
+                "optimization",
             )
         # Levels in float keys can arrive from YAML as strings.
         self.level_to_split = {int(k): int(v) for k, v in self.level_to_split.items()}
@@ -80,7 +80,7 @@ class PipelineConfig:
     # loading
     # ------------------------------------------------------------------ #
     @classmethod
-    def from_yaml(cls, path: str) -> "PipelineConfig":
+    def from_yaml(cls, path: str) -> "OptimizationConfig":
         with open(path, "r") as f:
             raw = yaml.safe_load(f) or {}
         known = {f.name for f in fields(cls)}
@@ -93,12 +93,12 @@ class PipelineConfig:
     # factories
     # ------------------------------------------------------------------ #
     def make_dataset(self):
-        from Zone_Generation.pipeline.data.dataset import Dataset
+        from Zone_Generation.optimization.data.dataset import Dataset
 
         return Dataset(self)
 
     def make_solver(self):
-        from Zone_Generation.pipeline.solvers import get_solver
+        from Zone_Generation.optimization.solvers import get_solver
 
         return get_solver(
             self.solver,
@@ -109,7 +109,7 @@ class PipelineConfig:
         )
 
     def make_strategy(self):
-        from Zone_Generation.pipeline.strategies import get_strategy
+        from Zone_Generation.optimization.strategies import get_strategy
 
         return get_strategy(
             self.strategy,

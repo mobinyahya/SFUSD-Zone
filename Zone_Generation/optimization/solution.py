@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from Zone_Generation.pipeline.problem import ZoneProblem
+from Zone_Generation.optimization.problem import ZoneProblem
 
 
 @dataclass
@@ -58,7 +58,7 @@ class ZoneSolution:
 
     def is_contiguous(self) -> bool:
         # Imported lazily to avoid a data-layer import cycle.
-        from Zone_Generation.pipeline.data.contiguity import is_contiguous
+        from Zone_Generation.optimization.data.contiguity import is_contiguous
 
         return is_contiguous(self.problem.G, self.assignment, self.problem.centroids)
 

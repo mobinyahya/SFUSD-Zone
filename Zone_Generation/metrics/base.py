@@ -1,4 +1,4 @@
-"""Pipeline-native metric data structures.
+"""Optimization-native metric data structures.
 
 Metrics now operate on :class:`ZoneSolution` objects rather than legacy
 ``zone_dict``/graph pairs. A run can contain one solution, recursive stages, or
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, is_dataclass, asdict
 from functools import cached_property
 from typing import Any, Callable, Mapping
 
-from Zone_Generation.pipeline.solution import ZoneSolution
+from Zone_Generation.optimization.solution import ZoneSolution
 
 MetricValue = float | int | str | bool | None
 MetricFn = Callable[["MetricsContext"], "MetricOutput"]
@@ -30,7 +30,7 @@ class MetricOutput:
 
 @dataclass
 class MetricsResult:
-    """Complete metric output for a pipeline run."""
+    """Complete metric output for a optimization run."""
 
     metrics: dict[str, MetricValue] = field(default_factory=dict)
     zone_data: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -74,7 +74,7 @@ class MetricsContext:
             raise ValueError("MetricsContext requires at least one ZoneSolution.")
         if not all(isinstance(stage, ZoneSolution) for stage in self.stages):
             raise TypeError(
-                "MetricsCalculator is pipeline-only; pass a ZoneSolution or a "
+                "MetricsCalculator is optimization-only; pass a ZoneSolution or a "
                 "sequence of ZoneSolution objects."
             )
 

@@ -1,17 +1,17 @@
 # Benchmark Package
 
-Pipeline-native benchmark orchestration for large SFUSD zoning simulation sweeps.
+Optimization-native benchmark orchestration for large SFUSD zoning simulation sweeps.
 
-This package runs the new `Zone_Generation.pipeline` stack directly. It does not use the legacy `Zone_Generation.Optimization` benchmark path.
+This package runs the new `Zone_Generation.optimization` stack directly. It does not use the legacy `Zone_Generation.Optimization` benchmark path.
 
 ## Capabilities
 
 - Runs large cartesian simulation sweeps from one YAML file.
-- Supports varying any `PipelineConfig` field across a sweep, including `solver`, `strategy`, `levels`, time limits, seeds, and balance constraints.
+- Supports varying any `OptimizationConfig` field across a sweep, including `solver`, `strategy`, `levels`, time limits, seeds, and balance constraints.
 - Executes tasks in parallel with capacity-aware scheduling.
 - Recycles worker processes with `max_tasks_per_worker` to reduce long-run memory growth.
 - Skips existing completed results only when the manifest schema and config hash match.
-- Saves every pipeline stage, not just the final solution.
+- Saves every optimization stage, not just the final solution.
 - Recomputes metrics from saved stage artifacts without rerunning optimization.
 - Aggregates run-level and stage-level outputs into CSV files.
 - Keeps benchmark output independent from the website and LLM components.
@@ -19,8 +19,8 @@ This package runs the new `Zone_Generation.pipeline` stack directly. It does not
 ## Entry Point
 
 ```bash
-uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml
-uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml --mode metrics
+uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml
+uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
 ```
 
 The YAML `mode` can be `run` or `metrics`. The CLI `--mode` flag overrides the YAML value.
@@ -37,8 +37,8 @@ Top-level sections:
 |---|---|
 | `name` | Human-readable sweep name. |
 | `mode` | Default mode: `run` or `metrics`. |
-| `pipeline_defaults` | Base `PipelineConfig` values shared by all tasks. |
-| `sweep` | Cartesian product values for `PipelineConfig` fields. |
+| `optimization_defaults` | Base `OptimizationConfig` values shared by all tasks. |
+| `sweep` | Cartesian product values for `OptimizationConfig` fields. |
 | `tasks` | Explicit per-task overrides, crossed with `sweep` values. |
 | `execution` | Parallelism, capacity, skipping, and output options. |
 | `metrics` | Metric strictness and aggregation output settings. |
@@ -46,7 +46,7 @@ Top-level sections:
 Example with solver and strategy variation:
 
 ```yaml
-pipeline_defaults:
+optimization_defaults:
   centroids_type: '5-zone-AF'
   frl_dev: 0.2
   racial_dev: 0.2
@@ -88,7 +88,7 @@ metrics:
 
 ## Execution Model
 
-Each expanded task is a concrete `PipelineConfig` plus benchmark metadata.
+Each expanded task is a concrete `OptimizationConfig` plus benchmark metadata.
 
 Capacity scheduling uses `capacity_slots` per task. By default this equals the task's `workers` value, so CP-SAT thread counts are reflected in the scheduler. You can override this globally with `execution.task_capacity`.
 
@@ -144,15 +144,15 @@ Primary objects and functions:
 | Symbol | File | Purpose |
 |---|---|---|
 | `SimulationSweep` | `config.py` | Parse YAML and generate benchmark tasks. |
-| `BenchmarkTask` | `config.py` | Concrete pipeline task with config hash and output path. |
-| `run_pipeline_task` | `runner.py` | Run one pipeline task and save artifacts. |
+| `BenchmarkTask` | `config.py` | Concrete optimization task with config hash and output path. |
+| `run_optimization_task` | `runner.py` | Run one optimization task and save artifacts. |
 | `load_solutions` | `runner.py` | Reconstruct `ZoneSolution` stages from saved artifacts. |
 | `run_tasks` | `parallel.py` | Capacity-aware task execution. |
 | `regenerate_metrics` | `regenerate.py` | Metrics-only recomputation. |
 
 ## Notes
 
-- The benchmark package expects new pipeline level names such as `BlockGroup_0` and `BlockGroup_1`.
+- The benchmark package expects new optimization level names such as `BlockGroup_0` and `BlockGroup_1`.
 - `mip` requires Gurobi and a valid license in the execution environment.
-- Metrics-only mode requires the graph cache and source data needed by `PipelineConfig.make_dataset()`.
+- Metrics-only mode requires the graph cache and source data needed by `OptimizationConfig.make_dataset()`.
 - Existing results are considered reusable only when `benchmark_manifest.json`, `result.json`, schema version, and config hash all match.

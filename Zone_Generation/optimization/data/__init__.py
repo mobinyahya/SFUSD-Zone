@@ -1,7 +1,7 @@
 """Data layer: ingestion, graph generation, level conversion, contiguity.
 
 This layer owns everything between the raw source files and a ready-to-solve
-:class:`~Zone_Generation.pipeline.problem.ZoneProblem`:
+:class:`~Zone_Generation.optimization.problem.ZoneProblem`:
 
 * ``loaders``      -- read the raw census/student/school/distance/adjacency data
 * ``graph_builder``-- build base graphs and aggregate them into a hierarchy

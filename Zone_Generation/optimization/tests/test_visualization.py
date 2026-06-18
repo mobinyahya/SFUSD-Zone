@@ -2,9 +2,9 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 from shapely.geometry import box
 
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.tests.synthetic import make_grid_problem
-from Zone_Generation.pipeline.visualization import (
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.tests.synthetic import make_grid_problem
+from Zone_Generation.optimization.visualization import (
     VisualizationArtifactStore,
     visualize_solutions,
 )
@@ -64,7 +64,7 @@ def test_geometry_artifact_is_cached(tmp_path):
 
 
 def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
-    output_dir = tmp_path / "pipeline_output"
+    output_dir = tmp_path / "optimization_output"
     artifact_dir = tmp_path / "visualization_artifacts"
     solutions = [
         _solution({0: 0, 1: 0, 2: 1, 3: 1}),
@@ -98,7 +98,7 @@ def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path):
 
 
 def test_visualize_defaults_to_png_and_never_shows(tmp_path, monkeypatch):
-    output_dir = tmp_path / "pipeline_output"
+    output_dir = tmp_path / "optimization_output"
     artifact_dir = tmp_path / "visualization_artifacts"
     monkeypatch.setattr(
         plt,

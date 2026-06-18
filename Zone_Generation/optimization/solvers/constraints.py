@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from Zone_Generation.pipeline.data import contiguity
-from Zone_Generation.pipeline.problem import ZoneProblem
+from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.problem import ZoneProblem
 
 # A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
 Term = tuple[float, int, int]

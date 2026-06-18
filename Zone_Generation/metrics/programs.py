@@ -1,4 +1,4 @@
-"""Program-access metrics for pipeline solutions."""
+"""Program-access metrics for optimization solutions."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pandas as pd
 
 from Zone_Generation.Config.Constants import PROGRAM_CATEGORIES, get_sfusd_path
 from Zone_Generation.Config.metrics_config import MetricColumns
-from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.metrics.base import MetricOutput, MetricsContext
 
 LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
 SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])

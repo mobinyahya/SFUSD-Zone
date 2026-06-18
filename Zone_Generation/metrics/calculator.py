@@ -1,12 +1,12 @@
-"""Pipeline-native metrics calculator."""
+"""Optimization-native metrics calculator."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any, Mapping
 
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.Running_Analysis.metrics import (
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.metrics import (
     distance,
     diversity,
     programs,
@@ -14,7 +14,7 @@ from Zone_Generation.Running_Analysis.metrics import (
     run_metrics,
     structure,
 )
-from Zone_Generation.Running_Analysis.metrics.base import (
+from Zone_Generation.metrics.base import (
     MetricFn,
     MetricOutput,
     MetricsContext,
@@ -32,9 +32,9 @@ DEFAULT_MODULES: tuple[MetricFn, ...] = (
 
 
 class MetricsCalculator:
-    """Compute modular metrics for one pipeline run.
+    """Compute modular metrics for one optimization run.
 
-    ``solutions`` is the list returned by a pipeline strategy. Single-shot runs
+    ``solutions`` is the list returned by a optimization strategy. Single-shot runs
     pass one ``ZoneSolution``; recursive and iterative runs pass every stage so
     run-level metrics can analyze progression while final metrics are computed
     on the selected final solution.
@@ -89,6 +89,6 @@ def _module_name(module: MetricFn) -> str:
 
 
 # Temporary name bridge for imports during the migration. The constructor is the
-# pipeline-only constructor above; legacy zone_dict/G inputs are intentionally not
+# optimization-only constructor above; legacy zone_dict/G inputs are intentionally not
 # supported.
 ZoneMetricsCalculator = MetricsCalculator

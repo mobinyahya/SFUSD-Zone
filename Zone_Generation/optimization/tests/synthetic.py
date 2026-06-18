@@ -1,4 +1,4 @@
-"""Synthetic, data-free fixtures for testing the pipeline.
+"""Synthetic, data-free fixtures for testing the optimization.
 
 These build node-attributed graphs and ZoneProblems by hand so the solver,
 contiguity, conversion and strategy logic can be exercised without any SFUSD
@@ -13,8 +13,8 @@ import networkx as nx
 from shapely.geometry import box
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.problem import ZoneProblem
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.problem import ZoneProblem
 
 
 def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:

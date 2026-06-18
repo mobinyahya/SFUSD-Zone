@@ -1,14 +1,14 @@
-"""Single CLI entrypoint for pipeline benchmark sweeps."""
+"""Single CLI entrypoint for optimization benchmark sweeps."""
 
 from __future__ import annotations
 
 import argparse
 import os
 
-from Zone_Generation.Running_Analysis.benchmark.config import SimulationSweep
-from Zone_Generation.Running_Analysis.benchmark.parallel import run_tasks
-from Zone_Generation.Running_Analysis.benchmark.regenerate import regenerate_metrics
-from Zone_Generation.Running_Analysis.benchmark.results import aggregate_results
+from Zone_Generation.benchmark.config import SimulationSweep
+from Zone_Generation.benchmark.parallel import run_tasks
+from Zone_Generation.benchmark.regenerate import regenerate_metrics
+from Zone_Generation.benchmark.results import aggregate_results
 
 
 def main(argv: list[str] | None = None) -> None:

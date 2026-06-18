@@ -1,5 +1,5 @@
-# Example pipeline configuration.
-#   uv run python -m Zone_Generation.pipeline.run Zone_Generation/pipeline/config.example.yaml
+# Example optimization configuration.
+#   uv run python -m Zone_Generation.optimization.run Zone_Generation/optimization/config.example.yaml
 
 # --- what to solve ---
 centroids_type: '6-zone-9'

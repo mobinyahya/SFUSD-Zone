@@ -11,8 +11,8 @@ uv sync                          # Install dependencies
 uv run python -m Zone_Generation.Optimization.optimizer  # Single optimization run (uses Zone_Generation/Config/config.yaml)
 
 # Benchmarking (from project root)
-uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml
-uv run python -m Zone_Generation.Running_Analysis.benchmark.run path/to/sweep.yaml --mode metrics
+uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml
+uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
 
 # Website
 cd website/backend && uv run uvicorn app:app --reload --port 8000
@@ -25,8 +25,8 @@ uv run python -m LLM.exploration.run_agent [path/to/summary.csv]
 
 - `Zone_Generation/Config/` - config.yaml, centroids.yaml, Constants.py, metrics_config.py
 - `Zone_Generation/Optimization/` - Optimizer implementations (cp_int, cp_bool, mip), design_zones.py, create_larger_areas.py
-- `Zone_Generation/Running_Analysis/benchmark/` - config.py, runner.py, results.py, parallel.py
-- `Zone_Generation/Running_Analysis/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
+- `Zone_Generation/benchmark/` - config.py, runner.py, results.py, parallel.py
+- `Zone_Generation/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
 - `LLM/exploration/` - zoning_agent.py, prompts.py, filters.py, pareto.py, clusters.py, tool_defs.py
 - `website/backend/` - app.py (FastAPI), data_loader.py
 - `website/frontend/` - index.html, app.js, shared.js, style.css, admin.html/js/css
@@ -99,10 +99,10 @@ for orig_node, agg_node in G.graph['partition'].items():
 
 Benchmarking is configured from one simulation sweep YAML file. The same entrypoint can run the full sweep or recalculate metrics from saved stage results. Aggregation always runs after either mode.
 
-- `mode: run` - Generate tasks from YAML and run the full pipeline sweep.
+- `mode: run` - Generate tasks from YAML and run the full optimization sweep.
 - `mode: metrics` - Reconstruct saved `ZoneSolution` stages, rewrite `result.json` with updated metrics, and aggregate outputs.
 
-See `Zone_Generation/Running_Analysis/benchmark/sweep.example.yaml` for the YAML shape.
+See `Zone_Generation/benchmark/sweep.example.yaml` for the YAML shape.
 
 ### Output Structure
 
@@ -121,9 +121,9 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 ### Key Classes
 
 - `SimulationSweep` (benchmark/config.py) - YAML-backed sweep definition
-- `BenchmarkTask` (benchmark/config.py) - Concrete pipeline task
+- `BenchmarkTask` (benchmark/config.py) - Concrete optimization task
 - `run_sweep` (benchmark/parallel.py) - Capacity-aware process executor with worker recycling
-- `MetricsCalculator` (metrics/calculator.py) - Pipeline-native metrics over `ZoneSolution` stages
+- `MetricsCalculator` (metrics/calculator.py) - Optimization-native metrics over `ZoneSolution` stages
 
 ## Website
 

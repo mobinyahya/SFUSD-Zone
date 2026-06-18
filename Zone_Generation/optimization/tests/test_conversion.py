@@ -1,9 +1,9 @@
-from Zone_Generation.pipeline.data.conversion import (
+from Zone_Generation.optimization.data.conversion import (
     LevelConverter,
     base_area_assignment,
 )
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.tests.synthetic import make_path_graphs
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.tests.synthetic import make_path_graphs
 
 BG0 = LevelSpec("BlockGroup", 0)
 BG1 = LevelSpec("BlockGroup", 1)

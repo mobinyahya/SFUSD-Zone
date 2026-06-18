@@ -3,13 +3,13 @@ import math
 import networkx as nx
 from shapely.geometry import box
 
-from Zone_Generation.pipeline.data.contiguity import boundary_edges
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.problem import ZoneProblem
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.tests.synthetic import make_grid_problem
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
-from Zone_Generation.Running_Analysis.metrics.spatial import compute_spatial_metrics
+from Zone_Generation.optimization.data.contiguity import boundary_edges
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.problem import ZoneProblem
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.tests.synthetic import make_grid_problem
+from Zone_Generation.metrics import MetricsCalculator
+from Zone_Generation.metrics.spatial import compute_spatial_metrics
 
 
 def _problem():
@@ -59,7 +59,7 @@ def _solution(objective=10.0, wall_time=1.5, metadata=None):
     )
 
 
-def test_pipeline_metrics_on_single_solution():
+def test_optimization_metrics_on_single_solution():
     solution = _solution(objective=12.0)
     result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
 

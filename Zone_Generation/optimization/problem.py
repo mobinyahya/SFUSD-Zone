@@ -17,7 +17,7 @@ from typing import Optional
 import networkx as nx
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, AALPI_ETHNICITIES
-from Zone_Generation.pipeline.levels import LevelSpec
+from Zone_Generation.optimization.levels import LevelSpec
 
 
 @dataclass

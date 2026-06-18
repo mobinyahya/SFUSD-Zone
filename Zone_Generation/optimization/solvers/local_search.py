@@ -4,17 +4,17 @@ Conforms to the :class:`Solver` interface so it is selectable today, but does
 not yet perform real search. It seeds from the problem's ``hint`` (or a nearest
 -centroid assignment) and runs one contiguity-repair pass. Greedy boundary
 swaps / simulated annealing can later be implemented behind this same
-interface without touching the rest of the pipeline.
+interface without touching the rest of the optimization.
 """
 
 from __future__ import annotations
 
 import time
 
-from Zone_Generation.pipeline.data import contiguity
-from Zone_Generation.pipeline.problem import ZoneProblem
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.solvers.base import Solver, register
+from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.problem import ZoneProblem
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.solvers.base import Solver, register
 
 
 @register("local_search")

@@ -1,25 +1,25 @@
 # Metrics Package
 
-Pipeline-native metrics for zoning solutions produced by `Zone_Generation.pipeline`.
+Optimization-native metrics for zoning solutions produced by `Zone_Generation.optimization`.
 
 Metrics operate on `ZoneSolution` objects, not legacy `(zone_dict, graph)` pairs. A metric run can include a single solution, recursive stages, or iterative-choice attempts.
 
 ## Capabilities
 
 - Computes final solution quality metrics from a `ZoneSolution`.
-- Computes run-level metrics across every stage returned by a pipeline strategy.
+- Computes run-level metrics across every stage returned by a optimization strategy.
 - Supports single-shot, recursive, and iterative-choice strategies.
-- Selects the final solution consistently with pipeline semantics.
+- Selects the final solution consistently with optimization semantics.
 - Produces flat metric dictionaries for CSV aggregation.
 - Produces full JSON payloads with run metadata and per-zone data.
 - Exposes modular metric files so new metric groups can be added without changing the benchmark runner.
 
 ## Entry Point
 
-Use `MetricsCalculator` from `Zone_Generation.Running_Analysis.metrics`.
+Use `MetricsCalculator` from `Zone_Generation.metrics`.
 
 ```python
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.metrics import MetricsCalculator
 
 result = MetricsCalculator(solutions, config=config).compute()
 flat_metrics = result.to_flat_dict()
@@ -88,7 +88,7 @@ The benchmark package stores this data in `result.json` and keeps scalar summari
 Metric modules are functions with this shape:
 
 ```python
-from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.metrics.base import MetricOutput, MetricsContext
 
 def compute(context: MetricsContext) -> MetricOutput:
     return MetricOutput(
@@ -108,7 +108,7 @@ result = MetricsCalculator(solutions, modules=[custom_compute]).compute()
 
 ## Data Expectations
 
-Metrics expect `ZoneSolution.problem.G` to follow the graph attribute schema used by the new pipeline.
+Metrics expect `ZoneSolution.problem.G` to follow the graph attribute schema used by the new optimization.
 
 Required graph data includes:
 

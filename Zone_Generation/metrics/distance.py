@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from Zone_Generation.Config.metrics_config import MetricColumns
-from Zone_Generation.Running_Analysis.metrics.base import MetricOutput, MetricsContext
-from Zone_Generation.Running_Analysis.metrics.programs import ge_schools
+from Zone_Generation.metrics.base import MetricOutput, MetricsContext
+from Zone_Generation.metrics.programs import ge_schools
 
 GE_PROXIMITY_RADIUS = 0.5
 

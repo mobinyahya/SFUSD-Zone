@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Recognized base units. ``attendance_area`` is supported for parsing parity
-# with the legacy data, though the active pipeline targets Block/BlockGroup.
+# with the legacy data, though the active optimization targets Block/BlockGroup.
 KNOWN_UNITS = ("BlockGroup", "Block", "attendance_area")
 
 

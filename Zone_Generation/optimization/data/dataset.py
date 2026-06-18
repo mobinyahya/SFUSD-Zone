@@ -14,19 +14,19 @@ from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
-from Zone_Generation.pipeline.data import graph_builder, loaders
-from Zone_Generation.pipeline.data.loaders import IngestConfig
-from Zone_Generation.pipeline.levels import LevelSpec
-from Zone_Generation.pipeline.problem import ZoneProblem
+from Zone_Generation.optimization.data import graph_builder, loaders
+from Zone_Generation.optimization.data.loaders import IngestConfig
+from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.problem import ZoneProblem
 
 if TYPE_CHECKING:
-    from Zone_Generation.pipeline.config import PipelineConfig
+    from Zone_Generation.optimization.config import OptimizationConfig
 
 
 class Dataset:
     """Lazy, cached access to graphs, centroids and problems for one config."""
 
-    def __init__(self, config: "PipelineConfig"):
+    def __init__(self, config: "OptimizationConfig"):
         self.config = config
         self.ingest = IngestConfig(
             unit=config.unit,

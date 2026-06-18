@@ -1,7 +1,7 @@
 import networkx as nx
 
-from Zone_Generation.pipeline.data import contiguity
-from Zone_Generation.pipeline.tests.synthetic import make_grid_graph
+from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.tests.synthetic import make_grid_graph
 
 
 def test_contiguous_assignment_passes():

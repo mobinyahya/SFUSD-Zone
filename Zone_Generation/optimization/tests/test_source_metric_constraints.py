@@ -12,18 +12,18 @@ from dataclasses import dataclass
 import pytest
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
-from Zone_Generation.pipeline.config import PipelineConfig
-from Zone_Generation.pipeline.data.dataset import Dataset
-from Zone_Generation.pipeline.problem import ZoneProblem
-from Zone_Generation.pipeline.solution import ZoneSolution
-from Zone_Generation.pipeline.solvers import get_solver
-from Zone_Generation.Running_Analysis.benchmark.config import (
+from Zone_Generation.optimization.config import OptimizationConfig
+from Zone_Generation.optimization.data.dataset import Dataset
+from Zone_Generation.optimization.problem import ZoneProblem
+from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.solvers import get_solver
+from Zone_Generation.benchmark.config import (
     BenchmarkTask,
-    pipeline_config_to_dict,
+    optimization_config_to_dict,
     stable_hash,
 )
-from Zone_Generation.Running_Analysis.benchmark.regenerate import regenerate_metrics
-from Zone_Generation.Running_Analysis.benchmark.runner import (
+from Zone_Generation.benchmark.regenerate import regenerate_metrics
+from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     load_solutions,
@@ -33,7 +33,7 @@ from Zone_Generation.Running_Analysis.benchmark.runner import (
     stage_names_for,
     write_json,
 )
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.metrics import MetricsCalculator
 
 
 # BlockGroup_1 with 5-zone-AF is currently infeasible; this source-backed
@@ -46,14 +46,14 @@ TOL = 1e-6
 
 @dataclass(frozen=True)
 class SourceRun:
-    config: PipelineConfig
+    config: OptimizationConfig
     problem: ZoneProblem
     solution: ZoneSolution
 
 
 @pytest.fixture(scope="module")
 def sfusd_source_run() -> SourceRun:
-    config = PipelineConfig(
+    config = OptimizationConfig(
         centroids_type=SOURCE_CENTROIDS,
         levels=[SOURCE_LEVEL],
         solver="cp_int",
@@ -124,7 +124,7 @@ def test_source_stage_regeneration_preserves_constraint_compliance(
     run_dir.mkdir()
     solutions = [sfusd_source_run.solution]
 
-    config_dict = pipeline_config_to_dict(sfusd_source_run.config)
+    config_dict = optimization_config_to_dict(sfusd_source_run.config)
     config_hash = stable_hash(config_dict)
     task = BenchmarkTask(
         task_id=config_hash[:12],
@@ -180,7 +180,7 @@ def test_source_stage_regeneration_preserves_constraint_compliance(
 def _assert_constraints_followed(
     problem: ZoneProblem,
     solution: ZoneSolution,
-    config: PipelineConfig,
+    config: OptimizationConfig,
 ) -> None:
     result = MetricsCalculator(solution, config=config).compute()
     assignment = solution.assignment

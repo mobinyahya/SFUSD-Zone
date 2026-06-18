@@ -6,16 +6,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 
-from Zone_Generation.Running_Analysis.benchmark.config import BenchmarkTask, stable_hash
-from Zone_Generation.Running_Analysis.benchmark.results import discover_run_dirs
-from Zone_Generation.Running_Analysis.benchmark.runner import (
+from Zone_Generation.benchmark.config import BenchmarkTask, stable_hash
+from Zone_Generation.benchmark.results import discover_run_dirs
+from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     load_solutions,
     result_payload_for,
     write_json,
 )
-from Zone_Generation.Running_Analysis.metrics import MetricsCalculator
+from Zone_Generation.metrics import MetricsCalculator
 
 
 @dataclass
@@ -41,11 +41,11 @@ def regenerate_metrics(
         try:
             dataset = None
             if dataset_factory is not None:
-                from Zone_Generation.Running_Analysis.benchmark.runner import load_manifest
-                from Zone_Generation.Running_Analysis.benchmark.config import pipeline_config_from_dict
+                from Zone_Generation.benchmark.runner import load_manifest
+                from Zone_Generation.benchmark.config import optimization_config_from_dict
 
                 manifest_for_dataset = load_manifest(run_dir)
-                config_for_dataset = pipeline_config_from_dict(manifest_for_dataset["config"])
+                config_for_dataset = optimization_config_from_dict(manifest_for_dataset["config"])
                 dataset = dataset_factory(config_for_dataset, manifest_for_dataset)
             solutions, config, manifest = load_solutions(run_dir, dataset=dataset)
             if not solutions:
