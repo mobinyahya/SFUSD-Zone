@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sfusd-zone"
 version = "0.1.0"
@@ -26,10 +30,26 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "scipy-stubs~=1.16.3",
     "seaborn>=0.13.2",
+    "student-assignment",
     "uvicorn[standard]>=0.40.0",
 ]
+
+[project.scripts]
+sfusd-match = "sfusd_matching.cli:cli"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+]
+
+[tool.uv.sources]
+student-assignment = { path = "../student-assignment", editable = true }
+
+[tool.setuptools.packages.find]
+include = [
+    "Helper_Functions*",
+    "LLM*",
+    "Zone_Generation*",
+    "redistricting*",
+    "sfusd_matching*",
 ]
