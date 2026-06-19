@@ -47,3 +47,10 @@ metrics:
   strict: true
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
+
+# Optional student-assignment matching simulation.
+# Run independently with:
+#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml --mode matching
+# matching:
+#   enabled: true
+#   config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml

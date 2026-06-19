@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import os
 
 from Zone_Generation.benchmark.config import BenchmarkTask, stable_hash
+from Zone_Generation.benchmark.matching import preserve_matching_payload
 from Zone_Generation.benchmark.results import discover_run_dirs
 from Zone_Generation.benchmark.runner import (
     MANIFEST_FILENAME,
@@ -66,6 +68,10 @@ def regenerate_metrics(
                 solutions=solutions,
                 task=task,
             )
+            previous_payload = _load_previous_result(
+                os.path.join(run_dir, RESULT_FILENAME)
+            )
+            preserve_matching_payload(payload, previous_payload)
             write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
             manifest["status"] = payload.get("status") or manifest.get("status")
             manifest["final_stage"] = metrics.run.get("final_stage")
@@ -78,3 +84,13 @@ def regenerate_metrics(
             if fail_fast:
                 raise
     return result
+
+
+def _load_previous_result(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}

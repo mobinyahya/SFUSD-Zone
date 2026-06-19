@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
+    MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
 )
@@ -46,6 +47,7 @@ def run_sweep(sweep: SimulationSweep) -> BatchResult:
         sweep.generate_tasks(),
         execution=sweep.execution,
         metrics=sweep.metrics,
+        matching=sweep.matching,
     )
 
 
@@ -54,6 +56,7 @@ def run_tasks(
     *,
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
+    matching: MatchingRunConfig | None = None,
 ) -> BatchResult:
     start = time.time()
     batch = BatchResult(total=len(tasks))
@@ -74,7 +77,11 @@ def run_tasks(
 
     if execution.sequential:
         for task in pending:
-            result = run_optimization_task(task, strict_metrics=metrics.strict)
+            result = run_optimization_task(
+                task,
+                strict_metrics=metrics.strict,
+                matching=matching,
+            )
             batch.add(result)
             _print_progress(batch)
             if result.status == "ERROR" and execution.fail_fast:
@@ -82,7 +89,7 @@ def run_tasks(
         batch.total_wall_time = time.time() - start
         return batch
 
-    _run_parallel(pending, execution, metrics, batch)
+    _run_parallel(pending, execution, metrics, matching, batch)
     batch.total_wall_time = time.time() - start
     return batch
 
@@ -91,6 +98,7 @@ def _run_parallel(
     pending: list[BenchmarkTask],
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
+    matching: MatchingRunConfig | None,
     batch: BatchResult,
 ) -> None:
     if not pending:
@@ -112,7 +120,12 @@ def _run_parallel(
                 if idx is None:
                     break
                 task = pending.pop(idx)
-                future = executor.submit(_worker_run_task, task, metrics.strict)
+                future = executor.submit(
+                    _worker_run_task,
+                    task,
+                    metrics.strict,
+                    matching,
+                )
                 futures[future] = (task, _effective_slots(task, capacity))
                 running_slots += _effective_slots(task, capacity)
                 made_progress = True
@@ -143,8 +156,16 @@ def _run_parallel(
                     return
 
 
-def _worker_run_task(task: BenchmarkTask, strict_metrics: bool) -> TaskResult:
-    return run_optimization_task(task, strict_metrics=strict_metrics)
+def _worker_run_task(
+    task: BenchmarkTask,
+    strict_metrics: bool,
+    matching: MatchingRunConfig | None,
+) -> TaskResult:
+    return run_optimization_task(
+        task,
+        strict_metrics=strict_metrics,
+        matching=matching,
+    )
 
 
 def _valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:

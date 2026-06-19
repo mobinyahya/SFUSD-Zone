@@ -14,6 +14,7 @@ from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
+    MatchingRunConfig,
     config_snapshot,
     json_ready,
     optimization_config_from_dict,
@@ -36,7 +37,12 @@ class TaskResult:
     skipped: bool = False
 
 
-def run_optimization_task(task: BenchmarkTask, *, strict_metrics: bool = True) -> TaskResult:
+def run_optimization_task(
+    task: BenchmarkTask,
+    *,
+    strict_metrics: bool = True,
+    matching: MatchingRunConfig | None = None,
+) -> TaskResult:
     """Run one benchmark task through the new optimization optimization."""
 
     output_dir = os.path.expanduser(task.output_dir)
@@ -63,12 +69,26 @@ def run_optimization_task(task: BenchmarkTask, *, strict_metrics: bool = True) -
         final_solution = calculator.context.solution
         final_solution.save(output_dir)
 
+        matching_result = None
+        if matching and matching.enabled:
+            from Zone_Generation.benchmark.matching import run_matching_for_solution
+
+            matching_result = run_matching_for_solution(
+                final_solution,
+                output_dir,
+                matching,
+            )
+
         result_payload = result_payload_for(
             metrics=metrics,
             config=config,
             solutions=solutions,
             task=task,
         )
+        if matching_result is not None:
+            from Zone_Generation.benchmark.matching import merge_matching_result
+
+            merge_matching_result(result_payload, matching_result)
         write_json(os.path.join(output_dir, RESULT_FILENAME), result_payload)
 
         manifest = manifest_for(

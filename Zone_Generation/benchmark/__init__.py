@@ -3,6 +3,7 @@
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
+    MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
 )
@@ -14,6 +15,7 @@ from Zone_Generation.benchmark.runner import TaskResult, run_optimization_task
 __all__ = [
     "BenchmarkTask",
     "ExecutionConfig",
+    "MatchingRunConfig",
     "MetricsRunConfig",
     "SimulationSweep",
     "BatchResult",

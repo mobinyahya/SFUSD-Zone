@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("config", help="Path to simulation sweep YAML.")
     parser.add_argument(
         "--mode",
-        choices=["run", "metrics"],
+        choices=["run", "metrics", "matching"],
         help="Override the mode declared in the YAML file.",
     )
     args = parser.parse_args(argv)
@@ -28,11 +28,29 @@ def main(argv: list[str] | None = None) -> None:
     if mode == "run":
         tasks = sweep.generate_tasks()
         print(f"Generated {len(tasks)} benchmark task(s).")
-        batch = run_tasks(tasks, execution=sweep.execution, metrics=sweep.metrics)
+        batch = run_tasks(
+            tasks,
+            execution=sweep.execution,
+            metrics=sweep.metrics,
+            matching=sweep.matching,
+        )
         print(
             f"Completed {batch.successful}/{batch.total}; "
             f"failed={batch.failed}, skipped={batch.skipped}, "
             f"wall={batch.total_wall_time / 60:.1f} min"
+        )
+        _aggregate(output_dir, sweep)
+    elif mode == "matching":
+        from Zone_Generation.benchmark.matching import run_matching_for_existing_runs
+
+        result = run_matching_for_existing_runs(
+            output_dir,
+            sweep.matching,
+            fail_fast=sweep.execution.fail_fast,
+        )
+        print(
+            f"Matched {result.successful}/{result.total}; "
+            f"failed={result.failed}, skipped={result.skipped}"
         )
         _aggregate(output_dir, sweep)
     elif mode == "metrics":

@@ -56,6 +56,18 @@ class MetricsRunConfig:
 
 
 @dataclass(frozen=True)
+class MatchingRunConfig:
+    """Student-assignment simulation settings for benchmark runs."""
+
+    enabled: bool = False
+    config: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "MatchingRunConfig":
+        return _dataclass_from_dict(cls, data or {})
+
+
+@dataclass(frozen=True)
 class BenchmarkTask:
     """One concrete optimization run generated from a simulation sweep."""
 
@@ -80,6 +92,7 @@ class SimulationSweep:
     tasks: list[dict[str, Any]] = field(default_factory=list)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     metrics: MetricsRunConfig = field(default_factory=MetricsRunConfig)
+    matching: MatchingRunConfig = field(default_factory=MatchingRunConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "SimulationSweep":
@@ -95,6 +108,7 @@ class SimulationSweep:
             "tasks",
             "execution",
             "metrics",
+            "matching",
         }
         unknown_top_level = set(raw) - allowed_top_level
         if unknown_top_level:
@@ -102,8 +116,8 @@ class SimulationSweep:
 
         name = str(raw.get("name") or Path(path).stem)
         mode = str(raw.get("mode", "run"))
-        if mode not in {"run", "metrics"}:
-            raise ValueError("mode must be one of: run, metrics")
+        if mode not in {"run", "metrics", "matching"}:
+            raise ValueError("mode must be one of: run, metrics, matching")
 
         optimization_defaults = dict(raw.get("optimization_defaults") or {})
         sweep = dict(raw.get("sweep") or {})
@@ -123,6 +137,7 @@ class SimulationSweep:
             tasks=[_restore_special_values(dict(task)) for task in tasks],
             execution=ExecutionConfig.from_dict(raw.get("execution")),
             metrics=MetricsRunConfig.from_dict(raw.get("metrics")),
+            matching=MatchingRunConfig.from_dict(raw.get("matching")),
         )
 
     def generate_tasks(self) -> list[BenchmarkTask]:
