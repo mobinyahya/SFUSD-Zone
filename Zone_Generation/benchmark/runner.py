@@ -14,6 +14,7 @@ from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
+    ChoiceMetricsRunConfig,
     MatchingRunConfig,
     config_snapshot,
     json_ready,
@@ -42,6 +43,7 @@ def run_optimization_task(
     *,
     strict_metrics: bool = True,
     matching: MatchingRunConfig | None = None,
+    choice_metrics: ChoiceMetricsRunConfig | None = None,
 ) -> TaskResult:
     """Run one benchmark task through the new optimization optimization."""
 
@@ -89,6 +91,19 @@ def run_optimization_task(
             from Zone_Generation.benchmark.matching import merge_matching_result
 
             merge_matching_result(result_payload, matching_result)
+
+        choice_metrics_result = None
+        if choice_metrics and choice_metrics.enabled:
+            from Zone_Generation.benchmark.choice_metrics import (
+                compute_choice_metrics_for_run,
+                merge_choice_metrics_result,
+            )
+
+            choice_metrics_result = compute_choice_metrics_for_run(
+                output_dir,
+                choice_metrics,
+            )
+            merge_choice_metrics_result(result_payload, choice_metrics_result)
         write_json(os.path.join(output_dir, RESULT_FILENAME), result_payload)
 
         manifest = manifest_for(

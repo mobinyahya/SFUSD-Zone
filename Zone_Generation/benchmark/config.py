@@ -56,6 +56,17 @@ class MetricsRunConfig:
 
 
 @dataclass(frozen=True)
+class ChoiceMetricsRunConfig:
+    """Student-assignment outcome metrics for benchmark runs."""
+
+    enabled: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "ChoiceMetricsRunConfig":
+        return _dataclass_from_dict(cls, data or {})
+
+
+@dataclass(frozen=True)
 class MatchingRunConfig:
     """Student-assignment simulation settings for benchmark runs."""
 
@@ -93,6 +104,7 @@ class SimulationSweep:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     metrics: MetricsRunConfig = field(default_factory=MetricsRunConfig)
     matching: MatchingRunConfig = field(default_factory=MatchingRunConfig)
+    choice_metrics: ChoiceMetricsRunConfig = field(default_factory=ChoiceMetricsRunConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "SimulationSweep":
@@ -109,15 +121,18 @@ class SimulationSweep:
             "execution",
             "metrics",
             "matching",
+            "choice_metrics",
         }
         unknown_top_level = set(raw) - allowed_top_level
         if unknown_top_level:
             raise ValueError(f"Unknown sweep YAML keys: {sorted(unknown_top_level)}")
 
         name = str(raw.get("name") or Path(path).stem)
-        mode = str(raw.get("mode", "run"))
-        if mode not in {"run", "metrics", "matching"}:
-            raise ValueError("mode must be one of: run, metrics, matching")
+        mode = _normalize_mode(str(raw.get("mode", "run")))
+        if mode not in {"run", "metrics", "matching", "choice_metrics"}:
+            raise ValueError(
+                "mode must be one of: run, metrics, matching, choice_metrics"
+            )
 
         optimization_defaults = dict(raw.get("optimization_defaults") or {})
         sweep = dict(raw.get("sweep") or {})
@@ -138,6 +153,7 @@ class SimulationSweep:
             execution=ExecutionConfig.from_dict(raw.get("execution")),
             metrics=MetricsRunConfig.from_dict(raw.get("metrics")),
             matching=MatchingRunConfig.from_dict(raw.get("matching")),
+            choice_metrics=ChoiceMetricsRunConfig.from_dict(raw.get("choice_metrics")),
         )
 
     def generate_tasks(self) -> list[BenchmarkTask]:
@@ -284,6 +300,10 @@ def _dataclass_from_dict(cls, data: Mapping[str, Any]):
     if unknown:
         raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
     return cls(**{k: v for k, v in data.items() if k in field_names})
+
+
+def _normalize_mode(mode: str) -> str:
+    return mode.replace("-", "_")
 
 
 def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:

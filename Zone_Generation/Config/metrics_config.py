@@ -80,6 +80,14 @@ class MetricColumns:
     TOTAL_WALL_TIME = "total_wall_time"
     FINAL_STAGE_INDEX = "final_stage_index"
     FINAL_CHOICE_UTILITY = "final_choice_utility"
+    CHOICE_AVG_STUDENT_DISTANCE = "choice_avg_student_distance"
+    CHOICE_SCHOOLS_ABOVE_10PCT_DISTRICT_FRL = "choice_schools_above_10pct_district_frl"
+    CHOICE_FRL_DISSIMILARITY = "choice_frl_dissimilarity"
+    CHOICE_PERCENT_UNASSIGNED = "choice_percent_unassigned"
+    CHOICE_PERCENT_DESIGNATED = "choice_percent_designated"
+    CHOICE_PERCENT_TOP_1 = "choice_percent_top_1"
+    CHOICE_PERCENT_TOP_3 = "choice_percent_top_3"
+    CHOICE_TOTAL_MNL_UTILITY = "choice_total_mnl_utility"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -109,6 +117,7 @@ CATEGORIES = {
     "programs": "Educational Program Availability",
     "quality": "School Quality Indicators",
     "structure": "Zone Structure and Shape",
+    "choice": "Student Assignment Choice Outcomes",
     "run": "Optimization Run Metadata",
 }
 
@@ -118,6 +127,7 @@ CATEGORY_DESCRIPTIONS = {
     "programs": "Measure how hard it is for students to access programs within their zone.",
     "quality": "Measures how evenly school quality is distributed across zones.",
     "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
+    "choice": "Measures assignment outcomes after students are matched to schools under a matching policy.",
     "run": "Solver and strategy outputs for the optimization run, including objectives and timing.",
 }
 
@@ -624,6 +634,86 @@ QUALITY_METRICS = [
 
 
 # ============================================================================
+# CHOICE METRICS (student-assignment outcomes)
+# ============================================================================
+
+CHOICE_METRICS = [
+    MetricSpec(
+        column="choice_avg_student_distance",
+        display_name="Average Assigned Student Distance",
+        description="Average distance in miles from assigned students to their matched school/program, averaged across assignment simulations when multiple assignment CSVs are present. Lower means students are assigned closer to home.",
+        category="choice",
+        direction="minimize",
+        is_core=False,
+        short_name="Choice Dist",
+    ),
+    MetricSpec(
+        column="choice_schools_above_10pct_district_frl",
+        display_name="Schools Above District FRL +10%",
+        description="Fraction of schools with assigned-student FRL at least 10 percentage points above participating-student district FRL, averaged across assignment simulations. Lower means fewer schools concentrate higher-FRL students.",
+        category="choice",
+        direction="minimize",
+        is_core=False,
+        short_name="High FRL Schools",
+    ),
+    MetricSpec(
+        column="choice_frl_dissimilarity",
+        display_name="FRL Dissimilarity Across Schools",
+        description="Weighted FRL dissimilarity across assigned school populations using freelunch_prob + reducedlunch_prob as each student's FRL weight. Lower means FRL students are more evenly distributed across schools.",
+        category="choice",
+        direction="minimize",
+        is_core=False,
+        short_name="FRL Dissimil.",
+    ),
+    MetricSpec(
+        column="choice_percent_unassigned",
+        display_name="Unassigned Students",
+        description="Fraction of participating students not assigned to any program, averaged across assignment simulations. Lower is better.",
+        category="choice",
+        direction="minimize",
+        is_core=False,
+        short_name="Unassigned",
+    ),
+    MetricSpec(
+        column="choice_percent_designated",
+        display_name="Designated Assignments",
+        description="Fraction of assigned students who were assigned through designation, averaged across assignment simulations. Lower means fewer assigned students needed designation to receive a placement.",
+        category="choice",
+        direction="minimize",
+        is_core=False,
+        short_name="Designated",
+    ),
+    MetricSpec(
+        column="choice_percent_top_1",
+        display_name="Top 1 Choice",
+        description="Fraction of assigned students who received their first-ranked choice, averaged across assignment simulations. Higher is better.",
+        category="choice",
+        direction="maximize",
+        is_core=False,
+        short_name="Top 1",
+    ),
+    MetricSpec(
+        column="choice_percent_top_3",
+        display_name="Top 3 Choice",
+        description="Fraction of assigned students who received one of their top three ranked choices, averaged across assignment simulations. Higher is better.",
+        category="choice",
+        direction="maximize",
+        is_core=False,
+        short_name="Top 3",
+    ),
+    MetricSpec(
+        column="choice_total_mnl_utility",
+        display_name="Total MNL Utility",
+        description="Sum of assigned_utility from the MNL utility model across students in each assignment simulation, averaged across assignment simulations when multiple assignment CSVs are present. Higher is better. Available only when matching writes assigned_utility.",
+        category="choice",
+        direction="maximize",
+        is_core=False,
+        short_name="MNL Utility",
+    ),
+]
+
+
+# ============================================================================
 # RUN METRICS (solver/strategy metadata)
 # ============================================================================
 
@@ -692,6 +782,7 @@ ALL_METRICS: list[MetricSpec] = (
     + PROGRAM_METRICS
     + QUALITY_METRICS
     + STRUCTURE_METRICS
+    + CHOICE_METRICS
     + RUN_METRICS
 )
 

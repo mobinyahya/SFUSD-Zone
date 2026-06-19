@@ -8,6 +8,7 @@ import json
 import os
 
 from Zone_Generation.benchmark.config import BenchmarkTask, stable_hash
+from Zone_Generation.benchmark.choice_metrics import preserve_choice_metrics_payload
 from Zone_Generation.benchmark.matching import preserve_matching_payload
 from Zone_Generation.benchmark.results import discover_run_dirs
 from Zone_Generation.benchmark.runner import (
@@ -72,6 +73,7 @@ def regenerate_metrics(
                 os.path.join(run_dir, RESULT_FILENAME)
             )
             preserve_matching_payload(payload, previous_payload)
+            preserve_choice_metrics_payload(payload, previous_payload)
             write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
             manifest["status"] = payload.get("status") or manifest.get("status")
             manifest["final_stage"] = metrics.run.get("final_stage")

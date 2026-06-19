@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
+    ChoiceMetricsRunConfig,
     ExecutionConfig,
     MatchingRunConfig,
     MetricsRunConfig,
@@ -48,6 +49,7 @@ def run_sweep(sweep: SimulationSweep) -> BatchResult:
         execution=sweep.execution,
         metrics=sweep.metrics,
         matching=sweep.matching,
+        choice_metrics=sweep.choice_metrics,
     )
 
 
@@ -57,6 +59,7 @@ def run_tasks(
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
     matching: MatchingRunConfig | None = None,
+    choice_metrics: ChoiceMetricsRunConfig | None = None,
 ) -> BatchResult:
     start = time.time()
     batch = BatchResult(total=len(tasks))
@@ -81,6 +84,7 @@ def run_tasks(
                 task,
                 strict_metrics=metrics.strict,
                 matching=matching,
+                choice_metrics=choice_metrics,
             )
             batch.add(result)
             _print_progress(batch)
@@ -89,7 +93,7 @@ def run_tasks(
         batch.total_wall_time = time.time() - start
         return batch
 
-    _run_parallel(pending, execution, metrics, matching, batch)
+    _run_parallel(pending, execution, metrics, matching, choice_metrics, batch)
     batch.total_wall_time = time.time() - start
     return batch
 
@@ -99,6 +103,7 @@ def _run_parallel(
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
     matching: MatchingRunConfig | None,
+    choice_metrics: ChoiceMetricsRunConfig | None,
     batch: BatchResult,
 ) -> None:
     if not pending:
@@ -125,6 +130,7 @@ def _run_parallel(
                     task,
                     metrics.strict,
                     matching,
+                    choice_metrics,
                 )
                 futures[future] = (task, _effective_slots(task, capacity))
                 running_slots += _effective_slots(task, capacity)
@@ -160,11 +166,13 @@ def _worker_run_task(
     task: BenchmarkTask,
     strict_metrics: bool,
     matching: MatchingRunConfig | None,
+    choice_metrics: ChoiceMetricsRunConfig | None,
 ) -> TaskResult:
     return run_optimization_task(
         task,
         strict_metrics=strict_metrics,
         matching=matching,
+        choice_metrics=choice_metrics,
     )
 
 

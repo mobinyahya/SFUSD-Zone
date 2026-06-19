@@ -1,21 +1,21 @@
 # Optimization-native benchmark sweep.
-# Run: uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml
+# Run: uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.test.yaml
 
 name: recursive-blockgroup-sweep
 mode: run  # run | metrics
 
 optimization_defaults:
-  centroids_type: '7-zone-14'
-  levels: ['BlockGroup_1', 'BlockGroup_0']
-  solver: 'cp_int'
-  strategy: 'recursive'
+  centroids_type: '6-zone-3'
+  levels: ['BlockGroup_1']
+  solver: 'cp_bool'
+  strategy: 'single'
   frl_dev: 0.3
   racial_dev: 0.3
   overage: 0.8
   shortage: 0.2
   max_distance: 5
-  solve_time_limits: [45, 60]
-  gap_limits: [0, 0]
+  solve_time_limits: [45]
+  gap_limits: [0]
   use_hints: true
   seed: 42
   workers: 8
@@ -27,12 +27,7 @@ optimization_defaults:
   level_to_split: {1: 2, 2: 1}
 
 sweep:
-  centroids_type: ['5-zone-AF', '6-zone-3']
-  frl_dev: [0.12, 0.15, 0.2, 0.25]
-  racial_dev: [0.12, 0.15, 0.2, 0.25]
-  seed: [42, 14, 20]
-  overage: [0.7, 0.8, 0.9]
-  shortage: [0.15, 0.2, 0.25]
+  seed: [42, 12]
 
 execution:
   output_dir: './optimization_output'
@@ -50,13 +45,13 @@ metrics:
 
 # Optional student-assignment matching simulation.
 # Run matching independently with:
-#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml --mode matching
-# matching:
-#   enabled: true
-#   config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.test.yaml --mode matching
+matching:
+  enabled: true
+  config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
 
 # Optional assignment-based choice metrics. These use matching assignment CSVs,
 # do nothing when no assignments exist, and can be run independently with:
-#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml --mode choice-metrics
-# choice_metrics:
-#   enabled: true
+#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.test.yaml --mode choice-metrics
+choice_metrics:
+  enabled: true

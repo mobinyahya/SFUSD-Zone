@@ -7,7 +7,7 @@ restrict-zone: true
 guard-rails: -1
 
 policies:
-- 6zone-1
+- generated_zones
 
 priority-weights:
   ctip: 8

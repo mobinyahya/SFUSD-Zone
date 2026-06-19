@@ -16,13 +16,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("config", help="Path to simulation sweep YAML.")
     parser.add_argument(
         "--mode",
-        choices=["run", "metrics", "matching"],
+        choices=["run", "metrics", "matching", "choice-metrics", "choice_metrics"],
         help="Override the mode declared in the YAML file.",
     )
     args = parser.parse_args(argv)
 
     sweep = SimulationSweep.from_yaml(args.config)
-    mode = args.mode or sweep.mode
+    mode = (args.mode or sweep.mode).replace("-", "_")
     output_dir = os.path.expanduser(sweep.execution.output_dir)
 
     if mode == "run":
@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> None:
             execution=sweep.execution,
             metrics=sweep.metrics,
             matching=sweep.matching,
+            choice_metrics=sweep.choice_metrics,
         )
         print(
             f"Completed {batch.successful}/{batch.total}; "
@@ -46,10 +47,26 @@ def main(argv: list[str] | None = None) -> None:
         result = run_matching_for_existing_runs(
             output_dir,
             sweep.matching,
+            choice_metrics=sweep.choice_metrics,
             fail_fast=sweep.execution.fail_fast,
         )
         print(
             f"Matched {result.successful}/{result.total}; "
+            f"failed={result.failed}, skipped={result.skipped}"
+        )
+        _aggregate(output_dir, sweep)
+    elif mode == "choice_metrics":
+        from Zone_Generation.benchmark.choice_metrics import (
+            run_choice_metrics_for_existing_runs,
+        )
+
+        result = run_choice_metrics_for_existing_runs(
+            output_dir,
+            sweep.choice_metrics,
+            fail_fast=sweep.execution.fail_fast,
+        )
+        print(
+            f"Choice metrics {result.successful}/{result.total}; "
             f"failed={result.failed}, skipped={result.skipped}"
         )
         _aggregate(output_dir, sweep)

@@ -14,7 +14,11 @@ from typing import Any, Mapping
 import pandas as pd
 import yaml
 
-from Zone_Generation.benchmark.config import MatchingRunConfig, json_ready
+from Zone_Generation.benchmark.config import (
+    ChoiceMetricsRunConfig,
+    MatchingRunConfig,
+    json_ready,
+)
 from Zone_Generation.metrics.base import MetricsContext
 from Zone_Generation.optimization.solution import ZoneSolution
 
@@ -142,6 +146,7 @@ def run_matching_for_existing_runs(
     root_folder: str,
     matching: MatchingRunConfig,
     *,
+    choice_metrics: ChoiceMetricsRunConfig | None = None,
     fail_fast: bool = False,
     dataset_factory=None,
 ) -> MatchingBatchResult:
@@ -185,6 +190,17 @@ def run_matching_for_existing_runs(
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
             merge_matching_result(payload, matching_result)
+            if choice_metrics and choice_metrics.enabled:
+                from Zone_Generation.benchmark.choice_metrics import (
+                    compute_choice_metrics_for_run,
+                    merge_choice_metrics_result,
+                )
+
+                choice_result = compute_choice_metrics_for_run(
+                    run_dir,
+                    choice_metrics,
+                )
+                merge_choice_metrics_result(payload, choice_result)
             write_json(result_path, payload)
 
             manifest["matching_regenerated"] = True
