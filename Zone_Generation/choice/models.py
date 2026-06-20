@@ -65,8 +65,6 @@ class MNLChoiceModel(ChoiceModel):
 
     def __init__(
         self,
-        utility_path: str | None = None,
-        student_path: str | None = None,
         method: str = "logsum",
         area_column: str | None = None,
         lower_bound: float = -1_000_000_000.0,
@@ -76,8 +74,6 @@ class MNLChoiceModel(ChoiceModel):
         self.lower_bound = float(lower_bound)
         self.upper_bound = float(upper_bound)
         self.evaluator = MNLZoningUtility(
-            utility_path=utility_path,
-            student_path=student_path,
             method=method,
             area_column=area_column,
             empty_utility=empty_utility,

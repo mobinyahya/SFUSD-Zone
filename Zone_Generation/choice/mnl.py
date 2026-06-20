@@ -39,8 +39,6 @@ class MNLZoningUtility:
 
     def __init__(
         self,
-        utility_path: str | None = None,
-        student_path: str | None = None,
         *,
         method: str = "logsum",
         area_column: str | None = None,
@@ -48,8 +46,6 @@ class MNLZoningUtility:
     ):
         if method not in {"max", "logsum"}:
             raise ValueError("MNL utility method must be 'max' or 'logsum'.")
-        self.utility_path = str(utility_path or DEFAULT_UTILITY_PATH)
-        self.student_path = str(student_path or DEFAULT_STUDENT_PATH)
         self.method = method
         self.area_column = area_column
         self.empty_utility = float(empty_utility)
@@ -84,8 +80,8 @@ class MNLZoningUtility:
         if self.utility_df is not None and self.student_df is not None:
             return
 
-        utility_path = Path(self.utility_path).expanduser()
-        student_path = Path(self.student_path).expanduser()
+        utility_path = Path(DEFAULT_UTILITY_PATH).expanduser()
+        student_path = Path(DEFAULT_STUDENT_PATH).expanduser()
         if not utility_path.exists():
             raise FileNotFoundError(f"MNL utility file not found: {utility_path}")
         if not student_path.exists():
@@ -122,7 +118,7 @@ class MNLZoningUtility:
         student_area_col = self.area_column or _student_area_column(problem)
         if student_area_col not in self.student_df.columns:
             raise ValueError(
-                f"MNL student file lacks {student_area_col!r}; set choice_model_options.area_column."
+                f"MNL student file lacks {student_area_col!r}."
             )
 
         zone_to_schools: dict[int, set[str]] = {z: set() for z in range(problem.Z)}

@@ -25,10 +25,14 @@ class IterativeChoiceStrategy(Strategy):
         tolerance = float(self.options.get("tolerance", 1e-6))
         use_hints = bool(self.options.get("use_hints", True))
         scale = float(self.options.get("choice_utility_scale", 100.0))
-        model = get_choice_model(
-            self.options.get("choice_model", "distance"),
-            **self.options.get("choice_model_options", {}),
-        )
+        choice_model = self.options.get("choice_model", "distance")
+        if choice_model == "mnl":
+            model = get_choice_model(
+                choice_model,
+                method=self.options.get("choice_model_method", "logsum"),
+            )
+        else:
+            model = get_choice_model(choice_model)
 
         base_problem = dataset.problem_for(target)
         lower_bound, upper_bound = model.utility_bounds(base_problem)

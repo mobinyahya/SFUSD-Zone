@@ -3,11 +3,12 @@
 import pandas as pd
 import pytest
 
+from Zone_Generation.choice import mnl
 from Zone_Generation.choice.models import MNLChoiceModel
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 
 
-def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path):
+def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(
@@ -26,11 +27,9 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path):
 
     problem = make_grid_problem(2, 2)
     assignment = {0: 0, 1: 0, 2: 1, 3: 1}
-    model = MNLChoiceModel(
-        utility_path=str(utility_path),
-        student_path=str(student_path),
-        method="max",
-    )
+    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
+    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
+    model = MNLChoiceModel(method="max")
 
     evaluated = model.evaluate_with_cuts(problem, assignment)
 

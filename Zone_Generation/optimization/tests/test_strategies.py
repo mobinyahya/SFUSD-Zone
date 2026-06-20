@@ -25,7 +25,6 @@ def test_iterative_choice_strategy_terminates():
         levels=["BlockGroup_0"],
         max_iterations=3,
         choice_model="distance",
-        choice_model_options={},
     )
     solutions = strat.run(dataset, solver)
     assert 1 <= len(solutions) <= 3
