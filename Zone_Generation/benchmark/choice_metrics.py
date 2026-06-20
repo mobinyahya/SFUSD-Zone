@@ -193,7 +193,13 @@ def run_choice_metrics_for_existing_runs(
     for run_dir in run_dirs:
         try:
             result = compute_choice_metrics_for_run(run_dir, choice_metrics)
-            if result is None:
+            manifest = load_manifest(run_dir)
+            stage_result = compute_choice_metrics_for_stages(
+                run_dir,
+                choice_metrics,
+                manifest.get("stages", []),
+            )
+            if result is None and not (stage_result and stage_result.get("stages")):
                 batch.add(
                     ChoiceMetricsTaskResult(
                         run_dir=run_dir,
@@ -206,9 +212,9 @@ def run_choice_metrics_for_existing_runs(
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
             merge_choice_metrics_result(payload, result)
+            merge_stage_choice_metrics_result(payload, stage_result)
             write_json(result_path, payload)
 
-            manifest = load_manifest(run_dir)
             manifest["choice_metrics_regenerated"] = True
             write_json(os.path.join(run_dir, MANIFEST_FILENAME), manifest)
             batch.add(ChoiceMetricsTaskResult(run_dir=run_dir, status="OK"))
@@ -227,6 +233,28 @@ def run_choice_metrics_for_existing_runs(
     return batch
 
 
+def compute_choice_metrics_for_stages(
+    output_dir: str,
+    choice_metrics: ChoiceMetricsRunConfig,
+    stage_records: list[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Optionally compute assignment outcome metrics for saved stage folders."""
+
+    if not choice_metrics.enabled or not choice_metrics.compute_stage_metrics:
+        return None
+
+    output_root = Path(os.path.expanduser(output_dir)).resolve()
+    stages: dict[str, Any] = {}
+    for stage in stage_records:
+        stage_name = str(stage.get("name"))
+        stage_dir = output_root / str(stage.get("path"))
+        result = compute_choice_metrics_for_run(str(stage_dir), choice_metrics)
+        if result is not None:
+            stages[stage_name] = {"choice_metrics": result.to_payload()}
+
+    return {"enabled": True, "stages": stages}
+
+
 def merge_choice_metrics_result(
     payload: dict[str, Any], choice_result: ChoiceMetricsResult | None
 ) -> dict[str, Any]:
@@ -234,6 +262,28 @@ def merge_choice_metrics_result(
         return payload
     payload["choice_metrics"] = choice_result.to_payload()
     payload.setdefault("metrics", {}).update(choice_result.metrics)
+    return payload
+
+
+def merge_stage_choice_metrics_result(
+    payload: dict[str, Any], stage_choice_result: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    if not stage_choice_result:
+        return payload
+    payload["stage_choice_metrics"] = json_ready(stage_choice_result)
+    run_stages = {
+        stage.get("name"): stage
+        for stage in (payload.get("run") or {}).get("stages", [])
+    }
+    for stage_name, stage_payload in stage_choice_result.get("stages", {}).items():
+        row = run_stages.get(stage_name)
+        if row is None:
+            continue
+        choice_payload = stage_payload.get("choice_metrics")
+        if choice_payload is None:
+            continue
+        row["choice_metrics"] = choice_payload
+        row["choice_metrics_metrics"] = choice_payload.get("metrics", {})
     return payload
 
 

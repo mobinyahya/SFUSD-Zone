@@ -7,7 +7,7 @@ Metrics operate on `ZoneSolution` objects, not legacy `(zone_dict, graph)` pairs
 ## Capabilities
 
 - Computes final solution quality metrics from a `ZoneSolution`.
-- Computes run-level metrics across every stage returned by a optimization strategy.
+- Computes run-level objective and timing metadata across every stage returned by a optimization strategy.
 - Supports single-shot, recursive, and iterative-choice strategies.
 - Selects the final solution consistently with optimization semantics.
 - Produces flat metric dictionaries for CSV aggregation.
@@ -58,7 +58,7 @@ Default modules are registered in `calculator.py` through `DEFAULT_MODULES`.
 
 | Module | Capabilities |
 |---|---|
-| `run_metrics.py` | Final status, objectives, wall time, cut edges, compactness scores, and per-stage metadata. |
+| `run_metrics.py` | Final status, objectives, wall time, and per-stage metadata. Per-stage cut edges and compactness scores are opt-in through `compute_stage_metrics`. |
 | `diversity.py` | FRL, race and ethnicity balance, AALPI balance, and seat disparity. |
 | `programs.py` | Program counts by zone, language programs, special education, and GE access. |
 | `distance.py` | In-zone GE school distances and nearby out-of-zone GE school access. |

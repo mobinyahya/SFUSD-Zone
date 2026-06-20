@@ -41,7 +41,7 @@ Top-level sections:
 | `sweep` | Cartesian product values for `OptimizationConfig` fields. |
 | `tasks` | Explicit per-task overrides, crossed with `sweep` values. |
 | `execution` | Parallelism, capacity, skipping, and output options. |
-| `metrics` | Metric strictness and aggregation output settings. |
+| `metrics` | Metric strictness, stage metric opt-in, and aggregation output settings. |
 
 Example with solver and strategy variation:
 
@@ -82,6 +82,7 @@ execution:
 
 metrics:
   strict: true
+  compute_stage_metrics: false
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
 ```
@@ -133,7 +134,7 @@ Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases
 
 ## Modes
 
-`run` expands the YAML into tasks, executes optimization, writes artifacts, computes metrics, and writes aggregate CSVs.
+`run` expands the YAML into tasks, executes optimization, writes artifacts, computes final-solution metrics, and writes aggregate CSVs. Recursive/iterative stage objective and timing metadata are always preserved; expensive per-stage cut-edge/compactness metrics run only when `metrics.compute_stage_metrics: true`.
 
 `metrics` discovers existing manifests under `execution.output_dir`, reconstructs saved `ZoneSolution` stages, recomputes metrics, rewrites `result.json`, and writes aggregate CSVs.
 

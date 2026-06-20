@@ -55,6 +55,7 @@ optimization_defaults:
 matching:
   enabled: true
   config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+  compute_stage_assignments: true
 """,
         encoding="utf-8",
     )
@@ -64,6 +65,7 @@ matching:
     assert sweep.mode == "matching"
     assert sweep.matching.enabled is True
     assert sweep.matching.config.endswith("medium_zones_no_reserves_no_sib.yaml")
+    assert sweep.matching.compute_stage_assignments is True
 
 
 def test_sweep_yaml_accepts_choice_metrics_config(tmp_path):
@@ -76,6 +78,7 @@ optimization_defaults:
   graphs_dir: '{tmp_path / "graphs"}'
 choice_metrics:
   enabled: true
+  compute_stage_metrics: true
 """,
         encoding="utf-8",
     )
@@ -84,6 +87,7 @@ choice_metrics:
 
     assert sweep.mode == "choice_metrics"
     assert sweep.choice_metrics.enabled is True
+    assert sweep.choice_metrics.compute_stage_metrics is True
 
 
 def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monkeypatch):
@@ -233,6 +237,34 @@ def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
     result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
     assert result["matching"]["status"] == "OK"
     assert result["metrics"]["matching_assignment_files"] == 1
+
+
+def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
+    _stub_student_assignment(monkeypatch)
+    run_dir, problem = _write_synthetic_run(tmp_path)
+
+    batch = run_matching_for_existing_runs(
+        str(tmp_path),
+        MatchingRunConfig(enabled=True, compute_stage_assignments=True),
+        choice_metrics=ChoiceMetricsRunConfig(enabled=True, compute_stage_metrics=True),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    assert batch.successful == 1
+    result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    stage_name = "stage_00_BlockGroup_0"
+    stage = result["run"]["stages"][0]
+    assert stage["matching"]["status"] == "OK"
+    assert stage["choice_metrics"]["status"] == "OK"
+    assert stage["choice_metrics_metrics"][CHOICE_PERCENT_UNASSIGNED] == 1 / 3
+    assert result["stage_matching"]["stages"][stage_name]["matching"]["status"] == "OK"
+    assert (
+        run_dir
+        / "stages"
+        / stage_name
+        / "matching"
+        / "choice_metrics_by_assignment.csv"
+    ).exists()
 
 
 def test_preserve_matching_payload_keeps_existing_matching_metrics():

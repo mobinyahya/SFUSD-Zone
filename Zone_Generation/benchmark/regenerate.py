@@ -33,6 +33,7 @@ def regenerate_metrics(
     root_folder: str,
     *,
     strict: bool = True,
+    compute_stage_metrics: bool = False,
     fail_fast: bool = False,
     dataset_factory=None,
 ) -> RegenerationResult:
@@ -61,7 +62,12 @@ def regenerate_metrics(
                 output_dir=run_dir,
                 capacity_slots=int(manifest.get("capacity_slots") or config.workers),
             )
-            calculator = MetricsCalculator(solutions, config=config, strict=strict)
+            calculator = MetricsCalculator(
+                solutions,
+                config=config,
+                strict=strict,
+                compute_stage_metrics=compute_stage_metrics,
+            )
             metrics = calculator.compute()
             payload = result_payload_for(
                 metrics=metrics,

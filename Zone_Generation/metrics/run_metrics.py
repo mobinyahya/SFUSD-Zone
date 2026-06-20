@@ -9,6 +9,7 @@ from Zone_Generation.metrics.spatial import compute_spatial_metrics
 
 def compute(context: MetricsContext) -> MetricOutput:
     stage_rows = []
+    compute_stage_metrics = context.compute_stage_metrics
     flat = {
         MetricColumns.FINAL_OBJECTIVE: context.solution.objective,
         MetricColumns.FINAL_STATUS: context.solution.status,
@@ -25,8 +26,16 @@ def compute(context: MetricsContext) -> MetricOutput:
         level_counts[stage.level.name] = level_counts.get(stage.level.name, 0) + 1
 
     for idx, (name, solution) in enumerate(zip(context.stage_names, context.stages)):
-        spatial = compute_spatial_metrics(solution, context.config) if solution.assignment else None
-        contiguous = solution.is_contiguous() if solution.assignment else None
+        spatial = (
+            compute_spatial_metrics(solution, context.config)
+            if compute_stage_metrics and solution.assignment
+            else None
+        )
+        contiguous = (
+            solution.is_contiguous()
+            if compute_stage_metrics and solution.assignment
+            else None
+        )
         row = {
             "name": name,
             "index": idx,
@@ -48,23 +57,32 @@ def compute(context: MetricsContext) -> MetricOutput:
         stage_rows.append(row)
 
         flat[f"objective_{name}"] = solution.objective
-        flat[f"cut_edges_{name}"] = row["cut_edges"]
-        flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
-        flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
-        flat[f"avg_polsby_popper_score_{name}"] = row["avg_polsby_popper_score"]
         flat[f"wall_time_{name}"] = solution.wall_time
+        if compute_stage_metrics:
+            flat[f"cut_edges_{name}"] = row["cut_edges"]
+            flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
+            flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
+            flat[f"avg_polsby_popper_score_{name}"] = row[
+                "avg_polsby_popper_score"
+            ]
         if level_counts[solution.level.name] == 1:
             flat[f"objective_{solution.level.name}"] = solution.objective
-            flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
-            flat[f"normalized_cut_edges_{solution.level.name}"] = row[
-                "normalized_cut_edges"
-            ]
-            flat[f"avg_reock_score_{solution.level.name}"] = row["avg_reock_score"]
-            flat[f"avg_polsby_popper_score_{solution.level.name}"] = row["avg_polsby_popper_score"]
             flat[f"wall_time_{solution.level.name}"] = solution.wall_time
+            if compute_stage_metrics:
+                flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
+                flat[f"normalized_cut_edges_{solution.level.name}"] = row[
+                    "normalized_cut_edges"
+                ]
+                flat[f"avg_reock_score_{solution.level.name}"] = row[
+                    "avg_reock_score"
+                ]
+                flat[f"avg_polsby_popper_score_{solution.level.name}"] = row[
+                    "avg_polsby_popper_score"
+                ]
 
     final_stage = stage_rows[context.final_stage_index]
-    flat[MetricColumns.FINAL_CUT_EDGES] = final_stage["cut_edges"]
+    if compute_stage_metrics:
+        flat[MetricColumns.FINAL_CUT_EDGES] = final_stage["cut_edges"]
 
     run = {
         "strategy": _strategy_name(context),

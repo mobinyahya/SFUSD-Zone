@@ -49,6 +49,7 @@ class MatchingResult:
         payload = {
             "enabled": True,
             "status": self.status,
+            "metrics": self.metrics,
             "artifacts": self.artifacts,
             "run": self.run,
         }
@@ -187,20 +188,41 @@ def run_matching_for_existing_runs(
                 continue
             final_solution = MetricsContext(solutions, config=config).solution
             matching_result = run_matching_for_solution(final_solution, run_dir, matching)
+            stage_matching_result = run_matching_for_stages(
+                solutions,
+                manifest.get("stages", []),
+                run_dir,
+                matching,
+                choice_metrics=choice_metrics,
+            )
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
             merge_matching_result(payload, matching_result)
+            merge_stage_matching_result(payload, stage_matching_result)
             if choice_metrics and choice_metrics.enabled:
                 from Zone_Generation.benchmark.choice_metrics import (
                     compute_choice_metrics_for_run,
+                    compute_choice_metrics_for_stages,
                     merge_choice_metrics_result,
+                    merge_stage_choice_metrics_result,
                 )
 
                 choice_result = compute_choice_metrics_for_run(
                     run_dir,
                     choice_metrics,
                 )
+                stage_choice_result = None
+                if not (
+                    stage_matching_result
+                    and choice_metrics.compute_stage_metrics
+                ):
+                    stage_choice_result = compute_choice_metrics_for_stages(
+                        run_dir,
+                        choice_metrics,
+                        manifest.get("stages", []),
+                    )
                 merge_choice_metrics_result(payload, choice_result)
+                merge_stage_choice_metrics_result(payload, stage_choice_result)
             write_json(result_path, payload)
 
             manifest["matching_regenerated"] = True
@@ -219,6 +241,43 @@ def run_matching_for_existing_runs(
             if fail_fast:
                 raise
     return batch
+
+
+def run_matching_for_stages(
+    solutions: list[ZoneSolution],
+    stage_records: list[dict[str, Any]],
+    output_dir: str,
+    matching: MatchingRunConfig,
+    *,
+    choice_metrics: ChoiceMetricsRunConfig | None = None,
+) -> dict[str, Any] | None:
+    """Optionally run matching and choice metrics for every saved stage."""
+
+    if not matching.enabled or not matching.compute_stage_assignments:
+        return None
+
+    output_root = Path(os.path.expanduser(output_dir)).resolve()
+    stages: dict[str, Any] = {}
+    for solution, stage in zip(solutions, stage_records):
+        stage_name = str(stage.get("name"))
+        stage_dir = output_root / str(stage.get("path"))
+        matching_result = run_matching_for_solution(solution, str(stage_dir), matching)
+        stage_payload: dict[str, Any] = {}
+        if matching_result is not None:
+            stage_payload["matching"] = matching_result.to_payload()
+            stage["matching"] = stage_payload["matching"]
+
+        if choice_metrics and choice_metrics.enabled and choice_metrics.compute_stage_metrics:
+            from Zone_Generation.benchmark.choice_metrics import compute_choice_metrics_for_run
+
+            choice_result = compute_choice_metrics_for_run(str(stage_dir), choice_metrics)
+            if choice_result is not None:
+                stage_payload["choice_metrics"] = choice_result.to_payload()
+                stage["choice_metrics"] = stage_payload["choice_metrics"]
+
+        stages[stage_name] = stage_payload
+
+    return {"enabled": True, "stages": stages}
 
 
 def write_matching_zone_csv(
@@ -332,6 +391,31 @@ def merge_matching_result(
         return payload
     payload["matching"] = matching_result.to_payload()
     payload.setdefault("metrics", {}).update(matching_result.metrics)
+    return payload
+
+
+def merge_stage_matching_result(
+    payload: dict[str, Any], stage_matching_result: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    if not stage_matching_result:
+        return payload
+    payload["stage_matching"] = json_ready(stage_matching_result)
+    run_stages = {
+        stage.get("name"): stage
+        for stage in (payload.get("run") or {}).get("stages", [])
+    }
+    for stage_name, stage_payload in stage_matching_result.get("stages", {}).items():
+        row = run_stages.get(stage_name)
+        if row is None:
+            continue
+        matching_payload = stage_payload.get("matching")
+        if matching_payload is not None:
+            row["matching"] = matching_payload
+            row["matching_metrics"] = matching_payload.get("metrics", {})
+        choice_payload = stage_payload.get("choice_metrics")
+        if choice_payload is not None:
+            row["choice_metrics"] = choice_payload
+            row["choice_metrics_metrics"] = choice_payload.get("metrics", {})
     return payload
 
 

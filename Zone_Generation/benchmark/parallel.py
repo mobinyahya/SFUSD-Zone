@@ -83,6 +83,7 @@ def run_tasks(
             result = run_optimization_task(
                 task,
                 strict_metrics=metrics.strict,
+                compute_stage_metrics=metrics.compute_stage_metrics,
                 matching=matching,
                 choice_metrics=choice_metrics,
             )
@@ -129,6 +130,7 @@ def _run_parallel(
                     _worker_run_task,
                     task,
                     metrics.strict,
+                    metrics.compute_stage_metrics,
                     matching,
                     choice_metrics,
                 )
@@ -165,12 +167,14 @@ def _run_parallel(
 def _worker_run_task(
     task: BenchmarkTask,
     strict_metrics: bool,
+    compute_stage_metrics: bool,
     matching: MatchingRunConfig | None,
     choice_metrics: ChoiceMetricsRunConfig | None,
 ) -> TaskResult:
     return run_optimization_task(
         task,
         strict_metrics=strict_metrics,
+        compute_stage_metrics=compute_stage_metrics,
         matching=matching,
         choice_metrics=choice_metrics,
     )

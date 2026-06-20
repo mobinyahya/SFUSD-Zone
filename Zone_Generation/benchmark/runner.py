@@ -42,6 +42,7 @@ def run_optimization_task(
     task: BenchmarkTask,
     *,
     strict_metrics: bool = True,
+    compute_stage_metrics: bool = False,
     matching: MatchingRunConfig | None = None,
     choice_metrics: ChoiceMetricsRunConfig | None = None,
 ) -> TaskResult:
@@ -60,25 +61,42 @@ def run_optimization_task(
         strategy = config.make_strategy()
         solutions = strategy.run(dataset, solver)
         stage_names = stage_names_for(solutions, config)
-        stage_records = save_stage_artifacts(solutions, output_dir, stage_names)
+        stage_records = save_stage_artifacts(
+            solutions,
+            output_dir,
+            stage_names,
+            compute_stage_metrics=compute_stage_metrics,
+        )
 
         calculator = MetricsCalculator(
             solutions,
             config=config,
             strict=strict_metrics,
+            compute_stage_metrics=compute_stage_metrics,
         )
         metrics = calculator.compute()
         final_solution = calculator.context.solution
         final_solution.save(output_dir)
 
         matching_result = None
+        stage_matching_result = None
         if matching and matching.enabled:
-            from Zone_Generation.benchmark.matching import run_matching_for_solution
+            from Zone_Generation.benchmark.matching import (
+                run_matching_for_solution,
+                run_matching_for_stages,
+            )
 
             matching_result = run_matching_for_solution(
                 final_solution,
                 output_dir,
                 matching,
+            )
+            stage_matching_result = run_matching_for_stages(
+                solutions,
+                stage_records,
+                output_dir,
+                matching,
+                choice_metrics=choice_metrics,
             )
 
         result_payload = result_payload_for(
@@ -88,9 +106,13 @@ def run_optimization_task(
             task=task,
         )
         if matching_result is not None:
-            from Zone_Generation.benchmark.matching import merge_matching_result
+            from Zone_Generation.benchmark.matching import (
+                merge_matching_result,
+                merge_stage_matching_result,
+            )
 
             merge_matching_result(result_payload, matching_result)
+            merge_stage_matching_result(result_payload, stage_matching_result)
 
         choice_metrics_result = None
         if choice_metrics and choice_metrics.enabled:
@@ -129,6 +151,7 @@ def run_optimization_task(
                 solutions,
                 output_dir,
                 stage_names_for(solutions, config),
+                compute_stage_metrics=compute_stage_metrics,
             )
         error_message = str(exc) or exc.__class__.__name__
         manifest = manifest_for(
@@ -170,7 +193,11 @@ def run_optimization_task(
 
 
 def save_stage_artifacts(
-    solutions: Sequence[ZoneSolution], output_dir: str, stage_names: Sequence[str]
+    solutions: Sequence[ZoneSolution],
+    output_dir: str,
+    stage_names: Sequence[str],
+    *,
+    compute_stage_metrics: bool = False,
 ) -> list[dict[str, Any]]:
     stages_dir = Path(output_dir) / "stages"
     stages_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +206,16 @@ def save_stage_artifacts(
         stage_dir = stages_dir / stage_name
         stage_dir.mkdir(parents=True, exist_ok=True)
         solution.save(str(stage_dir))
-        records.append(stage_record(solution, idx, stage_name, stage_dir, output_dir))
+        records.append(
+            stage_record(
+                solution,
+                idx,
+                stage_name,
+                stage_dir,
+                output_dir,
+                compute_stage_metrics=compute_stage_metrics,
+            )
+        )
     return records
 
 
@@ -189,9 +225,11 @@ def stage_record(
     stage_name: str,
     stage_dir: Path,
     output_dir: str,
+    *,
+    compute_stage_metrics: bool = False,
 ) -> dict[str, Any]:
     contiguous = None
-    if solution.assignment and solution.feasible:
+    if compute_stage_metrics and solution.assignment and solution.feasible:
         try:
             contiguous = solution.is_contiguous()
         except Exception:

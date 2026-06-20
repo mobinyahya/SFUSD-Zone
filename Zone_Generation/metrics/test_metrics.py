@@ -114,7 +114,7 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
     )
 
 
-def test_recursive_stage_metrics_are_preserved():
+def test_recursive_stage_metrics_default_to_final_only():
     first = _solution(objective=20.0, wall_time=2.0)
     final = _solution(objective=10.0, wall_time=3.0)
     result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
@@ -125,9 +125,25 @@ def test_recursive_stage_metrics_are_preserved():
     assert result.metrics["total_wall_time"] == 5.0
     assert result.metrics["objective_stage_00_Block_0"] == 20.0
     assert result.metrics["objective_stage_01_Block_0"] == 10.0
+    assert "cut_edges_stage_01_Block_0" not in result.metrics
+    assert result.run["stages"][1]["cut_edges"] is None
+    assert result.metrics["cut_edges"] > 0
+    assert result.run["final_cut_edges"] == result.metrics["cut_edges"]
+    assert len(result.run["stages"]) == 2
+
+
+def test_recursive_stage_metrics_can_be_enabled():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(objective=10.0, wall_time=3.0)
+    result = MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
     assert result.metrics["cut_edges_stage_01_Block_0"] > 0
     assert result.metrics["normalized_cut_edges_stage_01_Block_0"] > 0
-    assert len(result.run["stages"]) == 2
+    assert result.run["stages"][1]["cut_edges"] > 0
 
 
 def test_iterative_metrics_select_best_choice_utility():

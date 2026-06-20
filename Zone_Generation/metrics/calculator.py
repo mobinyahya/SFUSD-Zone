@@ -48,11 +48,13 @@ class MetricsCalculator:
         final_solution: ZoneSolution | None = None,
         modules: Sequence[MetricFn] | None = None,
         strict: bool = True,
+        compute_stage_metrics: bool = False,
     ):
         self.context = MetricsContext(
             solutions,
             config=config,
             final_solution=final_solution,
+            compute_stage_metrics=compute_stage_metrics,
         )
         self.modules = tuple(modules or DEFAULT_MODULES)
         self.strict = strict

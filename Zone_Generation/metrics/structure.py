@@ -22,4 +22,4 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.CONTIGUOUS: int(is_contiguous(context)),
         MetricColumns.SOLUTION_CODE: compute_solution_code(context.area_assignment),
     }
-    return MetricOutput(metrics=metrics)
+    return MetricOutput(metrics=metrics, run={"final_cut_edges": spatial.cut_edges})

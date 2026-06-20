@@ -65,6 +65,7 @@ class MetricsContext:
         solutions: ZoneSolution | list[ZoneSolution],
         config: Mapping[str, Any] | Any | None = None,
         final_solution: ZoneSolution | None = None,
+        compute_stage_metrics: bool = False,
     ):
         if isinstance(solutions, ZoneSolution):
             self.stages = [solutions]
@@ -80,6 +81,7 @@ class MetricsContext:
 
         self.config = _config_dict(config)
         self.solution = final_solution or self._select_final_solution()
+        self.compute_stage_metrics = bool(compute_stage_metrics)
 
     @property
     def G(self):

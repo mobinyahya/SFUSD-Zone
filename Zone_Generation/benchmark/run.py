@@ -74,6 +74,7 @@ def main(argv: list[str] | None = None) -> None:
         regen = regenerate_metrics(
             output_dir,
             strict=sweep.metrics.strict,
+            compute_stage_metrics=sweep.metrics.compute_stage_metrics,
             fail_fast=sweep.execution.fail_fast,
         )
         print(

@@ -47,6 +47,7 @@ class MetricsRunConfig:
     """Metric and aggregation settings for a simulation sweep."""
 
     strict: bool = True
+    compute_stage_metrics: bool = False
     summary_csv: str = "summary.csv"
     stages_csv: str = "stages.csv"
 
@@ -60,6 +61,7 @@ class ChoiceMetricsRunConfig:
     """Student-assignment outcome metrics for benchmark runs."""
 
     enabled: bool = False
+    compute_stage_metrics: bool = False
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> "ChoiceMetricsRunConfig":
@@ -72,6 +74,7 @@ class MatchingRunConfig:
 
     enabled: bool = False
     config: str | None = None
+    compute_stage_assignments: bool = False
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> "MatchingRunConfig":

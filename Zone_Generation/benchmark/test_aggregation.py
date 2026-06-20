@@ -51,6 +51,7 @@ execution:
   max_workers: 2
 metrics:
   strict: true
+  compute_stage_metrics: true
 """,
         encoding="utf-8",
     )
@@ -64,6 +65,7 @@ metrics:
     assert all(task.capacity_slots == 3 for task in tasks)
     assert all(task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks)
     assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
+    assert sweep.metrics.compute_stage_metrics is True
 
 
 def test_sweep_yaml_rejects_aggregate_only_mode(tmp_path):
