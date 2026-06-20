@@ -1,6 +1,7 @@
 """Data-free, end-to-end solver tests on a synthetic grid problem."""
 
 import pytest
+from ortools.sat.python import cp_model
 
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.base import available_solvers
@@ -23,6 +24,18 @@ def _check_valid(problem, solution):
 def test_cpsat_solvers(name):
     problem = make_grid_problem(3, 3)
     solver = get_solver(name, solve_time_limit=10, workers=1)
+    solution = solver.solve(problem)
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    _check_valid(problem, solution)
+
+
+def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):
+    def fail_exactly_one(self, *args, **kwargs):
+        raise AssertionError("cp_int should get assignment from integer domains")
+
+    monkeypatch.setattr(cp_model.CpModel, "add_exactly_one", fail_exactly_one)
+    problem = make_grid_problem(3, 3)
+    solver = get_solver("cp_int", solve_time_limit=10, workers=1)
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)

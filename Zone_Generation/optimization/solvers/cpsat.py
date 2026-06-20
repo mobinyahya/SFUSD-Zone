@@ -1,12 +1,12 @@
 """OR-Tools CP-SAT backends.
 
-A single model builder creates the assignment variables ``x[z][i]`` and applies
-the shared constraint set. The two registered solvers differ *only* in how they
-encode the boundary-minimization objective:
+The two registered solvers use different assignment encodings:
 
-* ``cp_bool`` -- boundary bools derived directly from the ``x`` edge differences,
-* ``cp_int``  -- an integer zone variable ``y[i]`` per node and ``y[u] != y[v]``
-  boundary bools.
+* ``cp_bool`` -- Boolean assignment variables ``x[z][i]`` plus an explicit
+  exactly-one constraint per node,
+* ``cp_int``  -- one integer zone variable ``y[i]`` per node, with Boolean
+  indicators ``x[z][i]`` derived from ``y[i]`` for the shared linear constraints.
+  This avoids adding the explicit exactly-one assignment constraint.
 
 Float constraint coefficients are scaled to integers here (CP-SAT requires
 integer coefficients); the shared constraint code stays in floats.
@@ -27,21 +27,15 @@ _SCALE = 100  # integer scaling for float coefficients
 _SENSE = {"<=", ">=", "=="}
 
 
-class _CpBackend(constraints.ModelBackend):
-    """Holds the CpModel and ``x`` vars; implements the shared primitives."""
+class _CpLinearBackend(constraints.ModelBackend):
+    """Shared CP-SAT linear primitives over assignment indicators."""
 
     def __init__(self, model: cp_model.CpModel, problem: ZoneProblem):
         self.m = model
         self.problem = problem
         self.x: dict[tuple[int, int], cp_model.IntVar] = {}
-        for i in problem.nodes:
-            for z in problem.candidate_zones(i):
-                self.x[(z, i)] = model.NewBoolVar(f"x_{z}_{i}")
 
     # -- primitives ---------------------------------------------------- #
-    def add_exactly_one(self, choices):
-        self.m.AddExactlyOne(self.x[(z, i)] for (z, i) in choices)
-
     def add_linear(self, terms, sense, rhs):
         if sense not in _SENSE:
             raise ValueError(f"Bad sense {sense!r}.")
@@ -58,6 +52,20 @@ class _CpBackend(constraints.ModelBackend):
         else:
             self.m.Add(expr == r)
 
+
+class _CpBoolBackend(_CpLinearBackend):
+    """Boolean assignment backend for ``cp_bool``."""
+
+    def __init__(self, model: cp_model.CpModel, problem: ZoneProblem):
+        super().__init__(model, problem)
+        for i in problem.nodes:
+            for z in problem.candidate_zones(i):
+                self.x[(z, i)] = model.NewBoolVar(f"x_{z}_{i}")
+
+    # -- primitives ---------------------------------------------------- #
+    def add_exactly_one(self, choices):
+        self.m.AddExactlyOne(self.x[(z, i)] for (z, i) in choices)
+
     def fix(self, zone, node):
         if (zone, node) in self.x:
             self.m.Add(self.x[(zone, node)] == 1)
@@ -67,22 +75,73 @@ class _CpBackend(constraints.ModelBackend):
             self.m.Add(self.x[(zone, node)] == 0)
 
 
+class _CpIntBackend(_CpLinearBackend):
+    """Integer assignment backend for ``cp_int``."""
+
+    def __init__(self, model: cp_model.CpModel, problem: ZoneProblem):
+        super().__init__(model, problem)
+        self.y: dict[int, cp_model.IntVar] = {}
+        for i in problem.nodes:
+            zones = sorted(problem.candidate_zones(i))
+            if not zones:
+                raise ValueError(f"Node {i} has no candidate zones (infeasible).")
+            self.y[i] = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(zones), f"y_{i}"
+            )
+            for z in zones:
+                indicator = model.NewBoolVar(f"x_{z}_{i}")
+                self.x[(z, i)] = indicator
+                model.Add(self.y[i] == z).OnlyEnforceIf(indicator)
+                model.Add(self.y[i] != z).OnlyEnforceIf(indicator.Not())
+
+    # -- primitives ---------------------------------------------------- #
+    def add_exactly_one(self, choices):
+        # ``y[i]`` has a candidate-zone domain, and each ``x[z, i]`` is fully
+        # reified to ``y[i] == z``. Exactly one indicator is therefore implied.
+        pass
+
+    def fix(self, zone, node):
+        if (zone, node) in self.x:
+            self.m.Add(self.y[node] == zone)
+
+    def forbid(self, zone, node):
+        if (zone, node) in self.x:
+            self.m.Add(self.y[node] != zone)
+
+
 class _CpSatSolver(Solver):
-    """Common build/solve; subclasses add the boundary objective."""
+    """Common solve flow; subclasses provide the assignment encoding."""
+
+    backend_cls = _CpBoolBackend
+
+    def _build_backend(self, m, problem):
+        return self.backend_cls(m, problem)
 
     def _add_objective(self, m, backend, problem):  # pragma: no cover - abstract
         raise NotImplementedError
 
+    def _add_hints(self, m, backend, problem):
+        if not problem.hint:
+            return
+        for (z, i), var in backend.x.items():
+            if i in problem.hint:
+                m.AddHint(var, 1 if problem.hint[i] == z else 0)
+
+    def _extract_assignment(self, solver, backend, problem):
+        assignment = {}
+        for i in problem.nodes:
+            for z in problem.candidate_zones(i):
+                if solver.Value(backend.x[(z, i)]) == 1:
+                    assignment[i] = z
+                    break
+        return assignment
+
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         m = cp_model.CpModel()
-        backend = _CpBackend(m, problem)
+        backend = self._build_backend(m, problem)
         constraints.add_all(problem, backend)
         self._add_objective(m, backend, problem)
-
-        if problem.hint:
-            for (z, i), var in backend.x.items():
-                if i in problem.hint:
-                    m.AddHint(var, 1 if problem.hint[i] == z else 0)
+        self._add_hints(m, backend, problem)
 
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = float(
@@ -109,11 +168,7 @@ class _CpSatSolver(Solver):
         assignment = {}
         objective = None
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            for i in problem.nodes:
-                for z in problem.candidate_zones(i):
-                    if solver.Value(backend.x[(z, i)]) == 1:
-                        assignment[i] = z
-                        break
+            assignment = self._extract_assignment(solver, backend, problem)
             objective = solver.ObjectiveValue()
 
         return ZoneSolution(
@@ -150,23 +205,26 @@ class CpBoolSolver(_CpSatSolver):
 
 
 @register("cp_int")
-class CpIntSolver(_CpSatSolver):
+class CpIntSolver(CpBoolSolver):
     """Boundary minimized over an integer zone variable per node."""
 
-    def _add_objective(self, m, backend, problem):
-        y = {}
-        for i in problem.nodes:
-            zones = sorted(problem.candidate_zones(i))
-            y[i] = m.NewIntVarFromDomain(
-                cp_model.Domain.FromValues(zones), f"y_{i}"
-            )
-            for z in zones:
-                m.Add(y[i] == z).OnlyEnforceIf(backend.x[(z, i)])
+    backend_cls = _CpIntBackend
 
+    def _add_hints(self, m, backend, problem):
+        if not problem.hint:
+            return
+        for node, zone in problem.hint.items():
+            if node in backend.y and zone in problem.candidate_zones(node):
+                m.AddHint(backend.y[node], zone)
+
+    def _extract_assignment(self, solver, backend, problem):
+        return {i: int(solver.Value(backend.y[i])) for i in problem.nodes}
+
+    def _add_objective(self, m, backend, problem):
         boundary_vars = []
         for u, v in problem.G.edges():
             b = m.NewBoolVar(f"bnd_{u}_{v}")
-            m.Add(y[u] != y[v]).OnlyEnforceIf(b)
-            m.Add(y[u] == y[v]).OnlyEnforceIf(b.Not())
+            m.Add(backend.y[u] != backend.y[v]).OnlyEnforceIf(b)
+            m.Add(backend.y[u] == backend.y[v]).OnlyEnforceIf(b.Not())
             boundary_vars.append(b)
         m.Minimize(sum(boundary_vars))
