@@ -15,9 +15,11 @@ integer coefficients); the shared constraint code stays in floats.
 from __future__ import annotations
 
 import time
+import math
 
 from ortools.sat.python import cp_model
 
+from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import constraints
@@ -140,7 +142,10 @@ class _CpSatSolver(Solver):
         m = cp_model.CpModel()
         backend = self._build_backend(m, problem)
         constraints.add_all(problem, backend)
-        self._add_objective(m, backend, problem)
+        if problem.choice_objective is None:
+            self._add_objective(m, backend, problem)
+        else:
+            self._add_choice_objective(m, backend, problem)
         self._add_hints(m, backend, problem)
 
         solver = cp_model.CpSolver()
@@ -170,15 +175,68 @@ class _CpSatSolver(Solver):
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignment = self._extract_assignment(solver, backend, problem)
             objective = solver.ObjectiveValue()
+            if problem.choice_objective is not None:
+                objective /= problem.choice_objective.scale
 
+        metadata = {"solver": self.name}
+        if problem.choice_objective is not None:
+            metadata.update(
+                {
+                    "objective_kind": "choice_utility",
+                    "choice_cuts": len(problem.choice_objective.cuts),
+                }
+            )
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
             status=status_name,
             objective=objective,
             wall_time=wall,
-            metadata={"solver": self.name},
+            metadata=metadata,
         )
+
+    def _add_choice_objective(self, m, backend, problem):
+        choice = problem.choice_objective
+        scale = float(choice.scale)
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("choice_utility_scale must be a positive finite value.")
+
+        lb = _scaled(choice.lower_bound, scale)
+        ub = _scaled(choice.upper_bound, scale)
+        if lb > ub:
+            raise ValueError("Choice utility lower_bound exceeds upper_bound.")
+
+        utilities = {
+            node: m.NewIntVar(lb, ub, f"choice_u_{node}") for node in problem.nodes
+        }
+        for cut in choice.cuts:
+            self._add_choice_cut(m, backend, utilities, cut, scale)
+
+        total_lb = lb * len(problem.nodes)
+        total_ub = ub * len(problem.nodes)
+        total = m.NewIntVar(total_lb, total_ub, "choice_total_utility")
+        m.Add(total == sum(utilities.values()))
+        m.Maximize(total)
+
+    def _add_choice_cut(self, m, backend, utilities, cut: ChoiceCut, scale: float):
+        indicator = backend.x.get((cut.zone, cut.node))
+        if indicator is None or cut.node not in utilities:
+            return
+        terms = []
+        coeffs = []
+        for term in cut.terms:
+            var = backend.x.get((term.zone, term.node))
+            if var is None:
+                continue
+            coeff = _scaled(term.coefficient, scale)
+            if coeff == 0:
+                continue
+            terms.append(var)
+            coeffs.append(coeff)
+        expr = _scaled(cut.constant, scale)
+        if terms:
+            expr += cp_model.LinearExpr.WeightedSum(terms, coeffs)
+        m.Add(utilities[cut.node] <= expr).OnlyEnforceIf(indicator)
 
 
 @register("cp_bool")
@@ -228,3 +286,9 @@ class CpIntSolver(CpBoolSolver):
             m.Add(backend.y[u] == backend.y[v]).OnlyEnforceIf(b.Not())
             boundary_vars.append(b)
         m.Minimize(sum(boundary_vars))
+
+
+def _scaled(value: float, scale: float) -> int:
+    if not math.isfinite(float(value)):
+        raise ValueError(f"Choice objective contains non-finite value: {value!r}")
+    return int(round(float(value) * scale))

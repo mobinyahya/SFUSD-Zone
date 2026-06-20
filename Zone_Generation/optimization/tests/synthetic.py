@@ -127,7 +127,9 @@ class FakeDataset:
     def centroids_for(self, level):
         return self._problem.centroids
 
-    def problem_for(self, level, fixed=None, candidates=None, hint=None):
+    def problem_for(
+        self, level, fixed=None, candidates=None, hint=None, choice_objective=None
+    ):
         return ZoneProblem(
             G=self._problem.G,
             level=self._problem.level,
@@ -140,4 +142,5 @@ class FakeDataset:
             fixed=fixed,
             candidates=candidates,
             hint=hint,
+            choice_objective=choice_objective,
         )

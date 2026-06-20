@@ -1,21 +1,13 @@
-"""Iterative-choice strategy.
+"""Iterative choice strategy.
 
-Alternates between solving a zoning and evaluating its school-choice utility,
-keeping the best zoning found. Each iteration re-solves with the incumbent as a
-warm-start hint and relaxes only the candidate zones near zone boundaries, so
-the search explores neighboring zonings while staying feasible and contiguous.
-Stops when the utility stops improving (by more than ``tolerance``) or after
-``max_iterations``.
-
-This is the interchangeable rewrite of the legacy ``iterative_choice`` loop.
-The utility evaluation is delegated to a :class:`ChoiceModel`, and the
-boundary-relaxation hook is exactly where MNL impact-gradient cuts would attach
-in a richer implementation.
+The strategy solves a zoning model with explicit utility variables, evaluates the
+returned zoning against the real choice model, then adds linearized utility cuts
+so the next solve has a more accurate objective approximation.
 """
 
 from __future__ import annotations
 
-from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.optimization.data.dataset import Dataset
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -31,44 +23,63 @@ class IterativeChoiceStrategy(Strategy):
         target = levels[-1]
         max_iterations = int(self.options.get("max_iterations", 5))
         tolerance = float(self.options.get("tolerance", 1e-6))
-        radius = self.options.get("boundary_radius", 1)
+        use_hints = bool(self.options.get("use_hints", True))
+        scale = float(self.options.get("choice_utility_scale", 100.0))
         model = get_choice_model(
             self.options.get("choice_model", "distance"),
             **self.options.get("choice_model_options", {}),
         )
 
-        centroids = dataset.centroids_for(target)
-        G = dataset.graph_for(target)
+        base_problem = dataset.problem_for(target)
+        lower_bound, upper_bound = model.utility_bounds(base_problem)
+        cuts = []
 
         solutions: list[ZoneSolution] = []
         best: ZoneSolution | None = None
         best_utility = float("-inf")
 
-        for _ in range(max_iterations):
-            if best is None:
-                problem = dataset.problem_for(target)
-            else:
-                candidates = contiguity.boundary_candidates(
-                    G, best.assignment, centroids, radius=radius
-                )
-                problem = dataset.problem_for(
-                    target, candidates=candidates, hint=best.assignment
-                )
-
+        for iteration in range(max_iterations):
+            choice_objective = ChoiceObjective(
+                cuts=tuple(cuts),
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                scale=scale,
+            )
+            hint = best.assignment if best is not None and use_hints else None
+            # The first iteration intentionally has no cuts, matching the legacy
+            # unconstrained seed. A boundary-minimized seed is a reasonable
+            # alternative if we later want a less arbitrary starting zoning.
+            problem = dataset.problem_for(
+                target,
+                hint=hint,
+                choice_objective=choice_objective,
+            )
             sol = solver.solve(problem)
-            if not sol.feasible and sol.status != "STUB":
+            sol.metadata["choice_iteration"] = iteration
+            sol.metadata["choice_objective_cuts"] = len(cuts)
+            if not sol.feasible:
                 solutions.append(sol)
                 break
 
-            utility = model.evaluate(problem, sol.assignment)
-            sol.metadata["choice_utility"] = utility
+            evaluated = model.evaluate_with_cuts(problem, sol.assignment)
+            utility = evaluated.utility
+            new_cuts = list(evaluated.cuts)
+            sol.metadata.update(
+                {
+                    "choice_utility": utility,
+                    "choice_cuts_added": len(new_cuts),
+                    "choice_cuts_total": len(cuts) + len(new_cuts),
+                }
+            )
             solutions.append(sol)
 
-            if utility <= best_utility + tolerance:
-                # No meaningful improvement; converged.
-                if best is not None:
-                    break
-            if utility > best_utility:
-                best_utility, best = utility, sol
+            improved = utility > best_utility + tolerance
+            if improved:
+                best_utility = utility
+                best = sol
+            elif iteration > 0:
+                break
+
+            cuts.extend(new_cuts)
 
         return solutions

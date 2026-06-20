@@ -114,6 +114,7 @@ class Dataset:
         fixed: Optional[dict[int, int]] = None,
         candidates: Optional[dict[int, set[int]]] = None,
         hint: Optional[dict[int, int]] = None,
+        choice_objective=None,
     ) -> ZoneProblem:
         level = LevelSpec.parse(level)
         return ZoneProblem(
@@ -128,4 +129,5 @@ class Dataset:
             fixed=fixed,
             candidates=candidates,
             hint=hint,
+            choice_objective=choice_objective,
         )

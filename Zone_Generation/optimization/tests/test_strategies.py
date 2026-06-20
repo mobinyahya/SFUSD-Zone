@@ -31,4 +31,6 @@ def test_iterative_choice_strategy_terminates():
     assert 1 <= len(solutions) <= 3
     last = solutions[-1]
     assert "choice_utility" in last.metadata
+    assert solutions[0].metadata["choice_objective_cuts"] == 0
+    assert solutions[0].metadata["choice_cuts_added"] > 0
     assert last.is_contiguous()

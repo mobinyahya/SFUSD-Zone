@@ -17,6 +17,7 @@ from typing import Optional
 import networkx as nx
 
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES, AALPI_ETHNICITIES
+from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.optimization.levels import LevelSpec
 
 
@@ -51,6 +52,8 @@ class ZoneProblem:
         take. When absent, candidacy is derived from ``max_distance``.
     hint:
         Optional ``{node: zone}`` warm-start passed to the solver.
+    choice_objective:
+        Optional choice-utility objective with accumulated linearization cuts.
     """
 
     G: nx.Graph
@@ -66,6 +69,7 @@ class ZoneProblem:
     fixed: Optional[dict[int, int]] = None
     candidates: Optional[dict[int, set[int]]] = None
     hint: Optional[dict[int, int]] = None
+    choice_objective: Optional[ChoiceObjective] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(

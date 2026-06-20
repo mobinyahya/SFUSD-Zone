@@ -12,6 +12,7 @@ import time
 import gurobipy as gp
 from gurobipy import GRB
 
+from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import constraints
@@ -65,22 +66,10 @@ class MipSolver(Solver):
         backend = _GurobiBackend(m, problem)
         constraints.add_all(problem, backend)
 
-        # Boundary objective: b_uv = 1 iff endpoints differ.
-        boundary = []
-        for u, v in problem.G.edges():
-            b = m.addVar(vtype=GRB.BINARY, name=f"bnd_{u}_{v}")
-            for z in problem.candidate_zones(u) | problem.candidate_zones(v):
-                xu = backend.x.get((z, u))
-                xv = backend.x.get((z, v))
-                if xu is not None and xv is not None:
-                    m.addConstr(b >= xu - xv)
-                    m.addConstr(b >= xv - xu)
-                elif xu is not None:
-                    m.addConstr(b >= xu)
-                elif xv is not None:
-                    m.addConstr(b >= xv)
-            boundary.append(b)
-        m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
+        if problem.choice_objective is None:
+            self._add_boundary_objective(m, backend, problem)
+        else:
+            self._add_choice_objective(m, backend, problem)
 
         if problem.hint:
             for (z, i), var in backend.x.items():
@@ -110,11 +99,70 @@ class MipSolver(Solver):
                         break
             objective = m.ObjVal
 
+        metadata = {"solver": self.name}
+        if problem.choice_objective is not None:
+            metadata.update(
+                {
+                    "objective_kind": "choice_utility",
+                    "choice_cuts": len(problem.choice_objective.cuts),
+                }
+            )
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
             status=status,
             objective=objective,
             wall_time=wall,
-            metadata={"solver": self.name},
+            metadata=metadata,
         )
+
+    def _add_boundary_objective(self, m, backend, problem):
+        boundary = []
+        for u, v in problem.G.edges():
+            b = m.addVar(vtype=GRB.BINARY, name=f"bnd_{u}_{v}")
+            for z in problem.candidate_zones(u) | problem.candidate_zones(v):
+                xu = backend.x.get((z, u))
+                xv = backend.x.get((z, v))
+                if xu is not None and xv is not None:
+                    m.addConstr(b >= xu - xv)
+                    m.addConstr(b >= xv - xu)
+                elif xu is not None:
+                    m.addConstr(b >= xu)
+                elif xv is not None:
+                    m.addConstr(b >= xv)
+            boundary.append(b)
+        m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
+
+    def _add_choice_objective(self, m, backend, problem):
+        choice = problem.choice_objective
+        utilities = {
+            node: m.addVar(
+                lb=choice.lower_bound,
+                ub=choice.upper_bound,
+                vtype=GRB.CONTINUOUS,
+                name=f"choice_u_{node}",
+            )
+            for node in problem.nodes
+        }
+        for cut in choice.cuts:
+            self._add_choice_cut(m, backend, utilities, cut)
+
+        total = m.addVar(
+            lb=choice.lower_bound * len(problem.nodes),
+            ub=choice.upper_bound * len(problem.nodes),
+            vtype=GRB.CONTINUOUS,
+            name="choice_total_utility",
+        )
+        m.addConstr(total == gp.quicksum(utilities.values()))
+        m.setObjective(total, GRB.MAXIMIZE)
+
+    def _add_choice_cut(self, m, backend, utilities, cut: ChoiceCut):
+        indicator = backend.x.get((cut.zone, cut.node))
+        if indicator is None or cut.node not in utilities:
+            return
+        expr = cut.constant + gp.quicksum(
+            term.coefficient * backend.x[(term.zone, term.node)]
+            for term in cut.terms
+            if (term.zone, term.node) in backend.x
+        )
+        m.addGenConstrIndicator(indicator, True, utilities[cut.node] <= expr)

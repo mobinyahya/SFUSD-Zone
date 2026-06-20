@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, fields
+from typing import Any
 
 import yaml
 
@@ -41,6 +42,8 @@ class OptimizationConfig:
     boundary_radius: int = 1
     max_iterations: int = 5
     choice_model: str = "distance"
+    choice_model_options: dict[str, Any] = field(default_factory=dict)
+    choice_utility_scale: float = 100.0
     tolerance: float = 1e-6
 
     # --- data ingestion ----------------------------------------------- #
@@ -120,5 +123,7 @@ class OptimizationConfig:
             boundary_radius=self.boundary_radius,
             max_iterations=self.max_iterations,
             choice_model=self.choice_model,
+            choice_model_options=self.choice_model_options,
+            choice_utility_scale=self.choice_utility_scale,
             tolerance=self.tolerance,
         )

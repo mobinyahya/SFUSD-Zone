@@ -3,6 +3,8 @@
 import pytest
 from ortools.sat.python import cp_model
 
+from Zone_Generation.choice.models import DistanceChoiceModel
+from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.base import available_solvers
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
@@ -46,6 +48,32 @@ def test_local_search_stub():
     solution = get_solver("local_search").solve(problem)
     assert solution.status == "STUB"
     _check_valid(problem, solution)
+
+
+@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
+def test_cpsat_solvers_support_choice_objective(name):
+    problem = make_grid_problem(3, 3)
+    model = DistanceChoiceModel()
+    evaluation = model.evaluate_with_cuts(
+        problem,
+        {node: min(problem.candidate_zones(node)) for node in problem.nodes},
+    )
+    lower, upper = model.utility_bounds(problem)
+    problem.choice_objective = ChoiceObjective(
+        cuts=evaluation.cuts,
+        lower_bound=lower,
+        upper_bound=upper,
+        scale=100,
+    )
+
+    solution = get_solver(name, solve_time_limit=10, workers=1).solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    _check_valid(problem, solution)
+    assert solution.metadata["objective_kind"] == "choice_utility"
+    assert solution.objective == pytest.approx(
+        model.evaluate(problem, solution.assignment), abs=0.05
+    )
 
 
 def test_explicit_candidates_cannot_unassign_centroids():

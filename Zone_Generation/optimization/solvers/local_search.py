@@ -20,6 +20,11 @@ from Zone_Generation.optimization.solvers.base import Solver, register
 @register("local_search")
 class LocalSearchSolver(Solver):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        if problem.choice_objective is not None:
+            raise NotImplementedError(
+                "local_search does not support choice objective cuts; use cp_int, cp_bool, or mip."
+            )
+
         start = time.time()
 
         if problem.hint:
