@@ -1,8 +1,12 @@
 import math
 
 import networkx as nx
+import pandas as pd
+import pytest
 from shapely.geometry import box
 
+from Zone_Generation.choice import mnl
+from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.optimization.data.contiguity import boundary_edges
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.problem import ZoneProblem
@@ -160,3 +164,52 @@ def test_iterative_metrics_select_best_choice_utility():
     assert result.metrics["final_objective"] == 25.0
     assert result.metrics["final_choice_utility"] == 2.5
     assert result.run["stages"][2]["choice_utility"] == 2.0
+
+
+def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "100-GE-KG": [2.0, 1.0],
+            "100-SA-KG": [3.0, 0.0],
+            "200-GE-KG": [0.5, 4.0],
+            "200-SA-KG": [0.2, 5.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1002],
+        }
+    ).to_csv(student_path, index=False)
+
+    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
+    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
+
+    solution = ZoneSolution(
+        problem=make_grid_problem(2, 2),
+        assignment={0: 0, 1: 0, 2: 1, 3: 1},
+        status="FEASIBLE",
+    )
+    column = MetricColumns.CHOICE_TOTAL_PREASSIGNMENT_UTILITY
+
+    max_result = MetricsCalculator(
+        solution,
+        config={"choice_model": "mnl", "choice_model_method": "max"},
+    ).compute()
+    logsum_result = MetricsCalculator(
+        solution,
+        config={"choice_model": "mnl", "choice_model_method": "logsum"},
+    ).compute()
+
+    expected_logsum = (
+        3.0
+        + math.log1p(math.exp(-1.0))
+        + 5.0
+        + math.log1p(math.exp(-1.0))
+    )
+    assert max_result.metrics[column] == pytest.approx(8.0)
+    assert logsum_result.metrics[column] == pytest.approx(expected_logsum)
+    assert logsum_result.run["choice_preassignment_utility"]["method"] == "logsum"

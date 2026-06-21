@@ -80,6 +80,7 @@ class MetricColumns:
     TOTAL_WALL_TIME = "total_wall_time"
     FINAL_STAGE_INDEX = "final_stage_index"
     FINAL_CHOICE_UTILITY = "final_choice_utility"
+    CHOICE_TOTAL_PREASSIGNMENT_UTILITY = "choice_total_preassignment_utility"
     CHOICE_AVG_STUDENT_DISTANCE = "choice_avg_student_distance"
     CHOICE_SCHOOLS_ABOVE_10PCT_DISTRICT_FRL = "choice_schools_above_10pct_district_frl"
     CHOICE_FRL_DISSIMILARITY = "choice_frl_dissimilarity"
@@ -117,7 +118,7 @@ CATEGORIES = {
     "programs": "Educational Program Availability",
     "quality": "School Quality Indicators",
     "structure": "Zone Structure and Shape",
-    "choice": "Student Assignment Choice Outcomes",
+    "choice": "Student Choice and Assignment Outcomes",
     "run": "Optimization Run Metadata",
 }
 
@@ -127,7 +128,7 @@ CATEGORY_DESCRIPTIONS = {
     "programs": "Measure how hard it is for students to access programs within their zone.",
     "quality": "Measures how evenly school quality is distributed across zones.",
     "structure": "Structural properties of the zone configuration including shape compactness and zone count.",
-    "choice": "Measures assignment outcomes after students are matched to schools under a matching policy.",
+    "choice": "Measures preassignment school-choice utility and assignment outcomes after students are matched to schools under a matching policy.",
     "run": "Solver and strategy outputs for the optimization run, including objectives and timing.",
 }
 
@@ -638,6 +639,15 @@ QUALITY_METRICS = [
 # ============================================================================
 
 CHOICE_METRICS = [
+    MetricSpec(
+        column="choice_total_preassignment_utility",
+        display_name="Preassignment Choice Utility",
+        description="Total student utility from the schools available in each student's assigned zone before any assignment/matching simulation is run. Computed with the configured choice_model and, for MNL, choice_model_method (logsum or max). Higher is better.",
+        category="choice",
+        direction="maximize",
+        is_core=False,
+        short_name="Preassign Utility",
+    ),
     MetricSpec(
         column="choice_avg_student_distance",
         display_name="Average Assigned Student Distance",

@@ -1,0 +1,61 @@
+name: iterative-choice-utility-test
+mode: run
+
+optimization_defaults:
+  centroids_type: '6-zone-3'
+  levels: ['BlockGroup_1']     # use ['BlockGroup_0'] for full fine-grained test
+  solver: 'cp_int'
+  strategy: 'iterative_choice'
+
+  frl_dev: 0.3
+  racial_dev: 0.3
+  overage: 0.8
+  shortage: 0.2
+  max_distance: 5
+
+  solve_time_limits: [60]
+  gap_limits: [0]
+  use_hints: true
+  seed: 42
+  workers: 8
+
+  max_iterations: 20
+  tolerance: 0
+
+  choice_model: 'mnl'
+  choice_model_method: 'logsum'
+  choice_utility_scale: 100.0
+
+  years: [14, 15, 16, 17, 18, 21, 22]
+  population_type: 'GE'
+  capacity_scenario: 'A'
+  new_schools: true
+  include_k8: false
+  level_to_split: {1: 2, 2: 1}
+
+sweep:
+  seed: [42]
+
+execution:
+  output_dir: './optimization_output/iterative_choice_utility_test'
+  capacity: 8
+  max_workers: 1
+  max_tasks_per_worker: 5
+  skip_existing: true
+  rerun_failed: true
+  sequential: true
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+matching:
+  enabled: true
+  config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+  compute_stage_assignments: true
+
+choice_metrics:
+  enabled: true
+  compute_stage_metrics: true

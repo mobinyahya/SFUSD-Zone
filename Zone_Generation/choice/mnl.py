@@ -29,6 +29,13 @@ class _PreparedZoningData:
     student_area_col: str
 
 
+@dataclass(frozen=True)
+class _PreassignmentUtility:
+    prepared: _PreparedZoningData
+    block_utilities: pd.Series
+    total: float
+
+
 class MNLZoningUtility:
     """Evaluate MNL welfare for a zoning and build Benders-style cuts.
 
@@ -55,17 +62,20 @@ class MNLZoningUtility:
         self.school_to_cols: dict[str, list[str]] = {}
 
     def evaluate(self, problem: ZoneProblem, assignment: dict[int, int]) -> float:
-        return self.evaluate_with_cuts(problem, assignment).utility
+        return self.preassignment_utility(problem, assignment)
+
+    def preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> float:
+        """Total student utility from the schools available in each zone."""
+
+        return self._preassignment_utility(problem, assignment).total
 
     def evaluate_with_cuts(
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> ChoiceEvaluation:
-        prepared = self._prepare(problem, assignment)
-        utilities = self._student_utilities(prepared.merged, prepared.zone_to_cols)
-        block_utilities = self._block_utilities(
-            prepared.merged, utilities, prepared.student_area_col
-        )
-        total = float(block_utilities.sum()) if not block_utilities.empty else 0.0
+        utility = self._preassignment_utility(problem, assignment)
+        prepared = utility.prepared
         block_impacts = self._block_impacts(
             problem,
             assignment,
@@ -73,8 +83,28 @@ class MNLZoningUtility:
             prepared.zone_to_cols,
             prepared.student_area_col,
         )
-        cuts = self._build_cuts(problem, assignment, block_utilities, block_impacts)
-        return ChoiceEvaluation(utility=total, cuts=tuple(cuts))
+        cuts = self._build_cuts(
+            problem,
+            assignment,
+            utility.block_utilities,
+            block_impacts,
+        )
+        return ChoiceEvaluation(utility=utility.total, cuts=tuple(cuts))
+
+    def _preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> _PreassignmentUtility:
+        prepared = self._prepare(problem, assignment)
+        utilities = self._student_utilities(prepared.merged, prepared.zone_to_cols)
+        block_utilities = self._block_utilities(
+            prepared.merged, utilities, prepared.student_area_col
+        )
+        total = float(block_utilities.sum()) if not block_utilities.empty else 0.0
+        return _PreassignmentUtility(
+            prepared=prepared,
+            block_utilities=block_utilities,
+            total=total,
+        )
 
     def _ensure_loaded(self) -> None:
         if self.utility_df is not None and self.student_df is not None:
@@ -345,16 +375,20 @@ def _school_to_node(problem: ZoneProblem) -> dict[str, int]:
 
 def _logsumexp(values: np.ndarray, axis: int) -> np.ndarray:
     max_values = np.max(values, axis=axis)
-    safe_max = np.where(np.isfinite(max_values), max_values, 0.0)
+    finite_max = np.isfinite(max_values)
+    safe_max = np.where(finite_max, max_values, 0.0)
     expanded = np.expand_dims(safe_max, axis=axis)
     summed = np.sum(np.exp(values - expanded), axis=axis)
-    out = safe_max + np.log(summed)
-    out[~np.isfinite(max_values)] = -np.inf
-    return out
+    safe_summed = np.where(finite_max & (summed > 0), summed, 1.0)
+    return np.where(finite_max, safe_max + np.log(safe_summed), -np.inf)
 
 
 def _log1pexp(values: np.ndarray) -> np.ndarray:
-    return np.where(values > 0, values + np.log1p(np.exp(-values)), np.log1p(np.exp(values)))
+    out = np.empty_like(values, dtype=float)
+    positive = values > 0
+    out[positive] = values[positive] + np.log1p(np.exp(-values[positive]))
+    out[~positive] = np.log1p(np.exp(values[~positive]))
+    return out
 
 
 def _finite_array(values: np.ndarray, replacement: float) -> np.ndarray:

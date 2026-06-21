@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any, Mapping
 
 from Zone_Generation.choice.mnl import MNLZoningUtility
 from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation
@@ -17,6 +18,11 @@ class ChoiceModel(ABC):
         """Real utility and linearization cuts at ``assignment``."""
 
     def evaluate(self, problem: ZoneProblem, assignment: dict[int, int]) -> float:
+        return self.preassignment_utility(problem, assignment)
+
+    def preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> float:
         return self.evaluate_with_cuts(problem, assignment).utility
 
     def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
@@ -26,14 +32,20 @@ class ChoiceModel(ABC):
 class DistanceChoiceModel(ChoiceModel):
     """Student-weighted negative distance to the assigned centroid."""
 
+    def preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> float:
+        return sum(
+            self._zone_utility(problem, node, assignment[node])
+            for node in problem.nodes
+        )
+
     def evaluate_with_cuts(
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> ChoiceEvaluation:
-        utility = 0.0
+        utility = self.preassignment_utility(problem, assignment)
         cuts: list[ChoiceCut] = []
         for node in problem.nodes:
-            assigned_zone = assignment[node]
-            utility += self._zone_utility(problem, node, assigned_zone)
             for zone in problem.candidate_zones(node):
                 cuts.append(
                     ChoiceCut(
@@ -84,6 +96,11 @@ class MNLChoiceModel(ChoiceModel):
     ) -> ChoiceEvaluation:
         return self.evaluator.evaluate_with_cuts(problem, assignment)
 
+    def preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> float:
+        return self.evaluator.preassignment_utility(problem, assignment)
+
     def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
         return (self.lower_bound, self.upper_bound)
 
@@ -100,3 +117,15 @@ def get_choice_model(name: str, **options) -> ChoiceModel:
             f"Unknown choice model {name!r}. Available: {sorted(_MODELS)}."
         )
     return _MODELS[name](**options)
+
+
+def get_configured_choice_model(options: Mapping[str, Any]) -> ChoiceModel:
+    """Build the choice model described by optimization config options."""
+
+    name = str(options.get("choice_model", "distance"))
+    if name == "mnl":
+        return get_choice_model(
+            name,
+            method=str(options.get("choice_model_method", "logsum")),
+        )
+    return get_choice_model(name)

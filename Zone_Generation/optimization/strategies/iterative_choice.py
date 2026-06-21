@@ -13,7 +13,7 @@ from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.base import Solver
 from Zone_Generation.optimization.strategies.base import Strategy, register
-from Zone_Generation.optimization.strategies.choice_model import get_choice_model
+from Zone_Generation.optimization.strategies.choice_model import get_configured_choice_model
 
 
 @register("iterative_choice")
@@ -25,22 +25,17 @@ class IterativeChoiceStrategy(Strategy):
         tolerance = float(self.options.get("tolerance", 1e-6))
         use_hints = bool(self.options.get("use_hints", True))
         scale = float(self.options.get("choice_utility_scale", 100.0))
-        choice_model = self.options.get("choice_model", "distance")
-        if choice_model == "mnl":
-            model = get_choice_model(
-                choice_model,
-                method=self.options.get("choice_model_method", "logsum"),
-            )
-        else:
-            model = get_choice_model(choice_model)
+        model = get_configured_choice_model(self.options)
 
         base_problem = dataset.problem_for(target)
         lower_bound, upper_bound = model.utility_bounds(base_problem)
         cuts = []
 
         solutions: list[ZoneSolution] = []
-        best: ZoneSolution | None = None
-        best_utility = float("-inf")
+        best_model_solution: ZoneSolution | None = None
+        best_model_utility = float("-inf")
+        last_feasible: ZoneSolution | None = None
+        previous_model_utility: float | None = None
 
         for iteration in range(max_iterations):
             choice_objective = ChoiceObjective(
@@ -49,7 +44,8 @@ class IterativeChoiceStrategy(Strategy):
                 upper_bound=upper_bound,
                 scale=scale,
             )
-            hint = best.assignment if best is not None and use_hints else None
+            hint_solution = best_model_solution or last_feasible
+            hint = hint_solution.assignment if hint_solution is not None and use_hints else None
             # The first iteration intentionally has no cuts, matching the legacy
             # unconstrained seed. A boundary-minimized seed is a reasonable
             # alternative if we later want a less arbitrary starting zoning.
@@ -67,23 +63,35 @@ class IterativeChoiceStrategy(Strategy):
 
             evaluated = model.evaluate_with_cuts(problem, sol.assignment)
             utility = evaluated.utility
+            model_utility = sol.objective
             new_cuts = list(evaluated.cuts)
             sol.metadata.update(
                 {
+                    "choice_model_utility": model_utility,
                     "choice_utility": utility,
                     "choice_cuts_added": len(new_cuts),
                     "choice_cuts_total": len(cuts) + len(new_cuts),
                 }
             )
             solutions.append(sol)
+            last_feasible = sol
+            if model_utility is not None and model_utility > best_model_utility:
+                best_model_utility = model_utility
+                best_model_solution = sol
 
-            improved = utility > best_utility + tolerance
-            if improved:
-                best_utility = utility
-                best = sol
-            elif iteration > 0:
-                break
+            if iteration > 0:
+                if model_utility is None or previous_model_utility is None:
+                    break
+                model_utility_change = abs(model_utility - previous_model_utility)
+                sol.metadata["choice_model_utility_change"] = model_utility_change
+                if model_utility_change <= tolerance:
+                    break
+
+            previous_model_utility = model_utility
 
             cuts.extend(new_cuts)
+
+            if not new_cuts:
+                break
 
         return solutions

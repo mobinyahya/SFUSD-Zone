@@ -1,18 +1,30 @@
-"""Choice-utility metrics from optimization strategy metadata.
-
-The new optimization does not call the legacy utility evaluator from metrics. Choice
-models attach their outputs to ``ZoneSolution.metadata``; metrics simply expose
-that information when present.
-"""
+"""Preassignment school-choice utility metrics for zoning solutions."""
 
 from __future__ import annotations
 
+from Zone_Generation.choice.models import get_configured_choice_model
 from Zone_Generation.Config.metrics_config import MetricColumns
 from Zone_Generation.metrics.base import MetricOutput, MetricsContext
 
 
 def compute(context: MetricsContext) -> MetricOutput:
-    utility = context.solution.metadata.get("choice_utility")
-    if utility is None:
+    if not context.assignment:
         return MetricOutput()
-    return MetricOutput(metrics={MetricColumns.FINAL_CHOICE_UTILITY: utility})
+
+    model = get_configured_choice_model(context.config)
+    utility = model.preassignment_utility(context.problem, context.assignment)
+    run = {
+        "choice_preassignment_utility": {
+            "model": str(context.config.get("choice_model", "distance")),
+            "method": (
+                str(context.config.get("choice_model_method", "logsum"))
+                if str(context.config.get("choice_model", "distance")) == "mnl"
+                else None
+            ),
+            "utility": utility,
+        }
+    }
+    return MetricOutput(
+        metrics={MetricColumns.CHOICE_TOTAL_PREASSIGNMENT_UTILITY: utility},
+        run=run,
+    )

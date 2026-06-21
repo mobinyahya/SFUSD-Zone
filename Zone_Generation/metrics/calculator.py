@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.metrics import (
+    choice,
     distance,
     diversity,
     programs,
@@ -28,6 +29,7 @@ DEFAULT_MODULES: tuple[MetricFn, ...] = (
     distance.compute,
     quality.compute,
     structure.compute,
+    choice.compute,
 )
 
 

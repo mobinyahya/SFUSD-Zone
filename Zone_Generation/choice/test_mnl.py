@@ -1,5 +1,8 @@
 """Tests for shared MNL zoning utility helpers."""
 
+import warnings
+
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -34,5 +37,24 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     evaluated = model.evaluate_with_cuts(problem, assignment)
 
     assert evaluated.utility == pytest.approx(6.0)
+    assert model.preassignment_utility(problem, assignment) == pytest.approx(
+        evaluated.utility
+    )
     assert evaluated.cuts
     assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
+
+
+def test_log_helpers_handle_extreme_values_without_runtime_warnings():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        logsum = mnl._logsumexp(
+            np.array([[-np.inf, -np.inf], [1000.0, 999.0]]),
+            axis=1,
+        )
+        softplus = mnl._log1pexp(np.array([1000.0, -1000.0, 0.0]))
+
+    assert np.isneginf(logsum[0])
+    assert logsum[1] == pytest.approx(1000.0 + np.log1p(np.exp(-1.0)))
+    assert softplus[0] == pytest.approx(1000.0)
+    assert softplus[1] == pytest.approx(0.0)
+    assert softplus[2] == pytest.approx(np.log(2.0))
