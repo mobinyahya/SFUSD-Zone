@@ -1,0 +1,72 @@
+# Optimization-native benchmark sweep.
+
+name: 6-18-block-group-sweep
+mode: run  # run | metrics
+
+optimization_defaults:
+  max_distance: 6
+  use_hints: true
+  capacity_scenario: 'A'
+  boundary_radius: 1
+  gap_limits: [0, 0, 0]
+  workers: 8
+
+sweep:
+  centroids_type: ['6-zone-3', '7-zone-14', '8-zone-24']
+  frl_dev: [0.12, 0.15, 0.2, 0.25]
+  racial_dev: [0.12, 0.15, 0.2, 0.25]
+  seed: [42, 14, 33, 80]
+  overage: [0.7, 0.8, 0.9]
+  shortage: [0.15, 0.2, 0.25]
+  solver: ['cp_bool']
+
+tasks:
+- strategy: 'single'
+  levels: ['Block_0']
+  solve_time_limits: [600]
+
+# equal splits
+- strategy: 'recursive'
+  levels: ['Block_1', 'Block_0']
+  solve_time_limits: [300, 300]
+
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_0']
+  solve_time_limits: [300, 300]
+
+  - strategy: 'recursive'
+  levels: ['Block_2', 'Block_1', 'Block_0']
+  solve_time_limits: [200, 200, 200]
+
+# back heavy splits
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_0']
+  solve_time_limits: [200, 400]
+
+- strategy: 'recursive'
+  levels: ['Block_1', 'Block_0']
+  solve_time_limits: [200, 400]
+
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_1', 'Block_0']
+  solve_time_limits: [100, 100, 400]
+
+- strategy: 'recursive'
+  levels: ['Block_2', 'Block_1', 'Block_0']
+  solve_time_limits: [100, 200, 300]
+
+
+
+execution:
+  output_dir: '/share/data/school_choice/local_runs/full_recursive_sweep/'
+  capacity: 40              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'

@@ -30,10 +30,9 @@ independently.
 
 ## Key design points
 
-- **Constraints written once.** `solvers/constraints.py` defines assignment,
-  centroid-fixing, strict contiguity, capacity, diversity, and school-count in
-  terms of a tiny `ModelBackend` interface. CP-SAT and Gurobi each implement
-  that interface — no duplicated constraint math.
+- **Solver-owned implementations.** `cp_bool`, `cp_int`, and `mip` each build
+  their own solver-native models from `ZoneProblem`. The CP-SAT solvers share
+  common helpers, while the Gurobi MIP implementation stays separate.
 - **Strict contiguity** (`data/contiguity.py`) uses the shortest-path-tree
   formulation: a non-centroid node may join a zone only if a strictly-closer
   neighbor does too. Same module validates contiguity and repairs assignments.

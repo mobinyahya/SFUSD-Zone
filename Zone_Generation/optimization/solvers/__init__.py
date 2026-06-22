@@ -3,7 +3,7 @@
 Every solver implements :class:`~Zone_Generation.optimization.solvers.base.Solver`
 (``solve(problem) -> ZoneSolution``) and registers itself by name so the config
 layer can build one from a string. Importing this package registers the
-built-in backends.
+built-in implementations.
 """
 
 from Zone_Generation.optimization.solvers.base import Solver, get_solver, register
