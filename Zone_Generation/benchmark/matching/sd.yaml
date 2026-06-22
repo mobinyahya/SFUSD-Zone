@@ -1,0 +1,28 @@
+assignment-algorithm: DA
+
+ctip-options:
+  - 0
+
+restrict-zone: true
+guard-rails: -1
+
+policies:
+  - 6zone-1
+
+priority-weights:
+  ctip: 0
+  zone: 0
+  language-programs:
+    ctip: 0
+    lp: 0
+
+sibling-access: false
+zone-building-blocks: block_group
+designate: true
+
+ties-options:
+  - STB
+
+iterations:
+  start: 0
+  end: 15

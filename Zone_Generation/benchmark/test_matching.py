@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+import yaml
 
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
@@ -224,7 +225,7 @@ def test_choice_metrics_mode_updates_existing_result(tmp_path):
 
 
 def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
-    _stub_student_assignment(monkeypatch)
+    captured = _stub_student_assignment(monkeypatch)
     run_dir, problem = _write_synthetic_run(tmp_path)
 
     batch = run_matching_for_existing_runs(
@@ -237,10 +238,15 @@ def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
     result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
     assert result["matching"]["status"] == "OK"
     assert result["metrics"]["matching_assignment_files"] == 1
+    assert len(captured["sessions"]) == 1
+    assert len(captured["sessions"][0].calls) == 1
+    assert captured["sessions"][0].calls[0]["config"]["paths"]["student-save"] == str(
+        (run_dir / "matching" / "precomputed").resolve()
+    )
 
 
 def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
-    _stub_student_assignment(monkeypatch)
+    captured = _stub_student_assignment(monkeypatch)
     run_dir, problem = _write_synthetic_run(tmp_path)
 
     batch = run_matching_for_existing_runs(
@@ -265,6 +271,78 @@ def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
         / "matching"
         / "choice_metrics_by_assignment.csv"
     ).exists()
+    assert len(captured["sessions"]) == 1
+    assert len(captured["sessions"][0].calls) == 2
+    stage_config = yaml.safe_load(
+        (
+            run_dir
+            / "stages"
+            / stage_name
+            / "matching"
+            / "config.generated.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    assert stage_config["paths"]["student-save"] == str(
+        (run_dir / "matching" / "precomputed").resolve()
+    )
+
+
+def test_student_assignment_session_reuses_market_for_dynamic_paths(
+    tmp_path, monkeypatch
+):
+    fake_market, fake_priority, fake_preference = _install_fake_market_generator(
+        monkeypatch
+    )
+    session = matching_runner.StudentAssignmentSession()
+    precomputed_dir = tmp_path / "matching" / "precomputed"
+    zone_a = tmp_path / "a" / "zones.csv"
+    zone_b = tmp_path / "b" / "zones.csv"
+    assignments_a = tmp_path / "a" / "assignments_raw"
+    assignments_b = tmp_path / "b" / "assignments_raw"
+
+    session.run(_session_config(zone_a, assignments_a, precomputed_dir), assignments_a)
+    session.run(_session_config(zone_b, assignments_b, precomputed_dir), assignments_b)
+
+    assert len(fake_market.instances) == 1
+    assert fake_market.executions == 2
+    assert fake_market.seen == [
+        {
+            "zone_file": str(zone_a),
+            "assignment_path": str(assignments_a),
+        },
+        {
+            "zone_file": str(zone_b),
+            "assignment_path": str(assignments_b),
+        },
+    ]
+    assert fake_priority.instances == 2
+    assert fake_preference.instances == 2
+
+
+def test_student_assignment_session_rebuilds_for_static_config_change(
+    tmp_path, monkeypatch
+):
+    fake_market, _, _ = _install_fake_market_generator(monkeypatch)
+    session = matching_runner.StudentAssignmentSession()
+    precomputed_dir = tmp_path / "matching" / "precomputed"
+    assignments_a = tmp_path / "a" / "assignments_raw"
+    assignments_b = tmp_path / "b" / "assignments_raw"
+
+    session.run(
+        _session_config(tmp_path / "a" / "zones.csv", assignments_a, precomputed_dir),
+        assignments_a,
+    )
+    session.run(
+        _session_config(
+            tmp_path / "b" / "zones.csv",
+            assignments_b,
+            precomputed_dir,
+            grade="01",
+        ),
+        assignments_b,
+    )
+
+    assert len(fake_market.instances) == 2
 
 
 def test_preserve_matching_payload_keeps_existing_matching_metrics():
@@ -296,10 +374,11 @@ def test_preserve_choice_metrics_payload_keeps_existing_choice_metrics():
 
 
 def _stub_student_assignment(monkeypatch):
-    captured = {}
+    captured = {"calls": [], "sessions": []}
 
     def fake_run(config, assignments_dir):
         captured["value"] = config
+        captured["calls"].append({"config": config, "assignments_dir": assignments_dir})
         output = assignments_dir / config["subconfig-name"] / "assignment.csv"
         output.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
@@ -313,8 +392,100 @@ def _stub_student_assignment(monkeypatch):
             }
         ).to_csv(output, index=False)
 
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+            captured["sessions"].append(self)
+
+        def run(self, config, assignments_dir):
+            self.calls.append({"config": config, "assignments_dir": assignments_dir})
+            fake_run(config, assignments_dir)
+
     monkeypatch.setattr(matching_runner, "_run_student_assignment", fake_run)
+    monkeypatch.setattr(
+        matching_runner,
+        "_new_student_assignment_session",
+        FakeSession,
+    )
     return captured
+
+
+def _install_fake_market_generator(monkeypatch):
+    class FakePriorityGenerator:
+        instances = 0
+
+        def __init__(self, market):
+            self.market = market
+            FakePriorityGenerator.instances += 1
+
+    class FakePreferenceGenerator:
+        instances = 0
+
+        def __init__(self, market):
+            self.market = market
+            FakePreferenceGenerator.instances += 1
+
+    class FakeMarketGenerator:
+        instances = []
+        executions = 0
+        seen = []
+
+        def __init__(self, configurator, assignment_path):
+            self.configurator = configurator
+            self.config = configurator.config
+            self.priority_generator = FakePriorityGenerator(self)
+            self.preference_generator = FakePreferenceGenerator(self)
+            self._set_up_save_folder(assignment_path)
+            FakeMarketGenerator.instances.append(self)
+
+        def _set_up_save_folder(self, assignment_path):
+            self.output_assignment_path = assignment_path
+
+        def create_iterations_generator(self):
+            FakeMarketGenerator.seen.append(
+                {
+                    "zone_file": self.config["paths"]["zone-files"][
+                        matching_runner.GENERATED_POLICY_NAME
+                    ],
+                    "assignment_path": str(self.output_assignment_path),
+                }
+            )
+            return iter([[iter([None])]])
+
+        @staticmethod
+        def execute_generator(iterations_generator):
+            FakeMarketGenerator.executions += 1
+            for policy_suboptions_generator in iterations_generator:
+                for priority_suboptions_generator in policy_suboptions_generator:
+                    for _ in priority_suboptions_generator:
+                        pass
+
+    monkeypatch.setattr(
+        matching_runner,
+        "_market_generator_class",
+        lambda: FakeMarketGenerator,
+    )
+    return FakeMarketGenerator, FakePriorityGenerator, FakePreferenceGenerator
+
+
+def _session_config(zone_csv, assignments_dir, precomputed_dir, *, grade="KG"):
+    return {
+        "grade": grade,
+        "paths": {
+            "assignment-folder": str(assignments_dir),
+            "student-save": str(precomputed_dir),
+            "zone-files": {
+                matching_runner.GENERATED_POLICY_NAME: str(zone_csv),
+            },
+        },
+        "policies": [matching_runner.GENERATED_POLICY_NAME],
+        "random-seed": 2023,
+        "save-assignment": True,
+        "subconfig-name": "generated_zones",
+        "subconfigs": ["generated_zones"],
+        "year": 23,
+        "zone-building-blocks": "block_group",
+    }
 
 
 def _solution():

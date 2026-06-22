@@ -2,8 +2,8 @@ name: iterative-choice-utility-test
 mode: run
 
 optimization_defaults:
-  centroids_type: '6-zone-3'
-  levels: ['BlockGroup_1']     # use ['BlockGroup_0'] for full fine-grained test
+  centroids_type: '7-zone-14'
+  levels: ['BlockGroup_0']     # use ['BlockGroup_0'] for full fine-grained test
   solver: 'cp_int'
   strategy: 'iterative_choice'
 
@@ -13,14 +13,14 @@ optimization_defaults:
   shortage: 0.2
   max_distance: 5
 
-  solve_time_limits: [60]
+  solve_time_limits: [120]
   gap_limits: [0]
   use_hints: true
   seed: 42
   workers: 8
 
-  max_iterations: 20
-  tolerance: 0
+  max_iterations: 15
+  tolerance: 100
 
   choice_model: 'mnl'
   choice_model_method: 'logsum'
@@ -37,7 +37,7 @@ sweep:
   seed: [42]
 
 execution:
-  output_dir: './optimization_output/iterative_choice_utility_test'
+  output_dir: './optimization_output/iterative_choice_utility_test_3'
   capacity: 8
   max_workers: 1
   max_tasks_per_worker: 5
@@ -53,7 +53,7 @@ metrics:
 
 matching:
   enabled: true
-  config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+  config: Zone_Generation/benchmark/matching/sd.yaml
   compute_stage_assignments: true
 
 choice_metrics:

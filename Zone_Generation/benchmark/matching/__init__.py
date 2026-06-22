@@ -3,6 +3,7 @@
 from Zone_Generation.benchmark.matching.runner import (
     MatchingBatchResult,
     MatchingResult,
+    StudentAssignmentSession,
     merge_matching_result,
     merge_stage_matching_result,
     preserve_matching_payload,
@@ -15,6 +16,7 @@ from Zone_Generation.benchmark.matching.runner import (
 __all__ = [
     "MatchingBatchResult",
     "MatchingResult",
+    "StudentAssignmentSession",
     "merge_matching_result",
     "merge_stage_matching_result",
     "preserve_matching_payload",

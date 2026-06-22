@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import os
@@ -88,6 +89,9 @@ def run_matching_for_solution(
     solution: ZoneSolution,
     output_dir: str,
     matching: MatchingRunConfig,
+    *,
+    student_assignment_session: StudentAssignmentSession | None = None,
+    precomputed_dir: str | Path | None = None,
 ) -> MatchingResult | None:
     """Run matching for one final zoning solution and write run artifacts."""
 
@@ -104,20 +108,28 @@ def run_matching_for_solution(
 
     zone_csv = matching_dir / ZONE_CSV
     zone_id_map = write_matching_zone_csv(solution.area_assignment(), zone_csv)
+    matching_precomputed_dir = (
+        Path(os.path.expanduser(str(precomputed_dir))).resolve()
+        if precomputed_dir is not None
+        else matching_dir / "precomputed"
+    )
 
     config_template = resolve_matching_template(matching.config)
     simulation_config = build_simulation_config(
         template_path=config_template,
         zone_csv=zone_csv,
         assignments_dir=assignments_dir,
-        precomputed_dir=matching_dir / "precomputed",
+        precomputed_dir=matching_precomputed_dir,
         solution=solution,
     )
     generated_config = matching_dir / GENERATED_CONFIG
     with open(generated_config, "w", encoding="utf-8") as f:
         yaml.safe_dump(json_ready(simulation_config), f, sort_keys=True)
 
-    _run_student_assignment(simulation_config, assignments_dir)
+    if student_assignment_session is None:
+        _run_student_assignment(simulation_config, assignments_dir)
+    else:
+        student_assignment_session.run(simulation_config, assignments_dir)
     result = summarize_assignment_outputs(
         assignments_dir=assignments_dir,
         matching_dir=matching_dir,
@@ -186,14 +198,28 @@ def run_matching_for_existing_runs(
             if not solutions:
                 batch.add(MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True))
                 continue
+            student_assignment_session = _new_student_assignment_session()
+            shared_precomputed_dir = (
+                Path(os.path.expanduser(run_dir)).resolve()
+                / MATCHING_DIRNAME
+                / "precomputed"
+            )
             final_solution = MetricsContext(solutions, config=config).solution
-            matching_result = run_matching_for_solution(final_solution, run_dir, matching)
+            matching_result = run_matching_for_solution(
+                final_solution,
+                run_dir,
+                matching,
+                student_assignment_session=student_assignment_session,
+                precomputed_dir=shared_precomputed_dir,
+            )
             stage_matching_result = run_matching_for_stages(
                 solutions,
                 manifest.get("stages", []),
                 run_dir,
                 matching,
                 choice_metrics=choice_metrics,
+                student_assignment_session=student_assignment_session,
+                precomputed_dir=shared_precomputed_dir,
             )
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
@@ -250,6 +276,8 @@ def run_matching_for_stages(
     matching: MatchingRunConfig,
     *,
     choice_metrics: ChoiceMetricsRunConfig | None = None,
+    student_assignment_session: StudentAssignmentSession | None = None,
+    precomputed_dir: str | Path | None = None,
 ) -> dict[str, Any] | None:
     """Optionally run matching and choice metrics for every saved stage."""
 
@@ -261,7 +289,13 @@ def run_matching_for_stages(
     for solution, stage in zip(solutions, stage_records):
         stage_name = str(stage.get("name"))
         stage_dir = output_root / str(stage.get("path"))
-        matching_result = run_matching_for_solution(solution, str(stage_dir), matching)
+        matching_result = run_matching_for_solution(
+            solution,
+            str(stage_dir),
+            matching,
+            student_assignment_session=student_assignment_session,
+            precomputed_dir=precomputed_dir,
+        )
         stage_payload: dict[str, Any] = {}
         if matching_result is not None:
             stage_payload["matching"] = matching_result.to_payload()
@@ -437,9 +471,7 @@ def preserve_matching_payload(
 
 
 def _run_student_assignment(config: dict[str, Any], assignments_dir: Path) -> None:
-    from student_assignment.market_generator.school_choice_market_generator import (
-        MarketGenerator,
-    )
+    MarketGenerator = _market_generator_class()
 
     configurator = _StaticConfigurator(config)
     market = MarketGenerator(
@@ -449,12 +481,87 @@ def _run_student_assignment(config: dict[str, Any], assignments_dir: Path) -> No
     MarketGenerator.execute_generator(market.create_iterations_generator())
 
 
+class StudentAssignmentSession:
+    """Reuse one student-assignment market while swapping zoning artifacts."""
+
+    def __init__(self) -> None:
+        self.market = None
+        self.configurator: _StaticConfigurator | None = None
+        self._static_signature: str | None = None
+
+    def run(self, config: dict[str, Any], assignments_dir: Path) -> None:
+        run_config = copy.deepcopy(config)
+        static_signature = _student_assignment_static_signature(run_config)
+        if self.market is None or static_signature != self._static_signature:
+            self._initialize_market(run_config, assignments_dir, static_signature)
+        else:
+            self._update_market(run_config, assignments_dir)
+
+        MarketGenerator = self.market.__class__
+        MarketGenerator.execute_generator(self.market.create_iterations_generator())
+
+    def _initialize_market(
+        self,
+        config: dict[str, Any],
+        assignments_dir: Path,
+        static_signature: str,
+    ) -> None:
+        MarketGenerator = _market_generator_class()
+        self.configurator = _StaticConfigurator(config)
+        self.market = MarketGenerator(
+            configurator=self.configurator,
+            assignment_path=str(assignments_dir),
+        )
+        self._static_signature = static_signature
+
+    def _update_market(self, config: dict[str, Any], assignments_dir: Path) -> None:
+        if self.configurator is None or self.market is None:
+            raise RuntimeError("StudentAssignmentSession has not been initialized.")
+
+        self.configurator.config = config
+        self.market.config = config
+        self.market._set_up_save_folder(str(assignments_dir))
+
+        # These generators hold zone-dependent caches, so reset them per zoning.
+        self.market.priority_generator = self.market.priority_generator.__class__(
+            self.market
+        )
+        self.market.preference_generator = self.market.preference_generator.__class__(
+            self.market
+        )
+
+
 class _StaticConfigurator:
     """Minimal Configerator-compatible object for generated in-memory configs."""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self._original_config = None
+
+
+def _new_student_assignment_session() -> StudentAssignmentSession:
+    return StudentAssignmentSession()
+
+
+def _market_generator_class():
+    from student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+
+    return MarketGenerator
+
+
+def _student_assignment_static_signature(config: Mapping[str, Any]) -> str:
+    signature_config = copy.deepcopy(dict(config))
+    paths = dict(signature_config.get("paths") or {})
+    paths.pop("assignment-folder", None)
+    paths.pop("zone-files", None)
+    signature_config["paths"] = paths
+    return json.dumps(
+        json_ready(signature_config),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _default_matching_config() -> dict[str, Any]:

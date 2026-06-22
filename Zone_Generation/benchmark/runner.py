@@ -82,14 +82,23 @@ def run_optimization_task(
         stage_matching_result = None
         if matching and matching.enabled:
             from Zone_Generation.benchmark.matching import (
+                StudentAssignmentSession,
                 run_matching_for_solution,
                 run_matching_for_stages,
             )
 
+            student_assignment_session = StudentAssignmentSession()
+            shared_precomputed_dir = (
+                Path(os.path.expanduser(output_dir)).resolve()
+                / "matching"
+                / "precomputed"
+            )
             matching_result = run_matching_for_solution(
                 final_solution,
                 output_dir,
                 matching,
+                student_assignment_session=student_assignment_session,
+                precomputed_dir=shared_precomputed_dir,
             )
             stage_matching_result = run_matching_for_stages(
                 solutions,
@@ -97,6 +106,8 @@ def run_optimization_task(
                 output_dir,
                 matching,
                 choice_metrics=choice_metrics,
+                student_assignment_session=student_assignment_session,
+                precomputed_dir=shared_precomputed_dir,
             )
 
         result_payload = result_payload_for(
