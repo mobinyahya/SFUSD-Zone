@@ -217,9 +217,8 @@ class _CpSatSolver(Solver):
                     forbidden.add(z)
                 continue
 
-            terms: list[_Term] = [(1.0, z, node)]
-            terms += [(-1.0, z, n) for n in support_nodes]
-            self._add_linear_constraint(m, x, terms, "<=", 0.0)
+            # x[z, node] => at least one supported neighbor is also in z.
+            m.AddBoolOr([x[(z, node)].Not(), *[x[(z, n)] for n in support_nodes]])
 
     def _add_capacity_constraints(
         self,
