@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-SFUSD-Zone optimizes school district zoning for San Francisco Unified School District using OR-Tools CP-SAT (primary) and Gurobi MIP. It creates geographically contiguous zones balancing demographic diversity, geographic access, school capacity, program access, and school quality. Includes a web dashboard with LLM-powered exploration.
+SFUSD-Zone optimizes school district zoning for San Francisco Unified School District using OR-Tools CP-SAT (primary) and Gurobi MIP. It creates geographically contiguous zones balancing demographic diversity, geographic access, school capacity, program access, and school quality.
 
 ## Commands
 
@@ -13,12 +13,6 @@ uv run python -m Zone_Generation.Optimization.optimizer  # Single optimization r
 # Benchmarking (from project root)
 uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml
 uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
-
-# Website
-cd website/backend && uv run uvicorn app:app --reload --port 8000
-
-# LLM agent CLI
-uv run python -m LLM.exploration.run_agent [path/to/summary.csv]
 ```
 
 ## Directory Structure
@@ -27,9 +21,6 @@ uv run python -m LLM.exploration.run_agent [path/to/summary.csv]
 - `Zone_Generation/Optimization/` - Optimizer implementations (cp_int, cp_bool, mip), design_zones.py, create_larger_areas.py
 - `Zone_Generation/benchmark/` - config.py, runner.py, results.py, parallel.py
 - `Zone_Generation/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
-- `LLM/exploration/` - zoning_agent.py, prompts.py, filters.py, pareto.py, clusters.py, tool_defs.py
-- `website/backend/` - app.py (FastAPI), data_loader.py
-- `website/frontend/` - index.html, app.js, shared.js, style.css, admin.html/js/css
 - `Helper_Functions/` - util.py, Graph.py
 
 ## Graph Object Structure
@@ -124,41 +115,6 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 - `BenchmarkTask` (benchmark/config.py) - Concrete optimization task
 - `run_sweep` (benchmark/parallel.py) - Capacity-aware process executor with worker recycling
 - `MetricsCalculator` (metrics/calculator.py) - Optimization-native metrics over `ZoneSolution` stages
-
-## Website
-
-### Backend (website/backend/)
-
-FastAPI server serving the frontend and API. Uses pre-calculated metrics from `result.json` (no graph recalculation).
-
-Key endpoints:
-- `GET /api/solution/{path}` - Load solution: zone mapping, demographics, metrics, percentile ranks, colors
-- `GET /api/geojson` - SF blockgroup geometries for map
-- `GET /api/schools` - School locations
-- `GET /api/metrics-config` - Metrics metadata (names, directions, categories)
-- `POST /api/chat` - Chat with ZoningAgent (session-based, Gemini via OpenAI SDK)
-- `POST /api/admin/filter` - Direct filter/centroid endpoint
-- `GET /api/health` - Health check
-
-Data path: `DEFAULT_CSV_PATH` in app.py points to summary.csv. Solutions loaded by path from `result.json` + `zone_dict_BlockGroup_0.json`.
-
-### Frontend (website/frontend/)
-
-- Leaflet map with CartoDB basemap, GeoJSON zones colored by assignment
-- Chart.js zone-level bar charts (demographics, programs, quality)
-- Comparison table with percentile rankings per metric
-- Chat interface with markdown rendering and cluster selector
-- Solution history (auto-saves up to 30, with pros/cons editing)
-- Admin console (admin.html) for direct filter manipulation
-
-### Agent Integration
-
-`ZoningAgent` (LLM/exploration/zoning_agent.py) manages:
-- Filter state with versioning and undo
-- Pareto frontier computation and filtering
-- Cluster exploration (themed solution groups)
-- Zone-level data queries
-- Uses Gemini via OpenAI-compatible API (`OPENAI_API_KEY` in `.env`)
 
 ## Config Reference (Zone_Generation/Config/config.yaml)
 

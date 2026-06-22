@@ -11,8 +11,8 @@ optimization instance) and
 :class:`~Zone_Generation.optimization.solution.ZoneSolution` (its result).
 
 Nothing here depends on the legacy ``Zone_Generation.Optimization`` package or
-on the benchmark/website consumers; it is a standalone replacement that can be
-migrated onto gradually.
+on benchmark consumers; it is a standalone replacement that can be migrated onto
+gradually.
 """
 
 from Zone_Generation.optimization.levels import LevelSpec

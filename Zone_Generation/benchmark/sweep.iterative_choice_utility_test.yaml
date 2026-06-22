@@ -4,7 +4,7 @@ mode: run
 optimization_defaults:
   centroids_type: '7-zone-14'
   levels: ['BlockGroup_0']     # use ['BlockGroup_0'] for full fine-grained test
-  solver: 'cp_int'
+  solver: 'cp_bool'
   strategy: 'iterative_choice'
 
   frl_dev: 0.3

@@ -14,7 +14,7 @@ This package runs the new `Zone_Generation.optimization` stack directly. It does
 - Saves every optimization stage, not just the final solution.
 - Recomputes metrics from saved stage artifacts without rerunning optimization.
 - Aggregates run-level and stage-level outputs into CSV files.
-- Keeps benchmark output independent from the website and LLM components.
+- Keeps benchmark output focused on optimization artifacts and aggregate metrics.
 
 ## Entry Point
 

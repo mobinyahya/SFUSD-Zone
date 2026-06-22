@@ -13,8 +13,8 @@ OptimizationConfig ──▶ Dataset ──build──▶ ZoneProblem ──┐
 ```
 
 This package does **not** touch the legacy `Zone_Generation/Optimization`
-package, the benchmark runner, or the website. It is a parallel replacement to
-migrate onto gradually.
+package or the benchmark runner. It is a parallel replacement to migrate onto
+gradually.
 
 ## The three layers
 
@@ -64,7 +64,7 @@ Rendered maps are written to the optimization output directory as
 `visualization_<stage>.png`. Cached geometry artifacts are written under
 `/share/data/school_choice/Data/Computed/visualization_artifacts/` as
 `geometry_<level>_<fingerprint>.pkl` and `.json`. This does not use benchmark,
-website, choice, or heatmap code.
+choice, or heatmap code.
 
 Switch granularity, solver, or strategy purely in the config:
 
@@ -91,5 +91,5 @@ school/distance/adjacency files) on the shared non-local data paths.
   logic plugs in behind the same interface.
 - `MNLChoiceModel` needs the estimate/demographics CSVs wired in;
   `DistanceChoiceModel` is the data-free default.
-- Consumers (benchmark, website) still use the legacy package; migrating them
-  and deleting `Zone_Generation/Optimization` is a separate step.
+- Consumers still using the legacy package can be migrated separately before
+  deleting `Zone_Generation/Optimization`.

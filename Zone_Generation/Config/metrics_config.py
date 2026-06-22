@@ -1,10 +1,8 @@
 """
 Centralized Metric Configuration — Single Source of Truth.
 
-Defines all metrics available for filtering zoning solutions,
-organized by category with descriptions for LLM understanding.
-Also includes chart visualization hints for the website frontend
-and column-name constants for computation modules.
+Defines all metrics available for filtering zoning solutions, organized by
+category, with column-name constants for computation modules.
 """
 
 from dataclasses import dataclass
@@ -16,18 +14,11 @@ class MetricSpec:
     """Specification for a single metric."""
     column: str                              # CSV column name
     display_name: str                        # User-friendly name
-    description: str                         # Brief description for LLM
+    description: str                         # Brief metric description
     category: str                            # diversity/distance/programs/quality/structure
     direction: Literal["minimize", "maximize"] | None = None  # None = informational only
-    is_core: bool = True                     # Show in main prompt vs on-demand
+    is_core: bool = True                     # Include in the default metric subset
     short_name: str = ""                     # Short label for badges/compact display
-    # Chart visualization (for website frontend)
-    chart_type: str = "none"                 # "bar", "ethnicity", "none"
-    chart_field: str = ""                    # zone_data field name if different from column
-    chart_unit: str = ""                     # "%", "miles", "Count", "Score", etc.
-    chart_max: float | None = None           # max value for chart scale
-    chart_title: str = ""                    # chart title override
-    chart_normalize: bool = False            # show as % deviation from zone average
 
 
 # ============================================================================
@@ -97,18 +88,6 @@ class MetricColumns:
 
 
 # ============================================================================
-# ETHNICITY DISPLAY LABELS (for website frontend)
-# ============================================================================
-
-ETHNICITY_DISPLAY_LABELS = {
-    "Ethnicity_Black_or_African_American": "Black/African American",
-    "Ethnicity_Hispanic/Latinx": "Hispanic/Latinx",
-    "Ethnicity_White": "White",
-    "Ethnicity_Asian": "Asian",
-}
-
-
-# ============================================================================
 # METRIC CATEGORIES
 # ============================================================================
 
@@ -146,10 +125,6 @@ DIVERSITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Racial",
-        chart_type="ethnicity",
-        chart_title="Racial Diversity",
-        chart_unit="%",
-        chart_max=100,
     ),
     MetricSpec(
         column="frl_mad",
@@ -159,11 +134,6 @@ DIVERSITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="SES",
-        chart_type="bar",
-        chart_field="frl_pct",
-        chart_unit="%",
-        chart_max=100,
-        chart_title="Socioeconomic Diversity",
     ),
     MetricSpec(
         column="black_mad",
@@ -278,10 +248,6 @@ PROXIMITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Avg GE Distance",
-        chart_type="bar",
-        chart_field="avg_any_ge_school_distance",
-        chart_unit="miles",
-        chart_title="Avg Distance to Any In-Zone GE School",
     ),
     MetricSpec(
         column="avg_farthest_zone_ge_school_distance",
@@ -291,10 +257,6 @@ PROXIMITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Farthest GE Distance",
-        chart_type="bar",
-        chart_field="avg_farthest_ge_school_distance",
-        chart_unit="miles",
-        chart_title="Avg Distance to Farthest In-Zone GE School",
     ),
     MetricSpec(
         column="avg_out_of_zone_ge_schools_within_half_mile",
@@ -304,10 +266,6 @@ PROXIMITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Out-of-Zone GE",
-        chart_type="bar",
-        chart_field="avg_out_of_zone_ge_schools",
-        chart_unit="Schools",
-        chart_title="Out-of-Zone GE Schools Within 0.5 Miles",
     ),
 
     MetricSpec(
@@ -318,10 +276,6 @@ PROXIMITY_METRICS = [
         direction="maximize",
         is_core=True,
         short_name="Walkable Schools",
-        chart_type="bar",
-        chart_field="ge_schools_within_half_mile",
-        chart_unit="Schools",
-        chart_title="Schools with General Education programs within 0.5 Miles",
     ),
 ]
 
@@ -338,10 +292,6 @@ PROGRAM_METRICS = [
     #     category="programs",
     #     direction="maximize",
     #     is_core=True,
-    #     chart_type="bar",
-    #     chart_field="total_programs",
-    #     chart_unit="Count",
-    #     chart_title="Total Programs by Zone",
     # ),
     # MetricSpec(
     #     column="avg_language_immersion_per_zone",
@@ -350,10 +300,6 @@ PROGRAM_METRICS = [
     #     category="programs",
     #     direction="maximize",
     #     is_core=True,
-    #     chart_type="bar",
-    #     chart_field="language_immersion_count",
-    #     chart_unit="Count",
-    #     chart_title="Language Immersion by Zone",
     # ),
     # MetricSpec(
     #     column="avg_special_ed_per_zone",
@@ -362,10 +308,6 @@ PROGRAM_METRICS = [
     #     category="programs",
     #     direction="maximize",
     #     is_core=True,
-    #     chart_type="bar",
-    #     chart_field="special_ed_count",
-    #     chart_unit="Count",
-    #     chart_title="Special Ed by Zone",
     # ),
 
     MetricSpec(
@@ -378,10 +320,6 @@ PROGRAM_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Seats",
-        chart_type="bar",
-        chart_field="seat_disparity",
-        chart_title="Seat Disparity by Zone",
-        chart_unit="%",
     ),
     # MetricSpec(
     #     column="avg_GE_per_zone",
@@ -594,11 +532,6 @@ QUALITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Math",
-        chart_type="bar",
-        chart_field="avg_math_score",
-        chart_unit="Score",
-        chart_title="Math Scores by Zone",
-        chart_normalize=True,
     ),
     MetricSpec(
         column="mad_eng_score",
@@ -608,11 +541,6 @@ QUALITY_METRICS = [
         direction="minimize",
         is_core=True,
         short_name="Eng",
-        chart_type="bar",
-        chart_field="avg_eng_score",
-        chart_unit="Score",
-        chart_title="English Scores by Zone",
-        chart_normalize=True,
     ),
     # Range metrics for quality scores
     MetricSpec(
@@ -800,7 +728,7 @@ ALL_METRICS: list[MetricSpec] = (
 METRIC_BY_COLUMN: dict[str, MetricSpec] = {m.column: m for m in ALL_METRICS}
 METRIC_BY_NAME: dict[str, MetricSpec] = {m.display_name: m for m in ALL_METRICS}
 
-# Core metrics for default LLM exposure
+# Core metrics for default summaries and filters.
 CORE_METRICS: list[MetricSpec] = [m for m in ALL_METRICS if m.is_core]
 
 
@@ -820,7 +748,7 @@ def get_metrics_by_category(category: str) -> list[MetricSpec]:
 
 
 def get_metric_summary() -> str:
-    """Generate a summary of all metrics for LLM context."""
+    """Generate a markdown summary of all metrics."""
     lines = ["## Available Metrics\n"]
 
     for cat_key, cat_name in CATEGORIES.items():
@@ -868,23 +796,3 @@ def resolve_metric_identifiers(identifiers: list[str]) -> list[str]:
         elif ident in METRIC_BY_COLUMN:
             columns.append(ident)
     return columns
-
-
-def get_chart_hints() -> dict[str, dict]:
-    """Build chart hints dict from MetricSpec chart fields (for website API)."""
-    hints = {}
-    for m in ALL_METRICS:
-        if m.chart_type == "none":
-            hints[m.column] = {"type": "none"}
-        else:
-            hint: dict = {"type": m.chart_type, "title": m.chart_title}
-            if m.chart_field:
-                hint["field"] = m.chart_field
-            if m.chart_unit:
-                hint["unit"] = m.chart_unit
-            if m.chart_max is not None:
-                hint["max"] = m.chart_max
-            if m.chart_normalize:
-                hint["normalize"] = True
-            hints[m.column] = hint
-    return hints
