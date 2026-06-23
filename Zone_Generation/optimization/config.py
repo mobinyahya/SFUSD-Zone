@@ -32,6 +32,7 @@ class OptimizationConfig:
     shortage: float = 0.2
     max_distance: float = float("inf")
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
+    carry_over_compute: bool = False
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     use_hints: bool = True
     save_solver_logs: bool = False
@@ -121,6 +122,7 @@ class OptimizationConfig:
             self.strategy,
             levels=self.levels,
             solve_time_limits=self.solve_time_limits,
+            carry_over_compute=self.carry_over_compute,
             gap_limits=self.gap_limits,
             use_hints=self.use_hints,
             boundary_radius=self.boundary_radius,

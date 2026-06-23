@@ -5,6 +5,7 @@ mode: run  # run | metrics
 
 optimization_defaults:
   save_solver_logs: true
+  carry_over_compute: true
   max_distance: 6
   use_hints: true
   capacity_scenario: 'A'
@@ -21,8 +22,8 @@ sweep:
   # 0.12, 0.15, 0.2,
   seed: [42, ]
   # 14, 33, 80, 9
-  overage: [ 0.8, ]
-  # 0.7, 0.9
+  overage: [ 0.9]
+  # 0.7, 0.8,
   shortage: [ 0.25]
   # 0.15, 0.2,
   solver: ['cp_bool']

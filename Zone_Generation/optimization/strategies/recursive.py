@@ -5,7 +5,8 @@ the previous solution is projected onto the current graph via
 :class:`LevelConverter`, used as a warm-start hint, and used to narrow each
 node's candidate zones to those seen near zone boundaries -- so the finer solve
 only re-decides the borders. Per-level time and gap limits are applied to the
-solver before each solve.
+solver before each solve, with optional carry-over of unused solve time from one
+level to the next.
 """
 
 from __future__ import annotations
@@ -24,19 +25,31 @@ class RecursiveStrategy(Strategy):
     def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
         levels = [LevelSpec.parse(l) for l in self.options["levels"]]
         time_limits = self.options.get("solve_time_limits")
+        carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
         use_hints = self.options.get("use_hints", True)
         radius = self.options.get("boundary_radius", 1)
         converter = LevelConverter()
+        default_time_limit = solver.options.get("solve_time_limit")
+        carry_over_time = 0.0
 
         solutions: list[ZoneSolution] = []
         prev: ZoneSolution | None = None
         prev_level: LevelSpec | None = None
 
         for i, level in enumerate(levels):
-            self._apply_limits(solver, time_limits, gap_limits, i)
+            configured_time_limit = self._configured_time_limit(
+                time_limits, i, default_time_limit
+            )
+            carry_over_time_received = carry_over_time if carry_over_compute else 0.0
+            effective_time_limit = self._effective_time_limit(
+                configured_time_limit,
+                carry_over_time_received,
+                carry_over_compute,
+            )
+            self._apply_limits(solver, effective_time_limit, gap_limits, i)
 
-            if prev is None:
+            if prev is None or not prev.assignment:
                 problem = dataset.problem_for(level)
             else:
                 dst_G = dataset.graph_for(level)
@@ -54,14 +67,50 @@ class RecursiveStrategy(Strategy):
                 )
 
             sol = solver.solve(problem)
+            unused_time = 0.0
+            if carry_over_compute and i + 1 < len(levels):
+                unused_time = self._unused_time(effective_time_limit, sol.wall_time)
+            carry_over_time = unused_time
+            if carry_over_compute:
+                sol.metadata.update(
+                    {
+                        "configured_time_limit_seconds": configured_time_limit,
+                        "carry_over_time_received_seconds": carry_over_time_received,
+                        "effective_time_limit_seconds": effective_time_limit,
+                        "unused_time_carried_forward_seconds": unused_time,
+                    }
+                )
             solutions.append(sol)
             prev, prev_level = sol, level
 
         return solutions
 
     @staticmethod
-    def _apply_limits(solver, time_limits, gap_limits, i):
-        if time_limits and i < len(time_limits):
-            solver.options["solve_time_limit"] = time_limits[i]
+    def _configured_time_limit(time_limits, i, default_time_limit):
+        if time_limits:
+            idx = min(i, len(time_limits) - 1)
+            return float(time_limits[idx])
+        if default_time_limit is not None:
+            return float(default_time_limit)
+        return None
+
+    @staticmethod
+    def _effective_time_limit(configured_time_limit, carry_over_time, enabled):
+        if configured_time_limit is None:
+            return None
+        if not enabled:
+            return configured_time_limit
+        return configured_time_limit + carry_over_time
+
+    @staticmethod
+    def _unused_time(effective_time_limit, wall_time):
+        if effective_time_limit is None or wall_time is None:
+            return 0.0
+        return max(0.0, float(effective_time_limit) - float(wall_time))
+
+    @staticmethod
+    def _apply_limits(solver, time_limit, gap_limits, i):
+        if time_limit is not None:
+            solver.options["solve_time_limit"] = time_limit
         if gap_limits and i < len(gap_limits):
             solver.options["relative_gap_limit"] = gap_limits[i]

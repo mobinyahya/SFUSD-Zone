@@ -21,6 +21,82 @@ def test_single_strategy():
     assert solutions[-1].is_contiguous()
 
 
+def test_recursive_carry_over_compute_disabled_by_default():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[1.0, 2.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [5.0, 10.0]
+    assert "effective_time_limit_seconds" not in solutions[0].metadata
+
+
+def test_recursive_carry_over_compute_adds_unused_time_for_feasible_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["FEASIBLE", "OPTIMAL"],
+        wall_times=[1.25, 2.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [5.0, 13.75]
+    assert solutions[0].metadata["configured_time_limit_seconds"] == 5.0
+    assert solutions[0].metadata["effective_time_limit_seconds"] == 5.0
+    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == pytest.approx(
+        3.75
+    )
+    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
+        3.75
+    )
+    assert solutions[1].metadata["effective_time_limit_seconds"] == pytest.approx(
+        13.75
+    )
+
+
+def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["INFEASIBLE", "OPTIMAL"],
+        wall_times=[0.5, 1.0],
+        assignments=[{}, None],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[4.0, 7.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [4.0, 10.5]
+    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == pytest.approx(
+        3.5
+    )
+    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
+        3.5
+    )
+    assert solver.problems[1].hint is None
+
+
 def test_iterative_choice_strategy_terminates():
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)
@@ -87,6 +163,40 @@ class ObjectiveSequenceSolver:
             objective=objective,
             wall_time=0.0,
         )
+
+
+class TimedSequenceSolver:
+    def __init__(self, statuses, wall_times, assignments=None):
+        self.statuses = list(statuses)
+        self.wall_times = list(wall_times)
+        self.assignments = list(assignments) if assignments is not None else None
+        self.options = {}
+        self.problems = []
+        self.solve_time_limits = []
+
+    def solve(self, problem):
+        idx = len(self.problems)
+        self.problems.append(problem)
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
+        assignment = None
+        if self.assignments is not None:
+            assignment = self.assignments[idx]
+        if assignment is None:
+            assignment = _split_assignment(problem)
+        return ZoneSolution(
+            problem=problem,
+            assignment=assignment,
+            status=self.statuses[idx],
+            objective=0.0,
+            wall_time=self.wall_times[idx],
+            metadata={"solver": "timed_sequence"},
+        )
+
+
+def _split_assignment(problem):
+    nodes = sorted(problem.nodes)
+    midpoint = len(nodes) // 2
+    return {node: 0 if idx < midpoint else 1 for idx, node in enumerate(nodes)}
 
 
 class DecreasingRealUtilityModel:
