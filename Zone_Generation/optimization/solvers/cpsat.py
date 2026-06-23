@@ -23,6 +23,10 @@ from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
+from Zone_Generation.optimization.solvers.balance import (
+    balance_constraints,
+    balance_terms,
+)
 from Zone_Generation.optimization.solvers.base import Solver, register
 
 _SCALE = 100  # integer scaling for float coefficients
@@ -180,8 +184,7 @@ class _CpSatSolver(Solver):
         self._add_assignment_constraints(m, problem, x, y)
         self._add_centroid_constraints(m, problem, x, y)
         self._add_contiguity_constraints(m, problem, x, y)
-        self._add_capacity_constraints(m, problem, x)
-        self._add_diversity_constraints(m, problem, x)
+        self._add_balance_constraints(m, problem, x)
         self._add_school_count_constraints(m, problem, x)
 
     def _add_centroid_constraints(
@@ -220,57 +223,19 @@ class _CpSatSolver(Solver):
             # x[z, node] => at least one supported neighbor is also in z.
             m.AddBoolOr([x[(z, node)].Not(), *[x[(z, n)] for n in support_nodes]])
 
-    def _add_capacity_constraints(
+    def _add_balance_constraints(
         self,
         m: cp_model.CpModel,
         problem: ZoneProblem,
         x: _AssignmentVars,
     ) -> None:
-        lo = 1.0 - problem.shortage
-        hi = 1.0 + problem.overage
+        constraints = balance_constraints(problem)
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
-            ge = [
-                (problem.capacity(n) - lo * problem.students(n), z, n)
-                for n in nodes
-            ]
-            self._add_linear_constraint(m, x, ge, ">=", 0.0)
-
-            le = [
-                (problem.capacity(n) - hi * problem.students(n), z, n)
-                for n in nodes
-            ]
-            self._add_linear_constraint(m, x, le, "<=", 0.0)
-
-    def _add_diversity_constraints(
-        self,
-        m: cp_model.CpModel,
-        problem: ZoneProblem,
-        x: _AssignmentVars,
-    ) -> None:
-        def balance(value_fn, ratio: float, dev: float) -> None:
-            for z in range(problem.Z):
-                nodes = self._candidate_nodes(problem, z)
-                upper = [
-                    (value_fn(n) - (ratio + dev) * problem.students(n), z, n)
-                    for n in nodes
-                ]
-                self._add_linear_constraint(m, x, upper, "<=", 0.0)
-
-                lower = [
-                    (value_fn(n) - (ratio - dev) * problem.students(n), z, n)
-                    for n in nodes
-                ]
+            for constraint in constraints:
+                lower, upper = balance_terms(problem, constraint, z, nodes)
                 self._add_linear_constraint(m, x, lower, ">=", 0.0)
-
-        balance(problem.frl, problem.district_frl, problem.frl_dev)
-        racial = problem.district_racial
-        for eth in problem.ethnicities:
-            balance(
-                lambda n, e=eth: problem.ethnicity(n, e),
-                racial[eth],
-                problem.racial_dev,
-            )
+                self._add_linear_constraint(m, x, upper, "<=", 0.0)
 
     def _add_school_count_constraints(
         self,
