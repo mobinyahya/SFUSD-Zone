@@ -32,7 +32,13 @@ _AssignmentVars = dict[tuple[int, int], gp.Var]
 class MipSolver(Solver):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         m = gp.Model("zoning")
-        m.Params.OutputFlag = int(self.options.get("verbose", 0))
+        log_path = self._next_solver_log_path(problem)
+        if log_path:
+            m.Params.OutputFlag = 1
+            m.Params.LogToConsole = 0
+            m.Params.LogFile = log_path
+        else:
+            m.Params.OutputFlag = int(self.options.get("verbose", 0))
         m.Params.TimeLimit = float(self.options.get("solve_time_limit", 60))
         m.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
         m.Params.Seed = int(self.options.get("seed", 42))
@@ -72,7 +78,7 @@ class MipSolver(Solver):
                         break
             objective = m.ObjVal
 
-        metadata = {"solver": self.name}
+        metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
         if problem.choice_objective is not None:
             metadata.update(
                 {

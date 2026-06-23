@@ -34,6 +34,7 @@ class OptimizationConfig:
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     use_hints: bool = True
+    save_solver_logs: bool = False
     seed: int = 42
     workers: int = 8
 
@@ -99,16 +100,19 @@ class OptimizationConfig:
 
         return Dataset(self)
 
-    def make_solver(self):
+    def make_solver(self, output_dir: str | None = None):
         from Zone_Generation.optimization.solvers import get_solver
 
-        return get_solver(
-            self.solver,
-            solve_time_limit=self.solve_time_limits[0],
-            relative_gap_limit=self.gap_limits[0],
-            seed=self.seed,
-            workers=self.workers,
-        )
+        options = {
+            "solve_time_limit": self.solve_time_limits[0],
+            "relative_gap_limit": self.gap_limits[0],
+            "seed": self.seed,
+            "workers": self.workers,
+            "save_solver_logs": self.save_solver_logs,
+        }
+        if output_dir is not None:
+            options["output_dir"] = output_dir
+        return get_solver(self.solver, **options)
 
     def make_strategy(self):
         from Zone_Generation.optimization.strategies import get_strategy

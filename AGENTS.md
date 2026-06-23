@@ -8,7 +8,7 @@ All commands use `uv`. Python 3.13+ required.
 
 ```bash
 uv sync                          # Install dependencies
-uv run python -m Zone_Generation.Optimization.optimizer  # Single optimization run (uses Zone_Generation/Config/config.yaml)
+uv run python -m Zone_Generation.optimization.run Zone_Generation/optimization/config.example.yaml  # Single optimization run
 
 # Benchmarking (from project root)
 uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml
@@ -17,8 +17,8 @@ uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
 
 ## Directory Structure
 
-- `Zone_Generation/Config/` - config.yaml, centroids.yaml, Constants.py, metrics_config.py
-- `Zone_Generation/Optimization/` - Optimizer implementations (cp_int, cp_bool, mip), design_zones.py, create_larger_areas.py
+- `Zone_Generation/Config/` - centroids.yaml, Constants.py, metrics_config.py
+- `Zone_Generation/optimization/` - config.py, problem.py, solution.py, solvers/, strategies/, data/
 - `Zone_Generation/benchmark/` - config.py, runner.py, results.py, parallel.py
 - `Zone_Generation/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
 - `Helper_Functions/` - util.py, Graph.py

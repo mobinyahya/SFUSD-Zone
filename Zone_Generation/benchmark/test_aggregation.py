@@ -40,6 +40,7 @@ optimization_defaults:
   strategy: 'recursive'
   solve_time_limits: [1, 2]
   gap_limits: [0, 0]
+  save_solver_logs: true
   workers: 4
   graphs_dir: '{tmp_path / "graphs"}'
 sweep:
@@ -64,6 +65,7 @@ metrics:
     assert {task.config["seed"] for task in tasks} == {1, 2}
     assert all(task.capacity_slots == 3 for task in tasks)
     assert all(task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks)
+    assert all(task.config["save_solver_logs"] is True for task in tasks)
     assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
     assert sweep.metrics.compute_stage_metrics is True
 

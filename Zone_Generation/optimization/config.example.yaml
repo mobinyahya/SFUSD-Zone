@@ -18,6 +18,7 @@ max_distance: 5
 solve_time_limits: [45, 45]   # one per level
 gap_limits: [0, 0]
 use_hints: true
+save_solver_logs: false       # write full CP-SAT/Gurobi logs under output/solver_logs
 seed: 42
 workers: 8
 

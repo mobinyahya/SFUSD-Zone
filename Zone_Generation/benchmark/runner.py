@@ -57,7 +57,7 @@ def run_optimization_task(
 
     try:
         dataset = config.make_dataset()
-        solver = config.make_solver()
+        solver = config.make_solver(output_dir=output_dir)
         strategy = config.make_strategy()
         solutions = strategy.run(dataset, solver)
         stage_names = stage_names_for(solutions, config)

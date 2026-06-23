@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from abc import ABC, abstractmethod
 
 from Zone_Generation.optimization.problem import ZoneProblem
@@ -20,10 +22,45 @@ class Solver(ABC):
 
     def __init__(self, **options):
         self.options = options
+        self._solve_count = 0
 
     @abstractmethod
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         ...
+
+    def _next_solver_log_path(self, problem: ZoneProblem) -> str | None:
+        if not self.options.get("save_solver_logs"):
+            return None
+        log_dir = self.options.get("solver_log_dir")
+        if not log_dir:
+            output_dir = self.options.get("output_dir")
+            if not output_dir:
+                return None
+            log_dir = os.path.join(str(output_dir), "solver_logs")
+        log_dir = os.path.expanduser(str(log_dir))
+        os.makedirs(log_dir, exist_ok=True)
+        level_name = getattr(getattr(problem, "level", None), "name", "unknown_level")
+        filename = _safe_filename(
+            f"solver_{self._solve_count:02d}_{level_name}_{self.name}.log"
+        )
+        self._solve_count += 1
+        return os.path.join(log_dir, filename)
+
+    def _solver_log_metadata(self, log_path: str | None) -> dict[str, str]:
+        if not log_path:
+            return {}
+        output_dir = self.options.get("output_dir")
+        if output_dir:
+            display_path = os.path.relpath(
+                log_path, os.path.expanduser(str(output_dir))
+            )
+        else:
+            display_path = log_path
+        return {"solver_log_path": display_path}
+
+
+def _safe_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "solver.log"
 
 
 _REGISTRY: dict[str, type[Solver]] = {}

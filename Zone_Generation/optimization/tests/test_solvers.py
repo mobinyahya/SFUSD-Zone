@@ -1,5 +1,7 @@
 """Data-free, end-to-end solver tests on a synthetic grid problem."""
 
+import os
+
 import pytest
 from ortools.sat.python import cp_model
 
@@ -41,6 +43,36 @@ def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)
+
+
+def test_cpsat_solver_saves_logs(tmp_path):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        "cp_int",
+        solve_time_limit=10,
+        workers=1,
+        save_solver_logs=True,
+        output_dir=str(tmp_path),
+    )
+
+    first = solver.solve(problem)
+    second = solver.solve(problem)
+
+    first_log = os.path.join(
+        "solver_logs", "solver_00_BlockGroup_0_cp_int.log"
+    )
+    second_log = os.path.join(
+        "solver_logs", "solver_01_BlockGroup_0_cp_int.log"
+    )
+    assert first.metadata["solver_log_path"] == first_log
+    assert second.metadata["solver_log_path"] == second_log
+    first_log_path = tmp_path / first_log
+    second_log_path = tmp_path / second_log
+    assert first_log_path.exists()
+    assert second_log_path.exists()
+    contents = first_log_path.read_text(encoding="utf-8")
+    assert contents.strip()
+    assert "CP-SAT" in contents or "CpSolverResponse" in contents
 
 
 def test_local_search_stub():

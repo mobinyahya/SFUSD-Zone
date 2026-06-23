@@ -134,10 +134,26 @@ class _CpSatSolver(Solver):
             )
         solver.parameters.num_search_workers = int(self.options.get("workers", 8))
         solver.parameters.random_seed = int(self.options.get("seed", 42))
+        log_path = self._next_solver_log_path(problem)
+        log_file = None
+        if log_path:
+            solver.parameters.log_search_progress = True
+            solver.parameters.log_to_stdout = False
+            log_file = open(log_path, "w", encoding="utf-8")
+
+            def write_log(text: str) -> None:
+                log_file.write(text)
+                log_file.flush()
+
+            solver.log_callback = write_log
 
         start = time.time()
-        status = solver.Solve(m)
-        wall = time.time() - start
+        try:
+            status = solver.Solve(m)
+            wall = time.time() - start
+        finally:
+            if log_file is not None:
+                log_file.close()
 
         status_name = {
             cp_model.OPTIMAL: "OPTIMAL",
@@ -154,7 +170,7 @@ class _CpSatSolver(Solver):
             if problem.choice_objective is not None:
                 objective /= problem.choice_objective.scale
 
-        metadata = {"solver": self.name}
+        metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
         if problem.choice_objective is not None:
             metadata.update(
                 {

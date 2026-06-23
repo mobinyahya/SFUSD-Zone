@@ -17,6 +17,7 @@ optimization_defaults:
   solve_time_limits: [45, 60]
   gap_limits: [0, 0]
   use_hints: true
+  save_solver_logs: false     # write full CP-SAT/Gurobi logs under each run's solver_logs/
   seed: 42
   workers: 8
   years: [14, 15, 16, 17, 18, 21, 22]

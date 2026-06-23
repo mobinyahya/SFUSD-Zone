@@ -41,8 +41,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = OptimizationConfig.from_yaml(args.config)
+    os.makedirs(args.output, exist_ok=True)
     dataset = config.make_dataset()
-    solver = config.make_solver()
+    solver = config.make_solver(output_dir=args.output)
     strategy = config.make_strategy()
 
     print(
@@ -51,7 +52,6 @@ def main(argv: list[str] | None = None) -> None:
     )
     solutions = strategy.run(dataset, solver)
 
-    os.makedirs(args.output, exist_ok=True)
     for sol in solutions:
         sol.save(args.output)
         contig = sol.is_contiguous() if sol.feasible else "n/a"

@@ -1,9 +1,10 @@
 # Optimization-native benchmark sweep.
 
-name: 6-18-block-group-sweep
+name: full-benchmark
 mode: run  # run | metrics
 
 optimization_defaults:
+  save_solver_logs: true
   max_distance: 6
   use_hints: true
   capacity_scenario: 'A'
@@ -12,12 +13,18 @@ optimization_defaults:
   workers: 8
 
 sweep:
-  centroids_type: ['6-zone-3', '7-zone-14', '8-zone-24']
-  frl_dev: [0.12, 0.15, 0.2, 0.25]
-  racial_dev: [0.12, 0.15, 0.2, 0.25]
-  seed: [42, 14, 33, 80]
-  overage: [0.7, 0.8, 0.9]
-  shortage: [0.15, 0.2, 0.25]
+  centroids_type: ['6-zone-3', '6-zone-9',  '8-zone-24', '8-zone-26', '10-zone-3', '10-zone-11', '13-zone-5', '13-zone-6', '18-zone-1', '18-zone-6']
+  # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
+  frl_dev: [ 0.25]
+  # 0.12, 0.15, 0.2,
+  racial_dev: [ 0.25]
+  # 0.12, 0.15, 0.2,
+  seed: [42, ]
+  # 14, 33, 80, 9
+  overage: [ 0.8, ]
+  # 0.7, 0.9
+  shortage: [ 0.25]
+  # 0.15, 0.2,
   solver: ['cp_bool']
 
 tasks:
@@ -30,18 +37,18 @@ tasks:
   levels: ['Block_1', 'Block_0']
   solve_time_limits: [300, 300]
 
-- strategy: 'recursive'
-  levels: ['Block_2', 'Block_0']
-  solve_time_limits: [300, 300]
+# - strategy: 'recursive'
+#   levels: ['Block_2', 'Block_0']
+#   solve_time_limits: [300, 300]
 
   - strategy: 'recursive'
   levels: ['Block_2', 'Block_1', 'Block_0']
   solve_time_limits: [200, 200, 200]
 
 # back heavy splits
-- strategy: 'recursive'
-  levels: ['Block_2', 'Block_0']
-  solve_time_limits: [200, 400]
+# - strategy: 'recursive'
+#   levels: ['Block_2', 'Block_0']
+#   solve_time_limits: [200, 400]
 
 - strategy: 'recursive'
   levels: ['Block_1', 'Block_0']
@@ -51,9 +58,9 @@ tasks:
   levels: ['Block_2', 'Block_1', 'Block_0']
   solve_time_limits: [100, 100, 400]
 
-- strategy: 'recursive'
-  levels: ['Block_2', 'Block_1', 'Block_0']
-  solve_time_limits: [100, 200, 300]
+# - strategy: 'recursive'
+#   levels: ['Block_2', 'Block_1', 'Block_0']
+#   solve_time_limits: [100, 200, 300]
 
 
 
