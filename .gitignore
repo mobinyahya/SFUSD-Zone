@@ -10,3 +10,4 @@ output/*
 /optimization_output/*
 /analysis/plots/
 /analysis/plots/*
+sweep.log
