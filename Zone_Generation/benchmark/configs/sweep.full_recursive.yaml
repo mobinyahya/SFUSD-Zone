@@ -29,35 +29,35 @@ sweep:
   solver: ['cp_bool']
 
 tasks:
-- strategy: 'single'
-  levels: ['Block_0']
-  solve_time_limits: [600]
+  - strategy: 'single'
+    levels: ['Block_0']
+    solve_time_limits: [600]
 
-# equal splits
-- strategy: 'recursive'
-  levels: ['Block_1', 'Block_0']
-  solve_time_limits: [300, 300]
+  # equal splits
+  - strategy: 'recursive'
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [300, 300]
 
 # - strategy: 'recursive'
 #   levels: ['Block_2', 'Block_0']
 #   solve_time_limits: [300, 300]
 
   - strategy: 'recursive'
-  levels: ['Block_2', 'Block_1', 'Block_0']
-  solve_time_limits: [200, 200, 200]
+    levels: ['Block_2', 'Block_1', 'Block_0']
+    solve_time_limits: [200, 200, 200]
 
 # back heavy splits
 # - strategy: 'recursive'
 #   levels: ['Block_2', 'Block_0']
 #   solve_time_limits: [200, 400]
 
-- strategy: 'recursive'
-  levels: ['Block_1', 'Block_0']
-  solve_time_limits: [200, 400]
+  - strategy: 'recursive'
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [200, 400]
 
-- strategy: 'recursive'
-  levels: ['Block_2', 'Block_1', 'Block_0']
-  solve_time_limits: [100, 100, 400]
+  - strategy: 'recursive'
+    levels: ['Block_2', 'Block_1', 'Block_0']
+    solve_time_limits: [100, 100, 400]
 
 # - strategy: 'recursive'
 #   levels: ['Block_2', 'Block_1', 'Block_0']
@@ -76,5 +76,15 @@ execution:
 
 metrics:
   strict: true
+  compute_stage_metrics: false
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
+
+matching:
+  enabled: true
+  config: Zone_Generation/benchmark/matching/sd.yaml
+  compute_stage_assignments: false
+
+choice_metrics:
+  enabled: true
+  compute_stage_metrics: false
