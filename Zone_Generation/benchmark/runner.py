@@ -253,6 +253,7 @@ def stage_record(
         "status": solution.status,
         "objective": solution.objective,
         "wall_time": solution.wall_time,
+        "time_to_convergence": solution.time_to_convergence,
         "num_zones": solution.problem.Z,
         "contiguous": contiguous,
         "metadata": dict(solution.metadata),
@@ -357,6 +358,9 @@ def load_solutions(
                 status=str(info.get("status") or stage.get("status") or "UNKNOWN"),
                 objective=info.get("objective", stage.get("objective")),
                 wall_time=info.get("wall_time", stage.get("wall_time")),
+                time_to_convergence=info.get(
+                    "time_to_convergence", stage.get("time_to_convergence")
+                ),
                 metadata=dict(info.get("metadata") or stage.get("metadata") or {}),
             )
         )

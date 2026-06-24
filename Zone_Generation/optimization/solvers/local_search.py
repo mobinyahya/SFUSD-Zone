@@ -40,11 +40,13 @@ class LocalSearchSolver(Solver):
 
         assignment = contiguity.repair(problem.G, assignment, problem.centroids)
 
+        wall = time.time() - start
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
             status="STUB",
             objective=float(contiguity.boundary_edges(problem.G, assignment)),
-            wall_time=time.time() - start,
+            wall_time=wall,
+            time_to_convergence=wall,
             metadata={"solver": self.name, "note": "stub implementation"},
         )

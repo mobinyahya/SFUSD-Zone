@@ -15,6 +15,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.FINAL_STATUS: context.solution.status,
         MetricColumns.FINAL_WALL_TIME: context.solution.wall_time,
         MetricColumns.TOTAL_WALL_TIME: _total_wall_time(context),
+        MetricColumns.TIME_TO_CONVERGENCE: _time_to_convergence(context),
         MetricColumns.FINAL_STAGE_INDEX: context.final_stage_index,
     }
 
@@ -47,6 +48,7 @@ def compute(context: MetricsContext) -> MetricOutput:
             "avg_reock_score": spatial.avg_reock_score if spatial else None,
             "avg_polsby_popper_score": spatial.avg_polsby_popper_score if spatial else None,
             "wall_time": solution.wall_time,
+            "time_to_convergence": solution.time_to_convergence,
             "contiguous": contiguous,
             "num_nodes": solution.problem.A,
             "num_zones": solution.problem.Z,
@@ -58,6 +60,7 @@ def compute(context: MetricsContext) -> MetricOutput:
 
         flat[f"objective_{name}"] = solution.objective
         flat[f"wall_time_{name}"] = solution.wall_time
+        flat[f"time_to_convergence_{name}"] = solution.time_to_convergence
         if compute_stage_metrics:
             flat[f"cut_edges_{name}"] = row["cut_edges"]
             flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
@@ -68,6 +71,9 @@ def compute(context: MetricsContext) -> MetricOutput:
         if level_counts[solution.level.name] == 1:
             flat[f"objective_{solution.level.name}"] = solution.objective
             flat[f"wall_time_{solution.level.name}"] = solution.wall_time
+            flat[f"time_to_convergence_{solution.level.name}"] = (
+                solution.time_to_convergence
+            )
             if compute_stage_metrics:
                 flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
                 flat[f"normalized_cut_edges_{solution.level.name}"] = row[
@@ -93,6 +99,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         "final_objective": context.solution.objective,
         "final_cut_edges": final_stage["cut_edges"],
         "total_wall_time": flat[MetricColumns.TOTAL_WALL_TIME],
+        "time_to_convergence": flat[MetricColumns.TIME_TO_CONVERGENCE],
         "stages": stage_rows,
     }
     return MetricOutput(metrics=flat, run=run)
@@ -100,6 +107,27 @@ def compute(context: MetricsContext) -> MetricOutput:
 
 def _total_wall_time(context: MetricsContext) -> float:
     return sum(float(stage.wall_time or 0.0) for stage in context.stages)
+
+
+def _time_to_convergence(context: MetricsContext) -> float | None:
+    strategy = _strategy_name(context).lower()
+    if "iterative" in strategy or context._is_iterative_run():
+        return _stage_time_to_convergence(context.stages[0])
+    if strategy == "recursive" or len(context.stages) > 1:
+        total = 0.0
+        for stage in context.stages:
+            stage_time = _stage_time_to_convergence(stage)
+            if stage_time is None:
+                return None
+            total += stage_time
+        return total
+    return _stage_time_to_convergence(context.solution)
+
+
+def _stage_time_to_convergence(solution) -> float | None:
+    if solution.time_to_convergence is None:
+        return None
+    return float(solution.time_to_convergence)
 
 
 def _strategy_name(context: MetricsContext) -> str:

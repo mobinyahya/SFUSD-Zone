@@ -115,6 +115,9 @@ def _stage_rows(
             "avg_reock_score": metrics_stage.get("avg_reock_score"),
             "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
             "wall_time": stage.get("wall_time"),
+            "time_to_convergence": metrics_stage.get(
+                "time_to_convergence", stage.get("time_to_convergence")
+            ),
             "contiguous": stage.get("contiguous"),
             "num_nodes": metrics_stage.get("num_nodes"),
             "num_zones": stage.get("num_zones"),

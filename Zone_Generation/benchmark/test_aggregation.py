@@ -91,6 +91,7 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     loaded, _, manifest = load_solutions(str(run_dir), dataset=FakeDataset(problem))
     assert manifest["stages"][0]["name"] == "stage_00_Block_0"
     assert loaded[0].assignment == _assignment()
+    assert loaded[0].time_to_convergence == pytest.approx(0.75)
 
     summary, stages = aggregate_results(
         str(tmp_path),
@@ -101,7 +102,9 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert len(stages) == 1
     assert summary.loc[0, "status"] == "FEASIBLE"
     assert summary.loc[0, "num_zones"] == 2
+    assert summary.loc[0, "time_to_convergence"] == pytest.approx(0.75)
     assert stages.loc[0, "stage_name"] == "stage_00_Block_0"
+    assert stages.loc[0, "time_to_convergence"] == pytest.approx(0.75)
     assert (tmp_path / "summary.csv").exists()
     assert (tmp_path / "stages.csv").exists()
 
@@ -132,6 +135,7 @@ def _write_synthetic_run(tmp_path):
         status="FEASIBLE",
         objective=7.0,
         wall_time=1.25,
+        time_to_convergence=0.75,
         metadata={"solver": "test"},
     )
     config = OptimizationConfig(

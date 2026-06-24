@@ -38,6 +38,16 @@ _AssignmentVars = dict[tuple[int, int], cp_model.IntVar]
 _ZoneVars = dict[int, cp_model.IntVar]
 
 
+class _FirstSolutionTimeCallback(cp_model.CpSolverSolutionCallback):
+    def __init__(self):
+        super().__init__()
+        self.time_to_convergence: float | None = None
+
+    def on_solution_callback(self) -> None:
+        if self.time_to_convergence is None:
+            self.time_to_convergence = self.WallTime()
+
+
 class _CpSatSolver(Solver):
     """Common CP-SAT solve flow; subclasses own assignment encoding details."""
 
@@ -147,9 +157,10 @@ class _CpSatSolver(Solver):
 
             solver.log_callback = write_log
 
+        first_solution_callback = _FirstSolutionTimeCallback()
         start = time.time()
         try:
-            status = solver.Solve(m)
+            status = solver.Solve(m, first_solution_callback)
             wall = time.time() - start
         finally:
             if log_file is not None:
@@ -170,6 +181,10 @@ class _CpSatSolver(Solver):
             if problem.choice_objective is not None:
                 objective /= problem.choice_objective.scale
 
+        time_to_convergence = first_solution_callback.time_to_convergence
+        if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) and time_to_convergence is None:
+            time_to_convergence = wall
+
         metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
         if problem.choice_objective is not None:
             metadata.update(
@@ -184,6 +199,7 @@ class _CpSatSolver(Solver):
             status=status_name,
             objective=objective,
             wall_time=wall,
+            time_to_convergence=time_to_convergence,
             metadata=metadata,
         )
 

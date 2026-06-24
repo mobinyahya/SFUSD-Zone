@@ -30,6 +30,8 @@ def test_cpsat_solvers(name):
     solver = get_solver(name, solve_time_limit=10, workers=1)
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
+    assert solution.time_to_convergence is not None
+    assert 0.0 <= solution.time_to_convergence <= solution.wall_time
     _check_valid(problem, solution)
 
 
@@ -79,6 +81,7 @@ def test_local_search_stub():
     problem = make_grid_problem(3, 3)
     solution = get_solver("local_search").solve(problem)
     assert solution.status == "STUB"
+    assert solution.time_to_convergence == solution.wall_time
     _check_valid(problem, solution)
 
 
