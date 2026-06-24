@@ -18,13 +18,20 @@ import pandas as pd
 import seaborn as sns
 
 
-DEFAULT_RESULTS_DIR = Path("/share/data/school_choice/local_runs/6-18-test")
+DEFAULT_RESULTS_DIR = Path("/share/data/school_choice/local_runs/full_recursive_sweep")
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
-SUCCESS_STATUSES = {"FEASIBLE", "OPTIMAL"}
 
 APPROACH_LABELS = {
-    "Block_2-Block_0": "Block_2 -> Block_0",
-    "Block_2-Block_1-Block_0": "Block_2 -> Block_1 -> Block_0",
+    ("Block_1-Block_0", "300-300"): "Block_1 -> Block_0 (300/300)",
+    (
+        "Block_2-Block_1-Block_0",
+        "200-200-200",
+    ): "Block_2 -> Block_1 -> Block_0 (200/200/200)",
+    ("Block_1-Block_0", "200-400"): "Block_1 -> Block_0 (200/400)",
+    (
+        "Block_2-Block_1-Block_0",
+        "100-100-400",
+    ): "Block_2 -> Block_1 -> Block_0 (100/100/400)",
 }
 
 METRICS = {
@@ -65,6 +72,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     summary_df = pd.read_csv(summary_path)
+    zone_order = extract_zone_order(summary_df)
     improvements = build_improvement_table(summary_df)
     if improvements.empty:
         raise ValueError("No matched recursive/single runs with usable metrics were found.")
@@ -73,9 +81,13 @@ def main() -> None:
     by_zones_path = output_dir / "recursive_compactness_improvement_by_zones.png"
 
     plot_overall(improvements, overall_path)
-    plot_by_zones(improvements, by_zones_path)
+    plot_by_zones(improvements, by_zones_path, zone_order)
 
-    print(f"Matched complete configs: {improvements['pair_id'].nunique()}")
+    print(f"Matched single-baseline configs: {improvements['pair_id'].nunique()}")
+    print(
+        "Matched recursive comparisons: "
+        f"{improvements[['pair_id', 'recursive_approach']].drop_duplicates().shape[0]}"
+    )
     print(f"Wrote {overall_path}")
     print(f"Wrote {by_zones_path}")
 
@@ -103,6 +115,7 @@ def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     required_columns = {
         "config_strategy",
         "levels",
+        "config_solve_time_limits",
         "config_centroids_type",
         "final_stage",
         "final_stage_index",
@@ -121,12 +134,13 @@ def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
 
     df["zone_count"] = df.apply(extract_zone_count, axis=1)
     df["levels"] = df["levels"].fillna("")
-    df["recursive_approach"] = df["levels"].map(APPROACH_LABELS)
+    df["time_limit_key"] = df["config_solve_time_limits"].map(time_limit_key)
+    df["recursive_approach"] = df.apply(recursive_approach_label, axis=1)
 
     # The unsuffixed metric columns in summary.csv are final-stage metrics.
     # Stage-specific columns are intentionally ignored here.
     usable_metric_rows = df[metric_columns].notna().all(axis=1) & (df[metric_columns] > 0).all(axis=1)
-    completed_final_rows = completed_final_block0_rows(df)
+    completed_final_rows = final_block0_rows(df)
     df = df[
         usable_metric_rows & completed_final_rows & df["zone_count"].notna()
     ].copy()
@@ -148,21 +162,6 @@ def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
         ]
         .mean()
         .reset_index()
-    )
-
-    complete_recursive_keys = (
-        recursive.groupby(key_columns, dropna=False)["recursive_approach"]
-        .nunique()
-        .reset_index(name="num_recursive_approaches")
-    )
-    complete_recursive_keys = complete_recursive_keys[
-        complete_recursive_keys["num_recursive_approaches"] == len(APPROACH_LABELS)
-    ][key_columns]
-    recursive = recursive.merge(
-        complete_recursive_keys,
-        on=key_columns,
-        how="inner",
-        validate="many_to_one",
     )
 
     paired = recursive.merge(
@@ -206,12 +205,11 @@ def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def completed_final_block0_rows(df: pd.DataFrame) -> pd.Series:
+def final_block0_rows(df: pd.DataFrame) -> pd.Series:
     final_stage_index = pd.to_numeric(df["final_stage_index"], errors="coerce")
     num_stages = pd.to_numeric(df["num_stages"], errors="coerce")
     return (
-        df["status"].isin(SUCCESS_STATUSES)
-        & df["final_stage"].fillna("").astype(str).str.endswith("Block_0")
+        df["final_stage"].fillna("").astype(str).str.endswith("Block_0")
         & final_stage_index.notna()
         & num_stages.notna()
         & (final_stage_index == num_stages - 1)
@@ -239,6 +237,20 @@ def extract_zone_count(row: pd.Series) -> int | None:
     if pd.notna(num_zones) and num_zones > 0:
         return int(num_zones)
     return None
+
+
+def extract_zone_order(summary_df: pd.DataFrame) -> list[int]:
+    zone_counts = summary_df.apply(extract_zone_count, axis=1).dropna().astype(int)
+    return [int(zone_count) for zone_count in sorted(zone_counts.unique())]
+
+
+def time_limit_key(value: object) -> str:
+    values = re.findall(r"\d+", str(value))
+    return "-".join(values)
+
+
+def recursive_approach_label(row: pd.Series) -> str | None:
+    return APPROACH_LABELS.get((row["levels"], row["time_limit_key"]))
 
 
 def plot_overall(improvements: pd.DataFrame, output_path: Path) -> None:
@@ -269,10 +281,11 @@ def plot_overall(improvements: pd.DataFrame, output_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_by_zones(improvements: pd.DataFrame, output_path: Path) -> None:
+def plot_by_zones(
+    improvements: pd.DataFrame, output_path: Path, zone_order: list[int]
+) -> None:
     metric_order = [meta["label"] for meta in METRICS.values()]
     approach_order = list(APPROACH_LABELS.values())
-    zone_order = sorted(improvements["zone_count"].dropna().unique())
     by_zones = (
         improvements.groupby(
             ["zone_count", "recursive_approach", "metric_label"], as_index=False
@@ -302,6 +315,16 @@ def plot_by_zones(improvements: pd.DataFrame, output_path: Path) -> None:
     for ax in grid.axes.flat:
         format_axis(ax, None)
         ax.tick_params(axis="x", rotation=20)
+        if not ax.patches:
+            ax.text(
+                0.5,
+                0.5,
+                "No matched\nfinal Block_0 baseline",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color="0.35",
+            )
 
     if grid.legend is not None:
         grid.legend.set_title("Recursive approach")
