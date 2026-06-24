@@ -17,6 +17,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.CUT_EDGES: spatial.cut_edges,
         MetricColumns.FINAL_CUT_EDGES: spatial.cut_edges,
         MetricColumns.NORMALIZED_CUT_EDGES: spatial.normalized_cut_edges,
+        MetricColumns.FRACTIONAL_CUT_EDGES: spatial.fractional_cut_edges,
         MetricColumns.AVG_REOCK_SCORE: spatial.avg_reock_score,
         MetricColumns.AVG_POLSBY_POPPER_SCORE: spatial.avg_polsby_popper_score,
         MetricColumns.CONTIGUOUS: int(is_contiguous(context)),

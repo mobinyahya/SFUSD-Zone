@@ -45,6 +45,7 @@ def compute(context: MetricsContext) -> MetricOutput:
             "objective": solution.objective,
             "cut_edges": spatial.cut_edges if spatial else None,
             "normalized_cut_edges": spatial.normalized_cut_edges if spatial else None,
+            "fractional_cut_edges": spatial.fractional_cut_edges if spatial else None,
             "avg_reock_score": spatial.avg_reock_score if spatial else None,
             "avg_polsby_popper_score": spatial.avg_polsby_popper_score if spatial else None,
             "wall_time": solution.wall_time,
@@ -64,6 +65,7 @@ def compute(context: MetricsContext) -> MetricOutput:
         if compute_stage_metrics:
             flat[f"cut_edges_{name}"] = row["cut_edges"]
             flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
+            flat[f"fractional_cut_edges_{name}"] = row["fractional_cut_edges"]
             flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
             flat[f"avg_polsby_popper_score_{name}"] = row[
                 "avg_polsby_popper_score"
@@ -78,6 +80,9 @@ def compute(context: MetricsContext) -> MetricOutput:
                 flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
                 flat[f"normalized_cut_edges_{solution.level.name}"] = row[
                     "normalized_cut_edges"
+                ]
+                flat[f"fractional_cut_edges_{solution.level.name}"] = row[
+                    "fractional_cut_edges"
                 ]
                 flat[f"avg_reock_score_{solution.level.name}"] = row[
                     "avg_reock_score"

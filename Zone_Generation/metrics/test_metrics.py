@@ -80,6 +80,9 @@ def test_optimization_metrics_on_single_solution():
     assert result.metrics["normalized_cut_edges"] == (
         expected_cut_edges / solution.problem.Z
     )
+    assert result.metrics["fractional_cut_edges"] == (
+        expected_cut_edges / solution.problem.G.number_of_edges()
+    )
     assert 0 < result.metrics["avg_reock_score"] <= 1
     assert 0 < result.metrics["avg_polsby_popper_score"] <= 1
     assert result.metrics["final_objective"] == 12.0
@@ -120,6 +123,7 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
     )
 
     assert math.isclose(actual.avg_reock_score, expected.avg_reock_score)
+    assert math.isclose(actual.fractional_cut_edges, expected.fractional_cut_edges)
     assert math.isclose(
         actual.avg_polsby_popper_score,
         expected.avg_polsby_popper_score,
@@ -158,7 +162,9 @@ def test_recursive_stage_metrics_can_be_enabled():
 
     assert result.metrics["cut_edges_stage_01_Block_0"] > 0
     assert result.metrics["normalized_cut_edges_stage_01_Block_0"] > 0
+    assert result.metrics["fractional_cut_edges_stage_01_Block_0"] > 0
     assert result.run["stages"][1]["cut_edges"] > 0
+    assert result.run["stages"][1]["fractional_cut_edges"] > 0
 
 
 def test_iterative_metrics_select_best_choice_utility():

@@ -48,6 +48,7 @@ class MetricColumns:
     AVG_SCHOOLS_IN_ATTENDANCE_AREA = "avg_schools_in_attendance_area"
     CUT_EDGES = "cut_edges"
     NORMALIZED_CUT_EDGES = "normalized_cut_edges"
+    FRACTIONAL_CUT_EDGES = "fractional_cut_edges"
     AVG_REOCK_SCORE = "avg_reock_score"
     AVG_POLSBY_POPPER_SCORE = "avg_polsby_popper_score"
     AVG_TOTAL_PROGRAMS = "avg_total_programs_per_zone"
@@ -472,6 +473,15 @@ STRUCTURE_METRICS = [
         direction="minimize",
         is_core=False,
         short_name="Cuts/Zone",
+    ),
+    MetricSpec(
+        column="fractional_cut_edges",
+        display_name="Fractional Cut Edges",
+        description="Proportion of Block_0 graph edges cut by zone boundaries after converting the selected final solution to Block_0. Lower is better.",
+        category="structure",
+        direction="minimize",
+        is_core=False,
+        short_name="Cut Frac",
     ),
     MetricSpec(
         column="avg_reock_score",

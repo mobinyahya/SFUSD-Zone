@@ -37,6 +37,7 @@ PROJECTED_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 class SpatialMetrics:
     cut_edges: int
     normalized_cut_edges: float
+    fractional_cut_edges: float
     avg_reock_score: float
     avg_polsby_popper_score: float
 
@@ -57,13 +58,21 @@ def compute_spatial_metrics(
 
     config = config or {}
     if not solution.assignment:
-        return SpatialMetrics(0, 0.0, 0.0, 0.0)
+        return SpatialMetrics(
+            cut_edges=0,
+            normalized_cut_edges=0.0,
+            fractional_cut_edges=0.0,
+            avg_reock_score=0.0,
+            avg_polsby_popper_score=0.0,
+        )
 
     block_G = _block0_graph(solution, config)
     block_assignment = _assignment_on_block0(solution, block_G)
     cut_edges = _cut_edges(block_G, block_assignment)
     num_zones = solution.problem.Z
     normalized_cut_edges = cut_edges / num_zones if num_zones else 0.0
+    total_edges = block_G.number_of_edges()
+    fractional_cut_edges = cut_edges / total_edges if total_edges else 0.0
 
     avg_reock_score, avg_polsby_popper_score = _average_zone_shape_scores(
         solution,
@@ -75,6 +84,7 @@ def compute_spatial_metrics(
     return SpatialMetrics(
         cut_edges=cut_edges,
         normalized_cut_edges=normalized_cut_edges,
+        fractional_cut_edges=fractional_cut_edges,
         avg_reock_score=avg_reock_score,
         avg_polsby_popper_score=avg_polsby_popper_score,
     )
