@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Plot compactness improvements from recursive benchmark runs.
-
-The script compares each recursive run against the matching single Block_0 run
-with the same non-strategy benchmark configuration. Improvements are reported as
-percent changes, sign-adjusted so that positive values always mean better
-compactness.
-"""
+"""Plot direct compactness values from recursive benchmark runs."""
 
 from __future__ import annotations
 
@@ -21,43 +15,21 @@ import seaborn as sns
 DEFAULT_RESULTS_DIR = Path("/share/data/school_choice/local_runs/full_recursive_sweep")
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 
-APPROACH_LABELS = {
-    ("Block_1-Block_0", "300-300"): "Block_1 -> Block_0 (300/300)",
-    (
-        "Block_2-Block_1-Block_0",
-        "200-200-200",
-    ): "Block_2 -> Block_1 -> Block_0 (200/200/200)",
-    ("Block_1-Block_0", "200-400"): "Block_1 -> Block_0 (200/400)",
-    (
-        "Block_2-Block_1-Block_0",
-        "100-100-400",
-    ): "Block_2 -> Block_1 -> Block_0 (100/100/400)",
-}
+SINGLE_APPROACH_LABEL = "Single Block_0"
 
 METRICS = {
     "avg_polsby_popper_score": {
         "label": "Polsby-Popper",
-        "direction": "higher",
-    },
-    "cut_edges": {
-        "label": "Cut edges",
-        "direction": "lower",
-    },
-    "normalized_cut_edges": {
-        "label": "Normalized cut edges",
-        "direction": "lower",
+        "direction": "higher is better",
     },
     "avg_reock_score": {
         "label": "Reock",
-        "direction": "higher",
+        "direction": "higher is better",
     },
-}
-
-EXCLUDED_MATCH_COLUMNS = {
-    "config_hash",
-    "config_strategy",
-    "config_levels",
-    "config_solve_time_limits",
+    "fractional_cut_edges": {
+        "label": "Fractional cut edges",
+        "direction": "lower is better",
+    },
 }
 
 
@@ -72,29 +44,28 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     summary_df = pd.read_csv(summary_path)
-    zone_order = extract_zone_order(summary_df)
-    improvements = build_improvement_table(summary_df)
-    if improvements.empty:
-        raise ValueError("No matched recursive/single runs with usable metrics were found.")
+    compactness_values = build_compactness_table(summary_df)
+    if compactness_values.empty:
+        raise ValueError(
+            "No completed final Block_0 runs with usable compactness metrics were found."
+        )
 
-    overall_path = output_dir / "recursive_compactness_improvement_overall.png"
-    by_zones_path = output_dir / "recursive_compactness_improvement_by_zones.png"
+    zone_order = sorted(compactness_values["zone_count"].unique())
+    overall_path = output_dir / "recursive_compactness_values_overall.png"
 
-    plot_overall(improvements, overall_path)
-    plot_by_zones(improvements, by_zones_path, zone_order)
+    plot_overall(compactness_values, overall_path)
+    zone_paths = plot_zone_count_files(compactness_values, output_dir, zone_order)
 
-    print(f"Matched single-baseline configs: {improvements['pair_id'].nunique()}")
-    print(
-        "Matched recursive comparisons: "
-        f"{improvements[['pair_id', 'recursive_approach']].drop_duplicates().shape[0]}"
-    )
+    print(f"Loaded solution rows: {compactness_values['solution_id'].nunique()}")
+    print(f"Plotted zone counts: {', '.join(str(zone) for zone in zone_order)}")
     print(f"Wrote {overall_path}")
-    print(f"Wrote {by_zones_path}")
+    for zone_path in zone_paths:
+        print(f"Wrote {zone_path}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot compactness improvements for recursive benchmark runs."
+        description="Plot direct compactness values for recursive benchmark runs."
     )
     parser.add_argument(
         "--results-dir",
@@ -111,7 +82,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
+def build_compactness_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     required_columns = {
         "config_strategy",
         "levels",
@@ -135,70 +106,32 @@ def build_improvement_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     df["zone_count"] = df.apply(extract_zone_count, axis=1)
     df["levels"] = df["levels"].fillna("")
     df["time_limit_key"] = df["config_solve_time_limits"].map(time_limit_key)
-    df["recursive_approach"] = df.apply(recursive_approach_label, axis=1)
+    df["approach"] = df.apply(approach_label, axis=1)
 
     # The unsuffixed metric columns in summary.csv are final-stage metrics.
     # Stage-specific columns are intentionally ignored here.
-    usable_metric_rows = df[metric_columns].notna().all(axis=1) & (df[metric_columns] > 0).all(axis=1)
+    usable_metric_rows = df[metric_columns].notna().all(axis=1) & (
+        df[metric_columns] >= 0
+    ).all(axis=1)
     completed_final_rows = final_block0_rows(df)
     df = df[
-        usable_metric_rows & completed_final_rows & df["zone_count"].notna()
+        usable_metric_rows
+        & completed_final_rows
+        & df["zone_count"].notna()
+        & df["approach"].notna()
     ].copy()
 
-    key_columns = match_columns(df)
-    single = df[(df["config_strategy"] == "single") & (df["levels"] == "Block_0")]
-    recursive = df[
-        (df["config_strategy"] == "recursive") & df["recursive_approach"].notna()
-    ]
-
-    single = (
-        single.groupby(key_columns, dropna=False)[metric_columns]
-        .mean()
-        .reset_index()
-    )
-    recursive = (
-        recursive.groupby(key_columns + ["recursive_approach", "zone_count"], dropna=False)[
-            metric_columns
-        ]
-        .mean()
-        .reset_index()
-    )
-
-    paired = recursive.merge(
-        single,
-        on=key_columns,
-        suffixes=("_recursive", "_single"),
-        how="inner",
-        validate="many_to_one",
-    )
-    paired["pair_id"] = paired.groupby(key_columns, dropna=False).ngroup()
-
     rows: list[dict[str, object]] = []
-    for _, row in paired.reset_index(drop=True).iterrows():
+    for solution_id, row in df.reset_index(drop=True).iterrows():
         for metric, meta in METRICS.items():
-            single_value = row[f"{metric}_single"]
-            recursive_value = row[f"{metric}_recursive"]
-            if pd.isna(single_value) or single_value <= 0 or pd.isna(recursive_value):
-                continue
-
-            if meta["direction"] == "lower":
-                improvement_pct = (single_value - recursive_value) / single_value * 100
-                raw_change = single_value - recursive_value
-            else:
-                improvement_pct = (recursive_value - single_value) / single_value * 100
-                raw_change = recursive_value - single_value
-
             rows.append(
                 {
-                    "pair_id": int(row["pair_id"]),
-                    "recursive_approach": row["recursive_approach"],
+                    "solution_id": int(solution_id),
+                    "approach": row["approach"],
                     "zone_count": int(row["zone_count"]),
                     "metric": metric,
-                    "metric_label": meta["label"],
-                    "single_value": single_value,
-                    "recursive_value": recursive_value,
-                    "raw_change": raw_change,
-                    "improvement_pct": improvement_pct,
+                    "metric_label": metric_label(meta),
+                    "value": float(row[metric]),
                 }
             )
 
@@ -216,17 +149,6 @@ def final_block0_rows(df: pd.DataFrame) -> pd.Series:
     )
 
 
-def match_columns(df: pd.DataFrame) -> list[str]:
-    columns = [
-        column
-        for column in df.columns
-        if column.startswith("config_") and column not in EXCLUDED_MATCH_COLUMNS
-    ]
-    if "config_centroids_type" not in columns:
-        raise ValueError("config_centroids_type is required to pair runs.")
-    return columns
-
-
 def extract_zone_count(row: pd.Series) -> int | None:
     centroids_type = str(row.get("config_centroids_type", ""))
     match = re.match(r"(\d+)-zone", centroids_type)
@@ -239,26 +161,74 @@ def extract_zone_count(row: pd.Series) -> int | None:
     return None
 
 
-def extract_zone_order(summary_df: pd.DataFrame) -> list[int]:
-    zone_counts = summary_df.apply(extract_zone_count, axis=1).dropna().astype(int)
-    return [int(zone_count) for zone_count in sorted(zone_counts.unique())]
-
-
 def time_limit_key(value: object) -> str:
     values = re.findall(r"\d+", str(value))
     return "-".join(values)
 
 
 def recursive_approach_label(row: pd.Series) -> str | None:
-    return APPROACH_LABELS.get((row["levels"], row["time_limit_key"]))
+    levels = str(row.get("levels", "")).strip()
+    if not levels:
+        return None
+
+    level_label = levels.replace("-", " -> ")
+    time_limit_key = str(row.get("time_limit_key", "")).strip()
+    if not time_limit_key:
+        return level_label
+    return f"{level_label} ({time_limit_key.replace('-', '/')})"
 
 
-def plot_overall(improvements: pd.DataFrame, output_path: Path) -> None:
-    metric_order = [meta["label"] for meta in METRICS.values()]
-    approach_order = list(APPROACH_LABELS.values())
-    overall = (
-        improvements.groupby(["recursive_approach", "metric_label"], as_index=False)[
-            "improvement_pct"
+def approach_label(row: pd.Series) -> str | None:
+    strategy = str(row.get("config_strategy", "")).lower()
+    levels = str(row.get("levels", ""))
+    if strategy == "single" and levels == "Block_0":
+        return SINGLE_APPROACH_LABEL
+    if strategy == "recursive":
+        return recursive_approach_label(row)
+    return None
+
+
+def metric_label(meta: dict[str, str]) -> str:
+    return f"{meta['label']}\n({meta['direction']})"
+
+
+def plot_overall(compactness_values: pd.DataFrame, output_path: Path) -> None:
+    plot_metric_bars(
+        compactness_values,
+        output_path,
+        "Compactness Metrics Across All Solutions",
+    )
+
+
+def plot_zone_count_files(
+    compactness_values: pd.DataFrame, output_dir: Path, zone_order: list[int]
+) -> list[Path]:
+    output_paths: list[Path] = []
+    for zone_count in zone_order:
+        zone_values = compactness_values[
+            compactness_values["zone_count"] == zone_count
+        ]
+        if zone_values.empty:
+            continue
+
+        output_path = output_dir / f"recursive_compactness_values_{zone_count}_zones.png"
+        plot_metric_bars(
+            zone_values,
+            output_path,
+            f"Compactness Metrics for {zone_count} Zones",
+        )
+        output_paths.append(output_path)
+    return output_paths
+
+
+def plot_metric_bars(
+    compactness_values: pd.DataFrame, output_path: Path, title: str
+) -> None:
+    metric_order = [metric_label(meta) for meta in METRICS.values()]
+    approach_order = present_approach_order(compactness_values)
+    plot_df = (
+        compactness_values.groupby(["approach", "metric_label"], as_index=False)[
+            "value"
         ]
         .mean()
     )
@@ -266,79 +236,48 @@ def plot_overall(improvements: pd.DataFrame, output_path: Path) -> None:
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(12, 6))
     sns.barplot(
-        data=overall,
+        data=plot_df,
         x="metric_label",
-        y="improvement_pct",
-        hue="recursive_approach",
+        y="value",
+        hue="approach",
         order=metric_order,
         hue_order=approach_order,
         ax=ax,
     )
-    format_axis(ax, "Average Compactness Improvement From Recursion")
-    ax.legend(title="Recursive approach")
+    format_axis(ax, title)
+    ax.legend(title="Approach")
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_by_zones(
-    improvements: pd.DataFrame, output_path: Path, zone_order: list[int]
-) -> None:
-    metric_order = [meta["label"] for meta in METRICS.values()]
-    approach_order = list(APPROACH_LABELS.values())
-    by_zones = (
-        improvements.groupby(
-            ["zone_count", "recursive_approach", "metric_label"], as_index=False
-        )["improvement_pct"]
-        .mean()
+def present_approach_order(compactness_values: pd.DataFrame) -> list[str]:
+    present = set(compactness_values["approach"].dropna())
+    recursive = sorted(
+        (approach for approach in present if approach != SINGLE_APPROACH_LABEL),
+        key=approach_sort_key,
     )
+    if SINGLE_APPROACH_LABEL in present:
+        return [SINGLE_APPROACH_LABEL, *recursive]
+    return recursive
 
-    sns.set_theme(style="whitegrid")
-    grid = sns.catplot(
-        data=by_zones,
-        kind="bar",
-        x="metric_label",
-        y="improvement_pct",
-        hue="recursive_approach",
-        col="zone_count",
-        order=metric_order,
-        hue_order=approach_order,
-        col_order=zone_order,
-        height=4.5,
-        aspect=1.05,
-        sharey=True,
+
+def approach_sort_key(approach: str) -> tuple[int, list[int], list[int], str]:
+    levels = [int(value) for value in re.findall(r"Block_(\d+)", approach)]
+    time_match = re.search(r"\(([^)]*)\)", approach)
+    time_limits = (
+        [int(value) for value in re.findall(r"\d+", time_match.group(1))]
+        if time_match
+        else []
     )
-    grid.set_axis_labels("", "Mean improvement vs single run (%)")
-    grid.set_titles("{col_name} zones")
-    grid.fig.suptitle("Compactness Improvement From Recursion by Number of Zones", y=1.08)
-
-    for ax in grid.axes.flat:
-        format_axis(ax, None)
-        ax.tick_params(axis="x", rotation=20)
-        if not ax.patches:
-            ax.text(
-                0.5,
-                0.5,
-                "No matched\nfinal Block_0 baseline",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                color="0.35",
-            )
-
-    if grid.legend is not None:
-        grid.legend.set_title("Recursive approach")
-
-    grid.fig.savefig(output_path, dpi=200, bbox_inches="tight")
-    plt.close(grid.fig)
+    return (len(levels), levels, time_limits, approach)
 
 
-def format_axis(ax: plt.Axes, title: str | None) -> None:
+def format_axis(ax: plt.Axes, title: str) -> None:
     if title:
         ax.set_title(title)
-    ax.axhline(0, color="0.25", linewidth=1)
     ax.set_xlabel("")
-    ax.set_ylabel("Mean improvement vs single run (%)")
+    ax.set_ylabel("Mean direct metric value")
     ax.tick_params(axis="x", rotation=20)
 
 

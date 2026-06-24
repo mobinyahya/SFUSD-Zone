@@ -1,12 +1,12 @@
 # Optimization-native benchmark sweep.
 
-name: full-benchmark
+name: solver_comparison
 mode: run  # run | metrics
 
 optimization_defaults:
   save_solver_logs: true
   strategy: single
-  solve_time_limits: 1200
+  solve_time_limits: [1200]
   max_distance: 6
   use_hints: true
   capacity_scenario: 'A'
@@ -27,15 +27,15 @@ sweep:
   # 0.7, 0.8,
   shortage: [ 0.25]
   # 0.15, 0.2,
-  solver: ['cp_bool', 'mip', 'cp_int']
+  solver: [ 'mip', 'cp_int', 'cp_bool',]
 
 
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/full_recursive_sweep/'
-  capacity: 40              # total solver-thread slots available on the machine
-  max_workers: 5            # max concurrent Python worker processes
+  output_dir: '/share/data/school_choice/local_runs/solver_comparison/'
+  capacity: 45              # total solver-thread slots available on the machine
+  max_workers: 8            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth
   skip_existing: false
   rerun_failed: true
