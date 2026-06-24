@@ -15,6 +15,7 @@ from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.conversion import LevelConverter
 from Zone_Generation.optimization.data.dataset import Dataset
 from Zone_Generation.optimization.levels import LevelSpec
+from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.base import Solver
 from Zone_Generation.optimization.strategies.base import Strategy, register
@@ -66,7 +67,12 @@ class RecursiveStrategy(Strategy):
                     hint=projected if use_hints else None,
                 )
 
-            sol = solver.solve(problem)
+            try:
+                sol = solver.solve(problem)
+            except DuplicateCentroidError as exc:
+                if i + 1 == len(levels):
+                    raise
+                sol = self._skipped_duplicate_centroid_solution(problem, exc)
             unused_time = 0.0
             if carry_over_compute and i + 1 < len(levels):
                 unused_time = self._unused_time(effective_time_limit, sol.wall_time)
@@ -81,9 +87,28 @@ class RecursiveStrategy(Strategy):
                     }
                 )
             solutions.append(sol)
-            prev, prev_level = sol, level
+            if sol.status != "SKIPPED":
+                prev, prev_level = sol, level
 
         return solutions
+
+    @staticmethod
+    def _skipped_duplicate_centroid_solution(
+        problem, exc: DuplicateCentroidError
+    ) -> ZoneSolution:
+        return ZoneSolution(
+            problem=problem,
+            assignment={},
+            status="SKIPPED",
+            objective=None,
+            wall_time=0.0,
+            metadata={
+                "skip_reason": "duplicate_centroid",
+                "error_message": str(exc),
+                "duplicate_centroid_node": exc.node,
+                "duplicate_centroid_zones": list(exc.zones),
+            },
+        )
 
     @staticmethod
     def _configured_time_limit(time_limits, i, default_time_limit):

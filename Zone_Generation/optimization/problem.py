@@ -21,6 +21,17 @@ from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.optimization.levels import LevelSpec
 
 
+class DuplicateCentroidError(ValueError):
+    """Raised when multiple zones resolve to the same centroid node."""
+
+    def __init__(self, node: int, zones) -> None:
+        self.node = int(node)
+        self.zones = tuple(sorted(int(zone) for zone in zones))
+        super().__init__(
+            f"Node {self.node} is used as multiple centroids: {list(self.zones)}."
+        )
+
+
 @dataclass
 class ZoneProblem:
     """One optimization instance.
@@ -149,10 +160,7 @@ class ZoneProblem:
             z for z, centroid in enumerate(self.centroids) if centroid == node
         }
         if len(centroid_zones) > 1:
-            raise ValueError(
-                f"Node {node} is used as multiple centroids: "
-                f"{sorted(centroid_zones)}."
-            )
+            raise DuplicateCentroidError(node, centroid_zones)
         if centroid_zones:
             return centroid_zones
         if self.candidates is not None and node in self.candidates:

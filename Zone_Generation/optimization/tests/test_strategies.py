@@ -3,6 +3,7 @@
 import pytest
 
 from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation
+from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.strategies import iterative_choice as iterative_choice_module
@@ -95,6 +96,46 @@ def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
         3.5
     )
     assert solver.problems[1].hint is None
+
+
+def test_recursive_skips_nonfinal_duplicate_centroid_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = DuplicateCentroidSequenceSolver([True, False])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[4.0, 7.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert [solution.status for solution in solutions] == ["SKIPPED", "OPTIMAL"]
+    assert solutions[0].assignment == {}
+    assert solutions[0].metadata["skip_reason"] == "duplicate_centroid"
+    assert solutions[0].metadata["duplicate_centroid_node"] == 23
+    assert solutions[0].metadata["duplicate_centroid_zones"] == [0, 3]
+    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == 4.0
+    assert solver.solve_time_limits == [4.0, 11.0]
+    assert solver.problems[1].hint is None
+
+
+def test_recursive_raises_final_duplicate_centroid_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = DuplicateCentroidSequenceSolver([True])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[4.0],
+    )
+
+    with pytest.raises(
+        DuplicateCentroidError,
+        match="Node 23 is used as multiple centroids",
+    ):
+        strat.run(dataset, solver)
 
 
 def test_iterative_choice_strategy_terminates():
@@ -190,6 +231,29 @@ class TimedSequenceSolver:
             objective=0.0,
             wall_time=self.wall_times[idx],
             metadata={"solver": "timed_sequence"},
+        )
+
+
+class DuplicateCentroidSequenceSolver:
+    def __init__(self, duplicate_by_call):
+        self.duplicate_by_call = list(duplicate_by_call)
+        self.options = {}
+        self.problems = []
+        self.solve_time_limits = []
+
+    def solve(self, problem):
+        idx = len(self.problems)
+        self.problems.append(problem)
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
+        if self.duplicate_by_call[idx]:
+            raise DuplicateCentroidError(23, {0, 3})
+        return ZoneSolution(
+            problem=problem,
+            assignment=_split_assignment(problem),
+            status="OPTIMAL",
+            objective=0.0,
+            wall_time=1.0,
+            metadata={"solver": "duplicate_centroid_sequence"},
         )
 
 
