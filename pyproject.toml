@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Creating zones for SFUSD"
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.3.1",
     "descartes>=1.1.0",
     "geopandas>=1.1.2",
     "gerrychain>=0.3.2",
@@ -36,7 +37,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-student-assignment = { path = "../student-assignment", editable = true }
+student-assignment = { git = "https://github.com/edouard-rabasse/student-assignment.git", branch = "main" }
 
 [tool.setuptools.packages.find]
 include = [

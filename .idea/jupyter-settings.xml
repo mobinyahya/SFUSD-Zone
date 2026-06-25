@@ -2,15 +2,7 @@
 <project version="4">
   <component name="JupyterPersistentConnectionParameters">
     <option name="moduleParameters">
-      <map>
-        <entry key="$PROJECT_DIR$/../student-assignment/.idea/student-assignment.iml">
-          <value>
-            <JupyterConnectionParameters>
-              <option name="managed" value="true" />
-            </JupyterConnectionParameters>
-          </value>
-        </entry>
-      </map>
+      <map />
     </option>
   </component>
 </project>
