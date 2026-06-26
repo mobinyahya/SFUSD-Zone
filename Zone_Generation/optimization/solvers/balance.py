@@ -36,15 +36,16 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
         ),
     ]
 
-    racial = problem.district_racial
-    for ethnicity in problem.ethnicities:
-        constraints.append(
-            BalanceConstraint(
-                value=lambda node, e=ethnicity: problem.ethnicity(node, e),
-                lower_ratio=racial[ethnicity] - problem.racial_dev,
-                upper_ratio=racial[ethnicity] + problem.racial_dev,
+    if problem.racial_dev >= 0:
+        racial = problem.district_racial
+        for ethnicity in problem.ethnicities:
+            constraints.append(
+                BalanceConstraint(
+                    value=lambda node, e=ethnicity: problem.ethnicity(node, e),
+                    lower_ratio=racial[ethnicity] - problem.racial_dev,
+                    upper_ratio=racial[ethnicity] + problem.racial_dev,
+                )
             )
-        )
 
     return constraints
 

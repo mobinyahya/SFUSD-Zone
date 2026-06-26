@@ -115,16 +115,18 @@ class Dataset:
         candidates: Optional[dict[int, set[int]]] = None,
         hint: Optional[dict[int, int]] = None,
         choice_objective=None,
+        constraint_multiplier: float = 1.0,
     ) -> ZoneProblem:
         level = LevelSpec.parse(level)
+        constraint_multiplier = float(constraint_multiplier)
         return ZoneProblem(
             G=self.graph_for(level),
             level=level,
             centroids=self.centroids_for(level),
-            frl_dev=self.config.frl_dev,
-            racial_dev=self.config.racial_dev,
-            overage=self.config.overage,
-            shortage=self.config.shortage,
+            frl_dev=self.config.frl_dev * constraint_multiplier,
+            racial_dev=self.config.racial_dev * constraint_multiplier,
+            overage=self.config.overage * constraint_multiplier,
+            shortage=self.config.shortage * constraint_multiplier,
             max_distance=self.config.max_distance,
             fixed=fixed,
             candidates=candidates,

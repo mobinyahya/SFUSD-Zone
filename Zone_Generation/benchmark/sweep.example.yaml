@@ -13,6 +13,7 @@ optimization_defaults:
   racial_dev: 0.3
   overage: 0.8
   shortage: 0.2
+  looseness: 1.0              # recursive: multiply constraints per configured coarser stage
   max_distance: 5
   solve_time_limits: [45, 60]
   carry_over_compute: false    # recursive: add unused level time to the next level

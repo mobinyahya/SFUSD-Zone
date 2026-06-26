@@ -8,6 +8,7 @@ from ortools.sat.python import cp_model
 from Zone_Generation.choice.models import DistanceChoiceModel
 from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.optimization.solvers import get_solver
+from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 
@@ -45,6 +46,12 @@ def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)
+
+
+def test_negative_racial_dev_disables_racial_balance_constraints():
+    problem = make_grid_problem(3, 3, racial_dev=-1)
+
+    assert len(balance_constraints(problem)) == 2
 
 
 def test_cpsat_solver_saves_logs(tmp_path):

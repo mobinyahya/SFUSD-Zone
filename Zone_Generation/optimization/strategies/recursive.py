@@ -29,6 +29,9 @@ class RecursiveStrategy(Strategy):
         carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
         use_hints = self.options.get("use_hints", True)
+        looseness = float(self.options.get("looseness", 1.0))
+        if looseness < 1.0:
+            raise ValueError("looseness must be >= 1.0 for recursive runs.")
         radius = self.options.get("boundary_radius", 1)
         converter = LevelConverter()
         default_time_limit = solver.options.get("solve_time_limit")
@@ -49,9 +52,13 @@ class RecursiveStrategy(Strategy):
                 carry_over_compute,
             )
             self._apply_limits(solver, effective_time_limit, gap_limits, i)
+            constraint_multiplier = self._constraint_multiplier(looseness, levels, i)
 
             if prev is None or not prev.assignment:
-                problem = dataset.problem_for(level)
+                problem = dataset.problem_for(
+                    level,
+                    constraint_multiplier=constraint_multiplier,
+                )
             else:
                 dst_G = dataset.graph_for(level)
                 centroids = dataset.centroids_for(level)
@@ -65,6 +72,7 @@ class RecursiveStrategy(Strategy):
                     level,
                     candidates=candidates,
                     hint=projected if use_hints else None,
+                    constraint_multiplier=constraint_multiplier,
                 )
 
             try:
@@ -139,3 +147,7 @@ class RecursiveStrategy(Strategy):
             solver.options["solve_time_limit"] = time_limit
         if gap_limits and i < len(gap_limits):
             solver.options["relative_gap_limit"] = gap_limits[i]
+
+    @staticmethod
+    def _constraint_multiplier(looseness, levels, i):
+        return float(looseness) ** (len(levels) - i - 1)

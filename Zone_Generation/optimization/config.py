@@ -30,6 +30,7 @@ class OptimizationConfig:
     racial_dev: float = 0.3
     overage: float = 0.8
     shortage: float = 0.2
+    looseness: float = 1.0
     max_distance: float = float("inf")
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
@@ -79,6 +80,8 @@ class OptimizationConfig:
             )
         # Levels in float keys can arrive from YAML as strings.
         self.level_to_split = {int(k): int(v) for k, v in self.level_to_split.items()}
+        if self.strategy == "recursive" and self.looseness < 1.0:
+            raise ValueError("looseness must be >= 1.0 for recursive runs.")
 
     # ------------------------------------------------------------------ #
     # loading
@@ -125,6 +128,7 @@ class OptimizationConfig:
             carry_over_compute=self.carry_over_compute,
             gap_limits=self.gap_limits,
             use_hints=self.use_hints,
+            looseness=self.looseness,
             boundary_radius=self.boundary_radius,
             max_iterations=self.max_iterations,
             choice_model=self.choice_model,

@@ -1,76 +1,50 @@
 # Optimization-native benchmark sweep.
 
-name: full-benchmark
+name: sfusd_zone_test
 mode: run  # run | metrics
 
 optimization_defaults:
   save_solver_logs: true
   carry_over_compute: true
-  max_distance: 6
+  max_distance: 4.5
   use_hints: true
   capacity_scenario: 'A'
-  boundary_radius: 1
+  boundary_radius: 2
+  racial_dev: -1
+  looseness: 1.2
   gap_limits: [0, 0, 0]
   workers: 8
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9',  '8-zone-24', '8-zone-26', '10-zone-3', '10-zone-11', '13-zone-5', '13-zone-6', '18-zone-1', '18-zone-6']
+  centroids_type: ['6-zone-3', '6-zone-9','6-zone-2', '8-zone-22', '8-zone-24', '8-zone-26', '10-zone-3', '10-zone-11','10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
   # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
-  frl_dev: [ 0.25]
+  frl_dev: [0.13, 0.14, 0.15, 0.16, 0.17]
   # 0.12, 0.15, 0.2,
-  racial_dev: [ 0.25]
-  # 0.12, 0.15, 0.2,
-  seed: [42, ]
+  # ignoring racial deviations
+  seed: [42]
   # 14, 33, 80, 9
-  overage: [ 0.9]
-  # 0.7, 0.8,
-  shortage: [ 0.25]
+  overage: [0.7, 0.8, 0.9]
+  # 
+  shortage: [0.15, 0.2, 0.25]
   # 0.15, 0.2,
   solver: ['cp_bool']
 
 tasks:
-  - strategy: 'single'
-    levels: ['Block_0']
-    solve_time_limits: [1200]
-
   # equal splits
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
     solve_time_limits: [600, 600]
 
-# - strategy: 'recursive'
-#   levels: ['Block_2', 'Block_0']
-#   solve_time_limits: [300, 300]
-
   - strategy: 'recursive'
     levels: ['Block_2', 'Block_1', 'Block_0']
-    solve_time_limits: [400, 400, 400]
-
-# back heavy splits
-# - strategy: 'recursive'
-#   levels: ['Block_2', 'Block_0']
-#   solve_time_limits: [200, 400]
-
-  - strategy: 'recursive'
-    levels: ['Block_1', 'Block_0']
-    solve_time_limits: [400, 800]
-
-  - strategy: 'recursive'
-    levels: ['Block_2', 'Block_1', 'Block_0']
-    solve_time_limits: [200, 200, 800]
-
-# - strategy: 'recursive'
-#   levels: ['Block_2', 'Block_1', 'Block_0']
-#   solve_time_limits: [100, 200, 300]
-
-
+    solve_time_limits: [200, 400, 600]
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/full_recursive_sweep/'
-  capacity: 40              # total solver-thread slots available on the machine
-  max_workers: 5            # max concurrent Python worker processes
-  max_tasks_per_worker: 25  # recycle processes to limit memory growth
-  skip_existing: false
+  output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test/'
+  capacity: 45              # total solver-thread slots available on the machine
+  max_workers: 10           # max concurrent Python worker processes
+  max_tasks_per_worker: 10  # recycle processes to limit memory growth
+  skip_existing: trye
   rerun_failed: true
   sequential: false
 
@@ -81,10 +55,16 @@ metrics:
   stages_csv: 'stages.csv'
 
 matching:
-  enabled: false
-  config: Zone_Generation/benchmark/matching/sd.yaml
+  enabled: true
+  configs:
+    - name: no_reserves
+      config: Zone_Generation/benchmark/matching/zones+no_reserves.yaml
+    - name: soft_reserves
+      config: Zone_Generation/benchmark/matching/zones+soft_reserves_06frl.yaml
+    - name: hard_reserves
+      config: Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml
   compute_stage_assignments: false
 
 choice_metrics:
-  enabled: false
+  enabled: true
   compute_stage_metrics: false

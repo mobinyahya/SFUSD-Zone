@@ -138,6 +138,83 @@ def test_recursive_raises_final_duplicate_centroid_stage():
         strat.run(dataset, solver)
 
 
+def test_recursive_looseness_scales_constraints_by_configured_stage():
+    problem = make_grid_problem(
+        2,
+        2,
+        frl_dev=0.2,
+        racial_dev=0.3,
+        overage=0.4,
+        shortage=0.1,
+    )
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0, 0.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_2", "BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0, 1.0],
+        looseness=1.2,
+    )
+
+    strat.run(dataset, solver)
+
+    multipliers = [1.2**2, 1.2, 1.0]
+    assert [p.level.name for p in solver.problems] == [
+        "BlockGroup_2",
+        "BlockGroup_1",
+        "BlockGroup_0",
+    ]
+    assert [p.frl_dev for p in solver.problems] == pytest.approx(
+        [problem.frl_dev * m for m in multipliers]
+    )
+    assert [p.racial_dev for p in solver.problems] == pytest.approx(
+        [problem.racial_dev * m for m in multipliers]
+    )
+    assert [p.overage for p in solver.problems] == pytest.approx(
+        [problem.overage * m for m in multipliers]
+    )
+    assert [p.shortage for p in solver.problems] == pytest.approx(
+        [problem.shortage * m for m in multipliers]
+    )
+
+
+def test_recursive_looseness_scales_by_configured_stages_when_levels_skip():
+    problem = make_grid_problem(2, 2, frl_dev=0.2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_2", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0],
+        looseness=1.2,
+    )
+
+    strat.run(dataset, solver)
+
+    assert [p.frl_dev for p in solver.problems] == pytest.approx([0.24, 0.2])
+
+
+def test_recursive_rejects_tightening_looseness():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[1.0],
+        looseness=0.9,
+    )
+
+    with pytest.raises(ValueError, match="looseness"):
+        strat.run(dataset, solver)
+
+
 def test_iterative_choice_strategy_terminates():
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)

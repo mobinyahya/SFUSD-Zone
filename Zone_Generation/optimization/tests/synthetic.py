@@ -128,16 +128,23 @@ class FakeDataset:
         return self._problem.centroids
 
     def problem_for(
-        self, level, fixed=None, candidates=None, hint=None, choice_objective=None
+        self,
+        level,
+        fixed=None,
+        candidates=None,
+        hint=None,
+        choice_objective=None,
+        constraint_multiplier=1.0,
     ):
+        constraint_multiplier = float(constraint_multiplier)
         return ZoneProblem(
             G=self._problem.G,
-            level=self._problem.level,
+            level=LevelSpec.parse(level),
             centroids=self._problem.centroids,
-            frl_dev=self._problem.frl_dev,
-            racial_dev=self._problem.racial_dev,
-            overage=self._problem.overage,
-            shortage=self._problem.shortage,
+            frl_dev=self._problem.frl_dev * constraint_multiplier,
+            racial_dev=self._problem.racial_dev * constraint_multiplier,
+            overage=self._problem.overage * constraint_multiplier,
+            shortage=self._problem.shortage * constraint_multiplier,
             max_distance=self._problem.max_distance,
             fixed=fixed,
             candidates=candidates,
