@@ -1041,7 +1041,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "scipy-stubs", specifier = "~=1.16.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "student-assignment", git = "https://github.com/edouard-rabasse/student-assignment.git?branch=main" },
+    { name = "student-assignment", git = "https://github.com/kchandra423/student-assignment-performance.git?branch=main" },
 ]
 
 [package.metadata.requires-dev]
@@ -1102,7 +1102,7 @@ wheels = [
 [[package]]
 name = "student-assignment"
 version = "0.1.0"
-source = { git = "https://github.com/edouard-rabasse/student-assignment.git?branch=main#5fb9bce132d865846ab66fbb04f186ab735fc35b" }
+source = { git = "https://github.com/kchandra423/student-assignment-performance.git?branch=main#5fb9bce132d865846ab66fbb04f186ab735fc35b" }
 dependencies = [
     { name = "adjusttext" },
     { name = "click" },

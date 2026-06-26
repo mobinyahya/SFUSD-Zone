@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-student-assignment = { git = "https://github.com/edouard-rabasse/student-assignment.git", branch = "main" }
+student-assignment = { git = "https://github.com/kchandra423/student-assignment-performance.git", branch = "main" }
 
 [tool.setuptools.packages.find]
 include = [
