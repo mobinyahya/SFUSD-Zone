@@ -12,12 +12,15 @@ from Zone_Generation.benchmark.config import (
     stable_hash,
 )
 from Zone_Generation.benchmark.choice_metrics import (
+    CHOICE_AVG_MNL_UTILITY,
     CHOICE_AVG_STUDENT_DISTANCE,
     CHOICE_FRL_DISSIMILARITY,
+    CHOICE_METRIC_COLUMNS,
     CHOICE_PERCENT_DESIGNATED,
     CHOICE_PERCENT_TOP_1,
     CHOICE_PERCENT_TOP_3,
     CHOICE_PERCENT_UNASSIGNED,
+    CHOICE_SES3_DISSIMILARITY,
     CHOICE_SCHOOLS_ABOVE_10PCT_DISTRICT_FRL,
     CHOICE_TOTAL_MNL_UTILITY,
     compute_choice_metrics_for_run,
@@ -161,12 +164,17 @@ def test_choice_metrics_compute_assignment_outcomes(tmp_path):
     assert metrics[CHOICE_PERCENT_DESIGNATED] == 1 / 3
     assert metrics[CHOICE_PERCENT_TOP_1] == 1 / 3
     assert metrics[CHOICE_PERCENT_TOP_3] == 2 / 3
+    assert metrics[CHOICE_AVG_MNL_UTILITY] == 20.0
     assert metrics[CHOICE_TOTAL_MNL_UTILITY] == 60.0
+    assert round(metrics[CHOICE_SES3_DISSIMILARITY], 6) == round(1 / 6, 6)
     assert round(metrics[CHOICE_FRL_DISSIMILARITY], 6) == round(0.7655502392344498, 6)
-    assert (tmp_path / "matching" / "choice_metrics_by_assignment.csv").exists()
+    by_assignment_path = tmp_path / "matching" / "choice_metrics_by_assignment.csv"
+    assert by_assignment_path.exists()
+    by_assignment = pd.read_csv(by_assignment_path)
+    assert all(column in by_assignment.columns for column in CHOICE_METRIC_COLUMNS)
 
 
-def test_choice_metrics_average_total_mnl_utility_across_assignments(tmp_path):
+def test_choice_metrics_average_mnl_utility_across_assignments(tmp_path):
     assignments_dir = tmp_path / "matching" / "assignments_raw" / "policy"
     assignments_dir.mkdir(parents=True)
     base = {
@@ -192,6 +200,7 @@ def test_choice_metrics_average_total_mnl_utility_across_assignments(tmp_path):
         ChoiceMetricsRunConfig(enabled=True),
     )
 
+    assert result.metrics[CHOICE_AVG_MNL_UTILITY] == 2.5
     assert result.metrics[CHOICE_TOTAL_MNL_UTILITY] == 5.0
 
 
@@ -362,15 +371,27 @@ def test_preserve_matching_payload_keeps_existing_matching_metrics():
 def test_preserve_choice_metrics_payload_keeps_existing_choice_metrics():
     new_payload = {"metrics": {"num_zones": 2}}
     previous_payload = {
-        "choice_metrics": {"status": "OK"},
-        "metrics": {CHOICE_AVG_STUDENT_DISTANCE: 1.5, "num_zones": 99},
+        "choice_metrics": {
+            "status": "OK",
+            "metrics": {
+                CHOICE_AVG_STUDENT_DISTANCE: 1.5,
+                CHOICE_TOTAL_MNL_UTILITY: 99,
+            },
+        },
+        "metrics": {
+            CHOICE_AVG_STUDENT_DISTANCE: 1.5,
+            CHOICE_TOTAL_MNL_UTILITY: 99,
+            "num_zones": 99,
+        },
     }
 
     preserve_choice_metrics_payload(new_payload, previous_payload)
 
-    assert new_payload["choice_metrics"] == {"status": "OK"}
+    assert new_payload["choice_metrics"]["status"] == "OK"
+    assert new_payload["choice_metrics"]["metrics"][CHOICE_TOTAL_MNL_UTILITY] == 99
     assert new_payload["metrics"]["num_zones"] == 2
     assert new_payload["metrics"][CHOICE_AVG_STUDENT_DISTANCE] == 1.5
+    assert new_payload["metrics"][CHOICE_TOTAL_MNL_UTILITY] == 99
 
 
 def _stub_student_assignment(monkeypatch):

@@ -8,6 +8,8 @@ category, with column-name constants for computation modules.
 from dataclasses import dataclass
 from typing import Literal
 
+from Zone_Generation.choice.assignment_metrics import DEPENDENCY_CHOICE_METRIC_COLUMNS
+
 
 @dataclass(frozen=True)
 class MetricSpec:
@@ -75,13 +77,26 @@ class MetricColumns:
     FINAL_CHOICE_UTILITY = "final_choice_utility"
     CHOICE_TOTAL_PREASSIGNMENT_UTILITY = "choice_total_preassignment_utility"
     CHOICE_AVG_STUDENT_DISTANCE = "choice_avg_student_distance"
+    CHOICE_DISTANCE_LT_HALF_MILE = "choice_percent_distance_lt_0_5"
+    CHOICE_DISTANCE_GT_3_MILES = "choice_percent_distance_gt_3"
     CHOICE_SCHOOLS_ABOVE_10PCT_DISTRICT_FRL = "choice_schools_above_10pct_district_frl"
+    CHOICE_SCHOOLS_ABOVE_15PCT_DISTRICT_FRL = "choice_schools_above_15pct_district_frl"
+    CHOICE_AALPI_IN_SCHOOL_WITH_10PCT_FRL = "choice_aalpi_in_school_with_10pct_frl"
+    CHOICE_AALPI_IN_SCHOOL_WITH_15PCT_FRL = "choice_aalpi_in_school_with_15pct_frl"
+    CHOICE_AALPI_DISSIMILARITY = "choice_aalpi_dissimilarity"
     CHOICE_FRL_DISSIMILARITY = "choice_frl_dissimilarity"
+    CHOICE_SES3_DISSIMILARITY = "choice_ses3_dissimilarity"
+    CHOICE_PROGRAMS_WITH_1_4_AA = "choice_programs_with_1_4_aa"
     CHOICE_PERCENT_UNASSIGNED = "choice_percent_unassigned"
     CHOICE_PERCENT_DESIGNATED = "choice_percent_designated"
     CHOICE_PERCENT_TOP_1 = "choice_percent_top_1"
     CHOICE_PERCENT_TOP_3 = "choice_percent_top_3"
+    CHOICE_PERCENT_TOP_1_IN_ZONE = "choice_percent_top_1_in_zone"
+    CHOICE_PERCENT_TOP_3_IN_ZONE = "choice_percent_top_3_in_zone"
+    CHOICE_PERCENT_DIST_GE_3_RANK_GE_5 = "choice_percent_dist_ge_3_rank_ge_5"
+    CHOICE_AVG_MNL_UTILITY = "choice_avg_mnl_utility"
     CHOICE_TOTAL_MNL_UTILITY = "choice_total_mnl_utility"
+    CHOICE_BG_COHESION_3 = "choice_bg_cohesion_3"
 
     @staticmethod
     def program_column(ptype: str) -> str:
@@ -577,6 +592,52 @@ QUALITY_METRICS = [
 # CHOICE METRICS (student-assignment outcomes)
 # ============================================================================
 
+def _choice_metric_direction(
+    source_name: str, column: str
+) -> Literal["minimize", "maximize"] | None:
+    lower = source_name.lower()
+    if "top " in lower or "utility" in lower or "cohesion" in lower:
+        return "maximize"
+    if "distance <" in lower:
+        return "maximize"
+    if "distance" in lower:
+        return "minimize"
+    if "unassigned" in lower or "designated" in lower:
+        return "minimize"
+    if "dissimilarity" in lower or "with +" in lower or "above" in lower:
+        return "minimize"
+    if "programs with 1-4" in lower:
+        return "minimize"
+    if column.startswith("choice_"):
+        return None
+    return None
+
+
+def _choice_display_name(source_name: str) -> str:
+    return source_name.replace("Av", "Average")
+
+
+def _dependency_choice_metric_specs() -> list[MetricSpec]:
+    specs: list[MetricSpec] = []
+    for source_name, column in DEPENDENCY_CHOICE_METRIC_COLUMNS.items():
+        specs.append(
+            MetricSpec(
+                column=column,
+                display_name=_choice_display_name(source_name),
+                description=(
+                    f"Student-assignment paper metric '{source_name}', computed by "
+                    "student-assignment and averaged across assignment simulations "
+                    "when multiple assignment CSVs are present."
+                ),
+                category="choice",
+                direction=_choice_metric_direction(source_name, column),
+                is_core=False,
+                short_name=source_name,
+            )
+        )
+    return specs
+
+
 CHOICE_METRICS = [
     MetricSpec(
         column="choice_total_preassignment_utility",
@@ -587,77 +648,34 @@ CHOICE_METRICS = [
         is_core=False,
         short_name="Preassign Utility",
     ),
-    MetricSpec(
-        column="choice_avg_student_distance",
-        display_name="Average Assigned Student Distance",
-        description="Average distance in miles from assigned students to their matched school/program, averaged across assignment simulations when multiple assignment CSVs are present. Lower means students are assigned closer to home.",
-        category="choice",
-        direction="minimize",
-        is_core=False,
-        short_name="Choice Dist",
-    ),
-    MetricSpec(
-        column="choice_schools_above_10pct_district_frl",
-        display_name="Schools Above District FRL +10%",
-        description="Fraction of schools with assigned-student FRL at least 10 percentage points above participating-student district FRL, averaged across assignment simulations. Lower means fewer schools concentrate higher-FRL students.",
-        category="choice",
-        direction="minimize",
-        is_core=False,
-        short_name="High FRL Schools",
-    ),
+] + _dependency_choice_metric_specs() + [
     MetricSpec(
         column="choice_frl_dissimilarity",
         display_name="FRL Dissimilarity Across Schools",
-        description="Weighted FRL dissimilarity across assigned school populations using freelunch_prob + reducedlunch_prob as each student's FRL weight. Lower means FRL students are more evenly distributed across schools.",
+        description=(
+            "Weighted FRL dissimilarity across assigned school populations using "
+            "the student-assignment evaluator's freelunch_prob + reducedlunch_prob "
+            "student FRL weights. Lower means FRL students are more evenly "
+            "distributed across schools."
+        ),
         category="choice",
         direction="minimize",
         is_core=False,
         short_name="FRL Dissimil.",
     ),
     MetricSpec(
-        column="choice_percent_unassigned",
-        display_name="Unassigned Students",
-        description="Fraction of participating students not assigned to any program, averaged across assignment simulations. Lower is better.",
-        category="choice",
-        direction="minimize",
-        is_core=False,
-        short_name="Unassigned",
-    ),
-    MetricSpec(
-        column="choice_percent_designated",
-        display_name="Designated Assignments",
-        description="Fraction of assigned students who were assigned through designation, averaged across assignment simulations. Lower means fewer assigned students needed designation to receive a placement.",
-        category="choice",
-        direction="minimize",
-        is_core=False,
-        short_name="Designated",
-    ),
-    MetricSpec(
-        column="choice_percent_top_1",
-        display_name="Top 1 Choice",
-        description="Fraction of assigned students who received their first-ranked choice, averaged across assignment simulations. Higher is better.",
-        category="choice",
-        direction="maximize",
-        is_core=False,
-        short_name="Top 1",
-    ),
-    MetricSpec(
-        column="choice_percent_top_3",
-        display_name="Top 3 Choice",
-        description="Fraction of assigned students who received one of their top three ranked choices, averaged across assignment simulations. Higher is better.",
-        category="choice",
-        direction="maximize",
-        is_core=False,
-        short_name="Top 3",
-    ),
-    MetricSpec(
         column="choice_total_mnl_utility",
         display_name="Total MNL Utility",
-        description="Sum of assigned_utility from the MNL utility model across students in each assignment simulation, averaged across assignment simulations when multiple assignment CSVs are present. Higher is better. Available only when matching writes assigned_utility.",
+        description=(
+            "Sum of assigned_utility across assigned students. This is the total "
+            "counterpart to student-assignment's Avg utility paper metric, whose "
+            "assigned_utility values come from the matched program utility and are "
+            "NaN for unassigned students."
+        ),
         category="choice",
         direction="maximize",
         is_core=False,
-        short_name="MNL Utility",
+        short_name="Total MNL Utility",
     ),
 ]
 

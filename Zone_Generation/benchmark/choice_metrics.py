@@ -15,15 +15,18 @@ import yaml
 from Zone_Generation.benchmark.config import ChoiceMetricsRunConfig, json_ready
 from Zone_Generation.choice.assignment_metrics import (
     CHOICE_AVG_STUDENT_DISTANCE,
-    CHOICE_FRL_DISSIMILARITY,
     CHOICE_METRIC_COLUMNS,
     CHOICE_PERCENT_DESIGNATED,
     CHOICE_PERCENT_TOP_1,
     CHOICE_PERCENT_TOP_3,
     CHOICE_PERCENT_UNASSIGNED,
     CHOICE_SCHOOLS_ABOVE_10PCT_DISTRICT_FRL,
+    CHOICE_AVG_MNL_UTILITY,
+    CHOICE_SES3_DISSIMILARITY,
+    CHOICE_FRL_DISSIMILARITY,
     CHOICE_TOTAL_MNL_UTILITY,
     assigned_mask,
+    choice_metric_columns_from_frame,
     choice_metrics_for_assignment,
     mean,
     prepare_assignment_df,
@@ -142,8 +145,7 @@ def compute_choice_metrics_from_assignments(
 
     metrics = {
         column: mean(by_assignment[column])
-        for column in CHOICE_METRIC_COLUMNS
-        if column in by_assignment.columns
+        for column in choice_metric_columns_from_frame(by_assignment)
     }
     result = ChoiceMetricsResult(
         status="OK",
