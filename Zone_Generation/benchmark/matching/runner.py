@@ -6,8 +6,10 @@ import copy
 import csv
 import json
 import os
+import re
 import shutil
 import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -17,6 +19,7 @@ import yaml
 
 from Zone_Generation.benchmark.config import (
     ChoiceMetricsRunConfig,
+    MatchingConfigSpec,
     MatchingRunConfig,
     json_ready,
 )
@@ -42,7 +45,7 @@ SUMMARY_JSON = "summary.json"
 class MatchingResult:
     status: str
     metrics: dict[str, Any] = field(default_factory=dict)
-    artifacts: dict[str, str] = field(default_factory=dict)
+    artifacts: dict[str, Any] = field(default_factory=dict)
     run: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
 
@@ -85,6 +88,21 @@ class MatchingBatchResult:
             self.successful += 1
 
 
+@dataclass(frozen=True)
+class _PreparedMatchingRun:
+    name: str
+    config_template: str
+    simulation_config: dict[str, Any]
+    matching_dir: str
+    assignments_dir: str
+    output_root: str
+    generated_config: str
+    zone_csv: str
+    zone_id_map: dict[int, int]
+    level: str
+    workers: int
+
+
 def run_matching_for_solution(
     solution: ZoneSolution,
     output_dir: str,
@@ -92,6 +110,7 @@ def run_matching_for_solution(
     *,
     student_assignment_session: StudentAssignmentSession | None = None,
     precomputed_dir: str | Path | None = None,
+    workers: int = 1,
 ) -> MatchingResult | None:
     """Run matching for one final zoning solution and write run artifacts."""
 
@@ -102,34 +121,155 @@ def run_matching_for_solution(
 
     output_root = Path(os.path.expanduser(output_dir)).resolve()
     matching_dir = output_root / MATCHING_DIRNAME
-    assignments_dir = matching_dir / ASSIGNMENTS_RAW_DIR
     _reset_matching_dir(matching_dir)
-    assignments_dir.mkdir(parents=True, exist_ok=True)
 
     zone_csv = matching_dir / ZONE_CSV
     zone_id_map = write_matching_zone_csv(solution.area_assignment(), zone_csv)
-    matching_precomputed_dir = (
+    precomputed_base_dir = (
         Path(os.path.expanduser(str(precomputed_dir))).resolve()
         if precomputed_dir is not None
         else matching_dir / "precomputed"
     )
 
-    config_template = resolve_matching_template(matching.config)
+    config_specs = matching.config_specs()
+    named_configs = _named_matching_configs(config_specs)
+    legacy_layout = len(named_configs) == 1
+    worker_count = max(1, int(workers or 1))
+    prepared_runs = [
+        _prepare_matching_run(
+            solution=solution,
+            output_root=output_root,
+            root_matching_dir=matching_dir,
+            config_name=config_name,
+            config_spec=config_spec,
+            zone_csv=zone_csv,
+            zone_id_map=zone_id_map,
+            precomputed_base_dir=precomputed_base_dir,
+            legacy_layout=legacy_layout,
+            workers=worker_count,
+        )
+        for config_name, config_spec in named_configs
+    ]
+
+    if legacy_layout:
+        return _execute_prepared_matching_run(
+            prepared_runs[0],
+            student_assignment_session=student_assignment_session,
+        )
+
+    if worker_count > 1:
+        results = _execute_prepared_matching_runs_parallel(prepared_runs, worker_count)
+    else:
+        results = [
+            _execute_prepared_matching_run(
+                prepared_run,
+                student_assignment_session=student_assignment_session,
+            )
+            for prepared_run in prepared_runs
+        ]
+
+    result = _combined_matching_result(
+        results=results,
+        output_root=output_root,
+        matching_dir=matching_dir,
+        zone_csv=zone_csv,
+        zone_id_map=zone_id_map,
+        solution=solution,
+        workers=worker_count,
+    )
+    result.artifacts["summary"] = _relpath(matching_dir / SUMMARY_JSON, output_root)
+    _write_json(matching_dir / SUMMARY_JSON, result.to_payload())
+    return result
+
+
+def _prepare_matching_run(
+    *,
+    solution: ZoneSolution,
+    output_root: Path,
+    root_matching_dir: Path,
+    config_name: str,
+    config_spec: MatchingConfigSpec,
+    zone_csv: Path,
+    zone_id_map: dict[int, int],
+    precomputed_base_dir: Path,
+    legacy_layout: bool,
+    workers: int,
+) -> _PreparedMatchingRun:
+    matching_dir = root_matching_dir if legacy_layout else root_matching_dir / config_name
+    assignments_dir = matching_dir / ASSIGNMENTS_RAW_DIR
+    assignments_dir.mkdir(parents=True, exist_ok=True)
+
+    precomputed_dir = (
+        precomputed_base_dir if legacy_layout else precomputed_base_dir / config_name
+    )
+    config_template = resolve_matching_template(config_spec.config)
     simulation_config = build_simulation_config(
         template_path=config_template,
         zone_csv=zone_csv,
         assignments_dir=assignments_dir,
-        precomputed_dir=matching_precomputed_dir,
+        precomputed_dir=precomputed_dir,
         solution=solution,
     )
-    generated_config = matching_dir / GENERATED_CONFIG
+    simulation_config["workers"] = max(1, int(workers or 1))
+
+    return _PreparedMatchingRun(
+        name=config_name,
+        config_template=str(config_template),
+        simulation_config=simulation_config,
+        matching_dir=str(matching_dir),
+        assignments_dir=str(assignments_dir),
+        output_root=str(output_root),
+        generated_config=str(matching_dir / GENERATED_CONFIG),
+        zone_csv=str(zone_csv),
+        zone_id_map=zone_id_map,
+        level=solution.level.name,
+        workers=max(1, int(workers or 1)),
+    )
+
+
+def _execute_prepared_matching_runs_parallel(
+    prepared_runs: list[_PreparedMatchingRun], workers: int
+) -> list[MatchingResult]:
+    max_workers = min(max(1, int(workers or 1)), len(prepared_runs))
+    results_by_name: dict[str, MatchingResult] = {}
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_execute_prepared_matching_run, prepared_run): prepared_run.name
+            for prepared_run in prepared_runs
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            results_by_name[name] = future.result()
+    return [results_by_name[prepared_run.name] for prepared_run in prepared_runs]
+
+
+def _execute_prepared_matching_run(
+    prepared_run: _PreparedMatchingRun,
+    student_assignment_session: StudentAssignmentSession | None = None,
+) -> MatchingResult:
+    matching_dir = Path(prepared_run.matching_dir)
+    assignments_dir = Path(prepared_run.assignments_dir)
+    output_root = Path(prepared_run.output_root)
+    generated_config = Path(prepared_run.generated_config)
+    zone_csv = Path(prepared_run.zone_csv)
+
+    matching_dir.mkdir(parents=True, exist_ok=True)
+    assignments_dir.mkdir(parents=True, exist_ok=True)
     with open(generated_config, "w", encoding="utf-8") as f:
-        yaml.safe_dump(json_ready(simulation_config), f, sort_keys=True)
+        yaml.safe_dump(json_ready(prepared_run.simulation_config), f, sort_keys=True)
 
     if student_assignment_session is None:
-        _run_student_assignment(simulation_config, assignments_dir)
+        _run_student_assignment(
+            prepared_run.simulation_config,
+            assignments_dir,
+            workers=prepared_run.workers,
+        )
     else:
-        student_assignment_session.run(simulation_config, assignments_dir)
+        student_assignment_session.run(
+            prepared_run.simulation_config,
+            assignments_dir,
+            workers=prepared_run.workers,
+        )
     result = summarize_assignment_outputs(
         assignments_dir=assignments_dir,
         matching_dir=matching_dir,
@@ -143,16 +283,58 @@ def run_matching_for_solution(
     )
     result.run.update(
         {
-            "config_template": str(config_template),
+            "config_name": prepared_run.name,
+            "config_template": prepared_run.config_template,
             "policy_name": GENERATED_POLICY_NAME,
-            "zone_id_map": {str(k): v for k, v in zone_id_map.items()},
-            "zone_building_blocks": simulation_config.get("zone-building-blocks"),
-            "level": solution.level.name,
+            "zone_id_map": {str(k): v for k, v in prepared_run.zone_id_map.items()},
+            "zone_building_blocks": prepared_run.simulation_config.get(
+                "zone-building-blocks"
+            ),
+            "level": prepared_run.level,
+            "workers": prepared_run.workers,
         }
     )
     result.artifacts["summary"] = _relpath(matching_dir / SUMMARY_JSON, output_root)
     _write_json(matching_dir / SUMMARY_JSON, result.to_payload())
     return result
+
+
+def _combined_matching_result(
+    *,
+    results: list[MatchingResult],
+    output_root: Path,
+    matching_dir: Path,
+    zone_csv: Path,
+    zone_id_map: dict[int, int],
+    solution: ZoneSolution,
+    workers: int,
+) -> MatchingResult:
+    metrics: dict[str, Any] = {}
+    runs: dict[str, Any] = {}
+    artifacts: dict[str, Any] = {
+        "zone_csv": _relpath(zone_csv, output_root),
+        "runs": {},
+    }
+    for result in results:
+        name = str(result.run.get("config_name") or "default")
+        runs[name] = result.to_payload()
+        artifacts["runs"][name] = result.artifacts
+        metrics.update(_prefix_matching_metrics(name, result.metrics))
+
+    return MatchingResult(
+        status="OK" if all(result.status == "OK" for result in results) else "ERROR",
+        metrics=metrics,
+        artifacts=artifacts,
+        run={
+            "configs": list(runs),
+            "runs": runs,
+            "workers": max(1, int(workers or 1)),
+            "policy_name": GENERATED_POLICY_NAME,
+            "zone_id_map": {str(k): v for k, v in zone_id_map.items()},
+            "zone_building_blocks": _zone_building_blocks(solution.level.unit),
+            "level": solution.level.name,
+        },
+    )
 
 
 def run_matching_for_existing_runs(
@@ -198,6 +380,7 @@ def run_matching_for_existing_runs(
             if not solutions:
                 batch.add(MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True))
                 continue
+            matching_workers = max(1, int(config.workers or 1))
             student_assignment_session = _new_student_assignment_session()
             shared_precomputed_dir = (
                 Path(os.path.expanduser(run_dir)).resolve()
@@ -211,6 +394,7 @@ def run_matching_for_existing_runs(
                 matching,
                 student_assignment_session=student_assignment_session,
                 precomputed_dir=shared_precomputed_dir,
+                workers=matching_workers,
             )
             stage_matching_result = run_matching_for_stages(
                 solutions,
@@ -220,6 +404,7 @@ def run_matching_for_existing_runs(
                 choice_metrics=choice_metrics,
                 student_assignment_session=student_assignment_session,
                 precomputed_dir=shared_precomputed_dir,
+                workers=matching_workers,
             )
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
@@ -278,6 +463,7 @@ def run_matching_for_stages(
     choice_metrics: ChoiceMetricsRunConfig | None = None,
     student_assignment_session: StudentAssignmentSession | None = None,
     precomputed_dir: str | Path | None = None,
+    workers: int = 1,
 ) -> dict[str, Any] | None:
     """Optionally run matching and choice metrics for every saved stage."""
 
@@ -295,6 +481,7 @@ def run_matching_for_stages(
             matching,
             student_assignment_session=student_assignment_session,
             precomputed_dir=precomputed_dir,
+            workers=workers,
         )
         stage_payload: dict[str, Any] = {}
         if matching_result is not None:
@@ -470,9 +657,12 @@ def preserve_matching_payload(
     return new_payload
 
 
-def _run_student_assignment(config: dict[str, Any], assignments_dir: Path) -> None:
+def _run_student_assignment(
+    config: dict[str, Any], assignments_dir: Path, *, workers: int = 1
+) -> None:
     MarketGenerator = _market_generator_class()
 
+    config["workers"] = max(1, int(workers or 1))
     configurator = _StaticConfigurator(config)
     market = MarketGenerator(
         configurator=configurator,
@@ -489,8 +679,11 @@ class StudentAssignmentSession:
         self.configurator: _StaticConfigurator | None = None
         self._static_signature: str | None = None
 
-    def run(self, config: dict[str, Any], assignments_dir: Path) -> None:
+    def run(
+        self, config: dict[str, Any], assignments_dir: Path, *, workers: int = 1
+    ) -> None:
         run_config = copy.deepcopy(config)
+        run_config["workers"] = max(1, int(workers or 1))
         static_signature = _student_assignment_static_signature(run_config)
         if self.market is None or static_signature != self._static_signature:
             self._initialize_market(run_config, assignments_dir, static_signature)
@@ -702,6 +895,35 @@ def _matching_metrics(summaries: list[dict[str, Any]]) -> dict[str, Any]:
         "matching_unassigned_rate_mean": sum(rates) / len(rates) if rates else None,
         "matching_unassigned_rate_max": max(rates) if rates else None,
     }
+
+
+def _named_matching_configs(
+    config_specs: list[MatchingConfigSpec],
+) -> list[tuple[str, MatchingConfigSpec]]:
+    used: dict[str, int] = {}
+    named: list[tuple[str, MatchingConfigSpec]] = []
+    for idx, config_spec in enumerate(config_specs):
+        base = _safe_name(config_spec.name) or f"config_{idx}"
+        count = used.get(base, 0)
+        used[base] = count + 1
+        name = base if count == 0 else f"{base}_{count + 1}"
+        named.append((name, config_spec))
+    return named
+
+
+def _prefix_matching_metrics(name: str, metrics: Mapping[str, Any]) -> dict[str, Any]:
+    prefix = f"matching_{_safe_name(name)}"
+    out: dict[str, Any] = {}
+    for key, value in metrics.items():
+        key_str = str(key)
+        suffix = key_str.removeprefix("matching_")
+        out[f"{prefix}_{suffix}"] = value
+    return out
+
+
+def _safe_name(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", str(value)).strip("_").lower()
+    return safe or "default"
 
 
 def _zone_building_blocks(unit: str) -> str:

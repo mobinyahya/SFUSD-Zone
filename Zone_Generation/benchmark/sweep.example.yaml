@@ -57,6 +57,12 @@ metrics:
 # matching:
 #   enabled: true
 #   config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+#   # Or run multiple matching templates for each optimization output:
+#   # configs:
+#   #   - name: no_reserves_no_sib
+#   #     config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+#   #   - name: sd
+#   #     config: Zone_Generation/benchmark/matching/sd.yaml
 #   compute_stage_assignments: false  # opt in to matching each recursive/iterative stage
 
 # Optional assignment-based choice metrics. These use matching assignment CSVs,

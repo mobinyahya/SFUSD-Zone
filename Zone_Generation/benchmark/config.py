@@ -69,16 +69,73 @@ class ChoiceMetricsRunConfig:
 
 
 @dataclass(frozen=True)
+class MatchingConfigSpec:
+    """One student-assignment template to run for each zoning solution."""
+
+    name: str
+    config: str | None = None
+
+    @classmethod
+    def from_value(cls, value: Any, index: int = 0) -> "MatchingConfigSpec":
+        if value is None:
+            return cls(name=f"default" if index == 0 else f"default_{index}")
+        if isinstance(value, str):
+            return cls(name=_matching_name_from_path(value, index), config=value)
+        if not isinstance(value, Mapping):
+            raise ValueError(
+                "matching.configs entries must be strings or mappings with name/config."
+            )
+
+        allowed = {"name", "config", "path"}
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError(f"Unknown MatchingConfigSpec keys: {sorted(unknown)}")
+        config = value.get("config", value.get("path"))
+        if config is not None:
+            config = str(config)
+        raw_name = value.get("name")
+        name = str(raw_name) if raw_name else _matching_name_from_path(config, index)
+        return cls(name=name, config=config)
+
+
+@dataclass(frozen=True)
 class MatchingRunConfig:
     """Student-assignment simulation settings for benchmark runs."""
 
     enabled: bool = False
     config: str | None = None
+    configs: list[MatchingConfigSpec] = field(default_factory=list)
     compute_stage_assignments: bool = False
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> "MatchingRunConfig":
-        return _dataclass_from_dict(cls, data or {})
+        raw = dict(data or {})
+        allowed = {"enabled", "config", "configs", "compute_stage_assignments"}
+        unknown = set(raw) - allowed
+        if unknown:
+            raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
+
+        config = raw.get("config")
+        if config is not None:
+            config = str(config)
+        configs = [
+            MatchingConfigSpec.from_value(value, idx)
+            for idx, value in enumerate(raw.get("configs") or [])
+        ]
+        if not configs and (config is not None or raw.get("enabled")):
+            configs = [MatchingConfigSpec.from_value(config, 0)]
+
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            config=config,
+            configs=configs,
+            compute_stage_assignments=bool(raw.get("compute_stage_assignments", False)),
+        )
+
+    def config_specs(self) -> list[MatchingConfigSpec]:
+        if self.configs:
+            return list(self.configs)
+        return [MatchingConfigSpec.from_value(self.config, 0)]
 
 
 @dataclass(frozen=True)
@@ -303,6 +360,12 @@ def _dataclass_from_dict(cls, data: Mapping[str, Any]):
     if unknown:
         raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
     return cls(**{k: v for k, v in data.items() if k in field_names})
+
+
+def _matching_name_from_path(path: str | None, index: int) -> str:
+    if path:
+        return Path(str(path)).stem or f"config_{index}"
+    return "default" if index == 0 else f"default_{index}"
 
 
 def _normalize_mode(mode: str) -> str:

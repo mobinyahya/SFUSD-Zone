@@ -1102,7 +1102,7 @@ wheels = [
 [[package]]
 name = "student-assignment"
 version = "0.1.0"
-source = { git = "https://github.com/kchandra423/student-assignment-performance.git?branch=main#5fb9bce132d865846ab66fbb04f186ab735fc35b" }
+source = { git = "https://github.com/kchandra423/student-assignment-performance.git?branch=main#09bcaa7a6cc84e07e30dbc524680312b621652b9" }
 dependencies = [
     { name = "adjusttext" },
     { name = "click" },

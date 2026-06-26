@@ -1,0 +1,42 @@
+# NOTE: lower_disadvantaged: true selects students with LOWER freelunch_prob values,
+# which is counterintuitive because higher freelunch_prob indicates higher need.
+# This flag remains true here for legacy behavior; revisit if revising reserve logic.
+
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: true
+guard-rails: 0
+reserve-settings: {
+  "column": "freelunch_prob", 
+  "thresholds": "percentile:60", 
+  "lower_disadvantaged": true, 
+  "citywide_only": false,  
+  "reserve_fraction": [0.6, 0.4]
+  }
+non_designation_boost: 128
+soft_reserve_boost: 64
+
+policies:
+- generated_zones
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+sibling-access: true
+zone-building-blocks: block
+designate: true
+ties-options:
+- MTB 
+
+iterations:
+  start: 0
+  end: 5

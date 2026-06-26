@@ -17,7 +17,7 @@ priority-weights:
     ctip: 2
 
 sibling-access: false
-zone-building-blocks: block_group
+zone-building-blocks: blocks
 designate: true
 ties-options:
 - MTB_REAL

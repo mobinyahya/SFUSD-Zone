@@ -6,6 +6,7 @@ import yaml
 from Zone_Generation.benchmark.config import (
     BenchmarkTask,
     ChoiceMetricsRunConfig,
+    MatchingConfigSpec,
     MatchingRunConfig,
     SimulationSweep,
     optimization_config_to_dict,
@@ -72,6 +73,34 @@ matching:
     assert sweep.matching.compute_stage_assignments is True
 
 
+def test_sweep_yaml_accepts_multiple_matching_configs(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        f"""
+mode: matching
+optimization_defaults:
+  levels: ['BlockGroup_0']
+  graphs_dir: '{tmp_path / "graphs"}'
+matching:
+  enabled: true
+  configs:
+    - name: no_reserves
+      config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+    - name: sd
+      config: Zone_Generation/benchmark/matching/sd.yaml
+""",
+        encoding="utf-8",
+    )
+
+    sweep = SimulationSweep.from_yaml(str(config_path))
+
+    assert [config.name for config in sweep.matching.config_specs()] == [
+        "no_reserves",
+        "sd",
+    ]
+    assert sweep.matching.config_specs()[1].config.endswith("sd.yaml")
+
+
 def test_sweep_yaml_accepts_choice_metrics_config(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(
@@ -102,6 +131,7 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
         solution,
         str(tmp_path),
         MatchingRunConfig(enabled=True),
+        workers=3,
     )
 
     assert result.status == "OK"
@@ -111,6 +141,8 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
     assert result.metrics["matching_unassigned_rate_mean"] == 1 / 3
     assert captured_config["value"]["zone-building-blocks"] == "block_group"
     assert captured_config["value"]["policies"] == ["generated_zones"]
+    assert captured_config["value"]["workers"] == 3
+    assert result.run["workers"] == 3
 
     zones_text = (tmp_path / "matching" / "zones.csv").read_text(encoding="utf-8")
     assert "1000,1001" in zones_text
@@ -123,6 +155,37 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
 
     school_populations = pd.read_csv(tmp_path / "matching" / "school_populations.csv")
     assert school_populations["assigned_count"].tolist() == [1, 1]
+
+
+def test_run_matching_for_solution_supports_multiple_configs(tmp_path, monkeypatch):
+    captured = _stub_student_assignment(monkeypatch)
+    solution = _solution()
+
+    result = run_matching_for_solution(
+        solution,
+        str(tmp_path),
+        MatchingRunConfig(
+            enabled=True,
+            configs=[
+                MatchingConfigSpec(name="first"),
+                MatchingConfigSpec(name="second"),
+            ],
+        ),
+        workers=1,
+    )
+
+    assert result.status == "OK"
+    assert set(result.run["runs"]) == {"first", "second"}
+    assert result.metrics["matching_first_assignment_files"] == 1
+    assert result.metrics["matching_second_assignment_files"] == 1
+    assert (
+        tmp_path / "matching" / "first" / "student_school_assignments.csv"
+    ).exists()
+    assert (
+        tmp_path / "matching" / "second" / "student_school_assignments.csv"
+    ).exists()
+    assert (tmp_path / "matching" / "summary.json").exists()
+    assert len(captured["calls"]) == 2
 
 
 def test_choice_metrics_noop_without_assignments(tmp_path):
@@ -172,6 +235,37 @@ def test_choice_metrics_compute_assignment_outcomes(tmp_path):
     assert by_assignment_path.exists()
     by_assignment = pd.read_csv(by_assignment_path)
     assert all(column in by_assignment.columns for column in CHOICE_METRIC_COLUMNS)
+
+
+def test_choice_metrics_support_multiple_matching_configs(tmp_path):
+    for name, utility in [("first", 10.0), ("second", 20.0)]:
+        assignments_dir = tmp_path / "matching" / name / "assignments_raw" / "policy"
+        assignments_dir.mkdir(parents=True)
+        pd.DataFrame(
+            {
+                "studentno": [1, 2],
+                "programno": [11, 0],
+                "programcodes": ["101-GE-KG", ""],
+                "rank": [1, 2],
+                "designation": [0, 0],
+                "assigned_utility": [utility, None],
+                "freelunch_prob": [0.3, 0.7],
+                "reducedlunch_prob": [0.0, 0.0],
+            }
+        ).to_csv(assignments_dir / "assignment.csv", index=False)
+
+    result = compute_choice_metrics_for_run(
+        str(tmp_path),
+        ChoiceMetricsRunConfig(enabled=True),
+    )
+
+    assert set(result.run["runs"]) == {"first", "second"}
+    assert result.metrics["choice_first_avg_mnl_utility"] == 10.0
+    assert result.metrics["choice_second_avg_mnl_utility"] == 20.0
+    assert (tmp_path / "matching" / "choice_metrics_summary.json").exists()
+    assert (
+        tmp_path / "matching" / "first" / "choice_metrics_by_assignment.csv"
+    ).exists()
 
 
 def test_choice_metrics_average_mnl_utility_across_assignments(tmp_path):
@@ -397,9 +491,11 @@ def test_preserve_choice_metrics_payload_keeps_existing_choice_metrics():
 def _stub_student_assignment(monkeypatch):
     captured = {"calls": [], "sessions": []}
 
-    def fake_run(config, assignments_dir):
+    def fake_run(config, assignments_dir, *, workers=1):
         captured["value"] = config
-        captured["calls"].append({"config": config, "assignments_dir": assignments_dir})
+        captured["calls"].append(
+            {"config": config, "assignments_dir": assignments_dir, "workers": workers}
+        )
         output = assignments_dir / config["subconfig-name"] / "assignment.csv"
         output.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
@@ -418,9 +514,11 @@ def _stub_student_assignment(monkeypatch):
             self.calls = []
             captured["sessions"].append(self)
 
-        def run(self, config, assignments_dir):
-            self.calls.append({"config": config, "assignments_dir": assignments_dir})
-            fake_run(config, assignments_dir)
+        def run(self, config, assignments_dir, *, workers=1):
+            self.calls.append(
+                {"config": config, "assignments_dir": assignments_dir, "workers": workers}
+            )
+            fake_run(config, assignments_dir, workers=workers)
 
     monkeypatch.setattr(matching_runner, "_run_student_assignment", fake_run)
     monkeypatch.setattr(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,7 +44,7 @@ CHOICE_SUMMARY_JSON = "choice_metrics_summary.json"
 class ChoiceMetricsResult:
     status: str
     metrics: dict[str, Any] = field(default_factory=dict)
-    artifacts: dict[str, str] = field(default_factory=dict)
+    artifacts: dict[str, Any] = field(default_factory=dict)
     run: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
 
@@ -97,15 +98,27 @@ def compute_choice_metrics_for_run(
 
     output_root = Path(os.path.expanduser(output_dir)).resolve()
     matching_dir = output_root / MATCHING_DIRNAME
-    assignments_dir = matching_dir / ASSIGNMENTS_RAW_DIR
-    if not _assignment_files(assignments_dir):
+    matching_runs = _matching_assignment_runs(matching_dir)
+    if not matching_runs:
         return None
 
-    return compute_choice_metrics_from_assignments(
-        assignments_dir=assignments_dir,
-        matching_dir=matching_dir,
-        output_root=output_root,
-    )
+    if len(matching_runs) == 1 and matching_runs[0][0] is None:
+        _, assignments_dir, run_matching_dir = matching_runs[0]
+        return compute_choice_metrics_from_assignments(
+            assignments_dir=assignments_dir,
+            matching_dir=run_matching_dir,
+            output_root=output_root,
+        )
+
+    results = []
+    for name, assignments_dir, run_matching_dir in matching_runs:
+        result = compute_choice_metrics_from_assignments(
+            assignments_dir=assignments_dir,
+            matching_dir=run_matching_dir,
+            output_root=output_root,
+        )
+        results.append((str(name), result))
+    return _combined_choice_metrics_result(results, matching_dir, output_root)
 
 
 def compute_choice_metrics_from_assignments(
@@ -304,6 +317,66 @@ def preserve_choice_metrics_payload(
     if choice_metric_values:
         new_payload.setdefault("metrics", {}).update(choice_metric_values)
     return new_payload
+
+
+def _combined_choice_metrics_result(
+    results: list[tuple[str, ChoiceMetricsResult]],
+    matching_dir: Path,
+    output_root: Path,
+) -> ChoiceMetricsResult:
+    metrics: dict[str, Any] = {}
+    runs: dict[str, Any] = {}
+    artifacts: dict[str, Any] = {"runs": {}}
+    for name, result in results:
+        safe_name = _safe_name(name)
+        runs[safe_name] = result.to_payload()
+        artifacts["runs"][safe_name] = result.artifacts
+        metrics.update(_prefix_choice_metrics(safe_name, result.metrics))
+
+    summary_path = matching_dir / CHOICE_SUMMARY_JSON
+    combined = ChoiceMetricsResult(
+        status="OK" if all(result.status == "OK" for _, result in results) else "ERROR",
+        metrics=metrics,
+        artifacts=artifacts,
+        run={"configs": list(runs), "runs": runs},
+    )
+    combined.artifacts["summary"] = _relpath(summary_path, output_root)
+    _write_json(summary_path, combined.to_payload())
+    return combined
+
+
+def _matching_assignment_runs(
+    matching_dir: Path,
+) -> list[tuple[str | None, Path, Path]]:
+    legacy_assignments_dir = matching_dir / ASSIGNMENTS_RAW_DIR
+    if _assignment_files(legacy_assignments_dir):
+        return [(None, legacy_assignments_dir, matching_dir)]
+
+    runs: list[tuple[str | None, Path, Path]] = []
+    if not matching_dir.exists():
+        return runs
+    for child in sorted(matching_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        assignments_dir = child / ASSIGNMENTS_RAW_DIR
+        if _assignment_files(assignments_dir):
+            runs.append((child.name, assignments_dir, child))
+    return runs
+
+
+def _prefix_choice_metrics(name: str, metrics: Mapping[str, Any]) -> dict[str, Any]:
+    prefix = f"choice_{_safe_name(name)}"
+    out: dict[str, Any] = {}
+    for key, value in metrics.items():
+        key_str = str(key)
+        suffix = key_str.removeprefix("choice_")
+        out[f"{prefix}_{suffix}"] = value
+    return out
+
+
+def _safe_name(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", str(value)).strip("_").lower()
+    return safe or "default"
 
 
 def _load_student_data(config: Mapping[str, Any]) -> pd.DataFrame:

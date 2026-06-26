@@ -87,6 +87,7 @@ def run_optimization_task(
                 run_matching_for_stages,
             )
 
+            matching_workers = max(1, int(config.workers or 1))
             student_assignment_session = StudentAssignmentSession()
             shared_precomputed_dir = (
                 Path(os.path.expanduser(output_dir)).resolve()
@@ -99,6 +100,7 @@ def run_optimization_task(
                 matching,
                 student_assignment_session=student_assignment_session,
                 precomputed_dir=shared_precomputed_dir,
+                workers=matching_workers,
             )
             stage_matching_result = run_matching_for_stages(
                 solutions,
@@ -108,6 +110,7 @@ def run_optimization_task(
                 choice_metrics=choice_metrics,
                 student_assignment_session=student_assignment_session,
                 precomputed_dir=shared_precomputed_dir,
+                workers=matching_workers,
             )
 
         result_payload = result_payload_for(
