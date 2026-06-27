@@ -8,6 +8,8 @@ operate purely against a ``Dataset``; they never read raw files.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import pickle
 from typing import TYPE_CHECKING, Optional
@@ -39,6 +41,10 @@ class Dataset:
         )
         self.graphs_dir = config.graphs_dir
         self.level_to_split = dict(config.level_to_split)
+        self.graph_cache_dir = os.path.join(
+            self.graphs_dir,
+            self._graph_cache_namespace(),
+        )
         self._graphs: dict[str, nx.Graph] = {}
         self._centroids: dict[str, list[int]] = {}
 
@@ -51,7 +57,7 @@ class Dataset:
         if key in self._graphs:
             return self._graphs[key]
 
-        path = os.path.join(self.graphs_dir, level.filename)
+        path = self._graph_path(level)
         if os.path.exists(path):
             with open(path, "rb") as f:
                 G = pickle.load(f)
@@ -76,9 +82,33 @@ class Dataset:
         )
 
     def _save(self, level: LevelSpec, G: nx.Graph) -> None:
-        os.makedirs(self.graphs_dir, exist_ok=True)
-        with open(os.path.join(self.graphs_dir, level.filename), "wb") as f:
+        os.makedirs(self.graph_cache_dir, exist_ok=True)
+        path = self._graph_path(level)
+        tmp_path = f"{path}.{os.getpid()}.tmp"
+        with open(tmp_path, "wb") as f:
             pickle.dump(G, f)
+        os.replace(tmp_path, path)
+
+    def _graph_path(self, level: LevelSpec) -> str:
+        return os.path.join(self.graph_cache_dir, level.filename)
+
+    def _graph_cache_namespace(self) -> str:
+        payload = {
+            "schema_version": 1,
+            "unit": self.ingest.unit,
+            "years": list(self.ingest.years),
+            "population_type": self.ingest.population_type,
+            "drop_optout": bool(self.ingest.drop_optout),
+            "capacity_scenario": self.ingest.capacity_scenario,
+            "new_schools": bool(self.ingest.new_schools),
+            "include_k8": bool(self.ingest.include_k8),
+            "level_to_split": {
+                str(k): int(v) for k, v in sorted(self.level_to_split.items())
+            },
+        }
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        return f"{self.ingest.unit}_{digest}"
 
     # ------------------------------------------------------------------ #
     # centroids
@@ -93,17 +123,42 @@ class Dataset:
         school_to_node = {}
         for node, attrs in G.nodes(data=True):
             for sid in attrs.get("school_ids", []):
-                school_to_node.setdefault(sid, node)
+                school_to_node.setdefault(int(sid), node)
+        raw_school_to_node = None
 
         centroids = []
         for sid in loaders.load_centroid_schools(self.config.centroids_type):
             if sid not in school_to_node:
-                raise ValueError(
-                    f"Centroid school {sid} not found in any node at {key}."
-                )
-            centroids.append(school_to_node[sid])
+                if raw_school_to_node is None:
+                    raw_school_to_node = self._raw_centroid_node_lookup(G)
+                if sid not in raw_school_to_node:
+                    raise ValueError(
+                        f"Centroid school {sid} not found in any node or raw "
+                        f"school location at {key}."
+                    )
+                centroids.append(raw_school_to_node[sid])
+            else:
+                centroids.append(school_to_node[sid])
         self._centroids[key] = centroids
         return centroids
+
+    def _raw_centroid_node_lookup(self, G: nx.Graph) -> dict[int, int]:
+        area_to_node = {}
+        for node, attrs in G.nodes(data=True):
+            if "area_id" in attrs:
+                area_to_node.setdefault(int(attrs["area_id"]), node)
+            for area_id in attrs.get("block_ids", []):
+                area_to_node.setdefault(int(area_id), node)
+
+        school_to_node = {}
+        locations = loaders.load_school_locations(self.ingest)
+        for row in locations.itertuples(index=False):
+            sid = int(row.school_id)
+            area_id = int(getattr(row, self.ingest.unit))
+            node = area_to_node.get(area_id)
+            if node is not None:
+                school_to_node.setdefault(sid, node)
+        return school_to_node
 
     # ------------------------------------------------------------------ #
     # problems

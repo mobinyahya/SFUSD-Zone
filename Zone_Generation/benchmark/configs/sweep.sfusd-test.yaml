@@ -6,7 +6,7 @@ mode: run  # run | metrics
 optimization_defaults:
   save_solver_logs: true
   carry_over_compute: true
-  max_distance: 4.5
+  max_distance: 4
   use_hints: true
   capacity_scenario: 'A'
   boundary_radius: 2
@@ -16,9 +16,9 @@ optimization_defaults:
   workers: 8
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9','6-zone-2', '8-zone-22', '8-zone-24', '8-zone-26', '10-zone-3', '10-zone-11','10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
+  centroids_type: ['6-zone-3', '6-zone-9', '8-zone-22', '8-zone-24', '10-zone-3', '10-zone-11','10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
   # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
-  frl_dev: [0.13, 0.14, 0.15, 0.16, 0.17]
+  frl_dev: [0.15]
   # 0.12, 0.15, 0.2,
   # ignoring racial deviations
   seed: [42]
@@ -34,9 +34,9 @@ tasks:
     levels: ['Block_1', 'Block_0']
     solve_time_limits: [600, 600]
 
-  - strategy: 'recursive'
-    levels: ['Block_2', 'Block_1', 'Block_0']
-    solve_time_limits: [200, 400, 600]
+  # - strategy: 'recursive'
+  #   levels: ['Block_2', 'Block_1', 'Block_0']
+  #   solve_time_limits: [200, 400, 600]
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test/'

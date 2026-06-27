@@ -90,20 +90,35 @@ class IngestConfig:
 def load_students(cfg: IngestConfig) -> pd.DataFrame:
     """Concatenated, filtered, per-student rows across ``cfg.years``.
 
-    A cleaned cache (``Cleaned_Students_<years>.csv``) is reused when present,
-    matching the legacy behavior.
+    A cleaned cache is reused when present. It is keyed by the student filters
+    that change row membership so generated graph populations match the run.
     """
-    cache = os.path.join(
-        f"{SFUSD_PATH}/Data/Cleaned",
-        "Cleaned_Students_" + "_".join(str(y) for y in cfg.years) + ".csv",
-    )
+    cache = _student_cache_path(cfg)
     if os.path.exists(cache):
         return pd.read_csv(cache, low_memory=False)
 
     frames = [_load_students_for_year(cfg, year) for year in cfg.years]
     students = pd.concat(frames, ignore_index=True)
-    students.to_csv(cache, index=False)
+    tmp_cache = f"{cache}.{os.getpid()}.tmp"
+    students.to_csv(tmp_cache, index=False)
+    os.replace(tmp_cache, cache)
     return students
+
+
+def _student_cache_path(cfg: IngestConfig) -> str:
+    years = "_".join(str(y) for y in cfg.years)
+    population = _safe_cache_value(cfg.population_type)
+    return os.path.join(
+        f"{SFUSD_PATH}/Data/Cleaned",
+        f"Cleaned_Students_{years}_pop{population}_drop{int(cfg.drop_optout)}.csv",
+    )
+
+
+def _safe_cache_value(value: object) -> str:
+    return "".join(
+        ch if ch.isalnum() or ch in {"-", "_"} else "_"
+        for ch in str(value)
+    )
 
 
 def _load_students_for_year(cfg: IngestConfig, year: int) -> pd.DataFrame:
@@ -249,6 +264,33 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
         },
         inplace=True,
     )
+    return df
+
+
+def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
+    """Raw school ids and locations before capacity/K-8/citywide filtering.
+
+    This is used only to locate centroid anchors geographically. Graph school
+    and capacity metrics continue to come from :func:`load_schools`.
+    """
+    if cfg.new_schools:
+        df = pd.read_csv(
+            f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+        )
+    else:
+        df = pd.read_csv(
+            f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv"
+        )
+
+    missing = {"school_id", cfg.unit} - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"School location table missing columns: {sorted(missing)}."
+        )
+
+    df = df[["school_id", cfg.unit]].dropna().copy()
+    df["school_id"] = df["school_id"].astype(int)
+    df[cfg.unit] = df[cfg.unit].astype("int64")
     return df
 
 
