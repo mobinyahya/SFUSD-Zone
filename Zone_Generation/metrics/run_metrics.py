@@ -10,16 +10,24 @@ from Zone_Generation.metrics.spatial import compute_spatial_metrics
 def compute(context: MetricsContext) -> MetricOutput:
     stage_rows = []
     compute_stage_metrics = context.compute_stage_metrics
-    flat = {
-        MetricColumns.FINAL_OBJECTIVE: context.solution.objective,
-        MetricColumns.FINAL_STATUS: context.solution.status,
-        MetricColumns.FINAL_WALL_TIME: context.solution.wall_time,
-        MetricColumns.TOTAL_WALL_TIME: _total_wall_time(context),
-        MetricColumns.TIME_TO_CONVERGENCE: _time_to_convergence(context),
-        MetricColumns.FINAL_STAGE_INDEX: context.final_stage_index,
-    }
+    final_is_eligible = context.solution.feasible
+    total_wall_time = _total_wall_time(context)
+    time_to_convergence = _time_to_convergence(context)
+    flat = {}
 
-    if context.solution.metadata.get("choice_utility") is not None:
+    if final_is_eligible:
+        flat.update(
+            {
+                MetricColumns.FINAL_OBJECTIVE: context.solution.objective,
+                MetricColumns.FINAL_STATUS: context.solution.status,
+                MetricColumns.FINAL_WALL_TIME: context.solution.wall_time,
+                MetricColumns.TOTAL_WALL_TIME: total_wall_time,
+                MetricColumns.TIME_TO_CONVERGENCE: time_to_convergence,
+                MetricColumns.FINAL_STAGE_INDEX: context.final_stage_index,
+            }
+        )
+
+    if final_is_eligible and context.solution.metadata.get("choice_utility") is not None:
         flat[MetricColumns.FINAL_CHOICE_UTILITY] = context.solution.metadata["choice_utility"]
 
     level_counts: dict[str, int] = {}
@@ -27,14 +35,15 @@ def compute(context: MetricsContext) -> MetricOutput:
         level_counts[stage.level.name] = level_counts.get(stage.level.name, 0) + 1
 
     for idx, (name, solution) in enumerate(zip(context.stage_names, context.stages)):
+        stage_is_eligible = solution.feasible and bool(solution.assignment)
         spatial = (
             compute_spatial_metrics(solution, context.config)
-            if compute_stage_metrics and solution.assignment
+            if compute_stage_metrics and stage_is_eligible
             else None
         )
         contiguous = (
             solution.is_contiguous()
-            if compute_stage_metrics and solution.assignment
+            if compute_stage_metrics and stage_is_eligible
             else None
         )
         row = {
@@ -59,10 +68,11 @@ def compute(context: MetricsContext) -> MetricOutput:
             row["choice_utility"] = solution.metadata["choice_utility"]
         stage_rows.append(row)
 
-        flat[f"objective_{name}"] = solution.objective
-        flat[f"wall_time_{name}"] = solution.wall_time
-        flat[f"time_to_convergence_{name}"] = solution.time_to_convergence
-        if compute_stage_metrics:
+        if final_is_eligible:
+            flat[f"objective_{name}"] = solution.objective
+            flat[f"wall_time_{name}"] = solution.wall_time
+            flat[f"time_to_convergence_{name}"] = solution.time_to_convergence
+        if compute_stage_metrics and stage_is_eligible:
             flat[f"cut_edges_{name}"] = row["cut_edges"]
             flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
             flat[f"fractional_cut_edges_{name}"] = row["fractional_cut_edges"]
@@ -70,13 +80,13 @@ def compute(context: MetricsContext) -> MetricOutput:
             flat[f"avg_polsby_popper_score_{name}"] = row[
                 "avg_polsby_popper_score"
             ]
-        if level_counts[solution.level.name] == 1:
+        if final_is_eligible and level_counts[solution.level.name] == 1:
             flat[f"objective_{solution.level.name}"] = solution.objective
             flat[f"wall_time_{solution.level.name}"] = solution.wall_time
             flat[f"time_to_convergence_{solution.level.name}"] = (
                 solution.time_to_convergence
             )
-            if compute_stage_metrics:
+            if compute_stage_metrics and stage_is_eligible:
                 flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
                 flat[f"normalized_cut_edges_{solution.level.name}"] = row[
                     "normalized_cut_edges"
@@ -92,7 +102,7 @@ def compute(context: MetricsContext) -> MetricOutput:
                 ]
 
     final_stage = stage_rows[context.final_stage_index]
-    if compute_stage_metrics:
+    if final_is_eligible and compute_stage_metrics:
         flat[MetricColumns.FINAL_CUT_EDGES] = final_stage["cut_edges"]
 
     run = {
@@ -103,8 +113,8 @@ def compute(context: MetricsContext) -> MetricOutput:
         "final_status": context.solution.status,
         "final_objective": context.solution.objective,
         "final_cut_edges": final_stage["cut_edges"],
-        "total_wall_time": flat[MetricColumns.TOTAL_WALL_TIME],
-        "time_to_convergence": flat[MetricColumns.TIME_TO_CONVERGENCE],
+        "total_wall_time": total_wall_time,
+        "time_to_convergence": time_to_convergence,
         "stages": stage_rows,
     }
     return MetricOutput(metrics=flat, run=run)
@@ -146,15 +156,19 @@ def _strategy_name(context: MetricsContext) -> str:
 
 
 def _selection_reason(context: MetricsContext) -> str:
+    if not context._is_iterative_run():
+        return "literal_final_stage"
     if context.solution.metadata.get("choice_utility") is not None:
         best = max(
             (
                 stage.metadata.get("choice_utility")
                 for stage in context.stages
-                if stage.metadata.get("choice_utility") is not None
+                if stage.feasible
+                and stage.assignment
+                and stage.metadata.get("choice_utility") is not None
             ),
             default=None,
         )
         if best == context.solution.metadata.get("choice_utility"):
             return "best_choice_utility"
-    return "last_solution_with_assignment"
+    return "literal_final_stage"

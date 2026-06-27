@@ -150,16 +150,18 @@ class MetricsContext:
         return self.stage_names[self.final_stage_index]
 
     def _select_final_solution(self) -> ZoneSolution:
+        if not self._is_iterative_run():
+            return self.stages[-1]
+
         choice_candidates = [
             sol
             for sol in self.stages
-            if sol.assignment and sol.metadata.get("choice_utility") is not None
+            if sol.feasible
+            and sol.assignment
+            and sol.metadata.get("choice_utility") is not None
         ]
         if choice_candidates:
             return max(choice_candidates, key=lambda sol: sol.metadata["choice_utility"])
-        for sol in reversed(self.stages):
-            if sol.assignment:
-                return sol
         return self.stages[-1]
 
     def _is_iterative_run(self) -> bool:

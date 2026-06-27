@@ -94,14 +94,15 @@ def run_optimization_task(
                 / "matching"
                 / "precomputed"
             )
-            matching_result = run_matching_for_solution(
-                final_solution,
-                output_dir,
-                matching,
-                student_assignment_session=student_assignment_session,
-                precomputed_dir=shared_precomputed_dir,
-                workers=matching_workers,
-            )
+            if final_solution.feasible:
+                matching_result = run_matching_for_solution(
+                    final_solution,
+                    output_dir,
+                    matching,
+                    student_assignment_session=student_assignment_session,
+                    precomputed_dir=shared_precomputed_dir,
+                    workers=matching_workers,
+                )
             stage_matching_result = run_matching_for_stages(
                 solutions,
                 stage_records,
@@ -129,7 +130,7 @@ def run_optimization_task(
             merge_stage_matching_result(result_payload, stage_matching_result)
 
         choice_metrics_result = None
-        if choice_metrics and choice_metrics.enabled:
+        if choice_metrics and choice_metrics.enabled and final_solution.feasible:
             from Zone_Generation.benchmark.choice_metrics import (
                 compute_choice_metrics_for_run,
                 merge_choice_metrics_result,

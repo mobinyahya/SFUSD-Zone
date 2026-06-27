@@ -65,6 +65,8 @@ class MetricsCalculator:
         result = MetricsResult()
         errors = []
         for module in self.modules:
+            if not self.context.solution.feasible and module is not run_metrics.compute:
+                continue
             try:
                 output = module(self.context)
             except Exception as exc:

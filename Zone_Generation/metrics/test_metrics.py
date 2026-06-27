@@ -57,11 +57,13 @@ def _solution(
     wall_time=1.5,
     time_to_convergence=None,
     metadata=None,
+    assignment=None,
+    status="FEASIBLE",
 ):
     return ZoneSolution(
         problem=_problem(),
-        assignment=_assignment(),
-        status="FEASIBLE",
+        assignment=_assignment() if assignment is None else assignment,
+        status=status,
         objective=objective,
         wall_time=wall_time,
         time_to_convergence=time_to_convergence,
@@ -136,7 +138,7 @@ def test_recursive_stage_metrics_default_to_final_only():
     result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
 
     assert result.run["strategy"] == "recursive"
-    assert result.run["selection"] == "last_solution_with_assignment"
+    assert result.run["selection"] == "literal_final_stage"
     assert result.run["final_stage"] == "stage_01_Block_0"
     assert result.metrics["total_wall_time"] == 5.0
     assert result.metrics["time_to_convergence"] == 1.75
@@ -149,6 +151,47 @@ def test_recursive_stage_metrics_default_to_final_only():
     assert result.metrics["cut_edges"] > 0
     assert result.run["final_cut_edges"] == result.metrics["cut_edges"]
     assert len(result.run["stages"]) == 2
+
+
+def test_recursive_metrics_use_infeasible_literal_final_stage():
+    first = _solution(objective=20.0, wall_time=2.0, time_to_convergence=0.5)
+    final = _solution(
+        objective=None,
+        wall_time=1.0,
+        assignment={},
+        status="INFEASIBLE",
+    )
+
+    result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
+
+    assert result.run["selection"] == "literal_final_stage"
+    assert result.run["final_status"] == "INFEASIBLE"
+    assert result.run["final_stage"] == "stage_01_Block_0"
+    assert result.metrics == {}
+    assert result.zone_data == {}
+
+
+def test_recursive_stage_metrics_skip_infeasible_stages():
+    first = _solution(objective=20.0, wall_time=2.0, time_to_convergence=0.5)
+    final = _solution(
+        objective=None,
+        wall_time=1.0,
+        assignment={},
+        status="INFEASIBLE",
+    )
+
+    result = MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert result.run["final_status"] == "INFEASIBLE"
+    assert result.run["stages"][0]["cut_edges"] is not None
+    assert result.run["stages"][1]["cut_edges"] is None
+    assert "cut_edges_stage_00_Block_0" in result.metrics
+    assert "cut_edges_stage_01_Block_0" not in result.metrics
+    assert "num_zones" not in result.metrics
 
 
 def test_recursive_stage_metrics_can_be_enabled():

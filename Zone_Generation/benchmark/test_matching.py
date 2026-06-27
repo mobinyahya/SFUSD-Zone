@@ -339,6 +339,39 @@ def test_choice_metrics_mode_updates_existing_result(tmp_path):
     assert result["choice_metrics"]["status"] == "OK"
 
 
+def test_choice_metrics_mode_skips_infeasible_final_solution(tmp_path):
+    run_dir, _ = _write_recursive_infeasible_run(tmp_path)
+    assignments_dir = run_dir / "matching" / "assignments_raw" / "policy"
+    assignments_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "programno": [11, 0],
+            "programcodes": ["101-GE-KG", ""],
+            "rank": [1, 2],
+            "designation": [0, 0],
+            "assignment_dist": [1.25, None],
+            "freelunch_prob": [0.3, 0.7],
+            "reducedlunch_prob": [0.0, 0.0],
+        }
+    ).to_csv(assignments_dir / "assignment.csv", index=False)
+    payload = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    payload["choice_metrics"] = {"status": "OK"}
+    payload.setdefault("metrics", {})[CHOICE_AVG_STUDENT_DISTANCE] = 99
+    write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
+
+    batch = run_choice_metrics_for_existing_runs(
+        str(tmp_path),
+        ChoiceMetricsRunConfig(enabled=True),
+    )
+
+    assert batch.skipped == 1
+    result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    assert result["status"] == "INFEASIBLE"
+    assert "choice_metrics" not in result
+    assert CHOICE_AVG_STUDENT_DISTANCE not in result["metrics"]
+
+
 def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
     captured = _stub_student_assignment(monkeypatch)
     run_dir, problem = _write_synthetic_run(tmp_path)
@@ -358,6 +391,28 @@ def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
     assert captured["sessions"][0].calls[0]["config"]["paths"]["student-save"] == str(
         (run_dir / "matching" / "precomputed").resolve()
     )
+
+
+def test_matching_mode_skips_infeasible_final_solution(tmp_path, monkeypatch):
+    captured = _stub_student_assignment(monkeypatch)
+    run_dir, problem = _write_recursive_infeasible_run(tmp_path)
+    payload = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    payload["matching"] = {"status": "OK"}
+    payload.setdefault("metrics", {})["matching_assignment_files"] = 99
+    write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
+
+    batch = run_matching_for_existing_runs(
+        str(tmp_path),
+        MatchingRunConfig(enabled=True, config=MATCHING_CONFIG),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    assert batch.successful == 1
+    result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    assert result["status"] == "INFEASIBLE"
+    assert "matching" not in result
+    assert "matching_assignment_files" not in result["metrics"]
+    assert sum(len(session.calls) for session in captured["sessions"]) == 0
 
 
 def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
@@ -404,6 +459,35 @@ def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
     assert stage_config["paths"]["student-save"] == str(
         (run_dir / "matching" / "precomputed").resolve()
     )
+
+
+def test_stage_matching_skips_infeasible_stages(tmp_path, monkeypatch):
+    captured = _stub_student_assignment(monkeypatch)
+    run_dir, problem = _write_recursive_infeasible_run(tmp_path)
+
+    batch = run_matching_for_existing_runs(
+        str(tmp_path),
+        MatchingRunConfig(
+            enabled=True,
+            config=MATCHING_CONFIG,
+            compute_stage_assignments=True,
+        ),
+        choice_metrics=ChoiceMetricsRunConfig(enabled=True, compute_stage_metrics=True),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    assert batch.successful == 1
+    result = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
+    feasible_stage = "stage_00_BlockGroup_0"
+    infeasible_stage = "stage_01_BlockGroup_0"
+    assert "matching" not in result
+    assert set(result["stage_matching"]["stages"]) == {feasible_stage}
+    assert result["stage_matching"]["stages"][feasible_stage]["matching"]["status"] == "OK"
+    assert result["run"]["stages"][0]["matching"]["status"] == "OK"
+    assert result["run"]["stages"][0]["choice_metrics"]["status"] == "OK"
+    assert "matching" not in result["run"]["stages"][1]
+    assert infeasible_stage not in result["stage_matching"]["stages"]
+    assert sum(len(session.calls) for session in captured["sessions"]) == 1
 
 
 def test_run_student_assignment_uses_market_constructor_shape(tmp_path, monkeypatch):
@@ -752,6 +836,71 @@ def _write_synthetic_run(tmp_path):
             completed_at="2026-01-01T00:00:01+00:00",
             stages=stage_records,
             final_stage="stage_00_BlockGroup_0",
+            error_message=None,
+        ),
+    )
+    return run_dir, problem
+
+
+def _write_recursive_infeasible_run(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    first = _solution()
+    problem = first.problem
+    final = ZoneSolution(
+        problem=problem,
+        assignment={},
+        status="INFEASIBLE",
+        objective=None,
+        wall_time=0.25,
+    )
+    config = OptimizationConfig(
+        centroids_type="5-zone-AF",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solver="local_search",
+        strategy="recursive",
+        frl_dev=1.0,
+        racial_dev=1.0,
+        overage=5.0,
+        shortage=0.0,
+        workers=1,
+        graphs_dir=str(tmp_path / "graphs"),
+    )
+    config_dict = optimization_config_to_dict(config)
+    config_hash = stable_hash(config_dict)
+    task = BenchmarkTask(
+        task_id=config_hash[:12],
+        config_hash=config_hash,
+        config=config_dict,
+        output_dir=str(run_dir),
+        capacity_slots=1,
+    )
+    solutions = [first, final]
+    stage_records = save_stage_artifacts(
+        solutions,
+        str(run_dir),
+        stage_names_for(solutions, config),
+    )
+    calculator = MetricsCalculator(solutions, config=config)
+    metrics = calculator.compute()
+    calculator.context.solution.save(str(run_dir))
+    payload = result_payload_for(
+        metrics=metrics,
+        config=config,
+        solutions=solutions,
+        task=task,
+    )
+    write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
+    write_json(
+        os.path.join(run_dir, MANIFEST_FILENAME),
+        manifest_for(
+            task=task,
+            config=config,
+            status=payload["status"],
+            started_at="2026-01-01T00:00:00+00:00",
+            completed_at="2026-01-01T00:00:01+00:00",
+            stages=stage_records,
+            final_stage=metrics.run.get("final_stage"),
             error_message=None,
         ),
     )

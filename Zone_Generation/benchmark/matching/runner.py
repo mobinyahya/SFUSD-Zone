@@ -115,6 +115,8 @@ def run_matching_for_solution(
 
     if not matching.enabled:
         return None
+    if not solution.feasible:
+        return None
     if not solution.assignment:
         raise ValueError("Cannot run matching without a final zone assignment.")
 
@@ -387,14 +389,16 @@ def run_matching_for_existing_runs(
                 / "precomputed"
             )
             final_solution = MetricsContext(solutions, config=config).solution
-            matching_result = run_matching_for_solution(
-                final_solution,
-                run_dir,
-                matching,
-                student_assignment_session=student_assignment_session,
-                precomputed_dir=shared_precomputed_dir,
-                workers=matching_workers,
-            )
+            matching_result = None
+            if final_solution.feasible:
+                matching_result = run_matching_for_solution(
+                    final_solution,
+                    run_dir,
+                    matching,
+                    student_assignment_session=student_assignment_session,
+                    precomputed_dir=shared_precomputed_dir,
+                    workers=matching_workers,
+                )
             stage_matching_result = run_matching_for_stages(
                 solutions,
                 manifest.get("stages", []),
@@ -407,6 +411,13 @@ def run_matching_for_existing_runs(
             )
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
+            clear_matching_payload(payload)
+            if (choice_metrics and choice_metrics.enabled) or not final_solution.feasible:
+                from Zone_Generation.benchmark.choice_metrics import (
+                    clear_choice_metrics_payload,
+                )
+
+                clear_choice_metrics_payload(payload)
             merge_matching_result(payload, matching_result)
             merge_stage_matching_result(payload, stage_matching_result)
             if choice_metrics and choice_metrics.enabled:
@@ -417,10 +428,12 @@ def run_matching_for_existing_runs(
                     merge_stage_choice_metrics_result,
                 )
 
-                choice_result = compute_choice_metrics_for_run(
-                    run_dir,
-                    choice_metrics,
-                )
+                choice_result = None
+                if final_solution.feasible:
+                    choice_result = compute_choice_metrics_for_run(
+                        run_dir,
+                        choice_metrics,
+                    )
                 stage_choice_result = None
                 if not (
                     stage_matching_result
@@ -472,6 +485,8 @@ def run_matching_for_stages(
     output_root = Path(os.path.expanduser(output_dir)).resolve()
     stages: dict[str, Any] = {}
     for solution, stage in zip(solutions, stage_records):
+        if not solution.feasible:
+            continue
         stage_name = str(stage.get("name"))
         stage_dir = output_root / str(stage.get("path"))
         matching_result = run_matching_for_solution(
@@ -616,6 +631,26 @@ def merge_matching_result(
         return payload
     payload["matching"] = matching_result.to_payload()
     payload.setdefault("metrics", {}).update(matching_result.metrics)
+    return payload
+
+
+def clear_matching_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.pop("matching", None)
+    metrics = payload.get("metrics")
+    if isinstance(metrics, dict):
+        for key in list(metrics):
+            if str(key).startswith("matching_"):
+                metrics.pop(key, None)
+
+    stage_matching = payload.get("stage_matching")
+    if isinstance(stage_matching, dict):
+        for stage_payload in (stage_matching.get("stages") or {}).values():
+            if isinstance(stage_payload, dict):
+                stage_payload.pop("matching", None)
+    for stage in (payload.get("run") or {}).get("stages", []):
+        if isinstance(stage, dict):
+            stage.pop("matching", None)
+            stage.pop("matching_metrics", None)
     return payload
 
 

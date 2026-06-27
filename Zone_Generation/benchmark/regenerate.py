@@ -78,8 +78,9 @@ def regenerate_metrics(
             previous_payload = _load_previous_result(
                 os.path.join(run_dir, RESULT_FILENAME)
             )
-            preserve_matching_payload(payload, previous_payload)
-            preserve_choice_metrics_payload(payload, previous_payload)
+            if calculator.context.solution.feasible:
+                preserve_matching_payload(payload, previous_payload)
+                preserve_choice_metrics_payload(payload, previous_payload)
             write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
             manifest["status"] = payload.get("status") or manifest.get("status")
             manifest["final_stage"] = metrics.run.get("final_stage")

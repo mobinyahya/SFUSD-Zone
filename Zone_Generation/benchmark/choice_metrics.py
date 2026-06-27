@@ -39,6 +39,10 @@ ASSIGNMENTS_RAW_DIR = "assignments_raw"
 GENERATED_CONFIG = "config.generated.yaml"
 CHOICE_BY_ASSIGNMENT_CSV = "choice_metrics_by_assignment.csv"
 CHOICE_SUMMARY_JSON = "choice_metrics_summary.json"
+ELIGIBLE_SOLUTION_STATUSES = {"OPTIMAL", "FEASIBLE"}
+_CHOICE_METRIC_SUFFIXES = tuple(
+    column.removeprefix("choice_") for column in CHOICE_METRIC_COLUMNS
+)
 
 @dataclass
 class ChoiceMetricsResult:
@@ -207,14 +211,20 @@ def run_choice_metrics_for_existing_runs(
 
     for run_dir in run_dirs:
         try:
-            result = compute_choice_metrics_for_run(run_dir, choice_metrics)
             manifest = load_manifest(run_dir)
+            result_path = os.path.join(run_dir, RESULT_FILENAME)
+            payload = _load_json(result_path)
+            result = None
+            if _status_is_eligible(_selected_final_status(manifest, payload)):
+                result = compute_choice_metrics_for_run(run_dir, choice_metrics)
             stage_result = compute_choice_metrics_for_stages(
                 run_dir,
                 choice_metrics,
                 manifest.get("stages", []),
             )
+            clear_choice_metrics_payload(payload)
             if result is None and not (stage_result and stage_result.get("stages")):
+                write_json(result_path, payload)
                 batch.add(
                     ChoiceMetricsTaskResult(
                         run_dir=run_dir,
@@ -224,8 +234,6 @@ def run_choice_metrics_for_existing_runs(
                 )
                 continue
 
-            result_path = os.path.join(run_dir, RESULT_FILENAME)
-            payload = _load_json(result_path)
             merge_choice_metrics_result(payload, result)
             merge_stage_choice_metrics_result(payload, stage_result)
             write_json(result_path, payload)
@@ -261,6 +269,8 @@ def compute_choice_metrics_for_stages(
     output_root = Path(os.path.expanduser(output_dir)).resolve()
     stages: dict[str, Any] = {}
     for stage in stage_records:
+        if not _status_is_eligible(stage.get("status")):
+            continue
         stage_name = str(stage.get("name"))
         stage_dir = output_root / str(stage.get("path"))
         result = compute_choice_metrics_for_run(str(stage_dir), choice_metrics)
@@ -277,6 +287,31 @@ def merge_choice_metrics_result(
         return payload
     payload["choice_metrics"] = choice_result.to_payload()
     payload.setdefault("metrics", {}).update(choice_result.metrics)
+    return payload
+
+
+def clear_choice_metrics_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.pop("choice_metrics", None)
+    metrics = payload.get("metrics")
+    if isinstance(metrics, dict):
+        for key in list(metrics):
+            if _is_assignment_choice_metric(key):
+                metrics.pop(key, None)
+
+    stage_choice_metrics = payload.get("stage_choice_metrics")
+    if isinstance(stage_choice_metrics, dict):
+        for stage_payload in (stage_choice_metrics.get("stages") or {}).values():
+            if isinstance(stage_payload, dict):
+                stage_payload.pop("choice_metrics", None)
+    stage_matching = payload.get("stage_matching")
+    if isinstance(stage_matching, dict):
+        for stage_payload in (stage_matching.get("stages") or {}).values():
+            if isinstance(stage_payload, dict):
+                stage_payload.pop("choice_metrics", None)
+    for stage in (payload.get("run") or {}).get("stages", []):
+        if isinstance(stage, dict):
+            stage.pop("choice_metrics", None)
+            stage.pop("choice_metrics_metrics", None)
     return payload
 
 
@@ -317,6 +352,43 @@ def preserve_choice_metrics_payload(
     if choice_metric_values:
         new_payload.setdefault("metrics", {}).update(choice_metric_values)
     return new_payload
+
+
+def _status_is_eligible(status: Any) -> bool:
+    return str(status or "").upper() in ELIGIBLE_SOLUTION_STATUSES
+
+
+def _selected_final_status(
+    manifest: Mapping[str, Any], payload: Mapping[str, Any]
+) -> Any:
+    strategy = str((manifest.get("config") or {}).get("strategy", "")).lower()
+    stages = manifest.get("stages") or []
+    if "iterative" in strategy:
+        choice_stages = [
+            stage
+            for stage in stages
+            if _status_is_eligible(stage.get("status"))
+            and (stage.get("metadata") or {}).get("choice_utility") is not None
+        ]
+        if choice_stages:
+            return max(
+                choice_stages,
+                key=lambda stage: (stage.get("metadata") or {})["choice_utility"],
+            ).get("status")
+        return (payload.get("run") or {}).get("final_status") or payload.get("status")
+
+    if stages:
+        return stages[-1].get("status")
+    return (payload.get("run") or {}).get("final_status") or payload.get("status")
+
+
+def _is_assignment_choice_metric(key: Any) -> bool:
+    key = str(key)
+    if key in CHOICE_METRIC_COLUMNS:
+        return True
+    return key.startswith("choice_") and any(
+        key.endswith(f"_{suffix}") for suffix in _CHOICE_METRIC_SUFFIXES
+    )
 
 
 def _combined_choice_metrics_result(

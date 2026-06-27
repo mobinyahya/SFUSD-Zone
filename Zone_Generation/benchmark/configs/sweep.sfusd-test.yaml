@@ -9,7 +9,6 @@ optimization_defaults:
   max_distance: 4
   use_hints: true
   capacity_scenario: 'A'
-  boundary_radius: 2
   racial_dev: -1
   looseness: 1.2
   gap_limits: [0, 0, 0]
@@ -33,13 +32,18 @@ tasks:
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
     solve_time_limits: [600, 600]
+    boundary_radius: 2
+   - strategy: 'recursive'
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [400, 800]
+    boundary_radius: 3
 
   # - strategy: 'recursive'
   #   levels: ['Block_2', 'Block_1', 'Block_0']
   #   solve_time_limits: [200, 400, 600]
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test/'
+  output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test_2/'
   capacity: 48              # total solver-thread slots available on the machine
   max_workers: 10           # max concurrent Python worker processes
   max_tasks_per_worker: 10  # recycle processes to limit memory growth
