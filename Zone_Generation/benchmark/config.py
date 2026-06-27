@@ -188,7 +188,7 @@ class SimulationSweep:
             raise ValueError(f"Unknown sweep YAML keys: {sorted(unknown_top_level)}")
 
         name = str(raw.get("name") or Path(path).stem)
-        mode = _normalize_mode(str(raw.get("mode", "run")))
+        mode = str(raw.get("mode", "run"))
         if mode not in {"run", "metrics", "matching", "choice_metrics"}:
             raise ValueError(
                 "mode must be one of: run, metrics, matching, choice_metrics"
@@ -366,10 +366,6 @@ def _matching_name_from_path(path: str | None, index: int) -> str:
     if path:
         return Path(str(path)).stem or f"config_{index}"
     return "default" if index == 0 else f"default_{index}"
-
-
-def _normalize_mode(mode: str) -> str:
-    return mode.replace("-", "_")
 
 
 def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:

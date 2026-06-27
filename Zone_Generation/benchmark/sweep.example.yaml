@@ -68,7 +68,7 @@ metrics:
 
 # Optional assignment-based choice metrics. These use matching assignment CSVs,
 # do nothing when no assignments exist, and can be run independently with:
-#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml --mode choice-metrics
+#   uv run python -m Zone_Generation.benchmark.run Zone_Generation/benchmark/sweep.example.yaml --mode choice_metrics
 # choice_metrics:
 #   enabled: true
 #   compute_stage_metrics: false  # opt in to assignment metrics for stage matching outputs

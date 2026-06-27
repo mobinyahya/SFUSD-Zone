@@ -112,7 +112,7 @@ def test_sweep_yaml_accepts_choice_metrics_config(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(
         f"""
-mode: choice-metrics
+mode: choice_metrics
 optimization_defaults:
   levels: ['BlockGroup_0']
   graphs_dir: '{tmp_path / "graphs"}'

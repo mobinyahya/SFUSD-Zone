@@ -16,13 +16,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("config", help="Path to simulation sweep YAML.")
     parser.add_argument(
         "--mode",
-        choices=["run", "metrics", "matching", "choice-metrics", "choice_metrics"],
+        choices=["run", "metrics", "matching", "choice_metrics"],
         help="Override the mode declared in the YAML file.",
     )
     args = parser.parse_args(argv)
 
     sweep = SimulationSweep.from_yaml(args.config)
-    mode = (args.mode or sweep.mode).replace("-", "_")
+    mode = args.mode or sweep.mode
     output_dir = os.path.expanduser(sweep.execution.output_dir)
 
     if mode == "run":

@@ -189,7 +189,7 @@ def run_choice_metrics_for_existing_runs(
     *,
     fail_fast: bool = False,
 ) -> ChoiceMetricsBatchResult:
-    """Run choice-metrics-only regeneration for saved benchmark run folders."""
+    """Regenerate choice metrics for saved benchmark run folders."""
 
     from Zone_Generation.benchmark.results import discover_run_dirs
     from Zone_Generation.benchmark.runner import (
