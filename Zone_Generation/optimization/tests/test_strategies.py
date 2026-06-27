@@ -215,6 +215,30 @@ def test_recursive_rejects_tightening_looseness():
         strat.run(dataset, solver)
 
 
+def test_recursive_anchors_centroids_in_projected_hint():
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    bad_assignment = {node: 1 for node in problem.nodes}
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0],
+        assignments=[bad_assignment, None],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0],
+    )
+
+    strat.run(dataset, solver)
+
+    refined = solver.problems[1]
+    assert refined.hint[problem.centroids[0]] == 0
+    assert refined.hint[problem.centroids[1]] == 1
+    assert refined.candidate_zones(problem.centroids[0]) == {0}
+    assert refined.candidate_zones(problem.centroids[1]) == {1}
+
+
 def test_iterative_choice_strategy_terminates():
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)

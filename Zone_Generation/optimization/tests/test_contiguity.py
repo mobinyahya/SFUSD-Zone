@@ -48,6 +48,18 @@ def test_boundary_candidates_pins_interior():
         assert assignment[node] in zones
 
 
+def test_boundary_candidates_radius_expands_switchable_band():
+    G = make_grid_graph(3, 3)
+    centroids = [0, 8]
+    assignment = {i: (1 if i % 3 == 2 else 0) for i in G.nodes()}
+
+    cands = contiguity.boundary_candidates(G, assignment, centroids, radius=1)
+
+    assert 1 in cands[3]
+    assert cands[0] == {0}
+    assert cands[8] == {1}
+
+
 def test_boundary_candidates_anchors_centroids_before_relaxing_neighbors():
     G = make_grid_graph(3, 3)
     centroids = [0, 8]

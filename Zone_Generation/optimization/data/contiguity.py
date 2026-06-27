@@ -203,36 +203,30 @@ def boundary_candidates(
     for z, centroid in enumerate(centroids):
         anchored[centroid] = z
 
-    boundary: set[int] = set()
+    candidates: dict[int, set[int]] = {
+        node: {zone} for node, zone in anchored.items() if node in G
+    }
+    boundary_sources: list[tuple[int, set[int]]] = []
     for u, v in G.edges():
-        if anchored.get(u) != anchored.get(v):
-            boundary.add(u)
-            boundary.add(v)
-
-    # Expand the boundary band by `radius` hops.
-    band = set(boundary)
-    frontier = set(boundary)
-    for _ in range(max(0, radius - 1)):
-        nxt = set()
-        for node in frontier:
-            nxt.update(G.neighbors(node))
-        band |= nxt
-        frontier = nxt
-
-    candidates: dict[int, set[int]] = {}
-    for node in G.nodes():
-        if node not in anchored:
-            # Not covered by the projection: leave it out so the problem falls
-            # back to its distance-based candidacy.
+        zu = anchored.get(u)
+        zv = anchored.get(v)
+        if zu is None or zv is None or zu == zv:
             continue
-        if node in band:
-            candidates[node] = {anchored[node]} | {
-                anchored[nb]
-                for nb in G.neighbors(node)
-                if nb in anchored
-            }
-        else:
-            candidates[node] = {anchored[node]}
+        zones = {zu, zv}
+        boundary_sources.append((u, zones))
+        boundary_sources.append((v, zones))
+
+    # Let adjacent-zone labels propagate into the boundary band. The previous
+    # implementation expanded the band but still only inspected immediate
+    # neighbors, so radius > 1 rarely changed the candidate sets.
+    cutoff = max(0, int(radius))
+    for source, zones in boundary_sources:
+        for node in nx.single_source_shortest_path_length(
+            G, source, cutoff=cutoff
+        ):
+            if node in anchored:
+                candidates.setdefault(node, {anchored[node]}).update(zones)
+
     # Pin centroids regardless of coverage.
     for z, centroid in enumerate(centroids):
         candidates[centroid] = {z}

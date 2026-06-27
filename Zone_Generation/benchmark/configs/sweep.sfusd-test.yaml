@@ -10,12 +10,12 @@ optimization_defaults:
   use_hints: true
   capacity_scenario: 'A'
   racial_dev: -1
-  looseness: 1.2
+  looseness: 1.1
   gap_limits: [0, 0, 0]
   workers: 8
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9', '8-zone-22', '8-zone-24', '10-zone-3', '10-zone-11','10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
+  centroids_type: ['6-zone-3', '6-zone-9', '8-zone-22', '8-zone-24', '10-zone-3', '10-zone-11', '10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
   # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
   frl_dev: [0.15]
   # 0.12, 0.15, 0.2,
@@ -29,21 +29,36 @@ sweep:
   solver: ['cp_bool']
 
 tasks:
+  - strategy: 'single'
+    levels: ['Block_0']
+    solve_time_limits: [100]
+
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [600, 600]
-    boundary_radius: 2
-   - strategy: 'recursive'
+    solve_time_limits: [300, 300]
+    boundary_radius: 0
+
+  - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [400, 800]
-    boundary_radius: 3
+    solve_time_limits: [300, 300]
+    boundary_radius: 1
+  
+  - strategy: 'recursive'
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [300, 300]
+    boundary_radius: 2
+
+  # - strategy: 'recursive'
+  #   levels: ['Block_1', 'Block_0']
+  #   solve_time_limits: [600, 600]
+  #   boundary_radius: 3
 
   # - strategy: 'recursive'
   #   levels: ['Block_2', 'Block_1', 'Block_0']
   #   solve_time_limits: [200, 400, 600]
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test_2/'
+  output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test_3/'
   capacity: 48              # total solver-thread slots available on the machine
   max_workers: 10           # max concurrent Python worker processes
   max_tasks_per_worker: 10  # recycle processes to limit memory growth

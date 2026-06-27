@@ -65,6 +65,8 @@ class RecursiveStrategy(Strategy):
                 projected = converter.between(
                     prev.problem.G, prev.assignment, prev_level, dst_G, level
                 )
+                for z, centroid in enumerate(centroids):
+                    projected[centroid] = z
                 candidates = contiguity.boundary_candidates(
                     dst_G, projected, centroids, radius=radius
                 )
