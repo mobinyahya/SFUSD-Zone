@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from Zone_Generation.choice import mnl
-from Zone_Generation.choice.models import MNLChoiceModel
+from Zone_Generation.choice.models import MNLChoiceModel, get_configured_choice_model
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 
 
@@ -42,6 +42,10 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     )
     assert evaluated.cuts
     assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
+
+
+def test_configured_choice_model_defaults_to_mnl():
+    assert isinstance(get_configured_choice_model({}), MNLChoiceModel)
 
 
 def test_log_helpers_handle_extreme_values_without_runtime_warnings():

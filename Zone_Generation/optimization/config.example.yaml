@@ -27,7 +27,7 @@ workers: 8
 # --- strategy-specific ---
 boundary_radius: 2            # recursive/iterative: how far from borders to relax
 max_iterations: 5             # iterative_choice
-choice_model: 'distance'      # iterative choice and preassignment metric: distance | mnl
+choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 

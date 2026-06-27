@@ -43,7 +43,7 @@ class OptimizationConfig:
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     max_iterations: int = 5
-    choice_model: str = "distance"
+    choice_model: str = "mnl"
     choice_model_method: str = "logsum"
     choice_utility_scale: float = 100.0
     tolerance: float = 1e-6

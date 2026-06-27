@@ -122,7 +122,7 @@ def get_choice_model(name: str, **options) -> ChoiceModel:
 def get_configured_choice_model(options: Mapping[str, Any]) -> ChoiceModel:
     """Build the choice model described by optimization config options."""
 
-    name = str(options.get("choice_model", "distance"))
+    name = str(options.get("choice_model", "mnl"))
     if name == "mnl":
         return get_choice_model(
             name,

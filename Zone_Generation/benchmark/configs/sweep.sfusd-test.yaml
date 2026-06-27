@@ -10,7 +10,7 @@ optimization_defaults:
   use_hints: true
   capacity_scenario: 'A'
   racial_dev: -1
-  looseness: 1.1
+  looseness: 1.25
   gap_limits: [0, 0, 0]
   workers: 8
 
@@ -35,17 +35,17 @@ tasks:
 
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [300, 300]
+    solve_time_limits: [200, 400]
     boundary_radius: 0
 
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [300, 300]
+    solve_time_limits: [200, 400]
     boundary_radius: 1
   
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [300, 300]
+    solve_time_limits: [200, 400]
     boundary_radius: 2
 
   # - strategy: 'recursive'

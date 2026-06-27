@@ -15,10 +15,10 @@ def compute(context: MetricsContext) -> MetricOutput:
     utility = model.preassignment_utility(context.problem, context.assignment)
     run = {
         "choice_preassignment_utility": {
-            "model": str(context.config.get("choice_model", "distance")),
+            "model": str(context.config.get("choice_model", "mnl")),
             "method": (
                 str(context.config.get("choice_model_method", "logsum"))
-                if str(context.config.get("choice_model", "distance")) == "mnl"
+                if str(context.config.get("choice_model", "mnl")) == "mnl"
                 else None
             ),
             "utility": utility,
