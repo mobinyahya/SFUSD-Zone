@@ -30,7 +30,6 @@ sweep:
   solver: ['cp_bool']
 
 tasks:
-  # equal splits
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
     solve_time_limits: [600, 600]
@@ -41,10 +40,10 @@ tasks:
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test/'
-  capacity: 45              # total solver-thread slots available on the machine
+  capacity: 48              # total solver-thread slots available on the machine
   max_workers: 10           # max concurrent Python worker processes
   max_tasks_per_worker: 10  # recycle processes to limit memory growth
-  skip_existing: trye
+  skip_existing: true
   rerun_failed: true
   sequential: false
 

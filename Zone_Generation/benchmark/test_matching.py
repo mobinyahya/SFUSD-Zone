@@ -49,6 +49,9 @@ from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.tests.synthetic import FakeDataset, make_grid_problem
 
 
+MATCHING_CONFIG = "Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml"
+
+
 def test_sweep_yaml_accepts_matching_config(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(
@@ -59,7 +62,7 @@ optimization_defaults:
   graphs_dir: '{tmp_path / "graphs"}'
 matching:
   enabled: true
-  config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+  config: {MATCHING_CONFIG}
   compute_stage_assignments: true
 """,
         encoding="utf-8",
@@ -69,8 +72,12 @@ matching:
 
     assert sweep.mode == "matching"
     assert sweep.matching.enabled is True
-    assert sweep.matching.config.endswith("medium_zones_no_reserves_no_sib.yaml")
+    assert sweep.matching.config.endswith("zones+hard_reserves_06frl.yaml")
     assert sweep.matching.compute_stage_assignments is True
+
+
+def test_default_matching_template_uses_bundled_path():
+    assert str(matching_runner.DEFAULT_MATCHING_TEMPLATE) == MATCHING_CONFIG
 
 
 def test_sweep_yaml_accepts_multiple_matching_configs(tmp_path):
@@ -85,7 +92,7 @@ matching:
   enabled: true
   configs:
     - name: no_reserves
-      config: Zone_Generation/benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+      config: {MATCHING_CONFIG}
     - name: sd
       config: Zone_Generation/benchmark/matching/sd.yaml
 """,
@@ -130,7 +137,7 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
     result = run_matching_for_solution(
         solution,
         str(tmp_path),
-        MatchingRunConfig(enabled=True),
+        MatchingRunConfig(enabled=True, config=MATCHING_CONFIG),
         workers=3,
     )
 
@@ -143,6 +150,11 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
     assert captured_config["value"]["policies"] == ["generated_zones"]
     assert captured_config["value"]["workers"] == 3
     assert result.run["workers"] == 3
+    expected_precomputed = str((tmp_path / "matching" / "precomputed").resolve())
+    assert captured_config["value"]["paths"]["student-save"] == expected_precomputed
+    assert captured_config["value"]["utility-model"]["save-path"] == str(
+        (tmp_path / "matching" / "precomputed" / "utility_matrix.npy").resolve()
+    )
 
     zones_text = (tmp_path / "matching" / "zones.csv").read_text(encoding="utf-8")
     assert "1000,1001" in zones_text
@@ -167,8 +179,8 @@ def test_run_matching_for_solution_supports_multiple_configs(tmp_path, monkeypat
         MatchingRunConfig(
             enabled=True,
             configs=[
-                MatchingConfigSpec(name="first"),
-                MatchingConfigSpec(name="second"),
+                MatchingConfigSpec(name="first", config=MATCHING_CONFIG),
+                MatchingConfigSpec(name="second", config=MATCHING_CONFIG),
             ],
         ),
         workers=1,
@@ -333,7 +345,7 @@ def test_matching_mode_updates_existing_result(tmp_path, monkeypatch):
 
     batch = run_matching_for_existing_runs(
         str(tmp_path),
-        MatchingRunConfig(enabled=True),
+        MatchingRunConfig(enabled=True, config=MATCHING_CONFIG),
         dataset_factory=lambda config, manifest: FakeDataset(problem),
     )
 
@@ -354,7 +366,11 @@ def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
 
     batch = run_matching_for_existing_runs(
         str(tmp_path),
-        MatchingRunConfig(enabled=True, compute_stage_assignments=True),
+        MatchingRunConfig(
+            enabled=True,
+            config=MATCHING_CONFIG,
+            compute_stage_assignments=True,
+        ),
         choice_metrics=ChoiceMetricsRunConfig(enabled=True, compute_stage_metrics=True),
         dataset_factory=lambda config, manifest: FakeDataset(problem),
     )
@@ -388,6 +404,62 @@ def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
     assert stage_config["paths"]["student-save"] == str(
         (run_dir / "matching" / "precomputed").resolve()
     )
+
+
+def test_run_student_assignment_uses_market_constructor_shape(tmp_path, monkeypatch):
+    fake_market, _, _ = _install_fake_market_generator(monkeypatch)
+    precomputed_dir = tmp_path / "matching" / "precomputed"
+    zone_csv = tmp_path / "zones.csv"
+    assignments_dir = tmp_path / "assignments_raw"
+
+    matching_runner._run_student_assignment(
+        _session_config(zone_csv, assignments_dir, precomputed_dir),
+        assignments_dir,
+        workers=2,
+    )
+
+    assert len(fake_market.instances) == 1
+    assert fake_market.instances[0].config["workers"] == 2
+    assert fake_market.seen == [
+        {
+            "zone_file": str(zone_csv),
+            "assignment_path": str(assignments_dir),
+        }
+    ]
+
+
+def test_student_assignment_guardrail_patch_allows_fractional_zone_counts():
+    matching_runner._patch_student_assignment_guardrail_pandas_compat()
+    from student_assignment.da.guardrail_setup import GuardrailSetup
+
+    fake_guardrail = type("FakeGuardrail", (), {})()
+    fake_guardrail.students = type(
+        "FakeStudents",
+        (),
+        {
+            "student_data": pd.DataFrame(
+                {"diversity_category": [0, 1, 1, 0]},
+                index=[101, 102, 103, 104],
+            )
+        },
+    )()
+    fake_guardrail.student2zone = {101: 0, 102: 0, 103: 1, 104: 1}
+
+    zone_frac = GuardrailSetup._calculate_zone_fractions(fake_guardrail)
+
+    assert zone_frac.loc[0, 0] == 0.5
+    assert zone_frac.loc[0, 1] == 0.5
+    assert zone_frac.loc[1, 0] == 0.5
+    assert zone_frac.loc[1, 1] == 0.5
+
+
+def test_student_assignment_empty_excess_match_patch_ignores_empty_heap():
+    matching_runner._patch_student_assignment_empty_excess_match_compat()
+    from student_assignment.da.da import School
+
+    school = School(index=-1, capacity=-1)
+
+    assert school.has_excess_matches() is False
 
 
 def test_student_assignment_session_reuses_market_for_dynamic_paths(
@@ -548,10 +620,13 @@ def _install_fake_market_generator(monkeypatch):
         instances = []
         executions = 0
         seen = []
+        active_configurator = None
 
-        def __init__(self, configurator, assignment_path):
-            self.configurator = configurator
-            self.config = configurator.config
+        def __init__(self, estimate_path=None, assignment_path=None):
+            self.estimate_path = estimate_path
+            self.configurator = FakeMarketGenerator.active_configurator
+            assert self.configurator is not None
+            self.config = self.configurator.config
             self.priority_generator = FakePriorityGenerator(self)
             self.preference_generator = FakePreferenceGenerator(self)
             self._set_up_save_folder(assignment_path)
@@ -583,6 +658,17 @@ def _install_fake_market_generator(monkeypatch):
         matching_runner,
         "_market_generator_class",
         lambda: FakeMarketGenerator,
+    )
+
+    def fake_install_student_assignment_config(config):
+        configurator = matching_runner._StaticConfigurator(config)
+        FakeMarketGenerator.active_configurator = configurator
+        return configurator
+
+    monkeypatch.setattr(
+        matching_runner,
+        "_install_student_assignment_config",
+        fake_install_student_assignment_config,
     )
     return FakeMarketGenerator, FakePriorityGenerator, FakePreferenceGenerator
 
