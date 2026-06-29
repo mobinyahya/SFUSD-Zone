@@ -2,25 +2,25 @@ name: iterative-choice-utility-test
 mode: run
 
 optimization_defaults:
-  centroids_type: '7-zone-14'
+  centroids_type: '6-zone-3'
   levels: ['BlockGroup_0']     # use ['BlockGroup_0'] for full fine-grained test
   solver: 'cp_bool'
   strategy: 'iterative_choice'
 
   frl_dev: 0.3
-  racial_dev: 0.3
-  overage: 0.8
-  shortage: 0.2
-  max_distance: 5
+  racial_dev: -1
+  overage: 0.9
+  shortage: 0.3
+  max_distance: 4
 
   solve_time_limits: [120]
   gap_limits: [0]
   use_hints: true
   seed: 42
-  workers: 8
+  workers: 24
 
-  max_iterations: 15
-  tolerance: 100
+  max_iterations: 50
+  tolerance: 0
 
   choice_model: 'mnl'
   choice_model_method: 'logsum'
@@ -37,8 +37,8 @@ sweep:
   seed: [42]
 
 execution:
-  output_dir: './optimization_output/iterative_choice_utility_test_3'
-  capacity: 8
+  output_dir: '/share/data/school_choice/local_runs/iterative_choice_test_mnl'
+  capacity: 40
   max_workers: 1
   max_tasks_per_worker: 5
   skip_existing: true

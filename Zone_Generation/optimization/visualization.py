@@ -219,6 +219,7 @@ def render_solution_map(
         edgecolor="white",
         linewidth=0.2,
     )
+    _plot_schools(map_ax, solution)
     _plot_centroids(map_ax, solution)
     _format_map_axis(map_ax, solution, stage)
     _add_zone_legend(map_ax, colors)
@@ -255,6 +256,51 @@ def _zone_color_map(zones) -> dict[int, str]:
         for idx, zone in enumerate(missing):
             colors[zone] = mcolors.to_hex(cmap(idx))
     return colors
+
+
+def _plot_schools(ax, solution: ZoneSolution) -> None:
+    school_data = solution.problem.G.graph.get("school_data", {})
+    plotted: set[int] = set()
+
+    for _node, attrs in solution.problem.G.nodes(data=True):
+        for school_id in attrs.get("school_ids", []):
+            sid = int(school_id)
+            if sid in plotted:
+                continue
+
+            info = school_data.get(school_id, school_data.get(sid, {}))
+            if not isinstance(info, dict):
+                info = {}
+            lon = _valid_float(info.get("lon", info.get("Lon")))
+            lat = _valid_float(info.get("lat", info.get("Lat")))
+            if lon is None or lat is None:
+                lon = _valid_float(attrs.get("lon"))
+                lat = _valid_float(attrs.get("lat"))
+            if lon is None or lat is None:
+                continue
+
+            ax.text(
+                lon,
+                lat,
+                "🏫",
+                fontsize=10,
+                ha="center",
+                va="center",
+                zorder=5,
+            )
+            plotted.add(sid)
+
+
+def _valid_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not pd.notna(number):
+        return None
+    return number
 
 
 def _plot_centroids(ax, solution: ZoneSolution) -> None:

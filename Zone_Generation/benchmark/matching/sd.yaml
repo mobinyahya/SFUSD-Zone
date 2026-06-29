@@ -7,7 +7,7 @@ restrict-zone: true
 guard-rails: -1
 
 policies:
-  - 6zone-1
+  - generated-zones
 
 priority-weights:
   ctip: 0
@@ -25,4 +25,4 @@ ties-options:
 
 iterations:
   start: 0
-  end: 15
+  end: 19

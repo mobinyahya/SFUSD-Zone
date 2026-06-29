@@ -6,6 +6,7 @@ from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 from Zone_Generation.optimization.visualization import (
     VisualizationArtifactStore,
+    render_solution_map,
     visualize_solutions,
 )
 
@@ -121,3 +122,28 @@ def test_visualize_defaults_to_png_and_never_shows(tmp_path, monkeypatch):
     assert results[0].figure_paths[0].exists()
     assert results[0].figure_paths[0].parent == output_dir
     plt.close("all")
+
+
+def test_render_solution_map_marks_every_graph_school(tmp_path):
+    solution = _solution()
+    solution.problem.G.graph["school_data"] = {
+        100: {"lat": 0.25, "lon": 0.75},
+        200: {"lat": 1.25, "lon": 1.75},
+    }
+    store = VisualizationArtifactStore(
+        artifact_dir=tmp_path,
+        geometry_loader=_geometry_loader,
+    )
+    geometry, _path = store.geometry_for(solution.level, solution.problem.G)
+
+    fig = render_solution_map(solution, geometry, "test")
+
+    school_markers = [
+        text for text in fig.axes[0].texts if text.get_text() == "🏫"
+    ]
+    assert len(school_markers) == 2
+    assert {text.get_position() for text in school_markers} == {
+        (0.75, 0.25),
+        (1.75, 1.25),
+    }
+    plt.close(fig)

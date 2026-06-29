@@ -5,6 +5,7 @@ mode: run  # run | metrics
 
 optimization_defaults:
   save_solver_logs: true
+  choice_model: distance
   carry_over_compute: true
   max_distance: 4
   use_hints: true
