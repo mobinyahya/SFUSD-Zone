@@ -9,7 +9,7 @@ built-in implementations.
 from Zone_Generation.optimization.solvers.base import Solver, get_solver, register
 
 # Importing the modules triggers their @register decorators.
-from Zone_Generation.optimization.solvers import cpsat, local_search  # noqa: E402,F401
+from Zone_Generation.optimization.solvers import cpsat, local_search, recom  # noqa: E402,F401
 
 # Gurobi is optional; only register it if the package is importable.
 try:  # pragma: no cover - depends on optional dependency

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from Zone_Generation.optimization.data.dataset import Dataset
+from Zone_Generation.optimization.data.initial_solutions import recom_initial_hint
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.base import Solver
@@ -17,4 +18,6 @@ class SingleShotStrategy(Strategy):
         levels = [LevelSpec.parse(l) for l in self.options["levels"]]
         target = levels[-1]
         problem = dataset.problem_for(target)
+        if getattr(solver, "name", None) == "recom" and problem.hint is None:
+            problem.hint = recom_initial_hint(dataset, problem, solver.options)
         return [solver.solve(problem)]

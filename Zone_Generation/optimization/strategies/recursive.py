@@ -14,6 +14,7 @@ from __future__ import annotations
 from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.conversion import LevelConverter
 from Zone_Generation.optimization.data.dataset import Dataset
+from Zone_Generation.optimization.data.initial_solutions import recom_initial_hint
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -76,6 +77,9 @@ class RecursiveStrategy(Strategy):
                     hint=projected if use_hints else None,
                     constraint_multiplier=constraint_multiplier,
                 )
+
+            if getattr(solver, "name", None) == "recom" and problem.hint is None:
+                problem.hint = recom_initial_hint(dataset, problem, solver.options)
 
             try:
                 sol = solver.solve(problem)

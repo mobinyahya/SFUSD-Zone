@@ -27,7 +27,7 @@ sweep:
   # 0.7, 0.8,
   shortage: [ 0.25]
   # 0.15, 0.2,
-  solver: [ 'mip', 'cp_int', 'cp_bool',]
+  solver: [ 'mip', 'cp_int', 'cp_bool', 'recom',]
 
 
 

@@ -5,9 +5,9 @@
 centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
-levels: ['Block_1', 'Block_0']
-solver: 'cp_int'        # cp_int | cp_bool | mip | local_search
-strategy: 'recursive'   # single | recursive | iterative_choice
+levels: ['Block_1']
+solver: 'recom'        # cp_int | cp_bool | mip | local_search | recom
+strategy: 'single'   # single | recursive | iterative_choice
 
 # --- optimization parameters ---
 frl_dev: 0.3
@@ -23,6 +23,14 @@ use_hints: true
 save_solver_logs: false       # write full CP-SAT/Gurobi logs under output/solver_logs
 seed: 42
 workers: 8
+recom_iterations: 10000
+recom_cut_attempts: 1000
+recom_temperature: 0.0
+recom_use_initial_cache: true
+recom_initial_level: 'BlockGroup_1'
+recom_initial_save_level: 'Block_0'
+recom_initial_constraint_multiplier: 10.0
+recom_initial_time_limit: 60
 
 # --- strategy-specific ---
 boundary_radius: 2            # recursive/iterative: how far from borders to relax

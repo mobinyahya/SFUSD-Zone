@@ -39,6 +39,14 @@ class OptimizationConfig:
     save_solver_logs: bool = False
     seed: int = 42
     workers: int = 8
+    recom_iterations: int = 1000
+    recom_cut_attempts: int = 100
+    recom_temperature: float = 0.0
+    recom_use_initial_cache: bool = True
+    recom_initial_level: str = "BlockGroup_1"
+    recom_initial_save_level: str = "Block_0"
+    recom_initial_constraint_multiplier: float = 10.0
+    recom_initial_time_limit: float = 60.0
 
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
@@ -113,6 +121,14 @@ class OptimizationConfig:
             "seed": self.seed,
             "workers": self.workers,
             "save_solver_logs": self.save_solver_logs,
+            "recom_iterations": self.recom_iterations,
+            "recom_cut_attempts": self.recom_cut_attempts,
+            "recom_temperature": self.recom_temperature,
+            "recom_use_initial_cache": self.recom_use_initial_cache,
+            "recom_initial_level": self.recom_initial_level,
+            "recom_initial_save_level": self.recom_initial_save_level,
+            "recom_initial_constraint_multiplier": self.recom_initial_constraint_multiplier,
+            "recom_initial_time_limit": self.recom_initial_time_limit,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir
