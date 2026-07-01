@@ -14,7 +14,7 @@ from __future__ import annotations
 from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.conversion import LevelConverter
 from Zone_Generation.optimization.data.dataset import Dataset
-from Zone_Generation.optimization.data.initial_solutions import recom_initial_hint
+from Zone_Generation.optimization.data.initial_solutions import math_prog_initial_hint
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -30,6 +30,7 @@ class RecursiveStrategy(Strategy):
         carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
         use_hints = self.options.get("use_hints", True)
+        initialization_method = self.options.get("initialization_method", "gerrychain")
         looseness = float(self.options.get("looseness", 1.0))
         if looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
@@ -78,8 +79,13 @@ class RecursiveStrategy(Strategy):
                     constraint_multiplier=constraint_multiplier,
                 )
 
-            if getattr(solver, "name", None) == "recom" and problem.hint is None:
-                problem.hint = recom_initial_hint(dataset, problem, solver.options)
+            if (
+                getattr(solver, "name", None) == "recom"
+                and problem.hint is None
+                and solver.options.get("initialization_method", initialization_method)
+                == "math_prog"
+            ):
+                problem.hint = math_prog_initial_hint(dataset, problem, solver.options)
 
             try:
                 sol = solver.solve(problem)

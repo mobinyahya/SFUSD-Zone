@@ -7,6 +7,7 @@ from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.strategies import iterative_choice as iterative_choice_module
+from Zone_Generation.optimization.strategies import single as single_module
 from Zone_Generation.optimization.strategies import get_strategy
 from Zone_Generation.optimization.tests.synthetic import FakeDataset, make_grid_problem
 
@@ -20,6 +21,30 @@ def test_single_strategy():
     assert len(solutions) == 1
     assert solutions[-1].status in ("OPTIMAL", "FEASIBLE")
     assert solutions[-1].is_contiguous()
+
+
+def test_single_recom_math_prog_initialization_uses_seed_hint(monkeypatch):
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "recom"
+    solver.options["initialization_method"] = "math_prog"
+    hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
+
+    monkeypatch.setattr(
+        single_module,
+        "math_prog_initial_hint",
+        lambda dataset_arg, problem_arg, options: hint,
+    )
+    strat = get_strategy(
+        "single",
+        levels=["BlockGroup_0"],
+        initialization_method="math_prog",
+    )
+
+    strat.run(dataset, solver)
+
+    assert solver.problems[0].hint == hint
 
 
 def test_recursive_carry_over_compute_disabled_by_default():

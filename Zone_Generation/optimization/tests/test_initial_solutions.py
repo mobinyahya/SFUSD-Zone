@@ -10,7 +10,7 @@ from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 
 
-def test_recom_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
+def test_math_prog_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
     config = OptimizationConfig(
         centroids_type="2-zone-test",
         levels=["Block_0"],
@@ -34,7 +34,7 @@ def test_recom_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
     block_dataset = _FakeDataset(config)
     problem = block_dataset.problem_for("Block_0")
 
-    hint = initial_solutions.recom_initial_hint(
+    hint = initial_solutions.math_prog_initial_hint(
         block_dataset,
         problem,
         {
@@ -47,8 +47,8 @@ def test_recom_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
 
     assert hint == {0: 0, 1: 0, 2: 1, 3: 1}
     assert solver_factory.calls == 1
-    assert problem._recom_initial_cache["cache_hit"] is False
-    assert problem._recom_initial_cache["available"] is True
+    assert problem._math_prog_initial_cache["cache_hit"] is False
+    assert problem._math_prog_initial_cache["available"] is True
     cache_path = (
         tmp_path
         / "graphs"
@@ -60,7 +60,7 @@ def test_recom_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
     assert cache_path.exists()
 
     second_problem = block_dataset.problem_for("Block_0")
-    second_hint = initial_solutions.recom_initial_hint(
+    second_hint = initial_solutions.math_prog_initial_hint(
         block_dataset,
         second_problem,
         {
@@ -73,7 +73,7 @@ def test_recom_initial_hint_generates_block0_cache(tmp_path, monkeypatch):
 
     assert second_hint == hint
     assert solver_factory.calls == 1
-    assert second_problem._recom_initial_cache["cache_hit"] is True
+    assert second_problem._math_prog_initial_cache["cache_hit"] is True
 
 
 class _FakeCpBoolSolver:

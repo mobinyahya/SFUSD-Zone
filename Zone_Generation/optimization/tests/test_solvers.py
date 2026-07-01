@@ -98,13 +98,13 @@ def test_recom_solver():
         "recom",
         solve_time_limit=1,
         recom_iterations=25,
-        recom_use_initial_cache=False,
         seed=1,
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
     _check_valid(problem, solution)
     assert solution.metadata["solver"] == "recom"
+    assert solution.metadata["initialization_method"] == "gerrychain"
 
 
 def test_recom_uses_explicit_hint():
@@ -126,12 +126,12 @@ def test_recom_uses_explicit_hint():
         "recom",
         solve_time_limit=1,
         recom_iterations=0,
-        recom_use_initial_cache=False,
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
     assert solution.assignment == hint
     assert solution.time_to_convergence == 0.0
+    assert solution.metadata["initialization_method"] == "hint"
 
 
 def test_recom_rejects_choice_objective():
@@ -144,7 +144,14 @@ def test_recom_rejects_choice_objective():
     )
 
     with pytest.raises(NotImplementedError, match="recom does not support"):
-        get_solver("recom", recom_use_initial_cache=False).solve(problem)
+        get_solver("recom").solve(problem)
+
+
+def test_recom_rejects_unknown_initialization_method():
+    problem = make_grid_problem(3, 3)
+
+    with pytest.raises(ValueError, match="initialization_method"):
+        get_solver("recom", initialization_method="bad").solve(problem)
 
 
 @pytest.mark.parametrize("name", ["cp_int", "cp_bool"])

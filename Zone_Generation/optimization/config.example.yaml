@@ -23,10 +23,10 @@ use_hints: true
 save_solver_logs: false       # write full CP-SAT/Gurobi logs under output/solver_logs
 seed: 42
 workers: 8
-recom_iterations: 10000
-recom_cut_attempts: 1000
+initialization_method: gerrychain  # gerrychain | math_prog
+recom_iterations: 10000000
+recom_cut_attempts: 1000000
 recom_temperature: 0.0
-recom_use_initial_cache: true
 recom_initial_level: 'BlockGroup_1'
 recom_initial_save_level: 'Block_0'
 recom_initial_constraint_multiplier: 10.0

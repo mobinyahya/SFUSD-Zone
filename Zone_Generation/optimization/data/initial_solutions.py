@@ -1,4 +1,4 @@
-"""Initial solution cache helpers for heuristic solvers."""
+"""Initial solution helpers for heuristic solvers."""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import get_solver
 
 
-def recom_initial_hint(
+def math_prog_initial_hint(
     dataset: Dataset,
     problem: ZoneProblem,
     options: Mapping | None = None,
 ) -> dict[int, int] | None:
-    """Return a ReCom starting hint converted from the cached ``Block_0`` seed.
+    """Return a starting hint converted from the cached ``Block_0`` seed.
 
     Seeds are keyed by data graph namespace and ``centroids_type``.  They are
     generated lazily on ``BlockGroup_1`` with loose constraints, converted to
@@ -34,8 +34,6 @@ def recom_initial_hint(
     """
 
     options = options or {}
-    if not bool(options.get("recom_use_initial_cache", True)):
-        return None
     config = getattr(dataset, "config", None)
     if config is None:
         return None
@@ -53,7 +51,7 @@ def recom_initial_hint(
     path = _cache_zone_dict_path(block_dataset, config.centroids_type, save_level)
     cache_hit = path.exists()
     if not cache_hit:
-        _generate_recom_seed(
+        _generate_math_prog_seed(
             config=config,
             initial_level=initial_level,
             save_level=save_level,
@@ -89,7 +87,7 @@ def recom_initial_hint(
     return _repair_hint(problem, hint)
 
 
-def _generate_recom_seed(
+def _generate_math_prog_seed(
     *,
     config: OptimizationConfig,
     initial_level: LevelSpec,
@@ -135,6 +133,7 @@ def _generate_recom_seed(
         time_to_convergence=solution.time_to_convergence,
         metadata={
             "solver": "cp_bool",
+            "initialization_method": "math_prog",
             "seed_source_level": initial_level.name,
             "seed_saved_level": save_level.name,
             "constraint_multiplier": multiplier,
@@ -165,7 +164,7 @@ def _set_cache_metadata(
     initial_level: LevelSpec,
     save_level: LevelSpec,
 ) -> None:
-    problem._recom_initial_cache = {
+    problem._math_prog_initial_cache = {
         "cache_hit": bool(cache_hit),
         "cache_path": str(path),
         "source_level": initial_level.name,

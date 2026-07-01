@@ -39,10 +39,10 @@ class OptimizationConfig:
     save_solver_logs: bool = False
     seed: int = 42
     workers: int = 8
+    initialization_method: str = "gerrychain"
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
     recom_temperature: float = 0.0
-    recom_use_initial_cache: bool = True
     recom_initial_level: str = "BlockGroup_1"
     recom_initial_save_level: str = "Block_0"
     recom_initial_constraint_multiplier: float = 10.0
@@ -90,6 +90,10 @@ class OptimizationConfig:
         self.level_to_split = {int(k): int(v) for k, v in self.level_to_split.items()}
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
+        if self.initialization_method not in {"gerrychain", "math_prog"}:
+            raise ValueError(
+                "initialization_method must be one of: gerrychain, math_prog."
+            )
 
     # ------------------------------------------------------------------ #
     # loading
@@ -120,11 +124,11 @@ class OptimizationConfig:
             "relative_gap_limit": self.gap_limits[0],
             "seed": self.seed,
             "workers": self.workers,
+            "initialization_method": self.initialization_method,
             "save_solver_logs": self.save_solver_logs,
             "recom_iterations": self.recom_iterations,
             "recom_cut_attempts": self.recom_cut_attempts,
             "recom_temperature": self.recom_temperature,
-            "recom_use_initial_cache": self.recom_use_initial_cache,
             "recom_initial_level": self.recom_initial_level,
             "recom_initial_save_level": self.recom_initial_save_level,
             "recom_initial_constraint_multiplier": self.recom_initial_constraint_multiplier,
@@ -144,6 +148,7 @@ class OptimizationConfig:
             carry_over_compute=self.carry_over_compute,
             gap_limits=self.gap_limits,
             use_hints=self.use_hints,
+            initialization_method=self.initialization_method,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
             max_iterations=self.max_iterations,
