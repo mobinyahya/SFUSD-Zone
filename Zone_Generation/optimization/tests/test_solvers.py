@@ -8,6 +8,7 @@ from ortools.sat.python import cp_model
 
 from Zone_Generation.choice.models import DistanceChoiceModel
 from Zone_Generation.choice.objective import ChoiceObjective
+from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
@@ -33,6 +34,46 @@ def test_cpsat_solvers(name):
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)
+
+
+def test_config_passes_cpsat_parameters_to_solver():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_int",
+        linearization_level=0,
+        cp_model_probing_level=1,
+        symmetry_level=0,
+    )
+
+    solver = config.make_solver()
+
+    assert solver.options["linearization_level"] == 0
+    assert solver.options["cp_model_probing_level"] == 1
+    assert solver.options["symmetry_level"] == 0
+
+
+def test_cpsat_solver_applies_configured_cp_sat_parameters():
+    solver = get_solver(
+        "cp_int",
+        solve_time_limit=10,
+        relative_gap_limit=0.25,
+        workers=1,
+        seed=7,
+        linearization_level=0,
+        cp_model_probing_level=1,
+        symmetry_level=0,
+    )
+    cp_solver = cp_model.CpSolver()
+
+    solver._configure_solver_parameters(cp_solver)
+
+    assert cp_solver.parameters.max_time_in_seconds == 10
+    assert cp_solver.parameters.relative_gap_limit == 0.25
+    assert cp_solver.parameters.num_search_workers == 1
+    assert cp_solver.parameters.random_seed == 7
+    assert cp_solver.parameters.linearization_level == 0
+    assert cp_solver.parameters.cp_model_probing_level == 1
+    assert cp_solver.parameters.symmetry_level == 0
 
 
 def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):

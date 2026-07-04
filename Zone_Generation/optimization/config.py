@@ -40,6 +40,9 @@ class OptimizationConfig:
     save_solver_progress: bool = False
     seed: int = 42
     workers: int = 8
+    linearization_level: int | None = None
+    cp_model_probing_level: int | None = None
+    symmetry_level: int | None = None
     initialization_method: str = "gerrychain"
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
@@ -127,6 +130,9 @@ class OptimizationConfig:
             "relative_gap_limit": self.gap_limits[0],
             "seed": self.seed,
             "workers": self.workers,
+            "linearization_level": self.linearization_level,
+            "cp_model_probing_level": self.cp_model_probing_level,
+            "symmetry_level": self.symmetry_level,
             "initialization_method": self.initialization_method,
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,

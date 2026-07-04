@@ -24,6 +24,10 @@ save_solver_logs: false       # write CP-SAT/Gurobi logs or ReCom progress JSONL
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 seed: 42
 workers: 8
+# CP-SAT-only solver parameters. Leave unset to use OR-Tools defaults.
+# linearization_level: 1
+# cp_model_probing_level: 2
+# symmetry_level: 2
 initialization_method: gerrychain  # gerrychain | math_prog
 recom_iterations: 10000
 recom_cut_attempts: 1000

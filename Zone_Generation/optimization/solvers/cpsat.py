@@ -32,6 +32,11 @@ from Zone_Generation.optimization.solvers.base import Solver, register
 
 _SCALE = 100  # integer scaling for float coefficients
 _SENSE = {"<=", ">=", "=="}
+_CP_SAT_INT_PARAMETERS = (
+    "linearization_level",
+    "cp_model_probing_level",
+    "symmetry_level",
+)
 
 # A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
 _Term = tuple[float, int, int]
@@ -163,6 +168,21 @@ class _CpSatSolver(Solver):
                     break
         return assignment
 
+    def _configure_solver_parameters(self, solver: cp_model.CpSolver) -> None:
+        solver.parameters.max_time_in_seconds = float(
+            self.options.get("solve_time_limit", 60)
+        )
+        if "relative_gap_limit" in self.options:
+            solver.parameters.relative_gap_limit = float(
+                self.options["relative_gap_limit"]
+            )
+        solver.parameters.num_search_workers = int(self.options.get("workers", 8))
+        solver.parameters.random_seed = int(self.options.get("seed", 42))
+        for parameter_name in _CP_SAT_INT_PARAMETERS:
+            value = self.options.get(parameter_name)
+            if value is not None:
+                setattr(solver.parameters, parameter_name, int(value))
+
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         m = cp_model.CpModel()
         x, y = self._build_assignment_vars(m, problem)
@@ -180,15 +200,7 @@ class _CpSatSolver(Solver):
         self._add_hints(m, problem, x, y)
 
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = float(
-            self.options.get("solve_time_limit", 60)
-        )
-        if "relative_gap_limit" in self.options:
-            solver.parameters.relative_gap_limit = float(
-                self.options["relative_gap_limit"]
-            )
-        solver.parameters.num_search_workers = int(self.options.get("workers", 8))
-        solver.parameters.random_seed = int(self.options.get("seed", 42))
+        self._configure_solver_parameters(solver)
         log_path = self._next_solver_log_path(problem)
         log_file = None
         if log_path:
