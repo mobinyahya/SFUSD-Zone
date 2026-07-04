@@ -37,71 +37,93 @@ class ShortBurstsReComSolver(ReComSolver):
         max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         burst_length = max(1, int(self.options.get("short_bursts_length", 25)))
+        log_path, progress_log = self._open_progress_log(problem)
 
         random_state = random.getstate()
         random.seed(seed)
         try:
-            initial = self._initial_state(problem, cut_attempts)
-            current = dict(initial.assignment)
-            current_partition = self._partition(problem, current)
-            current_score = self._score(problem, current)
-            initial_score = current_score
-            best = dict(current) if _valid(current_score) else None
-            best_score = current_score if best is not None else None
-            time_to_convergence = 0.0 if best is not None else None
-            attempted = 0
-            accepted = 0
-            proposal_failures = 0
-            bursts = 0
-            selected_improvements = 0
-            last_proposal_error = None
+            try:
+                initial = self._initial_state(problem, cut_attempts)
+                current = dict(initial.assignment)
+                current_partition = self._partition(problem, current)
+                current_score = self._score(problem, current)
+                initial_score = current_score
+                best = dict(current) if _valid(current_score) else None
+                best_score = current_score if best is not None else None
+                attempted = 0
+                accepted = 0
+                proposal_failures = 0
+                bursts = 0
+                selected_improvements = 0
+                last_proposal_error = None
 
-            while attempted < max_iterations:
-                if time.time() - start >= time_limit:
-                    break
-                bursts += 1
-                burst_best = dict(current)
-                burst_best_partition = current_partition
-                burst_best_score = current_score
-                burst_start_score = current_score
-                walk_partition = current_partition
+                self._write_progress_log(
+                    progress_log,
+                    start=start,
+                    event="initial",
+                    iteration=0,
+                    score=current_score,
+                    best_score=best_score,
+                )
 
-                for _ in range(min(burst_length, max_iterations - attempted)):
+                while attempted < max_iterations:
                     if time.time() - start >= time_limit:
                         break
-                    attempted += 1
-                    try:
-                        proposal_partition = self._gerrychain_proposal(
-                            problem, walk_partition, cut_attempts
+                    bursts += 1
+                    burst_best = dict(current)
+                    burst_best_partition = current_partition
+                    burst_best_score = current_score
+                    burst_start_score = current_score
+                    walk_partition = current_partition
+
+                    for _ in range(min(burst_length, max_iterations - attempted)):
+                        if time.time() - start >= time_limit:
+                            break
+                        attempted += 1
+                        try:
+                            proposal_partition = self._gerrychain_proposal(
+                                problem, walk_partition, cut_attempts
+                            )
+                        except _GERRYCHAIN_ERRORS as exc:
+                            proposal_failures += 1
+                            last_proposal_error = type(exc).__name__
+                            continue
+
+                        proposal = self._assignment_from_partition(proposal_partition)
+                        proposal_score = self._score(problem, proposal)
+                        walk_partition = proposal_partition
+                        accepted += 1
+
+                        if proposal_score < burst_best_score:
+                            burst_best = dict(proposal)
+                            burst_best_partition = proposal_partition
+                            burst_best_score = proposal_score
+
+                        if _valid(proposal_score) and (
+                            best_score is None
+                            or proposal_score.boundary < best_score.boundary
+                        ):
+                            best = dict(proposal)
+                            best_score = proposal_score
+
+                        self._write_progress_log(
+                            progress_log,
+                            start=start,
+                            event="cut",
+                            iteration=attempted,
+                            score=proposal_score,
+                            accepted=True,
+                            best_score=best_score,
                         )
-                    except _GERRYCHAIN_ERRORS as exc:
-                        proposal_failures += 1
-                        last_proposal_error = type(exc).__name__
-                        continue
 
-                    proposal = self._assignment_from_partition(proposal_partition)
-                    proposal_score = self._score(problem, proposal)
-                    walk_partition = proposal_partition
-                    accepted += 1
-
-                    if proposal_score < burst_best_score:
-                        burst_best = dict(proposal)
-                        burst_best_partition = proposal_partition
-                        burst_best_score = proposal_score
-
-                    if _valid(proposal_score) and (
-                        best_score is None or proposal_score.boundary < best_score.boundary
-                    ):
-                        best = dict(proposal)
-                        best_score = proposal_score
-                        if time_to_convergence is None:
-                            time_to_convergence = time.time() - start
-
-                current = burst_best
-                current_partition = burst_best_partition
-                current_score = burst_best_score
-                if current_score < burst_start_score:
-                    selected_improvements += 1
+                    current = burst_best
+                    current_partition = burst_best_partition
+                    current_score = burst_best_score
+                    if current_score < burst_start_score:
+                        selected_improvements += 1
+            finally:
+                if progress_log is not None:
+                    progress_log.close()
         finally:
             random.setstate(random_state)
 
@@ -110,8 +132,6 @@ class ShortBurstsReComSolver(ReComSolver):
             status = "FEASIBLE"
             assignment = best
             objective = float(best_score.boundary)
-            if time_to_convergence is None:
-                time_to_convergence = wall
         else:
             status = "UNKNOWN"
             assignment = {}
@@ -119,6 +139,7 @@ class ShortBurstsReComSolver(ReComSolver):
 
         metadata = {
             "solver": self.name,
+            **self._progress_log_metadata(log_path),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -147,6 +168,5 @@ class ShortBurstsReComSolver(ReComSolver):
             status=status,
             objective=objective,
             wall_time=wall,
-            time_to_convergence=time_to_convergence,
             metadata=metadata,
         )

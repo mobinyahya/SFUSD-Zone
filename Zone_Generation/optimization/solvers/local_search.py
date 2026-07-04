@@ -47,6 +47,5 @@ class LocalSearchSolver(Solver):
             status="STUB",
             objective=float(contiguity.boundary_edges(problem.G, assignment)),
             wall_time=wall,
-            time_to_convergence=wall,
             metadata={"solver": self.name, "note": "stub implementation"},
         )

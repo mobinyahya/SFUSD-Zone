@@ -1,5 +1,6 @@
 """Data-free, end-to-end solver tests on a synthetic grid problem."""
 
+import json
 import os
 
 import pytest
@@ -31,8 +32,6 @@ def test_cpsat_solvers(name):
     solver = get_solver(name, solve_time_limit=10, workers=1)
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    assert solution.time_to_convergence is not None
-    assert 0.0 <= solution.time_to_convergence <= solution.wall_time
     _check_valid(problem, solution)
 
 
@@ -84,11 +83,58 @@ def test_cpsat_solver_saves_logs(tmp_path):
     assert "CP-SAT" in contents or "CpSolverResponse" in contents
 
 
+@pytest.mark.parametrize(
+    "name,options",
+    [
+        ("recom", {}),
+        ("short_bursts_recom", {"short_bursts_length": 2}),
+        ("relaxed_recom", {"relaxed_recom_min_boundary_edges": 0}),
+    ],
+)
+def test_recom_solvers_save_progress_logs(tmp_path, name, options):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        name,
+        solve_time_limit=10,
+        recom_iterations=5,
+        recom_cut_attempts=25,
+        save_solver_logs=True,
+        output_dir=str(tmp_path),
+        seed=1,
+        **options,
+    )
+
+    solution = solver.solve(problem)
+
+    expected_log = os.path.join(
+        "solver_logs", f"solver_00_BlockGroup_0_{name}.log"
+    )
+    assert solution.metadata["solver_log_path"] == expected_log
+    assert solution.metadata["solver_log_format"] == "jsonl"
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / expected_log).read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows[0]["event"] == "initial"
+    cut_rows = [row for row in rows if row["event"] == "cut"]
+    assert len(cut_rows) == (
+        solution.metadata["attempted_moves"] - solution.metadata["proposal_failures"]
+    )
+    for row in rows:
+        assert isinstance(row["timestamp"], float)
+        assert row["elapsed_seconds"] >= 0.0
+        assert isinstance(row["iteration"], int)
+        assert isinstance(row["cut_edges"], int)
+        assert isinstance(row["feasible"], bool)
+    for row in cut_rows:
+        assert isinstance(row["accepted"], bool)
+
+
 def test_local_search_stub():
     problem = make_grid_problem(3, 3)
     solution = get_solver("local_search").solve(problem)
     assert solution.status == "STUB"
-    assert solution.time_to_convergence == solution.wall_time
     _check_valid(problem, solution)
 
 
@@ -147,7 +193,6 @@ def test_recom_uses_explicit_hint():
 
     assert solution.status == "FEASIBLE"
     assert solution.assignment == hint
-    assert solution.time_to_convergence == 0.0
     assert solution.metadata["initialization_method"] == "hint"
 
 
@@ -174,7 +219,6 @@ def test_short_bursts_recom_uses_explicit_hint():
 
     assert solution.status == "FEASIBLE"
     assert solution.assignment == hint
-    assert solution.time_to_convergence == 0.0
     assert solution.metadata["initialization_method"] == "hint"
 
 

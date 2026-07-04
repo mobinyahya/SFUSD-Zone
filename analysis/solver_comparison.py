@@ -29,10 +29,6 @@ METRICS = {
         "label": "Fractional cut edges",
         "direction": "lower is better",
     },
-    "normalized_time_to_convergence": {
-        "label": "Convergence time / solve limit",
-        "direction": "lower is better",
-    },
 }
 
 
@@ -91,13 +87,11 @@ def build_solver_metric_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     required_columns = {
         "config_solver",
         "config_centroids_type",
-        "config_solve_time_limits",
         "final_stage",
         "final_stage_index",
         "num_stages",
         "status",
         "fractional_cut_edges",
-        "time_to_convergence",
     }
     missing_columns = sorted(required_columns - set(summary_df.columns))
     if missing_columns:
@@ -107,16 +101,9 @@ def build_solver_metric_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     df["fractional_cut_edges"] = pd.to_numeric(
         df["fractional_cut_edges"], errors="coerce"
     )
-    df["time_to_convergence"] = pd.to_numeric(
-        df["time_to_convergence"], errors="coerce"
-    )
 
     df["zone_count"] = df.apply(extract_zone_count, axis=1)
     df["solver"] = df["config_solver"].map(solver_label)
-    df["solve_time_limit_seconds"] = df.apply(solve_time_limit_seconds, axis=1)
-    df["normalized_time_to_convergence"] = (
-        df["time_to_convergence"] / df["solve_time_limit_seconds"]
-    )
 
     completed_final_rows = final_block0_rows(df)
     successful_rows = df["status"].fillna("").astype(str).str.upper().isin(SUCCESS_STATUSES)
@@ -180,23 +167,6 @@ def solver_label(value: object) -> str | None:
     if not key:
         return None
     return SOLVER_LABELS.get(key, key.replace("_", " ").title())
-
-
-def solve_time_limit_seconds(row: pd.Series) -> float | None:
-    values = [
-        float(value)
-        for value in re.findall(r"\d+(?:\.\d+)?", str(row.get("config_solve_time_limits", "")))
-    ]
-    values = [value for value in values if value > 0]
-    if not values:
-        return None
-
-    final_stage_index = pd.to_numeric(row.get("final_stage_index"), errors="coerce")
-    if pd.notna(final_stage_index):
-        index = int(final_stage_index)
-        if 0 <= index < len(values):
-            return values[index]
-    return values[-1]
 
 
 def metric_label(meta: dict[str, str]) -> str:

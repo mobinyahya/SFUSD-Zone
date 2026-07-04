@@ -99,6 +99,7 @@ def _stage_rows(
     rows: list[dict[str, Any]] = []
     for stage in manifest.get("stages", []):
         metrics_stage = run_stage_by_name.get(stage.get("name"), {})
+        metadata = stage.get("metadata") or {}
         row = {
             "task_id": manifest.get("task_id"),
             "config_hash": manifest.get("config_hash"),
@@ -116,12 +117,11 @@ def _stage_rows(
             "avg_reock_score": metrics_stage.get("avg_reock_score"),
             "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
             "wall_time": stage.get("wall_time"),
-            "time_to_convergence": metrics_stage.get(
-                "time_to_convergence", stage.get("time_to_convergence")
-            ),
             "contiguous": stage.get("contiguous"),
             "num_nodes": metrics_stage.get("num_nodes"),
             "num_zones": stage.get("num_zones"),
+            "solver_log_path": metadata.get("solver_log_path"),
+            "solver_log_format": metadata.get("solver_log_format"),
         }
         row.update(_metric_values(metrics_stage.get("matching_metrics")))
         row.update(_metric_values(metrics_stage.get("choice_metrics_metrics")))

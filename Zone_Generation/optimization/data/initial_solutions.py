@@ -130,7 +130,6 @@ def _generate_math_prog_seed(
         status="SEED",
         objective=None,
         wall_time=solution.wall_time,
-        time_to_convergence=solution.time_to_convergence,
         metadata={
             "solver": "cp_bool",
             "initialization_method": "math_prog",
@@ -199,7 +198,6 @@ def _save_seed(solution: ZoneSolution, zone_dict_path: Path) -> None:
             "status": solution.status,
             "objective": solution.objective,
             "wall_time": solution.wall_time,
-            "time_to_convergence": solution.time_to_convergence,
             "num_zones": solution.problem.Z,
             "centroids": list(solution.problem.centroids),
             "contiguous": None,

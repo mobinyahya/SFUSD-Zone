@@ -72,7 +72,6 @@ class MetricColumns:
     FINAL_STATUS = "final_status"
     FINAL_WALL_TIME = "final_wall_time"
     TOTAL_WALL_TIME = "total_wall_time"
-    TIME_TO_CONVERGENCE = "time_to_convergence"
     FINAL_STAGE_INDEX = "final_stage_index"
     FINAL_CHOICE_UTILITY = "final_choice_utility"
     CHOICE_TOTAL_PREASSIGNMENT_UTILITY = "choice_total_preassignment_utility"
@@ -719,15 +718,6 @@ RUN_METRICS = [
         category="run",
         direction="minimize",
         is_core=False,
-    ),
-    MetricSpec(
-        column="time_to_convergence",
-        display_name="Time To Convergence",
-        description="Time until the solver first found a feasible solution. For recursive runs this sums stage convergence times; for iterative-choice runs this uses the first iteration only.",
-        category="run",
-        direction="minimize",
-        is_core=False,
-        short_name="Converge",
     ),
     MetricSpec(
         column="final_status",

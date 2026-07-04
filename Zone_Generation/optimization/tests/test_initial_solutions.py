@@ -84,7 +84,6 @@ class _FakeCpBoolSolver:
             status="FEASIBLE",
             objective=0.0,
             wall_time=0.0,
-            time_to_convergence=0.0,
         )
 
 

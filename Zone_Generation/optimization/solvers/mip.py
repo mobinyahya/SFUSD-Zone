@@ -55,15 +55,8 @@ class MipSolver(Solver):
 
         self._add_hints(problem, x)
 
-        first_solution_time: float | None = None
-
-        def record_first_solution(model, where):
-            nonlocal first_solution_time
-            if where == GRB.Callback.MIPSOL and first_solution_time is None:
-                first_solution_time = time.time() - start
-
         start = time.time()
-        m.optimize(record_first_solution)
+        m.optimize()
         wall = time.time() - start
 
         if m.Status == GRB.OPTIMAL:
@@ -85,9 +78,6 @@ class MipSolver(Solver):
                         break
             objective = m.ObjVal
 
-        if m.SolCount > 0 and first_solution_time is None:
-            first_solution_time = wall
-
         metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
         if problem.choice_objective is not None:
             metadata.update(
@@ -102,7 +92,6 @@ class MipSolver(Solver):
             status=status,
             objective=objective,
             wall_time=wall,
-            time_to_convergence=first_solution_time,
             metadata=metadata,
         )
 

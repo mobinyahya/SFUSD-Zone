@@ -8,12 +8,13 @@ candidate, centroid, capacity, diversity, school-count, and objective scoring.
 
 from __future__ import annotations
 
+import json
 import math
 import random
 import time
 from dataclasses import dataclass
 from functools import partial
-from typing import Mapping
+from typing import Mapping, TextIO
 
 from gerrychain import Graph, Partition
 from gerrychain.proposals import recom as gerrychain_recom
@@ -72,55 +73,79 @@ class ReComSolver(Solver):
         max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         temperature = max(0.0, float(self.options.get("recom_temperature", 0.0)))
+        log_path, progress_log = self._open_progress_log(problem)
 
         random_state = random.getstate()
         random.seed(seed)
         try:
-            initial = self._initial_state(problem, cut_attempts)
-            current = dict(initial.assignment)
-            current_partition = self._partition(problem, current)
-            current_score = self._score(problem, current)
-            initial_score = current_score
-            best = dict(current) if _valid(current_score) else None
-            best_score = current_score if best is not None else None
-            time_to_convergence = 0.0 if best is not None else None
-            accepted = 0
-            rejected = 0
-            attempted = 0
-            proposal_failures = 0
-            last_proposal_error = None
+            try:
+                initial = self._initial_state(problem, cut_attempts)
+                current = dict(initial.assignment)
+                current_partition = self._partition(problem, current)
+                current_score = self._score(problem, current)
+                initial_score = current_score
+                best = dict(current) if _valid(current_score) else None
+                best_score = current_score if best is not None else None
+                accepted = 0
+                rejected = 0
+                attempted = 0
+                proposal_failures = 0
+                last_proposal_error = None
 
-            for _ in range(max_iterations):
-                if time.time() - start >= time_limit:
-                    break
-                attempted += 1
-                try:
-                    proposal_partition = self._gerrychain_proposal(
-                        problem, current_partition, cut_attempts
+                self._write_progress_log(
+                    progress_log,
+                    start=start,
+                    event="initial",
+                    iteration=0,
+                    score=current_score,
+                    best_score=best_score,
+                )
+
+                for _ in range(max_iterations):
+                    if time.time() - start >= time_limit:
+                        break
+                    attempted += 1
+                    try:
+                        proposal_partition = self._gerrychain_proposal(
+                            problem, current_partition, cut_attempts
+                        )
+                    except _GERRYCHAIN_ERRORS as exc:
+                        rejected += 1
+                        proposal_failures += 1
+                        last_proposal_error = type(exc).__name__
+                        continue
+
+                    proposal = self._assignment_from_partition(proposal_partition)
+                    proposal_score = self._score(problem, proposal)
+                    accepted_move = self._accept(
+                        current_score, proposal_score, temperature, rng
                     )
-                except _GERRYCHAIN_ERRORS as exc:
-                    rejected += 1
-                    proposal_failures += 1
-                    last_proposal_error = type(exc).__name__
-                    continue
+                    if accepted_move:
+                        current = proposal
+                        current_partition = proposal_partition
+                        current_score = proposal_score
+                        accepted += 1
+                    else:
+                        rejected += 1
 
-                proposal = self._assignment_from_partition(proposal_partition)
-                proposal_score = self._score(problem, proposal)
-                if self._accept(current_score, proposal_score, temperature, rng):
-                    current = proposal
-                    current_partition = proposal_partition
-                    current_score = proposal_score
-                    accepted += 1
-                else:
-                    rejected += 1
+                    if _valid(proposal_score) and (
+                        best_score is None or proposal_score.boundary < best_score.boundary
+                    ):
+                        best = dict(proposal)
+                        best_score = proposal_score
 
-                if _valid(proposal_score) and (
-                    best_score is None or proposal_score.boundary < best_score.boundary
-                ):
-                    best = dict(proposal)
-                    best_score = proposal_score
-                    if time_to_convergence is None:
-                        time_to_convergence = time.time() - start
+                    self._write_progress_log(
+                        progress_log,
+                        start=start,
+                        event="cut",
+                        iteration=attempted,
+                        score=proposal_score,
+                        accepted=accepted_move,
+                        best_score=best_score,
+                    )
+            finally:
+                if progress_log is not None:
+                    progress_log.close()
         finally:
             random.setstate(random_state)
 
@@ -129,8 +154,6 @@ class ReComSolver(Solver):
             status = "FEASIBLE"
             assignment = best
             objective = float(best_score.boundary)
-            if time_to_convergence is None:
-                time_to_convergence = wall
         else:
             status = "UNKNOWN"
             assignment = {}
@@ -138,6 +161,7 @@ class ReComSolver(Solver):
 
         metadata = {
             "solver": self.name,
+            **self._progress_log_metadata(log_path),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -163,9 +187,58 @@ class ReComSolver(Solver):
             status=status,
             objective=objective,
             wall_time=wall,
-            time_to_convergence=time_to_convergence,
             metadata=metadata,
         )
+
+    # ------------------------------------------------------------------ #
+    # Progress logging
+    # ------------------------------------------------------------------ #
+    def _open_progress_log(
+        self, problem: ZoneProblem
+    ) -> tuple[str | None, TextIO | None]:
+        log_path = self._next_solver_log_path(problem)
+        if log_path is None:
+            return None, None
+        return log_path, open(log_path, "w", encoding="utf-8")
+
+    def _progress_log_metadata(self, log_path: str | None) -> dict[str, str]:
+        metadata = self._solver_log_metadata(log_path)
+        if log_path:
+            metadata["solver_log_format"] = "jsonl"
+        return metadata
+
+    def _write_progress_log(
+        self,
+        log_file: TextIO | None,
+        *,
+        start: float,
+        event: str,
+        iteration: int,
+        score: _Score,
+        accepted: bool | None = None,
+        best_score: _Score | None = None,
+    ) -> None:
+        if log_file is None:
+            return
+        timestamp = time.time()
+        penalty = float(score.penalty)
+        row = {
+            "event": event,
+            "iteration": int(iteration),
+            "timestamp": timestamp,
+            "elapsed_seconds": timestamp - start,
+            "cut_edges": int(score.boundary),
+            "feasible": _valid(score),
+            "penalty": penalty if math.isfinite(penalty) else None,
+        }
+        if accepted is not None:
+            row["accepted"] = bool(accepted)
+        if best_score is not None:
+            row["best_cut_edges"] = int(best_score.boundary)
+            row["best_feasible"] = _valid(best_score)
+        json.dump(row, log_file, sort_keys=True)
+        log_file.write("\n")
+        log_file.flush()
 
     # ------------------------------------------------------------------ #
     # Initial assignment

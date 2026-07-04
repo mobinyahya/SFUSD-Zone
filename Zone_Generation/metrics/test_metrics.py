@@ -55,7 +55,6 @@ def _assignment():
 def _solution(
     objective=10.0,
     wall_time=1.5,
-    time_to_convergence=None,
     metadata=None,
     assignment=None,
     status="FEASIBLE",
@@ -66,13 +65,12 @@ def _solution(
         status=status,
         objective=objective,
         wall_time=wall_time,
-        time_to_convergence=time_to_convergence,
         metadata=metadata or {"solver": "test"},
     )
 
 
 def test_optimization_metrics_on_single_solution():
-    solution = _solution(objective=12.0, time_to_convergence=0.9)
+    solution = _solution(objective=12.0)
     result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
 
     expected_cut_edges = boundary_edges(solution.problem.G, solution.assignment)
@@ -88,8 +86,6 @@ def test_optimization_metrics_on_single_solution():
     assert 0 < result.metrics["avg_reock_score"] <= 1
     assert 0 < result.metrics["avg_polsby_popper_score"] <= 1
     assert result.metrics["final_objective"] == 12.0
-    assert result.metrics["time_to_convergence"] == 0.9
-    assert result.run["stages"][0]["time_to_convergence"] == 0.9
     assert result.metrics["contiguous"] == 1
     assert result.metrics["avg_total_programs_per_zone"] == 2.0
     assert result.metrics["solution_code"]
@@ -133,19 +129,16 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
 
 
 def test_recursive_stage_metrics_default_to_final_only():
-    first = _solution(objective=20.0, wall_time=2.0, time_to_convergence=0.5)
-    final = _solution(objective=10.0, wall_time=3.0, time_to_convergence=1.25)
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(objective=10.0, wall_time=3.0)
     result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
 
     assert result.run["strategy"] == "recursive"
     assert result.run["selection"] == "literal_final_stage"
     assert result.run["final_stage"] == "stage_01_Block_0"
     assert result.metrics["total_wall_time"] == 5.0
-    assert result.metrics["time_to_convergence"] == 1.75
     assert result.metrics["objective_stage_00_Block_0"] == 20.0
     assert result.metrics["objective_stage_01_Block_0"] == 10.0
-    assert result.metrics["time_to_convergence_stage_00_Block_0"] == 0.5
-    assert result.metrics["time_to_convergence_stage_01_Block_0"] == 1.25
     assert "cut_edges_stage_01_Block_0" not in result.metrics
     assert result.run["stages"][1]["cut_edges"] is None
     assert result.metrics["cut_edges"] > 0
@@ -154,7 +147,7 @@ def test_recursive_stage_metrics_default_to_final_only():
 
 
 def test_recursive_metrics_use_infeasible_literal_final_stage():
-    first = _solution(objective=20.0, wall_time=2.0, time_to_convergence=0.5)
+    first = _solution(objective=20.0, wall_time=2.0)
     final = _solution(
         objective=None,
         wall_time=1.0,
@@ -172,7 +165,7 @@ def test_recursive_metrics_use_infeasible_literal_final_stage():
 
 
 def test_recursive_stage_metrics_skip_infeasible_stages():
-    first = _solution(objective=20.0, wall_time=2.0, time_to_convergence=0.5)
+    first = _solution(objective=20.0, wall_time=2.0)
     final = _solution(
         objective=None,
         wall_time=1.0,
@@ -213,17 +206,14 @@ def test_recursive_stage_metrics_can_be_enabled():
 def test_iterative_metrics_select_best_choice_utility():
     low = _solution(
         objective=30.0,
-        time_to_convergence=0.2,
         metadata={"choice_utility": 1.0},
     )
     best = _solution(
         objective=25.0,
-        time_to_convergence=0.6,
         metadata={"choice_utility": 2.5},
     )
     later = _solution(
         objective=20.0,
-        time_to_convergence=0.8,
         metadata={"choice_utility": 2.0},
     )
 
@@ -235,9 +225,7 @@ def test_iterative_metrics_select_best_choice_utility():
     assert result.run["final_stage"] == "iteration_01_Block_0"
     assert result.metrics["final_objective"] == 25.0
     assert result.metrics["final_choice_utility"] == 2.5
-    assert result.metrics["time_to_convergence"] == 0.2
     assert result.run["stages"][2]["choice_utility"] == 2.0
-    assert result.run["stages"][2]["time_to_convergence"] == 0.8
 
 
 def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):

@@ -25,7 +25,6 @@ class ZoneSolution:
     status: str
     objective: Optional[float] = None
     wall_time: Optional[float] = None
-    time_to_convergence: Optional[float] = None
     metadata: dict = field(default_factory=dict)
 
     @property
@@ -86,7 +85,6 @@ class ZoneSolution:
             "status": self.status,
             "objective": self.objective,
             "wall_time": self.wall_time,
-            "time_to_convergence": self.time_to_convergence,
             "num_zones": self.problem.Z,
             "centroids": list(self.problem.centroids),
             "contiguous": self.is_contiguous() if self.feasible else None,

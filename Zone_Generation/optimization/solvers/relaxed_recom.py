@@ -50,52 +50,73 @@ class RelaxedReComSolver(ReComSolver):
         min_boundary_edges = int(
             self.options.get("relaxed_recom_min_boundary_edges", 10)
         )
+        log_path, progress_log = self._open_progress_log(problem)
 
         random_state = random.getstate()
         random.seed(seed)
         try:
-            initial = self._initial_state(problem, cut_attempts)
-            current = self._prepare_relaxed_assignment(problem, initial.assignment)
-            current_score = self._score(problem, current)
-            initial_score = current_score
-            trees = self._zone_spanning_trees(problem, current, rng)
-
-            best = dict(current) if _valid(current_score) else None
-            best_score = current_score if best is not None else None
-            time_to_convergence = 0.0 if best is not None else None
-            attempted = 0
-            accepted = 0
-            rejected_samples = 0 if best is not None else 1
-            proposal_failures = 0
-            last_proposal_error = None
-
-            for _ in range(max_iterations):
-                if time.time() - start >= time_limit:
-                    break
-                attempted += 1
-                try:
-                    self._relaxed_recom_step(
-                        problem,
-                        current,
-                        trees,
-                        rng,
-                        min_boundary_edges=min_boundary_edges,
-                    )
-                except _RelaxedReComMoveError as exc:
-                    proposal_failures += 1
-                    last_proposal_error = str(exc)
-                    continue
-
-                accepted += 1
+            try:
+                initial = self._initial_state(problem, cut_attempts)
+                current = self._prepare_relaxed_assignment(problem, initial.assignment)
                 current_score = self._score(problem, current)
-                if _valid(current_score):
-                    if best_score is None or current_score.boundary < best_score.boundary:
-                        best = dict(current)
-                        best_score = current_score
-                        if time_to_convergence is None:
-                            time_to_convergence = time.time() - start
-                else:
-                    rejected_samples += 1
+                initial_score = current_score
+                trees = self._zone_spanning_trees(problem, current, rng)
+
+                best = dict(current) if _valid(current_score) else None
+                best_score = current_score if best is not None else None
+                attempted = 0
+                accepted = 0
+                rejected_samples = 0 if best is not None else 1
+                proposal_failures = 0
+                last_proposal_error = None
+
+                self._write_progress_log(
+                    progress_log,
+                    start=start,
+                    event="initial",
+                    iteration=0,
+                    score=current_score,
+                    best_score=best_score,
+                )
+
+                for _ in range(max_iterations):
+                    if time.time() - start >= time_limit:
+                        break
+                    attempted += 1
+                    try:
+                        self._relaxed_recom_step(
+                            problem,
+                            current,
+                            trees,
+                            rng,
+                            min_boundary_edges=min_boundary_edges,
+                        )
+                    except _RelaxedReComMoveError as exc:
+                        proposal_failures += 1
+                        last_proposal_error = str(exc)
+                        continue
+
+                    accepted += 1
+                    current_score = self._score(problem, current)
+                    if _valid(current_score):
+                        if best_score is None or current_score.boundary < best_score.boundary:
+                            best = dict(current)
+                            best_score = current_score
+                    else:
+                        rejected_samples += 1
+
+                    self._write_progress_log(
+                        progress_log,
+                        start=start,
+                        event="cut",
+                        iteration=attempted,
+                        score=current_score,
+                        accepted=True,
+                        best_score=best_score,
+                    )
+            finally:
+                if progress_log is not None:
+                    progress_log.close()
         finally:
             random.setstate(random_state)
 
@@ -104,8 +125,6 @@ class RelaxedReComSolver(ReComSolver):
             status = "FEASIBLE"
             assignment = best
             objective = float(best_score.boundary)
-            if time_to_convergence is None:
-                time_to_convergence = wall
         else:
             status = "UNKNOWN"
             assignment = {}
@@ -113,6 +132,7 @@ class RelaxedReComSolver(ReComSolver):
 
         metadata = {
             "solver": self.name,
+            **self._progress_log_metadata(log_path),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -140,7 +160,6 @@ class RelaxedReComSolver(ReComSolver):
             status=status,
             objective=objective,
             wall_time=wall,
-            time_to_convergence=time_to_convergence,
             metadata=metadata,
         )
 
