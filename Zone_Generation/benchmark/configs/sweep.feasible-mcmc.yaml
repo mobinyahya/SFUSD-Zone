@@ -1,0 +1,64 @@
+# Optimization-native benchmark sweep.
+
+name: feasible-mcmc
+mode: run  # run | metrics
+
+optimization_defaults:
+  racial_dev: -1
+  frl_dev: [0.20]
+  seed: 42
+  levels: [BlockGroup_0]
+  overage: [0.85]
+  shortage: [0.22]
+  workers: 1
+  initialization_method: gerrychain  # gerrychain | math_prog
+
+  recom_iterations: 1000000
+  recom_cut_attempts: 1000
+  recom_temperature: 0.0
+  short_bursts_length: 25
+
+sweep:
+  centroids_type: ['2-zone-1', '4-zone-rec-4', '5-zone-AF', '6-zone-3', '8-zone-22',]
+  frl_dev: [0.15, 0.2]
+  overage: [0.7, 0.8, 0.9]
+  shortage: [0.15, 0.2, 0.25]
+
+tasks:
+  - strategy: 'single'
+    solver: 'relaxed_recom'
+    solve_time_limits: [600]
+  - strategy: 'single'
+    solver: 'short_bursts_recom'
+    solve_time_limits: [600]
+
+
+execution:
+  output_dir: '/share/data/school_choice/local_runs/feasible_mcmc/'
+  capacity: 40             # total solver-thread slots available on the machine
+  max_workers: 50           # max concurrent Python worker processes
+  max_tasks_per_worker: 10  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+matching:
+  enabled: false
+  configs:
+    - name: no_reserves
+      config: Zone_Generation/benchmark/matching/zones+no_reserves.yaml
+    - name: soft_reserves
+      config: Zone_Generation/benchmark/matching/zones+soft_reserves_06frl.yaml
+    - name: hard_reserves
+      config: Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml
+  compute_stage_assignments: false
+
+choice_metrics:
+  enabled: false
+  compute_stage_metrics: false
