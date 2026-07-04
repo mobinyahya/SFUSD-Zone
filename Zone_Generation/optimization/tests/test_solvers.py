@@ -43,6 +43,7 @@ def test_config_passes_cpsat_parameters_to_solver():
         linearization_level=0,
         cp_model_probing_level=1,
         symmetry_level=0,
+        cp_sat_search_strategy="distance_to_centroid",
     )
 
     solver = config.make_solver()
@@ -50,6 +51,7 @@ def test_config_passes_cpsat_parameters_to_solver():
     assert solver.options["linearization_level"] == 0
     assert solver.options["cp_model_probing_level"] == 1
     assert solver.options["symmetry_level"] == 0
+    assert solver.options["cp_sat_search_strategy"] == "distance_to_centroid"
 
 
 def test_cpsat_solver_applies_configured_cp_sat_parameters():
@@ -62,6 +64,7 @@ def test_cpsat_solver_applies_configured_cp_sat_parameters():
         linearization_level=0,
         cp_model_probing_level=1,
         symmetry_level=0,
+        cp_sat_search_strategy="distance_to_centroid",
     )
     cp_solver = cp_model.CpSolver()
 
@@ -74,6 +77,88 @@ def test_cpsat_solver_applies_configured_cp_sat_parameters():
     assert cp_solver.parameters.linearization_level == 0
     assert cp_solver.parameters.cp_model_probing_level == 1
     assert cp_solver.parameters.symmetry_level == 0
+    assert cp_solver.parameters.search_branching == cp_model.PARTIAL_FIXED_SEARCH
+
+
+def test_cpsat_solver_rejects_unknown_search_strategy():
+    solver = get_solver("cp_int", cp_sat_search_strategy="bad_strategy")
+
+    with pytest.raises(ValueError, match="cp_sat_search_strategy"):
+        solver._configure_solver_parameters(cp_model.CpSolver())
+
+
+@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
+def test_cpsat_solvers_support_distance_to_centroid_search_strategy(name):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        name,
+        solve_time_limit=10,
+        workers=1,
+        cp_sat_search_strategy="distance_to_centroid",
+    )
+
+    solution = solver.solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    _check_valid(problem, solution)
+
+
+def test_cp_bool_distance_to_centroid_search_orders_assignment_bools():
+    problem = make_grid_problem(3, 3)
+    solver = get_solver("cp_bool", cp_sat_search_strategy="distance_to_centroid")
+    model = cp_model.CpModel()
+    x, y = solver._build_assignment_vars(model, problem)
+
+    solver._add_search_strategy(model, problem, x, y)
+
+    strategy = model.Proto().search_strategy[0]
+    expected_keys = sorted(
+        x,
+        key=lambda zone_node: (
+            problem.distance(problem.centroids[zone_node[0]], zone_node[1]),
+            zone_node[1],
+            zone_node[0],
+        ),
+    )
+    assert _decision_strategy_var_indices(model) == [
+        x[key].Index() for key in expected_keys
+    ]
+    assert strategy.variable_selection_strategy == cp_model.CHOOSE_FIRST
+    assert strategy.domain_reduction_strategy == cp_model.SELECT_MAX_VALUE
+
+
+def test_cp_int_distance_to_centroid_search_orders_only_integer_vars():
+    problem = make_grid_problem(3, 3)
+    solver = get_solver("cp_int", cp_sat_search_strategy="distance_to_centroid")
+    model = cp_model.CpModel()
+    x, y = solver._build_assignment_vars(model, problem)
+
+    solver._add_search_strategy(model, problem, x, y)
+
+    strategy = model.Proto().search_strategy[0]
+    expected_nodes = sorted(
+        y,
+        key=lambda node: (
+            min(
+                problem.distance(problem.centroids[z], node)
+                for z in problem.candidate_zones(node)
+            ),
+            node,
+        ),
+    )
+    decision_indices = _decision_strategy_var_indices(model)
+    assert decision_indices == [y[node].Index() for node in expected_nodes]
+    assert all(_var_name(model, idx).startswith("y_") for idx in decision_indices)
+    assert strategy.variable_selection_strategy == cp_model.CHOOSE_FIRST
+    assert strategy.domain_reduction_strategy == cp_model.SELECT_MIN_VALUE
+
+
+def _decision_strategy_var_indices(model):
+    return [expr.vars[0] for expr in model.Proto().search_strategy[0].exprs]
+
+
+def _var_name(model, index):
+    return model.Proto().variables[index].name
 
 
 def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):

@@ -43,6 +43,7 @@ class OptimizationConfig:
     linearization_level: int | None = None
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
+    cp_sat_search_strategy: str | None = None
     initialization_method: str = "gerrychain"
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
@@ -133,6 +134,7 @@ class OptimizationConfig:
             "linearization_level": self.linearization_level,
             "cp_model_probing_level": self.cp_model_probing_level,
             "symmetry_level": self.symmetry_level,
+            "cp_sat_search_strategy": self.cp_sat_search_strategy,
             "initialization_method": self.initialization_method,
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,

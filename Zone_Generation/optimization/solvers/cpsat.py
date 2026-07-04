@@ -37,6 +37,7 @@ _CP_SAT_INT_PARAMETERS = (
     "cp_model_probing_level",
     "symmetry_level",
 )
+_CP_SAT_SEARCH_STRATEGY_DISTANCE = "distance_to_centroid"
 
 # A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
 _Term = tuple[float, int, int]
@@ -153,6 +154,46 @@ class _CpSatSolver(Solver):
             if i in problem.hint:
                 m.AddHint(var, 1 if problem.hint[i] == z else 0)
 
+    def _add_search_strategy(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> None:
+        strategy = _normalized_cp_sat_search_strategy(
+            self.options.get("cp_sat_search_strategy")
+        )
+        if strategy is None:
+            return
+        if strategy == _CP_SAT_SEARCH_STRATEGY_DISTANCE:
+            variables = self._distance_to_centroid_search_vars(problem, x, y)
+            if variables:
+                m.AddDecisionStrategy(
+                    variables,
+                    cp_model.CHOOSE_FIRST,
+                    self._distance_to_centroid_domain_strategy(),
+                )
+
+    def _distance_to_centroid_search_vars(
+        self,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> list[cp_model.IntVar]:
+        keys = sorted(
+            x,
+            key=lambda zone_node: (
+                problem.distance(problem.centroids[zone_node[0]], zone_node[1]),
+                zone_node[1],
+                zone_node[0],
+            ),
+        )
+        return [x[key] for key in keys]
+
+    def _distance_to_centroid_domain_strategy(self):
+        return cp_model.SELECT_MAX_VALUE
+
     def _extract_assignment(
         self,
         solver: cp_model.CpSolver,
@@ -182,6 +223,10 @@ class _CpSatSolver(Solver):
             value = self.options.get(parameter_name)
             if value is not None:
                 setattr(solver.parameters, parameter_name, int(value))
+        if _normalized_cp_sat_search_strategy(
+            self.options.get("cp_sat_search_strategy")
+        ):
+            solver.parameters.search_branching = cp_model.PARTIAL_FIXED_SEARCH
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         m = cp_model.CpModel()
@@ -197,6 +242,7 @@ class _CpSatSolver(Solver):
                 maximize=True,
                 objective_scale=problem.choice_objective.scale,
             )
+        self._add_search_strategy(m, problem, x, y)
         self._add_hints(m, problem, x, y)
 
         solver = cp_model.CpSolver()
@@ -561,6 +607,27 @@ class CpIntSolver(CpBoolSolver):
     ) -> dict[int, int]:
         return {i: int(solver.Value(y[i])) for i in problem.nodes}
 
+    def _distance_to_centroid_search_vars(
+        self,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> list[cp_model.IntVar]:
+        nodes = sorted(
+            y,
+            key=lambda node: (
+                min(
+                    problem.distance(problem.centroids[z], node)
+                    for z in problem.candidate_zones(node)
+                ),
+                node,
+            ),
+        )
+        return [y[node] for node in nodes]
+
+    def _distance_to_centroid_domain_strategy(self):
+        return cp_model.SELECT_MIN_VALUE
+
     def _add_boundary_objective(
         self,
         m: cp_model.CpModel,
@@ -581,3 +648,16 @@ def _scaled(value: float, scale: float) -> int:
     if not math.isfinite(float(value)):
         raise ValueError(f"Choice objective contains non-finite value: {value!r}")
     return int(round(float(value) * scale))
+
+
+def _normalized_cp_sat_search_strategy(value: object) -> str | None:
+    if value is None:
+        return None
+    strategy = str(value).strip().lower()
+    if strategy in {"", "default"}:
+        return None
+    if strategy == _CP_SAT_SEARCH_STRATEGY_DISTANCE:
+        return strategy
+    raise ValueError(
+        "cp_sat_search_strategy must be one of: default, distance_to_centroid."
+    )
