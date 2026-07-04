@@ -6,7 +6,7 @@ centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
-solver: 'relaxed_recom'        # cp_int | cp_bool | mip | local_search | recom | relaxed_recom
+solver: 'relaxed_recom'        # cp_int | cp_bool | mip | local_search | recom | relaxed_recom | short_bursts_recom
 strategy: 'single'   # single | recursive | iterative_choice
 
 # --- optimization parameters ---
@@ -27,6 +27,7 @@ initialization_method: gerrychain  # gerrychain | math_prog
 recom_iterations: 10000
 recom_cut_attempts: 1000
 recom_temperature: 0.0
+short_bursts_length: 25
 relaxed_recom_min_boundary_edges: 10
 recom_initial_level: 'BlockGroup_1'
 recom_initial_save_level: 'Block_0'

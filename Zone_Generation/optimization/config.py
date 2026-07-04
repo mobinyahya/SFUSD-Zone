@@ -43,6 +43,7 @@ class OptimizationConfig:
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
     recom_temperature: float = 0.0
+    short_bursts_length: int = 25
     relaxed_recom_min_boundary_edges: int = 10
     recom_initial_level: str = "BlockGroup_1"
     recom_initial_save_level: str = "Block_0"
@@ -130,6 +131,7 @@ class OptimizationConfig:
             "recom_iterations": self.recom_iterations,
             "recom_cut_attempts": self.recom_cut_attempts,
             "recom_temperature": self.recom_temperature,
+            "short_bursts_length": self.short_bursts_length,
             "relaxed_recom_min_boundary_edges": (
                 self.relaxed_recom_min_boundary_edges
             ),

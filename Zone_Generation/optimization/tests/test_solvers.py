@@ -107,6 +107,23 @@ def test_recom_solver():
     assert solution.metadata["initialization_method"] == "gerrychain"
 
 
+def test_short_bursts_recom_solver():
+    problem = make_grid_problem(3, 3)
+    solution = get_solver(
+        "short_bursts_recom",
+        solve_time_limit=1,
+        recom_iterations=25,
+        short_bursts_length=5,
+        seed=1,
+    ).solve(problem)
+
+    assert solution.status == "FEASIBLE"
+    _check_valid(problem, solution)
+    assert solution.metadata["solver"] == "short_bursts_recom"
+    assert solution.metadata["short_bursts_length"] == 5
+    assert solution.metadata["completed_bursts"] <= 5
+
+
 def test_recom_uses_explicit_hint():
     problem = make_grid_problem(3, 3)
     hint = {
@@ -134,6 +151,33 @@ def test_recom_uses_explicit_hint():
     assert solution.metadata["initialization_method"] == "hint"
 
 
+def test_short_bursts_recom_uses_explicit_hint():
+    problem = make_grid_problem(3, 3)
+    hint = {
+        0: 0,
+        1: 0,
+        3: 0,
+        4: 0,
+        2: 1,
+        5: 1,
+        6: 1,
+        7: 1,
+        8: 1,
+    }
+    problem.hint = hint
+
+    solution = get_solver(
+        "short_bursts_recom",
+        solve_time_limit=1,
+        recom_iterations=0,
+    ).solve(problem)
+
+    assert solution.status == "FEASIBLE"
+    assert solution.assignment == hint
+    assert solution.time_to_convergence == 0.0
+    assert solution.metadata["initialization_method"] == "hint"
+
+
 def test_recom_rejects_choice_objective():
     problem = make_grid_problem(3, 3)
     problem.choice_objective = ChoiceObjective(
@@ -145,6 +189,36 @@ def test_recom_rejects_choice_objective():
 
     with pytest.raises(NotImplementedError, match="recom does not support"):
         get_solver("recom").solve(problem)
+
+
+def test_short_bursts_recom_rejects_choice_objective():
+    problem = make_grid_problem(3, 3)
+    problem.choice_objective = ChoiceObjective(
+        cuts=(),
+        lower_bound=-1.0,
+        upper_bound=1.0,
+        scale=100,
+    )
+
+    with pytest.raises(NotImplementedError, match="short_bursts_recom"):
+        get_solver("short_bursts_recom").solve(problem)
+
+
+def test_short_bursts_recom_unknown_when_no_valid_solution():
+    problem = make_grid_problem(3, 3, shortage=-0.1)
+
+    solution = get_solver(
+        "short_bursts_recom",
+        solve_time_limit=1,
+        recom_iterations=10,
+        short_bursts_length=5,
+        seed=1,
+    ).solve(problem)
+
+    assert solution.status == "UNKNOWN"
+    assert solution.assignment == {}
+    assert solution.objective is None
+    assert solution.metadata["best_penalty"] > 0
 
 
 def test_recom_rejects_unknown_initialization_method():

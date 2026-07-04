@@ -21,7 +21,7 @@ gradually.
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Block / BlockGroup at any depth | extend `data/loaders.py` / `graph_builder.py` |
-| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `local_search` (stub), `recom` | subclass `Solver`, `@register("name")` |
+| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `local_search` (stub), `recom`, `relaxed_recom`, `short_bursts_recom` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
@@ -33,7 +33,8 @@ independently.
 - **Solver-owned implementations.** `cp_bool`, `cp_int`, and `mip` each build
   their own solver-native models from `ZoneProblem`. The CP-SAT solvers share
   common helpers, while the Gurobi MIP implementation stays separate.
-- **ReCom heuristic.** `recom` starts from an explicit hint when provided. When
+- **ReCom heuristics.** `recom`, `relaxed_recom`, and `short_bursts_recom`
+  start from an explicit hint when provided. When
   no hint exists, strategies can build a cached `Block_0` initial assignment by
   solving `BlockGroup_1` with loose `cp_bool` constraints per `centroids_type`,
   then convert that seed to the active level.

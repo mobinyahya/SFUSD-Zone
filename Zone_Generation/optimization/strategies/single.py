@@ -25,7 +25,8 @@ class SingleShotStrategy(Strategy):
 
 def _use_math_prog_initialization(solver: Solver, problem, options: dict) -> bool:
     if (
-        getattr(solver, "name", None) not in {"recom", "relaxed_recom"}
+        getattr(solver, "name", None)
+        not in {"recom", "relaxed_recom", "short_bursts_recom"}
         or problem.hint is not None
     ):
         return False

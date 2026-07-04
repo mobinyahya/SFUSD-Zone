@@ -80,7 +80,8 @@ class RecursiveStrategy(Strategy):
                 )
 
             if (
-                getattr(solver, "name", None) in {"recom", "relaxed_recom"}
+                getattr(solver, "name", None)
+                in {"recom", "relaxed_recom", "short_bursts_recom"}
                 and problem.hint is None
                 and solver.options.get("initialization_method", initialization_method)
                 == "math_prog"
