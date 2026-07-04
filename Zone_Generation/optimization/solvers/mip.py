@@ -13,6 +13,7 @@ from gurobipy import GRB
 
 from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.progress import SolverProgressTracker
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.balance import (
@@ -26,6 +27,7 @@ _SENSE = {"<=", ">=", "=="}
 # A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
 _Term = tuple[float, int, int]
 _AssignmentVars = dict[tuple[int, int], gp.Var]
+_ProgressCaptureData = tuple[list[gp.Var], list[tuple[int, int, tuple[int, ...]]]]
 
 
 @register("mip")
@@ -50,13 +52,29 @@ class MipSolver(Solver):
 
         if problem.choice_objective is None:
             self._add_boundary_objective(m, problem, x)
+            progress = self._new_solver_progress_tracker(problem, maximize=False)
         else:
             self._add_choice_objective(m, problem, x)
+            progress = self._new_solver_progress_tracker(problem, maximize=True)
 
         self._add_hints(problem, x)
 
         start = time.time()
-        m.optimize()
+        if progress is None:
+            m.optimize()
+        else:
+            capture_data = self._progress_capture_data(problem, x)
+
+            def progress_callback(model, where):
+                if where == GRB.Callback.MIPSOL:
+                    self._capture_progress(
+                        model,
+                        progress,
+                        capture_data,
+                        start,
+                    )
+
+            m.optimize(progress_callback)
         wall = time.time() - start
 
         if m.Status == GRB.OPTIMAL:
@@ -78,7 +96,11 @@ class MipSolver(Solver):
                         break
             objective = m.ObjVal
 
-        metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
+        metadata = {
+            "solver": self.name,
+            **self._solver_log_metadata(log_path),
+            **self._solver_progress_metadata(progress),
+        }
         if problem.choice_objective is not None:
             metadata.update(
                 {
@@ -93,7 +115,46 @@ class MipSolver(Solver):
             objective=objective,
             wall_time=wall,
             metadata=metadata,
+            solver_progress=list(progress.entries) if progress is not None else [],
         )
+
+    def _progress_capture_data(
+        self, problem: ZoneProblem, x: _AssignmentVars
+    ) -> _ProgressCaptureData:
+        variables: list[gp.Var] = []
+        node_slices: list[tuple[int, int, tuple[int, ...]]] = []
+        for node in problem.nodes:
+            zones = tuple(sorted(problem.candidate_zones(node)))
+            offset = len(variables)
+            for zone in zones:
+                variables.append(x[(zone, node)])
+            node_slices.append((offset, len(zones), zones))
+        return variables, node_slices
+
+    def _capture_progress(
+        self,
+        model: gp.Model,
+        progress: SolverProgressTracker,
+        capture_data: _ProgressCaptureData,
+        start: float,
+    ) -> None:
+        objective = model.cbGet(GRB.Callback.MIPSOL_OBJ)
+        if not progress.is_improvement(objective):
+            return
+
+        variables, node_slices = capture_data
+        values = model.cbGetSolution(variables)
+        assignment = []
+        for offset, count, zones in node_slices:
+            selected = zones[0]
+            best_value = values[offset]
+            for idx in range(1, count):
+                value = values[offset + idx]
+                if value > best_value:
+                    selected = zones[idx]
+                    best_value = value
+            assignment.append(selected)
+        progress.add(objective, time.time() - start, assignment)
 
     def _build_assignment_vars(
         self, m: gp.Model, problem: ZoneProblem

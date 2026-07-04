@@ -6,6 +6,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 
+from Zone_Generation.optimization.progress import SolverProgressTracker
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 
@@ -23,6 +24,7 @@ class Solver(ABC):
     def __init__(self, **options):
         self.options = options
         self._solve_count = 0
+        self._progress_count = 0
 
     @abstractmethod
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
@@ -57,6 +59,37 @@ class Solver(ABC):
         else:
             display_path = log_path
         return {"solver_log_path": display_path}
+
+    def _new_solver_progress_tracker(
+        self,
+        problem: ZoneProblem,
+        *,
+        maximize: bool = False,
+        objective_scale: float = 1.0,
+    ) -> SolverProgressTracker | None:
+        if not self.options.get("save_solver_progress"):
+            return None
+        level_name = getattr(getattr(problem, "level", None), "name", "unknown_level")
+        progress_id = _safe_filename(
+            f"solver_{self._progress_count:02d}_{level_name}_{self.name}"
+        )
+        self._progress_count += 1
+        return SolverProgressTracker(
+            progress_id=progress_id,
+            maximize=maximize,
+            objective_scale=objective_scale,
+        )
+
+    def _solver_progress_metadata(
+        self, progress: SolverProgressTracker | None
+    ) -> dict[str, object]:
+        if progress is None:
+            return {}
+        return {
+            "solver_progress_enabled": True,
+            "solver_progress_id": progress.progress_id,
+            "solver_progress_count": len(progress.entries),
+        }
 
 
 def _safe_filename(value: str) -> str:

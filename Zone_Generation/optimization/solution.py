@@ -13,6 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from Zone_Generation.optimization.progress import SolverProgressEntry
 from Zone_Generation.optimization.problem import ZoneProblem
 
 
@@ -26,6 +27,7 @@ class ZoneSolution:
     objective: Optional[float] = None
     wall_time: Optional[float] = None
     metadata: dict = field(default_factory=dict)
+    solver_progress: list[SolverProgressEntry] = field(default_factory=list)
 
     @property
     def level(self):
@@ -45,9 +47,12 @@ class ZoneSolution:
         each node carries ``block_ids`` (the finest area ids it absorbed). This
         finest-unit dict is the lingua franca for cross-level conversion.
         """
+        return self._area_assignment_for(self.assignment)
+
+    def _area_assignment_for(self, assignment: dict[int, int]) -> dict[int, int]:
         G = self.problem.G
         out: dict[int, int] = {}
-        for node, zone in self.assignment.items():
+        for node, zone in assignment.items():
             attrs = G.nodes[node]
             if "area_id" in attrs:
                 out[attrs["area_id"]] = zone
@@ -80,6 +85,8 @@ class ZoneSolution:
                 {str(k): int(v) for k, v in self.area_assignment().items()}, f
             )
 
+        self._save_solver_progress(folder, level)
+
         info = {
             "level": level,
             "status": self.status,
@@ -93,3 +100,66 @@ class ZoneSolution:
         info_path = os.path.join(folder, f"solution_{level}.json")
         with open(info_path, "w") as f:
             json.dump(info, f, indent=2)
+
+    def _save_solver_progress(self, folder: str, level: str) -> None:
+        if not self.solver_progress:
+            if self.metadata.get("solver_progress_enabled"):
+                self.metadata["solver_progress_count"] = 0
+            return
+
+        progress_id = str(
+            self.metadata.get("solver_progress_id")
+            or _safe_filename(f"{level}_{self.metadata.get('solver', 'solver')}")
+        )
+        rel_dir = os.path.join("solver_progress", progress_id)
+        progress_dir = os.path.join(folder, rel_dir)
+        os.makedirs(progress_dir, exist_ok=True)
+
+        log_name = "progress.jsonl"
+        log_path = os.path.join(progress_dir, log_name)
+        nodes = list(self.problem.nodes)
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            for idx, entry in enumerate(self.solver_progress):
+                if len(entry.assignment) != len(nodes):
+                    raise ValueError(
+                        "Solver progress assignment length does not match problem nodes."
+                    )
+                assignment = {
+                    int(node): int(zone)
+                    for node, zone in zip(nodes, entry.assignment)
+                }
+                zone_name = f"zone_dict_{level}_{idx:04d}.json"
+                area_name = f"zone_dict_area_{level}_{idx:04d}.json"
+                with open(os.path.join(progress_dir, zone_name), "w") as f:
+                    json.dump({str(k): int(v) for k, v in assignment.items()}, f)
+                area_assignment = self._area_assignment_for(assignment)
+                with open(os.path.join(progress_dir, area_name), "w") as f:
+                    json.dump({str(k): int(v) for k, v in area_assignment.items()}, f)
+
+                row = {
+                    "solution_index": idx,
+                    "objective": entry.objective,
+                    "elapsed_seconds": entry.elapsed_seconds,
+                    "assignment_path": zone_name,
+                    "area_assignment_path": area_name,
+                }
+                if entry.iteration is not None:
+                    row["iteration"] = entry.iteration
+                json.dump(row, log_file, sort_keys=True)
+                log_file.write("\n")
+
+        self.metadata.update(
+            {
+                "solver_progress_enabled": True,
+                "solver_progress_id": progress_id,
+                "solver_progress_count": len(self.solver_progress),
+                "solver_progress_format": "jsonl",
+                "solver_progress_path": os.path.join(rel_dir, log_name),
+                "solver_progress_dir": rel_dir,
+            }
+        )
+
+
+def _safe_filename(value: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value)
+    return safe.strip("_") or "solver_progress"

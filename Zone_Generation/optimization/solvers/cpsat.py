@@ -21,6 +21,7 @@ from ortools.sat.python import cp_model
 
 from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.progress import SolverProgressTracker
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.balance import (
@@ -36,6 +37,54 @@ _SENSE = {"<=", ">=", "=="}
 _Term = tuple[float, int, int]
 _AssignmentVars = dict[tuple[int, int], cp_model.IntVar]
 _ZoneVars = dict[int, cp_model.IntVar]
+
+
+class _CpSatProgressCallback(cp_model.CpSolverSolutionCallback):
+    def __init__(
+        self,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+        progress: SolverProgressTracker,
+        start: float,
+    ) -> None:
+        super().__init__()
+        self._nodes = tuple(problem.nodes)
+        self._progress = progress
+        self._start = start
+        if y:
+            self._y_vars = tuple(y[node] for node in self._nodes)
+            self._x_vars = None
+        else:
+            self._y_vars = None
+            self._x_vars = tuple(
+                tuple((z, x[(z, node)]) for z in sorted(problem.candidate_zones(node)))
+                for node in self._nodes
+            )
+
+    def on_solution_callback(self) -> None:
+        objective = self.ObjectiveValue()
+        if not self._progress.is_improvement(objective):
+            return
+        self._progress.add(
+            objective,
+            time.time() - self._start,
+            self._assignment(),
+        )
+
+    def _assignment(self) -> tuple[int, ...]:
+        if self._y_vars is not None:
+            return tuple(int(self.Value(var)) for var in self._y_vars)
+
+        out = []
+        for candidates in self._x_vars or ():
+            selected = candidates[0][0]
+            for zone, var in candidates:
+                if self.Value(var) == 1:
+                    selected = zone
+                    break
+            out.append(selected)
+        return tuple(out)
 
 
 class _CpSatSolver(Solver):
@@ -120,8 +169,14 @@ class _CpSatSolver(Solver):
         self._add_core_constraints(m, problem, x, y)
         if problem.choice_objective is None:
             self._add_boundary_objective(m, problem, x, y)
+            progress = self._new_solver_progress_tracker(problem, maximize=False)
         else:
             self._add_choice_objective(m, problem, x)
+            progress = self._new_solver_progress_tracker(
+                problem,
+                maximize=True,
+                objective_scale=problem.choice_objective.scale,
+            )
         self._add_hints(m, problem, x, y)
 
         solver = cp_model.CpSolver()
@@ -148,8 +203,16 @@ class _CpSatSolver(Solver):
             solver.log_callback = write_log
 
         start = time.time()
+        progress_callback = (
+            _CpSatProgressCallback(problem, x, y, progress, start)
+            if progress is not None
+            else None
+        )
         try:
-            status = solver.Solve(m)
+            if progress_callback is None:
+                status = solver.Solve(m)
+            else:
+                status = solver.Solve(m, progress_callback)
             wall = time.time() - start
         finally:
             if log_file is not None:
@@ -170,7 +233,11 @@ class _CpSatSolver(Solver):
             if problem.choice_objective is not None:
                 objective /= problem.choice_objective.scale
 
-        metadata = {"solver": self.name, **self._solver_log_metadata(log_path)}
+        metadata = {
+            "solver": self.name,
+            **self._solver_log_metadata(log_path),
+            **self._solver_progress_metadata(progress),
+        }
         if problem.choice_objective is not None:
             metadata.update(
                 {
@@ -185,6 +252,7 @@ class _CpSatSolver(Solver):
             objective=objective,
             wall_time=wall,
             metadata=metadata,
+            solver_progress=list(progress.entries) if progress is not None else [],
         )
 
     # ------------------------------------------------------------------ #

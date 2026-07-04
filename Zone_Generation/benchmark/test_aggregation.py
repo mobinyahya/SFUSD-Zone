@@ -41,6 +41,7 @@ optimization_defaults:
   solve_time_limits: [1, 2]
   gap_limits: [0, 0]
   save_solver_logs: true
+  save_solver_progress: true
   workers: 4
   graphs_dir: '{tmp_path / "graphs"}'
 sweep:
@@ -66,6 +67,7 @@ metrics:
     assert all(task.capacity_slots == 3 for task in tasks)
     assert all(task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks)
     assert all(task.config["save_solver_logs"] is True for task in tasks)
+    assert all(task.config["save_solver_progress"] is True for task in tasks)
     assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
     assert sweep.metrics.compute_stage_metrics is True
 
@@ -104,6 +106,9 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert stages.loc[0, "stage_name"] == "stage_00_Block_0"
     assert stages.loc[0, "solver_log_path"] == "solver_logs/test.jsonl"
     assert stages.loc[0, "solver_log_format"] == "jsonl"
+    assert stages.loc[0, "solver_progress_path"] == "solver_progress/test/progress.jsonl"
+    assert stages.loc[0, "solver_progress_format"] == "jsonl"
+    assert stages.loc[0, "solver_progress_count"] == 2
     assert (tmp_path / "summary.csv").exists()
     assert (tmp_path / "stages.csv").exists()
 
@@ -138,6 +143,9 @@ def _write_synthetic_run(tmp_path):
             "solver": "test",
             "solver_log_path": "solver_logs/test.jsonl",
             "solver_log_format": "jsonl",
+            "solver_progress_path": "solver_progress/test/progress.jsonl",
+            "solver_progress_format": "jsonl",
+            "solver_progress_count": 2,
         },
     )
     config = OptimizationConfig(

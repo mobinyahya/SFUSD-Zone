@@ -38,6 +38,7 @@ class ShortBurstsReComSolver(ReComSolver):
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         burst_length = max(1, int(self.options.get("short_bursts_length", 25)))
         log_path, progress_log = self._open_progress_log(problem)
+        progress = self._new_recom_progress_tracker(problem)
 
         random_state = random.getstate()
         random.seed(seed)
@@ -64,6 +65,14 @@ class ShortBurstsReComSolver(ReComSolver):
                     iteration=0,
                     score=current_score,
                     best_score=best_score,
+                )
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    current,
+                    current_score,
+                    iteration=0,
                 )
 
                 while attempted < max_iterations:
@@ -105,6 +114,14 @@ class ShortBurstsReComSolver(ReComSolver):
                         ):
                             best = dict(proposal)
                             best_score = proposal_score
+                            self._record_recom_progress(
+                                progress,
+                                start,
+                                problem,
+                                proposal,
+                                proposal_score,
+                                iteration=attempted,
+                            )
 
                         self._write_progress_log(
                             progress_log,
@@ -140,6 +157,7 @@ class ShortBurstsReComSolver(ReComSolver):
         metadata = {
             "solver": self.name,
             **self._progress_log_metadata(log_path),
+            **self._solver_progress_metadata(progress),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -169,4 +187,5 @@ class ShortBurstsReComSolver(ReComSolver):
             objective=objective,
             wall_time=wall,
             metadata=metadata,
+            solver_progress=list(progress.entries) if progress is not None else [],
         )

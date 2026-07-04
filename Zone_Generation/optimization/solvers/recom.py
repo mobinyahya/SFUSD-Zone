@@ -29,6 +29,10 @@ from gerrychain.tree import (
 from gerrychain.updaters import Tally, cut_edges
 
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.progress import (
+    SolverProgressTracker,
+    assignment_tuple,
+)
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.balance import balance_constraints
@@ -74,6 +78,7 @@ class ReComSolver(Solver):
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         temperature = max(0.0, float(self.options.get("recom_temperature", 0.0)))
         log_path, progress_log = self._open_progress_log(problem)
+        progress = self._new_recom_progress_tracker(problem)
 
         random_state = random.getstate()
         random.seed(seed)
@@ -99,6 +104,14 @@ class ReComSolver(Solver):
                     iteration=0,
                     score=current_score,
                     best_score=best_score,
+                )
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    current,
+                    current_score,
+                    iteration=0,
                 )
 
                 for _ in range(max_iterations):
@@ -133,6 +146,14 @@ class ReComSolver(Solver):
                     ):
                         best = dict(proposal)
                         best_score = proposal_score
+                        self._record_recom_progress(
+                            progress,
+                            start,
+                            problem,
+                            proposal,
+                            proposal_score,
+                            iteration=attempted,
+                        )
 
                     self._write_progress_log(
                         progress_log,
@@ -162,6 +183,7 @@ class ReComSolver(Solver):
         metadata = {
             "solver": self.name,
             **self._progress_log_metadata(log_path),
+            **self._solver_progress_metadata(progress),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -188,6 +210,7 @@ class ReComSolver(Solver):
             objective=objective,
             wall_time=wall,
             metadata=metadata,
+            solver_progress=list(progress.entries) if progress is not None else [],
         )
 
     # ------------------------------------------------------------------ #
@@ -239,6 +262,30 @@ class ReComSolver(Solver):
         json.dump(row, log_file, sort_keys=True)
         log_file.write("\n")
         log_file.flush()
+
+    def _new_recom_progress_tracker(
+        self, problem: ZoneProblem
+    ) -> SolverProgressTracker | None:
+        return self._new_solver_progress_tracker(problem, maximize=False)
+
+    def _record_recom_progress(
+        self,
+        progress: SolverProgressTracker | None,
+        start: float,
+        problem: ZoneProblem,
+        assignment: Mapping[int, int],
+        score: _Score,
+        *,
+        iteration: int,
+    ) -> None:
+        if progress is None or not _valid(score):
+            return
+        progress.add(
+            score.boundary,
+            time.time() - start,
+            assignment_tuple(problem.nodes, assignment),
+            iteration=iteration,
+        )
 
     # ------------------------------------------------------------------ #
     # Initial assignment

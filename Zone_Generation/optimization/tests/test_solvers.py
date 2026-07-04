@@ -83,6 +83,48 @@ def test_cpsat_solver_saves_logs(tmp_path):
     assert "CP-SAT" in contents or "CpSolverResponse" in contents
 
 
+def test_cpsat_solver_saves_progress(tmp_path):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        "cp_int",
+        solve_time_limit=10,
+        workers=1,
+        save_solver_progress=True,
+        output_dir=str(tmp_path),
+    )
+
+    solution = solver.solve(problem)
+    assert solution.solver_progress
+
+    solution.save(str(tmp_path))
+
+    expected_dir = os.path.join(
+        "solver_progress", "solver_00_BlockGroup_0_cp_int"
+    )
+    expected_log = os.path.join(expected_dir, "progress.jsonl")
+    assert solution.metadata["solver_progress_path"] == expected_log
+    assert solution.metadata["solver_progress_format"] == "jsonl"
+    assert solution.metadata["solver_progress_count"] == len(solution.solver_progress)
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / expected_log).read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(rows) == len(solution.solver_progress)
+    assert rows[-1]["objective"] == pytest.approx(solution.objective)
+    objectives = [row["objective"] for row in rows]
+    assert all(next_obj < obj for obj, next_obj in zip(objectives, objectives[1:]))
+
+    for idx, row in enumerate(rows):
+        assert row["solution_index"] == idx
+        assignment_path = tmp_path / expected_dir / row["assignment_path"]
+        area_path = tmp_path / expected_dir / row["area_assignment_path"]
+        assert assignment_path.exists()
+        assert area_path.exists()
+        assignment = json.loads(assignment_path.read_text(encoding="utf-8"))
+        assert {int(node) for node in assignment} == set(problem.nodes)
+
+
 @pytest.mark.parametrize(
     "name,options",
     [
@@ -129,6 +171,52 @@ def test_recom_solvers_save_progress_logs(tmp_path, name, options):
         assert isinstance(row["feasible"], bool)
     for row in cut_rows:
         assert isinstance(row["accepted"], bool)
+
+
+@pytest.mark.parametrize(
+    "name,options",
+    [
+        ("recom", {}),
+        ("short_bursts_recom", {"short_bursts_length": 2}),
+        ("relaxed_recom", {"relaxed_recom_min_boundary_edges": 0}),
+    ],
+)
+def test_recom_solvers_save_incumbent_progress(tmp_path, name, options):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        name,
+        solve_time_limit=10,
+        recom_iterations=5,
+        recom_cut_attempts=25,
+        save_solver_progress=True,
+        output_dir=str(tmp_path),
+        seed=1,
+        **options,
+    )
+
+    solution = solver.solve(problem)
+    assert solution.solver_progress
+    assert "solver_log_path" not in solution.metadata
+
+    solution.save(str(tmp_path))
+
+    expected_dir = os.path.join(
+        "solver_progress", f"solver_00_BlockGroup_0_{name}"
+    )
+    expected_log = os.path.join(expected_dir, "progress.jsonl")
+    assert solution.metadata["solver_progress_path"] == expected_log
+    assert solution.metadata["solver_progress_count"] == len(solution.solver_progress)
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / expected_log).read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows[0]["iteration"] == 0
+    objectives = [row["objective"] for row in rows]
+    assert all(next_obj < obj for obj, next_obj in zip(objectives, objectives[1:]))
+    for row in rows:
+        assert (tmp_path / expected_dir / row["assignment_path"]).exists()
+        assert (tmp_path / expected_dir / row["area_assignment_path"]).exists()
 
 
 def test_local_search_stub():
@@ -329,3 +417,28 @@ def test_mip_solver():
         raise
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)
+
+
+@pytest.mark.skipif(
+    "mip" not in available_solvers(), reason="gurobipy not installed"
+)
+def test_mip_solver_saves_progress(tmp_path):
+    problem = make_grid_problem(3, 3)
+    try:
+        solution = get_solver(
+            "mip",
+            solve_time_limit=10,
+            save_solver_progress=True,
+            output_dir=str(tmp_path),
+        ).solve(problem)
+    except Exception as exc:  # no usable Gurobi license in this environment
+        if "gurobi" in type(exc).__module__.lower():
+            pytest.skip(f"Gurobi unavailable: {exc}")
+        raise
+
+    assert solution.solver_progress
+    solution.save(str(tmp_path))
+    expected_log = os.path.join(
+        "solver_progress", "solver_00_BlockGroup_0_mip", "progress.jsonl"
+    )
+    assert (tmp_path / expected_log).exists()

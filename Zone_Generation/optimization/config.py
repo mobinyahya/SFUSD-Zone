@@ -37,6 +37,7 @@ class OptimizationConfig:
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     use_hints: bool = True
     save_solver_logs: bool = False
+    save_solver_progress: bool = False
     seed: int = 42
     workers: int = 8
     initialization_method: str = "gerrychain"
@@ -128,6 +129,7 @@ class OptimizationConfig:
             "workers": self.workers,
             "initialization_method": self.initialization_method,
             "save_solver_logs": self.save_solver_logs,
+            "save_solver_progress": self.save_solver_progress,
             "recom_iterations": self.recom_iterations,
             "recom_cut_attempts": self.recom_cut_attempts,
             "recom_temperature": self.recom_temperature,

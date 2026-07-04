@@ -21,6 +21,7 @@ carry_over_compute: false     # recursive: add unused level time to the next lev
 gap_limits: [0, 0]
 use_hints: true
 save_solver_logs: false       # write CP-SAT/Gurobi logs or ReCom progress JSONL under output/solver_logs
+save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 seed: 42
 workers: 8
 initialization_method: gerrychain  # gerrychain | math_prog

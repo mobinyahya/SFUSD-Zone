@@ -51,6 +51,7 @@ class RelaxedReComSolver(ReComSolver):
             self.options.get("relaxed_recom_min_boundary_edges", 10)
         )
         log_path, progress_log = self._open_progress_log(problem)
+        progress = self._new_recom_progress_tracker(problem)
 
         random_state = random.getstate()
         random.seed(seed)
@@ -78,6 +79,14 @@ class RelaxedReComSolver(ReComSolver):
                     score=current_score,
                     best_score=best_score,
                 )
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    current,
+                    current_score,
+                    iteration=0,
+                )
 
                 for _ in range(max_iterations):
                     if time.time() - start >= time_limit:
@@ -102,6 +111,14 @@ class RelaxedReComSolver(ReComSolver):
                         if best_score is None or current_score.boundary < best_score.boundary:
                             best = dict(current)
                             best_score = current_score
+                            self._record_recom_progress(
+                                progress,
+                                start,
+                                problem,
+                                current,
+                                current_score,
+                                iteration=attempted,
+                            )
                     else:
                         rejected_samples += 1
 
@@ -133,6 +150,7 @@ class RelaxedReComSolver(ReComSolver):
         metadata = {
             "solver": self.name,
             **self._progress_log_metadata(log_path),
+            **self._solver_progress_metadata(progress),
             "initialization_method": initial.metadata.get(
                 "initialization_method", self._initialization_method(problem)
             ),
@@ -161,6 +179,7 @@ class RelaxedReComSolver(ReComSolver):
             objective=objective,
             wall_time=wall,
             metadata=metadata,
+            solver_progress=list(progress.entries) if progress is not None else [],
         )
 
     def _prepare_relaxed_assignment(

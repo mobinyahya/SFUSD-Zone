@@ -122,6 +122,9 @@ def _stage_rows(
             "num_zones": stage.get("num_zones"),
             "solver_log_path": metadata.get("solver_log_path"),
             "solver_log_format": metadata.get("solver_log_format"),
+            "solver_progress_path": metadata.get("solver_progress_path"),
+            "solver_progress_format": metadata.get("solver_progress_format"),
+            "solver_progress_count": metadata.get("solver_progress_count"),
         }
         row.update(_metric_values(metrics_stage.get("matching_metrics")))
         row.update(_metric_values(metrics_stage.get("choice_metrics_metrics")))
