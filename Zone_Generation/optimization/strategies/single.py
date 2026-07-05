@@ -31,6 +31,7 @@ def _use_math_prog_initialization(solver: Solver, problem, options: dict) -> boo
     ):
         return False
     method = options.get(
-        "initialization_method", solver.options.get("initialization_method", "gerrychain")
+        "initialization_method",
+        solver.options.get("initialization_method", "gerrychain"),
     )
     return method == "math_prog"

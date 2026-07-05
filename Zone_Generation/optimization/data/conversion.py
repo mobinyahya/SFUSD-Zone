@@ -111,13 +111,9 @@ class LevelConverter:
             bg2blocks = self.bg2blocks()
 
             def lookup(bg_id: int):
-                votes = Counter(
-                    area[b] for b in bg2blocks.get(bg_id, []) if b in area
-                )
+                votes = Counter(area[b] for b in bg2blocks.get(bg_id, []) if b in area)
                 return votes.most_common(1)[0][0] if votes else None
 
             return lookup
 
-        raise ValueError(
-            f"Unsupported unit conversion {src_unit!r} -> {dst_unit!r}."
-        )
+        raise ValueError(f"Unsupported unit conversion {src_unit!r} -> {dst_unit!r}.")

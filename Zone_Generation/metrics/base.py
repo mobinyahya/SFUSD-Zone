@@ -133,7 +133,10 @@ class MetricsContext:
     @cached_property
     def stage_names(self) -> list[str]:
         prefix = "iteration" if self._is_iterative_run() else "stage"
-        return [f"{prefix}_{idx:02d}_{sol.level.name}" for idx, sol in enumerate(self.stages)]
+        return [
+            f"{prefix}_{idx:02d}_{sol.level.name}"
+            for idx, sol in enumerate(self.stages)
+        ]
 
     @cached_property
     def final_stage_index(self) -> int:
@@ -161,7 +164,9 @@ class MetricsContext:
             and sol.metadata.get("choice_utility") is not None
         ]
         if choice_candidates:
-            return max(choice_candidates, key=lambda sol: sol.metadata["choice_utility"])
+            return max(
+                choice_candidates, key=lambda sol: sol.metadata["choice_utility"]
+            )
         return self.stages[-1]
 
     def _is_iterative_run(self) -> bool:

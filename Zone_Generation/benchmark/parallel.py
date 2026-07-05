@@ -122,7 +122,9 @@ def _run_parallel(
             made_progress = True
             while pending and len(futures) < max_workers and made_progress:
                 made_progress = False
-                idx = _first_task_that_fits(pending, running_slots, capacity, bool(futures))
+                idx = _first_task_that_fits(
+                    pending, running_slots, capacity, bool(futures)
+                )
                 if idx is None:
                     break
                 task = pending.pop(idx)

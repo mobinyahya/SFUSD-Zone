@@ -208,8 +208,7 @@ def _partition_graph_metis_partial_constraint(
     k = target_partition_count
     node_to_idx = {node: idx for idx, node in enumerate(nodes)}
     adjacency = [
-        [node_to_idx[neighbor] for neighbor in G.neighbors(node)]
-        for node in nodes
+        [node_to_idx[neighbor] for neighbor in G.neighbors(node)] for node in nodes
     ]
 
     vertex_weights = []
@@ -238,7 +237,7 @@ def _partition_graph_metis_partial_constraint(
 
 
 def aggregate_level(
-    base_G: nx.Graph, split_depth: int, split_base: int = 3 ** 3
+    base_G: nx.Graph, split_depth: int, split_base: int = 3**3
 ) -> nx.Graph:
     """Aggregate ``base_G`` once using a METIS recursion of ``split_depth``.
 
@@ -252,7 +251,7 @@ def aggregate_level(
 def build_hierarchy(
     cfg: IngestConfig,
     level_to_split: dict[int, int] | None = None,
-    split_base: int = 3 ** 3,
+    split_base: int = 3**3,
 ) -> dict[int, nx.Graph]:
     """Build ``{depth: graph}`` for ``cfg.unit``.
 

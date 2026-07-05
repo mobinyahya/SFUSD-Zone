@@ -68,9 +68,7 @@ class IngestConfig:
     """Everything ingestion needs to locate and shape the raw data."""
 
     unit: str  # 'Block' or 'BlockGroup'
-    years: list[int] = field(
-        default_factory=lambda: [14, 15, 16, 17, 18, 21, 22]
-    )
+    years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
     population_type: str = "GE"
     drop_optout: bool = True
     capacity_scenario: str = "A"
@@ -79,9 +77,7 @@ class IngestConfig:
 
     def __post_init__(self):
         if self.unit not in ("Block", "BlockGroup"):
-            raise ValueError(
-                f"Ingestion supports Block/BlockGroup, got {self.unit!r}."
-            )
+            raise ValueError(f"Ingestion supports Block/BlockGroup, got {self.unit!r}.")
 
 
 # ====================================================================== #
@@ -115,10 +111,7 @@ def _student_cache_path(cfg: IngestConfig) -> str:
 
 
 def _safe_cache_value(value: object) -> str:
-    return "".join(
-        ch if ch.isalnum() or ch in {"-", "_"} else "_"
-        for ch in str(value)
-    )
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(value))
 
 
 def _load_students_for_year(cfg: IngestConfig, year: int) -> pd.DataFrame:
@@ -158,9 +151,11 @@ def _load_students_for_year(cfg: IngestConfig, year: int) -> pd.DataFrame:
     # Each student is one all-program student and a (fractional) GE student.
     df["all_prog_students"] = 1
     df["ge_students"] = df.apply(
-        lambda x: sum(p == "GE" for p in x["r1_programs"]) / len(x["r1_programs"])
-        if x["enrolled_students"] == 1 and len(x["r1_programs"]) > 0
-        else 0,
+        lambda x: (
+            sum(p == "GE" for p in x["r1_programs"]) / len(x["r1_programs"])
+            if x["enrolled_students"] == 1 and len(x["r1_programs"]) > 0
+            else 0
+        ),
         axis=1,
     )
 
@@ -209,10 +204,9 @@ def _filter_to_population(
         return df
     if population_type == "GE":
         if year != 18:
-            df["filter"] = df["program_types"].apply(
-                lambda pt: 1 if "GE" in pt else 0
-            )
+            df["filter"] = df["program_types"].apply(lambda pt: 1 if "GE" in pt else 0)
         else:
+
             def keep(row):
                 if (
                     row["r1_idschool"] == row["enrolled_idschool"]
@@ -249,9 +243,7 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
             f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
         )
     else:
-        df = pd.read_csv(
-            f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv"
-        )
+        df = pd.read_csv(f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv")
 
     df[cfg.unit] = df[cfg.unit].astype("Int64")
     df["K-8"] = df["school_id"].apply(lambda x: 1 if x in K8_SCHOOLS else 0)
@@ -278,15 +270,11 @@ def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
             f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
         )
     else:
-        df = pd.read_csv(
-            f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv"
-        )
+        df = pd.read_csv(f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv")
 
     missing = {"school_id", cfg.unit} - set(df.columns)
     if missing:
-        raise ValueError(
-            f"School location table missing columns: {sorted(missing)}."
-        )
+        raise ValueError(f"School location table missing columns: {sorted(missing)}.")
 
     df = df[["school_id", cfg.unit]].dropna().copy()
     df["school_id"] = df["school_id"].astype(int)
@@ -356,12 +344,10 @@ def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
     latlon = load_area_latlon(cfg)
     area = area.merge(latlon, how="left", left_on=cfg.unit, right_index=True)
     school_ids = (
-        schools.dropna(subset=[cfg.unit])
-        .groupby(cfg.unit)["school_id"]
-        .apply(list)
+        schools.dropna(subset=[cfg.unit]).groupby(cfg.unit)["school_id"].apply(list)
     )
-    area["school_ids"] = area[cfg.unit].map(school_ids).apply(
-        lambda x: x if isinstance(x, list) else []
+    area["school_ids"] = (
+        area[cfg.unit].map(school_ids).apply(lambda x: x if isinstance(x, list) else [])
     )
     area[["Lat", "Lon"]] = area[["Lat", "Lon"]].fillna(0.0)
     return area
@@ -394,8 +380,8 @@ def _aggregate_schools(schools: pd.DataFrame, unit: str) -> pd.DataFrame:
     mean_cols = [c for c in mean_cols if c in schools.columns]
     summed = schools[sum_cols].groupby(unit, as_index=False).sum(numeric_only=True)
     if len(mean_cols) > 1:
-        meaned = schools[mean_cols].groupby(unit, as_index=False).mean(
-            numeric_only=True
+        meaned = (
+            schools[mean_cols].groupby(unit, as_index=False).mean(numeric_only=True)
         )
         return meaned.merge(summed, how="left", on=unit)
     return summed
@@ -404,9 +390,7 @@ def _aggregate_schools(schools: pd.DataFrame, unit: str) -> pd.DataFrame:
 def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     """Append census areas that had neither students nor schools."""
     valid = set(
-        pd.read_csv(
-            f"{DROPBOX_PATH}/Optimization/block_blockgroup_tract.csv"
-        )[cfg.unit]
+        pd.read_csv(f"{DROPBOX_PATH}/Optimization/block_blockgroup_tract.csv")[cfg.unit]
     )
     census = set(load_census_shapefile(cfg.unit, False)[cfg.unit]) - set(AUX_BG)
     have = set(area[cfg.unit].astype(int))
@@ -468,7 +452,9 @@ def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, lis
     """Symmetric adjacency ``{area_idx: [neighbor_idx, ...]}`` from the matrix."""
     import csv
 
-    fname = "adjacency_matrix_b.csv" if cfg.unit == "Block" else "adjacency_matrix_bg.csv"
+    fname = (
+        "adjacency_matrix_b.csv" if cfg.unit == "Block" else "adjacency_matrix_bg.csv"
+    )
     path = os.path.expanduser(f"{DROPBOX_PATH}/Optimization/{fname}")
     with open(path, "r") as f:
         rows = list(csv.reader(f))
@@ -478,11 +464,7 @@ def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, lis
         if not row or int(row[0]) not in area2idx:
             continue
         u = area2idx[int(row[0])]
-        adj = [
-            area2idx[int(n)]
-            for n in row
-            if n != "" and int(n) in area2idx
-        ]
+        adj = [area2idx[int(n)] for n in row if n != "" and int(n) in area2idx]
         if u in adj:
             adj.remove(u)
         neighbors.setdefault(u, [])

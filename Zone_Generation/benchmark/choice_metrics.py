@@ -44,6 +44,7 @@ _CHOICE_METRIC_SUFFIXES = tuple(
     column.removeprefix("choice_") for column in CHOICE_METRIC_COLUMNS
 )
 
+
 @dataclass
 class ChoiceMetricsResult:
     status: str
@@ -174,7 +175,9 @@ def compute_choice_metrics_from_assignments(
             "assignment_files": len(assignment_files),
             "student_data_loaded": not student_data.empty,
             "distance_data_loaded": distance_data is not None,
-            "config": _relpath(config_path, output_root) if config_path.exists() else None,
+            "config": _relpath(config_path, output_root)
+            if config_path.exists()
+            else None,
         },
     )
     summary_path = matching_dir / CHOICE_SUMMARY_JSON
@@ -499,7 +502,9 @@ def _distance_candidates(config: Mapping[str, Any], matching_dir: Path) -> list[
             candidates.append(
                 precomputed_dir / f"{prefix}_{grade}_{year}{year + 1}.csv"
             )
-        candidates.extend(sorted(precomputed_dir.glob("student_program_distances*.csv")))
+        candidates.extend(
+            sorted(precomputed_dir.glob("student_program_distances*.csv"))
+        )
 
     candidates.extend(
         sorted((matching_dir / "precomputed").glob("student_program_distances*.csv"))

@@ -142,7 +142,8 @@ class ReComSolver(Solver):
                         rejected += 1
 
                     if _valid(proposal_score) and (
-                        best_score is None or proposal_score.boundary < best_score.boundary
+                        best_score is None
+                        or proposal_score.boundary < best_score.boundary
                     ):
                         best = dict(proposal)
                         best_score = proposal_score
@@ -373,7 +374,9 @@ class ReComSolver(Solver):
                     "gerrychain_initial_attempts": len(_epsilon_schedule(epsilon)),
                     "gerrychain_population_target": target,
                     "gerrychain_population_epsilon": best_epsilon,
-                    "gerrychain_initial_penalty": best_score.penalty if best_score else None,
+                    "gerrychain_initial_penalty": best_score.penalty
+                    if best_score
+                    else None,
                 },
             )
 
@@ -409,7 +412,9 @@ class ReComSolver(Solver):
             used_zones.add(z)
 
         remaining_zones = [z for z in range(problem.Z) if z not in used_zones]
-        remaining_parts = sorted({int(part) for part in raw.values()} - set(part_to_zone))
+        remaining_parts = sorted(
+            {int(part) for part in raw.values()} - set(part_to_zone)
+        )
         for part, zone in zip(remaining_parts, remaining_zones):
             part_to_zone[part] = zone
 
@@ -475,7 +480,9 @@ class ReComSolver(Solver):
             ),
         )
 
-    def _partition(self, problem: ZoneProblem, assignment: Mapping[int, int]) -> Partition:
+    def _partition(
+        self, problem: ZoneProblem, assignment: Mapping[int, int]
+    ) -> Partition:
         graph = Graph.from_networkx(problem.G)
         return Partition(
             graph,
@@ -488,8 +495,7 @@ class ReComSolver(Solver):
 
     def _assignment_from_partition(self, partition: Partition) -> dict[int, int]:
         return {
-            int(node): int(zone)
-            for node, zone in partition.assignment.mapping.items()
+            int(node): int(zone) for node, zone in partition.assignment.mapping.items()
         }
 
     def _accept(

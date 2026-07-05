@@ -65,7 +65,9 @@ metrics:
     assert {task.config["frl_dev"] for task in tasks} == {0.1, 0.2}
     assert {task.config["seed"] for task in tasks} == {1, 2}
     assert all(task.capacity_slots == 3 for task in tasks)
-    assert all(task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks)
+    assert all(
+        task.config["levels"] == ["BlockGroup_1", "BlockGroup_0"] for task in tasks
+    )
     assert all(task.config["save_solver_logs"] is True for task in tasks)
     assert all(task.config["save_solver_progress"] is True for task in tasks)
     assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
@@ -106,7 +108,9 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert stages.loc[0, "stage_name"] == "stage_00_Block_0"
     assert stages.loc[0, "solver_log_path"] == "solver_logs/test.jsonl"
     assert stages.loc[0, "solver_log_format"] == "jsonl"
-    assert stages.loc[0, "solver_progress_path"] == "solver_progress/test/progress.jsonl"
+    assert (
+        stages.loc[0, "solver_progress_path"] == "solver_progress/test/progress.jsonl"
+    )
     assert stages.loc[0, "solver_progress_format"] == "jsonl"
     assert stages.loc[0, "solver_progress_count"] == 2
     assert (tmp_path / "summary.csv").exists()
@@ -115,7 +119,9 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
 
 def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     run_dir, problem = _write_synthetic_run(tmp_path)
-    write_json(os.path.join(run_dir, RESULT_FILENAME), {"status": "STALE", "metrics": {}})
+    write_json(
+        os.path.join(run_dir, RESULT_FILENAME), {"status": "STALE", "metrics": {}}
+    )
 
     result = regenerate_metrics(
         str(tmp_path),
@@ -179,7 +185,9 @@ def _write_synthetic_run(tmp_path):
     solution.save(str(run_dir))
     write_json(
         os.path.join(run_dir, RESULT_FILENAME),
-        result_payload_for(metrics=metrics, config=config, solutions=solutions, task=task),
+        result_payload_for(
+            metrics=metrics, config=config, solutions=solutions, task=task
+        ),
     )
     write_json(
         os.path.join(run_dir, MANIFEST_FILENAME),

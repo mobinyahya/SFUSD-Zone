@@ -406,9 +406,7 @@ class _CpSatSolver(Solver):
         if sense not in _SENSE:
             raise ValueError(f"Bad sense {sense!r}.")
         expr = sum(
-            int(round(c * _SCALE)) * x[(z, i)]
-            for (c, z, i) in terms
-            if (z, i) in x
+            int(round(c * _SCALE)) * x[(z, i)] for (c, z, i) in terms if (z, i) in x
         )
         r = int(round(rhs * _SCALE))
         if sense == "<=":

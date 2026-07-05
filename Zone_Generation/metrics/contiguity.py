@@ -7,9 +7,7 @@ from Zone_Generation.metrics.base import MetricOutput, MetricsContext
 
 
 def compute(context: MetricsContext) -> MetricOutput:
-    return MetricOutput(
-        metrics={MetricColumns.CONTIGUOUS: int(is_contiguous(context))}
-    )
+    return MetricOutput(metrics={MetricColumns.CONTIGUOUS: int(is_contiguous(context))})
 
 
 def is_contiguous(context: MetricsContext) -> bool:

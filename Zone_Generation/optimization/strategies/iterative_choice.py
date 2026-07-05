@@ -13,7 +13,9 @@ from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.base import Solver
 from Zone_Generation.optimization.strategies.base import Strategy, register
-from Zone_Generation.optimization.strategies.choice_model import get_configured_choice_model
+from Zone_Generation.optimization.strategies.choice_model import (
+    get_configured_choice_model,
+)
 
 
 @register("iterative_choice")
@@ -45,7 +47,11 @@ class IterativeChoiceStrategy(Strategy):
                 scale=scale,
             )
             hint_solution = best_model_solution or last_feasible
-            hint = hint_solution.assignment if hint_solution is not None and use_hints else None
+            hint = (
+                hint_solution.assignment
+                if hint_solution is not None and use_hints
+                else None
+            )
             # The first iteration intentionally has no cuts, matching the legacy
             # unconstrained seed. A boundary-minimized seed is a reasonable
             # alternative if we later want a less arbitrary starting zoning.

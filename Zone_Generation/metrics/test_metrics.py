@@ -131,7 +131,9 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
 def test_recursive_stage_metrics_default_to_final_only():
     first = _solution(objective=20.0, wall_time=2.0)
     final = _solution(objective=10.0, wall_time=3.0)
-    result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
+    result = MetricsCalculator(
+        [first, final], config={"strategy": "recursive"}
+    ).compute()
 
     assert result.run["strategy"] == "recursive"
     assert result.run["selection"] == "literal_final_stage"
@@ -155,7 +157,9 @@ def test_recursive_metrics_use_infeasible_literal_final_stage():
         status="INFEASIBLE",
     )
 
-    result = MetricsCalculator([first, final], config={"strategy": "recursive"}).compute()
+    result = MetricsCalculator(
+        [first, final], config={"strategy": "recursive"}
+    ).compute()
 
     assert result.run["selection"] == "literal_final_stage"
     assert result.run["final_status"] == "INFEASIBLE"
@@ -267,10 +271,7 @@ def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):
     ).compute()
 
     expected_logsum = (
-        3.0
-        + math.log1p(math.exp(-1.0))
-        + 5.0
-        + math.log1p(math.exp(-1.0))
+        3.0 + math.log1p(math.exp(-1.0)) + 5.0 + math.log1p(math.exp(-1.0))
     )
     assert max_result.metrics[column] == pytest.approx(8.0)
     assert logsum_result.metrics[column] == pytest.approx(expected_logsum)

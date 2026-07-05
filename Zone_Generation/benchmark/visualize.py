@@ -100,9 +100,7 @@ def visualize_sweep(
             if figure_count:
                 summary.rendered_runs += 1
                 saved = ", ".join(
-                    str(path)
-                    for result in results
-                    for path in result.figure_paths
+                    str(path) for result in results for path in result.figure_paths
                 )
                 print(f"RENDER {run_dir}: {saved}")
             else:

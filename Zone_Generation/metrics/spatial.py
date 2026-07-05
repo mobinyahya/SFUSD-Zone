@@ -121,10 +121,12 @@ def _block0_graph_path(config: Mapping[str, Any]) -> Path | None:
     graphs_dir = config.get("graphs_dir")
     if graphs_dir:
         graphs = Path(str(graphs_dir)).expanduser()
-        candidates.extend([
-            graphs / "Block_0.pickle",
-            graphs.parent / "Block_0.pickle",
-        ])
+        candidates.extend(
+            [
+                graphs / "Block_0.pickle",
+                graphs.parent / "Block_0.pickle",
+            ]
+        )
 
     candidates.extend(
         [
@@ -316,7 +318,9 @@ def _build_node_area_metrics(G, level: LevelSpec) -> gpd.GeoDataFrame:
     geo["node"] = geo[level.unit].map(area_to_node)
     geo = geo.dropna(subset=["node"]).copy()
     if geo.empty:
-        raise ValueError(f"No {level.unit} geometries matched {level.name} graph nodes.")
+        raise ValueError(
+            f"No {level.unit} geometries matched {level.name} graph nodes."
+        )
     geo["node"] = geo["node"].astype(int)
 
     if geo.crs is None:

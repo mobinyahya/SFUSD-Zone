@@ -192,12 +192,8 @@ def test_cpsat_solver_saves_logs(tmp_path):
     first = solver.solve(problem)
     second = solver.solve(problem)
 
-    first_log = os.path.join(
-        "solver_logs", "solver_00_BlockGroup_0_cp_int.log"
-    )
-    second_log = os.path.join(
-        "solver_logs", "solver_01_BlockGroup_0_cp_int.log"
-    )
+    first_log = os.path.join("solver_logs", "solver_00_BlockGroup_0_cp_int.log")
+    second_log = os.path.join("solver_logs", "solver_01_BlockGroup_0_cp_int.log")
     assert first.metadata["solver_log_path"] == first_log
     assert second.metadata["solver_log_path"] == second_log
     first_log_path = tmp_path / first_log
@@ -224,9 +220,7 @@ def test_cpsat_solver_saves_progress(tmp_path):
 
     solution.save(str(tmp_path))
 
-    expected_dir = os.path.join(
-        "solver_progress", "solver_00_BlockGroup_0_cp_int"
-    )
+    expected_dir = os.path.join("solver_progress", "solver_00_BlockGroup_0_cp_int")
     expected_log = os.path.join(expected_dir, "progress.jsonl")
     assert solution.metadata["solver_progress_path"] == expected_log
     assert solution.metadata["solver_progress_format"] == "jsonl"
@@ -274,9 +268,7 @@ def test_recom_solvers_save_progress_logs(tmp_path, name, options):
 
     solution = solver.solve(problem)
 
-    expected_log = os.path.join(
-        "solver_logs", f"solver_00_BlockGroup_0_{name}.log"
-    )
+    expected_log = os.path.join("solver_logs", f"solver_00_BlockGroup_0_{name}.log")
     assert solution.metadata["solver_log_path"] == expected_log
     assert solution.metadata["solver_log_format"] == "jsonl"
 
@@ -326,9 +318,7 @@ def test_recom_solvers_save_incumbent_progress(tmp_path, name, options):
 
     solution.save(str(tmp_path))
 
-    expected_dir = os.path.join(
-        "solver_progress", f"solver_00_BlockGroup_0_{name}"
-    )
+    expected_dir = os.path.join("solver_progress", f"solver_00_BlockGroup_0_{name}")
     expected_log = os.path.join(expected_dir, "progress.jsonl")
     assert solution.metadata["solver_progress_path"] == expected_log
     assert solution.metadata["solver_progress_count"] == len(solution.solver_progress)
@@ -530,9 +520,7 @@ def test_area_assignment_and_save(tmp_path):
     assert (tmp_path / "solution_BlockGroup_0.json").exists()
 
 
-@pytest.mark.skipif(
-    "mip" not in available_solvers(), reason="gurobipy not installed"
-)
+@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
 def test_mip_solver():
     problem = make_grid_problem(3, 3)
     try:
@@ -545,9 +533,7 @@ def test_mip_solver():
     _check_valid(problem, solution)
 
 
-@pytest.mark.skipif(
-    "mip" not in available_solvers(), reason="gurobipy not installed"
-)
+@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
 def test_mip_solver_saves_progress(tmp_path):
     problem = make_grid_problem(3, 3)
     try:

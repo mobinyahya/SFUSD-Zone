@@ -77,9 +77,7 @@ class Dataset:
                 f"No METIS split depth configured for level depth {level.depth}; "
                 f"set level_to_split[{level.depth}] in the config."
             )
-        return graph_builder.aggregate_level(
-            base, self.level_to_split[level.depth]
-        )
+        return graph_builder.aggregate_level(base, self.level_to_split[level.depth])
 
     def _save(self, level: LevelSpec, G: nx.Graph) -> None:
         os.makedirs(self.graph_cache_dir, exist_ok=True)

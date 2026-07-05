@@ -64,26 +64,20 @@ class OptimizationConfig:
     tolerance: float = 1e-6
 
     # --- data ingestion ----------------------------------------------- #
-    years: list[int] = field(
-        default_factory=lambda: [14, 15, 16, 17, 18, 21, 22]
-    )
+    years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
     population_type: str = "GE"
     drop_optout: bool = True
     capacity_scenario: str = "A"
     new_schools: bool = True
     include_k8: bool = False
-    level_to_split: dict[int, int] = field(
-        default_factory=lambda: {1: 2, 2: 1}
-    )
+    level_to_split: dict[int, int] = field(default_factory=lambda: {1: 2, 2: 1})
     graphs_dir: str = ""
 
     def __post_init__(self):
         # All levels in a run share one unit (the base graph is built per unit).
         units = {LevelSpec.parse(l).unit for l in self.levels}
         if len(units) != 1:
-            raise ValueError(
-                f"All levels must share one unit; got {sorted(units)}."
-            )
+            raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
         self.unit = units.pop()
         if not self.graphs_dir:
             self.graphs_dir = os.path.join(
@@ -142,9 +136,7 @@ class OptimizationConfig:
             "recom_cut_attempts": self.recom_cut_attempts,
             "recom_temperature": self.recom_temperature,
             "short_bursts_length": self.short_bursts_length,
-            "relaxed_recom_min_boundary_edges": (
-                self.relaxed_recom_min_boundary_edges
-            ),
+            "relaxed_recom_min_boundary_edges": (self.relaxed_recom_min_boundary_edges),
             "recom_initial_level": self.recom_initial_level,
             "recom_initial_save_level": self.recom_initial_save_level,
             "recom_initial_constraint_multiplier": self.recom_initial_constraint_multiplier,

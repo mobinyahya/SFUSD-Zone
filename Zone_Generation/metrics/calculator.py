@@ -91,7 +91,11 @@ class MetricsCalculator:
 
 
 def _module_name(module: MetricFn) -> str:
-    return getattr(module, "__module__", "") + "." + getattr(module, "__name__", repr(module))
+    return (
+        getattr(module, "__module__", "")
+        + "."
+        + getattr(module, "__name__", repr(module))
+    )
 
 
 # Temporary name bridge for imports during the migration. The constructor is the

@@ -108,7 +108,10 @@ class RelaxedReComSolver(ReComSolver):
                     accepted += 1
                     current_score = self._score(problem, current)
                     if _valid(current_score):
-                        if best_score is None or current_score.boundary < best_score.boundary:
+                        if (
+                            best_score is None
+                            or current_score.boundary < best_score.boundary
+                        ):
                             best = dict(current)
                             best_score = current_score
                             self._record_recom_progress(

@@ -205,13 +205,13 @@ def plot_zone_count_files(
 ) -> list[Path]:
     output_paths: list[Path] = []
     for zone_count in zone_order:
-        zone_values = compactness_values[
-            compactness_values["zone_count"] == zone_count
-        ]
+        zone_values = compactness_values[compactness_values["zone_count"] == zone_count]
         if zone_values.empty:
             continue
 
-        output_path = output_dir / f"recursive_compactness_values_{zone_count}_zones.png"
+        output_path = (
+            output_dir / f"recursive_compactness_values_{zone_count}_zones.png"
+        )
         plot_metric_bars(
             zone_values,
             output_path,
@@ -226,12 +226,9 @@ def plot_metric_bars(
 ) -> None:
     metric_order = [metric_label(meta) for meta in METRICS.values()]
     approach_order = present_approach_order(compactness_values)
-    plot_df = (
-        compactness_values.groupby(["approach", "metric_label"], as_index=False)[
-            "value"
-        ]
-        .mean()
-    )
+    plot_df = compactness_values.groupby(["approach", "metric_label"], as_index=False)[
+        "value"
+    ].mean()
 
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(12, 6))

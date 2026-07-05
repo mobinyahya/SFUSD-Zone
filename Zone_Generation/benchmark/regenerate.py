@@ -46,10 +46,14 @@ def regenerate_metrics(
             dataset = None
             if dataset_factory is not None:
                 from Zone_Generation.benchmark.runner import load_manifest
-                from Zone_Generation.benchmark.config import optimization_config_from_dict
+                from Zone_Generation.benchmark.config import (
+                    optimization_config_from_dict,
+                )
 
                 manifest_for_dataset = load_manifest(run_dir)
-                config_for_dataset = optimization_config_from_dict(manifest_for_dataset["config"])
+                config_for_dataset = optimization_config_from_dict(
+                    manifest_for_dataset["config"]
+                )
                 dataset = dataset_factory(config_for_dataset, manifest_for_dataset)
             solutions, config, manifest = load_solutions(run_dir, dataset=dataset)
             if not solutions:
@@ -57,7 +61,9 @@ def regenerate_metrics(
                 continue
             task = BenchmarkTask(
                 task_id=str(manifest["task_id"]),
-                config_hash=str(manifest.get("config_hash") or stable_hash(manifest["config"])),
+                config_hash=str(
+                    manifest.get("config_hash") or stable_hash(manifest["config"])
+                ),
                 config={k: v for k, v in manifest["config"].items() if k != "unit"},
                 output_dir=run_dir,
                 capacity_slots=int(manifest.get("capacity_slots") or config.workers),
@@ -84,8 +90,12 @@ def regenerate_metrics(
             write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
             manifest["status"] = payload.get("status") or manifest.get("status")
             manifest["final_stage"] = metrics.run.get("final_stage")
-            manifest["total_wall_time"] = payload.get("total_wall_time", manifest.get("total_wall_time"))
-            manifest["metrics_regenerated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            manifest["total_wall_time"] = payload.get(
+                "total_wall_time", manifest.get("total_wall_time")
+            )
+            manifest["metrics_regenerated_at"] = datetime.now(timezone.utc).isoformat(
+                timespec="seconds"
+            )
             write_json(os.path.join(run_dir, MANIFEST_FILENAME), manifest)
             result.regenerated += 1
         except Exception:

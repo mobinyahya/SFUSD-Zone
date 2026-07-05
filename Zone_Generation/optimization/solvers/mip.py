@@ -250,9 +250,7 @@ class MipSolver(Solver):
     ) -> None:
         if sense not in _SENSE:
             raise ValueError(f"Bad sense {sense!r}.")
-        expr = gp.quicksum(
-            c * x[(z, i)] for (c, z, i) in terms if (z, i) in x
-        )
+        expr = gp.quicksum(c * x[(z, i)] for (c, z, i) in terms if (z, i) in x)
         if sense == "<=":
             m.addConstr(expr <= rhs)
         elif sense == ">=":

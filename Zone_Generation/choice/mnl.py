@@ -14,12 +14,8 @@ from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation, Choice
 from Zone_Generation.optimization.problem import ZoneProblem
 
 
-DEFAULT_UTILITY_PATH = (
-    "/share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv"
-)
-DEFAULT_STUDENT_PATH = (
-    "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
-)
+DEFAULT_UTILITY_PATH = "/share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv"
+DEFAULT_STUDENT_PATH = "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
 
 @dataclass(frozen=True)
@@ -147,9 +143,7 @@ class MNLZoningUtility:
 
         student_area_col = self.area_column or _student_area_column(problem)
         if student_area_col not in self.student_df.columns:
-            raise ValueError(
-                f"MNL student file lacks {student_area_col!r}."
-            )
+            raise ValueError(f"MNL student file lacks {student_area_col!r}.")
 
         zone_to_schools: dict[int, set[str]] = {z: set() for z in range(problem.Z)}
         area_to_zone: dict[str, int] = {}
@@ -233,7 +227,9 @@ class MNLZoningUtility:
             block_keys = group[student_area_col].map(_area_key).to_numpy()
 
             for sid in all_schools:
-                sid_cols = [col for col in self.school_to_cols[sid] if col in group.columns]
+                sid_cols = [
+                    col for col in self.school_to_cols[sid] if col in group.columns
+                ]
                 if not sid_cols:
                     continue
                 sid_utils = self._utilities_for_cols(group, sid_cols)
@@ -263,7 +259,9 @@ class MNLZoningUtility:
                         continue
                     school_map = impacts.setdefault(block_id, {})
                     type_map = school_map.setdefault(sid, {"add": 0.0, "remove": 0.0})
-                    type_map[impact_type] = type_map.get(impact_type, 0.0) + float(impact)
+                    type_map[impact_type] = type_map.get(impact_type, 0.0) + float(
+                        impact
+                    )
         return impacts
 
     def _build_cuts(
@@ -319,7 +317,9 @@ class MNLZoningUtility:
                     for school_node, coef in coeffs.items()
                     if zone in problem.candidate_zones(school_node)
                 )
-                cuts.append(ChoiceCut(node=node, zone=zone, constant=constant, terms=terms))
+                cuts.append(
+                    ChoiceCut(node=node, zone=zone, constant=constant, terms=terms)
+                )
         return cuts
 
 

@@ -130,7 +130,9 @@ choice_metrics:
     assert sweep.choice_metrics.compute_stage_metrics is True
 
 
-def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monkeypatch):
+def test_run_matching_for_solution_writes_mapping_and_populations(
+    tmp_path, monkeypatch
+):
     captured_config = _stub_student_assignment(monkeypatch)
     solution = _solution()
 
@@ -160,9 +162,7 @@ def test_run_matching_for_solution_writes_mapping_and_populations(tmp_path, monk
     assert "1000,1001" in zones_text
     assert "1002,1003" in zones_text
 
-    assignments = pd.read_csv(
-        tmp_path / "matching" / "student_school_assignments.csv"
-    )
+    assignments = pd.read_csv(tmp_path / "matching" / "student_school_assignments.csv")
     assert assignments["school_id"].dropna().astype(int).tolist() == [664, 665]
 
     school_populations = pd.read_csv(tmp_path / "matching" / "school_populations.csv")
@@ -190,9 +190,7 @@ def test_run_matching_for_solution_supports_multiple_configs(tmp_path, monkeypat
     assert set(result.run["runs"]) == {"first", "second"}
     assert result.metrics["matching_first_assignment_files"] == 1
     assert result.metrics["matching_second_assignment_files"] == 1
-    assert (
-        tmp_path / "matching" / "first" / "student_school_assignments.csv"
-    ).exists()
+    assert (tmp_path / "matching" / "first" / "student_school_assignments.csv").exists()
     assert (
         tmp_path / "matching" / "second" / "student_school_assignments.csv"
     ).exists()
@@ -449,11 +447,7 @@ def test_stage_matching_and_choice_metrics_are_opt_in(tmp_path, monkeypatch):
     assert len(captured["sessions"][0].calls) == 2
     stage_config = yaml.safe_load(
         (
-            run_dir
-            / "stages"
-            / stage_name
-            / "matching"
-            / "config.generated.yaml"
+            run_dir / "stages" / stage_name / "matching" / "config.generated.yaml"
         ).read_text(encoding="utf-8")
     )
     assert stage_config["paths"]["student-save"] == str(
@@ -482,7 +476,9 @@ def test_stage_matching_skips_infeasible_stages(tmp_path, monkeypatch):
     infeasible_stage = "stage_01_BlockGroup_0"
     assert "matching" not in result
     assert set(result["stage_matching"]["stages"]) == {feasible_stage}
-    assert result["stage_matching"]["stages"][feasible_stage]["matching"]["status"] == "OK"
+    assert (
+        result["stage_matching"]["stages"][feasible_stage]["matching"]["status"] == "OK"
+    )
     assert result["run"]["stages"][0]["matching"]["status"] == "OK"
     assert result["run"]["stages"][0]["choice_metrics"]["status"] == "OK"
     assert "matching" not in result["run"]["stages"][1]
@@ -672,7 +668,11 @@ def _stub_student_assignment(monkeypatch):
 
         def run(self, config, assignments_dir, *, workers=1):
             self.calls.append(
-                {"config": config, "assignments_dir": assignments_dir, "workers": workers}
+                {
+                    "config": config,
+                    "assignments_dir": assignments_dir,
+                    "workers": workers,
+                }
             )
             fake_run(config, assignments_dir, workers=workers)
 
@@ -824,7 +824,9 @@ def _write_synthetic_run(tmp_path):
     solution.save(str(run_dir))
     write_json(
         os.path.join(run_dir, RESULT_FILENAME),
-        result_payload_for(metrics=metrics, config=config, solutions=solutions, task=task),
+        result_payload_for(
+            metrics=metrics, config=config, solutions=solutions, task=task
+        ),
     )
     write_json(
         os.path.join(run_dir, MANIFEST_FILENAME),

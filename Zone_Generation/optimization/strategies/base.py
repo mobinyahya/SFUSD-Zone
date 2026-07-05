@@ -22,8 +22,7 @@ class Strategy(ABC):
         self.options = options
 
     @abstractmethod
-    def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
-        ...
+    def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]: ...
 
 
 _REGISTRY: dict[str, type[Strategy]] = {}
@@ -40,9 +39,7 @@ def register(name: str):
 
 def get_strategy(name: str, **options) -> Strategy:
     if name not in _REGISTRY:
-        raise ValueError(
-            f"Unknown strategy {name!r}. Registered: {sorted(_REGISTRY)}."
-        )
+        raise ValueError(f"Unknown strategy {name!r}. Registered: {sorted(_REGISTRY)}.")
     return _REGISTRY[name](**options)
 
 

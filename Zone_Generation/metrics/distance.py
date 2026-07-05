@@ -60,7 +60,9 @@ def compute(context: MetricsContext) -> MetricOutput:
     return MetricOutput(metrics=metrics, zone_data=zone_data)
 
 
-def _ge_school_zones(context: MetricsContext, ge_school_ids: set[int]) -> dict[int, int]:
+def _ge_school_zones(
+    context: MetricsContext, ge_school_ids: set[int]
+) -> dict[int, int]:
     out: dict[int, int] = {}
     for zone_id, schools in context.zone_schools.items():
         for sid in schools:
@@ -107,7 +109,10 @@ def _nearby_out_of_zone_ge(
             if school_zone == zone_id or school_id not in school_to_node:
                 continue
             school_node = school_to_node[school_id]
-            if distance_dict[node].get(school_node, float("inf")) <= GE_PROXIMITY_RADIUS:
+            if (
+                distance_dict[node].get(school_node, float("inf"))
+                <= GE_PROXIMITY_RADIUS
+            ):
                 nearby += 1
         counts.append(nearby)
     return _mean(counts)
@@ -131,7 +136,10 @@ def _student_weighted_nearby_ge(
             if school_id not in school_to_node:
                 continue
             school_node = school_to_node[school_id]
-            if distance_dict[node].get(school_node, float("inf")) <= GE_PROXIMITY_RADIUS:
+            if (
+                distance_dict[node].get(school_node, float("inf"))
+                <= GE_PROXIMITY_RADIUS
+            ):
                 nearby += 1
         weighted_count += nearby * students
         total_students += students

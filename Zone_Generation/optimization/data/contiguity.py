@@ -56,8 +56,7 @@ def closer_supports(
             supports[(node, z)] = [
                 nb
                 for nb in G.neighbors(node)
-                if _distance(G, centroid, nb) < d_node
-                and z in candidate_zones(nb)
+                if _distance(G, centroid, nb) < d_node and z in candidate_zones(nb)
             ]
     return supports
 
@@ -93,18 +92,12 @@ def contiguity_supports(
     for key, closer_nodes in closer.items():
         node, z = key
         centroid = centroids[z]
-        good = [
-            nb
-            for nb in closer_nodes
-            if nb == centroid or closer.get((nb, z), [])
-        ]
+        good = [nb for nb in closer_nodes if nb == centroid or closer.get((nb, z), [])]
         if good:
             supports[key] = good
             continue
         supports[key] = [
-            nb
-            for nb in adjacent[key]
-            if nb == centroid or closer.get((nb, z), [])
+            nb for nb in adjacent[key] if nb == centroid or closer.get((nb, z), [])
         ]
     return supports
 
@@ -127,11 +120,7 @@ def is_contiguous(
 
 def boundary_edges(G: nx.Graph, assignment: dict[int, int]) -> int:
     """Number of edges whose endpoints fall in different zones."""
-    return sum(
-        1
-        for u, v in G.edges()
-        if assignment.get(u) != assignment.get(v)
-    )
+    return sum(1 for u, v in G.edges() if assignment.get(u) != assignment.get(v))
 
 
 def repair(
@@ -221,9 +210,7 @@ def boundary_candidates(
     # neighbors, so radius > 1 rarely changed the candidate sets.
     cutoff = max(0, int(radius))
     for source, zones in boundary_sources:
-        for node in nx.single_source_shortest_path_length(
-            G, source, cutoff=cutoff
-        ):
+        for node in nx.single_source_shortest_path_length(G, source, cutoff=cutoff):
             if node in anchored:
                 candidates.setdefault(node, {anchored[node]}).update(zones)
 

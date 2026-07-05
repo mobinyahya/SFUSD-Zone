@@ -18,12 +18,9 @@ sweep:
   # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
   frl_dev: [0.12, 0.15, 0.17,]
   racial_dev: [0.12, 0.15, 0.17]
-  seed: [42, ]
-  # 14, 33, 80, 9
-  overage: [0.15]
-  # 0.7, 0.8,
-  shortage: [ 0.25]
-  # 0.15, 0.2,
+  seed: [42]
+  overage: [0.15, 0.2, 0.25]
+  shortage: [0.15, 0.2, 0.25]
   solver: ['cp_bool']
 
 tasks:

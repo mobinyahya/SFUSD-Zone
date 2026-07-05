@@ -6,7 +6,9 @@ from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import get_solver
-from Zone_Generation.optimization.strategies import iterative_choice as iterative_choice_module
+from Zone_Generation.optimization.strategies import (
+    iterative_choice as iterative_choice_module,
+)
 from Zone_Generation.optimization.strategies import single as single_module
 from Zone_Generation.optimization.strategies import get_strategy
 from Zone_Generation.optimization.tests.synthetic import FakeDataset, make_grid_problem
@@ -85,15 +87,13 @@ def test_recursive_carry_over_compute_adds_unused_time_for_feasible_stage():
     assert solver.solve_time_limits == [5.0, 13.75]
     assert solutions[0].metadata["configured_time_limit_seconds"] == 5.0
     assert solutions[0].metadata["effective_time_limit_seconds"] == 5.0
-    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == pytest.approx(
-        3.75
-    )
+    assert solutions[0].metadata[
+        "unused_time_carried_forward_seconds"
+    ] == pytest.approx(3.75)
     assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
         3.75
     )
-    assert solutions[1].metadata["effective_time_limit_seconds"] == pytest.approx(
-        13.75
-    )
+    assert solutions[1].metadata["effective_time_limit_seconds"] == pytest.approx(13.75)
 
 
 def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
@@ -114,9 +114,9 @@ def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
     solutions = strat.run(dataset, solver)
 
     assert solver.solve_time_limits == [4.0, 10.5]
-    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == pytest.approx(
-        3.5
-    )
+    assert solutions[0].metadata[
+        "unused_time_carried_forward_seconds"
+    ] == pytest.approx(3.5)
     assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
         3.5
     )

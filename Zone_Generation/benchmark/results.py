@@ -80,9 +80,14 @@ def _run_row(
         "rel_path": os.path.relpath(run_dir, root),
         "status": result.get("status") or manifest.get("status"),
         "error_message": result.get("error_message") or manifest.get("error_message"),
-        "total_wall_time": result.get("total_wall_time", manifest.get("total_wall_time")),
-        "final_stage": (result.get("run") or {}).get("final_stage") or manifest.get("final_stage"),
-        "levels": _join(result.get("levels") or [s.get("level") for s in manifest.get("stages", [])]),
+        "total_wall_time": result.get(
+            "total_wall_time", manifest.get("total_wall_time")
+        ),
+        "final_stage": (result.get("run") or {}).get("final_stage")
+        or manifest.get("final_stage"),
+        "levels": _join(
+            result.get("levels") or [s.get("level") for s in manifest.get("stages", [])]
+        ),
         "num_stages": len(manifest.get("stages", [])),
     }
     row.update({f"config_{k}": _cell(v) for k, v in config.items()})
@@ -94,7 +99,8 @@ def _stage_rows(
     root: str, run_dir: str, manifest: Mapping[str, Any], result: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
     run_stage_by_name = {
-        stage.get("name"): stage for stage in (result.get("run") or {}).get("stages", [])
+        stage.get("name"): stage
+        for stage in (result.get("run") or {}).get("stages", [])
     }
     rows: list[dict[str, Any]] = []
     for stage in manifest.get("stages", []):

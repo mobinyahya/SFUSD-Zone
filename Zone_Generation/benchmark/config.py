@@ -164,7 +164,9 @@ class SimulationSweep:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     metrics: MetricsRunConfig = field(default_factory=MetricsRunConfig)
     matching: MatchingRunConfig = field(default_factory=MatchingRunConfig)
-    choice_metrics: ChoiceMetricsRunConfig = field(default_factory=ChoiceMetricsRunConfig)
+    choice_metrics: ChoiceMetricsRunConfig = field(
+        default_factory=ChoiceMetricsRunConfig
+    )
 
     @classmethod
     def from_yaml(cls, path: str) -> "SimulationSweep":
@@ -229,7 +231,9 @@ class SimulationSweep:
             config_hash = stable_hash(config_dict)
             output_dir = os.path.join(
                 os.path.expanduser(self.execution.output_dir),
-                format_output_path(config_dict, config_hash, self.execution.output_template),
+                format_output_path(
+                    config_dict, config_hash, self.execution.output_template
+                ),
             )
             tasks.append(
                 BenchmarkTask(
@@ -255,7 +259,9 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     return OptimizationConfig(**kwargs)
 
 
-def optimization_config_to_dict(config: OptimizationConfig | Mapping[str, Any]) -> dict[str, Any]:
+def optimization_config_to_dict(
+    config: OptimizationConfig | Mapping[str, Any],
+) -> dict[str, Any]:
     if isinstance(config, OptimizationConfig):
         data = asdict(config)
     else:

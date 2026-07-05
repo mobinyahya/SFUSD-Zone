@@ -27,7 +27,8 @@ from Zone_Generation.metrics.base import MetricsContext
 from Zone_Generation.optimization.solution import ZoneSolution
 
 
-DEFAULT_MATCHING_TEMPLATE = Path("Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml"
+DEFAULT_MATCHING_TEMPLATE = Path(
+    "Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml"
 )
 GENERATED_POLICY_NAME = "generated_zones"
 MATCHING_DIRNAME = "matching"
@@ -196,7 +197,9 @@ def _prepare_matching_run(
     legacy_layout: bool,
     workers: int,
 ) -> _PreparedMatchingRun:
-    matching_dir = root_matching_dir if legacy_layout else root_matching_dir / config_name
+    matching_dir = (
+        root_matching_dir if legacy_layout else root_matching_dir / config_name
+    )
     assignments_dir = matching_dir / ASSIGNMENTS_RAW_DIR
     assignments_dir.mkdir(parents=True, exist_ok=True)
 
@@ -235,7 +238,9 @@ def _execute_prepared_matching_runs_parallel(
     results_by_name: dict[str, MatchingResult] = {}
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_execute_prepared_matching_run, prepared_run): prepared_run.name
+            executor.submit(
+                _execute_prepared_matching_run, prepared_run
+            ): prepared_run.name
             for prepared_run in prepared_runs
         }
         for future in as_completed(futures):
@@ -362,14 +367,18 @@ def run_matching_for_existing_runs(
     batch.total = len(run_dirs)
     if not matching.enabled:
         for run_dir in run_dirs:
-            batch.add(MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True))
+            batch.add(
+                MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True)
+            )
         return batch
 
     for run_dir in run_dirs:
         try:
             dataset = None
             if dataset_factory is not None:
-                from Zone_Generation.benchmark.config import optimization_config_from_dict
+                from Zone_Generation.benchmark.config import (
+                    optimization_config_from_dict,
+                )
 
                 manifest_for_dataset = load_manifest(run_dir)
                 config_for_dataset = optimization_config_from_dict(
@@ -379,7 +388,9 @@ def run_matching_for_existing_runs(
 
             solutions, config, manifest = load_solutions(run_dir, dataset=dataset)
             if not solutions:
-                batch.add(MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True))
+                batch.add(
+                    MatchingTaskResult(run_dir=run_dir, status="SKIPPED", skipped=True)
+                )
                 continue
             matching_workers = max(1, int(config.workers or 1))
             student_assignment_session = _new_student_assignment_session()
@@ -412,7 +423,9 @@ def run_matching_for_existing_runs(
             result_path = os.path.join(run_dir, RESULT_FILENAME)
             payload = _load_json(result_path)
             clear_matching_payload(payload)
-            if (choice_metrics and choice_metrics.enabled) or not final_solution.feasible:
+            if (
+                choice_metrics and choice_metrics.enabled
+            ) or not final_solution.feasible:
                 from Zone_Generation.benchmark.choice_metrics import (
                     clear_choice_metrics_payload,
                 )
@@ -435,10 +448,7 @@ def run_matching_for_existing_runs(
                         choice_metrics,
                     )
                 stage_choice_result = None
-                if not (
-                    stage_matching_result
-                    and choice_metrics.compute_stage_metrics
-                ):
+                if not (stage_matching_result and choice_metrics.compute_stage_metrics):
                     stage_choice_result = compute_choice_metrics_for_stages(
                         run_dir,
                         choice_metrics,
@@ -502,10 +512,18 @@ def run_matching_for_stages(
             stage_payload["matching"] = matching_result.to_payload()
             stage["matching"] = stage_payload["matching"]
 
-        if choice_metrics and choice_metrics.enabled and choice_metrics.compute_stage_metrics:
-            from Zone_Generation.benchmark.choice_metrics import compute_choice_metrics_for_run
+        if (
+            choice_metrics
+            and choice_metrics.enabled
+            and choice_metrics.compute_stage_metrics
+        ):
+            from Zone_Generation.benchmark.choice_metrics import (
+                compute_choice_metrics_for_run,
+            )
 
-            choice_result = compute_choice_metrics_for_run(str(stage_dir), choice_metrics)
+            choice_result = compute_choice_metrics_for_run(
+                str(stage_dir), choice_metrics
+            )
             if choice_result is not None:
                 stage_payload["choice_metrics"] = choice_result.to_payload()
                 stage["choice_metrics"] = stage_payload["choice_metrics"]
@@ -801,9 +819,7 @@ def _patch_student_assignment_guardrail_pandas_compat() -> None:
             .groupby(["zone_id", "diversity_category"], as_index=False)
             .sum()
         )
-        zone_total = (
-            data[["zone_id", "count"]].groupby("zone_id", as_index=False).sum()
-        )
+        zone_total = data[["zone_id", "count"]].groupby("zone_id", as_index=False).sum()
         count_per_zone = count_per_zone.merge(
             zone_total, how="left", on="zone_id", suffixes=("", "_tot")
         )
@@ -989,7 +1005,11 @@ def _matching_metrics(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     totals = [int(row["students_total"]) for row in summaries]
     assigned = [int(row["students_assigned"]) for row in summaries]
     unassigned = [int(row["students_unassigned"]) for row in summaries]
-    rates = [row["unassigned_rate"] for row in summaries if row["unassigned_rate"] is not None]
+    rates = [
+        row["unassigned_rate"]
+        for row in summaries
+        if row["unassigned_rate"] is not None
+    ]
     return {
         "matching_assignment_files": len(summaries),
         "matching_students_total": totals[0] if len(set(totals)) == 1 else sum(totals),

@@ -185,7 +185,9 @@ def _assert_constraints_followed(
     result = MetricsCalculator(solution, config=config).compute()
     assignment = solution.assignment
 
-    assert set(assignment) == set(problem.nodes), "not every source graph node is assigned"
+    assert set(assignment) == set(problem.nodes), (
+        "not every source graph node is assigned"
+    )
     for node, zone in assignment.items():
         assert zone in problem.candidate_zones(node), (
             f"node {node} assigned to non-candidate zone {zone}"

@@ -81,9 +81,7 @@ class ZoneSolution:
 
         area_path = os.path.join(folder, f"zone_dict_area_{level}.json")
         with open(area_path, "w") as f:
-            json.dump(
-                {str(k): int(v) for k, v in self.area_assignment().items()}, f
-            )
+            json.dump({str(k): int(v) for k, v in self.area_assignment().items()}, f)
 
         self._save_solver_progress(folder, level)
 
@@ -125,8 +123,7 @@ class ZoneSolution:
                         "Solver progress assignment length does not match problem nodes."
                     )
                 assignment = {
-                    int(node): int(zone)
-                    for node, zone in zip(nodes, entry.assignment)
+                    int(node): int(zone) for node, zone in zip(nodes, entry.assignment)
                 }
                 zone_name = f"zone_dict_{level}_{idx:04d}.json"
                 area_name = f"zone_dict_area_{level}_{idx:04d}.json"

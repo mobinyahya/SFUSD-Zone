@@ -106,7 +106,9 @@ def build_solver_metric_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     df["solver"] = df["config_solver"].map(solver_label)
 
     completed_final_rows = final_block0_rows(df)
-    successful_rows = df["status"].fillna("").astype(str).str.upper().isin(SUCCESS_STATUSES)
+    successful_rows = (
+        df["status"].fillna("").astype(str).str.upper().isin(SUCCESS_STATUSES)
+    )
     df = df[
         completed_final_rows
         & successful_rows
@@ -248,8 +250,12 @@ def print_status_counts(summary_df: pd.DataFrame) -> None:
     if "status" not in summary_df:
         return
 
-    counts = summary_df["status"].fillna("MISSING").astype(str).value_counts().sort_index()
-    formatted_counts = ", ".join(f"{status}={count}" for status, count in counts.items())
+    counts = (
+        summary_df["status"].fillna("MISSING").astype(str).value_counts().sort_index()
+    )
+    formatted_counts = ", ".join(
+        f"{status}={count}" for status, count in counts.items()
+    )
     print(f"Summary status counts: {formatted_counts}")
 
 

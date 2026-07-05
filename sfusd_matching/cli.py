@@ -51,6 +51,7 @@ def simulate(config_path: Path, assignments_dir: Path | None) -> None:
     assignments_dir.mkdir(parents=True, exist_ok=True)
     _run_student_assignment(config, assignments_dir)
 
+
 __all__ = ["cli"]
 
 

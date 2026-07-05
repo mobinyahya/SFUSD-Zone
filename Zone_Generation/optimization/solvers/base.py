@@ -27,8 +27,7 @@ class Solver(ABC):
         self._progress_count = 0
 
     @abstractmethod
-    def solve(self, problem: ZoneProblem) -> ZoneSolution:
-        ...
+    def solve(self, problem: ZoneProblem) -> ZoneSolution: ...
 
     def _next_solver_log_path(self, problem: ZoneProblem) -> str | None:
         if not self.options.get("save_solver_logs"):
@@ -112,9 +111,7 @@ def register(name: str):
 
 def get_solver(name: str, **options) -> Solver:
     if name not in _REGISTRY:
-        raise ValueError(
-            f"Unknown solver {name!r}. Registered: {sorted(_REGISTRY)}."
-        )
+        raise ValueError(f"Unknown solver {name!r}. Registered: {sorted(_REGISTRY)}.")
     return _REGISTRY[name](**options)
 
 

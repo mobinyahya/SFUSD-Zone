@@ -155,7 +155,9 @@ def prepare_assignment_df(
             out[column] = pd.to_numeric(out[column], errors="coerce")
 
     out.attrs["choice_student_data"] = _student_data_for_assignment(out, student_data)
-    out.attrs["choice_distance_data"] = _distance_data_for_assignment(out, distance_data)
+    out.attrs["choice_distance_data"] = _distance_data_for_assignment(
+        out, distance_data
+    )
     return out
 
 
@@ -172,7 +174,9 @@ def choice_metrics_for_assignment(assignments: pd.DataFrame) -> dict[str, Any]:
 def dependency_metrics_to_choice_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {column: None for column in CHOICE_METRIC_COLUMNS}
     for name, value in dict(metrics).items():
-        column = DEPENDENCY_CHOICE_METRIC_COLUMNS.get(name, dependency_metric_column(name))
+        column = DEPENDENCY_CHOICE_METRIC_COLUMNS.get(
+            name, dependency_metric_column(name)
+        )
         out[column] = scalar_metric_value(value)
     return out
 
@@ -195,8 +199,7 @@ def choice_metric_columns_from_frame(frame: pd.DataFrame) -> list[str]:
     dynamic = [
         column
         for column in frame.columns
-        if str(column).startswith("choice_")
-        and column not in preferred
+        if str(column).startswith("choice_") and column not in preferred
     ]
     return preferred + dynamic
 
@@ -246,7 +249,13 @@ def _dependency_assignment_df(assignments: pd.DataFrame) -> pd.DataFrame:
     if "In-Zone Rank" not in out.columns:
         out["In-Zone Rank"] = out["rank"]
 
-    for column in ["programno", "rank", "designation", "In-Zone Rank", "assigned_utility"]:
+    for column in [
+        "programno",
+        "rank",
+        "designation",
+        "In-Zone Rank",
+        "assigned_utility",
+    ]:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
     keep = [
@@ -277,7 +286,9 @@ def _student_data_for_assignment(
     base = base.dropna(subset=["studentno"]).drop_duplicates("studentno")
     base["studentno"] = base["studentno"].astype(int)
 
-    students = ensure_studentno(student_data) if not student_data.empty else pd.DataFrame()
+    students = (
+        ensure_studentno(student_data) if not student_data.empty else pd.DataFrame()
+    )
     if not students.empty and "studentno" in students.columns:
         drop_assignment_columns = [
             column
@@ -358,14 +369,20 @@ def _fill_missing_student_columns(
 
 
 def _ses_category(student_data: pd.DataFrame) -> pd.Series:
-    if "N'hood SES Score" in student_data.columns and "FRL Score" in student_data.columns:
-        score = (
-            0.25 * pd.to_numeric(student_data["N'hood SES Score"], errors="coerce")
-            + 0.25 * pd.to_numeric(student_data["FRL Score"], errors="coerce")
-        )
+    if (
+        "N'hood SES Score" in student_data.columns
+        and "FRL Score" in student_data.columns
+    ):
+        score = 0.25 * pd.to_numeric(
+            student_data["N'hood SES Score"], errors="coerce"
+        ) + 0.25 * pd.to_numeric(student_data["FRL Score"], errors="coerce")
     else:
         frl = frl_series(student_data)
-        score = pd.to_numeric(frl, errors="coerce") if frl is not None else pd.Series(0, index=student_data.index)
+        score = (
+            pd.to_numeric(frl, errors="coerce")
+            if frl is not None
+            else pd.Series(0, index=student_data.index)
+        )
     numeric = pd.to_numeric(score, errors="coerce")
     non_null = numeric.dropna()
     if non_null.empty:
@@ -394,7 +411,10 @@ def _distance_data_for_assignment(
     students["studentno"] = pd.to_numeric(students["studentno"], errors="coerce")
     students = students.dropna(subset=["studentno"])
     students["studentno"] = students["studentno"].astype(int)
-    if "programcodes" not in students.columns or "assignment_dist" not in students.columns:
+    if (
+        "programcodes" not in students.columns
+        or "assignment_dist" not in students.columns
+    ):
         index = pd.Index(students["studentno"].drop_duplicates(), name="studentno")
         return pd.DataFrame(index=index)
 
@@ -436,15 +456,23 @@ def _guard_empty_dependency_methods(evaluator) -> None:
     def metric_frl_concentration(all_students, group_students, threshold):
         if len(group_students) == 0:
             return np.nan
-        return original_metric_frl_concentration(all_students, group_students, threshold)
+        return original_metric_frl_concentration(
+            all_students, group_students, threshold
+        )
 
     def metric_dissimilarity(group_students, total_enrollment):
-        if len(group_students) == 0 or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0:
+        if (
+            len(group_students) == 0
+            or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0
+        ):
             return np.nan
         return original_metric_dissimilarity(group_students, total_enrollment)
 
     def dissimilarity(group_students, total_enrollment):
-        if len(group_students) == 0 or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0:
+        if (
+            len(group_students) == 0
+            or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0
+        ):
             return np.nan
         return original_dissimilarity(group_students, total_enrollment)
 
@@ -454,7 +482,11 @@ def _guard_empty_dependency_methods(evaluator) -> None:
         cohesion = assigned_students.groupby("census_blockgroup").apply(
             lambda group: evaluator._bgcohesion(group, num)
         )
-        values = cohesion.to_numpy().reshape(-1) if isinstance(cohesion, pd.DataFrame) else cohesion
+        values = (
+            cohesion.to_numpy().reshape(-1)
+            if isinstance(cohesion, pd.DataFrame)
+            else cohesion
+        )
         numeric = pd.to_numeric(values, errors="coerce")
         numeric = pd.Series(numeric).dropna()
         return float(numeric.sum() / len(assigned_students))
@@ -557,7 +589,10 @@ def assigned_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def frl_dissimilarity(assigned_students: pd.DataFrame) -> float | None:
-    if "frl" not in assigned_students.columns or "assigned school" not in assigned_students.columns:
+    if (
+        "frl" not in assigned_students.columns
+        or "assigned school" not in assigned_students.columns
+    ):
         return None
     students = assigned_students.dropna(subset=["assigned school", "frl"]).copy()
     if students.empty:
@@ -576,10 +611,7 @@ def frl_dissimilarity(assigned_students: pd.DataFrame) -> float | None:
         return None
     return float(
         0.5
-        * (
-            (by_school["sum"] / total_frl)
-            - (by_school["non_frl"] / total_non_frl)
-        )
+        * ((by_school["sum"] / total_frl) - (by_school["non_frl"] / total_non_frl))
         .abs()
         .sum()
     )
@@ -632,4 +664,8 @@ def scalar_metric_value(value: Any) -> Any:
         return None
     if hasattr(value, "item"):
         return scalar_metric_value(value.item())
-    return float(value) if isinstance(value, (int, float, np.integer, np.floating)) else value
+    return (
+        float(value)
+        if isinstance(value, (int, float, np.integer, np.floating))
+        else value
+    )

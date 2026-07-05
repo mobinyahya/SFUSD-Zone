@@ -7,7 +7,11 @@ implement the same :class:`~Zone_Generation.optimization.strategies.base.Strateg
 interface and register themselves by name.
 """
 
-from Zone_Generation.optimization.strategies.base import Strategy, get_strategy, register
+from Zone_Generation.optimization.strategies.base import (
+    Strategy,
+    get_strategy,
+    register,
+)
 
 from Zone_Generation.optimization.strategies import (  # noqa: E402,F401
     single,

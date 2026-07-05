@@ -57,7 +57,9 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.AVG_SPECIAL_ED: _zone_average(special_ed_counts, num_zones),
     }
     for program, counts in per_type_counts.items():
-        metrics[MetricColumns.program_column(program)] = _zone_average(counts, num_zones)
+        metrics[MetricColumns.program_column(program)] = _zone_average(
+            counts, num_zones
+        )
 
     return MetricOutput(metrics=metrics, zone_data=zone_data)
 

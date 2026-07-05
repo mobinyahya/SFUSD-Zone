@@ -14,21 +14,26 @@ from Zone_Generation.choice.assignment_metrics import DEPENDENCY_CHOICE_METRIC_C
 @dataclass(frozen=True)
 class MetricSpec:
     """Specification for a single metric."""
-    column: str                              # CSV column name
-    display_name: str                        # User-friendly name
-    description: str                         # Brief metric description
-    category: str                            # diversity/distance/programs/quality/structure
-    direction: Literal["minimize", "maximize"] | None = None  # None = informational only
-    is_core: bool = True                     # Include in the default metric subset
-    short_name: str = ""                     # Short label for badges/compact display
+
+    column: str  # CSV column name
+    display_name: str  # User-friendly name
+    description: str  # Brief metric description
+    category: str  # diversity/distance/programs/quality/structure
+    direction: Literal["minimize", "maximize"] | None = (
+        None  # None = informational only
+    )
+    is_core: bool = True  # Include in the default metric subset
+    short_name: str = ""  # Short label for badges/compact display
 
 
 # ============================================================================
 # COLUMN NAME CONSTANTS (for use in computation modules)
 # ============================================================================
 
+
 class MetricColumns:
     """Column name constants for use in computation modules."""
+
     AALPI_MAD = "aalpi_mad"
     FRL_MAD = "frl_mad"
     BLACK_MAD = "black_mad"
@@ -283,7 +288,6 @@ PROXIMITY_METRICS = [
         is_core=True,
         short_name="Out-of-Zone GE",
     ),
-
     MetricSpec(
         column="avg_ge_schools_within_half_mile",
         display_name="In-Zone GE Programs Within 0.5 Miles",
@@ -325,7 +329,6 @@ PROGRAM_METRICS = [
     #     direction="maximize",
     #     is_core=True,
     # ),
-
     MetricSpec(
         column="seat_disparity",
         display_name="Student Seat Imbalance",
@@ -591,6 +594,7 @@ QUALITY_METRICS = [
 # CHOICE METRICS (student-assignment outcomes)
 # ============================================================================
 
+
 def _choice_metric_direction(
     source_name: str, column: str
 ) -> Literal["minimize", "maximize"] | None:
@@ -637,46 +641,50 @@ def _dependency_choice_metric_specs() -> list[MetricSpec]:
     return specs
 
 
-CHOICE_METRICS = [
-    MetricSpec(
-        column="choice_total_preassignment_utility",
-        display_name="Preassignment Choice Utility",
-        description="Total student utility from the schools available in each student's assigned zone before any assignment/matching simulation is run. Computed with the configured choice_model and, for MNL, choice_model_method (logsum or max). Higher is better.",
-        category="choice",
-        direction="maximize",
-        is_core=False,
-        short_name="Preassign Utility",
-    ),
-] + _dependency_choice_metric_specs() + [
-    MetricSpec(
-        column="choice_frl_dissimilarity",
-        display_name="FRL Dissimilarity Across Schools",
-        description=(
-            "Weighted FRL dissimilarity across assigned school populations using "
-            "the student-assignment evaluator's freelunch_prob + reducedlunch_prob "
-            "student FRL weights. Lower means FRL students are more evenly "
-            "distributed across schools."
+CHOICE_METRICS = (
+    [
+        MetricSpec(
+            column="choice_total_preassignment_utility",
+            display_name="Preassignment Choice Utility",
+            description="Total student utility from the schools available in each student's assigned zone before any assignment/matching simulation is run. Computed with the configured choice_model and, for MNL, choice_model_method (logsum or max). Higher is better.",
+            category="choice",
+            direction="maximize",
+            is_core=False,
+            short_name="Preassign Utility",
         ),
-        category="choice",
-        direction="minimize",
-        is_core=False,
-        short_name="FRL Dissimil.",
-    ),
-    MetricSpec(
-        column="choice_total_mnl_utility",
-        display_name="Total MNL Utility",
-        description=(
-            "Sum of assigned_utility across assigned students. This is the total "
-            "counterpart to student-assignment's Avg utility paper metric, whose "
-            "assigned_utility values come from the matched program utility and are "
-            "NaN for unassigned students."
+    ]
+    + _dependency_choice_metric_specs()
+    + [
+        MetricSpec(
+            column="choice_frl_dissimilarity",
+            display_name="FRL Dissimilarity Across Schools",
+            description=(
+                "Weighted FRL dissimilarity across assigned school populations using "
+                "the student-assignment evaluator's freelunch_prob + reducedlunch_prob "
+                "student FRL weights. Lower means FRL students are more evenly "
+                "distributed across schools."
+            ),
+            category="choice",
+            direction="minimize",
+            is_core=False,
+            short_name="FRL Dissimil.",
         ),
-        category="choice",
-        direction="maximize",
-        is_core=False,
-        short_name="Total MNL Utility",
-    ),
-]
+        MetricSpec(
+            column="choice_total_mnl_utility",
+            display_name="Total MNL Utility",
+            description=(
+                "Sum of assigned_utility across assigned students. This is the total "
+                "counterpart to student-assignment's Avg utility paper metric, whose "
+                "assigned_utility values come from the matched program utility and are "
+                "NaN for unassigned students."
+            ),
+            category="choice",
+            direction="maximize",
+            is_core=False,
+            short_name="Total MNL Utility",
+        ),
+    ]
+)
 
 
 # ============================================================================
@@ -796,7 +804,9 @@ def get_metric_summary() -> str:
             else:
                 direction = "informational"
             core_marker = "" if m.is_core else " [detailed]"
-            lines.append(f"- **{m.display_name}**{core_marker}: {m.description} ({direction})")
+            lines.append(
+                f"- **{m.display_name}**{core_marker}: {m.description} ({direction})"
+            )
 
         lines.append("")
 
@@ -807,7 +817,8 @@ def search_metrics(query: str) -> list[MetricSpec]:
     """Search metrics by name or description (case-insensitive)."""
     query_lower = query.lower()
     return [
-        m for m in ALL_METRICS
+        m
+        for m in ALL_METRICS
         if query_lower in m.display_name.lower() or query_lower in m.description.lower()
     ]
 

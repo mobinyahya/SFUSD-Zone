@@ -3,6 +3,7 @@
 Hashes a `{area_id: zone_id}` mapping into a fixed-length lowercase base36
 string so that each particular zoning has a compact, citable identifier.
 """
+
 import hashlib
 import json
 import os
@@ -32,7 +33,9 @@ def compute_solution_code(zone_dict: dict, length: int = 7) -> str:
         key=lambda x: x[0],
     )
     payload = json.dumps(canonical, separators=(",", ":")).encode()
-    digest_int = int.from_bytes(hashlib.blake2b(payload, digest_size=16).digest(), "big")
+    digest_int = int.from_bytes(
+        hashlib.blake2b(payload, digest_size=16).digest(), "big"
+    )
     encoded = _int_to_base36(digest_int).rjust(length, "0")
     return encoded[-length:]
 
@@ -64,7 +67,9 @@ def solution_code_from_folder(folder_path: str) -> str:
 INDEX_FILENAME = "solution_codes.json"
 
 
-def build_solution_code_index(root_folder: str, write: bool = True) -> dict[str, list[str]]:
+def build_solution_code_index(
+    root_folder: str, write: bool = True
+) -> dict[str, list[str]]:
     """Walk `root_folder` and build `{code: [relative_solution_folder, ...]}`.
 
     Reads `metrics.solution_code` from each `result.json`; falls back to
