@@ -11,3 +11,4 @@ output/*
 /analysis/plots/
 /analysis/plots/*
 sweep.log
+sweep_comparison.log

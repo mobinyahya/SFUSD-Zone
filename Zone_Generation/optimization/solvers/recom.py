@@ -13,6 +13,7 @@ import math
 import random
 import time
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from functools import total_ordering
@@ -494,59 +495,89 @@ class ReComSolver(Solver):
         components: defaultdict[str, float] = defaultdict(float)
         for z in range(problem.Z):
             nodes = [n for n in problem.nodes if assignment.get(n) == z]
-            students = sum(problem.students(n) for n in nodes)
-            if students <= _EPS:
-                continue
+            zone_components = self._zone_balance_penalty_components(
+                problem, nodes, context
+            )
+            for key, value in zone_components.items():
+                components[key] += value
+        return components
 
-            capacity = sum(problem.capacity(n) for n in nodes)
-            lower_capacity = (1.0 - problem.shortage) * students
-            upper_capacity = (1.0 + problem.overage) * students
-            if capacity < lower_capacity:
-                coeff = context.coefficients["shortage"]
-                components["shortage"] += coeff * _target_violation_difference(
-                    value=capacity,
-                    target=students,
-                    lower=lower_capacity,
-                    upper=upper_capacity,
-                )
-            if capacity > upper_capacity:
-                coeff = context.coefficients["overage"]
-                components["overage"] += coeff * _target_violation_difference(
-                    value=capacity,
-                    target=students,
-                    lower=lower_capacity,
-                    upper=upper_capacity,
-                )
+    def _zone_constraint_penalty(
+        self,
+        problem: ZoneProblem,
+        nodes: Iterable[int],
+        context: _PenaltyContext | None = None,
+    ) -> float:
+        context = context or self._penalty_context(problem)
+        zone_nodes = list(nodes)
+        return sum(
+            self._zone_balance_penalty_components(
+                problem,
+                zone_nodes,
+                context,
+            ).values()
+        ) + self._zone_school_count_penalty(problem, zone_nodes, context)
 
-            frl = sum(problem.frl(n) for n in nodes)
-            frl_target = context.district_frl * students
-            frl_lower = (context.district_frl - problem.frl_dev) * students
-            frl_upper = (context.district_frl + problem.frl_dev) * students
-            if frl < frl_lower or frl > frl_upper:
-                coeff = context.coefficients["frl"]
-                components["frl"] += coeff * _target_violation_difference(
-                    value=frl,
-                    target=frl_target,
-                    lower=frl_lower,
-                    upper=frl_upper,
-                )
+    def _zone_balance_penalty_components(
+        self,
+        problem: ZoneProblem,
+        nodes: list[int],
+        context: _PenaltyContext,
+    ) -> defaultdict[str, float]:
+        components: defaultdict[str, float] = defaultdict(float)
+        students = sum(problem.students(n) for n in nodes)
+        if students <= _EPS:
+            return components
 
-            if problem.racial_dev >= 0:
-                for ethnicity in problem.ethnicities:
-                    key = _race_penalty_key(ethnicity)
-                    target_ratio = context.district_racial[ethnicity]
-                    value = sum(problem.ethnicity(n, ethnicity) for n in nodes)
-                    target = target_ratio * students
-                    lower = (target_ratio - problem.racial_dev) * students
-                    upper = (target_ratio + problem.racial_dev) * students
-                    if value < lower or value > upper:
-                        coeff = context.coefficients[key]
-                        components[key] += coeff * _target_violation_difference(
-                            value=value,
-                            target=target,
-                            lower=lower,
-                            upper=upper,
-                        )
+        capacity = sum(problem.capacity(n) for n in nodes)
+        lower_capacity = (1.0 - problem.shortage) * students
+        upper_capacity = (1.0 + problem.overage) * students
+        if capacity < lower_capacity:
+            coeff = context.coefficients["shortage"]
+            components["shortage"] += coeff * _target_violation_difference(
+                value=capacity,
+                target=students,
+                lower=lower_capacity,
+                upper=upper_capacity,
+            )
+        if capacity > upper_capacity:
+            coeff = context.coefficients["overage"]
+            components["overage"] += coeff * _target_violation_difference(
+                value=capacity,
+                target=students,
+                lower=lower_capacity,
+                upper=upper_capacity,
+            )
+
+        frl = sum(problem.frl(n) for n in nodes)
+        frl_target = context.district_frl * students
+        frl_lower = (context.district_frl - problem.frl_dev) * students
+        frl_upper = (context.district_frl + problem.frl_dev) * students
+        if frl < frl_lower or frl > frl_upper:
+            coeff = context.coefficients["frl"]
+            components["frl"] += coeff * _target_violation_difference(
+                value=frl,
+                target=frl_target,
+                lower=frl_lower,
+                upper=frl_upper,
+            )
+
+        if problem.racial_dev >= 0:
+            for ethnicity in problem.ethnicities:
+                key = _race_penalty_key(ethnicity)
+                target_ratio = context.district_racial[ethnicity]
+                value = sum(problem.ethnicity(n, ethnicity) for n in nodes)
+                target = target_ratio * students
+                lower = (target_ratio - problem.racial_dev) * students
+                upper = (target_ratio + problem.racial_dev) * students
+                if value < lower or value > upper:
+                    coeff = context.coefficients[key]
+                    components[key] += coeff * _target_violation_difference(
+                        value=value,
+                        target=target,
+                        lower=lower,
+                        upper=upper,
+                    )
         return components
 
     def _balance_penalty(
@@ -571,14 +602,24 @@ class ReComSolver(Solver):
             return 0.0
         penalty = 0.0
         for z in range(problem.Z):
-            schools = sum(
-                problem.num_schools(n) for n in problem.nodes if assignment.get(n) == z
-            )
-            if schools < context.school_lower or schools > context.school_upper:
-                penalty += context.coefficients["schools"] * abs(
-                    schools - context.avg_schools
-                )
+            nodes = [n for n in problem.nodes if assignment.get(n) == z]
+            penalty += self._zone_school_count_penalty(problem, nodes, context)
         return penalty
+
+    def _zone_school_count_penalty(
+        self,
+        problem: ZoneProblem,
+        nodes: Iterable[int],
+        context: _PenaltyContext,
+    ) -> float:
+        if context.avg_schools <= _EPS:
+            return 0.0
+        schools = sum(problem.num_schools(n) for n in nodes)
+        if schools < context.school_lower or schools > context.school_upper:
+            return context.coefficients["schools"] * abs(
+                schools - context.avg_schools
+            )
+        return 0.0
 
     def _penalty_context(self, problem: ZoneProblem) -> _PenaltyContext:
         signature = _penalty_context_signature(problem)

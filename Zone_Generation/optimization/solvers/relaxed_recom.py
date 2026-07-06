@@ -20,16 +20,6 @@ class _RelaxedReComMoveError(RuntimeError):
     """Raised when the relaxed ReCom walk cannot produce a valid tree move."""
 
 
-_RELAXED_RECOM_WEIGHTS = {
-    "nodes": 1,
-    "frl": 3,
-    "students": 1,
-    "seats": 1,
-    "shortage%": 10,
-    "sch_count": 45,
-}
-
-
 @register("relaxed_recom")
 class RelaxedReComSolver(ReComSolver):
     """Relaxed ReCom walk with post-hoc rejection sampling of valid plans."""
@@ -167,7 +157,7 @@ class RelaxedReComSolver(ReComSolver):
             "initial_penalty": initial_score.penalty,
             "best_penalty": best_score.penalty if best_score else current_score.penalty,
             "relaxed_recom_min_boundary_edges": min_boundary_edges,
-            "relaxed_recom_cut_weight": "legacy_metric_product",
+            "relaxed_recom_cut_weight": "log_inverse_configured_constraint_penalty",
             **initial.metadata,
         }
         if last_proposal_error is not None:
@@ -350,29 +340,13 @@ class RelaxedReComSolver(ReComSolver):
     def _relaxed_cut_log_weight(
         self,
         problem: ZoneProblem,
-        zone_a: set[int],
-        zone_b: set[int],
+        nodes_a: set[int],
+        nodes_b: set[int],
     ) -> float:
-        metrics_a = self._relaxed_zone_metrics(problem, zone_a)
-        metrics_b = self._relaxed_zone_metrics(problem, zone_b)
-        log_weight = 0.0
-        for metric, power in _RELAXED_RECOM_WEIGHTS.items():
-            value = metrics_a[metric] * metrics_b[metric]
-            if value <= 0:
-                return float("-inf")
-            log_weight += power * math.log(value)
-        return log_weight
-
-    def _relaxed_zone_metrics(
-        self, problem: ZoneProblem, zone: set[int]
-    ) -> dict[str, float]:
-        students = sum(problem.students(node) for node in zone)
-        seats = sum(problem.capacity(node) for node in zone)
-        return {
-            "nodes": float(len(zone)),
-            "frl": sum(problem.frl(node) for node in zone),
-            "students": students,
-            "seats": seats,
-            "shortage%": max(students - seats, 1.0),
-            "sch_count": float(sum(problem.num_schools(node) for node in zone)),
-        }
+        context = self._penalty_context(problem)
+        penalty = self._zone_constraint_penalty(
+            problem, nodes_a, context
+        ) + self._zone_constraint_penalty(problem, nodes_b, context)
+        if not math.isfinite(penalty):
+            return float("-inf")
+        return math.log(1.0 / (1.0 + penalty))

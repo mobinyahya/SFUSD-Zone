@@ -5,39 +5,44 @@ mode: run  # run | metrics
 
 optimization_defaults:
   save_solver_logs: true
+  save_solver_progress: true
   strategy: single
-  solve_time_limits: [1200]
-  max_distance: 6
+  solve_time_limits: [600]
+  max_distance: 4
   hints: gerry_chain
-  capacity_scenario: 'A'
-  boundary_radius: 1
-  gap_limits: [0]
-  workers: 8
+  workers: 1
+  racial_dev: -1
+  frl_dev: 0.15
+  overage: 0.15
+  shortage: 0.15
+  levels: [Block_0]
+  recom_iterations: 1000000000
+  recom_cut_attempts: 10000
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9',  '8-zone-24', '8-zone-26', '10-zone-3', '10-zone-11', '13-zone-5', '13-zone-6', '18-zone-1', '18-zone-6']
-  # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
-  frl_dev: [ 0.25]
-  # 0.12, 0.15, 0.2,
-  racial_dev: [ 0.25]
-  # 0.12, 0.15, 0.2,
-  seed: [42, ]
-  # 14, 33, 80, 9
-  overage: [ 0.9]
-  # 0.7, 0.8,
-  shortage: [ 0.25]
-  # 0.15, 0.2,
-  solver: [ 'mip', 'cp_int', 'cp_bool', 'recom',]
+  centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']
+  seed: [1, 2, 3, 4]
+
+tasks:
+  - solver: 'mip'
+    secondary_objective: true
+    workers: 8
+  - solver: 'cp_bool'
+    linearization_level: 2
+    workers: 8
+  - solver: 'relaxed_recom'
+  - solver: 'short_bursts'
+    short_bursts_length: 25
 
 
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/solver_comparison/'
-  capacity: 45              # total solver-thread slots available on the machine
+  output_dir: '/share/data/school_choice/local_runs/solver_comparison_3/'
+  capacity: 8         # total solver-thread slots available on the machine
   max_workers: 8            # max concurrent Python worker processes
-  max_tasks_per_worker: 25  # recycle processes to limit memory growth
-  skip_existing: false
+  max_tasks_per_worker: 10   # recycle processes to limit memory growth
+  skip_existing: true
   rerun_failed: true
   sequential: false
 
@@ -49,7 +54,6 @@ metrics:
 
 matching:
   enabled: false
-  config: Zone_Generation/benchmark/matching/sd.yaml
   compute_stage_assignments: false
 
 choice_metrics:

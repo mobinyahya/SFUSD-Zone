@@ -58,6 +58,25 @@ def test_relaxed_recom_rejects_choice_objective():
         solver.solve(problem)
 
 
+def test_relaxed_recom_cut_weight_uses_configured_frl_constraint():
+    loose = _small_problem(hint={0: 0, 1: 0, 2: 1, 3: 1})
+    tight = _small_problem(hint={0: 0, 1: 0, 2: 1, 3: 1})
+    for problem in (loose, tight):
+        problem.G.nodes[0]["FRL"] = 1.0
+        problem.G.nodes[1]["FRL"] = 1.0
+        problem.G.nodes[2]["FRL"] = 0.0
+        problem.G.nodes[3]["FRL"] = 0.0
+    loose.frl_dev = 1.0
+    tight.frl_dev = 0.1
+    solver = get_solver("relaxed_recom")
+
+    loose_weight = solver._relaxed_cut_log_weight(loose, {0, 1}, {2, 3})
+    tight_weight = solver._relaxed_cut_log_weight(tight, {0, 1}, {2, 3})
+
+    assert loose_weight == pytest.approx(0.0)
+    assert tight_weight < loose_weight
+
+
 def _small_problem(hint, choice_objective=None) -> ZoneProblem:
     graph = nx.path_graph(4)
     for node in graph.nodes:
