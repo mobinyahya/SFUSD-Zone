@@ -24,11 +24,15 @@ from gerrychain.tree import (
     PopulationBalanceError,
     ReselectException,
     bipartition_tree,
-    recursive_tree_part,
 )
 from gerrychain.updaters import Tally, cut_edges
 
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.data.initial_solutions import (
+    complete_assignment,
+    initial_solution,
+    normalize_hints,
+)
 from Zone_Generation.optimization.progress import (
     SolverProgressTracker,
     assignment_tuple,
@@ -71,6 +75,9 @@ class ReComSolver(Solver):
             )
 
         start = time.time()
+        hint_error = self._hints_error_solution(problem, start)
+        if hint_error is not None:
+            return hint_error
         seed = int(self.options.get("seed", 42))
         rng = random.Random(seed)
         time_limit = float(self.options.get("solve_time_limit", 60.0))
@@ -185,9 +192,7 @@ class ReComSolver(Solver):
             "solver": self.name,
             **self._progress_log_metadata(log_path),
             **self._solver_progress_metadata(progress),
-            "initialization_method": initial.metadata.get(
-                "initialization_method", self._initialization_method(problem)
-            ),
+            "hints": initial.metadata.get("hints", self._hints()),
             "iterations": max_iterations,
             "attempted_moves": attempted,
             "accepted_moves": accepted,
@@ -200,9 +205,6 @@ class ReComSolver(Solver):
         }
         if last_proposal_error is not None:
             metadata["last_proposal_error"] = last_proposal_error
-        cache_metadata = getattr(problem, "_math_prog_initial_cache", None)
-        if cache_metadata is not None:
-            metadata["initial_cache"] = dict(cache_metadata)
 
         return ZoneSolution(
             problem=problem,
@@ -295,169 +297,47 @@ class ReComSolver(Solver):
         if problem.hint:
             return _InitialState(
                 assignment=self._complete_assignment(problem, problem.hint),
-                metadata={"initialization_method": "hint"},
+                metadata={"hints": "provided", "hint_source": "problem_hint"},
             )
 
-        method = self._initialization_method(problem)
-        if method == "math_prog":
-            # The strategy layer materializes math_prog hints. This fallback keeps
-            # direct solver calls safe if no dataset was available to do so.
-            assignment = self._fallback_initial_assignment(problem)
-            return _InitialState(
-                assignment=assignment,
-                metadata={
-                    "initialization_method": "math_prog",
-                    "initialization_fallback": "nearest_centroid",
-                },
+        initial = initial_solution(problem, self._hints(), cut_attempts=cut_attempts)
+        if initial is None:
+            raise ValueError(
+                "ReCom solvers require hints to be voronoi or gerry_chain."
             )
-
-        return self._gerrychain_initial_state(problem, cut_attempts)
-
-    def _gerrychain_initial_state(
-        self, problem: ZoneProblem, cut_attempts: int
-    ) -> _InitialState:
-        target = _population_target(problem)
-        epsilon = _population_epsilon(problem)
-        if problem.Z < 2 or target <= 0:
-            assignment = self._fallback_initial_assignment(problem)
-            return _InitialState(
-                assignment=assignment,
-                metadata={
-                    "initialization_method": "gerrychain",
-                    "initialization_fallback": "nearest_centroid",
-                    "gerrychain_population_target": target,
-                    "gerrychain_population_epsilon": epsilon,
-                },
-            )
-
-        graph = Graph.from_networkx(problem.G)
-        tree_method = partial(bipartition_tree, max_attempts=cut_attempts)
-        best_assignment = None
-        best_score = None
-        best_epsilon = epsilon
-        errors: list[str] = []
-        for attempt, current_epsilon in enumerate(_epsilon_schedule(epsilon), start=1):
-            try:
-                raw = recursive_tree_part(
-                    graph,
-                    parts=list(range(problem.Z)),
-                    pop_target=target,
-                    pop_col="ge_students",
-                    epsilon=current_epsilon,
-                    method=tree_method,
-                )
-            except _GERRYCHAIN_ERRORS as exc:
-                errors.append(type(exc).__name__)
-                continue
-            assignment = self._normalize_gerrychain_assignment(problem, raw)
-            score = self._score(problem, assignment)
-            if best_score is None or score < best_score:
-                best_assignment = assignment
-                best_score = score
-                best_epsilon = current_epsilon
-            if _valid(score):
-                return _InitialState(
-                    assignment=assignment,
-                    metadata={
-                        "initialization_method": "gerrychain",
-                        "gerrychain_initial_attempts": attempt,
-                        "gerrychain_population_target": target,
-                        "gerrychain_population_epsilon": current_epsilon,
-                    },
-                )
-
-        if best_assignment is not None:
-            return _InitialState(
-                assignment=best_assignment,
-                metadata={
-                    "initialization_method": "gerrychain",
-                    "gerrychain_initial_attempts": len(_epsilon_schedule(epsilon)),
-                    "gerrychain_population_target": target,
-                    "gerrychain_population_epsilon": best_epsilon,
-                    "gerrychain_initial_penalty": best_score.penalty
-                    if best_score
-                    else None,
-                },
-            )
-
-        assignment = self._fallback_initial_assignment(problem)
-        metadata = {
-            "initialization_method": "gerrychain",
-            "initialization_fallback": "nearest_centroid",
-            "gerrychain_population_target": target,
-            "gerrychain_population_epsilon": epsilon,
-        }
-        if errors:
-            metadata["gerrychain_initial_errors"] = errors[-3:]
-        return _InitialState(assignment=assignment, metadata=metadata)
-
-    def _normalize_gerrychain_assignment(
-        self, problem: ZoneProblem, raw: Mapping[int, int]
-    ) -> dict[int, int]:
-        relabeled = self._relabel_parts_by_centroids(problem, raw)
-        completed = self._complete_assignment(problem, relabeled)
-        repaired = contiguity.repair(problem.G, completed, problem.centroids)
-        return self._complete_assignment(problem, repaired)
-
-    def _relabel_parts_by_centroids(
-        self, problem: ZoneProblem, raw: Mapping[int, int]
-    ) -> dict[int, int]:
-        part_to_zone: dict[int, int] = {}
-        used_zones: set[int] = set()
-        for z, centroid in enumerate(problem.centroids):
-            part = raw.get(centroid)
-            if part is None or part in part_to_zone:
-                continue
-            part_to_zone[int(part)] = z
-            used_zones.add(z)
-
-        remaining_zones = [z for z in range(problem.Z) if z not in used_zones]
-        remaining_parts = sorted(
-            {int(part) for part in raw.values()} - set(part_to_zone)
+        return _InitialState(
+            assignment=initial.assignment,
+            metadata=dict(initial.metadata),
         )
-        for part, zone in zip(remaining_parts, remaining_zones):
-            part_to_zone[part] = zone
-
-        if not part_to_zone:
-            return {}
-        fallback_zone = remaining_zones[0] if remaining_zones else 0
-        return {
-            int(node): int(part_to_zone.get(int(part), fallback_zone))
-            for node, part in raw.items()
-        }
-
-    def _fallback_initial_assignment(self, problem: ZoneProblem) -> dict[int, int]:
-        assignment = self._complete_assignment(problem, {})
-        repaired = contiguity.repair(problem.G, assignment, problem.centroids)
-        return self._complete_assignment(problem, repaired)
 
     def _complete_assignment(
         self, problem: ZoneProblem, seed: Mapping[int, int]
     ) -> dict[int, int]:
-        assignment: dict[int, int] = {}
-        for node in problem.nodes:
-            zone = seed.get(node)
-            candidates = problem.candidate_zones(node)
-            if zone in candidates:
-                assignment[node] = int(zone)
-            else:
-                assignment[node] = min(
-                    candidates,
-                    key=lambda z: problem.distance(problem.centroids[z], node),
-                )
-        for z, centroid in enumerate(problem.centroids):
-            assignment[centroid] = z
-        return assignment
+        return complete_assignment(problem, seed)
 
-    def _initialization_method(self, problem: ZoneProblem) -> str:
-        if problem.hint:
-            return "hint"
-        method = str(self.options.get("initialization_method", "gerrychain"))
-        if method not in {"gerrychain", "math_prog"}:
-            raise ValueError(
-                "initialization_method must be one of: gerrychain, math_prog."
-            )
-        return method
+    def _hints(self) -> str:
+        return normalize_hints(self.options.get("hints", "gerry_chain"))
+
+    def _hints_error_solution(
+        self, problem: ZoneProblem, start: float
+    ) -> ZoneSolution | None:
+        method = self._hints()
+        if method != "none":
+            return None
+        return ZoneSolution(
+            problem=problem,
+            assignment={},
+            status="ERROR",
+            objective=None,
+            wall_time=time.time() - start,
+            metadata={
+                "solver": self.name,
+                "hints": method,
+                "error_message": (
+                    "ReCom solvers require hints to be voronoi or gerry_chain."
+                ),
+            },
+        )
 
     # ------------------------------------------------------------------ #
     # GerryChain proposals

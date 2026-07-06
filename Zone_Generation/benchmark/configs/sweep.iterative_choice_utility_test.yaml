@@ -15,7 +15,7 @@ optimization_defaults:
 
   solve_time_limits: [120]
   gap_limits: [0]
-  use_hints: true
+  hints: gerry_chain
   seed: 42
   workers: 24
 

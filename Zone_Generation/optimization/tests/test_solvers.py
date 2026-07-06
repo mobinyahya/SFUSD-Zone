@@ -354,7 +354,7 @@ def test_recom_solver():
     assert solution.status == "FEASIBLE"
     _check_valid(problem, solution)
     assert solution.metadata["solver"] == "recom"
-    assert solution.metadata["initialization_method"] == "gerrychain"
+    assert solution.metadata["hints"] == "gerry_chain"
 
 
 def test_short_bursts_recom_solver():
@@ -397,7 +397,7 @@ def test_recom_uses_explicit_hint():
 
     assert solution.status == "FEASIBLE"
     assert solution.assignment == hint
-    assert solution.metadata["initialization_method"] == "hint"
+    assert solution.metadata["hints"] == "provided"
 
 
 def test_short_bursts_recom_uses_explicit_hint():
@@ -423,7 +423,7 @@ def test_short_bursts_recom_uses_explicit_hint():
 
     assert solution.status == "FEASIBLE"
     assert solution.assignment == hint
-    assert solution.metadata["initialization_method"] == "hint"
+    assert solution.metadata["hints"] == "provided"
 
 
 def test_recom_rejects_choice_objective():
@@ -469,11 +469,24 @@ def test_short_bursts_recom_unknown_when_no_valid_solution():
     assert solution.metadata["best_penalty"] > 0
 
 
-def test_recom_rejects_unknown_initialization_method():
+def test_recom_rejects_unknown_hints():
     problem = make_grid_problem(3, 3)
 
-    with pytest.raises(ValueError, match="initialization_method"):
-        get_solver("recom", initialization_method="bad").solve(problem)
+    with pytest.raises(ValueError, match="hints"):
+        get_solver("recom", hints="bad").solve(problem)
+
+
+@pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
+def test_recom_solvers_return_error_for_hints_none(name):
+    problem = make_grid_problem(3, 3)
+
+    solution = get_solver(name, hints="none").solve(problem)
+
+    assert solution.status == "ERROR"
+    assert solution.assignment == {}
+    assert solution.objective is None
+    assert solution.metadata["hints"] == "none"
+    assert "require hints" in solution.metadata["error_message"]
 
 
 @pytest.mark.parametrize("name", ["cp_int", "cp_bool"])

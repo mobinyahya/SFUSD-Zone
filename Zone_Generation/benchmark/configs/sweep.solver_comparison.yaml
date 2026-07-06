@@ -8,7 +8,7 @@ optimization_defaults:
   strategy: single
   solve_time_limits: [1200]
   max_distance: 6
-  use_hints: true
+  hints: gerry_chain
   capacity_scenario: 'A'
   boundary_radius: 1
   gap_limits: [0]

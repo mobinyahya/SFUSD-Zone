@@ -3,6 +3,7 @@
 import pytest
 
 from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation
+from Zone_Generation.optimization.data.initial_solutions import InitialSolution
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers import get_solver
@@ -25,23 +26,26 @@ def test_single_strategy():
     assert solutions[-1].is_contiguous()
 
 
-def test_single_recom_math_prog_initialization_uses_seed_hint(monkeypatch):
+def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)
     solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
-    solver.name = "recom"
-    solver.options["initialization_method"] = "math_prog"
+    solver.name = "cp_int"
+    solver.options["hints"] = "gerry_chain"
     hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
 
     monkeypatch.setattr(
         single_module,
-        "math_prog_initial_hint",
-        lambda dataset_arg, problem_arg, options: hint,
+        "initial_solution",
+        lambda problem_arg, hints, cut_attempts=100: InitialSolution(
+            assignment=hint,
+            metadata={"hints": hints},
+        ),
     )
     strat = get_strategy(
         "single",
         levels=["BlockGroup_0"],
-        initialization_method="math_prog",
+        hints="gerry_chain",
     )
 
     strat.run(dataset, solver)

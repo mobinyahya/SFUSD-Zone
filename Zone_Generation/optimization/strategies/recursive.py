@@ -14,7 +14,10 @@ from __future__ import annotations
 from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.conversion import LevelConverter
 from Zone_Generation.optimization.data.dataset import Dataset
-from Zone_Generation.optimization.data.initial_solutions import math_prog_initial_hint
+from Zone_Generation.optimization.data.initial_solutions import (
+    initial_solution,
+    normalize_hints,
+)
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -29,8 +32,8 @@ class RecursiveStrategy(Strategy):
         time_limits = self.options.get("solve_time_limits")
         carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
-        use_hints = self.options.get("use_hints", True)
-        initialization_method = self.options.get("initialization_method", "gerrychain")
+        hints = normalize_hints(self.options.get("hints", "gerry_chain"))
+        apply_hints = hints != "none"
         looseness = float(self.options.get("looseness", 1.0))
         if looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
@@ -75,18 +78,11 @@ class RecursiveStrategy(Strategy):
                 problem = dataset.problem_for(
                     level,
                     candidates=candidates,
-                    hint=projected if use_hints else None,
+                    hint=projected if apply_hints else None,
                     constraint_multiplier=constraint_multiplier,
                 )
 
-            if (
-                getattr(solver, "name", None)
-                in {"recom", "relaxed_recom", "short_bursts_recom"}
-                and problem.hint is None
-                and solver.options.get("initialization_method", initialization_method)
-                == "math_prog"
-            ):
-                problem.hint = math_prog_initial_hint(dataset, problem, solver.options)
+            _add_math_programming_initial_hint(problem, solver, hints)
 
             try:
                 sol = solver.solve(problem)
@@ -164,3 +160,17 @@ class RecursiveStrategy(Strategy):
     @staticmethod
     def _constraint_multiplier(looseness, levels, i):
         return float(looseness) ** (len(levels) - i - 1)
+
+
+def _add_math_programming_initial_hint(problem, solver: Solver, hints: str) -> None:
+    if getattr(solver, "name", None) not in {"cp_int", "cp_bool", "mip"}:
+        return
+    if problem.hint is not None:
+        return
+    initial = initial_solution(
+        problem,
+        hints,
+        cut_attempts=int(solver.options.get("recom_cut_attempts", 100)),
+    )
+    if initial is not None:
+        problem.hint = initial.assignment

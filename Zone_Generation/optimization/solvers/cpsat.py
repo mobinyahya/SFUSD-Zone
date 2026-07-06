@@ -21,6 +21,7 @@ from ortools.sat.python import cp_model
 
 from Zone_Generation.choice.objective import ChoiceCut
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.data.initial_solutions import initial_solution
 from Zone_Generation.optimization.progress import SolverProgressTracker
 from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -148,11 +149,24 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        if not problem.hint:
+        hint = self._hint_assignment(problem)
+        if not hint:
             return
         for (z, i), var in x.items():
-            if i in problem.hint:
-                m.AddHint(var, 1 if problem.hint[i] == z else 0)
+            if i in hint:
+                m.AddHint(var, 1 if hint[i] == z else 0)
+
+    def _hint_assignment(self, problem: ZoneProblem) -> dict[int, int] | None:
+        if problem.hint:
+            return problem.hint
+        if "hints" not in self.options:
+            return None
+        initial = initial_solution(
+            problem,
+            self.options.get("hints"),
+            cut_attempts=int(self.options.get("recom_cut_attempts", 100)),
+        )
+        return initial.assignment if initial is not None else None
 
     def _add_search_strategy(
         self,
@@ -596,9 +610,10 @@ class CpIntSolver(CpBoolSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        if not problem.hint:
+        hint = self._hint_assignment(problem)
+        if not hint:
             return
-        for node, zone in problem.hint.items():
+        for node, zone in hint.items():
             if node in y and zone in problem.candidate_zones(node):
                 m.AddHint(y[node], zone)
 

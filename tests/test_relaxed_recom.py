@@ -26,11 +26,11 @@ def test_relaxed_recom_uses_hint_and_returns_feasible_solution():
 
     assert solution.status == "FEASIBLE"
     assert solution.is_contiguous()
-    assert solution.metadata["initialization_method"] == "hint"
+    assert solution.metadata["hints"] == "provided"
     assert solution.metadata["accepted_moves"] == 1
 
 
-def test_relaxed_recom_defaults_to_gerrychain_initialization_without_hint():
+def test_relaxed_recom_defaults_to_gerry_chain_initialization_without_hint():
     problem = _small_problem(hint=None)
     solver = get_solver(
         "relaxed_recom",
@@ -44,7 +44,7 @@ def test_relaxed_recom_defaults_to_gerrychain_initialization_without_hint():
     solution = solver.solve(problem)
 
     assert solution.status == "FEASIBLE"
-    assert solution.metadata["initialization_method"] == "gerrychain"
+    assert solution.metadata["hints"] == "gerry_chain"
 
 
 def test_relaxed_recom_rejects_choice_objective():

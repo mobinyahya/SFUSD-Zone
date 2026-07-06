@@ -8,6 +8,7 @@ so the next solve has a more accurate objective approximation.
 from __future__ import annotations
 
 from Zone_Generation.choice.objective import ChoiceObjective
+from Zone_Generation.optimization.data.initial_solutions import normalize_hints
 from Zone_Generation.optimization.data.dataset import Dataset
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -25,7 +26,7 @@ class IterativeChoiceStrategy(Strategy):
         target = levels[-1]
         max_iterations = int(self.options.get("max_iterations", 5))
         tolerance = float(self.options.get("tolerance", 1e-6))
-        use_hints = bool(self.options.get("use_hints", True))
+        apply_hints = normalize_hints(self.options.get("hints", "gerry_chain")) != "none"
         scale = float(self.options.get("choice_utility_scale", 100.0))
         model = get_configured_choice_model(self.options)
 
@@ -49,7 +50,7 @@ class IterativeChoiceStrategy(Strategy):
             hint_solution = best_model_solution or last_feasible
             hint = (
                 hint_solution.assignment
-                if hint_solution is not None and use_hints
+                if hint_solution is not None and apply_hints
                 else None
             )
             # The first iteration intentionally has no cuts, matching the legacy

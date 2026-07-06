@@ -1,223 +1,155 @@
-"""Initial solution helpers for heuristic solvers."""
+"""Shared initial-solution helpers for solver warm starts."""
 
 from __future__ import annotations
 
-import json
-import os
-import re
-import time
-from dataclasses import replace
-from pathlib import Path
+import math
+from dataclasses import dataclass
+from functools import partial
 from typing import Mapping
 
+from gerrychain import Graph
+from gerrychain.proposals.tree_proposals import MetagraphError
+from gerrychain.tree import (
+    BalanceError,
+    PopulationBalanceError,
+    ReselectException,
+    bipartition_tree,
+    recursive_tree_part,
+)
+
 from Zone_Generation.optimization.data import contiguity
-from Zone_Generation.optimization.config import OptimizationConfig
-from Zone_Generation.optimization.data.conversion import LevelConverter
-from Zone_Generation.optimization.data.dataset import Dataset
-from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.problem import ZoneProblem
-from Zone_Generation.optimization.solution import ZoneSolution
-from Zone_Generation.optimization.solvers import get_solver
+
+HINT_METHODS = {"voronoi", "gerry_chain", "none"}
+
+_EPS = 1e-6
+_GERRY_CHAIN_ERRORS = (
+    BalanceError,
+    PopulationBalanceError,
+    ReselectException,
+    MetagraphError,
+    IndexError,
+)
 
 
-def math_prog_initial_hint(
-    dataset: Dataset,
+@dataclass(frozen=True)
+class InitialSolution:
+    assignment: dict[int, int]
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True, order=True)
+class _Score:
+    penalty: float
+    boundary: int
+
+
+def normalize_hints(value: object, default: str = "gerry_chain") -> str:
+    method = str(default if value is None else value)
+    if method not in HINT_METHODS:
+        raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
+    return method
+
+
+def initial_solution(
     problem: ZoneProblem,
-    options: Mapping | None = None,
-) -> dict[int, int] | None:
-    """Return a starting hint converted from the cached ``Block_0`` seed.
-
-    Seeds are keyed by data graph namespace and ``centroids_type``.  They are
-    generated lazily on ``BlockGroup_1`` with loose constraints, converted to
-    ``Block_0`` for storage, and converted from that canonical saved level to the
-    requested problem level when needed.
-    """
-
-    options = options or {}
-    config = getattr(dataset, "config", None)
-    if config is None:
-        return None
-
-    initial_level = LevelSpec.parse(
-        str(options.get("recom_initial_level", "BlockGroup_1"))
-    )
-    save_level = LevelSpec.parse(
-        str(options.get("recom_initial_save_level", "Block_0"))
-    )
-    if save_level.name != "Block_0":
-        raise ValueError("recom_initial_save_level must be Block_0.")
-
-    block_dataset = _dataset_for_level(config, save_level)
-    path = _cache_zone_dict_path(block_dataset, config.centroids_type, save_level)
-    cache_hit = path.exists()
-    if not cache_hit:
-        _generate_math_prog_seed(
-            config=config,
-            initial_level=initial_level,
-            save_level=save_level,
-            output_path=path,
-            options=options,
-        )
-    _set_cache_metadata(
-        problem,
-        path=path,
-        cache_hit=cache_hit,
-        initial_level=initial_level,
-        save_level=save_level,
-    )
-    if not path.exists():
-        return None
-
-    block_assignment = _load_assignment(path)
-    block_G = block_dataset.graph_for(save_level)
-    if problem.level == save_level:
-        hint = {
-            node: block_assignment[node]
-            for node in problem.nodes
-            if node in block_assignment
-        }
-    else:
-        hint = LevelConverter().between(
-            block_G,
-            block_assignment,
-            save_level,
-            problem.G,
-            problem.level,
-        )
-    return _repair_hint(problem, hint)
-
-
-def _generate_math_prog_seed(
+    hints: object,
     *,
-    config: OptimizationConfig,
-    initial_level: LevelSpec,
-    save_level: LevelSpec,
-    output_path: Path,
-    options: Mapping,
-) -> None:
-    initial_dataset = _dataset_for_level(config, initial_level)
-    save_dataset = _dataset_for_level(config, save_level)
+    cut_attempts: int = 100,
+) -> InitialSolution | None:
+    """Return a complete candidate-aware initial solution for ``hints``."""
 
-    multiplier = float(options.get("recom_initial_constraint_multiplier", 10.0))
-    initial_problem = initial_dataset.problem_for(
-        initial_level,
-        constraint_multiplier=multiplier,
+    method = normalize_hints(hints)
+    if method == "none":
+        return None
+    if method == "voronoi":
+        return voronoi_initial_solution(problem)
+    return gerry_chain_initial_solution(problem, cut_attempts=cut_attempts)
+
+
+def voronoi_initial_solution(problem: ZoneProblem) -> InitialSolution:
+    assignment = _nearest_centroid_assignment(problem)
+    return InitialSolution(
+        assignment=assignment,
+        metadata={"hints": "voronoi"},
     )
-    seed_solver = get_solver(
-        "cp_bool",
-        solve_time_limit=float(options.get("recom_initial_time_limit", 60.0)),
-        relative_gap_limit=float(options.get("relative_gap_limit", 0.0)),
-        seed=int(options.get("seed", 42)),
-        workers=int(options.get("workers", 1)),
-    )
-    solution = seed_solver.solve(initial_problem)
-    if not solution.feasible:
-        return
-
-    save_problem = save_dataset.problem_for(save_level)
-    save_assignment = LevelConverter().between(
-        initial_problem.G,
-        solution.assignment,
-        initial_level,
-        save_problem.G,
-        save_level,
-    )
-    save_assignment = _repair_hint(save_problem, save_assignment)
-
-    seed_solution = ZoneSolution(
-        problem=save_problem,
-        assignment=save_assignment,
-        status="SEED",
-        objective=None,
-        wall_time=solution.wall_time,
-        metadata={
-            "solver": "cp_bool",
-            "initialization_method": "math_prog",
-            "seed_source_level": initial_level.name,
-            "seed_saved_level": save_level.name,
-            "constraint_multiplier": multiplier,
-            "source_status": solution.status,
-            "generated_at": time.time(),
-        },
-    )
-    _save_seed(seed_solution, output_path)
 
 
-def _dataset_for_level(config: OptimizationConfig, level: LevelSpec) -> Dataset:
-    return Dataset(replace(config, levels=[level.name]))
-
-
-def _cache_zone_dict_path(
-    dataset: Dataset, centroids_type: str, save_level: LevelSpec
-) -> Path:
-    key = re.sub(r"[^A-Za-z0-9_.-]+", "_", centroids_type).strip("_")
-    cache_dir = Path(dataset.graph_cache_dir) / "recom_initial_solutions" / key
-    return cache_dir / f"zone_dict_{save_level.name}.json"
-
-
-def _set_cache_metadata(
+def gerry_chain_initial_solution(
     problem: ZoneProblem,
     *,
-    path: Path,
-    cache_hit: bool,
-    initial_level: LevelSpec,
-    save_level: LevelSpec,
-) -> None:
-    problem._math_prog_initial_cache = {
-        "cache_hit": bool(cache_hit),
-        "cache_path": str(path),
-        "source_level": initial_level.name,
-        "saved_level": save_level.name,
-        "available": path.exists(),
-    }
+    cut_attempts: int = 100,
+) -> InitialSolution:
+    target = _population_target(problem)
+    epsilon = _population_epsilon(problem)
+    if problem.Z < 2 or target <= 0:
+        return _gerry_chain_fallback(problem, target, epsilon)
+
+    graph = Graph.from_networkx(problem.G)
+    tree_method = partial(bipartition_tree, max_attempts=max(1, int(cut_attempts)))
+    best_assignment = None
+    best_score = None
+    best_epsilon = epsilon
+    errors: list[str] = []
+
+    for attempt, current_epsilon in enumerate(_epsilon_schedule(epsilon), start=1):
+        try:
+            raw = recursive_tree_part(
+                graph,
+                parts=list(range(problem.Z)),
+                pop_target=target,
+                pop_col="ge_students",
+                epsilon=current_epsilon,
+                method=tree_method,
+            )
+        except _GERRY_CHAIN_ERRORS as exc:
+            errors.append(type(exc).__name__)
+            continue
+
+        assignment = _normalize_gerry_chain_assignment(problem, raw)
+        score = _score(problem, assignment)
+        if best_score is None or score < best_score:
+            best_assignment = assignment
+            best_score = score
+            best_epsilon = current_epsilon
+        if _valid(score):
+            return InitialSolution(
+                assignment=assignment,
+                metadata={
+                    "hints": "gerry_chain",
+                    "gerry_chain_initial_attempts": attempt,
+                    "gerry_chain_population_target": target,
+                    "gerry_chain_population_epsilon": current_epsilon,
+                },
+            )
+
+    if best_assignment is not None:
+        return InitialSolution(
+            assignment=best_assignment,
+            metadata={
+                "hints": "gerry_chain",
+                "gerry_chain_initial_attempts": len(_epsilon_schedule(epsilon)),
+                "gerry_chain_population_target": target,
+                "gerry_chain_population_epsilon": best_epsilon,
+                "gerry_chain_initial_penalty": best_score.penalty
+                if best_score
+                else None,
+            },
+        )
+
+    result = _gerry_chain_fallback(problem, target, epsilon)
+    if errors:
+        result.metadata["gerry_chain_initial_errors"] = errors[-3:]
+    return result
 
 
-def _load_assignment(path: Path) -> dict[int, int]:
-    with path.open("r", encoding="utf-8") as f:
-        raw = json.load(f)
-    return {int(k): int(v) for k, v in raw.items()}
-
-
-def _save_seed(solution: ZoneSolution, zone_dict_path: Path) -> None:
-    zone_dict_path.parent.mkdir(parents=True, exist_ok=True)
-    level = solution.level.name
-    payload = {str(k): int(v) for k, v in solution.assignment.items()}
-    _atomic_json(zone_dict_path, payload)
-
-    area_path = zone_dict_path.parent / f"zone_dict_area_{level}.json"
-    _atomic_json(
-        area_path,
-        {str(k): int(v) for k, v in solution.area_assignment().items()},
-    )
-
-    info_path = zone_dict_path.parent / f"solution_{level}.json"
-    _atomic_json(
-        info_path,
-        {
-            "level": level,
-            "status": solution.status,
-            "objective": solution.objective,
-            "wall_time": solution.wall_time,
-            "num_zones": solution.problem.Z,
-            "centroids": list(solution.problem.centroids),
-            "contiguous": None,
-            "metadata": solution.metadata,
-        },
-        indent=2,
-    )
-
-
-def _atomic_json(path: Path, payload, indent: int | None = None) -> None:
-    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=indent)
-    os.replace(tmp_path, path)
-
-
-def _complete_hint(problem: ZoneProblem, hint: Mapping[int, int]) -> dict[int, int]:
+def complete_assignment(
+    problem: ZoneProblem,
+    seed: Mapping[int, int],
+) -> dict[int, int]:
     assignment: dict[int, int] = {}
     for node in problem.nodes:
-        zone = hint.get(node)
+        zone = seed.get(node)
         candidates = problem.candidate_zones(node)
         if zone in candidates:
             assignment[node] = int(zone)
@@ -231,7 +163,153 @@ def _complete_hint(problem: ZoneProblem, hint: Mapping[int, int]) -> dict[int, i
     return assignment
 
 
-def _repair_hint(problem: ZoneProblem, hint: Mapping[int, int]) -> dict[int, int]:
-    assignment = _complete_hint(problem, hint)
+def _nearest_centroid_assignment(problem: ZoneProblem) -> dict[int, int]:
+    assignment = complete_assignment(problem, {})
     repaired = contiguity.repair(problem.G, assignment, problem.centroids)
-    return _complete_hint(problem, repaired)
+    return complete_assignment(problem, repaired)
+
+
+def _gerry_chain_fallback(
+    problem: ZoneProblem,
+    target: float,
+    epsilon: float,
+) -> InitialSolution:
+    return InitialSolution(
+        assignment=_nearest_centroid_assignment(problem),
+        metadata={
+            "hints": "gerry_chain",
+            "hint_fallback": "voronoi",
+            "gerry_chain_population_target": target,
+            "gerry_chain_population_epsilon": epsilon,
+        },
+    )
+
+
+def _normalize_gerry_chain_assignment(
+    problem: ZoneProblem,
+    raw: Mapping[int, int],
+) -> dict[int, int]:
+    relabeled = _relabel_parts_by_centroids(problem, raw)
+    completed = complete_assignment(problem, relabeled)
+    repaired = contiguity.repair(problem.G, completed, problem.centroids)
+    return complete_assignment(problem, repaired)
+
+
+def _relabel_parts_by_centroids(
+    problem: ZoneProblem,
+    raw: Mapping[int, int],
+) -> dict[int, int]:
+    part_to_zone: dict[int, int] = {}
+    used_zones: set[int] = set()
+    for z, centroid in enumerate(problem.centroids):
+        part = raw.get(centroid)
+        if part is None or part in part_to_zone:
+            continue
+        part_to_zone[int(part)] = z
+        used_zones.add(z)
+
+    remaining_zones = [z for z in range(problem.Z) if z not in used_zones]
+    remaining_parts = sorted({int(part) for part in raw.values()} - set(part_to_zone))
+    for part, zone in zip(remaining_parts, remaining_zones):
+        part_to_zone[part] = zone
+
+    if not part_to_zone:
+        return {}
+    fallback_zone = remaining_zones[0] if remaining_zones else 0
+    return {
+        int(node): int(part_to_zone.get(int(part), fallback_zone))
+        for node, part in raw.items()
+    }
+
+
+def _score(problem: ZoneProblem, assignment: Mapping[int, int]) -> _Score:
+    penalty = 0.0
+    hard_penalty = float(problem.A + problem.Z + 1) * 1000.0
+
+    if set(assignment) != set(problem.nodes):
+        missing = set(problem.nodes) - set(assignment)
+        extra = set(assignment) - set(problem.nodes)
+        penalty += hard_penalty * (len(missing) + len(extra))
+
+    for node in problem.nodes:
+        zone = assignment.get(node)
+        if zone not in problem.candidate_zones(node):
+            penalty += hard_penalty
+
+    for z, centroid in enumerate(problem.centroids):
+        if assignment.get(centroid) != z:
+            penalty += hard_penalty
+
+    if set(assignment) >= set(problem.nodes) and not contiguity.is_contiguous(
+        problem.G, dict(assignment), problem.centroids
+    ):
+        penalty += hard_penalty
+
+    penalty += _balance_penalty(problem, assignment)
+    penalty += _school_count_penalty(problem, assignment)
+    return _Score(
+        penalty=penalty,
+        boundary=contiguity.boundary_edges(problem.G, dict(assignment)),
+    )
+
+
+def _balance_penalty(problem: ZoneProblem, assignment: Mapping[int, int]) -> float:
+    from Zone_Generation.optimization.solvers.balance import balance_constraints
+
+    penalty = 0.0
+    for z in range(problem.Z):
+        nodes = [n for n in problem.nodes if assignment.get(n) == z]
+        students = sum(problem.students(n) for n in nodes)
+        for constraint in balance_constraints(problem):
+            value = sum(constraint.value(n) for n in nodes)
+            lower = constraint.lower_ratio * students
+            upper = constraint.upper_ratio * students
+            if value < lower:
+                penalty += lower - value
+            if value > upper:
+                penalty += value - upper
+    return penalty
+
+
+def _school_count_penalty(problem: ZoneProblem, assignment: Mapping[int, int]) -> float:
+    total = sum(problem.num_schools(n) for n in problem.nodes)
+    if total == 0:
+        return 0.0
+    avg = total / problem.Z
+    lower = max(0.0, avg - 1.0)
+    upper = avg + 1.0
+    penalty = 0.0
+    for z in range(problem.Z):
+        schools = sum(
+            problem.num_schools(n) for n in problem.nodes if assignment.get(n) == z
+        )
+        if schools < lower:
+            penalty += lower - schools
+        if schools > upper:
+            penalty += schools - upper
+    return penalty
+
+
+def _valid(score: _Score) -> bool:
+    return score.penalty <= _EPS
+
+
+def _population_target(problem: ZoneProblem) -> float:
+    return sum(problem.students(node) for node in problem.nodes) / max(1, problem.Z)
+
+
+def _population_epsilon(problem: ZoneProblem) -> float:
+    tolerances = [problem.shortage, problem.overage, 0.05]
+    finite = [float(value) for value in tolerances if math.isfinite(float(value))]
+    return max(0.01, min(max(finite) if finite else 1.0, 10.0))
+
+
+def _epsilon_schedule(epsilon: float) -> list[float]:
+    values = [epsilon, max(epsilon, 0.10), max(epsilon, 0.25), max(epsilon, 0.50)]
+    values.append(max(epsilon, 1.0))
+    out = []
+    for value in values:
+        value = float(value)
+        if value not in out:
+            out.append(value)
+    return out

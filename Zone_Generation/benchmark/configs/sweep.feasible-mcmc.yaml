@@ -11,7 +11,7 @@ optimization_defaults:
   overage: [0.85]
   shortage: [0.22]
   workers: 1
-  initialization_method: gerrychain  # gerrychain | math_prog
+  hints: gerry_chain
 
   recom_iterations: 1000000
   recom_cut_attempts: 1000

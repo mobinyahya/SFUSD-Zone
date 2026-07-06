@@ -8,7 +8,7 @@ optimization_defaults:
   choice_model: distance
   carry_over_compute: true
   max_distance: 4
-  use_hints: true
+  hints: gerry_chain
   capacity_scenario: 'A'
   racial_dev: -1
   looseness: 1.25

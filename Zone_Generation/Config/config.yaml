@@ -45,7 +45,7 @@ solve_time_limit: 60 # seconds
 random_seed: 42
 # mip, cp_int, cp_bool
 optimizer: 'cp_int'
-use_hints: True
+hints: gerry_chain
 
 # optimize with choice
 optimize_with_choice: True

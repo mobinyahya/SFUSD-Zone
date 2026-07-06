@@ -128,7 +128,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `is_local` | `False` | Data path toggle (local vs HPC) |
-| `use_hints` | `True` | Use coarse solution as hint for fine level |
+| `hints` | `gerry_chain` | Warm-start method: `voronoi`, `gerry_chain`, or `none` |
 | `random_seed` | `42` | Solver seed |
 
 Data paths: HPC at `/share/data/school_choice/`, local at `~/SFUSD/`.

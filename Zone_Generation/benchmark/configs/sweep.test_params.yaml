@@ -9,7 +9,7 @@ optimization_defaults:
   strategy: single
   solve_time_limits: [600]
   max_distance: 5
-  use_hints: true
+  hints: gerry_chain
   capacity_scenario: 'A'
   racial_dev: -1
   workers: 8

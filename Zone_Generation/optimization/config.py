@@ -35,7 +35,7 @@ class OptimizationConfig:
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
-    use_hints: bool = True
+    hints: str = "gerry_chain"
     save_solver_logs: bool = False
     save_solver_progress: bool = False
     seed: int = 42
@@ -44,16 +44,11 @@ class OptimizationConfig:
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
-    initialization_method: str = "gerrychain"
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
     recom_temperature: float = 0.0
     short_bursts_length: int = 25
     relaxed_recom_min_boundary_edges: int = 10
-    recom_initial_level: str = "BlockGroup_1"
-    recom_initial_save_level: str = "Block_0"
-    recom_initial_constraint_multiplier: float = 10.0
-    recom_initial_time_limit: float = 60.0
 
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
@@ -91,10 +86,8 @@ class OptimizationConfig:
         self.level_to_split = {int(k): int(v) for k, v in self.level_to_split.items()}
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
-        if self.initialization_method not in {"gerrychain", "math_prog"}:
-            raise ValueError(
-                "initialization_method must be one of: gerrychain, math_prog."
-            )
+        if self.hints not in {"voronoi", "gerry_chain", "none"}:
+            raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
 
     # ------------------------------------------------------------------ #
     # loading
@@ -129,7 +122,7 @@ class OptimizationConfig:
             "cp_model_probing_level": self.cp_model_probing_level,
             "symmetry_level": self.symmetry_level,
             "cp_sat_search_strategy": self.cp_sat_search_strategy,
-            "initialization_method": self.initialization_method,
+            "hints": self.hints,
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "recom_iterations": self.recom_iterations,
@@ -137,10 +130,6 @@ class OptimizationConfig:
             "recom_temperature": self.recom_temperature,
             "short_bursts_length": self.short_bursts_length,
             "relaxed_recom_min_boundary_edges": (self.relaxed_recom_min_boundary_edges),
-            "recom_initial_level": self.recom_initial_level,
-            "recom_initial_save_level": self.recom_initial_save_level,
-            "recom_initial_constraint_multiplier": self.recom_initial_constraint_multiplier,
-            "recom_initial_time_limit": self.recom_initial_time_limit,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir
@@ -155,8 +144,7 @@ class OptimizationConfig:
             solve_time_limits=self.solve_time_limits,
             carry_over_compute=self.carry_over_compute,
             gap_limits=self.gap_limits,
-            use_hints=self.use_hints,
-            initialization_method=self.initialization_method,
+            hints=self.hints,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
             max_iterations=self.max_iterations,

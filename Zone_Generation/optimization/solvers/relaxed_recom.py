@@ -42,6 +42,9 @@ class RelaxedReComSolver(ReComSolver):
             )
 
         start = time.time()
+        hint_error = self._hints_error_solution(problem, start)
+        if hint_error is not None:
+            return hint_error
         seed = int(self.options.get("seed", 42))
         rng = random.Random(seed)
         time_limit = float(self.options.get("solve_time_limit", 60.0))
@@ -154,9 +157,7 @@ class RelaxedReComSolver(ReComSolver):
             "solver": self.name,
             **self._progress_log_metadata(log_path),
             **self._solver_progress_metadata(progress),
-            "initialization_method": initial.metadata.get(
-                "initialization_method", self._initialization_method(problem)
-            ),
+            "hints": initial.metadata.get("hints", self._hints()),
             "iterations": max_iterations,
             "attempted_moves": attempted,
             "accepted_moves": accepted,
@@ -171,9 +172,6 @@ class RelaxedReComSolver(ReComSolver):
         }
         if last_proposal_error is not None:
             metadata["last_proposal_error"] = last_proposal_error
-        cache_metadata = getattr(problem, "_math_prog_initial_cache", None)
-        if cache_metadata is not None:
-            metadata["initial_cache"] = dict(cache_metadata)
 
         return ZoneSolution(
             problem=problem,
