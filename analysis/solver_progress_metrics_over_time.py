@@ -78,6 +78,8 @@ CATEGORY_MODULES = {
     "run": run_metrics.compute,
     "structure": structure.compute,
 }
+OUTLIER_MAD_MULTIPLIER = 4.0
+OUTLIER_IQR_MULTIPLIER = 2.0
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,7 @@ def plot_progress_metric(
     *,
     labels: Sequence[str] | None = None,
     separate: bool = False,
+    ignore_outliers: bool = True,
 ) -> Path:
     """Plot one metric over cumulative solver time.
 
@@ -184,8 +187,70 @@ def plot_progress_metric(
             metric,
             output_path,
             labels=labels,
+            ignore_outliers=ignore_outliers,
         )
-    return _plot_aggregated_progress_metric(df, metric, output_path, labels=labels)
+    return _plot_aggregated_progress_metric(
+        df,
+        metric,
+        output_path,
+        labels=labels,
+        ignore_outliers=ignore_outliers,
+    )
+
+
+def plot_progress_metric_by_centroids_type(
+    df: pd.DataFrame,
+    metric: str,
+    output_path: str | Path,
+    *,
+    labels: Sequence[str] | None = None,
+    separate: bool = False,
+    ignore_outliers: bool = True,
+    centroids_types: Sequence[str] | None = None,
+) -> list[Path]:
+    """Write one progress plot per ``config_centroids_type`` value."""
+
+    if "config_centroids_type" not in df.columns:
+        raise ValueError(
+            "Progress DataFrame is missing config_centroids_type; cannot write "
+            "separate zone files. Pass --no-separate-zones to write one file."
+        )
+
+    output_paths: list[Path] = []
+    zone_keys = _ordered_centroids_types(df, centroids_types)
+    centroids_column = df["config_centroids_type"].map(_centroids_type_key)
+    for centroids_type in zone_keys:
+        zone_df = df[centroids_column == centroids_type].copy()
+        if zone_df.empty:
+            continue
+        if labels is not None:
+            group_column = "task_number" if separate else "explicit_task_number"
+            label_df = zone_df[[group_column, metric]].copy()
+            label_df[metric] = pd.to_numeric(label_df[metric], errors="coerce")
+            group_count = label_df.dropna(subset=[metric])[group_column].nunique()
+            if group_count < len(labels):
+                print(
+                    f"Skipping {centroids_type}: expected {len(labels)} label group(s), "
+                    f"found {group_count}."
+                )
+                continue
+        output_paths.append(
+            plot_progress_metric(
+                zone_df,
+                metric,
+                _centroids_type_output_path(output_path, centroids_type),
+                labels=labels,
+                separate=separate,
+                ignore_outliers=ignore_outliers,
+            )
+        )
+
+    if not output_paths:
+        raise ValueError(
+            "No solver-progress rows matched any centroids_type value with enough "
+            "groups to plot."
+        )
+    return output_paths
 
 
 def _plot_separate_progress_metric(
@@ -194,6 +259,7 @@ def _plot_separate_progress_metric(
     output_path: str | Path,
     *,
     labels: Sequence[str] | None = None,
+    ignore_outliers: bool = True,
 ) -> Path:
     """Plot one line per generated task/run."""
 
@@ -210,6 +276,8 @@ def _plot_separate_progress_metric(
     plot_df = df[["task_number", "time_seconds", metric]].copy()
     plot_df[metric] = pd.to_numeric(plot_df[metric], errors="coerce")
     plot_df = plot_df.dropna(subset=[metric])
+    if ignore_outliers:
+        plot_df = _drop_upper_outliers(plot_df, metric, group_columns=["task_number"])
     if plot_df.empty:
         raise ValueError(f"Metric {metric!r} has no numeric values to plot.")
 
@@ -246,8 +314,9 @@ def _plot_aggregated_progress_metric(
     output_path: str | Path,
     *,
     labels: Sequence[str] | None = None,
+    ignore_outliers: bool = True,
 ) -> Path:
-    """Plot mean trajectory and +/-2 std-dev bands per explicit YAML task."""
+    """Plot mean trajectory and min/max run bands per explicit YAML task."""
 
     required = {"explicit_task_number", "task_number", "progress_step"}
     missing = required - set(df.columns)
@@ -259,6 +328,12 @@ def _plot_aggregated_progress_metric(
     ].copy()
     plot_df[metric] = pd.to_numeric(plot_df[metric], errors="coerce")
     plot_df = plot_df.dropna(subset=[metric])
+    if ignore_outliers:
+        plot_df = _drop_upper_outliers(
+            plot_df,
+            metric,
+            group_columns=["explicit_task_number"],
+        )
     if plot_df.empty:
         raise ValueError(f"Metric {metric!r} has no numeric values to plot.")
 
@@ -275,14 +350,12 @@ def _plot_aggregated_progress_metric(
         .agg(
             time_seconds=("time_seconds", "mean"),
             metric_mean=(metric, "mean"),
-            metric_std=(metric, "std"),
+            metric_min=(metric, "min"),
+            metric_max=(metric, "max"),
             run_count=("task_number", "nunique"),
         )
         .sort_values(["explicit_task_number", "progress_step"])
     )
-    agg["metric_std"] = agg["metric_std"].fillna(0.0)
-    agg["metric_lower"] = agg["metric_mean"] - 2.0 * agg["metric_std"]
-    agg["metric_upper"] = agg["metric_mean"] + 2.0 * agg["metric_std"]
 
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(12, 7), constrained_layout=True)
@@ -290,8 +363,8 @@ def _plot_aggregated_progress_metric(
         group_df = group_df.sort_values("time_seconds")
         x = group_df["time_seconds"].to_numpy(dtype=float)
         mean = group_df["metric_mean"].to_numpy(dtype=float)
-        lower = group_df["metric_lower"].to_numpy(dtype=float)
-        upper = group_df["metric_upper"].to_numpy(dtype=float)
+        lower = group_df["metric_min"].to_numpy(dtype=float)
+        upper = group_df["metric_max"].to_numpy(dtype=float)
         line = ax.plot(
             x,
             mean,
@@ -342,7 +415,10 @@ def main(argv: list[str] | None = None) -> None:
         "--output",
         type=Path,
         default=None,
-        help="Output PNG path. Default: analysis/plots/solver_progress_<metric>.png",
+        help=(
+            "Output PNG path. Default: analysis/plots/solver_progress_<metric>.png. "
+            "With --separate-zones, the centroids_type is appended to the filename."
+        ),
     )
     parser.add_argument(
         "--labels",
@@ -361,6 +437,26 @@ def main(argv: list[str] | None = None) -> None:
         help=(
             "Plot each generated run separately instead of aggregating by explicit "
             "YAML task. The misspelled --seperate spelling is supported as requested."
+        ),
+    )
+    parser.add_argument(
+        "--separate-zones",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Write one plot per centroids_type, aggregating only across the other "
+            "generated task fields. Enabled by default; use --no-separate-zones "
+            "to write one combined plot."
+        ),
+    )
+    parser.add_argument(
+        "--ignore-outliers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Ignore high-side metric outliers when plotting, which keeps early "
+            "very-high objective values from dominating the y-axis. Enabled by "
+            "default; use --no-ignore-outliers to plot every point."
         ),
     )
     parser.add_argument(
@@ -440,18 +536,33 @@ def main(argv: list[str] | None = None) -> None:
     csv_output.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(csv_output, index=False)
 
-    output_path = plot_progress_metric(
-        df,
-        metric,
-        output,
-        labels=args.labels,
-        separate=args.separate,
-    )
+    if args.separate_zones:
+        output_paths = plot_progress_metric_by_centroids_type(
+            df,
+            metric,
+            output,
+            labels=args.labels,
+            separate=args.separate,
+            ignore_outliers=args.ignore_outliers,
+            centroids_types=_config_centroids_types(args.config),
+        )
+    else:
+        output_paths = [
+            plot_progress_metric(
+                df,
+                metric,
+                output,
+                labels=args.labels,
+                separate=args.separate,
+                ignore_outliers=args.ignore_outliers,
+            )
+        ]
     print(f"Loaded {df['task_number'].nunique()} generated run(s).")
     print(f"Found {df['explicit_task_number'].nunique()} explicit YAML task group(s).")
     print(f"Computed {len(df)} solver-progress metric row(s).")
     print(f"Wrote {csv_output}")
-    print(f"Wrote {output_path}")
+    for output_path in output_paths:
+        print(f"Wrote {output_path}")
 
 
 def resolve_metric(metric: str, columns: Sequence[str]) -> str:
@@ -653,6 +764,48 @@ def _is_dynamic_program_metric(metric: str) -> bool:
     return metric.startswith("avg_") and metric.endswith("_per_zone")
 
 
+def _drop_upper_outliers(
+    df: pd.DataFrame,
+    metric: str,
+    *,
+    group_columns: Sequence[str],
+) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    parts = []
+    for _key, group_df in df.groupby(list(group_columns), sort=False, dropna=False):
+        threshold = _upper_outlier_threshold(group_df[metric])
+        if threshold is None:
+            parts.append(group_df)
+            continue
+
+        filtered = group_df[group_df[metric] <= threshold]
+        parts.append(filtered if not filtered.empty else group_df)
+
+    if not parts:
+        return df.iloc[0:0].copy()
+    return pd.concat(parts, axis=0).sort_index(kind="stable")
+
+
+def _upper_outlier_threshold(values: pd.Series) -> float | None:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if len(numeric) < 3:
+        return None
+
+    median = float(numeric.median())
+    mad = float((numeric - median).abs().median())
+    if mad > 0:
+        return median + OUTLIER_MAD_MULTIPLIER * 1.4826 * mad
+
+    q1 = float(numeric.quantile(0.25))
+    q3 = float(numeric.quantile(0.75))
+    iqr = q3 - q1
+    if iqr > 0:
+        return q3 + OUTLIER_IQR_MULTIPLIER * iqr
+    return None
+
+
 def _stage_progress_path(stage_dir: Path, stage: Mapping[str, Any]) -> Path | None:
     metadata = stage.get("metadata") or {}
     return _resolve_progress_path(stage_dir, metadata.get("solver_progress_path"))
@@ -660,6 +813,58 @@ def _stage_progress_path(stage_dir: Path, stage: Mapping[str, Any]) -> Path | No
 
 def _explicit_task_count(sweep: SimulationSweep) -> int:
     return len(sweep.tasks) if sweep.tasks else 1
+
+
+def _config_centroids_types(config_path: str | Path) -> list[str]:
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    centroids_types: list[str] = []
+    seen: set[str] = set()
+    for task in sweep.generate_tasks():
+        key = _centroids_type_key(task.config.get("centroids_type"))
+        if key and key not in seen:
+            centroids_types.append(key)
+            seen.add(key)
+    return centroids_types
+
+
+def _ordered_centroids_types(
+    df: pd.DataFrame,
+    centroids_types: Sequence[str] | None,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: object) -> None:
+        key = _centroids_type_key(value)
+        if key and key not in seen:
+            ordered.append(key)
+            seen.add(key)
+
+    for value in centroids_types or []:
+        add(value)
+    if "config_centroids_type" in df.columns:
+        for value in df["config_centroids_type"].dropna().tolist():
+            add(value)
+    return ordered
+
+
+def _centroids_type_key(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _centroids_type_output_path(output_path: str | Path, centroids_type: str) -> Path:
+    output = Path(output_path).expanduser()
+    suffix = output.suffix or ".png"
+    return output.with_name(
+        f"{output.stem}_{_safe_filename(str(centroids_type))}{suffix}"
+    )
 
 
 def _resolve_progress_path(base_dir: Path, path_value: Any) -> Path | None:

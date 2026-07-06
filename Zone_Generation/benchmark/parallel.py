@@ -27,7 +27,10 @@ from Zone_Generation.benchmark.runner import (
 @dataclass
 class BatchResult:
     total: int = 0
-    successful: int = 0
+    feasible: int = 0
+    optimal: int = 0
+    unknown: int = 0
+    infeasible: int = 0
     failed: int = 0
     skipped: int = 0
     total_wall_time: float = 0.0
@@ -35,12 +38,39 @@ class BatchResult:
 
     def add(self, result: TaskResult) -> None:
         self.results.append(result)
-        if result.skipped:
+        status = str(result.status or "UNKNOWN").upper()
+        if result.skipped or status == "SKIPPED":
             self.skipped += 1
-        elif result.status == "ERROR":
+        elif status == "ERROR":
             self.failed += 1
+        elif status == "FEASIBLE":
+            self.feasible += 1
+        elif status == "OPTIMAL":
+            self.optimal += 1
+        elif status == "INFEASIBLE":
+            self.infeasible += 1
         else:
-            self.successful += 1
+            self.unknown += 1
+
+    @property
+    def successful(self) -> int:
+        return self.feasible + self.optimal + self.unknown + self.infeasible
+
+    @property
+    def completed(self) -> int:
+        return self.successful + self.failed + self.skipped
+
+    def status_count_summary(self, separator: str = " ") -> str:
+        return separator.join(
+            (
+                f"num_feasible={self.feasible}",
+                f"num_optimal={self.optimal}",
+                f"num_unknown={self.unknown}",
+                f"num_infeasible={self.infeasible}",
+                f"num_failed={self.failed}",
+                f"num_skipped={self.skipped}",
+            )
+        )
 
 
 def run_sweep(sweep: SimulationSweep) -> BatchResult:
@@ -225,9 +255,7 @@ def _max_workers(execution: ExecutionConfig, task_count: int) -> int:
 
 
 def _print_progress(batch: BatchResult) -> None:
-    completed = batch.successful + batch.failed + batch.skipped
     print(
-        f"[{completed}/{batch.total}] ok={batch.successful} "
-        f"failed={batch.failed} skipped={batch.skipped}",
+        f"[{batch.completed}/{batch.total}] {batch.status_count_summary()}",
         flush=True,
     )

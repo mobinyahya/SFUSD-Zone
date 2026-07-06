@@ -36,8 +36,8 @@ def main(argv: list[str] | None = None) -> None:
             choice_metrics=sweep.choice_metrics,
         )
         print(
-            f"Completed {batch.successful}/{batch.total}; "
-            f"failed={batch.failed}, skipped={batch.skipped}, "
+            f"Completed {batch.completed}/{batch.total}; "
+            f"{batch.status_count_summary(separator=', ')}, "
             f"wall={batch.total_wall_time / 60:.1f} min"
         )
         _aggregate(output_dir, sweep)
