@@ -34,6 +34,7 @@ from Zone_Generation.benchmark.runner import (
     write_json,
 )
 from Zone_Generation.metrics import MetricsCalculator
+from Zone_Generation.optimization.solvers.recom import _race_penalty_key
 
 
 # BlockGroup_1 with 5-zone-AF is currently infeasible; this source-backed
@@ -175,6 +176,29 @@ def test_source_stage_regeneration_preserves_constraint_compliance(
     )
     assert len(loaded) == 1
     _assert_constraints_followed(loaded[0].problem, loaded[0], loaded_config)
+
+
+def test_source_recom_penalty_coefficients_have_balanced_real_graph_weight(
+    sfusd_source_run,
+):
+    solver = get_solver("recom")
+    context = solver._penalty_context(sfusd_source_run.problem)
+    keys = ["shortage", "overage", "frl", "schools"] + [
+        _race_penalty_key(ethnicity) for ethnicity in AREA_ETHNICITIES
+    ]
+
+    calibrated = []
+    for key in keys:
+        reference = context.reference_denominators[key]
+        coefficient = context.coefficients[key]
+        if reference <= TOL or coefficient <= TOL:
+            continue
+        calibrated.append(coefficient * reference)
+
+    assert calibrated, "no active Recom penalty coefficients were calibrated"
+    assert max(calibrated) == pytest.approx(min(calibrated), rel=0.05)
+    for value in calibrated:
+        assert value == pytest.approx(1.0)
 
 
 def _assert_constraints_followed(

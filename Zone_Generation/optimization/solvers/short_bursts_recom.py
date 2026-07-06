@@ -170,7 +170,7 @@ class ShortBurstsReComSolver(ReComSolver):
             "completed_bursts": bursts,
             "selected_burst_improvements": selected_improvements,
             "short_bursts_length": burst_length,
-            "short_bursts_score": "constraint_penalty_then_cut_edges",
+            "short_bursts_score": "infeasible_penalty_else_cut_edges",
             "initial_penalty": initial_score.penalty,
             "best_penalty": best_score.penalty if best_score else current_score.penalty,
             **initial.metadata,

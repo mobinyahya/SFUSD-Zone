@@ -8,10 +8,12 @@ from ortools.sat.python import cp_model
 
 from Zone_Generation.choice.models import DistanceChoiceModel
 from Zone_Generation.choice.objective import ChoiceObjective
+from Zone_Generation.Config.Constants import AREA_ETHNICITIES
 from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
+from Zone_Generation.optimization.solvers.recom import _Score, _race_penalty_key
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
 
 
@@ -52,6 +54,78 @@ def test_config_passes_cpsat_parameters_to_solver():
     assert solver.options["cp_model_probing_level"] == 1
     assert solver.options["symmetry_level"] == 0
     assert solver.options["cp_sat_search_strategy"] == "distance_to_centroid"
+
+
+def test_recom_score_ordering_separates_feasibility_from_cut_edges():
+    assert _Score(penalty=0.0, boundary=2) < _Score(penalty=0.0, boundary=3)
+    assert _Score(penalty=1.0, boundary=100) < _Score(penalty=2.0, boundary=0)
+    assert _Score(penalty=0.0, boundary=100) < _Score(penalty=1.0, boundary=0)
+
+    first = _Score(penalty=1.0, boundary=0)
+    second = _Score(penalty=1.0, boundary=100)
+    assert first <= second
+    assert second <= first
+
+
+def test_recom_penalty_coefficients_include_each_constraint_family():
+    problem = make_grid_problem(3, 3)
+    solver = get_solver("recom")
+
+    context = solver._penalty_context(problem)
+
+    expected = {"shortage", "overage", "frl", "schools"} | {
+        _race_penalty_key(ethnicity) for ethnicity in AREA_ETHNICITIES
+    }
+    assert expected <= set(context.coefficients)
+    assert all(context.coefficients[key] > 0 for key in expected)
+
+
+def test_recom_balance_penalty_uses_target_difference_after_violation():
+    problem = make_grid_problem(
+        2,
+        2,
+        shortage=0.2,
+        overage=10.0,
+        frl_dev=0.1,
+        racial_dev=-1,
+    )
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    for node in (0, 1):
+        problem.G.nodes[node]["ge_capacity"] = 0.75
+        problem.G.nodes[node]["FRL"] = 0.35
+
+    solver = get_solver("recom")
+    context = solver._penalty_context(problem)
+    components = solver._constraint_penalty_components(problem, assignment)
+
+    assert components["shortage"] == pytest.approx(
+        (2.0 - 1.5) * context.coefficients["shortage"]
+    )
+    assert components["frl"] == pytest.approx((1.0 - 0.7) * context.coefficients["frl"])
+    assert "overage" not in components
+
+
+def test_recom_capacity_overage_has_separate_penalty_coefficient():
+    problem = make_grid_problem(
+        2,
+        2,
+        shortage=10.0,
+        overage=0.2,
+        frl_dev=1.0,
+        racial_dev=-1,
+    )
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    for node in (0, 1):
+        problem.G.nodes[node]["ge_capacity"] = 1.25
+
+    solver = get_solver("recom")
+    context = solver._penalty_context(problem)
+    components = solver._constraint_penalty_components(problem, assignment)
+
+    assert components["overage"] == pytest.approx(
+        (2.5 - 2.0) * context.coefficients["overage"]
+    )
+    assert "shortage" not in components
 
 
 def test_cpsat_solver_applies_configured_cp_sat_parameters():
