@@ -38,6 +38,7 @@ class OptimizationConfig:
     hints: str = "gerry_chain"
     save_solver_logs: bool = False
     save_solver_progress: bool = False
+    secondary_objective: bool = False
     seed: int = 42
     workers: int = 8
     linearization_level: int | None = None
@@ -125,6 +126,7 @@ class OptimizationConfig:
             "hints": self.hints,
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
+            "secondary_objective": self.secondary_objective,
             "recom_iterations": self.recom_iterations,
             "recom_cut_attempts": self.recom_cut_attempts,
             "recom_temperature": self.recom_temperature,

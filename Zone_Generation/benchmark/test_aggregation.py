@@ -74,6 +74,32 @@ metrics:
     assert sweep.metrics.compute_stage_metrics is True
 
 
+def test_sweep_yaml_accepts_secondary_objective_task(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        f"""
+name: unit-test
+mode: run
+optimization_defaults:
+  levels: ['BlockGroup_0']
+  graphs_dir: '{tmp_path / "graphs"}'
+tasks:
+  - solver: 'cp_bool'
+    secondary_objective: true
+execution:
+  output_dir: '{tmp_path / "out"}'
+""",
+        encoding="utf-8",
+    )
+
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    tasks = sweep.generate_tasks()
+
+    assert len(tasks) == 1
+    assert tasks[0].config["solver"] == "cp_bool"
+    assert tasks[0].config["secondary_objective"] is True
+
+
 def test_sweep_yaml_rejects_aggregate_only_mode(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(

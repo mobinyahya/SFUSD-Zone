@@ -10,6 +10,7 @@ from Zone_Generation.choice.models import DistanceChoiceModel
 from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
 from Zone_Generation.optimization.config import OptimizationConfig
+from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
@@ -46,6 +47,7 @@ def test_config_passes_cpsat_parameters_to_solver():
         cp_model_probing_level=1,
         symmetry_level=0,
         cp_sat_search_strategy="distance_to_centroid",
+        secondary_objective=True,
     )
 
     solver = config.make_solver()
@@ -54,6 +56,26 @@ def test_config_passes_cpsat_parameters_to_solver():
     assert solver.options["cp_model_probing_level"] == 1
     assert solver.options["symmetry_level"] == 0
     assert solver.options["cp_sat_search_strategy"] == "distance_to_centroid"
+    assert solver.options["secondary_objective"] is True
+
+
+def test_cp_bool_solver_supports_secondary_objective():
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(
+        "cp_bool",
+        solve_time_limit=10,
+        workers=1,
+        secondary_objective=True,
+    )
+
+    solution = solver.solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    _check_valid(problem, solution)
+    assert solution.objective == contiguity.boundary_edges(
+        problem.G,
+        solution.assignment,
+    )
 
 
 def test_recom_score_ordering_separates_feasibility_from_cut_edges():
@@ -616,6 +638,24 @@ def test_mip_solver():
         if "gurobi" in type(exc).__module__.lower():
             pytest.skip(f"Gurobi unavailable: {exc}")
         raise
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    _check_valid(problem, solution)
+
+
+@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
+def test_mip_solver_supports_secondary_objective():
+    problem = make_grid_problem(3, 3)
+    try:
+        solution = get_solver(
+            "mip",
+            solve_time_limit=10,
+            secondary_objective=True,
+        ).solve(problem)
+    except Exception as exc:  # no usable Gurobi license in this environment
+        if "gurobi" in type(exc).__module__.lower():
+            pytest.skip(f"Gurobi unavailable: {exc}")
+        raise
+
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     _check_valid(problem, solution)
 

@@ -525,6 +525,25 @@ class CpBoolSolver(_CpSatSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
+        if self.options.get("secondary_objective", False):
+            boundary_vars = []
+            for u, v in problem.G.edges():
+                zones = problem.candidate_zones(u) | problem.candidate_zones(v)
+                b = m.NewBoolVar(f"bnd_{u}_{v}")
+                for z in zones:
+                    xu = x.get((z, u))
+                    xv = x.get((z, v))
+                    if xu is not None and xv is not None:
+                        m.Add(b >= xu - xv)
+                        m.Add(b >= xv - xu)
+                    elif xu is not None:
+                        m.Add(b >= xu)
+                    elif xv is not None:
+                        m.Add(b >= xv)
+                boundary_vars.append(b)
+            m.Minimize(sum(boundary_vars))
+            return
+
         boundary_vars = []
         for u, v in problem.G.edges():
             zones = problem.candidate_zones(u) | problem.candidate_zones(v)
@@ -532,7 +551,7 @@ class CpBoolSolver(_CpSatSolver):
             for z in zones:
                 xu = x.get((z, u))
                 xv = x.get((z, v))
-                
+
                 if xu is not None and xv is not None:
                     # Direction 1: u is assigned to zone z, but v is not
                     m.Add(b == 1).OnlyEnforceIf([xu, xv.Not()])
@@ -544,7 +563,7 @@ class CpBoolSolver(_CpSatSolver):
                 elif xv is not None:
                     # z is only a candidate for v. If v takes it, u cannot, so edge is cut.
                     m.Add(b == 1).OnlyEnforceIf(xv)
-                    
+
             boundary_vars.append(b)
         m.Minimize(sum(boundary_vars))
 

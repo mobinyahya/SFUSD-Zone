@@ -280,6 +280,42 @@ class MipSolver(Solver):
     def _add_boundary_objective(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
+        if self.options.get("secondary_objective", False):
+            boundary = []
+            for u, v in problem.G.edges():
+                u_ord, v_ord = (u, v) if u < v else (v, u)
+                b = m.addVar(
+                    vtype=GRB.CONTINUOUS,
+                    lb=0.0,
+                    name=f"bnd_{u_ord}_{v_ord}",
+                )
+
+                z_vars = []
+                all_zones = problem.candidate_zones(u_ord) | problem.candidate_zones(
+                    v_ord
+                )
+                for z in all_zones:
+                    z_var = m.addVar(
+                        vtype=GRB.CONTINUOUS,
+                        lb=0.0,
+                        name=f"z_{u_ord}_{v_ord}_{z}",
+                    )
+                    xu = x.get((z, u_ord))
+                    xv = x.get((z, v_ord))
+                    if xu is not None and xv is not None:
+                        m.addConstr(xu - xv <= z_var)
+                    elif xu is not None:
+                        m.addConstr(xu <= z_var)
+                    elif xv is not None:
+                        m.addConstr(-xv <= z_var)
+                    z_vars.append(z_var)
+
+                m.addConstr(b == gp.quicksum(z_vars))
+                boundary.append(b)
+
+            m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
+            return
+
         boundary = []
         for u, v in problem.G.edges():
             b = m.addVar(vtype=GRB.BINARY, name=f"bnd_{u}_{v}")
