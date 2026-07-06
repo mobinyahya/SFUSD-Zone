@@ -407,7 +407,7 @@ def main(argv: list[str] | None = None) -> None:
         "--csv-output",
         type=Path,
         default=None,
-        help="Optional path to save the computed progress metrics DataFrame.",
+        help="CSV output path. Default: analysis/plots/solver_progress_<metric>.csv",
     )
     args = parser.parse_args(argv)
 
@@ -433,10 +433,12 @@ def main(argv: list[str] | None = None) -> None:
     output = args.output or (
         DEFAULT_OUTPUT_DIR / f"solver_progress_{_safe_filename(metric)}.png"
     )
-    if args.csv_output is not None and args.input_csv is None:
-        csv_output = Path(args.csv_output).expanduser()
-        csv_output.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(csv_output, index=False)
+    csv_output = args.csv_output or (
+        DEFAULT_OUTPUT_DIR / f"solver_progress_{_safe_filename(metric)}.csv"
+    )
+    csv_output = Path(csv_output).expanduser()
+    csv_output.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(csv_output, index=False)
 
     output_path = plot_progress_metric(
         df,
@@ -448,8 +450,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Loaded {df['task_number'].nunique()} generated run(s).")
     print(f"Found {df['explicit_task_number'].nunique()} explicit YAML task group(s).")
     print(f"Computed {len(df)} solver-progress metric row(s).")
-    if args.csv_output is not None and args.input_csv is None:
-        print(f"Wrote {Path(args.csv_output).expanduser()}")
+    print(f"Wrote {csv_output}")
     print(f"Wrote {output_path}")
 
 

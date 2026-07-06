@@ -18,9 +18,9 @@ sweep:
   centroids_type: ['5-zone-AF', '6-zone-3',  '8-zone-24', '10-zone-3',  '13-zone-6', '18-zone-1']
   frl_dev: [0.15]
   seed: [42, 14, 33]
-  overage: [0.15, 0.2, 0.25]
-  shortage: [0.15, 0.2, 0.25]
-  solver: ['cp_int', 'cp_bool']
+  overage: [0.15]
+  shortage: [0.15]
+  solver: ['cp_bool']
 
 
 tasks:
@@ -28,15 +28,15 @@ tasks:
   - cp_sat_search_strategy: distance_to_centroid # use dif search strat
   - cp_model_probing_level: 3 # more probing
   - strategy: single # base line 
-  # - linearization_level: 2 # multiple strats
-  #   cp_sat_search_strategy: distance_to_centroid
-  #   cp_model_probing_level: 3 
+  - linearization_level: 2 # multiple strats
+    cp_sat_search_strategy: distance_to_centroid
+    cp_model_probing_level: 3 
 
 
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/test_cp_params/'
+  output_dir: '/share/data/school_choice/local_runs/test_cp_params_2/'
   capacity: 48             # total solver-thread slots available on the machine
   max_workers: 8            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth

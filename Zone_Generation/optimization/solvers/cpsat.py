@@ -518,13 +518,19 @@ class CpBoolSolver(_CpSatSolver):
             for z in zones:
                 xu = x.get((z, u))
                 xv = x.get((z, v))
+                
                 if xu is not None and xv is not None:
-                    m.Add(b >= xu - xv)
-                    m.Add(b >= xv - xu)
+                    # Direction 1: u is assigned to zone z, but v is not
+                    m.Add(b == 1).OnlyEnforceIf([xu, xv.Not()])
+                    # Direction 2: v is assigned to zone z, but u is not
+                    m.Add(b == 1).OnlyEnforceIf([xv, xu.Not()])
                 elif xu is not None:
-                    m.Add(b >= xu)
+                    # z is only a candidate for u. If u takes it, v cannot, so edge is cut.
+                    m.Add(b == 1).OnlyEnforceIf(xu)
                 elif xv is not None:
-                    m.Add(b >= xv)
+                    # z is only a candidate for v. If v takes it, u cannot, so edge is cut.
+                    m.Add(b == 1).OnlyEnforceIf(xv)
+                    
             boundary_vars.append(b)
         m.Minimize(sum(boundary_vars))
 
