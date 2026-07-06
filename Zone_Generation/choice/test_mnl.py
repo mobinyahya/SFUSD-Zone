@@ -44,6 +44,64 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
 
 
+@pytest.mark.parametrize("method", ["max", "logsum"])
+def test_mnl_block_impacts_match_direct_add_remove_deltas(
+    tmp_path, monkeypatch, method
+):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1"],
+            "100-GE-KG": [2.0],
+            "200-GE-KG": [4.0],
+            "300-GE-KG": [1.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    problem.G.nodes[1]["school_ids"] = [300]
+    problem.G.nodes[1]["num_schools"] = 1
+    problem.G.graph["school_data"][300] = {}
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
+    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
+    evaluator = mnl.MNLZoningUtility(method=method)
+
+    prepared = evaluator._prepare(problem, assignment)
+    impacts = evaluator._block_impacts(
+        problem,
+        assignment,
+        prepared.merged,
+        prepared.zone_to_cols,
+        prepared.student_area_col,
+    )
+
+    def utility(cols):
+        return float(evaluator._utilities_for_cols(prepared.merged, cols)[0])
+
+    zone_cols = prepared.zone_to_cols[0]
+    school_100_cols = evaluator.school_to_cols["100"]
+    school_200_cols = evaluator.school_to_cols["200"]
+    baseline = utility(zone_cols)
+    added_cols = zone_cols + [col for col in school_200_cols if col not in zone_cols]
+    remaining_cols = [col for col in zone_cols if col not in school_100_cols]
+
+    assert impacts["1001"]["200"]["add"] == pytest.approx(
+        utility(added_cols) - baseline
+    )
+    assert impacts["1001"]["100"]["remove"] == pytest.approx(
+        baseline - utility(remaining_cols)
+    )
+    assert impacts["1001"]["100"]["remove"] >= 0.0
+
+
 def test_configured_choice_model_defaults_to_mnl():
     assert isinstance(get_configured_choice_model({}), MNLChoiceModel)
 

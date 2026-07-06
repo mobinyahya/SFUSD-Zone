@@ -17,12 +17,12 @@ priority-weights:
     lp: 0
 
 sibling-access: false
-zone-building-blocks: block_group
+zone-building-blocks: block
 designate: true
 
 ties-options:
   - STB
 
 iterations:
-  start: 0
-  end: 19
+  start: 1
+  end: 5

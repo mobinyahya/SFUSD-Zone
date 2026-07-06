@@ -232,26 +232,17 @@ class MNLZoningUtility:
                 ]
                 if not sid_cols:
                     continue
-                sid_utils = self._utilities_for_cols(group, sid_cols)
                 is_in_zone = school_to_current_zone.get(sid) == zone
-                if self.method == "logsum":
-                    diff = sid_utils - baseline
-                    if is_in_zone:
-                        safe_diff = np.minimum(diff, -1e-15)
-                        student_impacts = np.log1p(-np.exp(safe_diff))
-                        impact_type = "remove"
-                    else:
-                        student_impacts = _log1pexp(diff)
-                        impact_type = "add"
+                if is_in_zone:
+                    remaining_cols = [col for col in cols if col not in sid_cols]
+                    new_utils = self._utilities_for_cols(group, remaining_cols)
+                    student_impacts = baseline - new_utils
+                    impact_type = "remove"
                 else:
-                    if is_in_zone:
-                        remaining_cols = [col for col in cols if col not in sid_cols]
-                        new_utils = self._utilities_for_cols(group, remaining_cols)
-                        student_impacts = new_utils - baseline
-                        impact_type = "remove"
-                    else:
-                        student_impacts = np.maximum(baseline, sid_utils) - baseline
-                        impact_type = "add"
+                    added_cols = cols + [col for col in sid_cols if col not in cols]
+                    new_utils = self._utilities_for_cols(group, added_cols)
+                    student_impacts = new_utils - baseline
+                    impact_type = "add"
 
                 student_impacts = _finite_array(student_impacts, 0.0)
                 for block_id, impact in zip(block_keys, student_impacts):
