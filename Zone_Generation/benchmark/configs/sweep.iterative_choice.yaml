@@ -2,39 +2,38 @@ name: iterative-choice
 mode: run
 
 optimization_defaults:
-  levels: ['Block_1']     # use ['BlockGroup_0'] for full fine-grained test
+  levels: ['Block_2']     # use ['BlockGroup_0'] for full fine-grained test
   strategy: 'iterative_choice'
   linearization_level: 2
 
   frl_dev: 0.15
   racial_dev: -1
-  overage: 0.15
-  shortage: 0.15
+  overage: 0.3
+  shortage: 0.3
   max_distance: 4
 
   solve_time_limits: [300]
   hints: gerry_chain
   workers: 8
 
-  max_iterations: 25
+  max_iterations: 15
   tolerance: 0
 
   choice_model: 'mnl'
   choice_utility_scale: 100.0
 
 sweep:
-  centroids_type: ['6-zone-3',  '8-zone-24', '10-zone-3',  '13-zone-6']
-  seed: [42, 14, 33]
-  solver: ['cp_bool', 'mip']
+  centroids_type: ['6-zone-3']
+  seed: [42]
+  solver: ['cp_bool']
 
 tasks:
   - choice_model_method: 'logsum'
-  - choice_model_method: 'max'
   - strategy: 'single'
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/iterative_choice_updated_5'
+  output_dir: '/share/data/school_choice/local_runs/iterative_choice_updated_6'
   capacity: 40
   max_workers: 5
   max_tasks_per_worker: 5

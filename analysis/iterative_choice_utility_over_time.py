@@ -274,9 +274,9 @@ def single_prechoice_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
     if candidates.empty:
         return pd.DataFrame()
 
-    best_indexes = candidates.groupby("centroids_type", dropna=False)[
-        "utility"
-    ].idxmax()
+    best_indexes = candidates.groupby(
+        ["centroids_type", "solver", "choice_model_method"], dropna=False
+    )["utility"].idxmax()
     baselines = candidates.loc[best_indexes].copy()
     baselines.rename(columns={"utility": "baseline_utility"}, inplace=True)
     return baselines.reset_index(drop=True)
@@ -452,7 +452,12 @@ def plot_trajectories_by_group(
                 == choice_model_method
             )
         ]
-        baseline = baseline_for_centroid(baselines, centroids_type)
+        baseline = baseline_for_group(
+            baselines,
+            centroids_type,
+            solver,
+            choice_model_method,
+        )
         output_path = centroid_output_path(
             output_dir,
             output_name,
@@ -567,13 +572,22 @@ def plot_group_order(trajectories: pd.DataFrame) -> list[tuple[Any, str, str]]:
     )
 
 
-def baseline_for_centroid(
+def baseline_for_group(
     baselines: pd.DataFrame,
     centroids_type: Any,
+    solver: str,
+    choice_model_method: str,
 ) -> pd.Series | None:
     if baselines.empty:
         return None
-    matches = baselines[baselines["centroids_type"] == centroids_type]
+    matches = baselines[
+        (baselines["centroids_type"] == centroids_type)
+        & (baselines["solver"].fillna("").astype(str) == solver)
+        & (
+            baselines["choice_model_method"].fillna("").astype(str)
+            == choice_model_method
+        )
+    ]
     if matches.empty:
         return None
     return matches.iloc[0]

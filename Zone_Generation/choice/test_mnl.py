@@ -102,6 +102,46 @@ def test_mnl_block_impacts_match_direct_add_remove_deltas(
     assert impacts["1001"]["100"]["remove"] >= 0.0
 
 
+@pytest.mark.parametrize("method", ["max", "logsum"])
+def test_mnl_choice_cuts_upper_bound_substitute_school(
+    tmp_path, monkeypatch, method
+):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1"],
+            "100-GE-KG": [10.0],
+            "200-GE-KG": [9.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    incumbent = {0: 0, 1: 0, 2: 1, 3: 1}
+    alternative = {0: 0, 1: 1, 2: 1, 3: 1}
+    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
+    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
+    evaluator = mnl.MNLZoningUtility(method=method)
+
+    evaluated = evaluator.evaluate_with_cuts(problem, incumbent)
+    cut = next(cut for cut in evaluated.cuts if cut.node == 1 and cut.zone == 1)
+    rhs = cut.constant + sum(
+        term.coefficient
+        for term in cut.terms
+        if alternative.get(term.node) == term.zone
+    )
+    true_utility = _node_utility(evaluator, problem, alternative, node=1)
+
+    assert rhs >= true_utility - 1e-9
+    assert rhs == pytest.approx(true_utility)
+
+
 def test_configured_choice_model_defaults_to_mnl():
     assert isinstance(get_configured_choice_model({}), MNLChoiceModel)
 
@@ -120,3 +160,12 @@ def test_log_helpers_handle_extreme_values_without_runtime_warnings():
     assert softplus[0] == pytest.approx(1000.0)
     assert softplus[1] == pytest.approx(0.0)
     assert softplus[2] == pytest.approx(np.log(2.0))
+
+
+def _node_utility(evaluator, problem, assignment, node: int) -> float:
+    utility = evaluator._preassignment_utility(problem, assignment)
+    return sum(
+        float(utility.block_utilities.loc[block_id])
+        for block_id in mnl._node_area_ids(problem.G.nodes[node])
+        if block_id in utility.block_utilities.index
+    )

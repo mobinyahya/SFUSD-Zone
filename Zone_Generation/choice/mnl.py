@@ -224,6 +224,13 @@ class MNLZoningUtility:
             zone = int(zone)
             cols = zone_to_cols.get(zone, [])
             baseline = self._utilities_for_cols(group, cols)
+            full_cols = [
+                col
+                for sid in all_schools
+                for col in self.school_to_cols[sid]
+                if col in group.columns
+            ]
+            full_baseline = self._utilities_for_cols(group, full_cols)
             block_keys = group[student_area_col].map(_area_key).to_numpy()
 
             for sid in all_schools:
@@ -232,9 +239,15 @@ class MNLZoningUtility:
                 ]
                 if not sid_cols:
                     continue
+                sid_col_set = set(sid_cols)
+                full_remaining_cols = [
+                    col for col in full_cols if col not in sid_col_set
+                ]
+                full_removed_utils = self._utilities_for_cols(group, full_remaining_cols)
+                full_remove_impacts = full_baseline - full_removed_utils
                 is_in_zone = school_to_current_zone.get(sid) == zone
                 if is_in_zone:
-                    remaining_cols = [col for col in cols if col not in sid_cols]
+                    remaining_cols = [col for col in cols if col not in sid_col_set]
                     new_utils = self._utilities_for_cols(group, remaining_cols)
                     student_impacts = baseline - new_utils
                     impact_type = "remove"
@@ -245,14 +258,22 @@ class MNLZoningUtility:
                     impact_type = "add"
 
                 student_impacts = _finite_array(student_impacts, 0.0)
-                for block_id, impact in zip(block_keys, student_impacts):
+                full_remove_impacts = _finite_array(full_remove_impacts, 0.0)
+                for block_id, impact, full_remove in zip(
+                    block_keys, student_impacts, full_remove_impacts
+                ):
                     if block_id is None:
                         continue
                     school_map = impacts.setdefault(block_id, {})
-                    type_map = school_map.setdefault(sid, {"add": 0.0, "remove": 0.0})
+                    type_map = school_map.setdefault(
+                        sid, {"add": 0.0, "remove": 0.0, "full_remove": 0.0}
+                    )
                     type_map[impact_type] = type_map.get(impact_type, 0.0) + float(
                         impact
                     )
+                    type_map["full_remove"] = type_map.get(
+                        "full_remove", 0.0
+                    ) + float(full_remove)
         return impacts
 
     def _build_cuts(
@@ -281,9 +302,12 @@ class MNLZoningUtility:
                     value += float(block_utilities.loc[block_id])
                     has_data = True
                 for sid, by_type in block_impacts.get(block_id, {}).items():
-                    target = total_impacts.setdefault(sid, {"add": 0.0, "remove": 0.0})
+                    target = total_impacts.setdefault(
+                        sid, {"add": 0.0, "remove": 0.0, "full_remove": 0.0}
+                    )
                     target["add"] += float(by_type.get("add", 0.0))
                     target["remove"] += float(by_type.get("remove", 0.0))
+                    target["full_remove"] += float(by_type.get("full_remove", 0.0))
 
             assigned_zone = assignment.get(node)
             current_schools = zone_current_schools.get(assigned_zone, set())
@@ -295,7 +319,7 @@ class MNLZoningUtility:
                 if school_node is None:
                     continue
                 if sid in current_schools:
-                    grad = float(by_type.get("remove", 0.0))
+                    grad = float(by_type.get("full_remove", 0.0))
                     constant -= grad
                 else:
                     grad = float(by_type.get("add", 0.0))

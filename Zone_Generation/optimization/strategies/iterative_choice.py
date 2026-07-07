@@ -35,8 +35,8 @@ class IterativeChoiceStrategy(Strategy):
         cuts = []
 
         solutions: list[ZoneSolution] = []
-        best_model_solution: ZoneSolution | None = None
-        best_model_utility = float("-inf")
+        best_choice_solution: ZoneSolution | None = None
+        best_choice_utility = float("-inf")
         last_feasible: ZoneSolution | None = None
         previous_model_utility: float | None = None
 
@@ -47,7 +47,7 @@ class IterativeChoiceStrategy(Strategy):
                 upper_bound=upper_bound,
                 scale=scale,
             )
-            hint_solution = best_model_solution or last_feasible
+            hint_solution = best_choice_solution or last_feasible
             hint = (
                 hint_solution.assignment
                 if hint_solution is not None and apply_hints
@@ -75,6 +75,9 @@ class IterativeChoiceStrategy(Strategy):
             sol.metadata.update(
                 {
                     "choice_model_utility": model_utility,
+                    "choice_model_utility_gap": (
+                        model_utility - utility if model_utility is not None else None
+                    ),
                     "choice_utility": utility,
                     "choice_cuts_added": len(new_cuts),
                     "choice_cuts_total": len(cuts) + len(new_cuts),
@@ -82,9 +85,9 @@ class IterativeChoiceStrategy(Strategy):
             )
             solutions.append(sol)
             last_feasible = sol
-            if model_utility is not None and model_utility > best_model_utility:
-                best_model_utility = model_utility
-                best_model_solution = sol
+            if utility > best_choice_utility:
+                best_choice_utility = utility
+                best_choice_solution = sol
 
             if iteration > 0:
                 if model_utility is None or previous_model_utility is None:
