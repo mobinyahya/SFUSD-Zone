@@ -16,7 +16,7 @@ optimization_defaults:
   overage: 0.15
   shortage: 0.15
   recom_iterations: 1000000000
-  recom_cut_attempts: 10000
+  recom_cut_attempts: 10
 
 sweep:
   centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']

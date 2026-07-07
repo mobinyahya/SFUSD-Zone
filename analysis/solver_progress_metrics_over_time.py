@@ -168,8 +168,8 @@ def plot_progress_metric(
 ) -> Path:
     """Plot one metric over cumulative solver time.
 
-    By default, generated runs are aggregated by the explicit YAML task index.
-    With ``separate=True``, each generated run is plotted separately.
+    By default, generated runs are colored and labeled by explicit YAML task.
+    With ``separate=True``, each generated run gets its own legend label.
     """
 
     if df.empty:
@@ -189,7 +189,7 @@ def plot_progress_metric(
             labels=labels,
             ignore_outliers=ignore_outliers,
         )
-    return _plot_aggregated_progress_metric(
+    return _plot_grouped_progress_metric(
         df,
         metric,
         output_path,
@@ -308,7 +308,7 @@ def _plot_separate_progress_metric(
     return output
 
 
-def _plot_aggregated_progress_metric(
+def _plot_grouped_progress_metric(
     df: pd.DataFrame,
     metric: str,
     output_path: str | Path,
@@ -316,16 +316,14 @@ def _plot_aggregated_progress_metric(
     labels: Sequence[str] | None = None,
     ignore_outliers: bool = True,
 ) -> Path:
-    """Plot mean trajectory and min/max run bands per explicit YAML task."""
+    """Plot every generated run, colored by explicit YAML task."""
 
-    required = {"explicit_task_number", "task_number", "progress_step"}
+    required = {"explicit_task_number", "task_number"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Progress DataFrame is missing columns: {sorted(missing)}")
 
-    plot_df = df[
-        ["explicit_task_number", "task_number", "progress_step", "time_seconds", metric]
-    ].copy()
+    plot_df = df[["explicit_task_number", "task_number", "time_seconds", metric]].copy()
     plot_df[metric] = pd.to_numeric(plot_df[metric], errors="coerce")
     plot_df = plot_df.dropna(subset=[metric])
     if ignore_outliers:
@@ -337,7 +335,10 @@ def _plot_aggregated_progress_metric(
     if plot_df.empty:
         raise ValueError(f"Metric {metric!r} has no numeric values to plot.")
 
-    groups = list(dict.fromkeys(plot_df["explicit_task_number"].tolist()))
+    groups = [
+        int(group)
+        for group in dict.fromkeys(plot_df["explicit_task_number"].tolist())
+    ]
     if labels is not None and len(labels) != len(groups):
         raise ValueError(f"Expected {len(groups)} label(s), got {len(labels)}.")
     label_by_group = {
@@ -345,44 +346,29 @@ def _plot_aggregated_progress_metric(
         for idx, group in enumerate(groups)
     }
 
-    agg = (
-        plot_df.groupby(["explicit_task_number", "progress_step"], as_index=False)
-        .agg(
-            time_seconds=("time_seconds", "mean"),
-            metric_mean=(metric, "mean"),
-            metric_min=(metric, "min"),
-            metric_max=(metric, "max"),
-            run_count=("task_number", "nunique"),
-        )
-        .sort_values(["explicit_task_number", "progress_step"])
-    )
-
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(12, 7), constrained_layout=True)
-    for group, group_df in agg.groupby("explicit_task_number", sort=False):
-        group_df = group_df.sort_values("time_seconds")
-        x = group_df["time_seconds"].to_numpy(dtype=float)
-        mean = group_df["metric_mean"].to_numpy(dtype=float)
-        lower = group_df["metric_min"].to_numpy(dtype=float)
-        upper = group_df["metric_max"].to_numpy(dtype=float)
-        line = ax.plot(
-            x,
-            mean,
-            marker="o",
-            linewidth=2.3,
-            label=label_by_group[int(group)],
-        )[0]
-        ax.fill_between(
-            x,
-            lower,
-            upper,
-            color=line.get_color(),
-            alpha=0.18,
-            linewidth=0,
+    palette = sns.color_palette(n_colors=len(groups))
+    color_by_group = dict(zip(groups, palette, strict=False))
+    labeled_groups: set[int] = set()
+    for (group, _task_number), run_df in plot_df.groupby(
+        ["explicit_task_number", "task_number"], sort=False
+    ):
+        run_df = run_df.sort_values("time_seconds")
+        group = int(group)
+        label = label_by_group[group] if group not in labeled_groups else None
+        ax.plot(
+            run_df["time_seconds"],
+            run_df[metric],
+            linewidth=1.6,
+            alpha=0.8,
+            color=color_by_group[group],
+            label=label,
         )
+        labeled_groups.add(group)
 
     title = _metric_title(metric)
-    ax.set_title(f"Mean {title} Over Solver Progress")
+    ax.set_title(f"{title} Over Solver Progress")
     ax.set_xlabel("Solver time (seconds)")
     ax.set_ylabel(title)
     ax.set_xlim(left=0)
@@ -435,8 +421,9 @@ def main(argv: list[str] | None = None) -> None:
         dest="separate",
         action="store_true",
         help=(
-            "Plot each generated run separately instead of aggregating by explicit "
-            "YAML task. The misspelled --seperate spelling is supported as requested."
+            "Give each generated run its own legend label instead of coloring and "
+            "labeling runs by explicit YAML task. The misspelled --seperate spelling "
+            "is supported as requested."
         ),
     )
     parser.add_argument(
@@ -444,9 +431,8 @@ def main(argv: list[str] | None = None) -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Write one plot per centroids_type, aggregating only across the other "
-            "generated task fields. Enabled by default; use --no-separate-zones "
-            "to write one combined plot."
+            "Write one plot per centroids_type. Enabled by default; use "
+            "--no-separate-zones to write one combined plot."
         ),
     )
     parser.add_argument(
