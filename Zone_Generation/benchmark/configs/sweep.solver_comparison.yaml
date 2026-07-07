@@ -8,20 +8,20 @@ optimization_defaults:
   save_solver_progress: true
   strategy: single
   solve_time_limits: [600]
-  max_distance: 4
+  max_distance: 4.52
   hints: gerry_chain
   workers: 1
   racial_dev: -1
   frl_dev: 0.15
   overage: 0.15
   shortage: 0.15
-  levels: [Block_0]
   recom_iterations: 1000000000
   recom_cut_attempts: 10000
 
 sweep:
   centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']
   seed: [1, 2, 3, 4]
+  levels: [Block_0, Block_1]
 
 tasks:
   - solver: 'mip'
@@ -31,7 +31,7 @@ tasks:
     linearization_level: 2
     workers: 8
   - solver: 'relaxed_recom'
-  - solver: 'short_bursts'
+  - solver: 'short_bursts_recom'
     short_bursts_length: 25
 
 

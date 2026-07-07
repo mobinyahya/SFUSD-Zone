@@ -185,7 +185,7 @@ class MipSolver(Solver):
         for node in problem.nodes:
             choices = [(z, node) for z in problem.candidate_zones(node)]
             if not choices:
-                raise ValueError(f"Node {node} has no candidate zones (infeasible).")
+                raise problem.no_candidate_zones_error(node)
             m.addConstr(gp.quicksum(x[(z, i)] for (z, i) in choices) == 1)
 
     def _add_centroid_constraints(

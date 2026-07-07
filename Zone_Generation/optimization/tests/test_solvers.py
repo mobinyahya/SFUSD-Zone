@@ -522,6 +522,33 @@ def test_short_bursts_recom_uses_explicit_hint():
     assert solution.metadata["hints"] == "provided"
 
 
+def test_relaxed_recom_keeps_repaired_initial_assignment_even_if_infeasible():
+    problem = make_grid_problem(3, 3, candidates={2: {1}})
+    assignment = {
+        0: 0,
+        1: 0,
+        2: 1,
+        3: 0,
+        4: 0,
+        5: 0,
+        6: 0,
+        7: 0,
+        8: 1,
+    }
+    solver = get_solver("relaxed_recom")
+
+    prepared = solver._prepare_relaxed_assignment(problem, assignment)
+
+    assert contiguity.is_contiguous(problem.G, prepared, problem.centroids)
+    assert prepared[2] == 0
+    assert prepared[2] not in problem.candidate_zones(2)
+    assert not contiguity.is_contiguous(
+        problem.G,
+        solver._complete_assignment(problem, prepared),
+        problem.centroids,
+    )
+
+
 def test_recom_rejects_choice_objective():
     problem = make_grid_problem(3, 3)
     problem.choice_objective = ChoiceObjective(

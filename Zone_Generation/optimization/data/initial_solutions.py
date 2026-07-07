@@ -154,6 +154,8 @@ def complete_assignment(
         if zone in candidates:
             assignment[node] = int(zone)
         else:
+            if not candidates:
+                raise problem.no_candidate_zones_error(node)
             assignment[node] = min(
                 candidates,
                 key=lambda z: problem.distance(problem.centroids[z], node),

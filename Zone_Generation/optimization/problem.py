@@ -32,6 +32,14 @@ class DuplicateCentroidError(ValueError):
         )
 
 
+class NoCandidateZonesError(ValueError):
+    """Raised when a node cannot be legally assigned to any zone."""
+
+    def __init__(self, problem, node: int) -> None:
+        self.node = int(node)
+        super().__init__(problem.no_candidate_zones_message(node))
+
+
 @dataclass
 class ZoneProblem:
     """One optimization instance.
@@ -168,6 +176,49 @@ class ZoneProblem:
         if self.fixed is not None and node in self.fixed:
             return {self.fixed[node]}
         return self._distance_candidates()[node]
+
+    def no_candidate_zones_error(self, node: int) -> NoCandidateZonesError:
+        return NoCandidateZonesError(self, node)
+
+    def no_candidate_zones_message(self, node: int) -> str:
+        attrs = self.G.nodes[node]
+        area_id = attrs.get("area_id")
+        label = f"Node {node}"
+        if area_id is not None:
+            label += f" (area_id={area_id})"
+
+        if self.candidates is not None and node in self.candidates:
+            reason = "explicit candidate restrictions leave no legal zones"
+            advice = "Relax the candidate restrictions or add a legal zone for this node."
+        else:
+            reason = (
+                f"max_distance={self.max_distance:g} excludes all {self.Z} centroids"
+            )
+            advice = (
+                "Increase max_distance or choose centroid schools that cover every node."
+            )
+
+        nearest = self._nearest_centroid_description(node)
+        nearest_text = f" {nearest}" if nearest else ""
+        return (
+            f"{label} has no candidate zones for {self.level.name}: "
+            f"{reason}.{nearest_text} {advice}"
+        )
+
+    def _nearest_centroid_description(self, node: int) -> str:
+        if not self.centroids:
+            return ""
+        distance, zone, centroid = min(
+            (
+                (self.distance(centroid, node), zone, centroid)
+                for zone, centroid in enumerate(self.centroids)
+            ),
+            key=lambda item: item[0],
+        )
+        return (
+            f"Nearest centroid is zone {zone} at node {centroid} "
+            f"({distance:.3f} miles away)."
+        )
 
     def _distance_candidates(self) -> dict[int, set[int]]:
         if self._candidates is None:

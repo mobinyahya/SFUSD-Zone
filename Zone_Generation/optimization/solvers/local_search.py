@@ -34,6 +34,8 @@ class LocalSearchSolver(Solver):
             assignment = {}
             for node in problem.nodes:
                 cands = problem.candidate_zones(node)
+                if not cands:
+                    raise problem.no_candidate_zones_error(node)
                 assignment[node] = min(
                     cands, key=lambda z: problem.distance(problem.centroids[z], node)
                 )

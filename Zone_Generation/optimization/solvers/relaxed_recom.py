@@ -180,7 +180,9 @@ class RelaxedReComSolver(ReComSolver):
         if contiguity.is_contiguous(problem.G, current, problem.centroids):
             return current
         repaired = contiguity.repair(problem.G, current, problem.centroids)
-        return self._complete_assignment(problem, repaired)
+        # Candidate enforcement can undo connector nodes inserted by repair.
+        # Keep the contiguous state and let scoring carry candidate violations.
+        return repaired
 
     def _zone_spanning_trees(
         self,

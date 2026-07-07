@@ -515,7 +515,7 @@ class CpBoolSolver(_CpSatSolver):
         for node in problem.nodes:
             choices = [(z, node) for z in problem.candidate_zones(node)]
             if not choices:
-                raise ValueError(f"Node {node} has no candidate zones (infeasible).")
+                raise problem.no_candidate_zones_error(node)
             m.AddExactlyOne(x[(z, i)] for (z, i) in choices)
 
     def _add_boundary_objective(
@@ -580,7 +580,7 @@ class CpIntSolver(CpBoolSolver):
         for i in problem.nodes:
             zones = sorted(problem.candidate_zones(i))
             if not zones:
-                raise ValueError(f"Node {i} has no candidate zones (infeasible).")
+                raise problem.no_candidate_zones_error(i)
             y[i] = m.NewIntVarFromDomain(cp_model.Domain.FromValues(zones), f"y_{i}")
             for z in zones:
                 indicator = m.NewBoolVar(f"x_{z}_{i}")
