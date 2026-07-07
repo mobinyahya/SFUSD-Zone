@@ -14,6 +14,9 @@ from Zone_Generation.optimization.problem import ZoneProblem
 from Zone_Generation.optimization.solution import ZoneSolution
 from Zone_Generation.optimization.solvers.base import register
 from Zone_Generation.optimization.solvers.recom import ReComSolver, _valid
+from Zone_Generation.optimization.data.initial_solutions import (
+    normalize_recom_balance_metric,
+)
 
 
 class _RelaxedReComMoveError(RuntimeError):
@@ -40,6 +43,10 @@ class RelaxedReComSolver(ReComSolver):
         time_limit = float(self.options.get("solve_time_limit", 60.0))
         max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
+        population_epsilon = self.options.get("recom_population_epsilon")
+        balance_metric = normalize_recom_balance_metric(
+            self.options.get("recom_balance_metric", "students")
+        )
         min_boundary_edges = int(
             self.options.get("relaxed_recom_min_boundary_edges", 10)
         )
@@ -50,7 +57,12 @@ class RelaxedReComSolver(ReComSolver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state(problem, cut_attempts)
+                initial = self._initial_state_with_options(
+                    problem,
+                    cut_attempts,
+                    population_epsilon=population_epsilon,
+                    balance_metric=balance_metric,
+                )
                 current = self._prepare_relaxed_assignment(problem, initial.assignment)
                 current_score = self._score(problem, current)
                 initial_score = current_score
@@ -149,6 +161,7 @@ class RelaxedReComSolver(ReComSolver):
             **self._solver_progress_metadata(progress),
             "hints": initial.metadata.get("hints", self._hints()),
             "iterations": max_iterations,
+            "recom_balance_metric": balance_metric,
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": proposal_failures,
@@ -193,9 +206,6 @@ class RelaxedReComSolver(ReComSolver):
         trees: dict[int, nx.Graph] = {}
         for z in range(problem.Z):
             nodes = {node for node, zone in assignment.items() if zone == z}
-            centroid = problem.centroids[z]
-            if centroid not in nodes:
-                raise _RelaxedReComMoveError(f"zone {z} is missing its centroid")
             zone_graph = problem.G.subgraph(nodes).copy()
             if zone_graph.number_of_nodes() == 0:
                 raise _RelaxedReComMoveError(f"zone {z} has no nodes")
@@ -291,8 +301,6 @@ class RelaxedReComSolver(ReComSolver):
         zone_b: int,
         rng: random.Random,
     ) -> tuple[set[int], set[int]]:
-        centroid_a = problem.centroids[zone_a]
-        centroid_b = problem.centroids[zone_b]
         choices: list[tuple[tuple[int, int], set[int], set[int], float]] = []
         for edge in merged.edges():
             test_tree = merged.copy()
@@ -303,12 +311,10 @@ class RelaxedReComSolver(ReComSolver):
             if len(components) != 2:
                 continue
             first, second = components
-            if centroid_a in first and centroid_b in second:
+            if rng.random() < 0.5:
                 nodes_a, nodes_b = first, second
-            elif centroid_a in second and centroid_b in first:
-                nodes_a, nodes_b = second, first
             else:
-                continue
+                nodes_a, nodes_b = second, first
             choices.append(
                 (
                     tuple(edge),
@@ -319,7 +325,7 @@ class RelaxedReComSolver(ReComSolver):
             )
 
         if not choices:
-            raise _RelaxedReComMoveError("merged tree has no centroid-preserving cut")
+            raise _RelaxedReComMoveError("merged tree has no two-component cut")
 
         finite_logs = [
             log_weight for *_, log_weight in choices if math.isfinite(log_weight)

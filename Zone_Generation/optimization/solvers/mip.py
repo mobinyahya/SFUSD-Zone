@@ -391,5 +391,7 @@ class MipSolver(Solver):
             problem,
             self.options.get("hints"),
             cut_attempts=int(self.options.get("recom_cut_attempts", 100)),
+            population_epsilon=self.options.get("recom_population_epsilon"),
+            balance_metric=self.options.get("recom_balance_metric", "students"),
         )
         return initial.assignment if initial is not None else None

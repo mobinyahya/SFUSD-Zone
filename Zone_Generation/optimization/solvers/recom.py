@@ -19,7 +19,7 @@ from functools import partial
 from functools import total_ordering
 from typing import Mapping, TextIO
 
-from gerrychain import Graph, Partition
+from gerrychain import Partition
 from gerrychain.proposals import recom as gerrychain_recom
 from gerrychain.proposals.tree_proposals import MetagraphError
 from gerrychain.tree import (
@@ -32,9 +32,13 @@ from gerrychain.updaters import Tally, cut_edges
 
 from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.initial_solutions import (
-    complete_assignment,
     initial_solution,
     normalize_hints,
+    normalize_recom_balance_metric,
+    recom_balance_epsilon,
+    recom_balance_pop_col,
+    recom_balance_target,
+    recom_gerrychain_graph,
 )
 from Zone_Generation.optimization.progress import (
     SolverProgressTracker,
@@ -59,6 +63,7 @@ _GERRYCHAIN_ERRORS = (
 class _Score:
     penalty: float
     boundary: int
+    components: Mapping[str, float] | None = None
 
     @property
     def feasible(self) -> bool:
@@ -131,6 +136,10 @@ class ReComSolver(Solver):
         time_limit = float(self.options.get("solve_time_limit", 60.0))
         max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
+        population_epsilon = self.options.get("recom_population_epsilon")
+        balance_metric = normalize_recom_balance_metric(
+            self.options.get("recom_balance_metric", "students")
+        )
         temperature = max(0.0, float(self.options.get("recom_temperature", 0.0)))
         log_path, progress_log = self._open_progress_log(problem)
         progress = self._new_recom_progress_tracker(problem)
@@ -139,9 +148,14 @@ class ReComSolver(Solver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state(problem, cut_attempts)
+                initial = self._initial_state(
+                    problem,
+                    cut_attempts,
+                    population_epsilon=population_epsilon,
+                    balance_metric=balance_metric,
+                )
                 current = dict(initial.assignment)
-                current_partition = self._partition(problem, current)
+                current_partition = self._partition(problem, current, balance_metric)
                 current_score = self._score(problem, current)
                 initial_score = current_score
                 best = dict(current) if _valid(current_score) else None
@@ -175,7 +189,11 @@ class ReComSolver(Solver):
                     attempted += 1
                     try:
                         proposal_partition = self._gerrychain_proposal(
-                            problem, current_partition, cut_attempts
+                            problem,
+                            current_partition,
+                            cut_attempts,
+                            population_epsilon=population_epsilon,
+                            balance_metric=balance_metric,
                         )
                     except _GERRYCHAIN_ERRORS as exc:
                         rejected += 1
@@ -242,6 +260,10 @@ class ReComSolver(Solver):
             **self._solver_progress_metadata(progress),
             "hints": initial.metadata.get("hints", self._hints()),
             "iterations": max_iterations,
+            "recom_balance_metric": balance_metric,
+            "recom_population_epsilon": _population_epsilon(
+                problem, population_epsilon
+            ),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": rejected,
@@ -304,12 +326,16 @@ class ReComSolver(Solver):
             "cut_edges": int(score.boundary),
             "feasible": _valid(score),
             "penalty": penalty if math.isfinite(penalty) else None,
+            "penalty_components": _json_penalty_components(score.components),
         }
         if accepted is not None:
             row["accepted"] = bool(accepted)
         if best_score is not None:
             row["best_cut_edges"] = int(best_score.boundary)
             row["best_feasible"] = _valid(best_score)
+            row["best_penalty_components"] = _json_penalty_components(
+                best_score.components
+            )
         json.dump(row, log_file, sort_keys=True)
         log_file.write("\n")
         log_file.flush()
@@ -341,14 +367,42 @@ class ReComSolver(Solver):
     # ------------------------------------------------------------------ #
     # Initial assignment
     # ------------------------------------------------------------------ #
-    def _initial_state(self, problem: ZoneProblem, cut_attempts: int) -> _InitialState:
+    def _initial_state(
+        self,
+        problem: ZoneProblem,
+        cut_attempts: int,
+        *,
+        population_epsilon: float | None = None,
+        balance_metric: object = "students",
+    ) -> _InitialState:
+        return self._initial_state_with_options(
+            problem,
+            cut_attempts,
+            population_epsilon=population_epsilon,
+            balance_metric=balance_metric,
+        )
+
+    def _initial_state_with_options(
+        self,
+        problem: ZoneProblem,
+        cut_attempts: int,
+        *,
+        population_epsilon: float | None = None,
+        balance_metric: object = "students",
+    ) -> _InitialState:
         if problem.hint:
             return _InitialState(
                 assignment=self._complete_assignment(problem, problem.hint),
                 metadata={"hints": "provided", "hint_source": "problem_hint"},
             )
 
-        initial = initial_solution(problem, self._hints(), cut_attempts=cut_attempts)
+        initial = initial_solution(
+            problem,
+            self._hints(),
+            cut_attempts=cut_attempts,
+            population_epsilon=population_epsilon,
+            balance_metric=balance_metric,
+        )
         if initial is None:
             raise ValueError(
                 "ReCom solvers require hints to be voronoi or gerry_chain."
@@ -361,7 +415,29 @@ class ReComSolver(Solver):
     def _complete_assignment(
         self, problem: ZoneProblem, seed: Mapping[int, int]
     ) -> dict[int, int]:
-        return complete_assignment(problem, seed)
+        assignment: dict[int, int] = {}
+        for node in problem.nodes:
+            zone = seed.get(node)
+            candidates = self._candidate_zones(problem, node)
+            if zone in candidates:
+                assignment[node] = int(zone)
+                continue
+            if not candidates:
+                raise problem.no_candidate_zones_error(node)
+            assignment[node] = min(
+                candidates,
+                key=lambda z: problem.distance(problem.centroids[z], node),
+            )
+        return assignment
+
+    def _candidate_zones(self, problem: ZoneProblem, node: int) -> set[int]:
+        if node in problem.centroids:
+            return set(range(problem.Z))
+        if problem.candidates is not None and node in problem.candidates:
+            return set(problem.candidates[node])
+        if problem.fixed is not None and node in problem.fixed:
+            return {int(problem.fixed[node])}
+        return set(range(problem.Z))
 
     def _hints(self) -> str:
         return normalize_hints(self.options.get("hints", "gerry_chain"))
@@ -395,28 +471,41 @@ class ReComSolver(Solver):
         problem: ZoneProblem,
         partition: Partition,
         cut_attempts: int,
+        *,
+        population_epsilon: float | None = None,
+        balance_metric: object = "students",
     ) -> Partition:
-        return gerrychain_recom(
-            partition,
-            pop_col="ge_students",
-            pop_target=_population_target(problem),
-            epsilon=_population_epsilon(problem),
-            method=partial(
-                bipartition_tree,
-                max_attempts=cut_attempts,
-                allow_pair_reselection=True,
-            ),
-        )
+        metric = normalize_recom_balance_metric(balance_metric)
+        try:
+            return gerrychain_recom(
+                partition,
+                pop_col=recom_balance_pop_col(metric),
+                pop_target=_population_target(problem, metric),
+                epsilon=_population_epsilon(problem, population_epsilon),
+                method=partial(
+                    bipartition_tree,
+                    max_attempts=cut_attempts,
+                    allow_pair_reselection=False,
+                ),
+            )
+        except RuntimeError as exc:
+            if "Could not find a possible cut" in str(exc):
+                raise ReselectException(str(exc)) from exc
+            raise
 
     def _partition(
-        self, problem: ZoneProblem, assignment: Mapping[int, int]
+        self,
+        problem: ZoneProblem,
+        assignment: Mapping[int, int],
+        balance_metric: object = "students",
     ) -> Partition:
-        graph = Graph.from_networkx(problem.G)
+        metric = normalize_recom_balance_metric(balance_metric)
+        graph = recom_gerrychain_graph(problem, metric)
         return Partition(
             graph,
             assignment={int(node): int(zone) for node, zone in assignment.items()},
             updaters={
-                "population": Tally("ge_students", alias="population"),
+                "population": Tally(recom_balance_pop_col(metric), alias="population"),
                 "cut_edges": cut_edges,
             },
         )
@@ -446,35 +535,40 @@ class ReComSolver(Solver):
     # Constraint scoring and validation
     # ------------------------------------------------------------------ #
     def _score(self, problem: ZoneProblem, assignment: Mapping[int, int]) -> _Score:
-        penalty = 0.0
+        components = self._penalty_components(problem, assignment)
+        penalty = sum(components.values())
+        return _Score(
+            penalty=penalty,
+            boundary=contiguity.boundary_edges(problem.G, dict(assignment)),
+            components=components,
+        )
+
+    def _penalty_components(
+        self, problem: ZoneProblem, assignment: Mapping[int, int]
+    ) -> dict[str, float]:
+        components: defaultdict[str, float] = defaultdict(float)
         hard_penalty = float(problem.A + problem.Z + 1) * 1000.0
 
         if set(assignment) != set(problem.nodes):
             missing = set(problem.nodes) - set(assignment)
             extra = set(assignment) - set(problem.nodes)
-            penalty += hard_penalty * (len(missing) + len(extra))
+            components["assignment"] += hard_penalty * (len(missing) + len(extra))
 
         for node in problem.nodes:
             zone = assignment.get(node)
-            if zone not in problem.candidate_zones(node):
-                penalty += hard_penalty
-
-        for z, centroid in enumerate(problem.centroids):
-            if assignment.get(centroid) != z:
-                penalty += hard_penalty
+            if zone not in self._candidate_zones(problem, node):
+                components["candidate"] += hard_penalty
 
         if set(assignment) >= set(problem.nodes) and not contiguity.is_contiguous(
             problem.G, dict(assignment), problem.centroids
         ):
-            penalty += hard_penalty
+            components["contiguity"] += hard_penalty
 
-        penalty += sum(
-            self._constraint_penalty_components(problem, assignment).values()
-        )
-        return _Score(
-            penalty=penalty,
-            boundary=contiguity.boundary_edges(problem.G, dict(assignment)),
-        )
+        for key, value in self._constraint_penalty_components(
+            problem, assignment
+        ).items():
+            components[key] += value
+        return {key: value for key, value in components.items() if value}
 
     def _constraint_penalty_components(
         self, problem: ZoneProblem, assignment: Mapping[int, int]
@@ -616,9 +710,7 @@ class ReComSolver(Solver):
             return 0.0
         schools = sum(problem.num_schools(n) for n in nodes)
         if schools < context.school_lower or schools > context.school_upper:
-            return context.coefficients["schools"] * abs(
-                schools - context.avg_schools
-            )
+            return context.coefficients["schools"] * abs(schools - context.avg_schools)
         return 0.0
 
     def _penalty_context(self, problem: ZoneProblem) -> _PenaltyContext:
@@ -669,6 +761,18 @@ def _valid(score: _Score) -> bool:
     return score.penalty <= _EPS
 
 
+def _json_penalty_components(
+    components: Mapping[str, float] | None,
+) -> dict[str, float | None]:
+    if not components:
+        return {}
+    out: dict[str, float | None] = {}
+    for key, value in sorted(components.items()):
+        number = float(value)
+        out[str(key)] = number if math.isfinite(number) else None
+    return out
+
+
 def _penalty_context_signature(problem: ZoneProblem) -> tuple:
     return (
         id(problem.G),
@@ -707,11 +811,17 @@ def _race_penalty_key(ethnicity: str) -> str:
     return f"race:{ethnicity}"
 
 
-def _population_target(problem: ZoneProblem) -> float:
-    return sum(problem.students(node) for node in problem.nodes) / max(1, problem.Z)
+def _population_target(
+    problem: ZoneProblem, balance_metric: object = "students"
+) -> float:
+    return recom_balance_target(problem, balance_metric)
 
 
-def _population_epsilon(problem: ZoneProblem) -> float:
+def _population_epsilon(
+    problem: ZoneProblem, population_epsilon: float | None = None
+) -> float:
+    if population_epsilon is not None:
+        return recom_balance_epsilon(problem, population_epsilon)
     tolerances = [problem.shortage, problem.overage, 0.05]
     finite = [float(value) for value in tolerances if math.isfinite(float(value))]
     return max(0.01, min(max(finite) if finite else 1.0, 10.0))

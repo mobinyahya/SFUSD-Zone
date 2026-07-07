@@ -17,19 +17,22 @@ optimization_defaults:
   shortage: 0.15
   recom_iterations: 1000000000
   recom_cut_attempts: 10
+  recom_population_epsilon: 0.25
+  recom_balance_metric: students
+  levels: ["Block_1"]
 
 sweep:
   centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']
-  seed: [1, 2, 3, 4]
-  levels: [Block_0, Block_1]
+  seed: [1, 2,]
+   # actually resolves to just solving Block_1 but its ok because it illustratesr the point
 
 tasks:
-  - solver: 'mip'
-    secondary_objective: true
-    workers: 8
-  - solver: 'cp_bool'
-    linearization_level: 2
-    workers: 8
+  # - solver: 'mip'
+  #   secondary_objective: true
+  #   workers: 8
+  # - solver: 'cp_bool'
+  #   linearization_level: 2
+  #   workers: 8
   - solver: 'relaxed_recom'
   - solver: 'short_bursts_recom'
     short_bursts_length: 25
@@ -38,9 +41,9 @@ tasks:
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/solver_comparison_3/'
-  capacity: 8         # total solver-thread slots available on the machine
-  max_workers: 8            # max concurrent Python worker processes
+  output_dir: '/share/data/school_choice/local_runs/solver_comparison_4/'
+  capacity: 45         # total solver-thread slots available on the machine
+  max_workers: 50       # max concurrent Python worker processes
   max_tasks_per_worker: 10   # recycle processes to limit memory growth
   skip_existing: true
   rerun_failed: true

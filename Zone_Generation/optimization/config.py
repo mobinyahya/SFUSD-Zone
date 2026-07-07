@@ -47,6 +47,8 @@ class OptimizationConfig:
     cp_sat_search_strategy: str | None = None
     recom_iterations: int = 1000
     recom_cut_attempts: int = 100
+    recom_population_epsilon: float | None = None
+    recom_balance_metric: str = "students"
     recom_temperature: float = 0.0
     short_bursts_length: int = 25
     relaxed_recom_min_boundary_edges: int = 10
@@ -71,7 +73,7 @@ class OptimizationConfig:
 
     def __post_init__(self):
         # All levels in a run share one unit (the base graph is built per unit).
-        units = {LevelSpec.parse(l).unit for l in self.levels}
+        units = {LevelSpec.parse(level).unit for level in self.levels}
         if len(units) != 1:
             raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
         self.unit = units.pop()
@@ -89,6 +91,8 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "gerry_chain", "none"}:
             raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
+        if self.recom_balance_metric not in {"students", "nodes"}:
+            raise ValueError("recom_balance_metric must be one of: students, nodes.")
 
     # ------------------------------------------------------------------ #
     # loading
@@ -129,6 +133,8 @@ class OptimizationConfig:
             "secondary_objective": self.secondary_objective,
             "recom_iterations": self.recom_iterations,
             "recom_cut_attempts": self.recom_cut_attempts,
+            "recom_population_epsilon": self.recom_population_epsilon,
+            "recom_balance_metric": self.recom_balance_metric,
             "recom_temperature": self.recom_temperature,
             "short_bursts_length": self.short_bursts_length,
             "relaxed_recom_min_boundary_edges": (self.relaxed_recom_min_boundary_edges),

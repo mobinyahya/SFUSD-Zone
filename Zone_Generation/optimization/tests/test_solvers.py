@@ -30,6 +30,18 @@ def _check_valid(problem, solution):
     assert solution.is_contiguous()
 
 
+def _check_recom_valid(problem, solution):
+    assert solution.feasible
+    assert set(solution.assignment) == set(problem.nodes)
+    centroid_nodes = set(problem.centroids)
+    for node, zone in solution.assignment.items():
+        if node in centroid_nodes:
+            assert 0 <= zone < problem.Z
+        else:
+            assert zone in problem.candidate_zones(node)
+    assert solution.is_contiguous()
+
+
 @pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
 def test_cpsat_solvers(name):
     problem = make_grid_problem(3, 3)
@@ -87,6 +99,56 @@ def test_recom_score_ordering_separates_feasibility_from_cut_edges():
     second = _Score(penalty=1.0, boundary=100)
     assert first <= second
     assert second <= first
+
+
+@pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
+def test_recom_score_does_not_penalize_swapped_centroid_labels(name):
+    problem = make_grid_problem(2, 2, racial_dev=-1, frl_dev=1.0, overage=10.0)
+    assignment = {0: 1, 1: 1, 2: 0, 3: 0}
+    solver = get_solver(name)
+
+    score = solver._score(problem, assignment)
+
+    assert score.penalty == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
+def test_recom_score_ignores_max_distance_candidates(name):
+    problem = make_grid_problem(
+        2,
+        2,
+        max_distance=0.1,
+        racial_dev=-1,
+        frl_dev=1.0,
+        overage=10.0,
+    )
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    assert not problem.candidate_zones(1)
+    assert not problem.candidate_zones(2)
+
+    score = get_solver(name)._score(problem, assignment)
+
+    assert score.penalty == pytest.approx(0.0)
+    assert score.components == {}
+
+
+@pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
+def test_recom_score_keeps_explicit_candidate_penalty(name):
+    problem = make_grid_problem(
+        2,
+        2,
+        candidates={1: {1}},
+        racial_dev=-1,
+        frl_dev=1.0,
+        overage=10.0,
+    )
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    hard_penalty = float(problem.A + problem.Z + 1) * 1000.0
+
+    score = get_solver(name)._score(problem, assignment)
+
+    assert score.components == {"candidate": hard_penalty}
+    assert score.penalty == pytest.approx(hard_penalty)
 
 
 def test_recom_penalty_coefficients_include_each_constraint_family():
@@ -383,6 +445,13 @@ def test_recom_solvers_save_progress_logs(tmp_path, name, options):
         assert isinstance(row["iteration"], int)
         assert isinstance(row["cut_edges"], int)
         assert isinstance(row["feasible"], bool)
+        assert isinstance(row["penalty_components"], dict)
+        component_total = sum(
+            value for value in row["penalty_components"].values() if value is not None
+        )
+        assert row["penalty"] == pytest.approx(component_total)
+        if "best_penalty_components" in row:
+            assert isinstance(row["best_penalty_components"], dict)
     for row in cut_rows:
         assert isinstance(row["accepted"], bool)
 
@@ -448,7 +517,7 @@ def test_recom_solver():
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
-    _check_valid(problem, solution)
+    _check_recom_valid(problem, solution)
     assert solution.metadata["solver"] == "recom"
     assert solution.metadata["hints"] == "gerry_chain"
 
@@ -464,7 +533,7 @@ def test_short_bursts_recom_solver():
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
-    _check_valid(problem, solution)
+    _check_recom_valid(problem, solution)
     assert solution.metadata["solver"] == "short_bursts_recom"
     assert solution.metadata["short_bursts_length"] == 5
     assert solution.metadata["completed_bursts"] <= 5
@@ -515,6 +584,24 @@ def test_short_bursts_recom_uses_explicit_hint():
         "short_bursts_recom",
         solve_time_limit=1,
         recom_iterations=0,
+    ).solve(problem)
+
+    assert solution.status == "FEASIBLE"
+    assert solution.assignment == hint
+    assert solution.metadata["hints"] == "provided"
+
+
+@pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
+def test_recom_solvers_do_not_force_explicit_hint_centroid_labels(name):
+    problem = make_grid_problem(2, 2, racial_dev=-1, frl_dev=1.0, overage=10.0)
+    hint = {0: 1, 1: 1, 2: 0, 3: 0}
+    problem.hint = hint
+
+    solution = get_solver(
+        name,
+        solve_time_limit=1,
+        recom_iterations=0,
+        relaxed_recom_min_boundary_edges=0,
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"

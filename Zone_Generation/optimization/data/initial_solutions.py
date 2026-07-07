@@ -21,6 +21,8 @@ from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.problem import ZoneProblem
 
 HINT_METHODS = {"voronoi", "gerry_chain", "none"}
+RECOM_BALANCE_METRICS = {"students", "nodes"}
+RECOM_NODE_COUNT_COL = "__recom_node_count"
 
 _EPS = 1e-6
 _GERRY_CHAIN_ERRORS = (
@@ -51,11 +53,20 @@ def normalize_hints(value: object, default: str = "gerry_chain") -> str:
     return method
 
 
+def normalize_recom_balance_metric(value: object, default: str = "students") -> str:
+    metric = str(default if value is None else value)
+    if metric not in RECOM_BALANCE_METRICS:
+        raise ValueError("recom_balance_metric must be one of: students, nodes.")
+    return metric
+
+
 def initial_solution(
     problem: ZoneProblem,
     hints: object,
     *,
     cut_attempts: int = 100,
+    population_epsilon: float | None = None,
+    balance_metric: object = "students",
 ) -> InitialSolution | None:
     """Return a complete candidate-aware initial solution for ``hints``."""
 
@@ -64,7 +75,12 @@ def initial_solution(
         return None
     if method == "voronoi":
         return voronoi_initial_solution(problem)
-    return gerry_chain_initial_solution(problem, cut_attempts=cut_attempts)
+    return gerry_chain_initial_solution(
+        problem,
+        cut_attempts=cut_attempts,
+        population_epsilon=population_epsilon,
+        balance_metric=balance_metric,
+    )
 
 
 def voronoi_initial_solution(problem: ZoneProblem) -> InitialSolution:
@@ -79,13 +95,17 @@ def gerry_chain_initial_solution(
     problem: ZoneProblem,
     *,
     cut_attempts: int = 100,
+    population_epsilon: float | None = None,
+    balance_metric: object = "students",
 ) -> InitialSolution:
-    target = _population_target(problem)
-    epsilon = _population_epsilon(problem)
+    metric = normalize_recom_balance_metric(balance_metric)
+    target = recom_balance_target(problem, metric)
+    epsilon = recom_balance_epsilon(problem, population_epsilon)
     if problem.Z < 2 or target <= 0:
-        return _gerry_chain_fallback(problem, target, epsilon)
+        return _gerry_chain_fallback(problem, target, epsilon, metric)
 
-    graph = Graph.from_networkx(problem.G)
+    graph = recom_gerrychain_graph(problem, metric)
+    pop_col = recom_balance_pop_col(metric)
     tree_method = partial(bipartition_tree, max_attempts=max(1, int(cut_attempts)))
     best_assignment = None
     best_score = None
@@ -98,7 +118,7 @@ def gerry_chain_initial_solution(
                 graph,
                 parts=list(range(problem.Z)),
                 pop_target=target,
-                pop_col="ge_students",
+                pop_col=pop_col,
                 epsilon=current_epsilon,
                 method=tree_method,
             )
@@ -118,6 +138,7 @@ def gerry_chain_initial_solution(
                 metadata={
                     "hints": "gerry_chain",
                     "gerry_chain_initial_attempts": attempt,
+                    "gerry_chain_balance_metric": metric,
                     "gerry_chain_population_target": target,
                     "gerry_chain_population_epsilon": current_epsilon,
                 },
@@ -129,6 +150,7 @@ def gerry_chain_initial_solution(
             metadata={
                 "hints": "gerry_chain",
                 "gerry_chain_initial_attempts": len(_epsilon_schedule(epsilon)),
+                "gerry_chain_balance_metric": metric,
                 "gerry_chain_population_target": target,
                 "gerry_chain_population_epsilon": best_epsilon,
                 "gerry_chain_initial_penalty": best_score.penalty
@@ -137,7 +159,7 @@ def gerry_chain_initial_solution(
             },
         )
 
-    result = _gerry_chain_fallback(problem, target, epsilon)
+    result = _gerry_chain_fallback(problem, target, epsilon, metric)
     if errors:
         result.metadata["gerry_chain_initial_errors"] = errors[-3:]
     return result
@@ -175,16 +197,54 @@ def _gerry_chain_fallback(
     problem: ZoneProblem,
     target: float,
     epsilon: float,
+    balance_metric: str,
 ) -> InitialSolution:
     return InitialSolution(
         assignment=_nearest_centroid_assignment(problem),
         metadata={
             "hints": "gerry_chain",
             "hint_fallback": "voronoi",
+            "gerry_chain_balance_metric": balance_metric,
             "gerry_chain_population_target": target,
             "gerry_chain_population_epsilon": epsilon,
         },
     )
+
+
+def recom_gerrychain_graph(
+    problem: ZoneProblem, balance_metric: object = "students"
+) -> Graph:
+    metric = normalize_recom_balance_metric(balance_metric)
+    if metric == "students":
+        return Graph.from_networkx(problem.G)
+    graph = problem.G.copy()
+    for node in graph.nodes:
+        graph.nodes[node][RECOM_NODE_COUNT_COL] = 1.0
+    return Graph.from_networkx(graph)
+
+
+def recom_balance_pop_col(balance_metric: object = "students") -> str:
+    metric = normalize_recom_balance_metric(balance_metric)
+    if metric == "nodes":
+        return RECOM_NODE_COUNT_COL
+    return "ge_students"
+
+
+def recom_balance_target(
+    problem: ZoneProblem, balance_metric: object = "students"
+) -> float:
+    metric = normalize_recom_balance_metric(balance_metric)
+    if metric == "nodes":
+        return len(problem.nodes) / max(1, problem.Z)
+    return sum(problem.students(node) for node in problem.nodes) / max(1, problem.Z)
+
+
+def recom_balance_epsilon(
+    problem: ZoneProblem, population_epsilon: float | None = None
+) -> float:
+    if population_epsilon is not None:
+        return max(0.01, float(population_epsilon))
+    return _population_epsilon(problem)
 
 
 def _normalize_gerry_chain_assignment(

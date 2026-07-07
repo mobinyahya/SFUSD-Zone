@@ -12,6 +12,10 @@ from Zone_Generation.optimization.solvers.recom import (
     _GERRYCHAIN_ERRORS,
     ReComSolver,
     _valid,
+    _population_epsilon,
+)
+from Zone_Generation.optimization.data.initial_solutions import (
+    normalize_recom_balance_metric,
 )
 
 
@@ -39,6 +43,10 @@ class ShortBurstsReComSolver(ReComSolver):
         time_limit = float(self.options.get("solve_time_limit", 60.0))
         max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
+        population_epsilon = self.options.get("recom_population_epsilon")
+        balance_metric = normalize_recom_balance_metric(
+            self.options.get("recom_balance_metric", "students")
+        )
         burst_length = max(1, int(self.options.get("short_bursts_length", 25)))
         log_path, progress_log = self._open_progress_log(problem)
         progress = self._new_recom_progress_tracker(problem)
@@ -47,9 +55,14 @@ class ShortBurstsReComSolver(ReComSolver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state(problem, cut_attempts)
+                initial = self._initial_state_with_options(
+                    problem,
+                    cut_attempts,
+                    population_epsilon=population_epsilon,
+                    balance_metric=balance_metric,
+                )
                 current = dict(initial.assignment)
-                current_partition = self._partition(problem, current)
+                current_partition = self._partition(problem, current, balance_metric)
                 current_score = self._score(problem, current)
                 initial_score = current_score
                 best = dict(current) if _valid(current_score) else None
@@ -94,7 +107,11 @@ class ShortBurstsReComSolver(ReComSolver):
                         attempted += 1
                         try:
                             proposal_partition = self._gerrychain_proposal(
-                                problem, walk_partition, cut_attempts
+                                problem,
+                                walk_partition,
+                                cut_attempts,
+                                population_epsilon=population_epsilon,
+                                balance_metric=balance_metric,
                             )
                         except _GERRYCHAIN_ERRORS as exc:
                             proposal_failures += 1
@@ -163,6 +180,10 @@ class ShortBurstsReComSolver(ReComSolver):
             **self._solver_progress_metadata(progress),
             "hints": initial.metadata.get("hints", self._hints()),
             "iterations": max_iterations,
+            "recom_balance_metric": balance_metric,
+            "recom_population_epsilon": _population_epsilon(
+                problem, population_epsilon
+            ),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": proposal_failures,

@@ -223,32 +223,26 @@ def plot_progress_metric_by_centroids_type(
         zone_df = df[centroids_column == centroids_type].copy()
         if zone_df.empty:
             continue
-        if labels is not None:
-            group_column = "task_number" if separate else "explicit_task_number"
-            label_df = zone_df[[group_column, metric]].copy()
-            label_df[metric] = pd.to_numeric(label_df[metric], errors="coerce")
-            group_count = label_df.dropna(subset=[metric])[group_column].nunique()
-            if group_count < len(labels):
-                print(
-                    f"Skipping {centroids_type}: expected {len(labels)} label group(s), "
-                    f"found {group_count}."
+        try:
+            output_paths.append(
+                plot_progress_metric(
+                    zone_df,
+                    metric,
+                    _centroids_type_output_path(output_path, centroids_type),
+                    labels=labels,
+                    separate=separate,
+                    ignore_outliers=ignore_outliers,
                 )
-                continue
-        output_paths.append(
-            plot_progress_metric(
-                zone_df,
-                metric,
-                _centroids_type_output_path(output_path, centroids_type),
-                labels=labels,
-                separate=separate,
-                ignore_outliers=ignore_outliers,
             )
-        )
+        except ValueError as exc:
+            if "has no numeric values to plot" not in str(exc):
+                raise
+            print(f"Skipping {centroids_type}: {exc}")
 
     if not output_paths:
         raise ValueError(
-            "No solver-progress rows matched any centroids_type value with enough "
-            "groups to plot."
+            "No solver-progress rows matched any centroids_type value with numeric "
+            "values to plot."
         )
     return output_paths
 
@@ -264,14 +258,7 @@ def _plot_separate_progress_metric(
     """Plot one line per generated task/run."""
 
     task_numbers = list(dict.fromkeys(df["task_number"].tolist()))
-    if labels is not None and len(labels) != len(task_numbers):
-        raise ValueError(
-            f"Expected {len(task_numbers)} label(s), got {len(labels)}."
-        )
-    label_by_task = {
-        task_number: labels[idx] if labels is not None else f"Task {task_number}"
-        for idx, task_number in enumerate(task_numbers)
-    }
+    label_by_task = _labels_by_group(task_numbers, labels)
 
     plot_df = df[["task_number", "time_seconds", metric]].copy()
     plot_df[metric] = pd.to_numeric(plot_df[metric], errors="coerce")
@@ -339,12 +326,7 @@ def _plot_grouped_progress_metric(
         int(group)
         for group in dict.fromkeys(plot_df["explicit_task_number"].tolist())
     ]
-    if labels is not None and len(labels) != len(groups):
-        raise ValueError(f"Expected {len(groups)} label(s), got {len(labels)}.")
-    label_by_group = {
-        group: labels[idx] if labels is not None else f"Task {group}"
-        for idx, group in enumerate(groups)
-    }
+    label_by_group = _labels_by_group(groups, labels)
 
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(12, 7), constrained_layout=True)
@@ -380,6 +362,24 @@ def _plot_grouped_progress_metric(
     fig.savefig(output, dpi=200)
     plt.close(fig)
     return output
+
+
+def _labels_by_group(
+    groups: Sequence[int],
+    labels: Sequence[str] | None,
+) -> dict[int, str]:
+    int_groups = [int(group) for group in groups]
+    if labels is None:
+        return {group: f"Task {group}" for group in int_groups}
+    if len(labels) == len(int_groups):
+        return {group: labels[idx] for idx, group in enumerate(int_groups)}
+    if int_groups and min(int_groups) >= 1 and max(int_groups) <= len(labels):
+        return {group: labels[group - 1] for group in int_groups}
+
+    expected = f"{len(int_groups)} label(s)"
+    if int_groups:
+        expected = f"{expected} or at least {max(int_groups)} 1-based label(s)"
+    raise ValueError(f"Expected {expected}, got {len(labels)}.")
 
 
 def main(argv: list[str] | None = None) -> None:
