@@ -11,6 +11,13 @@ from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
 from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.data import contiguity
+from Zone_Generation.optimization.data.initial_solutions import (
+    RECOM_SCHOOL_COUNT_COL,
+    _initial_balance_metrics,
+    recom_balance_pop_col,
+    recom_balance_target,
+    recom_gerrychain_graph,
+)
 from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
@@ -69,6 +76,18 @@ def test_config_passes_cpsat_parameters_to_solver():
     assert solver.options["symmetry_level"] == 0
     assert solver.options["cp_sat_search_strategy"] == "distance_to_centroid"
     assert solver.options["secondary_objective"] is True
+
+
+def test_config_accepts_school_recom_balance_metric():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="short_bursts_recom",
+        recom_balance_metric="schools",
+    )
+
+    solver = config.make_solver()
+
+    assert solver.options["recom_balance_metric"] == "schools"
 
 
 def test_cp_bool_solver_supports_secondary_objective():
@@ -162,6 +181,24 @@ def test_recom_penalty_coefficients_include_each_constraint_family():
     }
     assert expected <= set(context.coefficients)
     assert all(context.coefficients[key] > 0 for key in expected)
+
+
+def test_recom_school_balance_metric_uses_school_counts():
+    problem = make_grid_problem(3, 3)
+
+    graph = recom_gerrychain_graph(problem, "schools")
+
+    assert recom_balance_pop_col("schools") == RECOM_SCHOOL_COUNT_COL
+    assert recom_balance_target(problem, "schools") == pytest.approx(1.0)
+    assert graph.nodes[0][RECOM_SCHOOL_COUNT_COL] == pytest.approx(1.0)
+    assert graph.nodes[4][RECOM_SCHOOL_COUNT_COL] == pytest.approx(0.0)
+
+
+def test_gerry_chain_initialization_adds_school_multistart():
+    problem = make_grid_problem(3, 3)
+
+    assert _initial_balance_metrics(problem, "students") == ["students", "schools"]
+    assert _initial_balance_metrics(problem, "schools") == ["schools", "students"]
 
 
 def test_recom_balance_penalty_uses_target_difference_after_violation():

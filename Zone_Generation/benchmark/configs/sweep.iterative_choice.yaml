@@ -2,17 +2,17 @@ name: iterative-choice
 mode: run
 
 optimization_defaults:
-  levels: ['Block_2']     # use ['BlockGroup_0'] for full fine-grained test
+  levels: ['Block_1']     # use ['BlockGroup_0'] for full fine-grained test
   strategy: 'iterative_choice'
   linearization_level: 2
 
-  frl_dev: 0.15
+  frl_dev: 0.2
   racial_dev: -1
-  overage: 0.3
-  shortage: 0.3
+  overage: 0.2
+  shortage: 0.2
   max_distance: 4
 
-  solve_time_limits: [300]
+  solve_time_limits: [150]
   hints: gerry_chain
   workers: 8
 
@@ -30,12 +30,19 @@ sweep:
 tasks:
   - choice_model_method: 'logsum'
   - strategy: 'single'
+    seed: 1
+  - strategy: 'single'
+    seed: 2
+  - strategy: 'single'
+    seed: 3
+  - strategy: 'single'
+    seed: 4
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/iterative_choice_updated_6'
+  output_dir: '/share/data/school_choice/local_runs/iterative_choice_updated_7'
   capacity: 40
-  max_workers: 5
+  max_workers: 6
   max_tasks_per_worker: 5
   skip_existing: true
   rerun_failed: true
@@ -52,12 +59,12 @@ matching:
   configs:
     - name: sd
       config: Zone_Generation/benchmark/matching/sd.yaml
-    - name: no_reserves
-      config: Zone_Generation/benchmark/matching/zones+no_reserves.yaml
-    - name: soft_reserves
-      config: Zone_Generation/benchmark/matching/zones+soft_reserves_06frl.yaml
-    - name: hard_reserves
-      config: Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml
+    # - name: no_reserves
+    #   config: Zone_Generation/benchmark/matching/zones+no_reserves.yaml
+    # - name: soft_reserves
+    #   config: Zone_Generation/benchmark/matching/zones+soft_reserves_06frl.yaml
+    # - name: hard_reserves
+    #   config: Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml
   compute_stage_assignments: true
 
 choice_metrics:

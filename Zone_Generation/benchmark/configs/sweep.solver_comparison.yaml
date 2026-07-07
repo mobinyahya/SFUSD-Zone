@@ -19,6 +19,7 @@ optimization_defaults:
   recom_cut_attempts: 10
   recom_population_epsilon: 0.25
   recom_balance_metric: students
+  relaxed_recom_min_boundary_edges: 0
   levels: ["Block_1"]
 
 sweep:
@@ -42,8 +43,8 @@ tasks:
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/solver_comparison_4/'
-  capacity: 45         # total solver-thread slots available on the machine
-  max_workers: 50       # max concurrent Python worker processes
+  capacity: 8         # total solver-thread slots available on the machine
+  max_workers: 10       # max concurrent Python worker processes
   max_tasks_per_worker: 10   # recycle processes to limit memory growth
   skip_existing: true
   rerun_failed: true

@@ -21,8 +21,9 @@ from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.problem import ZoneProblem
 
 HINT_METHODS = {"voronoi", "gerry_chain", "none"}
-RECOM_BALANCE_METRICS = {"students", "nodes"}
+RECOM_BALANCE_METRICS = {"students", "nodes", "schools"}
 RECOM_NODE_COUNT_COL = "__recom_node_count"
+RECOM_SCHOOL_COUNT_COL = "__recom_school_count"
 
 _EPS = 1e-6
 _GERRY_CHAIN_ERRORS = (
@@ -56,7 +57,9 @@ def normalize_hints(value: object, default: str = "gerry_chain") -> str:
 def normalize_recom_balance_metric(value: object, default: str = "students") -> str:
     metric = str(default if value is None else value)
     if metric not in RECOM_BALANCE_METRICS:
-        raise ValueError("recom_balance_metric must be one of: students, nodes.")
+        raise ValueError(
+            "recom_balance_metric must be one of: students, nodes, schools."
+        )
     return metric
 
 
@@ -98,71 +101,120 @@ def gerry_chain_initial_solution(
     population_epsilon: float | None = None,
     balance_metric: object = "students",
 ) -> InitialSolution:
-    metric = normalize_recom_balance_metric(balance_metric)
-    target = recom_balance_target(problem, metric)
+    requested_metric = normalize_recom_balance_metric(balance_metric)
+    metrics = _initial_balance_metrics(problem, requested_metric)
     epsilon = recom_balance_epsilon(problem, population_epsilon)
-    if problem.Z < 2 or target <= 0:
-        return _gerry_chain_fallback(problem, target, epsilon, metric)
-
-    graph = recom_gerrychain_graph(problem, metric)
-    pop_col = recom_balance_pop_col(metric)
     tree_method = partial(bipartition_tree, max_attempts=max(1, int(cut_attempts)))
     best_assignment = None
     best_score = None
+    best_metadata = None
     best_epsilon = epsilon
+    best_metric = requested_metric
+    metric_attempts: dict[str, int] = {}
     errors: list[str] = []
 
-    for attempt, current_epsilon in enumerate(_epsilon_schedule(epsilon), start=1):
-        try:
-            raw = recursive_tree_part(
-                graph,
-                parts=list(range(problem.Z)),
-                pop_target=target,
-                pop_col=pop_col,
-                epsilon=current_epsilon,
-                method=tree_method,
-            )
-        except _GERRY_CHAIN_ERRORS as exc:
-            errors.append(type(exc).__name__)
+    for metric in metrics:
+        target = recom_balance_target(problem, metric)
+        if problem.Z < 2 or target <= 0:
             continue
+        graph = recom_gerrychain_graph(problem, metric)
+        pop_col = recom_balance_pop_col(metric)
+        for attempt, current_epsilon in enumerate(
+            _epsilon_schedule(epsilon), start=1
+        ):
+            metric_attempts[metric] = attempt
+            try:
+                raw = recursive_tree_part(
+                    graph,
+                    parts=list(range(problem.Z)),
+                    pop_target=target,
+                    pop_col=pop_col,
+                    epsilon=current_epsilon,
+                    method=tree_method,
+                )
+            except _GERRY_CHAIN_ERRORS as exc:
+                errors.append(f"{metric}:{type(exc).__name__}")
+                continue
 
-        assignment = _normalize_gerry_chain_assignment(problem, raw)
-        score = _score(problem, assignment)
-        if best_score is None or score < best_score:
-            best_assignment = assignment
-            best_score = score
-            best_epsilon = current_epsilon
-        if _valid(score):
-            return InitialSolution(
-                assignment=assignment,
-                metadata={
-                    "hints": "gerry_chain",
-                    "gerry_chain_initial_attempts": attempt,
-                    "gerry_chain_balance_metric": metric,
-                    "gerry_chain_population_target": target,
-                    "gerry_chain_population_epsilon": current_epsilon,
-                },
+            assignment = _normalize_gerry_chain_assignment(problem, raw)
+            score = _score(problem, assignment)
+            metadata = _gerry_chain_metadata(
+                metric=metric,
+                requested_metric=requested_metric,
+                metrics=metrics,
+                attempts=attempt,
+                metric_attempts=metric_attempts,
+                target=target,
+                epsilon=current_epsilon,
             )
+            if best_score is None or score < best_score:
+                best_assignment = assignment
+                best_score = score
+                best_metadata = metadata
+                best_epsilon = current_epsilon
+                best_metric = metric
+            if _valid(score):
+                return InitialSolution(assignment=assignment, metadata=metadata)
 
     if best_assignment is not None:
-        return InitialSolution(
-            assignment=best_assignment,
-            metadata={
-                "hints": "gerry_chain",
-                "gerry_chain_initial_attempts": len(_epsilon_schedule(epsilon)),
-                "gerry_chain_balance_metric": metric,
-                "gerry_chain_population_target": target,
+        metadata = dict(best_metadata or {})
+        metadata.update(
+            {
+                "gerry_chain_balance_metric": best_metric,
                 "gerry_chain_population_epsilon": best_epsilon,
                 "gerry_chain_initial_penalty": best_score.penalty
                 if best_score
                 else None,
-            },
+            }
+        )
+        if errors:
+            metadata["gerry_chain_initial_errors"] = errors[-3:]
+        return InitialSolution(
+            assignment=best_assignment,
+            metadata=metadata,
         )
 
-    result = _gerry_chain_fallback(problem, target, epsilon, metric)
+    result = _gerry_chain_fallback(
+        problem,
+        recom_balance_target(problem, requested_metric),
+        epsilon,
+        requested_metric,
+    )
+    result.metadata["gerry_chain_initial_balance_metrics"] = metrics
+    result.metadata["gerry_chain_initial_metric_attempts"] = metric_attempts
     if errors:
         result.metadata["gerry_chain_initial_errors"] = errors[-3:]
     return result
+
+
+def _initial_balance_metrics(problem: ZoneProblem, requested_metric: str) -> list[str]:
+    metrics = [requested_metric]
+    for metric in ("students", "schools"):
+        if metric not in metrics and recom_balance_target(problem, metric) > 0:
+            metrics.append(metric)
+    return metrics
+
+
+def _gerry_chain_metadata(
+    *,
+    metric: str,
+    requested_metric: str,
+    metrics: list[str],
+    attempts: int,
+    metric_attempts: dict[str, int],
+    target: float,
+    epsilon: float,
+) -> dict[str, object]:
+    return {
+        "hints": "gerry_chain",
+        "gerry_chain_initial_attempts": attempts,
+        "gerry_chain_initial_balance_metrics": list(metrics),
+        "gerry_chain_initial_metric_attempts": dict(metric_attempts),
+        "gerry_chain_requested_balance_metric": requested_metric,
+        "gerry_chain_balance_metric": metric,
+        "gerry_chain_population_target": target,
+        "gerry_chain_population_epsilon": epsilon,
+    }
 
 
 def complete_assignment(
@@ -218,8 +270,14 @@ def recom_gerrychain_graph(
     if metric == "students":
         return Graph.from_networkx(problem.G)
     graph = problem.G.copy()
-    for node in graph.nodes:
-        graph.nodes[node][RECOM_NODE_COUNT_COL] = 1.0
+    if metric == "nodes":
+        for node in graph.nodes:
+            graph.nodes[node][RECOM_NODE_COUNT_COL] = 1.0
+    elif metric == "schools":
+        for node in graph.nodes:
+            graph.nodes[node][RECOM_SCHOOL_COUNT_COL] = float(
+                problem.num_schools(node)
+            )
     return Graph.from_networkx(graph)
 
 
@@ -227,6 +285,8 @@ def recom_balance_pop_col(balance_metric: object = "students") -> str:
     metric = normalize_recom_balance_metric(balance_metric)
     if metric == "nodes":
         return RECOM_NODE_COUNT_COL
+    if metric == "schools":
+        return RECOM_SCHOOL_COUNT_COL
     return "ge_students"
 
 
@@ -236,6 +296,10 @@ def recom_balance_target(
     metric = normalize_recom_balance_metric(balance_metric)
     if metric == "nodes":
         return len(problem.nodes) / max(1, problem.Z)
+    if metric == "schools":
+        return sum(problem.num_schools(node) for node in problem.nodes) / max(
+            1, problem.Z
+        )
     return sum(problem.students(node) for node in problem.nodes) / max(1, problem.Z)
 
 

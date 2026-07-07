@@ -48,7 +48,7 @@ class RelaxedReComSolver(ReComSolver):
             self.options.get("recom_balance_metric", "students")
         )
         min_boundary_edges = int(
-            self.options.get("relaxed_recom_min_boundary_edges", 10)
+            self.options.get("relaxed_recom_min_boundary_edges", 0)
         )
         log_path, progress_log = self._open_progress_log(problem)
         progress = self._new_recom_progress_tracker(problem)
