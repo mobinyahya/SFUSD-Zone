@@ -16,6 +16,7 @@ from Zone_Generation.optimization.solvers.recom import (
 )
 from Zone_Generation.optimization.data.initial_solutions import (
     normalize_recom_balance_metric,
+    recom_balance_target,
 )
 
 
@@ -27,6 +28,19 @@ class ShortBurstsReComSolver(ReComSolver):
     proposals, then restarts the next burst from the lowest-penalty map seen in
     that burst. Feasible maps are tracked separately and selected by cut edges.
     """
+
+    def _proposal_balance_metric(
+        self,
+        problem: ZoneProblem,
+        score,
+        default_metric: str,
+    ) -> str:
+        if default_metric != "students":
+            return default_metric
+        if score.components and score.components.get("schools", 0.0) > 0:
+            if recom_balance_target(problem, "schools") > 0:
+                return "schools"
+        return default_metric
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         if problem.choice_objective is not None:
@@ -62,11 +76,12 @@ class ShortBurstsReComSolver(ReComSolver):
                     balance_metric=balance_metric,
                 )
                 current = dict(initial.assignment)
-                current_partition = self._partition(problem, current, balance_metric)
                 current_score = self._score(problem, current)
                 initial_score = current_score
                 best = dict(current) if _valid(current_score) else None
                 best_score = current_score if best is not None else None
+                best_infeasible = None if best is not None else dict(current)
+                best_infeasible_score = None if best is not None else current_score
                 attempted = 0
                 accepted = 0
                 proposal_failures = 0
@@ -96,22 +111,28 @@ class ShortBurstsReComSolver(ReComSolver):
                         break
                     bursts += 1
                     burst_best = dict(current)
-                    burst_best_partition = current_partition
                     burst_best_score = current_score
                     burst_start_score = current_score
-                    walk_partition = current_partition
+                    walk_assignment = dict(current)
+                    walk_score = current_score
 
                     for _ in range(min(burst_length, max_iterations - attempted)):
                         if time.time() - start >= time_limit:
                             break
                         attempted += 1
+                        proposal_metric = self._proposal_balance_metric(
+                            problem, walk_score, balance_metric
+                        )
+                        walk_partition = self._partition(
+                            problem, walk_assignment, proposal_metric
+                        )
                         try:
                             proposal_partition = self._gerrychain_proposal(
                                 problem,
                                 walk_partition,
                                 cut_attempts,
                                 population_epsilon=population_epsilon,
-                                balance_metric=balance_metric,
+                                balance_metric=proposal_metric,
                             )
                         except _GERRYCHAIN_ERRORS as exc:
                             proposal_failures += 1
@@ -120,12 +141,18 @@ class ShortBurstsReComSolver(ReComSolver):
 
                         proposal = self._assignment_from_partition(proposal_partition)
                         proposal_score = self._score(problem, proposal)
-                        walk_partition = proposal_partition
+                        if not _valid(proposal_score) and (
+                            best_infeasible_score is None
+                            or proposal_score < best_infeasible_score
+                        ):
+                            best_infeasible = dict(proposal)
+                            best_infeasible_score = proposal_score
+                        walk_assignment = proposal
+                        walk_score = proposal_score
                         accepted += 1
 
                         if proposal_score < burst_best_score:
                             burst_best = dict(proposal)
-                            burst_best_partition = proposal_partition
                             burst_best_score = proposal_score
 
                         if _valid(proposal_score) and (
@@ -154,7 +181,6 @@ class ShortBurstsReComSolver(ReComSolver):
                         )
 
                     current = burst_best
-                    current_partition = burst_best_partition
                     current_score = burst_best_score
                     if current_score < burst_start_score:
                         selected_improvements += 1
@@ -165,6 +191,22 @@ class ShortBurstsReComSolver(ReComSolver):
             random.setstate(random_state)
 
         wall = time.time() - start
+        repair_metadata = {}
+        if best is None and best_infeasible is not None and best_infeasible_score:
+            repaired, repaired_score, repair_metadata = self._repair_infeasible_solution(
+                problem, best_infeasible, best_infeasible_score
+            )
+            if _valid(repaired_score):
+                best = repaired
+                best_score = repaired_score
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    repaired,
+                    repaired_score,
+                    iteration=attempted,
+                )
         if best is not None and best_score is not None:
             status = "FEASIBLE"
             assignment = best
@@ -173,6 +215,13 @@ class ShortBurstsReComSolver(ReComSolver):
             status = "UNKNOWN"
             assignment = {}
             objective = None
+        best_penalty = (
+            best_score.penalty
+            if best_score is not None
+            else best_infeasible_score.penalty
+            if best_infeasible_score is not None
+            else current_score.penalty
+        )
 
         metadata = {
             "solver": self.name,
@@ -182,7 +231,7 @@ class ShortBurstsReComSolver(ReComSolver):
             "iterations": max_iterations,
             "recom_balance_metric": balance_metric,
             "recom_population_epsilon": _population_epsilon(
-                problem, population_epsilon
+                problem, population_epsilon, balance_metric
             ),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
@@ -193,7 +242,8 @@ class ShortBurstsReComSolver(ReComSolver):
             "short_bursts_length": burst_length,
             "short_bursts_score": "infeasible_penalty_else_cut_edges",
             "initial_penalty": initial_score.penalty,
-            "best_penalty": best_score.penalty if best_score else current_score.penalty,
+            "best_penalty": best_penalty,
+            **repair_metadata,
             **initial.metadata,
         }
         if last_proposal_error is not None:

@@ -74,7 +74,7 @@ def main() -> None:
             "No iterative-choice stages with model, pre-choice, or post-choice "
             "utility data were found after filtering."
         )
-    baselines = single_prechoice_baselines(utility_rows)
+    baselines = single_postchoice_baselines(utility_rows)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output_paths = plot_trajectories_by_group(
@@ -260,14 +260,14 @@ def iterative_trajectory_rows(utility_rows: pd.DataFrame) -> pd.DataFrame:
     return utility_rows[strategy == "iterative_choice"].copy()
 
 
-def single_prechoice_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
+def single_postchoice_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
     if utility_rows.empty:
         return pd.DataFrame()
 
     strategy = utility_rows["strategy"].fillna("").astype(str).str.lower()
     candidates = utility_rows[
         (strategy == "single")
-        & (utility_rows["utility_kind"] == "pre")
+        & (utility_rows["utility_kind"] == "post")
         & utility_rows["utility"].notna()
         & utility_rows["centroids_type"].notna()
     ].copy()
@@ -386,13 +386,14 @@ def stage_post_choice_utilities(stage: dict[str, Any]) -> dict[str, float]:
             key = str(key)
             match = POST_CHOICE_RE.match(key)
             if match:
-                numeric = to_number(value)
-                if numeric is not None:
-                    out[match.group("matching_config")] = numeric
+                matching_config = match.group("matching_config")
             elif key == LEGACY_POST_CHOICE_COLUMN:
-                numeric = to_number(value)
-                if numeric is not None:
-                    out["default"] = numeric
+                matching_config = "default"
+            else:
+                continue
+            numeric = to_number(value)
+            if numeric is not None:
+                out[matching_config] = numeric
     return out
 
 
@@ -413,14 +414,14 @@ def stage_choice_metric_dicts(stage: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(runs, dict):
         for name, run_payload in runs.items():
             run_metrics = (run_payload or {}).get("metrics") or {}
-            if LEGACY_POST_CHOICE_COLUMN in run_metrics:
-                metric_dicts.append(
-                    {
-                        f"choice_{name}_total_mnl_utility": run_metrics[
-                            LEGACY_POST_CHOICE_COLUMN
-                        ]
-                    }
-                )
+            # if LEGACY_POST_CHOICE_COLUMN in run_metrics:
+            #     metric_dicts.append(
+            #         {
+            #             f"choice_{name}_total_mnl_utility": run_metrics[
+            #                 LEGACY_POST_CHOICE_COLUMN
+            #             ]
+            #         }
+            #     )
 
     return metric_dicts
 
@@ -659,7 +660,13 @@ def baseline_label(baseline: pd.Series) -> str:
     method = format_choice_method(str(baseline.get("choice_model_method") or ""))
     seed = baseline.get("seed")
     seed_label = "" if pd.isna(seed) else f", seed {seed:g}"
-    return f"Best single pre-assignment ({solver}, {method}{seed_label})"
+    matching_config = baseline.get("matching_config")
+    matching_label = (
+        ""
+        if pd.isna(matching_config) or not matching_config
+        else f", {format_matching_config(str(matching_config))}"
+    )
+    return f"Best single post-choice ({solver}, {method}{matching_label}{seed_label})"
 
 
 def trajectory_id(

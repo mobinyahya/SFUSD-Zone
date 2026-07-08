@@ -22,6 +22,7 @@ from Zone_Generation.optimization.problem import ZoneProblem
 
 HINT_METHODS = {"voronoi", "gerry_chain", "none"}
 RECOM_BALANCE_METRICS = {"students", "nodes", "schools"}
+RECOM_BALANCE_METRIC_ALIASES = {"num_schools": "schools"}
 RECOM_NODE_COUNT_COL = "__recom_node_count"
 RECOM_SCHOOL_COUNT_COL = "__recom_school_count"
 
@@ -56,6 +57,7 @@ def normalize_hints(value: object, default: str = "gerry_chain") -> str:
 
 def normalize_recom_balance_metric(value: object, default: str = "students") -> str:
     metric = str(default if value is None else value)
+    metric = RECOM_BALANCE_METRIC_ALIASES.get(metric, metric)
     if metric not in RECOM_BALANCE_METRICS:
         raise ValueError(
             "recom_balance_metric must be one of: students, nodes, schools."
@@ -103,12 +105,14 @@ def gerry_chain_initial_solution(
 ) -> InitialSolution:
     requested_metric = normalize_recom_balance_metric(balance_metric)
     metrics = _initial_balance_metrics(problem, requested_metric)
-    epsilon = recom_balance_epsilon(problem, population_epsilon)
+    requested_epsilon = recom_balance_epsilon(
+        problem, population_epsilon, requested_metric
+    )
     tree_method = partial(bipartition_tree, max_attempts=max(1, int(cut_attempts)))
     best_assignment = None
     best_score = None
     best_metadata = None
-    best_epsilon = epsilon
+    best_epsilon = requested_epsilon
     best_metric = requested_metric
     metric_attempts: dict[str, int] = {}
     errors: list[str] = []
@@ -117,6 +121,7 @@ def gerry_chain_initial_solution(
         target = recom_balance_target(problem, metric)
         if problem.Z < 2 or target <= 0:
             continue
+        epsilon = recom_balance_epsilon(problem, population_epsilon, metric)
         graph = recom_gerrychain_graph(problem, metric)
         pop_col = recom_balance_pop_col(metric)
         for attempt, current_epsilon in enumerate(
@@ -177,7 +182,7 @@ def gerry_chain_initial_solution(
     result = _gerry_chain_fallback(
         problem,
         recom_balance_target(problem, requested_metric),
-        epsilon,
+        requested_epsilon,
         requested_metric,
     )
     result.metadata["gerry_chain_initial_balance_metrics"] = metrics
@@ -304,11 +309,20 @@ def recom_balance_target(
 
 
 def recom_balance_epsilon(
-    problem: ZoneProblem, population_epsilon: float | None = None
+    problem: ZoneProblem,
+    population_epsilon: float | None = None,
+    balance_metric: object = "students",
 ) -> float:
+    metric = normalize_recom_balance_metric(balance_metric)
     if population_epsilon is not None:
-        return max(0.01, float(population_epsilon))
-    return _population_epsilon(problem)
+        epsilon = max(0.01, float(population_epsilon))
+    else:
+        epsilon = _population_epsilon(problem)
+    if metric == "schools":
+        target = recom_balance_target(problem, metric)
+        if target > 0:
+            epsilon = min(epsilon, 1.0 / target)
+    return max(0.01, epsilon)
 
 
 def _normalize_gerry_chain_assignment(

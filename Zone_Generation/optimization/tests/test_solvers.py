@@ -14,6 +14,7 @@ from Zone_Generation.optimization.data import contiguity
 from Zone_Generation.optimization.data.initial_solutions import (
     RECOM_SCHOOL_COUNT_COL,
     _initial_balance_metrics,
+    recom_balance_epsilon,
     recom_balance_pop_col,
     recom_balance_target,
     recom_gerrychain_graph,
@@ -88,6 +89,16 @@ def test_config_accepts_school_recom_balance_metric():
     solver = config.make_solver()
 
     assert solver.options["recom_balance_metric"] == "schools"
+
+
+def test_config_normalizes_num_schools_recom_balance_metric_alias():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="short_bursts_recom",
+        recom_balance_metric="num_schools",
+    )
+
+    assert config.recom_balance_metric == "schools"
 
 
 def test_cp_bool_solver_supports_secondary_objective():
@@ -192,6 +203,62 @@ def test_recom_school_balance_metric_uses_school_counts():
     assert recom_balance_target(problem, "schools") == pytest.approx(1.0)
     assert graph.nodes[0][RECOM_SCHOOL_COUNT_COL] == pytest.approx(1.0)
     assert graph.nodes[4][RECOM_SCHOOL_COUNT_COL] == pytest.approx(0.0)
+
+
+def test_recom_school_balance_metric_tightens_epsilon_to_one_school():
+    problem = make_grid_problem(3, 3)
+    for node in problem.nodes:
+        problem.G.nodes[node]["num_schools"] = 1
+
+    assert recom_balance_epsilon(problem, 0.25, "schools") == pytest.approx(2 / 9)
+    assert recom_balance_epsilon(problem, 0.25, "students") == pytest.approx(0.25)
+
+
+def test_short_bursts_recom_uses_school_metric_for_school_penalty():
+    problem = make_grid_problem(3, 3)
+    solver = get_solver("short_bursts_recom")
+
+    metric = solver._proposal_balance_metric(
+        problem,
+        _Score(penalty=1.0, boundary=0, components={"schools": 1.0}),
+        "students",
+    )
+
+    assert metric == "schools"
+    assert (
+        solver._proposal_balance_metric(
+            problem,
+            _Score(penalty=1.0, boundary=0, components={"schools": 1.0}),
+            "nodes",
+        )
+        == "nodes"
+    )
+    assert (
+        solver._proposal_balance_metric(
+            problem,
+            _Score(penalty=1.0, boundary=0, components={"frl": 1.0}),
+            "students",
+        )
+        == "students"
+    )
+
+
+def test_recom_boundary_repair_can_fix_school_count_violation():
+    problem = make_grid_problem(2, 3, racial_dev=-1, frl_dev=1.0, overage=10.0)
+    for node in problem.nodes:
+        problem.G.nodes[node]["num_schools"] = 1 if node in {0, 1, 3, 4} else 0
+    assignment = {0: 0, 1: 0, 3: 0, 4: 0, 2: 1, 5: 1}
+    solver = get_solver("recom")
+    score = solver._score(problem, assignment)
+
+    repaired, repaired_score, metadata = solver._repair_infeasible_solution(
+        problem, assignment, score
+    )
+
+    assert score.components == {"schools": pytest.approx(2.0)}
+    assert repaired_score.penalty == pytest.approx(0.0)
+    assert metadata["repair_success"] is True
+    assert contiguity.is_contiguous(problem.G, repaired, problem.centroids)
 
 
 def test_gerry_chain_initialization_adds_school_multistart():

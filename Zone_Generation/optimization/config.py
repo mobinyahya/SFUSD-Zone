@@ -91,6 +91,8 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "gerry_chain", "none"}:
             raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
+        if self.recom_balance_metric == "num_schools":
+            self.recom_balance_metric = "schools"
         if self.recom_balance_metric not in {"students", "nodes", "schools"}:
             raise ValueError(
                 "recom_balance_metric must be one of: students, nodes, schools."

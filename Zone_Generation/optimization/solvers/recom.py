@@ -160,6 +160,8 @@ class ReComSolver(Solver):
                 initial_score = current_score
                 best = dict(current) if _valid(current_score) else None
                 best_score = current_score if best is not None else None
+                best_infeasible = None if best is not None else dict(current)
+                best_infeasible_score = None if best is not None else current_score
                 accepted = 0
                 rejected = 0
                 attempted = 0
@@ -203,6 +205,12 @@ class ReComSolver(Solver):
 
                     proposal = self._assignment_from_partition(proposal_partition)
                     proposal_score = self._score(problem, proposal)
+                    if not _valid(proposal_score) and (
+                        best_infeasible_score is None
+                        or proposal_score < best_infeasible_score
+                    ):
+                        best_infeasible = dict(proposal)
+                        best_infeasible_score = proposal_score
                     accepted_move = self._accept(
                         current_score, proposal_score, temperature, rng
                     )
@@ -245,6 +253,22 @@ class ReComSolver(Solver):
             random.setstate(random_state)
 
         wall = time.time() - start
+        repair_metadata = {}
+        if best is None and best_infeasible is not None and best_infeasible_score:
+            repaired, repaired_score, repair_metadata = self._repair_infeasible_solution(
+                problem, best_infeasible, best_infeasible_score
+            )
+            if _valid(repaired_score):
+                best = repaired
+                best_score = repaired_score
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    repaired,
+                    repaired_score,
+                    iteration=attempted,
+                )
         if best is not None and best_score is not None:
             status = "FEASIBLE"
             assignment = best
@@ -253,6 +277,13 @@ class ReComSolver(Solver):
             status = "UNKNOWN"
             assignment = {}
             objective = None
+        best_penalty = (
+            best_score.penalty
+            if best_score is not None
+            else best_infeasible_score.penalty
+            if best_infeasible_score is not None
+            else current_score.penalty
+        )
 
         metadata = {
             "solver": self.name,
@@ -262,15 +293,16 @@ class ReComSolver(Solver):
             "iterations": max_iterations,
             "recom_balance_metric": balance_metric,
             "recom_population_epsilon": _population_epsilon(
-                problem, population_epsilon
+                problem, population_epsilon, balance_metric
             ),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": rejected,
             "proposal_failures": proposal_failures,
             "initial_penalty": initial_score.penalty,
-            "best_penalty": best_score.penalty if best_score else current_score.penalty,
+            "best_penalty": best_penalty,
             "temperature": temperature,
+            **repair_metadata,
             **initial.metadata,
         }
         if last_proposal_error is not None:
@@ -362,6 +394,92 @@ class ReComSolver(Solver):
             time.time() - start,
             assignment_tuple(problem.nodes, assignment),
             iteration=iteration,
+        )
+
+    def _repair_infeasible_solution(
+        self,
+        problem: ZoneProblem,
+        assignment: Mapping[int, int],
+        score: _Score,
+    ) -> tuple[dict[int, int], _Score, dict[str, object]]:
+        current = dict(assignment)
+        current_score = score
+        max_steps = max(
+            0,
+            int(self.options.get("recom_repair_iterations", max(100, problem.A * 4))),
+        )
+        time_limit = max(0.0, float(self.options.get("recom_repair_time_limit", 3.0)))
+        repair_start = time.time()
+        checked_moves = 0
+        steps = 0
+
+        for _ in range(max_steps):
+            if time_limit and time.time() - repair_start >= time_limit:
+                break
+            best_assignment = None
+            best_score = current_score
+            for node in self._repair_boundary_nodes(problem, current):
+                if time_limit and time.time() - repair_start >= time_limit:
+                    break
+                current_zone = current[node]
+                adjacent_zones = {
+                    int(current[nb])
+                    for nb in problem.G.neighbors(node)
+                    if nb in current and current[nb] != current_zone
+                }
+                for zone in sorted(adjacent_zones):
+                    if time_limit and time.time() - repair_start >= time_limit:
+                        break
+                    if zone not in self._candidate_zones(problem, node):
+                        continue
+                    trial = dict(current)
+                    trial[node] = zone
+                    checked_moves += 1
+                    if not contiguity.is_contiguous(
+                        problem.G, trial, problem.centroids
+                    ):
+                        continue
+                    trial_score = self._score(problem, trial)
+                    if trial_score < best_score:
+                        best_assignment = trial
+                        best_score = trial_score
+            if best_assignment is None:
+                break
+            current = best_assignment
+            current_score = best_score
+            steps += 1
+            if _valid(current_score):
+                break
+
+        return current, current_score, {
+            "repair_attempted": True,
+            "repair_steps": steps,
+            "repair_checked_moves": checked_moves,
+            "repair_final_penalty": current_score.penalty,
+            "repair_success": _valid(current_score),
+        }
+
+    def _repair_boundary_nodes(
+        self, problem: ZoneProblem, assignment: Mapping[int, int]
+    ) -> list[int]:
+        nodes = {
+            int(u)
+            for u, v in problem.G.edges()
+            if assignment.get(u) != assignment.get(v)
+        } | {
+            int(v)
+            for u, v in problem.G.edges()
+            if assignment.get(u) != assignment.get(v)
+        }
+        return sorted(
+            nodes,
+            key=lambda node: (
+                -problem.num_schools(node),
+                problem.distance(problem.centroids[int(assignment[node])], node)
+                if int(assignment[node]) < len(problem.centroids)
+                else 0.0,
+                node,
+            ),
         )
 
     # ------------------------------------------------------------------ #
@@ -481,7 +599,7 @@ class ReComSolver(Solver):
                 partition,
                 pop_col=recom_balance_pop_col(metric),
                 pop_target=_population_target(problem, metric),
-                epsilon=_population_epsilon(problem, population_epsilon),
+                epsilon=_population_epsilon(problem, population_epsilon, metric),
                 method=partial(
                     bipartition_tree,
                     max_attempts=cut_attempts,
@@ -818,13 +936,11 @@ def _population_target(
 
 
 def _population_epsilon(
-    problem: ZoneProblem, population_epsilon: float | None = None
+    problem: ZoneProblem,
+    population_epsilon: float | None = None,
+    balance_metric: object = "students",
 ) -> float:
-    if population_epsilon is not None:
-        return recom_balance_epsilon(problem, population_epsilon)
-    tolerances = [problem.shortage, problem.overage, 0.05]
-    finite = [float(value) for value in tolerances if math.isfinite(float(value))]
-    return max(0.01, min(max(finite) if finite else 1.0, 10.0))
+    return recom_balance_epsilon(problem, population_epsilon, balance_metric)
 
 
 def _epsilon_schedule(epsilon: float) -> list[float]:

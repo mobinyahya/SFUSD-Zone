@@ -70,6 +70,8 @@ class RelaxedReComSolver(ReComSolver):
 
                 best = dict(current) if _valid(current_score) else None
                 best_score = current_score if best is not None else None
+                best_infeasible = None if best is not None else dict(current)
+                best_infeasible_score = None if best is not None else current_score
                 attempted = 0
                 accepted = 0
                 rejected_samples = 0 if best is not None else 1
@@ -112,6 +114,12 @@ class RelaxedReComSolver(ReComSolver):
 
                     accepted += 1
                     current_score = self._score(problem, current)
+                    if not _valid(current_score) and (
+                        best_infeasible_score is None
+                        or current_score < best_infeasible_score
+                    ):
+                        best_infeasible = dict(current)
+                        best_infeasible_score = current_score
                     if _valid(current_score):
                         if (
                             best_score is None
@@ -146,6 +154,22 @@ class RelaxedReComSolver(ReComSolver):
             random.setstate(random_state)
 
         wall = time.time() - start
+        repair_metadata = {}
+        if best is None and best_infeasible is not None and best_infeasible_score:
+            repaired, repaired_score, repair_metadata = self._repair_infeasible_solution(
+                problem, best_infeasible, best_infeasible_score
+            )
+            if _valid(repaired_score):
+                best = repaired
+                best_score = repaired_score
+                self._record_recom_progress(
+                    progress,
+                    start,
+                    problem,
+                    repaired,
+                    repaired_score,
+                    iteration=attempted,
+                )
         if best is not None and best_score is not None:
             status = "FEASIBLE"
             assignment = best
@@ -154,6 +178,13 @@ class RelaxedReComSolver(ReComSolver):
             status = "UNKNOWN"
             assignment = {}
             objective = None
+        best_penalty = (
+            best_score.penalty
+            if best_score is not None
+            else best_infeasible_score.penalty
+            if best_infeasible_score is not None
+            else current_score.penalty
+        )
 
         metadata = {
             "solver": self.name,
@@ -168,9 +199,10 @@ class RelaxedReComSolver(ReComSolver):
             "rejected_samples": rejected_samples,
             "proposal_failures": proposal_failures,
             "initial_penalty": initial_score.penalty,
-            "best_penalty": best_score.penalty if best_score else current_score.penalty,
+            "best_penalty": best_penalty,
             "relaxed_recom_min_boundary_edges": min_boundary_edges,
             "relaxed_recom_cut_weight": "log_inverse_configured_constraint_penalty",
+            **repair_metadata,
             **initial.metadata,
         }
         if last_proposal_error is not None:
