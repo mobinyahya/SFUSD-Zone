@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Plot iterative-choice utility trajectories from benchmark outputs.
 
-The first iterative-choice solve has no choice cuts, so its model objective is
-not comparable to later iterations. By default this script drops iteration 0.
+The first iterative-choice solve has no choice cuts, so pass ``--skip-iteration 0``
+if you want to omit it.
 """
 
 from __future__ import annotations
@@ -133,8 +133,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-iteration",
         type=int,
-        default=0,
-        help="Iteration index to skip. Use -1 to skip nothing. Default: 0",
+        default=-1,
+        help="Iteration index to skip. Use -1 to skip nothing. Default: -1",
     )
     return parser.parse_args()
 
@@ -274,12 +274,43 @@ def single_utility_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
     if candidates.empty:
         return pd.DataFrame()
 
-    best_indexes = candidates.groupby(
-        ["centroids_type", "solver", "choice_model_method", "utility_kind"],
-        dropna=False,
-    )["utility"].idxmax()
-    baselines = candidates.loc[best_indexes].copy()
-    baselines.rename(columns={"utility": "baseline_utility"}, inplace=True)
+    post_is_sd = (
+        candidates["matching_config"].fillna("").astype(str).str.lower() == "sd"
+    )
+    candidates = candidates[
+        (candidates["utility_kind"] != "post") | post_is_sd
+    ].copy()
+    if candidates.empty:
+        return pd.DataFrame()
+
+    group_cols = [
+        "centroids_type",
+        "solver",
+        "choice_model_method",
+        "utility_kind",
+        "utility_kind_order",
+        "matching_config",
+        "matching_config_label",
+    ]
+    baselines = (
+        candidates.groupby(group_cols, dropna=False)["utility"]
+        .agg(
+            baseline_max="max",
+            baseline_median="median",
+            baseline_min="min",
+        )
+        .reset_index()
+    )
+    baselines.sort_values(
+        [
+            "centroids_type",
+            "solver",
+            "choice_model_method",
+            "utility_kind_order",
+            "matching_config_label",
+        ],
+        inplace=True,
+    )
     return baselines.reset_index(drop=True)
 
 
@@ -523,12 +554,20 @@ def plot_trajectories(
         )
 
     for _, baseline in baselines.iterrows():
-        utility_kind = str(baseline.get("utility_kind") or "")
+        color = baseline_color(baseline)
         ax.axhline(
-            float(baseline["baseline_utility"]),
-            color=baseline_color(baseline),
-            linestyle=":" if utility_kind == "post" else "--",
-            linewidth=2.2,
+            float(baseline["baseline_median"]),
+            color=color,
+            linestyle="--",
+            linewidth=2.0,
+            label="_nolegend_",
+            zorder=1,
+        )
+        ax.axhspan(
+            float(baseline["baseline_min"]),
+            float(baseline["baseline_max"]),
+            color=color,
+            alpha=0.14,
             label=baseline_label(baseline),
             zorder=0,
         )
@@ -637,7 +676,8 @@ def baseline_color(row: pd.Series) -> str:
     utility_kind = str(row.get("utility_kind") or "")
     if utility_kind == "pre":
         return BASE_COLORS["pre"]
-    return "#222222"
+    matching_config = str(row.get("matching_config") or "default")
+    return POST_COLORS.get(matching_config, "#222222")
 
 
 def format_matching_config(value: str | None) -> str:
@@ -663,19 +703,17 @@ def format_choice_method(value: str | None) -> str:
 
 
 def baseline_label(baseline: pd.Series) -> str:
-    solver = format_solver(str(baseline.get("solver") or ""))
-    method = format_choice_method(str(baseline.get("choice_model_method") or ""))
     utility_kind = str(baseline.get("utility_kind") or "post")
     utility_label = "pre-choice" if utility_kind == "pre" else "post-choice"
-    seed = baseline.get("seed")
-    seed_label = "" if pd.isna(seed) else f", seed {seed:g}"
     matching_config = baseline.get("matching_config")
-    matching_label = (
-        ""
-        if pd.isna(matching_config) or not matching_config
-        else f", {format_matching_config(str(matching_config))}"
-    )
-    return f"Best single {utility_label} ({solver}, {method}{matching_label}{seed_label})"
+    if utility_kind == "post" and not pd.isna(matching_config) and matching_config:
+        matching_label = (
+            "SD"
+            if str(matching_config).lower() == "sd"
+            else format_matching_config(str(matching_config))
+        )
+        utility_label = f"{matching_label} {utility_label}"
+    return f"Single {utility_label} baseline range"
 
 
 def trajectory_id(
