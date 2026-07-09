@@ -28,6 +28,9 @@ class ChoiceModel(ABC):
     def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
         return (-1_000_000_000.0, 1_000_000_000.0)
 
+    def choice_utility_hint_cuts(self, problem: ZoneProblem) -> tuple[ChoiceCut, ...]:
+        return ()
+
 
 class DistanceChoiceModel(ChoiceModel):
     """Student-weighted negative distance to the assigned centroid."""
@@ -103,6 +106,9 @@ class MNLChoiceModel(ChoiceModel):
 
     def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
         return (self.lower_bound, self.upper_bound)
+
+    def choice_utility_hint_cuts(self, problem: ZoneProblem) -> tuple[ChoiceCut, ...]:
+        return self.evaluator.choice_utility_hint_cuts(problem)
 
 
 _MODELS = {

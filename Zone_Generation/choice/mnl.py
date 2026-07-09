@@ -87,6 +87,111 @@ class MNLZoningUtility:
         )
         return ChoiceEvaluation(utility=utility.total, cuts=tuple(cuts))
 
+    def choice_utility_hint_cuts(self, problem: ZoneProblem) -> tuple[ChoiceCut, ...]:
+        """Initial cuts around each area's nearest average-zone-size school set."""
+
+        if problem.Z <= 0:
+            return ()
+        schools_per_zone = int(
+            sum(problem.num_schools(node) for node in problem.nodes) / problem.Z
+        )
+        if schools_per_zone <= 0:
+            return ()
+
+        self._ensure_loaded()
+        assert self.utility_df is not None
+        assert self.student_df is not None
+
+        student_area_col = self.area_column or _student_area_column(problem)
+        if student_area_col not in self.student_df.columns:
+            raise ValueError(f"MNL student file lacks {student_area_col!r}.")
+
+        merged = self.student_df.merge(self.utility_df, on="studentno").copy()
+        merged["_area_key"] = merged[student_area_col].map(_area_key)
+
+        school_to_node = _school_to_node(problem)
+        school_cols = {
+            sid: [col for col in self.school_to_cols.get(sid, []) if col in merged]
+            for sid in school_to_node
+        }
+        school_items = sorted(
+            (sid, school_node)
+            for sid, school_node in school_to_node.items()
+            if school_cols.get(sid)
+        )
+        if not school_items:
+            return ()
+        all_cols = [
+            col
+            for sid, _school_node in school_items
+            for col in school_cols.get(sid, [])
+        ]
+
+        def summed_utility(frame: pd.DataFrame, cols: list[str]) -> float:
+            if frame.empty:
+                return 0.0
+            return finite_or(float(np.sum(self._utilities_for_cols(frame, cols))))
+
+        distance_dict = problem.G.graph.get("distance_dict", {})
+        cuts: list[ChoiceCut] = []
+        empty_frame = merged.iloc[0:0]
+        for node in problem.nodes:
+            block_ids = set(_node_area_ids(problem.G.nodes[node]))
+            group = (
+                merged[merged["_area_key"].isin(block_ids)]
+                if block_ids and not merged.empty
+                else empty_frame
+            )
+            nearest_schools = {
+                sid
+                for sid, _school_node in sorted(
+                    school_items,
+                    key=lambda item: (
+                        distance_dict.get(node, {}).get(item[1], float("inf")),
+                        item[1],
+                        item[0],
+                    ),
+                )[:schools_per_zone]
+            }
+            baseline_cols = [
+                col
+                for sid in nearest_schools
+                for col in school_cols.get(sid, [])
+            ]
+            baseline_col_set = set(baseline_cols)
+            baseline_value = summed_utility(group, baseline_cols)
+            full_value = summed_utility(group, all_cols)
+            constant = baseline_value
+            coeffs: dict[int, float] = {}
+
+            for sid, school_node in school_items:
+                sid_cols = school_cols.get(sid, [])
+                sid_col_set = set(sid_cols)
+                if sid in nearest_schools:
+                    remaining_cols = [col for col in all_cols if col not in sid_col_set]
+                    grad = full_value - summed_utility(group, remaining_cols)
+                    constant -= grad
+                else:
+                    added_cols = baseline_cols + [
+                        col for col in sid_cols if col not in baseline_col_set
+                    ]
+                    grad = summed_utility(group, added_cols) - baseline_value
+                grad = finite_or(grad)
+                if grad:
+                    coeffs[school_node] = coeffs.get(school_node, 0.0) + grad
+
+            constant = finite_or(constant)
+            for zone in problem.candidate_zones(node):
+                terms = tuple(
+                    ChoiceTerm(coef, zone, school_node)
+                    for school_node, coef in coeffs.items()
+                    if zone in problem.candidate_zones(school_node)
+                )
+                cuts.append(
+                    ChoiceCut(node=node, zone=zone, constant=constant, terms=terms)
+                )
+        return tuple(cuts)
+
     def _preassignment_utility(
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> _PreassignmentUtility:

@@ -40,8 +40,7 @@ class RelaxedReComSolver(ReComSolver):
             return hint_error
         seed = int(self.options.get("seed", 42))
         rng = random.Random(seed)
-        time_limit = float(self.options.get("solve_time_limit", 60.0))
-        max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
+        time_limit, max_iterations = self._recom_limits()
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         population_epsilon = self.options.get("recom_population_epsilon")
         balance_metric = normalize_recom_balance_metric(
@@ -95,7 +94,7 @@ class RelaxedReComSolver(ReComSolver):
                     iteration=0,
                 )
 
-                for _ in range(max_iterations):
+                while self._has_recom_iteration_budget(max_iterations, attempted):
                     if time.time() - start >= time_limit:
                         break
                     attempted += 1

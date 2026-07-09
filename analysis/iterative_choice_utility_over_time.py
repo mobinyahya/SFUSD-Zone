@@ -74,7 +74,7 @@ def main() -> None:
             "No iterative-choice stages with model, pre-choice, or post-choice "
             "utility data were found after filtering."
         )
-    baselines = single_postchoice_baselines(utility_rows)
+    baselines = single_utility_baselines(utility_rows)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output_paths = plot_trajectories_by_group(
@@ -85,8 +85,8 @@ def main() -> None:
     )
 
     print(f"Loaded {trajectories['run_label'].nunique()} iterative-choice run(s).")
-    baseline_count = 0 if baselines.empty else baselines["centroids_type"].nunique()
-    print(f"Loaded {baseline_count} centroid baseline(s).")
+    baseline_count = 0 if baselines.empty else len(baselines)
+    print(f"Loaded {baseline_count} single-run utility baseline(s).")
     print(f"Plotted {len(trajectories)} utility row(s).")
     print(
         "Centroid types: "
@@ -260,14 +260,14 @@ def iterative_trajectory_rows(utility_rows: pd.DataFrame) -> pd.DataFrame:
     return utility_rows[strategy == "iterative_choice"].copy()
 
 
-def single_postchoice_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
+def single_utility_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
     if utility_rows.empty:
         return pd.DataFrame()
 
     strategy = utility_rows["strategy"].fillna("").astype(str).str.lower()
     candidates = utility_rows[
         (strategy == "single")
-        & (utility_rows["utility_kind"] == "post")
+        & utility_rows["utility_kind"].isin(["pre", "post"])
         & utility_rows["utility"].notna()
         & utility_rows["centroids_type"].notna()
     ].copy()
@@ -275,7 +275,8 @@ def single_postchoice_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     best_indexes = candidates.groupby(
-        ["centroids_type", "solver", "choice_model_method"], dropna=False
+        ["centroids_type", "solver", "choice_model_method", "utility_kind"],
+        dropna=False,
     )["utility"].idxmax()
     baselines = candidates.loc[best_indexes].copy()
     baselines.rename(columns={"utility": "baseline_utility"}, inplace=True)
@@ -453,7 +454,7 @@ def plot_trajectories_by_group(
                 == choice_model_method
             )
         ]
-        baseline = baseline_for_group(
+        plot_baselines = baselines_for_group(
             baselines,
             centroids_type,
             solver,
@@ -473,7 +474,7 @@ def plot_trajectories_by_group(
             str(centroids_type),
             solver,
             choice_model_method,
-            baseline,
+            plot_baselines,
         )
         output_paths.append(output_path)
     return output_paths
@@ -485,7 +486,7 @@ def plot_trajectories(
     centroids_type: str,
     solver: str,
     choice_model_method: str,
-    baseline: pd.Series | None,
+    baselines: pd.DataFrame,
 ) -> None:
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(13, 8), constrained_layout=True)
@@ -521,11 +522,12 @@ def plot_trajectories(
             f"No utility series had numeric values to plot for {centroids_type}."
         )
 
-    if baseline is not None:
+    for _, baseline in baselines.iterrows():
+        utility_kind = str(baseline.get("utility_kind") or "")
         ax.axhline(
             float(baseline["baseline_utility"]),
-            color="#222222",
-            linestyle=":",
+            color=baseline_color(baseline),
+            linestyle=":" if utility_kind == "post" else "--",
             linewidth=2.2,
             label=baseline_label(baseline),
             zorder=0,
@@ -573,14 +575,14 @@ def plot_group_order(trajectories: pd.DataFrame) -> list[tuple[Any, str, str]]:
     )
 
 
-def baseline_for_group(
+def baselines_for_group(
     baselines: pd.DataFrame,
     centroids_type: Any,
     solver: str,
     choice_model_method: str,
-) -> pd.Series | None:
+) -> pd.DataFrame:
     if baselines.empty:
-        return None
+        return baselines
     matches = baselines[
         (baselines["centroids_type"] == centroids_type)
         & (baselines["solver"].fillna("").astype(str) == solver)
@@ -589,9 +591,7 @@ def baseline_for_group(
             == choice_model_method
         )
     ]
-    if matches.empty:
-        return None
-    return matches.iloc[0]
+    return matches.sort_values(["utility_kind_order", "matching_config_label"])
 
 
 def centroid_sort_key(value: Any) -> tuple[int, str]:
@@ -633,6 +633,13 @@ def series_color(row: pd.Series) -> str:
     return POST_COLORS.get(matching_config, "#9D755D")
 
 
+def baseline_color(row: pd.Series) -> str:
+    utility_kind = str(row.get("utility_kind") or "")
+    if utility_kind == "pre":
+        return BASE_COLORS["pre"]
+    return "#222222"
+
+
 def format_matching_config(value: str | None) -> str:
     if not value:
         return "Default"
@@ -658,6 +665,8 @@ def format_choice_method(value: str | None) -> str:
 def baseline_label(baseline: pd.Series) -> str:
     solver = format_solver(str(baseline.get("solver") or ""))
     method = format_choice_method(str(baseline.get("choice_model_method") or ""))
+    utility_kind = str(baseline.get("utility_kind") or "post")
+    utility_label = "pre-choice" if utility_kind == "pre" else "post-choice"
     seed = baseline.get("seed")
     seed_label = "" if pd.isna(seed) else f", seed {seed:g}"
     matching_config = baseline.get("matching_config")
@@ -666,7 +675,7 @@ def baseline_label(baseline: pd.Series) -> str:
         if pd.isna(matching_config) or not matching_config
         else f", {format_matching_config(str(matching_config))}"
     )
-    return f"Best single post-choice ({solver}, {method}{matching_label}{seed_label})"
+    return f"Best single {utility_label} ({solver}, {method}{matching_label}{seed_label})"
 
 
 def trajectory_id(

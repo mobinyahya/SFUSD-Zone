@@ -28,11 +28,16 @@ class IterativeChoiceStrategy(Strategy):
         tolerance = float(self.options.get("tolerance", 1e-6))
         apply_hints = normalize_hints(self.options.get("hints", "gerry_chain")) != "none"
         scale = float(self.options.get("choice_utility_scale", 100.0))
+        use_choice_utility_hints = bool(self.options.get("choice_utility_hints", False))
         model = get_configured_choice_model(self.options)
 
         base_problem = dataset.problem_for(target)
         lower_bound, upper_bound = model.utility_bounds(base_problem)
         cuts = []
+        hint_cut_count = 0
+        if use_choice_utility_hints:
+            cuts.extend(model.choice_utility_hint_cuts(base_problem))
+            hint_cut_count = len(cuts)
 
         solutions: list[ZoneSolution] = []
         best_choice_solution: ZoneSolution | None = None
@@ -53,9 +58,8 @@ class IterativeChoiceStrategy(Strategy):
                 if hint_solution is not None and apply_hints
                 else None
             )
-            # The first iteration intentionally has no cuts, matching the legacy
-            # unconstrained seed. A boundary-minimized seed is a reasonable
-            # alternative if we later want a less arbitrary starting zoning.
+            # Without choice_utility_hints, the first iteration intentionally has
+            # no cuts, matching the legacy unconstrained seed.
             problem = dataset.problem_for(
                 target,
                 hint=hint,
@@ -64,6 +68,8 @@ class IterativeChoiceStrategy(Strategy):
             sol = solver.solve(problem)
             sol.metadata["choice_iteration"] = iteration
             sol.metadata["choice_objective_cuts"] = len(cuts)
+            if use_choice_utility_hints:
+                sol.metadata["choice_utility_hint_cuts"] = hint_cut_count
             if not sol.feasible:
                 solutions.append(sol)
                 break

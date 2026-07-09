@@ -59,6 +59,7 @@ class OptimizationConfig:
     choice_model: str = "mnl"
     choice_model_method: str = "logsum"
     choice_utility_scale: float = 100.0
+    choice_utility_hints: bool = False
     tolerance: float = 1e-6
 
     # --- data ingestion ----------------------------------------------- #
@@ -91,6 +92,11 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "gerry_chain", "none"}:
             raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
+        if self.recom_iterations < 0 and not self.solve_time_limits:
+            raise ValueError(
+                "solve_time_limits must include at least one value when "
+                "recom_iterations is negative."
+            )
         if self.recom_balance_metric == "num_schools":
             self.recom_balance_metric = "schools"
         if self.recom_balance_metric not in {"students", "nodes", "schools"}:
@@ -163,5 +169,6 @@ class OptimizationConfig:
             choice_model=self.choice_model,
             choice_model_method=self.choice_model_method,
             choice_utility_scale=self.choice_utility_scale,
+            choice_utility_hints=self.choice_utility_hints,
             tolerance=self.tolerance,
         )

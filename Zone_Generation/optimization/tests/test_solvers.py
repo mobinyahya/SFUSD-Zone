@@ -6,6 +6,9 @@ import os
 import pytest
 from ortools.sat.python import cp_model
 
+import Zone_Generation.optimization.solvers.recom as recom_module
+import Zone_Generation.optimization.solvers.relaxed_recom as relaxed_recom_module
+import Zone_Generation.optimization.solvers.short_bursts_recom as short_bursts_recom_module
 from Zone_Generation.choice.models import DistanceChoiceModel
 from Zone_Generation.choice.objective import ChoiceObjective
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
@@ -99,6 +102,16 @@ def test_config_normalizes_num_schools_recom_balance_metric_alias():
     )
 
     assert config.recom_balance_metric == "schools"
+
+
+def test_config_requires_time_limit_for_negative_recom_iterations():
+    with pytest.raises(ValueError, match="solve_time_limits"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="recom",
+            recom_iterations=-1,
+            solve_time_limits=[],
+        )
 
 
 def test_cp_bool_solver_supports_secondary_objective():
@@ -641,6 +654,80 @@ def test_short_bursts_recom_solver():
     assert solution.metadata["solver"] == "short_bursts_recom"
     assert solution.metadata["short_bursts_length"] == 5
     assert solution.metadata["completed_bursts"] <= 5
+
+
+@pytest.mark.parametrize(
+    "name,options",
+    [
+        ("recom", {}),
+        ("short_bursts_recom", {"short_bursts_length": 2}),
+        (
+            "relaxed_recom",
+            {"relaxed_recom_min_boundary_edges": 0},
+        ),
+    ],
+)
+def test_recom_solvers_require_time_limit_for_negative_iterations(
+    name,
+    options,
+):
+    problem = make_grid_problem(3, 3)
+
+    with pytest.raises(ValueError, match="solve_time_limit"):
+        get_solver(name, recom_iterations=-1, **options).solve(problem)
+
+
+@pytest.mark.parametrize(
+    "name,module,options",
+    [
+        ("recom", recom_module, {}),
+        ("short_bursts_recom", short_bursts_recom_module, {"short_bursts_length": 2}),
+        (
+            "relaxed_recom",
+            relaxed_recom_module,
+            {"relaxed_recom_min_boundary_edges": 0},
+        ),
+    ],
+)
+def test_negative_recom_iterations_use_time_limit(
+    monkeypatch,
+    name,
+    module,
+    options,
+):
+    problem = make_grid_problem(3, 3)
+    problem.hint = {
+        0: 0,
+        1: 0,
+        3: 0,
+        4: 0,
+        2: 1,
+        5: 1,
+        6: 1,
+        7: 1,
+        8: 1,
+    }
+
+    class FakeClock:
+        def __init__(self):
+            self.current = 0.0
+
+        def time(self):
+            self.current += 0.2
+            return self.current
+
+    monkeypatch.setattr(module, "time", FakeClock())
+    solution = get_solver(
+        name,
+        solve_time_limit=0.5,
+        recom_iterations=-1,
+        seed=1,
+        **options,
+    ).solve(problem)
+
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["iterations"] is None
+    assert solution.metadata["attempted_moves"] > 0
 
 
 def test_recom_uses_explicit_hint():

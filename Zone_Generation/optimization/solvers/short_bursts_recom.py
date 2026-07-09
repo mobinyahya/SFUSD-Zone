@@ -54,8 +54,7 @@ class ShortBurstsReComSolver(ReComSolver):
         if hint_error is not None:
             return hint_error
         seed = int(self.options.get("seed", 42))
-        time_limit = float(self.options.get("solve_time_limit", 60.0))
-        max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
+        time_limit, max_iterations = self._recom_limits()
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         population_epsilon = self.options.get("recom_population_epsilon")
         balance_metric = normalize_recom_balance_metric(
@@ -106,7 +105,7 @@ class ShortBurstsReComSolver(ReComSolver):
                     iteration=0,
                 )
 
-                while attempted < max_iterations:
+                while self._has_recom_iteration_budget(max_iterations, attempted):
                     if time.time() - start >= time_limit:
                         break
                     bursts += 1
@@ -116,7 +115,13 @@ class ShortBurstsReComSolver(ReComSolver):
                     walk_assignment = dict(current)
                     walk_score = current_score
 
-                    for _ in range(min(burst_length, max_iterations - attempted)):
+                    burst_iterations = burst_length
+                    if max_iterations is not None:
+                        burst_iterations = min(
+                            burst_length,
+                            max_iterations - attempted,
+                        )
+                    for _ in range(burst_iterations):
                         if time.time() - start >= time_limit:
                             break
                         attempted += 1

@@ -3,6 +3,7 @@
 import pytest
 
 from Zone_Generation.choice.objective import ChoiceCut, ChoiceEvaluation
+from Zone_Generation.optimization.config import OptimizationConfig
 from Zone_Generation.optimization.data.initial_solutions import InitialSolution
 from Zone_Generation.optimization.problem import DuplicateCentroidError
 from Zone_Generation.optimization.solution import ZoneSolution
@@ -287,6 +288,43 @@ def test_iterative_choice_strategy_terminates():
     assert last.is_contiguous()
 
 
+def test_config_passes_choice_utility_hints_to_iterative_strategy():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="iterative_choice",
+        choice_utility_hints=True,
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["choice_utility_hints"] is True
+
+
+def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    model = HintCutModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "get_configured_choice_model",
+        lambda options: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=1,
+        choice_model="mnl",
+        choice_utility_hints=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.problems[0].choice_objective.cuts == model.hint_cuts
+    assert solutions[0].metadata["choice_objective_cuts"] == len(model.hint_cuts)
+    assert solutions[0].metadata["choice_utility_hint_cuts"] == len(model.hint_cuts)
+
+
 def test_iterative_choice_stops_on_absolute_model_objective_change(monkeypatch):
     problem = make_grid_problem(2, 2)
     dataset = FakeDataset(problem)
@@ -409,3 +447,17 @@ class DecreasingRealUtilityModel:
             for zone in problem.candidate_zones(node)
         )
         return ChoiceEvaluation(utility=utility, cuts=cuts)
+
+
+class HintCutModel:
+    def __init__(self):
+        self.hint_cuts = (ChoiceCut(node=0, zone=0, constant=1.0),)
+
+    def utility_bounds(self, problem):
+        return -1_000.0, 1_000.0
+
+    def choice_utility_hint_cuts(self, problem):
+        return self.hint_cuts
+
+    def evaluate_with_cuts(self, problem, assignment):
+        return ChoiceEvaluation(utility=1.0, cuts=())

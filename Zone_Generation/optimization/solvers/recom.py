@@ -133,8 +133,7 @@ class ReComSolver(Solver):
             return hint_error
         seed = int(self.options.get("seed", 42))
         rng = random.Random(seed)
-        time_limit = float(self.options.get("solve_time_limit", 60.0))
-        max_iterations = max(0, int(self.options.get("recom_iterations", 1000)))
+        time_limit, max_iterations = self._recom_limits()
         cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
         population_epsilon = self.options.get("recom_population_epsilon")
         balance_metric = normalize_recom_balance_metric(
@@ -185,7 +184,7 @@ class ReComSolver(Solver):
                     iteration=0,
                 )
 
-                for _ in range(max_iterations):
+                while self._has_recom_iteration_budget(max_iterations, attempted):
                     if time.time() - start >= time_limit:
                         break
                     attempted += 1
@@ -317,6 +316,26 @@ class ReComSolver(Solver):
             metadata=metadata,
             solver_progress=list(progress.entries) if progress is not None else [],
         )
+
+    # ------------------------------------------------------------------ #
+    # Limit handling
+    # ------------------------------------------------------------------ #
+    def _recom_limits(self) -> tuple[float, int | None]:
+        recom_iterations = int(self.options.get("recom_iterations", 1000))
+        if recom_iterations < 0:
+            if self.options.get("solve_time_limit") is None:
+                raise ValueError(
+                    "solve_time_limit must be supplied when recom_iterations is negative."
+                )
+            return float(self.options["solve_time_limit"]), None
+        return float(self.options.get("solve_time_limit", 60.0)), recom_iterations
+
+    @staticmethod
+    def _has_recom_iteration_budget(
+        max_iterations: int | None,
+        attempted: int,
+    ) -> bool:
+        return max_iterations is None or attempted < max_iterations
 
     # ------------------------------------------------------------------ #
     # Progress logging

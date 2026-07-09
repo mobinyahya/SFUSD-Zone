@@ -44,6 +44,43 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
 
 
+def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(
+    tmp_path, monkeypatch
+):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "100-GE-KG": [1.0],
+            "200-GE-KG": [2.0],
+            "300-GE-KG": [10.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    problem.G.nodes[1]["school_ids"] = [300]
+    problem.G.nodes[1]["num_schools"] = 1
+    problem.G.graph["school_data"][300] = {}
+    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
+    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
+    evaluator = mnl.MNLZoningUtility(method="max")
+
+    cuts = evaluator.choice_utility_hint_cuts(problem)
+
+    cut = next(cut for cut in cuts if cut.node == 1 and cut.zone == 0)
+    coeffs = {term.node: term.coefficient for term in cut.terms}
+    assert cut.constant == pytest.approx(2.0)
+    assert set(coeffs) == {1}
+    assert coeffs[1] == pytest.approx(8.0)
+
+
 @pytest.mark.parametrize("method", ["max", "logsum"])
 def test_mnl_block_impacts_match_direct_add_remove_deltas(
     tmp_path, monkeypatch, method

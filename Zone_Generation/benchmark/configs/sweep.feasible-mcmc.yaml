@@ -4,38 +4,39 @@ name: feasible-mcmc
 mode: run  # run | metrics
 
 optimization_defaults:
+  save_solver_progress: true
+  save_solver_logs: true
   racial_dev: -1
-  frl_dev: [0.20]
-  seed: 42
-  levels: [BlockGroup_0]
-  overage: [0.85]
-  shortage: [0.22]
+  frl_dev: 0.15
+  levels: [Block_1]
+
+  solve_time_limits: [900]
+  overage: 0.3
   workers: 1
   hints: gerry_chain
+  strategy: single
 
-  recom_iterations: 1000000
-  recom_cut_attempts: 1000
+  recom_iterations: -1
+  recom_cut_attempts: 10
+  recom_population_epsilon: 0.15
+  recom_balance_metric: num_schools
+  relaxed_recom_min_boundary_edges: 0
   recom_temperature: 0.0
   short_bursts_length: 25
 
 sweep:
-  centroids_type: ['2-zone-1', '4-zone-rec-4', '5-zone-AF', '6-zone-3', '8-zone-22',]
-  frl_dev: [0.15, 0.2]
-  overage: [0.7, 0.8, 0.9]
+  centroids_type: ['4-zone-rec-4', '5-zone-AF', '6-zone-3', '8-zone-22']
   shortage: [0.15, 0.2, 0.25]
+  seed: [1, 2, 3]
 
 tasks:
-  - strategy: 'single'
-    solver: 'relaxed_recom'
-    solve_time_limits: [600]
-  - strategy: 'single'
-    solver: 'short_bursts_recom'
-    solve_time_limits: [600]
+  - solver: 'relaxed_recom'
+  - solver: 'short_bursts_recom'
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/feasible_mcmc/'
-  capacity: 40             # total solver-thread slots available on the machine
+  output_dir: '/share/data/school_choice/local_runs/feasible_mcmc_3/'
+  capacity: 48             # total solver-thread slots available on the machine
   max_workers: 50           # max concurrent Python worker processes
   max_tasks_per_worker: 10  # recycle processes to limit memory growth
   skip_existing: true
@@ -50,13 +51,6 @@ metrics:
 
 matching:
   enabled: false
-  configs:
-    - name: no_reserves
-      config: Zone_Generation/benchmark/matching/zones+no_reserves.yaml
-    - name: soft_reserves
-      config: Zone_Generation/benchmark/matching/zones+soft_reserves_06frl.yaml
-    - name: hard_reserves
-      config: Zone_Generation/benchmark/matching/zones+hard_reserves_06frl.yaml
   compute_stage_assignments: false
 
 choice_metrics:

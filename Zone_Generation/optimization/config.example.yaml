@@ -42,6 +42,7 @@ max_iterations: 5             # iterative_choice
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
+choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 
 # --- data ingestion ---
 years: [14, 15, 16, 17, 18, 21, 22]
