@@ -20,7 +20,7 @@ runner.
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
-| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip` | subclass `Solver`, `@register("name")` |
+| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
@@ -29,9 +29,14 @@ independently.
 
 ## Key design points
 
-- **Solver-owned implementations.** `cp_bool`, `cp_int`, and `mip` each build
-  their own solver-native models from `ZoneProblem`. The CP-SAT solvers share
-  common helpers, while the Gurobi MIP implementation stays separate.
+- **Solver-owned implementations.** `cp_bool`, `cp_int`, `mip`, and the ReCom
+  family each build their own solver-specific representation from `ZoneProblem`.
+  The CP-SAT solvers share common helpers, while the Gurobi MIP implementation
+  stays separate.
+- **ReCom label semantics.** ReCom uses centroids to determine the zone count and
+  to generate an optional Voronoi hint, but does not enforce centroid anchors or
+  `max_distance` during the walk. Explicit `candidates` and `fixed` restrictions
+  are still hard constraints.
 - **Strict contiguity** (`data/contiguity.py`) uses the shortest-path-tree
   formulation: a non-centroid node may join a zone only if a strictly-closer
   neighbor does too. Same module validates contiguity and repairs assignments.

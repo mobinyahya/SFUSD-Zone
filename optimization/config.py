@@ -45,6 +45,9 @@ class OptimizationConfig:
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
+    recom_iterations: int = 1000
+    short_bursts_length: int = 25
+    short_bursts_method: str = "recom"
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     max_iterations: int = 5
@@ -91,6 +94,16 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "none"}:
             raise ValueError("hints must be one of: voronoi, none.")
+        if self.recom_iterations < 0 and not self.solve_time_limits:
+            raise ValueError(
+                "solve_time_limits must include a value when recom_iterations is negative."
+            )
+        if self.short_bursts_length <= 0:
+            raise ValueError("short_bursts_length must be positive.")
+        if self.short_bursts_method not in {"recom", "relaxed_recom"}:
+            raise ValueError(
+                "short_bursts_method must be one of: recom, relaxed_recom."
+            )
 
     # ------------------------------------------------------------------ #
     # loading
@@ -131,6 +144,9 @@ class OptimizationConfig:
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "secondary_objective": self.secondary_objective,
+            "recom_iterations": self.recom_iterations,
+            "short_bursts_length": self.short_bursts_length,
+            "short_bursts_method": self.short_bursts_method,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir

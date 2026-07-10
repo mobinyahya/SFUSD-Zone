@@ -6,7 +6,7 @@ centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
-solver: 'cp_int'               # cp_int | cp_bool | mip
+solver: 'cp_int'               # cp_int | cp_bool | mip | recom | relaxed_recom | short_bursts
 strategy: 'single'   # single | recursive | iterative_choice
 
 # --- optimization parameters ---
@@ -30,6 +30,10 @@ workers: 8
 # cp_model_probing_level: 2
 # symmetry_level: 2
 # cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
+# ReCom-only parameters. Negative recom_iterations uses only the solve time limit.
+recom_iterations: 1000
+short_bursts_length: 25
+short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # recursive/iterative: how far from borders to relax
 max_iterations: 5             # iterative_choice
