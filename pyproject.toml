@@ -11,7 +11,6 @@ dependencies = [
     "click>=8.3.1",
     "descartes>=1.1.0",
     "geopandas>=1.1.2",
-    "gerrychain>=0.3.2",
     "gurobipy>=13.0.0",
     "kahip>=3.22",
     "matplotlib>=3.10.8",

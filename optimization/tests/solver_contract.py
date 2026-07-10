@@ -18,11 +18,7 @@ CONTRACT_SOLVERS = (
     "cp_int",
     "cp_bool",
     "mip",
-    "recom",
-    "relaxed_recom",
-    "short_bursts_recom",
 )
-RECOM_SOLVERS = ("recom", "relaxed_recom", "short_bursts_recom")
 TOLERANCE = 1e-6
 
 
@@ -40,14 +36,6 @@ def solve_contract_problem(
         "workers": 1,
         "seed": 1,
         "hints": "voronoi",
-        "recom_iterations": 0,
-        "recom_cut_attempts": 10,
-        "recom_population_epsilon": 10.0,
-        "recom_balance_metric": "nodes",
-        "recom_temperature": 0.0,
-        "recom_repair_iterations": 0,
-        "short_bursts_length": 1,
-        "relaxed_recom_min_boundary_edges": 0,
     }
     options.update(option_overrides)
 

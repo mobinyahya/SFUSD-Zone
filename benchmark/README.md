@@ -56,7 +56,7 @@ optimization_defaults:
   seed: 42
 
 sweep:
-  solver: ['cp_int', 'cp_bool', 'recom']
+  solver: ['cp_int', 'cp_bool']
   seed: [42, 14]
 
 tasks:

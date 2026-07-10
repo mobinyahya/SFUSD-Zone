@@ -20,9 +20,8 @@ SOLVER_LABELS = {
     "cp_bool": "CP Bool",
     "cp_int": "CP Int",
     "mip": "MIP",
-    "recom": "ReCom",
 }
-SOLVER_ORDER = ["CP Bool", "CP Int", "MIP", "ReCom"]
+SOLVER_ORDER = ["CP Bool", "CP Int", "MIP"]
 
 METRICS = {
     "fractional_cut_edges": {

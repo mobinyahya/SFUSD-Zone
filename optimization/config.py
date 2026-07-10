@@ -45,14 +45,6 @@ class OptimizationConfig:
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
-    recom_iterations: int = 1000
-    recom_cut_attempts: int = 100
-    recom_population_epsilon: float | None = None
-    recom_balance_metric: str = "students"
-    recom_temperature: float = 0.0
-    short_bursts_length: int = 25
-    relaxed_recom_min_boundary_edges: int = 0
-
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     max_iterations: int = 5
@@ -99,17 +91,6 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "none"}:
             raise ValueError("hints must be one of: voronoi, none.")
-        if self.recom_iterations < 0 and not self.solve_time_limits:
-            raise ValueError(
-                "solve_time_limits must include at least one value when "
-                "recom_iterations is negative."
-            )
-        if self.recom_balance_metric == "num_schools":
-            self.recom_balance_metric = "schools"
-        if self.recom_balance_metric not in {"students", "nodes", "schools"}:
-            raise ValueError(
-                "recom_balance_metric must be one of: students, nodes, schools."
-            )
 
     # ------------------------------------------------------------------ #
     # loading
@@ -150,13 +131,6 @@ class OptimizationConfig:
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "secondary_objective": self.secondary_objective,
-            "recom_iterations": self.recom_iterations,
-            "recom_cut_attempts": self.recom_cut_attempts,
-            "recom_population_epsilon": self.recom_population_epsilon,
-            "recom_balance_metric": self.recom_balance_metric,
-            "recom_temperature": self.recom_temperature,
-            "short_bursts_length": self.short_bursts_length,
-            "relaxed_recom_min_boundary_edges": (self.relaxed_recom_min_boundary_edges),
         }
         if output_dir is not None:
             options["output_dir"] = output_dir

@@ -205,21 +205,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gerrychain"
-version = "0.3.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "matplotlib" },
-    { name = "networkx" },
-    { name = "pandas" },
-    { name = "scipy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/94/e0/a446e0f4880639fb7c55bc7882b6364bd175d595f9bb0d7b4eb205e198df/gerrychain-0.3.2.tar.gz", hash = "sha256:321d1ebd34408aa4cae457220365ce76a7e12f56efe43a81d34cede9bb4377df", size = 95564, upload-time = "2024-04-29T21:55:15.042Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/01/90cdaa1bfb1536e1aa773671baccafe3bfde648960c584416a9e26bea9f8/gerrychain-0.3.2-py2.py3-none-any.whl", hash = "sha256:1241d16f4a7374d679227ea5a9eacae9db9386e1598ac02daeded7d4d007035e", size = 87940, upload-time = "2024-04-29T21:55:12.712Z" },
-]
-
-[[package]]
 name = "gurobipy"
 version = "13.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1004,7 +989,6 @@ dependencies = [
     { name = "click" },
     { name = "descartes" },
     { name = "geopandas" },
-    { name = "gerrychain" },
     { name = "gurobipy" },
     { name = "kahip" },
     { name = "matplotlib" },
@@ -1031,7 +1015,6 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.1" },
     { name = "descartes", specifier = ">=1.1.0" },
     { name = "geopandas", specifier = ">=1.1.2" },
-    { name = "gerrychain", specifier = ">=0.3.2" },
     { name = "gurobipy", specifier = ">=13.0.0" },
     { name = "kahip", specifier = ">=3.22" },
     { name = "matplotlib", specifier = ">=3.10.8" },

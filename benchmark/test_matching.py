@@ -796,7 +796,7 @@ def _write_synthetic_run(tmp_path):
     config = OptimizationConfig(
         centroids_type="5-zone-AF",
         levels=["BlockGroup_0"],
-        solver="local_search",
+        solver="cp_int",
         strategy="single",
         frl_dev=1.0,
         racial_dev=1.0,
@@ -859,7 +859,7 @@ def _write_recursive_infeasible_run(tmp_path):
     config = OptimizationConfig(
         centroids_type="5-zone-AF",
         levels=["BlockGroup_0", "BlockGroup_0"],
-        solver="local_search",
+        solver="cp_int",
         strategy="recursive",
         frl_dev=1.0,
         racial_dev=1.0,

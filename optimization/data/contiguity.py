@@ -12,7 +12,7 @@ This module provides:
   turn into linear constraints,
 * :func:`is_contiguous` / :func:`boundary_edges` -- validators / objective
   helpers,
-* :func:`repair` -- a post-hoc fixer used by local search,
+* :func:`repair` -- a post-hoc assignment fixer,
 * :func:`boundary_candidates` -- the candidate-narrowing used by the recursive
   strategy to relax only near zone borders.
 """
@@ -130,8 +130,8 @@ def repair(
 
     For each zone we keep only the connected component containing its centroid.
     Every other node is repeatedly reassigned to the most common zone among its
-    already-settled neighbors until all nodes are placed. Used by the
-    local-search solver and as a post-processing pass.
+    already-settled neighbors until all nodes are placed. Used for warm starts
+    and post-processing.
     """
     result = dict(assignment)
     centroid_zone = {centroids[z]: z for z in range(len(centroids))}

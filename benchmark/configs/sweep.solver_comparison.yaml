@@ -15,28 +15,17 @@ optimization_defaults:
   frl_dev: 0.15
   overage: 0.15
   shortage: 0.15
-  recom_iterations: 1000000000
-  recom_cut_attempts: 10
-  recom_population_epsilon: 0.25
-  recom_balance_metric: num_schools
-  relaxed_recom_min_boundary_edges: 0
   levels: ["Block_1"]
 
 sweep:
   centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']
   seed: [1, 2,]
-   # actually resolves to just solving Block_1 but its ok because it illustratesr the point
-
 tasks:
-  # - solver: 'mip'
-  #   secondary_objective: true
-  #   workers: 8
-  # - solver: 'cp_bool'
-  #   linearization_level: 2
-  #   workers: 8
-  - solver: 'relaxed_recom'
-  - solver: 'short_bursts_recom'
-    short_bursts_length: 25
+  - solver: 'cp_int'
+    workers: 8
+  - solver: 'cp_bool'
+    linearization_level: 2
+    workers: 8
 
 
 

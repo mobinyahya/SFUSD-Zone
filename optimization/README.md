@@ -20,7 +20,7 @@ runner.
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
-| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `local_search` (stub), `recom`, `relaxed_recom`, `short_bursts_recom` | subclass `Solver`, `@register("name")` |
+| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
@@ -32,11 +32,6 @@ independently.
 - **Solver-owned implementations.** `cp_bool`, `cp_int`, and `mip` each build
   their own solver-native models from `ZoneProblem`. The CP-SAT solvers share
   common helpers, while the Gurobi MIP implementation stays separate.
-- **ReCom heuristics.** `recom`, `relaxed_recom`, and `short_bursts_recom`
-  start from an explicit hint when provided. When
-  no hint exists, strategies can build a cached `Block_0` initial assignment by
-  solving `BlockGroup_1` with loose `cp_bool` constraints per `centroids_type`,
-  then convert that seed to the active level.
 - **Strict contiguity** (`data/contiguity.py`) uses the shortest-path-tree
   formulation: a non-centroid node may join a zone only if a strictly-closer
   neighbor does too. Same module validates contiguity and repairs assignments.
@@ -99,7 +94,5 @@ school/distance/adjacency files) on the shared non-local data paths.
 
 ## Status / follow-ups
 
-- `local_search` is an interface stub (seed + contiguity repair); real search
-  logic plugs in behind the same interface.
 - `MNLChoiceModel` needs the estimate/demographics CSVs wired in;
   `DistanceChoiceModel` is the data-free default.

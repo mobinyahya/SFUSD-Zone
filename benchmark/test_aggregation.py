@@ -216,7 +216,7 @@ def _write_synthetic_run(tmp_path):
     config = OptimizationConfig(
         centroids_type="5-zone-AF",
         levels=["Block_0"],
-        solver="local_search",
+        solver="cp_int",
         strategy="single",
         frl_dev=1.0,
         racial_dev=1.0,

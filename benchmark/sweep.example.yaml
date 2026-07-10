@@ -19,7 +19,7 @@ optimization_defaults:
   carry_over_compute: false    # recursive: add unused level time to the next level
   gap_limits: [0, 0]
   hints: voronoi
-  save_solver_logs: false     # write CP-SAT/Gurobi logs or ReCom progress JSONL under solver_logs/
+  save_solver_logs: false     # write solver logs under solver_logs/
   save_solver_progress: false # save improving incumbents under solver_progress/
   seed: 42
   workers: 8

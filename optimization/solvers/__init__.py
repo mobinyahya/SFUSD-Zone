@@ -9,13 +9,7 @@ built-in implementations.
 from optimization.solvers.base import Solver, get_solver, register
 
 # Importing the modules triggers their @register decorators.
-from optimization.solvers import (  # noqa: E402,F401
-    cpsat,
-    local_search,
-    recom,
-    relaxed_recom,
-    short_bursts_recom,
-)
+from optimization.solvers import cpsat  # noqa: E402,F401
 
 # Gurobi is optional; only register it if the package is importable.
 try:  # pragma: no cover - depends on optional dependency
