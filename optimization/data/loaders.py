@@ -472,10 +472,12 @@ def _projected_centroids_latlon(gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
 def load_distance_dict(
     cfg: IngestConfig, area2idx: dict[int, int]
 ) -> dict[int, dict[int, float]]:
-    """``{centroid_idx: {area_idx: miles}}`` distance lookup.
+    """Distance lookup for cached source areas and their destinations.
 
-    Reuse the unit's distance matrix when present, otherwise calculate and
-    atomically cache a complete matrix from projected area centroids.
+    Block caches are rectangular: their rows are school/centroid blocks and
+    their columns are all blocks. BlockGroup caches are square. Reuse either
+    format when present, otherwise calculate and atomically cache a complete
+    matrix from projected area centroids.
     """
     filename = (
         "distances_b2b_schools.csv" if cfg.unit == "Block" else "distances_bg2bg.csv"
@@ -519,20 +521,29 @@ def load_distance_dict(
         matrix.to_csv(tmp_cache)
         os.replace(tmp_cache, cache_path)
 
-    missing_rows = set(area_ids) - set(matrix.index)
     missing_columns = set(area_ids) - set(matrix.columns)
-    if missing_rows or missing_columns:
+    if missing_columns:
         raise ValueError(
             f"Distance cache {cache_path} is missing {cfg.unit} IDs: "
-            f"{sorted(missing_rows | missing_columns)}."
+            f"{sorted(missing_columns)}."
         )
 
-    return {
-        area2idx[area_i]: {
-            area2idx[area_j]: float(matrix.loc[area_i, area_j]) for area_j in area_ids
-        }
-        for area_i in area_ids
-    }
+    source_ids = [area_id for area_id in matrix.index if area_id in area2idx]
+    if not source_ids:
+        raise ValueError(
+            f"Distance cache {cache_path} has no {cfg.unit} rows used by the graph."
+        )
+
+    distances = {idx: {} for idx in area2idx.values()}
+    values = matrix.loc[source_ids, area_ids].to_numpy()
+    for area_i, row in zip(source_ids, values):
+        idx_i = area2idx[area_i]
+        for area_j, distance in zip(area_ids, row):
+            idx_j = area2idx[area_j]
+            value = float(distance)
+            distances[idx_i][idx_j] = value
+            distances[idx_j][idx_i] = value
+    return distances
 
 
 def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, list[int]]:

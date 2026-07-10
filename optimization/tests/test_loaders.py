@@ -81,6 +81,28 @@ def test_load_distance_dict_reads_cached_matrix(tmp_path, monkeypatch):
     assert distances == {4: {4: 0.0, 9: 1.25}, 9: {4: 1.25, 9: 0.0}}
 
 
+def test_load_distance_dict_reads_rectangular_school_matrix(tmp_path, monkeypatch):
+    optimization_dir = tmp_path / "Optimization"
+    optimization_dir.mkdir()
+    matrix = pd.DataFrame(
+        [[0.0, 1.25, 2.5]],
+        index=pd.Index([100], name="Block"),
+        columns=[100, 200, 300],
+    )
+    matrix.to_csv(optimization_dir / "distances_b2b_schools.csv")
+    monkeypatch.setattr(loaders, "DROPBOX_PATH", str(tmp_path))
+
+    distances = loaders.load_distance_dict(
+        IngestConfig(unit="Block"), {100: 4, 200: 9, 300: 12}
+    )
+
+    assert distances == {
+        4: {4: 0.0, 9: 1.25, 12: 2.5},
+        9: {4: 1.25},
+        12: {4: 2.5},
+    }
+
+
 def test_load_distance_dict_builds_and_caches_matrix(tmp_path, monkeypatch):
     locations = pd.DataFrame(
         {"Lat": [0.0, 0.0], "Lon": [0.0, 90.0]},

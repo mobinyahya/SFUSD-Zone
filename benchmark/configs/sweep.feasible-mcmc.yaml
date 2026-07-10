@@ -1,0 +1,44 @@
+# Optimization-native benchmark sweep.
+
+name: feasible_mcmc
+mode: run  # run | metrics
+
+optimization_defaults:
+  hints: voronoi
+  workers: 1
+  racial_dev: -1
+  recom_iterations: -1
+  short_bursts_method: relaxed_recom  
+  frl_dev: 0.15
+  shortage: 0.2
+  overage: 0.3
+  solve_time_limits: [300]
+
+sweep:
+  centroids_type: ['4-zone-rec-4', '5-zone-AF', '6-zone-3','7-zone-19', '8-zone-24']
+  seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  levels: [[Block_3], [Block_2], [Block_1], [Block_0]]
+  solver: ['relaxed_recom', 'short_bursts']
+
+execution:
+  output_dir: '/share/data/school_choice/local_runs/feasible_mcmc_5/'
+  capacity: 45              # total solver-thread slots available on the machine
+  max_workers: 48          # max concurrent Python worker processes
+  max_tasks_per_worker: 20  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+matching:
+  enabled: false
+  compute_stage_assignments: false
+
+choice_metrics:
+  enabled: false
+  compute_stage_metrics: false
