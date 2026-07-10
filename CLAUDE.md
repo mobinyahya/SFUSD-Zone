@@ -24,10 +24,15 @@ uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 
 ## Graph Object Structure
 
-The optimization uses NetworkX undirected graphs. Nodes are geographic areas, edges are adjacency. Graphs are created by `create_larger_areas.py` at hierarchical levels:
-- **BlockGroup_0** - Finest (~500+ nodes, one per Census BlockGroup)
-- **BlockGroup_1** - Aggregated (~100-200 nodes)
-- **BlockGroup_2** - Coarsest (~30-60 nodes)
+The optimization uses NetworkX undirected graphs. Nodes are geographic areas and edges are adjacency. `optimization/data/graph_builder.py` creates these predefined hierarchies:
+- **Block_0** - Direct Census Block units
+- **Block_1** - Up to 1,200 nodes, built from Block_0
+- **Block_2** - Up to 579 nodes, built from Block_1
+- **Block_3** - Up to 250 nodes, built from Block_2
+- **Block_4** - Up to 125 nodes, built from Block_3
+- **BlockGroup_0** - Direct Census BlockGroup units
+- **BlockGroup_1** - Up to 250 nodes, built from BlockGroup_0
+- **BlockGroup_2** - Up to 125 nodes, built from BlockGroup_1
 
 ### Node Attributes
 
@@ -61,7 +66,7 @@ The optimization uses NetworkX undirected graphs. Nodes are geographic areas, ed
     'school_data': dict,    # {school_id: school_info_dict}
     'F': float,             # District-wide FRL proportion (0-1)
     'R': dict,              # District-wide ethnicity proportions {ethnicity: proportion}
-    'partition': dict,      # Aggregated graphs only: {original_node: aggregated_node}
+    'partition': dict,      # Aggregated graphs only: {parent_node: aggregated_node}
 }
 ```
 
@@ -71,17 +76,14 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 
 ### Hierarchical Aggregation
 
-`create_larger_areas.py` builds multi-level graphs:
-1. `create_base_graph()` - Creates BlockGroup_0.pickle from DesignZones + census shapefiles
-2. `recursively_split_with_zones()` - METIS partitioning into coarse zones, produces zone_dict `{node_idx: zone_id}`
-3. `aggregate_zone_dict(partition, G)` - Creates coarser graph: sums node attributes, recomputes adjacency from dissolved geometries, recalculates distance_dict, stores mapping in `G.graph['partition']`
-4. Result: BlockGroup_1.pickle, BlockGroup_2.pickle (fewer nodes, same total students/capacity)
+`optimization/data/graph_builder.py` builds multi-level graphs:
+1. `build_base_graph()` creates depth 0 directly from the selected census units.
+2. Each coarser level uses its immediate finer parent rather than repartitioning level 0.
+3. School nodes are removed and retained as singleton vertices. KaHIP strong mode partitions the remaining nodes using the population selected by `population_type`; imbalance starts at 0.8 and doubles until validation passes.
+4. `aggregate()` sums node attributes, flattens base area IDs, recomputes distances, and derives every child edge from crossing parent edges. This also reconnects school nodes to every aggregate containing one of their former neighbors.
+5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
-To convert aggregated solutions back to fine-grained geography:
-```python
-for orig_node, agg_node in G.graph['partition'].items():
-    original_solution[orig_node] = solution[agg_node]
-```
+Graphs are cached by data and partition-policy parameters under `/share/data/school_choice/Zones/Optimization/Graphs`.
 
 ## Benchmarking
 
@@ -123,11 +125,11 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `frl_dev` | `0.3` | Max FRL deviation from district average |
 | `racial_dev` | `0.3` | Max racial/ethnic deviation |
 | `optimizer` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
-| `recursive_levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
+| `levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `is_local` | `False` | Data path toggle (local vs HPC) |
 | `hints` | `gerry_chain` | Warm-start method: `voronoi`, `gerry_chain`, or `none` |
 | `random_seed` | `42` | Solver seed |
 
-Data paths: HPC at `/share/data/school_choice/`, local at `~/SFUSD/`.
+Graph cache path: `/share/data/school_choice/Zones/Optimization/Graphs`.

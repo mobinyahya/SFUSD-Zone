@@ -80,7 +80,7 @@ class VisualizationArtifactStore:
     def geometry_for(self, level: LevelSpec, G) -> tuple[gpd.GeoDataFrame, Path]:
         """Return cached node geometry for ``G`` at ``level``.
 
-        The cache key includes a graph/partition fingerprint so changing METIS
+        The cache key includes a graph/partition fingerprint so changing graph
         aggregation or switching base units naturally creates a new artifact.
         """
 

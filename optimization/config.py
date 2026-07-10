@@ -13,8 +13,8 @@ from dataclasses import dataclass, field, fields
 
 import yaml
 
-from Config.Constants import get_dropbox_path
-from optimization.levels import LevelSpec
+from Config.Constants import get_sfusd_path
+from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
 @dataclass
@@ -69,25 +69,32 @@ class OptimizationConfig:
     capacity_scenario: str = "A"
     new_schools: bool = True
     include_k8: bool = False
-    level_to_split: dict[int, int] = field(default_factory=lambda: {1: 2, 2: 1})
     graphs_dir: str = ""
 
     def __post_init__(self):
         # All levels in a run share one unit (the base graph is built per unit).
-        units = {LevelSpec.parse(level).unit for level in self.levels}
+        specs = [LevelSpec.parse(level) for level in self.levels]
+        units = {level.unit for level in specs}
         if len(units) != 1:
             raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
         self.unit = units.pop()
+        unsupported = [
+            level.name
+            for level in specs
+            if not level.is_base
+            and level.depth not in LEVEL_NODE_TARGETS.get(level.unit, {})
+        ]
+        if unsupported:
+            raise ValueError(
+                f"No predefined graph size for levels: {', '.join(unsupported)}."
+            )
         if not self.graphs_dir:
             self.graphs_dir = os.path.join(
-                get_dropbox_path(False),
-                "Optimization",
+                get_sfusd_path(False),
                 "Zones",
+                "Optimization",
                 "Graphs",
-                "optimization",
             )
-        # Levels in float keys can arrive from YAML as strings.
-        self.level_to_split = {int(k): int(v) for k, v in self.level_to_split.items()}
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.hints not in {"voronoi", "gerry_chain", "none"}:
@@ -111,6 +118,8 @@ class OptimizationConfig:
     def from_yaml(cls, path: str) -> "OptimizationConfig":
         with open(path, "r") as f:
             raw = yaml.safe_load(f) or {}
+        # Persisted pre-KaHIP configs included this obsolete partition setting.
+        raw.pop("level_to_split", None)
         known = {f.name for f in fields(cls)}
         unknown = set(raw) - known
         if unknown:

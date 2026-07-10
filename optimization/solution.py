@@ -8,6 +8,7 @@ to geographic-unit ids, and serialize.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -15,6 +16,23 @@ from typing import Optional
 
 from optimization.progress import SolverProgressEntry
 from optimization.problem import ZoneProblem
+
+
+def graph_fingerprint(G) -> str:
+    """Stable hash of graph node labels and their finest geographic units."""
+    digest = hashlib.sha256()
+    for node in sorted(G.nodes()):
+        attrs = G.nodes[node]
+        area_ids = (
+            [attrs["area_id"]] if "area_id" in attrs else attrs.get("block_ids", [])
+        )
+        digest.update(str(int(node)).encode("utf-8"))
+        digest.update(b":")
+        for area_id in sorted(area_ids):
+            digest.update(str(int(area_id)).encode("utf-8"))
+            digest.update(b",")
+        digest.update(b";")
+    return digest.hexdigest()[:16]
 
 
 @dataclass
@@ -87,6 +105,7 @@ class ZoneSolution:
 
         info = {
             "level": level,
+            "graph_fingerprint": graph_fingerprint(self.problem.G),
             "status": self.status,
             "objective": self.objective,
             "wall_time": self.wall_time,

@@ -1,21 +1,9 @@
-"""Graph generation and aggregation.
-
-Builds the node-attributed adjacency graphs the optimizer consumes, for *either*
-unit (Block or BlockGroup) at *any* depth. This replaces the legacy
-``create_larger_areas.py``, which hardcoded ``level='BlockGroup'`` and a fixed
-two-level hierarchy.
-
-* :func:`build_base_graph` -- the depth-0 graph from the per-area tables.
-* :func:`aggregate`        -- collapse a base graph under a partition into a
-  coarser graph (adjacency rederived from base edges, so no reliance on
-  re-dissolving shapefiles).
-* :func:`build_hierarchy`  -- METIS recursive split + aggregate to produce a
-  ``{depth: graph}`` hierarchy.
-
-Graph/node attribute schema matches CLAUDE.md.
-"""
+"""Build base graphs and school-preserving KaHIP graph hierarchies."""
 
 from __future__ import annotations
+
+import math
+from importlib.metadata import version
 
 import networkx as nx
 
@@ -23,6 +11,7 @@ from Config.Constants import AREA_ETHNICITIES
 from optimization.data import loaders
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
+from optimization.levels import LEVEL_NODE_TARGETS
 
 # Node attributes summed when aggregating.
 _SUM_ATTRS = [
@@ -33,6 +22,13 @@ _SUM_ATTRS = [
     "num_schools",
     "FRL",
 ]
+
+GRAPH_CACHE_SCHEMA_VERSION = 2
+PARTITION_INITIAL_IMBALANCE = 0.8
+PARTITION_MAX_ATTEMPTS = 14
+PARTITION_SEED = 42
+PARTITION_WEIGHT_SCALE = 1000
+PARTITION_MODE = "strong"
 
 
 # ====================================================================== #
@@ -98,10 +94,10 @@ def _school_data(cfg: IngestConfig) -> dict:
 # ====================================================================== #
 # Aggregation
 # ====================================================================== #
-def aggregate(base_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
-    """Collapse ``base_G`` under ``partition`` (``{base_node: part_id}``).
+def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
+    """Collapse ``parent_G`` under ``partition`` (``{parent_node: part_id}``).
 
-    Sums per-area attributes, rederives adjacency from base edges that cross
+    Sums per-area attributes, rederives adjacency from parent edges that cross
     parts, recomputes centroids/distances, and records the mapping in
     ``G.graph['partition']`` (and each node's ``block_ids``).
     """
@@ -119,18 +115,21 @@ def aggregate(base_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
                 lon=0.0,
             )
         n = new_G.nodes[part]
-        b = base_G.nodes[node]
+        b = parent_G.nodes[node]
         for a in _SUM_ATTRS:
             n[a] += float(b[a])
         for e in AREA_ETHNICITIES:
             n[e] += float(b[e])
         n["school_ids"].extend(b.get("school_ids", []))
-        n["block_ids"].append(b["area_id"])
+        if "area_id" in b:
+            n["block_ids"].append(b["area_id"])
+        else:
+            n["block_ids"].extend(b["block_ids"])
 
     # population-weighted centroids
     acc: dict[int, list[float]] = {p: [0.0, 0.0, 0.0] for p in new_G.nodes()}
     for node, part in partition.items():
-        b = base_G.nodes[node]
+        b = parent_G.nodes[node]
         w = float(b["ge_students"]) + 1e-9
         acc[part][0] += w * float(b["lat"])
         acc[part][1] += w * float(b["lon"])
@@ -139,8 +138,8 @@ def aggregate(base_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
         new_G.nodes[part]["lat"] = slat / w if w else 0.0
         new_G.nodes[part]["lon"] = slon / w if w else 0.0
 
-    # adjacency from crossing base edges
-    for u, v in base_G.edges():
+    # Adjacency from crossing parent edges also reattaches school singletons.
+    for u, v in parent_G.edges():
         pu, pv = partition[u], partition[v]
         if pu != pv:
             new_G.add_edge(pu, pv)
@@ -158,114 +157,271 @@ def aggregate(base_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
                     lat_i, lon_i, new_G.nodes[j]["lat"], new_G.nodes[j]["lon"]
                 )
     new_G.graph["distance_dict"] = distance_dict
-    new_G.graph["F"] = base_G.graph["F"]
-    new_G.graph["R"] = base_G.graph["R"]
-    new_G.graph["school_data"] = base_G.graph["school_data"]
-    new_G.graph["partition"] = partition
+    new_G.graph["F"] = parent_G.graph["F"]
+    new_G.graph["R"] = parent_G.graph["R"]
+    new_G.graph["school_data"] = parent_G.graph["school_data"]
+    new_G.graph["partition"] = dict(partition)
     return new_G
 
 
 # ====================================================================== #
-# Hierarchy
+# Hierarchy partitioning
 # ====================================================================== #
-def _recursive_split(
-    G: nx.Graph, cur_size: int, depth: int, offset: int = 0
-) -> tuple[dict[int, int], int]:
-    """METIS recursive partition; returns ``({node: part}, next_part_id)``."""
-    if depth == 0 or cur_size <= 4:
-        return {node: offset for node in G.nodes()}, offset + 1
-    supers = _partition_graph_metis_partial_constraint(G, cur_size)
-    zone_dict: dict[int, int] = {}
-    cur = offset
-    for nodes in supers.values():
-        sub = G.subgraph(nodes).copy()
-        sub_zones, cur = _recursive_split(sub, cur_size // 3, depth - 1, cur)
-        zone_dict.update(sub_zones)
-    return zone_dict, cur
+def partition_cache_policy(unit: str) -> dict:
+    """Return the partition policy included in graph cache namespaces."""
+    return {
+        "backend": "kahip",
+        "backend_version": version("kahip"),
+        "mode": PARTITION_MODE,
+        "seed": PARTITION_SEED,
+        "initial_imbalance": PARTITION_INITIAL_IMBALANCE,
+        "weight_scale": PARTITION_WEIGHT_SCALE,
+        "school_nodes_are_singletons": True,
+        "hierarchical": True,
+        "node_targets": {
+            str(depth): target
+            for depth, target in sorted(LEVEL_NODE_TARGETS.get(unit, {}).items())
+        },
+    }
 
 
-def _partition_graph_metis_partial_constraint(
-    G: nx.Graph, target_partition_count: int
-) -> dict[int, list[int]]:
-    """Partition ``G`` with the legacy school/student METIS weights.
+def population_attribute(population_type: str) -> str:
+    """Node attribute representing the population selected during ingestion."""
+    return "ge_students" if population_type == "GE" else "all_prog_students"
 
-    This is the only graph utility the lowercase optimization package needs
-    from the deleted legacy optimization package.
-    """
-    # Imported lazily: METIS is only needed when actually building a hierarchy,
-    # so base graph generation and most tests do not require pymetis import-time
-    # availability.
-    import pymetis
 
-    nodes = list(G.nodes())
-    if not nodes:
-        return {}
-    if target_partition_count <= 1:
-        return {0: nodes}
-    if target_partition_count >= len(nodes):
-        return {idx: [node] for idx, node in enumerate(nodes)}
+def _is_school_node(attrs: dict) -> bool:
+    return bool(attrs.get("school_ids")) or float(attrs.get("num_schools", 0)) > 0
 
-    k = target_partition_count
-    node_to_idx = {node: idx for idx, node in enumerate(nodes)}
-    adjacency = [
-        [node_to_idx[neighbor] for neighbor in G.neighbors(node)] for node in nodes
-    ]
 
-    vertex_weights = []
+def _integer_population_weights(
+    G: nx.Graph, nodes: list[int], population_attr: str
+) -> list[int]:
+    weights = []
     for node in nodes:
-        attrs = G.nodes[node]
-        schools = int(attrs["num_schools"] * 100) + 1
-        students = int(attrs["ge_students"] * 10) + 2
-        vertex_weights.extend([schools, students])
+        population = float(G.nodes[node][population_attr])
+        if not math.isfinite(population) or population < 0:
+            raise ValueError(
+                f"Invalid {population_attr}={population!r} for node {node}."
+            )
+        weights.append(round(population * PARTITION_WEIGHT_SCALE))
+    # KaHIP needs a meaningful balance dimension even for an empty population.
+    return weights if any(weights) else [1] * len(nodes)
 
-    options = pymetis.Options()
-    options.niter = 30
-    options.ncuts = 10
-    options.contig = True
 
-    _, membership = pymetis.part_graph(
-        k,
-        adjacency=adjacency,
-        vweights=vertex_weights,
-        options=options,
+def _partition_graph_kahip(
+    G: nx.Graph,
+    target_partition_count: int,
+    population_attr: str,
+) -> tuple[dict[int, list[int]], float]:
+    """Partition one connected graph, relaxing balance until output is valid."""
+    nodes = sorted(G.nodes())
+    if not nodes:
+        return {}, PARTITION_INITIAL_IMBALANCE
+    if not nx.is_connected(G):
+        raise ValueError("_partition_graph_kahip requires a connected graph.")
+    if target_partition_count <= 1:
+        return {0: nodes}, PARTITION_INITIAL_IMBALANCE
+    if target_partition_count >= len(nodes):
+        return (
+            {idx: [node] for idx, node in enumerate(nodes)},
+            PARTITION_INITIAL_IMBALANCE,
+        )
+
+    import kahip
+
+    node_to_idx = {node: idx for idx, node in enumerate(nodes)}
+    xadj = [0]
+    adjncy: list[int] = []
+    for node in nodes:
+        adjncy.extend(sorted(node_to_idx[neighbor] for neighbor in G.neighbors(node)))
+        xadj.append(len(adjncy))
+    vertex_weights = _integer_population_weights(G, nodes, population_attr)
+    edge_weights = [1] * len(adjncy)
+
+    imbalance = PARTITION_INITIAL_IMBALANCE
+    last_reason = "KaHIP returned no result"
+    for _ in range(PARTITION_MAX_ATTEMPTS):
+        try:
+            _, membership = kahip.kaffpa(
+                vertex_weights,
+                xadj,
+                edge_weights,
+                adjncy,
+                target_partition_count,
+                imbalance,
+                True,
+                PARTITION_SEED,
+                kahip.STRONG,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "KaHIP failed while partitioning "
+                f"{len(nodes)} nodes into at most {target_partition_count} parts."
+            ) from exc
+
+        if len(membership) != len(nodes):
+            raise RuntimeError(
+                f"KaHIP returned {len(membership)} memberships for {len(nodes)} nodes."
+            )
+        if any(part < 0 or part >= target_partition_count for part in membership):
+            raise RuntimeError("KaHIP returned an out-of-range partition id.")
+
+        groups: dict[int, list[int]] = {}
+        totals: dict[int, int] = {}
+        for node, weight, part in zip(nodes, vertex_weights, membership):
+            part = int(part)
+            groups.setdefault(part, []).append(node)
+            totals[part] = totals.get(part, 0) + weight
+
+        average = math.ceil(sum(vertex_weights) / target_partition_count)
+        upper_bound = (1 + imbalance) * average
+        overweight = max(totals.values(), default=0) > upper_bound
+        disconnected = any(
+            not nx.is_connected(G.subgraph(group)) for group in groups.values()
+        )
+        if not overweight and not disconnected:
+            compact = {
+                new_part: groups[old_part]
+                for new_part, old_part in enumerate(sorted(groups))
+            }
+            return compact, imbalance
+
+        failures = []
+        if overweight:
+            failures.append("population imbalance")
+        if disconnected:
+            failures.append("disconnected aggregate")
+        last_reason = " and ".join(failures)
+        imbalance *= 2
+
+    raise RuntimeError(
+        f"KaHIP could not produce a valid partition after "
+        f"{PARTITION_MAX_ATTEMPTS} attempts: {last_reason}."
     )
 
-    super_nodes: dict[int, list[int]] = {}
-    for node_idx, partition_id in enumerate(membership):
-        super_nodes.setdefault(partition_id, []).append(nodes[node_idx])
-    return super_nodes
+
+def _component_partition_counts(
+    G: nx.Graph,
+    components: list[list[int]],
+    target_partition_count: int,
+    population_attr: str,
+) -> list[int]:
+    """Allocate parts across components in proportion to selected population."""
+    if target_partition_count < len(components):
+        raise ValueError(
+            f"Cannot form at most {target_partition_count} connected aggregates from "
+            f"{len(components)} connected components."
+        )
+
+    counts = [1] * len(components)
+    populations = [
+        sum(float(G.nodes[node][population_attr]) for node in component)
+        for component in components
+    ]
+    if not any(populations):
+        populations = [float(len(component)) for component in components]
+    remaining = min(target_partition_count, sum(map(len, components))) - len(components)
+    while remaining:
+        candidates = [
+            idx
+            for idx, component in enumerate(components)
+            if counts[idx] < len(component)
+        ]
+        chosen = max(
+            candidates,
+            key=lambda idx: (populations[idx] / counts[idx], -idx),
+        )
+        counts[chosen] += 1
+        remaining -= 1
+    return counts
+
+
+def _partition_non_school_nodes(
+    G: nx.Graph,
+    target_partition_count: int,
+    population_attr: str,
+) -> tuple[dict[int, int], list[float]]:
+    if not G:
+        return {}, []
+    components = [sorted(component) for component in nx.connected_components(G)]
+    components.sort(key=lambda component: (-len(component), component[0]))
+    counts = _component_partition_counts(
+        G,
+        components,
+        target_partition_count,
+        population_attr,
+    )
+
+    partition: dict[int, int] = {}
+    imbalances = []
+    offset = 0
+    for component, count in zip(components, counts):
+        groups, imbalance = _partition_graph_kahip(
+            G.subgraph(component).copy(), count, population_attr
+        )
+        imbalances.append(imbalance)
+        for part, nodes in groups.items():
+            for node in nodes:
+                partition[node] = offset + part
+        offset += len(groups)
+    return partition, imbalances
 
 
 def aggregate_level(
-    base_G: nx.Graph, split_depth: int, split_base: int = 3**3
+    parent_G: nx.Graph,
+    target_node_count: int,
+    population_type: str,
 ) -> nx.Graph:
-    """Aggregate ``base_G`` once using a METIS recursion of ``split_depth``.
+    """Build one coarse graph from its immediate finer parent graph."""
+    school_nodes = sorted(
+        node for node, attrs in parent_G.nodes(data=True) if _is_school_node(attrs)
+    )
+    if len(school_nodes) > target_node_count:
+        raise ValueError(
+            f"Target {target_node_count} cannot preserve {len(school_nodes)} school "
+            "nodes as singleton vertices."
+        )
+    school_node_set = set(school_nodes)
+    non_school_nodes = [node for node in parent_G if node not in school_node_set]
+    non_school_target = target_node_count - len(school_nodes)
+    if non_school_nodes and non_school_target < 1:
+        raise ValueError(
+            f"Target {target_node_count} cannot preserve {len(school_nodes)} school "
+            "nodes and aggregate the remaining nodes."
+        )
 
-    Larger ``split_depth`` = finer aggregation (more nodes). Used by the dataset
-    to materialize a single coarser level on demand from a cached base graph.
-    """
-    partition, _ = _recursive_split(base_G, split_base, split_depth)
-    return aggregate(base_G, partition)
+    population_attr = population_attribute(population_type)
+    partition, imbalances = _partition_non_school_nodes(
+        parent_G.subgraph(non_school_nodes).copy(),
+        non_school_target,
+        population_attr,
+    )
+    next_part = max(partition.values(), default=-1) + 1
+    for node in school_nodes:
+        partition[node] = next_part
+        next_part += 1
+
+    coarse = aggregate(parent_G, partition)
+    coarse.graph.update(
+        {
+            "partition_backend": "kahip",
+            "partition_mode": PARTITION_MODE,
+            "partition_seed": PARTITION_SEED,
+            "partition_population_attribute": population_attr,
+            "partition_initial_imbalance": PARTITION_INITIAL_IMBALANCE,
+            "partition_imbalance": max(imbalances, default=PARTITION_INITIAL_IMBALANCE),
+            "target_node_count": target_node_count,
+            "actual_node_count": len(coarse),
+            "school_singleton_count": len(school_nodes),
+        }
+    )
+    return coarse
 
 
-def build_hierarchy(
-    cfg: IngestConfig,
-    level_to_split: dict[int, int] | None = None,
-    split_base: int = 3**3,
-) -> dict[int, nx.Graph]:
-    """Build ``{depth: graph}`` for ``cfg.unit``.
-
-    ``level_to_split`` maps a LevelSpec depth (>=1) to the METIS recursion depth
-    used to partition the base graph. Larger recursion depth = finer
-    aggregation, so the default ``{1: 2, 2: 1}`` makes depth 1 finer than
-    depth 2 (mirroring the legacy two-level hierarchy).
-    """
-    if level_to_split is None:
-        level_to_split = {1: 2, 2: 1}
-
-    base = build_base_graph(cfg)
-    graphs: dict[int, nx.Graph] = {0: base}
-    for depth, split_depth in sorted(level_to_split.items()):
-        partition, _ = _recursive_split(base, split_base, split_depth)
-        graphs[depth] = aggregate(base, partition)
+def build_hierarchy(cfg: IngestConfig) -> dict[int, nx.Graph]:
+    """Build every predefined level sequentially from its immediate parent."""
+    graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg)}
+    for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
+        graphs[depth] = aggregate_level(graphs[depth - 1], target, cfg.population_type)
     return graphs

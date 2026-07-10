@@ -50,6 +50,4 @@ population_type: 'GE'
 capacity_scenario: 'A'
 new_schools: true
 include_k8: false
-# Maps an aggregated level depth to its METIS recursion depth (finer = larger).
-level_to_split: {1: 2, 2: 1}
-# graphs_dir: leave unset to use the default cache under the Dropbox path.
+# graphs_dir: leave unset to use /share/data/school_choice/Zones/Optimization/Graphs.

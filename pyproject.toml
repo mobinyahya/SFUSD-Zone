@@ -20,7 +20,6 @@ dependencies = [
     "ortools>=9.14.6206",
     "pandas>=2.3.3",
     "pandas-stubs~=2.3.3",
-    "pymetis>=2025.2.2",
     "pyyaml>=6.0.3",
     "ruff>=0.15.20",
     "scikit-learn>=1.8.0",

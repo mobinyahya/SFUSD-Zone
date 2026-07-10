@@ -19,7 +19,7 @@ runner.
 
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
-| **Data** | `Dataset` → `ZoneProblem` | Block / BlockGroup at any depth | extend `data/loaders.py` / `graph_builder.py` |
+| **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `local_search` (stub), `recom`, `relaxed_recom`, `short_bursts_recom` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
 
@@ -44,6 +44,15 @@ independently.
   (`"BlockGroup_0"`, `"Block_2"`). `Dataset` generates and caches whatever
   graph a level needs; `LevelConverter` maps assignments between any two
   levels (across depth or unit).
+- **Nested graph hierarchy.** Level 0 contains the source census units. Every
+  coarser level is built from its immediate finer parent with KaHIP strong mode.
+  School nodes remain singleton vertices; only non-school nodes are partitioned,
+  balancing the population selected by `population_type` with progressively
+  relaxed imbalance. Requested sizes are upper targets because KaHIP may return
+  fewer nonempty partitions.
+- **Shared graph cache.** Parameter-specific graph namespaces are stored below
+  `/share/data/school_choice/Zones/Optimization/Graphs` by default. The cache
+  key includes ingestion parameters and the graph-partition policy.
 
 ## Running
 
@@ -72,7 +81,7 @@ choice, or heatmap code.
 Switch granularity, solver, or strategy purely in the config:
 
 ```yaml
-levels: ['Block_2', 'Block_0']   # arbitrary unit/depth sequence
+levels: ['Block_2', 'Block_1', 'Block_0']
 solver: 'cp_bool'
 strategy: 'recursive'
 ```

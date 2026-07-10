@@ -32,7 +32,6 @@ optimization_defaults:
   capacity_scenario: 'A'
   new_schools: true
   include_k8: false
-  level_to_split: {1: 2, 2: 1}
 
 sweep:
   centroids_type: ['5-zone-AF', '6-zone-3']

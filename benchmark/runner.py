@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from optimization.config import OptimizationConfig
-from optimization.solution import ZoneSolution
+from optimization.solution import ZoneSolution, graph_fingerprint
 from benchmark.config import (
     BenchmarkTask,
     ChoiceMetricsRunConfig,
@@ -346,6 +346,7 @@ def load_solutions(
         level = stage["level"]
         stage_dir = os.path.join(output_dir, stage["path"])
         zone_dict_path = os.path.join(stage_dir, f"zone_dict_{level}.json")
+        area_dict_path = os.path.join(stage_dir, f"zone_dict_area_{level}.json")
         solution_path = os.path.join(stage_dir, f"solution_{level}.json")
         with open(zone_dict_path, "r", encoding="utf-8") as f:
             assignment = {int(k): int(v) for k, v in json.load(f).items()}
@@ -354,6 +355,20 @@ def load_solutions(
             with open(solution_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
         problem = dataset.problem_for(level)
+        saved_fingerprint = info.get("graph_fingerprint")
+        if saved_fingerprint != graph_fingerprint(problem.G):
+            if not os.path.exists(area_dict_path):
+                raise ValueError(
+                    f"Saved stage {stage['name']} uses a different graph and has no "
+                    "area assignment for safe reconstruction."
+                )
+            with open(area_dict_path, "r", encoding="utf-8") as f:
+                area_assignment = {int(k): int(v) for k, v in json.load(f).items()}
+            assignment = _node_assignment_from_areas(
+                problem.G,
+                area_assignment,
+                stage["name"],
+            )
         solutions.append(
             ZoneSolution(
                 problem=problem,
@@ -365,6 +380,33 @@ def load_solutions(
             )
         )
     return solutions, config, manifest
+
+
+def _node_assignment_from_areas(
+    G,
+    area_assignment: dict[int, int],
+    stage_name: str,
+) -> dict[int, int]:
+    """Reconstruct nodes only when every covered area has the same saved zone."""
+    assignment = {}
+    for node, attrs in G.nodes(data=True):
+        area_ids = (
+            [attrs["area_id"]] if "area_id" in attrs else attrs.get("block_ids", [])
+        )
+        assigned = [
+            area_assignment[area_id]
+            for area_id in area_ids
+            if area_id in area_assignment
+        ]
+        if not assigned:
+            continue
+        if len(assigned) != len(area_ids) or len(set(assigned)) != 1:
+            raise ValueError(
+                f"Saved stage {stage_name} cannot be represented on the current "
+                f"graph at node {node}."
+            )
+        assignment[node] = assigned[0]
+    return assignment
 
 
 def load_manifest(output_dir: str) -> dict[str, Any]:

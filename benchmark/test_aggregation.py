@@ -1,4 +1,7 @@
 import os
+from dataclasses import replace
+
+import networkx as nx
 
 import pytest
 
@@ -9,6 +12,7 @@ from optimization.tests.synthetic import FakeDataset, make_grid_problem
 from benchmark.config import (
     BenchmarkTask,
     SimulationSweep,
+    optimization_config_from_dict,
     optimization_config_to_dict,
     stable_hash,
 )
@@ -141,6 +145,35 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert stages.loc[0, "solver_progress_count"] == 2
     assert (tmp_path / "summary.csv").exists()
     assert (tmp_path / "stages.csv").exists()
+
+
+def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    mapping = {node: node + 100 for node in problem.G}
+    relabeled = nx.relabel_nodes(problem.G, mapping)
+    changed_problem = replace(
+        problem,
+        G=relabeled,
+        centroids=[mapping[node] for node in problem.centroids],
+    )
+
+    loaded, _, _ = load_solutions(
+        str(run_dir),
+        dataset=FakeDataset(changed_problem),
+    )
+
+    assert loaded[0].assignment == {
+        mapping[node]: zone for node, zone in _assignment().items()
+    }
+
+
+def test_saved_config_ignores_legacy_level_to_split():
+    config = optimization_config_from_dict(
+        {"levels": ["BlockGroup_0"], "level_to_split": {"1": 2, "2": 1}}
+    )
+
+    assert config.levels == ["BlockGroup_0"]
+    assert not hasattr(config, "level_to_split")
 
 
 def test_regenerate_metrics_rewrites_result_payload(tmp_path):

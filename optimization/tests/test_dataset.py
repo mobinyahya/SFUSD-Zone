@@ -27,7 +27,6 @@ def _config(tmp_path, **overrides):
         {"capacity_scenario": "B"},
         {"new_schools": False},
         {"include_k8": True},
-        {"level_to_split": {1: 1, 2: 1}},
     ],
 )
 def test_graph_cache_path_changes_for_graph_data_parameters(tmp_path, override):
@@ -46,6 +45,40 @@ def test_graph_cache_path_ignores_centroid_choice(tmp_path):
     changed = Dataset(_config(tmp_path, centroids_type="8-zone-22"))
 
     assert baseline._graph_path(level) == changed._graph_path(level)
+
+
+def test_default_graph_root_uses_shared_optimization_graph_directory():
+    config = OptimizationConfig(levels=["Block_0"])
+
+    assert config.graphs_dir == "/share/data/school_choice/Zones/Optimization/Graphs"
+
+
+def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypatch):
+    base = nx.path_graph(4)
+    middle = nx.path_graph(3)
+    coarse = nx.path_graph(2)
+    generated_from = []
+
+    monkeypatch.setattr(loaders, "load_students", lambda cfg: None)
+    monkeypatch.setattr(
+        "optimization.data.graph_builder.build_base_graph",
+        lambda cfg: base,
+    )
+
+    def fake_aggregate(parent, target, population_type):
+        generated_from.append((parent, target, population_type))
+        return middle if parent is base else coarse
+
+    monkeypatch.setattr(
+        "optimization.data.graph_builder.aggregate_level",
+        fake_aggregate,
+    )
+
+    dataset = Dataset(_config(tmp_path, levels=["BlockGroup_2"]))
+    result = dataset.graph_for("BlockGroup_2")
+
+    assert result is coarse
+    assert generated_from == [(base, 250, "GE"), (middle, 125, "GE")]
 
 
 def test_centroids_fallback_to_raw_school_locations_for_aggregated_graph(

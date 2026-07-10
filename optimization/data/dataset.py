@@ -18,7 +18,7 @@ import networkx as nx
 
 from optimization.data import graph_builder, loaders
 from optimization.data.loaders import IngestConfig
-from optimization.levels import LevelSpec
+from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
 
 if TYPE_CHECKING:
@@ -40,7 +40,6 @@ class Dataset:
             include_k8=config.include_k8,
         )
         self.graphs_dir = config.graphs_dir
-        self.level_to_split = dict(config.level_to_split)
         self.graph_cache_dir = os.path.join(
             self.graphs_dir,
             self._graph_cache_namespace(),
@@ -71,13 +70,15 @@ class Dataset:
     def _generate(self, level: LevelSpec) -> nx.Graph:
         if level.is_base:
             return graph_builder.build_base_graph(self.ingest)
-        base = self.graph_for(level.base())
-        if level.depth not in self.level_to_split:
-            raise ValueError(
-                f"No METIS split depth configured for level depth {level.depth}; "
-                f"set level_to_split[{level.depth}] in the config."
-            )
-        return graph_builder.aggregate_level(base, self.level_to_split[level.depth])
+        targets = LEVEL_NODE_TARGETS.get(level.unit, {})
+        if level.depth not in targets:
+            raise ValueError(f"No predefined graph size for level {level.name}.")
+        parent = self.graph_for(level.finer())
+        return graph_builder.aggregate_level(
+            parent,
+            targets[level.depth],
+            self.ingest.population_type,
+        )
 
     def _save(self, level: LevelSpec, G: nx.Graph) -> None:
         os.makedirs(self.graph_cache_dir, exist_ok=True)
@@ -92,7 +93,7 @@ class Dataset:
 
     def _graph_cache_namespace(self) -> str:
         payload = {
-            "schema_version": 1,
+            "schema_version": graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
             "unit": self.ingest.unit,
             "years": list(self.ingest.years),
             "population_type": self.ingest.population_type,
@@ -100,9 +101,7 @@ class Dataset:
             "capacity_scenario": self.ingest.capacity_scenario,
             "new_schools": bool(self.ingest.new_schools),
             "include_k8": bool(self.ingest.include_k8),
-            "level_to_split": {
-                str(k): int(v) for k, v in sorted(self.level_to_split.items())
-            },
+            "partition_policy": graph_builder.partition_cache_policy(self.ingest.unit),
         }
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]

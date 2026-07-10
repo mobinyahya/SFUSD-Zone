@@ -251,6 +251,8 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     """Construct a :class:`OptimizationConfig` from a saved config snapshot."""
 
     restored = _restore_special_values(dict(data))
+    # Existing benchmark manifests persisted the pre-KaHIP split-depth setting.
+    restored.pop("level_to_split", None)
     field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:

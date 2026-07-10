@@ -23,6 +23,13 @@ from dataclasses import dataclass
 # with the legacy data, though the active optimization targets Block/BlockGroup.
 KNOWN_UNITS = ("BlockGroup", "Block", "attendance_area")
 
+# Requested graph sizes include school nodes, which remain singleton vertices.
+# KaHIP may return fewer nonempty partitions, so these are upper targets.
+LEVEL_NODE_TARGETS = {
+    "Block": {1: 1200, 2: 579, 3: 250, 4: 125},
+    "BlockGroup": {1: 250, 2: 125},
+}
+
 
 @dataclass(frozen=True, order=True)
 class LevelSpec:
