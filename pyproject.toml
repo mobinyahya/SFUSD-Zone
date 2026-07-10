@@ -37,6 +37,11 @@ dev = [
     "pytest>=8.0.0",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "real_data: requires prebuilt SFUSD graph caches",
+]
+
 [tool.uv.sources]
 student-assignment = { git = "https://github.com/kchandra423/student-assignment-performance.git", branch = "main" }
 

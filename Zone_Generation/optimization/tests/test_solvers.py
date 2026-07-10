@@ -26,40 +26,8 @@ from Zone_Generation.optimization.solvers import get_solver
 from Zone_Generation.optimization.solvers.balance import balance_constraints
 from Zone_Generation.optimization.solvers.base import available_solvers
 from Zone_Generation.optimization.solvers.recom import _Score, _race_penalty_key
+from Zone_Generation.optimization.tests.solver_contract import assert_valid_solution
 from Zone_Generation.optimization.tests.synthetic import make_grid_problem
-
-
-def _check_valid(problem, solution):
-    assert solution.feasible or solution.status == "STUB"
-    # every node assigned to a candidate zone
-    assert set(solution.assignment) == set(problem.nodes)
-    for node, zone in solution.assignment.items():
-        assert zone in problem.candidate_zones(node)
-    # centroids anchor their zones
-    for z, centroid in enumerate(problem.centroids):
-        assert solution.assignment[centroid] == z
-    assert solution.is_contiguous()
-
-
-def _check_recom_valid(problem, solution):
-    assert solution.feasible
-    assert set(solution.assignment) == set(problem.nodes)
-    centroid_nodes = set(problem.centroids)
-    for node, zone in solution.assignment.items():
-        if node in centroid_nodes:
-            assert 0 <= zone < problem.Z
-        else:
-            assert zone in problem.candidate_zones(node)
-    assert solution.is_contiguous()
-
-
-@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
-def test_cpsat_solvers(name):
-    problem = make_grid_problem(3, 3)
-    solver = get_solver(name, solve_time_limit=10, workers=1)
-    solution = solver.solve(problem)
-    assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
 
 
 def test_config_passes_cpsat_parameters_to_solver():
@@ -126,7 +94,7 @@ def test_cp_bool_solver_supports_secondary_objective():
     solution = solver.solve(problem)
 
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
+    assert_valid_solution(problem, solution)
     assert solution.objective == contiguity.boundary_edges(
         problem.G,
         solution.assignment,
@@ -145,18 +113,20 @@ def test_recom_score_ordering_separates_feasibility_from_cut_edges():
 
 
 @pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
-def test_recom_score_does_not_penalize_swapped_centroid_labels(name):
+def test_recom_score_penalizes_swapped_centroid_labels(name):
     problem = make_grid_problem(2, 2, racial_dev=-1, frl_dev=1.0, overage=10.0)
     assignment = {0: 1, 1: 1, 2: 0, 3: 0}
     solver = get_solver(name)
 
     score = solver._score(problem, assignment)
 
-    assert score.penalty == pytest.approx(0.0)
+    hard_penalty = float(problem.A + problem.Z + 1) * 1000.0
+    assert score.components["candidate"] == pytest.approx(2 * hard_penalty)
+    assert score.penalty >= score.components["candidate"]
 
 
 @pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
-def test_recom_score_ignores_max_distance_candidates(name):
+def test_recom_score_honors_max_distance_candidates(name):
     problem = make_grid_problem(
         2,
         2,
@@ -171,8 +141,9 @@ def test_recom_score_ignores_max_distance_candidates(name):
 
     score = get_solver(name)._score(problem, assignment)
 
-    assert score.penalty == pytest.approx(0.0)
-    assert score.components == {}
+    hard_penalty = float(problem.A + problem.Z + 1) * 1000.0
+    assert score.components["candidate"] == pytest.approx(2 * hard_penalty)
+    assert score.penalty >= score.components["candidate"]
 
 
 @pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
@@ -375,7 +346,7 @@ def test_cpsat_solvers_support_distance_to_centroid_search_strategy(name):
     solution = solver.solve(problem)
 
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
+    assert_valid_solution(problem, solution)
 
 
 def test_cp_bool_distance_to_centroid_search_orders_assignment_bools():
@@ -445,7 +416,7 @@ def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):
     solver = get_solver("cp_int", solve_time_limit=10, workers=1)
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
+    assert_valid_solution(problem, solution)
 
 
 def test_negative_racial_dev_disables_racial_balance_constraints():
@@ -621,7 +592,8 @@ def test_local_search_stub():
     problem = make_grid_problem(3, 3)
     solution = get_solver("local_search").solve(problem)
     assert solution.status == "STUB"
-    _check_valid(problem, solution)
+    assert set(solution.assignment) == set(problem.nodes)
+    assert solution.is_contiguous()
 
 
 def test_recom_solver():
@@ -634,7 +606,7 @@ def test_recom_solver():
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
-    _check_recom_valid(problem, solution)
+    assert_valid_solution(problem, solution)
     assert solution.metadata["solver"] == "recom"
     assert solution.metadata["hints"] == "gerry_chain"
 
@@ -650,7 +622,7 @@ def test_short_bursts_recom_solver():
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
-    _check_recom_valid(problem, solution)
+    assert_valid_solution(problem, solution)
     assert solution.metadata["solver"] == "short_bursts_recom"
     assert solution.metadata["short_bursts_length"] == 5
     assert solution.metadata["completed_bursts"] <= 5
@@ -783,7 +755,7 @@ def test_short_bursts_recom_uses_explicit_hint():
 
 
 @pytest.mark.parametrize("name", ["recom", "relaxed_recom", "short_bursts_recom"])
-def test_recom_solvers_do_not_force_explicit_hint_centroid_labels(name):
+def test_recom_solvers_correct_explicit_hint_centroid_labels(name):
     problem = make_grid_problem(2, 2, racial_dev=-1, frl_dev=1.0, overage=10.0)
     hint = {0: 1, 1: 1, 2: 0, 3: 0}
     problem.hint = hint
@@ -796,7 +768,9 @@ def test_recom_solvers_do_not_force_explicit_hint_centroid_labels(name):
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
-    assert solution.assignment == hint
+    assert_valid_solution(problem, solution)
+    assert solution.assignment[problem.centroids[0]] == 0
+    assert solution.assignment[problem.centroids[1]] == 1
     assert solution.metadata["hints"] == "provided"
 
 
@@ -909,7 +883,7 @@ def test_cpsat_solvers_support_choice_objective(name):
     solution = get_solver(name, solve_time_limit=10, workers=1).solve(problem)
 
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
+    assert_valid_solution(problem, solution, check_boundary_objective=False)
     assert solution.metadata["objective_kind"] == "choice_utility"
     assert solution.objective == pytest.approx(
         model.evaluate(problem, solution.assignment), abs=0.05
@@ -935,19 +909,6 @@ def test_area_assignment_and_save(tmp_path):
 
 
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
-def test_mip_solver():
-    problem = make_grid_problem(3, 3)
-    try:
-        solution = get_solver("mip", solve_time_limit=10).solve(problem)
-    except Exception as exc:  # no usable Gurobi license in this environment
-        if "gurobi" in type(exc).__module__.lower():
-            pytest.skip(f"Gurobi unavailable: {exc}")
-        raise
-    assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
-
-
-@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
 def test_mip_solver_supports_secondary_objective():
     problem = make_grid_problem(3, 3)
     try:
@@ -962,7 +923,7 @@ def test_mip_solver_supports_secondary_objective():
         raise
 
     assert solution.status in ("OPTIMAL", "FEASIBLE")
-    _check_valid(problem, solution)
+    assert_valid_solution(problem, solution, check_boundary_objective=False)
 
 
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")

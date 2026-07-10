@@ -94,6 +94,57 @@ def make_grid_problem(rows: int = 3, cols: int = 3, **overrides) -> ZoneProblem:
     )
 
 
+def make_solver_contract_problem(**overrides) -> ZoneProblem:
+    """Four-node path with one easy, uniquely determined two-zone split."""
+    G = nx.path_graph(4)
+    school_counts = [2, 1, 1, 2]
+    school_id = 100
+    school_data = {}
+    for node in G.nodes:
+        schools = list(range(school_id, school_id + school_counts[node]))
+        school_id += school_counts[node]
+        school_data.update({sid: {} for sid in schools})
+        G.nodes[node].update(
+            {
+                "area_id": 1000 + node,
+                "ge_students": 1.0,
+                "ge_capacity": 1.0,
+                "all_prog_students": 1.0,
+                "all_prog_capacity": 1.0,
+                "num_schools": school_counts[node],
+                "FRL": 0.5,
+                "school_ids": schools,
+                "lat": 0.0,
+                "lon": float(node),
+                **{ethnicity: 0.2 for ethnicity in AREA_ETHNICITIES},
+            }
+        )
+
+    G.graph["distance_dict"] = {
+        source: {target: abs(source - target) for target in G.nodes}
+        for source in G.nodes
+    }
+    G.graph["F"] = 0.5
+    G.graph["R"] = {ethnicity: 0.2 for ethnicity in AREA_ETHNICITIES}
+    G.graph["school_data"] = school_data
+
+    params = {
+        "frl_dev": 0.0,
+        "racial_dev": 0.0,
+        "overage": 0.0,
+        "shortage": 0.0,
+        "max_distance": 1.0,
+        "hint": {0: 0, 1: 0, 2: 1, 3: 1},
+    }
+    params.update(overrides)
+    return ZoneProblem(
+        G=G,
+        level=LevelSpec("BlockGroup", 0),
+        centroids=[0, 3],
+        **params,
+    )
+
+
 def make_path_graphs():
     """A 4-node base path and its 2-node aggregation, for conversion tests."""
     base = nx.Graph()

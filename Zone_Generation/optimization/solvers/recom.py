@@ -568,13 +568,7 @@ class ReComSolver(Solver):
         return assignment
 
     def _candidate_zones(self, problem: ZoneProblem, node: int) -> set[int]:
-        if node in problem.centroids:
-            return set(range(problem.Z))
-        if problem.candidates is not None and node in problem.candidates:
-            return set(problem.candidates[node])
-        if problem.fixed is not None and node in problem.fixed:
-            return {int(problem.fixed[node])}
-        return set(range(problem.Z))
+        return problem.candidate_zones(node)
 
     def _hints(self) -> str:
         return normalize_hints(self.options.get("hints", "gerry_chain"))

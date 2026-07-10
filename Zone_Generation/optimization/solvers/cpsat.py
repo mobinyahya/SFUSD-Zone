@@ -365,17 +365,9 @@ class _CpSatSolver(Solver):
         supports = contiguity.contiguity_supports(
             problem.G, problem.centroids, problem.candidate_zones
         )
-        forbidden_by_node: dict[int, set[int]] = {}
         for (node, z), support_nodes in supports.items():
             if not support_nodes:
-                # If another zone remains available, forbid unsupported choices.
-                # If this is the only candidate, leave it to avoid contradictory
-                # constraints in boundary-relaxed edge cases.
-                forbidden = forbidden_by_node.setdefault(node, set())
-                remaining = problem.candidate_zones(node) - forbidden
-                if len(remaining) > 1:
-                    self._forbid_assignment(m, z, node, x, y)
-                    forbidden.add(z)
+                self._forbid_assignment(m, z, node, x, y)
                 continue
 
             # x[z, node] => at least one supported neighbor is also in z.
