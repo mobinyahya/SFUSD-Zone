@@ -9,7 +9,7 @@ optimization_defaults:
   strategy: single
   solve_time_limits: [600]
   max_distance: 4.52
-  hints: gerry_chain
+  hints: voronoi
   workers: 1
   racial_dev: -1
   frl_dev: 0.15

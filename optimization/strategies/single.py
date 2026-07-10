@@ -15,7 +15,7 @@ class SingleShotStrategy(Strategy):
     """Solve only the finest configured level directly."""
 
     def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
-        levels = [LevelSpec.parse(l) for l in self.options["levels"]]
+        levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         target = levels[-1]
         problem = dataset.problem_for(target)
         _add_math_programming_initial_hint(problem, solver, self.options)
@@ -27,11 +27,7 @@ def _add_math_programming_initial_hint(problem, solver: Solver, options: dict) -
         return
     if problem.hint is not None:
         return
-    hints = options.get("hints", solver.options.get("hints", "gerry_chain"))
-    initial = initial_solution(
-        problem,
-        hints,
-        cut_attempts=int(solver.options.get("recom_cut_attempts", 100)),
-    )
+    hints = options.get("hints", solver.options.get("hints", "voronoi"))
+    initial = initial_solution(problem, hints)
     if initial is not None:
         problem.hint = initial.assignment

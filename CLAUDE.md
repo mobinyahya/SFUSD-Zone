@@ -129,7 +129,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `is_local` | `False` | Data path toggle (local vs HPC) |
-| `hints` | `gerry_chain` | Warm-start method: `voronoi`, `gerry_chain`, or `none` |
+| `hints` | `voronoi` | Warm-start method: `voronoi` or `none` |
 | `random_seed` | `42` | Solver seed |
 
 Graph cache path: `/share/data/school_choice/Zones/Optimization/Graphs`.

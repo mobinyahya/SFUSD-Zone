@@ -28,11 +28,11 @@ from optimization.strategies.base import Strategy, register
 @register("recursive")
 class RecursiveStrategy(Strategy):
     def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
-        levels = [LevelSpec.parse(l) for l in self.options["levels"]]
+        levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         time_limits = self.options.get("solve_time_limits")
         carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
-        hints = normalize_hints(self.options.get("hints", "gerry_chain"))
+        hints = normalize_hints(self.options.get("hints", "voronoi"))
         apply_hints = hints != "none"
         looseness = float(self.options.get("looseness", 1.0))
         if looseness < 1.0:
@@ -167,10 +167,6 @@ def _add_math_programming_initial_hint(problem, solver: Solver, hints: str) -> N
         return
     if problem.hint is not None:
         return
-    initial = initial_solution(
-        problem,
-        hints,
-        cut_attempts=int(solver.options.get("recom_cut_attempts", 100)),
-    )
+    initial = initial_solution(problem, hints)
     if initial is not None:
         problem.hint = initial.assignment

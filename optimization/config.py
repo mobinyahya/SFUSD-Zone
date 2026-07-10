@@ -35,7 +35,7 @@ class OptimizationConfig:
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
-    hints: str = "gerry_chain"
+    hints: str = "voronoi"
     save_solver_logs: bool = False
     save_solver_progress: bool = False
     secondary_objective: bool = False
@@ -97,8 +97,8 @@ class OptimizationConfig:
             )
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
-        if self.hints not in {"voronoi", "gerry_chain", "none"}:
-            raise ValueError("hints must be one of: voronoi, gerry_chain, none.")
+        if self.hints not in {"voronoi", "none"}:
+            raise ValueError("hints must be one of: voronoi, none.")
         if self.recom_iterations < 0 and not self.solve_time_limits:
             raise ValueError(
                 "solve_time_limits must include at least one value when "

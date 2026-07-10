@@ -9,7 +9,7 @@ optimization_defaults:
   strategy: single
   solve_time_limits: [500]
   max_distance: 4
-  hints: gerry_chain
+  hints: voronoi
   capacity_scenario: 'A'
   levels: [Block_1]
   racial_dev: -1

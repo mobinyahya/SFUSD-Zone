@@ -22,12 +22,12 @@ from optimization.strategies.choice_model import (
 @register("iterative_choice")
 class IterativeChoiceStrategy(Strategy):
     def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
-        levels = [LevelSpec.parse(l) for l in self.options["levels"]]
+        levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         target = levels[-1]
         max_iterations = int(self.options.get("max_iterations", 5))
         tolerance = float(self.options.get("tolerance", 1e-6))
         apply_hints = (
-            normalize_hints(self.options.get("hints", "gerry_chain")) != "none"
+            normalize_hints(self.options.get("hints", "voronoi")) != "none"
         )
         scale = float(self.options.get("choice_utility_scale", 100.0))
         use_choice_utility_hints = bool(self.options.get("choice_utility_hints", False))

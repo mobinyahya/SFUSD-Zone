@@ -30,7 +30,7 @@ def test_relaxed_recom_uses_hint_and_returns_feasible_solution():
     assert solution.metadata["accepted_moves"] == 1
 
 
-def test_relaxed_recom_defaults_to_gerry_chain_initialization_without_hint():
+def test_relaxed_recom_defaults_to_voronoi_initialization_without_hint():
     problem = _small_problem(hint=None)
     solver = get_solver(
         "relaxed_recom",
@@ -44,7 +44,7 @@ def test_relaxed_recom_defaults_to_gerry_chain_initialization_without_hint():
     solution = solver.solve(problem)
 
     assert solution.status == "FEASIBLE"
-    assert solution.metadata["hints"] == "gerry_chain"
+    assert solution.metadata["hints"] == "voronoi"
 
 
 def test_relaxed_recom_rejects_choice_objective():

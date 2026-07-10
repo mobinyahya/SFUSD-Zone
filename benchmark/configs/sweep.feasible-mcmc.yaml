@@ -13,7 +13,7 @@ optimization_defaults:
   solve_time_limits: [900]
   overage: 0.3
   workers: 1
-  hints: gerry_chain
+  hints: voronoi
   strategy: single
 
   recom_iterations: -1

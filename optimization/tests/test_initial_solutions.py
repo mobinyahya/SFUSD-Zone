@@ -14,16 +14,6 @@ def test_voronoi_initial_solution_returns_valid_hint():
     _check_candidate_assignment(problem, result.assignment)
 
 
-def test_gerry_chain_initial_solution_returns_valid_hint():
-    problem = make_grid_problem(3, 3)
-
-    result = initial_solution(problem, "gerry_chain", cut_attempts=10)
-
-    assert result is not None
-    assert result.metadata["hints"] == "gerry_chain"
-    _check_candidate_assignment(problem, result.assignment)
-
-
 def test_initial_solution_none_returns_no_hint():
     problem = make_grid_problem(3, 3)
 

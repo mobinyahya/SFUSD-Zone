@@ -68,12 +68,7 @@ class ShortBurstsReComSolver(ReComSolver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state_with_options(
-                    problem,
-                    cut_attempts,
-                    population_epsilon=population_epsilon,
-                    balance_metric=balance_metric,
-                )
+                initial = self._initial_state(problem)
                 current = dict(initial.assignment)
                 current_score = self._score(problem, current)
                 initial_score = current_score

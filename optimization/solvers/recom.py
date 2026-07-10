@@ -1,9 +1,10 @@
 """GerryChain-backed ReCom local-search solver.
 
-The solver preserves the project-level ``ZoneProblem`` / ``ZoneSolution`` API but
-delegates initial tree partitioning and ReCom proposals to GerryChain. GerryChain
-handles contiguous, student-balanced tree cuts; this layer keeps the SFUSD-specific
-candidate, centroid, capacity, diversity, school-count, and objective scoring.
+The solver preserves the project-level ``ZoneProblem`` / ``ZoneSolution`` API,
+starts from a Voronoi assignment, and delegates ReCom proposals to GerryChain.
+GerryChain handles contiguous, student-balanced tree cuts; this layer keeps the
+SFUSD-specific candidate, centroid, capacity, diversity, school-count, and objective
+scoring.
 """
 
 from __future__ import annotations
@@ -147,12 +148,7 @@ class ReComSolver(Solver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state(
-                    problem,
-                    cut_attempts,
-                    population_epsilon=population_epsilon,
-                    balance_metric=balance_metric,
-                )
+                initial = self._initial_state(problem)
                 current = dict(initial.assignment)
                 current_partition = self._partition(problem, current, balance_metric)
                 current_score = self._score(problem, current)
@@ -513,25 +509,6 @@ class ReComSolver(Solver):
     def _initial_state(
         self,
         problem: ZoneProblem,
-        cut_attempts: int,
-        *,
-        population_epsilon: float | None = None,
-        balance_metric: object = "students",
-    ) -> _InitialState:
-        return self._initial_state_with_options(
-            problem,
-            cut_attempts,
-            population_epsilon=population_epsilon,
-            balance_metric=balance_metric,
-        )
-
-    def _initial_state_with_options(
-        self,
-        problem: ZoneProblem,
-        cut_attempts: int,
-        *,
-        population_epsilon: float | None = None,
-        balance_metric: object = "students",
     ) -> _InitialState:
         if problem.hint:
             return _InitialState(
@@ -539,17 +516,9 @@ class ReComSolver(Solver):
                 metadata={"hints": "provided", "hint_source": "problem_hint"},
             )
 
-        initial = initial_solution(
-            problem,
-            self._hints(),
-            cut_attempts=cut_attempts,
-            population_epsilon=population_epsilon,
-            balance_metric=balance_metric,
-        )
+        initial = initial_solution(problem, self._hints())
         if initial is None:
-            raise ValueError(
-                "ReCom solvers require hints to be voronoi or gerry_chain."
-            )
+            raise ValueError("ReCom solvers require hints to be voronoi.")
         return _InitialState(
             assignment=initial.assignment,
             metadata=dict(initial.metadata),
@@ -577,7 +546,7 @@ class ReComSolver(Solver):
         return problem.candidate_zones(node)
 
     def _hints(self) -> str:
-        return normalize_hints(self.options.get("hints", "gerry_chain"))
+        return normalize_hints(self.options.get("hints", "voronoi"))
 
     def _hints_error_solution(
         self, problem: ZoneProblem, start: float
@@ -594,9 +563,7 @@ class ReComSolver(Solver):
             metadata={
                 "solver": self.name,
                 "hints": method,
-                "error_message": (
-                    "ReCom solvers require hints to be voronoi or gerry_chain."
-                ),
+                "error_message": "ReCom solvers require hints to be voronoi.",
             },
         )
 

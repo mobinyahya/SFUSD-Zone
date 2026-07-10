@@ -32,13 +32,13 @@ def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     dataset = FakeDataset(problem)
     solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
     solver.name = "cp_int"
-    solver.options["hints"] = "gerry_chain"
+    solver.options["hints"] = "voronoi"
     hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
 
     monkeypatch.setattr(
         single_module,
         "initial_solution",
-        lambda problem_arg, hints, cut_attempts=100: InitialSolution(
+        lambda problem_arg, hints: InitialSolution(
             assignment=hint,
             metadata={"hints": hints},
         ),
@@ -46,7 +46,7 @@ def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     strat = get_strategy(
         "single",
         levels=["BlockGroup_0"],
-        hints="gerry_chain",
+        hints="voronoi",
     )
 
     strat.run(dataset, solver)

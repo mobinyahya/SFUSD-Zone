@@ -38,7 +38,7 @@ def _short_bursts_config(centroids_type: str, seed: int) -> OptimizationConfig:
         strategy="single",
         solve_time_limits=[_SOLVE_SECONDS],
         max_distance=4.52,
-        hints="gerry_chain",
+        hints="voronoi",
         workers=1,
         racial_dev=-1,
         frl_dev=0.15,

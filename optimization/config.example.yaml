@@ -19,7 +19,7 @@ max_distance: 5
 solve_time_limits: [45, 45]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level
 gap_limits: [0, 0]
-hints: gerry_chain            # voronoi | gerry_chain | none
+hints: voronoi                # voronoi | none
 save_solver_logs: false       # write CP-SAT/Gurobi logs or ReCom progress JSONL under output/solver_logs
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 secondary_objective: false    # cp_bool/mip: use alternative boundary objective formulation

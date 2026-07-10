@@ -13,7 +13,7 @@ optimization_defaults:
   max_distance: 4
 
   solve_time_limits: [200]
-  hints: gerry_chain
+  hints: voronoi
   workers: 4
 
   max_iterations: 15

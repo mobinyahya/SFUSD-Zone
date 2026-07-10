@@ -16,7 +16,7 @@ optimization_defaults:
   max_distance: 5
   solve_time_limits: [45]
   gap_limits: [0]
-  hints: gerry_chain
+  hints: voronoi
   seed: 42
   workers: 8
   years: [14, 15, 16, 17, 18, 21, 22]

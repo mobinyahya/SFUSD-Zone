@@ -41,8 +41,6 @@ class RelaxedReComSolver(ReComSolver):
         seed = int(self.options.get("seed", 42))
         rng = random.Random(seed)
         time_limit, max_iterations = self._recom_limits()
-        cut_attempts = max(1, int(self.options.get("recom_cut_attempts", 100)))
-        population_epsilon = self.options.get("recom_population_epsilon")
         balance_metric = normalize_recom_balance_metric(
             self.options.get("recom_balance_metric", "students")
         )
@@ -56,12 +54,7 @@ class RelaxedReComSolver(ReComSolver):
         random.seed(seed)
         try:
             try:
-                initial = self._initial_state_with_options(
-                    problem,
-                    cut_attempts,
-                    population_epsilon=population_epsilon,
-                    balance_metric=balance_metric,
-                )
+                initial = self._initial_state(problem)
                 current = self._prepare_relaxed_assignment(problem, initial.assignment)
                 current_score = self._score(problem, current)
                 initial_score = current_score

@@ -16,7 +16,6 @@ from optimization.config import OptimizationConfig
 from optimization.data import contiguity
 from optimization.data.initial_solutions import (
     RECOM_SCHOOL_COUNT_COL,
-    _initial_balance_metrics,
     recom_balance_epsilon,
     recom_balance_pop_col,
     recom_balance_target,
@@ -243,13 +242,6 @@ def test_recom_boundary_repair_can_fix_school_count_violation():
     assert repaired_score.penalty == pytest.approx(0.0)
     assert metadata["repair_success"] is True
     assert contiguity.is_contiguous(problem.G, repaired, problem.centroids)
-
-
-def test_gerry_chain_initialization_adds_school_multistart():
-    problem = make_grid_problem(3, 3)
-
-    assert _initial_balance_metrics(problem, "students") == ["students", "schools"]
-    assert _initial_balance_metrics(problem, "schools") == ["schools", "students"]
 
 
 def test_recom_balance_penalty_uses_target_difference_after_violation():
@@ -608,7 +600,7 @@ def test_recom_solver():
     assert solution.status == "FEASIBLE"
     assert_valid_solution(problem, solution)
     assert solution.metadata["solver"] == "recom"
-    assert solution.metadata["hints"] == "gerry_chain"
+    assert solution.metadata["hints"] == "voronoi"
 
 
 def test_short_bursts_recom_solver():
