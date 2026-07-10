@@ -47,7 +47,6 @@ student-assignment = { git = "https://github.com/kchandra423/student-assignment-
 
 [tool.setuptools.packages.find]
 include = [
-    "Helper_Functions*",
     "Zone_Generation*",
     "redistricting*",
     "sfusd_matching*",

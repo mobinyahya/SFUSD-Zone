@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import networkx as nx
 
-from Helper_Functions.util import calculate_euc_distance
 from Zone_Generation.Config.Constants import AREA_ETHNICITIES
 from Zone_Generation.optimization.data import loaders
+from Zone_Generation.optimization.data.geography import great_circle_miles
 from Zone_Generation.optimization.data.loaders import IngestConfig
 
 # Node attributes summed when aggregating.
@@ -154,7 +154,7 @@ def aggregate(base_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
             if i == j:
                 distance_dict[i][j] = 0.0
             else:
-                distance_dict[i][j] = calculate_euc_distance(
+                distance_dict[i][j] = great_circle_miles(
                     lat_i, lon_i, new_G.nodes[j]["lat"], new_G.nodes[j]["lon"]
                 )
     new_G.graph["distance_dict"] = distance_dict

@@ -14,9 +14,9 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry.base import BaseGeometry
 
-from Helper_Functions.util import load_census_shapefile
 from Zone_Generation.Config.Constants import get_dropbox_path
 from Zone_Generation.optimization.data.conversion import LevelConverter
+from Zone_Generation.optimization.data.loaders import load_census_shapefile
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
 

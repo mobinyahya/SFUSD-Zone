@@ -20,8 +20,8 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from Helper_Functions.util import load_census_shapefile
 from Zone_Generation.Config.Constants import zone_colors
+from Zone_Generation.optimization.data.loaders import load_census_shapefile
 from Zone_Generation.optimization.levels import LevelSpec
 from Zone_Generation.optimization.solution import ZoneSolution
 

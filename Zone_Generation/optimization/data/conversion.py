@@ -18,10 +18,12 @@ every depth records the base ids it covers (``area_id`` at depth 0,
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 
 import networkx as nx
+import pandas as pd
 
-from Helper_Functions.util import load_b2bg
+from Zone_Generation.Config.Constants import get_dropbox_path
 from Zone_Generation.optimization.levels import LevelSpec
 
 
@@ -45,22 +47,34 @@ def _node_base_ids(G: nx.Graph, node: int) -> list[int]:
     return list(attrs["block_ids"])
 
 
+def _load_block_to_blockgroup(is_local: bool = False) -> dict[int, int]:
+    """Load the geographic crosswalk used for Block/BlockGroup conversion."""
+    path = f"{get_dropbox_path(is_local)}/Optimization/block_blockgroup_tract.csv"
+    crosswalk = pd.read_csv(path).dropna(subset=["Block", "BlockGroup"])
+    return {
+        int(row.Block): int(row.BlockGroup)
+        for row in crosswalk[["Block", "BlockGroup"]].itertuples(index=False)
+    }
+
+
 class LevelConverter:
     """Translate zone assignments between levels."""
 
-    def __init__(self):
-        self._b2bg: dict | None = None
-        self._bg2blocks: dict | None = None
+    def __init__(self, block_to_blockgroup: Mapping[int, int] | None = None) -> None:
+        self._b2bg = (
+            dict(block_to_blockgroup) if block_to_blockgroup is not None else None
+        )
+        self._bg2blocks: dict[int, list[int]] | None = None
 
     # ------------------------------------------------------------------ #
     # unit bridging maps (lazy)
     # ------------------------------------------------------------------ #
-    def b2bg(self) -> dict:
+    def b2bg(self) -> dict[int, int]:
         if self._b2bg is None:
-            self._b2bg = load_b2bg(False)
+            self._b2bg = _load_block_to_blockgroup()
         return self._b2bg
 
-    def bg2blocks(self) -> dict:
+    def bg2blocks(self) -> dict[int, list[int]]:
         if self._bg2blocks is None:
             bg2blocks: dict[int, list[int]] = {}
             for block, bg in self.b2bg().items():

@@ -26,10 +26,6 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from Helper_Functions.util import (
-    load_census_shapefile,
-    load_euc_distance_data,
-)
 from Zone_Generation.Config.Constants import (
     AREA_COLS,
     AREA_ETHNICITIES,
@@ -42,6 +38,7 @@ from Zone_Generation.Config.Constants import (
     get_dropbox_path,
     get_sfusd_path,
 )
+from Zone_Generation.optimization.data.geography import great_circle_miles
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "Config")
 CENTROIDS_YAML = os.path.abspath(os.path.join(CONFIG_DIR, "centroids.yaml"))
@@ -418,6 +415,38 @@ def _apply_closure_scaling(area: pd.DataFrame) -> pd.DataFrame:
 # ====================================================================== #
 # Geometry / distance / adjacency
 # ====================================================================== #
+def load_census_shapefile(level: str, is_local: bool = False) -> gpd.GeoDataFrame:
+    """Load census geometry enriched with Block and BlockGroup identifiers."""
+    if is_local:
+        path = os.path.join(
+            get_sfusd_path(is_local),
+            "drive-download-20200216T210200Z-001",
+            "2013 ESAAs SFUSD.shp",
+        )
+    else:
+        path = os.path.join(
+            get_sfusd_path(is_local),
+            "shapefiles",
+            "geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp",
+        )
+
+    census = gpd.read_file(path)
+    census["Block"] = census["geoid10"].fillna(0).astype("int64")
+
+    crosswalk = pd.read_csv(
+        os.path.join(
+            get_dropbox_path(is_local),
+            "Optimization",
+            "block_blockgroup_tract.csv",
+        )
+    )
+    crosswalk["Block"] = crosswalk["Block"].fillna(0).astype("int64")
+    census = census.merge(crosswalk, how="left", on="Block")
+    census.dropna(subset=["BlockGroup", "Block"], inplace=True)
+    census[level] = census[level].astype("int64")
+    return census
+
+
 def load_area_latlon(cfg: IngestConfig) -> pd.DataFrame:
     """Centroid Lat/Lon per area, indexed by the unit id."""
     census = load_census_shapefile(cfg.unit, False)
@@ -440,12 +469,70 @@ def _projected_centroids_latlon(gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
     )
 
 
-def load_distance_dict(cfg: IngestConfig, area2idx: dict[int, int]) -> dict:
+def load_distance_dict(
+    cfg: IngestConfig, area2idx: dict[int, int]
+) -> dict[int, dict[int, float]]:
     """``{centroid_idx: {area_idx: miles}}`` distance lookup.
 
-    Delegates to the shared euclidean-distance loader (which caches CSVs).
+    Reuse the unit's distance matrix when present, otherwise calculate and
+    atomically cache a complete matrix from projected area centroids.
     """
-    return load_euc_distance_data(cfg.unit, area2idx, False)
+    filename = (
+        "distances_b2b_schools.csv" if cfg.unit == "Block" else "distances_bg2bg.csv"
+    )
+    cache_path = os.path.join(DROPBOX_PATH, "Optimization", filename)
+    area_ids = list(area2idx)
+
+    if os.path.exists(cache_path):
+        matrix = pd.read_csv(cache_path, index_col=cfg.unit)
+        matrix.index = [int(float(area_id)) for area_id in matrix.index]
+        matrix.columns = [int(float(area_id)) for area_id in matrix.columns]
+    else:
+        locations = load_area_latlon(cfg)
+        missing_locations = set(area_ids) - set(locations.index)
+        if missing_locations:
+            raise ValueError(
+                f"Missing {cfg.unit} centroid locations for "
+                f"{sorted(missing_locations)}."
+            )
+
+        matrix = pd.DataFrame(
+            0.0,
+            index=pd.Index(area_ids, name=cfg.unit),
+            columns=area_ids,
+        )
+        for i, area_i in enumerate(area_ids):
+            lat_i = float(locations.loc[area_i, "Lat"])
+            lon_i = float(locations.loc[area_i, "Lon"])
+            for area_j in area_ids[i + 1 :]:
+                distance = great_circle_miles(
+                    lat_i,
+                    lon_i,
+                    float(locations.loc[area_j, "Lat"]),
+                    float(locations.loc[area_j, "Lon"]),
+                )
+                matrix.loc[area_i, area_j] = distance
+                matrix.loc[area_j, area_i] = distance
+
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        tmp_cache = f"{cache_path}.{os.getpid()}.tmp"
+        matrix.to_csv(tmp_cache)
+        os.replace(tmp_cache, cache_path)
+
+    missing_rows = set(area_ids) - set(matrix.index)
+    missing_columns = set(area_ids) - set(matrix.columns)
+    if missing_rows or missing_columns:
+        raise ValueError(
+            f"Distance cache {cache_path} is missing {cfg.unit} IDs: "
+            f"{sorted(missing_rows | missing_columns)}."
+        )
+
+    return {
+        area2idx[area_i]: {
+            area2idx[area_j]: float(matrix.loc[area_i, area_j]) for area_j in area_ids
+        }
+        for area_i in area_ids
+    }
 
 
 def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, list[int]]:

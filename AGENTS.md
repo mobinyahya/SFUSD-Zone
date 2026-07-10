@@ -21,7 +21,6 @@ uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
 - `Zone_Generation/optimization/` - config.py, problem.py, solution.py, solvers/, strategies/, data/
 - `Zone_Generation/benchmark/` - config.py, runner.py, results.py, parallel.py
 - `Zone_Generation/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
-- `Helper_Functions/` - util.py, Graph.py
 
 ## Graph Object Structure
 

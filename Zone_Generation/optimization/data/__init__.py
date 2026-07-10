@@ -8,4 +8,5 @@ This layer owns everything between the raw source files and a ready-to-solve
 * ``dataset``      -- lazily expose graphs + centroids and emit ZoneProblems
 * ``conversion``   -- map assignments between any two levels
 * ``contiguity``   -- strict-contiguity primitives shared by solvers/strategies
+* ``geography``    -- low-level geographic distance calculations
 """
