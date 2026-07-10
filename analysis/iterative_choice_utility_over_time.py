@@ -20,9 +20,7 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SWEEP_CONFIG = (
-    PROJECT_ROOT / "benchmark/configs/sweep.iterative_choice.yaml"
-)
+DEFAULT_SWEEP_CONFIG = PROJECT_ROOT / "benchmark/configs/sweep.iterative_choice.yaml"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 DEFAULT_OUTPUT_NAME = "iterative_choice_utility_over_time.png"
 
@@ -277,9 +275,7 @@ def single_utility_baselines(utility_rows: pd.DataFrame) -> pd.DataFrame:
     post_is_sd = (
         candidates["matching_config"].fillna("").astype(str).str.lower() == "sd"
     )
-    candidates = candidates[
-        (candidates["utility_kind"] != "post") | post_is_sd
-    ].copy()
+    candidates = candidates[(candidates["utility_kind"] != "post") | post_is_sd].copy()
     if candidates.empty:
         return pd.DataFrame()
 

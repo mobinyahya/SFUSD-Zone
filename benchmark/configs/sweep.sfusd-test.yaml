@@ -4,59 +4,42 @@ name: sfusd_zone_test
 mode: run  # run | metrics
 
 optimization_defaults:
-  save_solver_logs: true
-  choice_model: distance
   carry_over_compute: true
-  max_distance: 4
-  hints: gerry_chain
-  capacity_scenario: 'A'
+  max_distance: 4.52
+  hints: voronoi
   racial_dev: -1
   looseness: 1.25
   gap_limits: [0, 0, 0]
   workers: 8
+  solver: 'cp_bool'
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9', '8-zone-22', '8-zone-24', '10-zone-3', '10-zone-11', '10-zone-9', '13-zone-5', '13-zone-6','13-zone-7', '18-zone-1', '18-zone-6', '18-zone-3']
-  # '5-zone-2', '5-zone-AF',  '7-zone-14', '7-zone-19',
-  frl_dev: [0.15]
-  # 0.12, 0.15, 0.2,
+  frl_dev: [0.13, 0.14, 0.15]
   # ignoring racial deviations
-  seed: [42]
-  # 14, 33, 80, 9
-  overage: [0.7, 0.8, 0.9]
-  # 
+  overage: [0.15, 0.2, 0.25]
   shortage: [0.15, 0.2, 0.25]
-  # 0.15, 0.2,
-  solver: ['cp_bool']
 
 tasks:
   - strategy: 'single'
     levels: ['Block_0']
-    solve_time_limits: [100]
+    solve_time_limits: [1200]
 
   - strategy: 'recursive'
-    levels: ['Block_1', 'Block_0']
-    solve_time_limits: [200, 400]
-    boundary_radius: 0
-
-  - strategy: 'recursive'
-    levels: ['Block_1', 'Block_0']
-    solve_time_limits: [200, 400]
-    boundary_radius: 1
+    levels: ['Block_2', 'Block_0']
+    solve_time_limits: [400, 800]
+    boundary_radius: 2
   
   - strategy: 'recursive'
     levels: ['Block_1', 'Block_0']
-    solve_time_limits: [200, 400]
+    solve_time_limits: [600, 600]
+    boundary_radius: 1
+
+  - strategy: 'recursive'
+    levels: ['Block_3', 'Block_0']
+    solve_time_limits: [400, 800]
     boundary_radius: 2
 
-  # - strategy: 'recursive'
-  #   levels: ['Block_1', 'Block_0']
-  #   solve_time_limits: [600, 600]
-  #   boundary_radius: 3
-
-  # - strategy: 'recursive'
-  #   levels: ['Block_2', 'Block_1', 'Block_0']
-  #   solve_time_limits: [200, 400, 600]
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/sfusd_zone_test_3/'

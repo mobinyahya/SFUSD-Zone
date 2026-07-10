@@ -68,9 +68,9 @@ def _run_short_bursts_case(
     try:
         config = _short_bursts_config(centroids_type, seed)
         start = time.monotonic()
-        solution = config.make_strategy().run(config.make_dataset(), config.make_solver())[
-            -1
-        ]
+        solution = config.make_strategy().run(
+            config.make_dataset(), config.make_solver()
+        )[-1]
         output.put(
             {
                 "ok": True,
@@ -110,8 +110,7 @@ def test_short_bursts_recom_real_data_stalled_cases_return(
         process.terminate()
         process.join(5)
         pytest.fail(
-            f"short_bursts_recom stalled on real-data case "
-            f"{centroids_type} seed {seed}"
+            f"short_bursts_recom stalled on real-data case {centroids_type} seed {seed}"
         )
 
     assert process.exitcode == 0

@@ -27,9 +27,7 @@ from metrics.base import MetricsContext
 from optimization.solution import ZoneSolution
 
 
-DEFAULT_MATCHING_TEMPLATE = Path(
-    "benchmark/matching/zones+hard_reserves_06frl.yaml"
-)
+DEFAULT_MATCHING_TEMPLATE = Path("benchmark/matching/zones+hard_reserves_06frl.yaml")
 GENERATED_POLICY_NAME = "generated_zones"
 MATCHING_DIRNAME = "matching"
 ZONE_CSV = "zones.csv"

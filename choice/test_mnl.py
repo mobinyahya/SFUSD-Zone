@@ -140,9 +140,7 @@ def test_mnl_block_impacts_match_direct_add_remove_deltas(
 
 
 @pytest.mark.parametrize("method", ["max", "logsum"])
-def test_mnl_choice_cuts_upper_bound_substitute_school(
-    tmp_path, monkeypatch, method
-):
+def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, monkeypatch, method):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(

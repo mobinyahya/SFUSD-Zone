@@ -254,8 +254,10 @@ class ReComSolver(Solver):
         wall = time.time() - start
         repair_metadata = {}
         if best is None and best_infeasible is not None and best_infeasible_score:
-            repaired, repaired_score, repair_metadata = self._repair_infeasible_solution(
-                problem, best_infeasible, best_infeasible_score
+            repaired, repaired_score, repair_metadata = (
+                self._repair_infeasible_solution(
+                    problem, best_infeasible, best_infeasible_score
+                )
             )
             if _valid(repaired_score):
                 best = repaired
@@ -470,13 +472,17 @@ class ReComSolver(Solver):
             if _valid(current_score):
                 break
 
-        return current, current_score, {
-            "repair_attempted": True,
-            "repair_steps": steps,
-            "repair_checked_moves": checked_moves,
-            "repair_final_penalty": current_score.penalty,
-            "repair_success": _valid(current_score),
-        }
+        return (
+            current,
+            current_score,
+            {
+                "repair_attempted": True,
+                "repair_steps": steps,
+                "repair_checked_moves": checked_moves,
+                "repair_final_penalty": current_score.penalty,
+                "repair_success": _valid(current_score),
+            },
+        )
 
     def _repair_boundary_nodes(
         self, problem: ZoneProblem, assignment: Mapping[int, int]

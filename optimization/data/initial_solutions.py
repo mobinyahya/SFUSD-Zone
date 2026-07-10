@@ -124,9 +124,7 @@ def gerry_chain_initial_solution(
         epsilon = recom_balance_epsilon(problem, population_epsilon, metric)
         graph = recom_gerrychain_graph(problem, metric)
         pop_col = recom_balance_pop_col(metric)
-        for attempt, current_epsilon in enumerate(
-            _epsilon_schedule(epsilon), start=1
-        ):
+        for attempt, current_epsilon in enumerate(_epsilon_schedule(epsilon), start=1):
             metric_attempts[metric] = attempt
             try:
                 raw = recursive_tree_part(
@@ -280,9 +278,7 @@ def recom_gerrychain_graph(
             graph.nodes[node][RECOM_NODE_COUNT_COL] = 1.0
     elif metric == "schools":
         for node in graph.nodes:
-            graph.nodes[node][RECOM_SCHOOL_COUNT_COL] = float(
-                problem.num_schools(node)
-            )
+            graph.nodes[node][RECOM_SCHOOL_COUNT_COL] = float(problem.num_schools(node))
     return Graph.from_networkx(graph)
 
 

@@ -25,9 +25,7 @@ from benchmark.config import BenchmarkTask, SimulationSweep
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SWEEP_CONFIG = (
-    PROJECT_ROOT / "benchmark/configs/sweep.feasible-mcmc.yaml"
-)
+DEFAULT_SWEEP_CONFIG = PROJECT_ROOT / "benchmark/configs/sweep.feasible-mcmc.yaml"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 DEFAULT_OUTPUT_NAME = "feasible_mcmc_penalties_objective_over_time.png"
 
@@ -256,7 +254,9 @@ def build_mcmc_tables(
                         )
                         stage_objectives.append(float(objective_row["objective"]))
 
-        first_real_feasible_time = min(stage_progress_first_feasible_times, default=None)
+        first_real_feasible_time = min(
+            stage_progress_first_feasible_times, default=None
+        )
         if first_real_feasible_time is None:
             first_real_feasible_time = min(stage_log_first_feasible_times, default=None)
         run_rows.append(
@@ -401,7 +401,9 @@ def penalty_components_dataframe(
             number = finite_float(value)
             if number is None:
                 continue
-            component_totals[str(component)] = component_totals.get(str(component), 0.0) + number
+            component_totals[str(component)] = (
+                component_totals.get(str(component), 0.0) + number
+            )
     components = [
         component
         for component, _total in sorted(
@@ -457,7 +459,9 @@ def plot_mcmc_tables(
     run_df = filter_centroids(tables.runs, centroids_type)
 
     if penalty_df.empty:
-        raise ValueError(f"No penalty rows found for centroids_type={centroids_type!r}.")
+        raise ValueError(
+            f"No penalty rows found for centroids_type={centroids_type!r}."
+        )
 
     sns.set_theme(style="whitegrid")
     fig, axes = plt.subplots(
@@ -470,9 +474,7 @@ def plot_mcmc_tables(
     )
     colors = solver_colors(penalty_df, objective_df)
 
-    plot_total_penalty(
-        axes[0], penalty_df, colors, time_bin_seconds=time_bin_seconds
-    )
+    plot_total_penalty(axes[0], penalty_df, colors, time_bin_seconds=time_bin_seconds)
     plot_penalty_components(
         axes[1], component_df, colors, time_bin_seconds=time_bin_seconds
     )
@@ -548,10 +550,16 @@ def plot_penalty_components(
         group_columns=["solver_label", "component_label"],
         time_bin_seconds=time_bin_seconds,
     )
-    styles = {solver: style for solver, style in zip(SOLVER_ORDER, ["-", "--"], strict=False)}
+    styles = {
+        solver: style for solver, style in zip(SOLVER_ORDER, ["-", "--"], strict=False)
+    }
     component_labels = sorted(median_df["component_label"].dropna().unique())
     component_palette = dict(
-        zip(component_labels, sns.color_palette("tab10", len(component_labels)), strict=False)
+        zip(
+            component_labels,
+            sns.color_palette("tab10", len(component_labels)),
+            strict=False,
+        )
     )
 
     for (solver, component), group_df in median_df.groupby(
@@ -623,7 +631,9 @@ def plot_objectives(
         )
         labeled.add(solver)
 
-    feasible_runs = int(run_df["has_real_feasible_solution"].sum()) if not run_df.empty else 0
+    feasible_runs = (
+        int(run_df["has_real_feasible_solution"].sum()) if not run_df.empty else 0
+    )
     total_runs = len(run_df)
     ax.text(
         0.01,
@@ -661,7 +671,9 @@ def binned_median(
     bin_seconds = max(float(time_bin_seconds), 1e-9)
     data["time_bin"] = (data["elapsed_seconds"] / bin_seconds).round().astype(int)
     per_run = (
-        data.groupby([*group_columns, "run_id", "time_bin"], as_index=False)[value_column]
+        data.groupby([*group_columns, "run_id", "time_bin"], as_index=False)[
+            value_column
+        ]
         .mean()
         .sort_values([*group_columns, "time_bin"], kind="stable")
     )
@@ -716,10 +728,7 @@ def selected_log_rows(
         return list(enumerate(rows))
 
     last_idx = len(rows) - 1
-    indices = {
-        round(i * last_idx / (max_rows - 1))
-        for i in range(max_rows)
-    }
+    indices = {round(i * last_idx / (max_rows - 1)) for i in range(max_rows)}
     previous_best = object()
     for idx, row in enumerate(rows):
         if row.get("feasible"):

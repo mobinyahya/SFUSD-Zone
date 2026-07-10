@@ -155,8 +155,10 @@ class RelaxedReComSolver(ReComSolver):
         wall = time.time() - start
         repair_metadata = {}
         if best is None and best_infeasible is not None and best_infeasible_score:
-            repaired, repaired_score, repair_metadata = self._repair_infeasible_solution(
-                problem, best_infeasible, best_infeasible_score
+            repaired, repaired_score, repair_metadata = (
+                self._repair_infeasible_solution(
+                    problem, best_infeasible, best_infeasible_score
+                )
             )
             if _valid(repaired_score):
                 best = repaired

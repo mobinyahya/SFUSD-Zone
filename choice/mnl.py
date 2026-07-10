@@ -154,9 +154,7 @@ class MNLZoningUtility:
                 )[:schools_per_zone]
             }
             baseline_cols = [
-                col
-                for sid in nearest_schools
-                for col in school_cols.get(sid, [])
+                col for sid in nearest_schools for col in school_cols.get(sid, [])
             ]
             baseline_col_set = set(baseline_cols)
             baseline_value = summed_utility(group, baseline_cols)
@@ -348,7 +346,9 @@ class MNLZoningUtility:
                 full_remaining_cols = [
                     col for col in full_cols if col not in sid_col_set
                 ]
-                full_removed_utils = self._utilities_for_cols(group, full_remaining_cols)
+                full_removed_utils = self._utilities_for_cols(
+                    group, full_remaining_cols
+                )
                 full_remove_impacts = full_baseline - full_removed_utils
                 is_in_zone = school_to_current_zone.get(sid) == zone
                 if is_in_zone:
@@ -376,9 +376,9 @@ class MNLZoningUtility:
                     type_map[impact_type] = type_map.get(impact_type, 0.0) + float(
                         impact
                     )
-                    type_map["full_remove"] = type_map.get(
-                        "full_remove", 0.0
-                    ) + float(full_remove)
+                    type_map["full_remove"] = type_map.get("full_remove", 0.0) + float(
+                        full_remove
+                    )
         return impacts
 
     def _build_cuts(

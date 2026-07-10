@@ -15,9 +15,7 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SWEEP_CONFIG = (
-    PROJECT_ROOT / "benchmark/configs/sweep.test_params.yaml"
-)
+DEFAULT_SWEEP_CONFIG = PROJECT_ROOT / "benchmark/configs/sweep.test_params.yaml"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 
 SUCCESS_STATUSES = {"FEASIBLE", "OPTIMAL"}

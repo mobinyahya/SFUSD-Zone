@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - tqdm is available in normal uv envs.
     def tqdm(iterable, **_kwargs):
         return iterable
 
+
 from Config.metrics_config import (
     METRIC_BY_COLUMN,
     METRIC_BY_NAME,
@@ -323,8 +324,7 @@ def _plot_grouped_progress_metric(
         raise ValueError(f"Metric {metric!r} has no numeric values to plot.")
 
     groups = [
-        int(group)
-        for group in dict.fromkeys(plot_df["explicit_task_number"].tolist())
+        int(group) for group in dict.fromkeys(plot_df["explicit_task_number"].tolist())
     ]
     label_by_group = _labels_by_group(groups, labels)
 
@@ -667,11 +667,15 @@ def _progress_rows_for_task(job: ProgressTaskJob) -> list[dict[str, Any]]:
                 kwargs = {"strict": job.strict_metrics}
                 if metric_modules is not None:
                     kwargs["modules"] = metric_modules
-                metric_values = MetricsCalculator(
-                    solution,
-                    config=config,
-                    **kwargs,
-                ).compute().metrics
+                metric_values = (
+                    MetricsCalculator(
+                        solution,
+                        config=config,
+                        **kwargs,
+                    )
+                    .compute()
+                    .metrics
+                )
 
             row = {
                 "task_number": job.task_number,

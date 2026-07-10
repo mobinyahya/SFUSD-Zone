@@ -189,14 +189,14 @@ class ZoneProblem:
 
         if self.candidates is not None and node in self.candidates:
             reason = "explicit candidate restrictions leave no legal zones"
-            advice = "Relax the candidate restrictions or add a legal zone for this node."
+            advice = (
+                "Relax the candidate restrictions or add a legal zone for this node."
+            )
         else:
             reason = (
                 f"max_distance={self.max_distance:g} excludes all {self.Z} centroids"
             )
-            advice = (
-                "Increase max_distance or choose centroid schools that cover every node."
-            )
+            advice = "Increase max_distance or choose centroid schools that cover every node."
 
         nearest = self._nearest_centroid_description(node)
         nearest_text = f" {nearest}" if nearest else ""
