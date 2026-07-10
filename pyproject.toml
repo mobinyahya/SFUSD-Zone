@@ -47,7 +47,17 @@ student-assignment = { git = "https://github.com/kchandra423/student-assignment-
 
 [tool.setuptools.packages.find]
 include = [
-    "Zone_Generation*",
+    "Config*",
+    "choice*",
+    "optimization*",
+    "metrics*",
+    "benchmark*",
     "redistricting*",
     "sfusd_matching*",
 ]
+
+[tool.setuptools.package-data]
+Config = ["*.yaml"]
+optimization = ["*.yaml"]
+benchmark = ["*.yaml", "configs/*.yaml"]
+"benchmark.matching" = ["*.yaml"]

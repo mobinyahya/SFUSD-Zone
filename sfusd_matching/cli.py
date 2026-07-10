@@ -30,7 +30,7 @@ def cli() -> None:
 def simulate(config_path: Path, assignments_dir: Path | None) -> None:
     """Run a student-assignment simulation."""
 
-    from Zone_Generation.benchmark.matching.runner import _run_student_assignment
+    from benchmark.matching.runner import _run_student_assignment
 
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}

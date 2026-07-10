@@ -8,19 +8,19 @@ All commands use `uv`. Python 3.13+ required.
 
 ```bash
 uv sync                          # Install dependencies
-uv run python -m Zone_Generation.Optimization.optimizer  # Single optimization run (uses Zone_Generation/Config/config.yaml)
+uv run python -m optimization.run optimization/config.example.yaml  # Single optimization run
 
 # Benchmarking (from project root)
-uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml
-uv run python -m Zone_Generation.benchmark.run path/to/sweep.yaml --mode metrics
+uv run python -m benchmark.run path/to/sweep.yaml
+uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 ```
 
 ## Directory Structure
 
-- `Zone_Generation/Config/` - config.yaml, centroids.yaml, Constants.py, metrics_config.py
-- `Zone_Generation/Optimization/` - Optimizer implementations (cp_int, cp_bool, mip), design_zones.py, create_larger_areas.py
-- `Zone_Generation/benchmark/` - config.py, runner.py, results.py, parallel.py
-- `Zone_Generation/metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
+- `Config/` - config.yaml, centroids.yaml, Constants.py, metrics_config.py
+- `optimization/` - config.py, problem.py, solution.py, solvers/, strategies/, data/
+- `benchmark/` - config.py, runner.py, results.py, parallel.py
+- `metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
 
 ## Graph Object Structure
 
@@ -92,7 +92,7 @@ Benchmarking is configured from one simulation sweep YAML file. The same entrypo
 - `mode: run` - Generate tasks from YAML and run the full optimization sweep.
 - `mode: metrics` - Reconstruct saved `ZoneSolution` stages, rewrite `result.json` with updated metrics, and aggregate outputs.
 
-See `Zone_Generation/benchmark/sweep.example.yaml` for the YAML shape.
+See `benchmark/sweep.example.yaml` for the YAML shape.
 
 ### Output Structure
 
@@ -115,7 +115,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 - `run_sweep` (benchmark/parallel.py) - Capacity-aware process executor with worker recycling
 - `MetricsCalculator` (metrics/calculator.py) - Optimization-native metrics over `ZoneSolution` stages
 
-## Config Reference (Zone_Generation/Config/config.yaml)
+## Config Reference (Config/config.yaml)
 
 | Parameter | Example | Description |
 |---|---|---|

@@ -2,7 +2,7 @@
 """Plot feasible-MCMC penalties and objective progress over time.
 
 This script reads the benchmark outputs produced by
-``Zone_Generation/benchmark/configs/sweep.feasible-mcmc.yaml``. ReCom solver
+``benchmark/configs/sweep.feasible-mcmc.yaml``. ReCom solver
 logs provide every sampled penalty trajectory; solver-progress logs provide only
 real feasible incumbents, which is what we use for the objective trajectory.
 """
@@ -21,12 +21,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-from Zone_Generation.benchmark.config import BenchmarkTask, SimulationSweep
+from benchmark.config import BenchmarkTask, SimulationSweep
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SWEEP_CONFIG = (
-    PROJECT_ROOT / "Zone_Generation/benchmark/configs/sweep.feasible-mcmc.yaml"
+    PROJECT_ROOT / "benchmark/configs/sweep.feasible-mcmc.yaml"
 )
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 DEFAULT_OUTPUT_NAME = "feasible_mcmc_penalties_objective_over_time.png"

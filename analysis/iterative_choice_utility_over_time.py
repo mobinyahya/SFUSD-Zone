@@ -21,7 +21,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SWEEP_CONFIG = (
-    PROJECT_ROOT / "Zone_Generation/benchmark/configs/sweep.iterative_choice.yaml"
+    PROJECT_ROOT / "benchmark/configs/sweep.iterative_choice.yaml"
 )
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 DEFAULT_OUTPUT_NAME = "iterative_choice_utility_over_time.png"

@@ -1,0 +1,79 @@
+# Optimization-native benchmark sweep.
+# Run: uv run python -m benchmark.run benchmark/sweep.example.yaml
+
+name: recursive-blockgroup-sweep
+mode: run  # run | metrics
+
+optimization_defaults:
+  centroids_type: '7-zone-14'
+  levels: ['BlockGroup_1', 'BlockGroup_0']
+  solver: 'cp_int'
+  strategy: 'recursive'
+  frl_dev: 0.3
+  racial_dev: 0.3
+  overage: 0.8
+  shortage: 0.2
+  looseness: 1.0              # recursive: multiply constraints per configured coarser stage
+  max_distance: 5
+  solve_time_limits: [45, 60]
+  carry_over_compute: false    # recursive: add unused level time to the next level
+  gap_limits: [0, 0]
+  hints: gerry_chain
+  save_solver_logs: false     # write CP-SAT/Gurobi logs or ReCom progress JSONL under solver_logs/
+  save_solver_progress: false # save improving incumbents under solver_progress/
+  seed: 42
+  workers: 8
+  # CP-SAT-only solver parameters. Leave unset to use OR-Tools defaults.
+  # linearization_level: 1
+  # cp_model_probing_level: 2
+  # symmetry_level: 2
+  years: [14, 15, 16, 17, 18, 21, 22]
+  population_type: 'GE'
+  capacity_scenario: 'A'
+  new_schools: true
+  include_k8: false
+  level_to_split: {1: 2, 2: 1}
+
+sweep:
+  centroids_type: ['5-zone-AF', '6-zone-3']
+  frl_dev: [0.12, 0.15, 0.2, 0.25]
+  racial_dev: [0.12, 0.15, 0.2, 0.25]
+  seed: [42, 14, 20]
+  overage: [0.7, 0.8, 0.9]
+  shortage: [0.15, 0.2, 0.25]
+
+execution:
+  output_dir: './optimization_output'
+  capacity: 32              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false  # opt in to cut-edge/compactness metrics for every saved stage
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+# Optional student-assignment matching simulation.
+# Run matching independently with:
+#   uv run python -m benchmark.run benchmark/sweep.example.yaml --mode matching
+# matching:
+#   enabled: true
+#   config: benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+#   # Or run multiple matching templates for each optimization output:
+#   # configs:
+#   #   - name: no_reserves_no_sib
+#   #     config: benchmark/matching/medium_zones_no_reserves_no_sib.yaml
+#   #   - name: sd
+#   #     config: benchmark/matching/sd.yaml
+#   compute_stage_assignments: false  # opt in to matching each recursive/iterative stage
+
+# Optional assignment-based choice metrics. These use matching assignment CSVs,
+# do nothing when no assignments exist, and can be run independently with:
+#   uv run python -m benchmark.run benchmark/sweep.example.yaml --mode choice_metrics
+# choice_metrics:
+#   enabled: true
+#   compute_stage_metrics: false  # opt in to assignment metrics for stage matching outputs

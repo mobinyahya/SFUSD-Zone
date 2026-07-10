@@ -1,10 +1,10 @@
 import networkx as nx
 import pytest
 
-from Zone_Generation.Config.Constants import AREA_ETHNICITIES
-from Zone_Generation.optimization.levels import LevelSpec
-from Zone_Generation.optimization.problem import ZoneProblem
-from Zone_Generation.optimization.solvers import get_solver
+from Config.Constants import AREA_ETHNICITIES
+from optimization.levels import LevelSpec
+from optimization.problem import ZoneProblem
+from optimization.solvers import get_solver
 
 
 def test_relaxed_recom_registered():

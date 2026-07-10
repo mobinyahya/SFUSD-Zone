@@ -28,14 +28,14 @@ except ImportError:  # pragma: no cover - tqdm is available in normal uv envs.
     def tqdm(iterable, **_kwargs):
         return iterable
 
-from Zone_Generation.Config.metrics_config import (
+from Config.metrics_config import (
     METRIC_BY_COLUMN,
     METRIC_BY_NAME,
     resolve_metric_identifiers,
 )
-from Zone_Generation.benchmark.config import SimulationSweep
-from Zone_Generation.benchmark.runner import load_solutions
-from Zone_Generation.metrics import (
+from benchmark.config import SimulationSweep
+from benchmark.runner import load_solutions
+from metrics import (
     choice,
     distance,
     diversity,
@@ -45,7 +45,7 @@ from Zone_Generation.metrics import (
     structure,
     MetricsCalculator,
 )
-from Zone_Generation.optimization.solution import ZoneSolution
+from optimization.solution import ZoneSolution
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
