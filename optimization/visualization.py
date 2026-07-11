@@ -282,8 +282,9 @@ def _plot_schools(ax, solution: ZoneSolution) -> None:
             ax.text(
                 lon,
                 lat,
-                "🏫",
+                "S",
                 fontsize=10,
+                fontweight="bold",
                 ha="center",
                 va="center",
                 zorder=5,
