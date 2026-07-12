@@ -105,6 +105,18 @@ def test_cpsat_solvers_support_distance_to_centroid_search_strategy(name):
     assert_valid_solution(problem, solution)
 
 
+@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
+def test_cpsat_solvers_forbid_zone_without_closer_neighbor(name):
+    problem = make_grid_problem(3, 3, candidates={4: {0}})
+    # Make node 4 a distance-local minimum for zone 0. Its adjacent nodes are
+    # all farther from centroid 0, so its forced assignment must be rejected.
+    problem.G.graph["distance_dict"][0][4] = 0.5
+
+    solution = get_solver(name, solve_time_limit=10, workers=1).solve(problem)
+
+    assert solution.status == "INFEASIBLE"
+
+
 def test_cp_bool_distance_to_centroid_search_orders_assignment_bools():
     problem = make_grid_problem(3, 3)
     solver = get_solver("cp_bool", cp_sat_search_strategy="distance_to_centroid")
@@ -307,6 +319,20 @@ def test_mip_solver_supports_secondary_objective():
 
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     assert_valid_solution(problem, solution, check_boundary_objective=False)
+
+
+@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
+def test_mip_solver_forbids_zone_without_closer_neighbor():
+    problem = make_grid_problem(3, 3, candidates={4: {0}})
+    problem.G.graph["distance_dict"][0][4] = 0.5
+    try:
+        solution = get_solver("mip", solve_time_limit=10).solve(problem)
+    except Exception as exc:  # no usable Gurobi license in this environment
+        if "gurobi" in type(exc).__module__.lower():
+            pytest.skip(f"Gurobi unavailable: {exc}")
+        raise
+
+    assert solution.status == "INFEASIBLE"
 
 
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")

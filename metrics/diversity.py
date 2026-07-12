@@ -47,11 +47,14 @@ def compute(context: MetricsContext) -> MetricOutput:
     metrics: dict[str, float] = {}
 
     district_students = sum(c["ge_students"] for c in per_zone_counts.values())
-    district_frl = (
-        sum(c["FRL"] for c in per_zone_counts.values()) / district_students
-        if district_students
-        else 0.0
-    )
+    if context.solution.metadata.get("partial_assignment"):
+        district_frl = float(context.G.graph.get("F", 0.0))
+    else:
+        district_frl = (
+            sum(c["FRL"] for c in per_zone_counts.values()) / district_students
+            if district_students
+            else 0.0
+        )
     district_eth = context.G.graph.get("R", {})
     district_aalpi = sum(float(district_eth.get(e, 0.0)) for e in AALPI_ETHNICITIES)
 

@@ -1,12 +1,14 @@
 """OR-Tools CP-SAT solvers.
 
-The two registered solvers use different assignment encodings:
+The registered solvers use different assignment encodings:
 
 * ``cp_bool`` -- Boolean assignment variables ``x[z][i]`` plus an explicit
   exactly-one constraint per node,
 * ``cp_int``  -- one integer zone variable ``y[i]`` per node, with Boolean
   indicators ``x[z][i]`` reified from ``y[i]`` for linear constraints. This
-  avoids adding the explicit exactly-one assignment constraint.
+  avoids adding the explicit exactly-one assignment constraint,
+* ``cp_single_zone`` -- one Boolean membership variable per node, selecting a
+  connected subset around a single school centroid.
 
 CP-SAT requires integer coefficients, so float coefficients are scaled locally
 when constraints are added.
@@ -17,6 +19,7 @@ from __future__ import annotations
 import math
 import time
 
+import networkx as nx
 from ortools.sat.python import cp_model
 
 from choice.objective import ChoiceCut
@@ -359,11 +362,14 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
+        closer_supports = contiguity.closer_supports(
+            problem.G, problem.centroids, problem.candidate_zones
+        )
         supports = contiguity.contiguity_supports(
             problem.G, problem.centroids, problem.candidate_zones
         )
         for (node, z), support_nodes in supports.items():
-            if not support_nodes:
+            if not closer_supports[(node, z)] or not support_nodes:
                 self._forbid_assignment(m, z, node, x, y)
                 continue
 
@@ -669,6 +675,148 @@ class CpIntSolver(CpBoolSolver):
             b = m.NewBoolVar(f"bnd_{u}_{v}")
             m.Add(y[u] != y[v]).OnlyEnforceIf(b)
             m.Add(y[u] == y[v]).OnlyEnforceIf(b.Not())
+            boundary_vars.append(b)
+        m.Minimize(sum(boundary_vars))
+
+
+@register("cp_single_zone")
+class CpSingleZoneSolver(CpBoolSolver):
+    """Select one connected, balanced zone around one school centroid."""
+
+    def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        self._validate_problem(problem)
+        solution = super().solve(problem)
+        solution.metadata.update(
+            {
+                "partial_assignment": True,
+                "objective_kind": "selected_zone_boundary",
+                "centroid_node": problem.centroids[0],
+                "centroid_school_id": self._school_ids(problem, problem.centroids[0])[
+                    0
+                ],
+                "selected_node_count": len(solution.assignment),
+                "omitted_node_count": problem.A - len(solution.assignment),
+            }
+        )
+        return solution
+
+    def _validate_problem(self, problem: ZoneProblem) -> None:
+        if problem.Z != 1:
+            raise ValueError(
+                "cp_single_zone requires centroids_type to resolve to exactly "
+                "one centroid."
+            )
+        centroid = problem.centroids[0]
+        school_ids = self._school_ids(problem, centroid)
+        school_count = problem.num_schools(centroid)
+        if len(school_ids) != 1 or school_count != 1:
+            raise ValueError(
+                "cp_single_zone requires its centroid node to contain exactly one "
+                f"school; node {centroid} has {len(school_ids)} school_ids and "
+                f"num_schools={school_count}."
+            )
+        if problem.choice_objective is not None:
+            raise ValueError("cp_single_zone does not support choice objectives.")
+        if self.options.get("save_solver_progress"):
+            raise ValueError(
+                "cp_single_zone does not support save_solver_progress because "
+                "its assignments omit nodes outside the selected zone."
+            )
+        radius = self.options.get("centroid_neighbor_radius", 0)
+        if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
+            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+
+    @staticmethod
+    def _school_ids(problem: ZoneProblem, node: int) -> list[int]:
+        return [
+            int(school_id) for school_id in problem.G.nodes[node].get("school_ids", [])
+        ]
+
+    def _is_school_node(self, problem: ZoneProblem, node: int) -> bool:
+        return bool(self._school_ids(problem, node)) or problem.num_schools(node) > 0
+
+    def _build_assignment_vars(
+        self, m: cp_model.CpModel, problem: ZoneProblem
+    ) -> tuple[_AssignmentVars, _ZoneVars]:
+        return {(0, node): m.NewBoolVar(f"x_0_{node}") for node in problem.nodes}, {}
+
+    def _add_assignment_constraints(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> None:
+        centroid = problem.centroids[0]
+        radius = self.options.get("centroid_neighbor_radius", 0)
+        centroid_neighbors = nx.single_source_shortest_path_length(
+            problem.G, centroid, cutoff=radius
+        )
+        other_school_neighbors = set()
+        for school_node in problem.nodes:
+            if school_node == centroid or not self._is_school_node(
+                problem, school_node
+            ):
+                continue
+            other_school_neighbors.update(
+                nx.single_source_shortest_path_length(
+                    problem.G, school_node, cutoff=radius
+                )
+            )
+
+        for node in problem.nodes:
+            var = x[(0, node)]
+            if 0 not in problem.candidate_zones(node):
+                m.Add(var == 0)
+            if node in centroid_neighbors:
+                m.Add(var == 1)
+            if node in other_school_neighbors:
+                m.Add(var == 0)
+            if problem.fixed is not None and problem.fixed.get(node) == 0:
+                m.Add(var == 1)
+
+    def _add_school_count_constraints(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+    ) -> None:
+        # The centroid is fixed in and every other school node is fixed out.
+        return
+
+    def _add_hints(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> None:
+        if problem.hint is None:
+            return
+        for node in problem.nodes:
+            m.AddHint(x[(0, node)], int(problem.hint.get(node) == 0))
+
+    def _extract_assignment(
+        self,
+        solver: cp_model.CpSolver,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> dict[int, int]:
+        return {node: 0 for node in problem.nodes if solver.Value(x[(0, node)]) == 1}
+
+    def _add_boundary_objective(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> None:
+        boundary_vars = []
+        for u, v in problem.G.edges():
+            b = m.NewBoolVar(f"bnd_{u}_{v}")
+            m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(b)
+            m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(b.Not())
             boundary_vars.append(b)
         m.Minimize(sum(boundary_vars))
 

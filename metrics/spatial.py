@@ -68,7 +68,13 @@ def compute_spatial_metrics(
 
     block_G = _block0_graph(solution, config)
     block_assignment = _assignment_on_block0(solution, block_G)
-    cut_edges = _cut_edges(block_G, block_assignment)
+    cut_edges = _cut_edges(
+        block_G,
+        block_assignment,
+        include_unassigned_boundary=bool(
+            solution.metadata.get("partial_assignment", False)
+        ),
+    )
     num_zones = solution.problem.Z
     normalized_cut_edges = cut_edges / num_zones if num_zones else 0.0
     total_edges = block_G.number_of_edges()
@@ -166,11 +172,19 @@ def _assignment_on_block0(solution: ZoneSolution, block_G) -> dict[int, int]:
     )
 
 
-def _cut_edges(G, assignment: Mapping[int, int]) -> int:
+def _cut_edges(
+    G,
+    assignment: Mapping[int, int],
+    *,
+    include_unassigned_boundary: bool = False,
+) -> int:
     cut = 0
     for u, v in G.edges():
         zone_u = assignment.get(u)
         zone_v = assignment.get(v)
+        if include_unassigned_boundary:
+            cut += int(zone_u != zone_v)
+            continue
         if zone_u is None or zone_v is None:
             continue
         if zone_u != zone_v:

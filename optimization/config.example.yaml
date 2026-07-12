@@ -6,8 +6,9 @@ centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
-solver: 'cp_int'               # cp_int | cp_bool | mip | recom | relaxed_recom | short_bursts
+solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
 strategy: 'single'   # single | recursive | iterative_choice
+# cp_single_zone requires a centroids_type containing exactly one school ID.
 
 # --- optimization parameters ---
 frl_dev: 0.3
@@ -16,6 +17,8 @@ overage: 0.8
 shortage: 0.2
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
 max_distance: 5
+# cp_single_zone: force centroid neighbors in and other-school neighbors out.
+centroid_neighbor_radius: 0
 solve_time_limits: [45, 45]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level
 gap_limits: [0, 0]

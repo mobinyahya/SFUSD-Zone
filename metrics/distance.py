@@ -63,7 +63,11 @@ def compute(context: MetricsContext) -> MetricOutput:
 def _ge_school_zones(
     context: MetricsContext, ge_school_ids: set[int]
 ) -> dict[int, int]:
-    out: dict[int, int] = {}
+    out: dict[int, int] = (
+        {school_id: -1 for school_id in ge_school_ids}
+        if context.solution.metadata.get("partial_assignment")
+        else {}
+    )
     for zone_id, schools in context.zone_schools.items():
         for sid in schools:
             if sid in ge_school_ids:

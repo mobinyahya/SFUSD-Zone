@@ -197,11 +197,14 @@ class MipSolver(Solver):
     def _add_contiguity_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
+        closer_supports = contiguity.closer_supports(
+            problem.G, problem.centroids, problem.candidate_zones
+        )
         supports = contiguity.contiguity_supports(
             problem.G, problem.centroids, problem.candidate_zones
         )
         for (node, z), support_nodes in supports.items():
-            if not support_nodes:
+            if not closer_supports[(node, z)] or not support_nodes:
                 self._forbid_assignment(m, z, node, x)
                 continue
 

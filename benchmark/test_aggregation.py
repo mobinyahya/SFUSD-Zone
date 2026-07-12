@@ -1,5 +1,6 @@
 import os
 from dataclasses import replace
+from pathlib import Path
 
 import networkx as nx
 
@@ -76,6 +77,23 @@ metrics:
     assert all(task.config["save_solver_progress"] is True for task in tasks)
     assert all(str(tmp_path / "out") in task.output_dir for task in tasks)
     assert sweep.metrics.compute_stage_metrics is True
+
+
+def test_single_zone_sweep_generates_scalar_optimization_values():
+    config_path = Path(__file__).parent / "configs" / "sweep.test-one.yaml"
+
+    tasks = SimulationSweep.from_yaml(str(config_path)).generate_tasks()
+
+    assert len(tasks) == 3
+    assert {task.config["seed"] for task in tasks} == {14, 33, 42}
+    for task in tasks:
+        config = task.optimization_config()
+        assert config.solver == "cp_single_zone"
+        assert config.strategy == "single"
+        assert config.save_solver_progress is False
+        assert config.frl_dev * 1.0 == 0.15
+        assert config.overage * 1.0 == 0.15
+        assert config.shortage * 1.0 == 0.15
 
 
 def test_sweep_yaml_accepts_secondary_objective_task(tmp_path):

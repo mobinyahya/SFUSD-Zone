@@ -145,6 +145,56 @@ def make_solver_contract_problem(**overrides) -> ZoneProblem:
     )
 
 
+def make_single_zone_problem(**overrides) -> ZoneProblem:
+    """Seven-node path whose optimal one-school zone has three nodes."""
+    G = nx.path_graph(7)
+    school_nodes = {0: 200, 3: 100, 6: 300}
+    for node in G.nodes:
+        school_id = school_nodes.get(node)
+        G.nodes[node].update(
+            {
+                "area_id": 2000 + node,
+                "ge_students": 1.0,
+                "ge_capacity": 3.0 if node == 3 else 0.0,
+                "all_prog_students": 1.0,
+                "all_prog_capacity": 3.0 if node == 3 else 0.0,
+                "num_schools": int(school_id is not None),
+                "FRL": 0.5,
+                "school_ids": [school_id] if school_id is not None else [],
+                "lat": 0.0,
+                "lon": float(node),
+                "geometry": box(node, 0, node + 1, 1),
+                **{ethnicity: 0.2 for ethnicity in AREA_ETHNICITIES},
+            }
+        )
+
+    G.graph["distance_dict"] = {
+        source: {target: abs(source - target) for target in G.nodes}
+        for source in G.nodes
+    }
+    G.graph["F"] = 0.5
+    G.graph["R"] = {ethnicity: 0.2 for ethnicity in AREA_ETHNICITIES}
+    G.graph["school_data"] = {
+        school_id: {"program_types": ["GE"], "ge_capacity": 1.0}
+        for school_id in school_nodes.values()
+    }
+
+    params = {
+        "frl_dev": 0.0,
+        "racial_dev": 0.0,
+        "overage": 0.0,
+        "shortage": 0.0,
+        "max_distance": float("inf"),
+    }
+    params.update(overrides)
+    return ZoneProblem(
+        G=G,
+        level=LevelSpec("Block", 0),
+        centroids=[3],
+        **params,
+    )
+
+
 def make_path_graphs():
     """A 4-node base path and its 2-node aggregation, for conversion tests."""
     base = nx.Graph()

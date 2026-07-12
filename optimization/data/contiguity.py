@@ -1,15 +1,15 @@
 """Contiguity primitives.
 
-A zone is *contiguous* if the subgraph it induces is connected. We enforce this
-with a centroid-rooted support formulation: a non-centroid node may belong to
-zone ``z`` only if at least one supported neighbor also belongs to ``z``. The
-preferred support moves strictly closer to the centroid; a fallback handles
-fine-graph local minima where a physically adjacent block is the only way out.
+A zone is *contiguous* if the subgraph it induces is connected. The math
+programming solvers enforce this with a centroid-rooted support formulation and
+reject a non-centroid assignment when the block has no candidate neighbor that
+is strictly closer to the zone centroid.
 
 This module provides:
 
-* :func:`contiguity_supports` -- the per-(node, zone) support sets the solvers
-  turn into linear constraints,
+* :func:`closer_supports` -- strictly closer candidate neighbors,
+* :func:`contiguity_supports` -- the support sets the solvers turn into linear
+  constraints,
 * :func:`is_contiguous` / :func:`boundary_edges` -- validators / objective
   helpers,
 * :func:`repair` -- a post-hoc assignment fixer,

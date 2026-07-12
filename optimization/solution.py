@@ -3,7 +3,9 @@
 A ``ZoneSolution`` is what every solver returns and what every strategy passes
 around. It pairs a node->zone assignment with solver metadata and the
 ``ZoneProblem`` it solved, and knows how to validate its own contiguity, expand
-to geographic-unit ids, and serialize.
+to geographic-unit ids, and serialize. Most assignments cover the full graph;
+single-zone selection assignments omit nodes outside the selected zone and set
+``metadata["partial_assignment"]``.
 """
 
 from __future__ import annotations

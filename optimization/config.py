@@ -32,6 +32,7 @@ class OptimizationConfig:
     shortage: float = 0.2
     looseness: float = 1.0
     max_distance: float = float("inf")
+    centroid_neighbor_radius: int = 0
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
@@ -92,6 +93,16 @@ class OptimizationConfig:
             )
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
+        if self.solver == "cp_single_zone" and self.strategy != "single":
+            raise ValueError("cp_single_zone requires strategy='single'.")
+        if (
+            isinstance(self.centroid_neighbor_radius, bool)
+            or not isinstance(self.centroid_neighbor_radius, int)
+            or self.centroid_neighbor_radius < 0
+        ):
+            raise ValueError(
+                "centroid_neighbor_radius must be a non-negative integer."
+            )
         if self.hints not in {"voronoi", "none"}:
             raise ValueError("hints must be one of: voronoi, none.")
         if self.recom_iterations < 0 and not self.solve_time_limits:
@@ -144,6 +155,7 @@ class OptimizationConfig:
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "secondary_objective": self.secondary_objective,
+            "centroid_neighbor_radius": self.centroid_neighbor_radius,
             "recom_iterations": self.recom_iterations,
             "short_bursts_length": self.short_bursts_length,
             "short_bursts_method": self.short_bursts_method,
