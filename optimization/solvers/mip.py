@@ -34,6 +34,7 @@ _ProgressCaptureData = tuple[list[gp.Var], list[tuple[int, int, tuple[int, ...]]
 @register("mip")
 class MipSolver(Solver):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        self._centroid_neighbor_radius()
         m = gp.Model("zoning")
         log_path = self._next_solver_log_path(problem)
         if log_path:
@@ -191,8 +192,11 @@ class MipSolver(Solver):
     def _add_centroid_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
-        for z, centroid in enumerate(problem.centroids):
-            self._fix_assignment(m, z, centroid, x)
+        for zone, neighborhood in self._centroid_neighborhoods(problem).items():
+            for node in neighborhood:
+                self._fix_assignment(m, zone, node, x)
+                for other_zone in problem.candidate_zones(node) - {zone}:
+                    self._forbid_assignment(m, other_zone, node, x)
 
     def _add_contiguity_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars

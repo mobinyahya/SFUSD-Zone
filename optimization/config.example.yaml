@@ -18,7 +18,8 @@ overage: 0.8
 shortage: 0.2
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
 max_distance: 5
-# cp_single_zone: force centroid neighbors in and other-school neighbors out.
+# CP/MIP: force each centroid's graph-hop neighborhood into its zone.
+# cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
 centroid_neighbor_radius: 0
 solve_time_limits: [45, 45]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level

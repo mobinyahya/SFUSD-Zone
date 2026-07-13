@@ -1,0 +1,48 @@
+# Optimization-native benchmark sweep.
+
+name: full-benchmark
+mode: run  # run | metrics
+
+optimization_defaults:
+  save_solver_logs: true
+  max_distance: 3.5
+  hints: voronoi
+  cp_model_probing_level: 3
+  cp_sat_search_strategy: distance_to_centroid
+  centroid_neighbor_radius: 0
+
+  gap_limits: [0, 0, 0]
+  workers: 48
+
+sweep:
+  centroids_type: ['59-zone']
+  frl_dev: [0.5]
+  racial_dev: [-1]
+  seed: [42]
+  overage: [0.5]
+  shortage: [0.5]
+  solver: ['cp_bool']
+
+
+tasks:
+  - strategy: 'single'
+    levels: ['Block_2']
+    solve_time_limits: [500]
+
+
+
+execution:
+  output_dir: '/share/data/school_choice/local_runs/59_recur_5/'
+  capacity: 48              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: false
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+

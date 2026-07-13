@@ -245,6 +245,7 @@ class _CpSatSolver(Solver):
             solver.parameters.search_branching = cp_model.PARTIAL_FIXED_SEARCH
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        self._centroid_neighbor_radius()
         m = cp_model.CpModel()
         x, y = self._build_assignment_vars(m, problem)
         self._add_core_constraints(m, problem, x, y)
@@ -352,8 +353,11 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        for z, centroid in enumerate(problem.centroids):
-            self._fix_assignment(m, z, centroid, x, y)
+        for zone, neighborhood in self._centroid_neighborhoods(problem).items():
+            for node in neighborhood:
+                self._fix_assignment(m, zone, node, x, y)
+                for other_zone in problem.candidate_zones(node) - {zone}:
+                    self._forbid_assignment(m, other_zone, node, x, y)
 
     def _add_contiguity_constraints(
         self,
@@ -726,9 +730,7 @@ class CpSingleZoneSolver(CpBoolSolver):
                 "cp_single_zone does not support save_solver_progress because "
                 "its assignments omit nodes outside the selected zone."
             )
-        radius = self.options.get("centroid_neighbor_radius", 0)
-        if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
-            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+        self._centroid_neighbor_radius()
 
     @staticmethod
     def _school_ids(problem: ZoneProblem, node: int) -> list[int]:
@@ -752,10 +754,7 @@ class CpSingleZoneSolver(CpBoolSolver):
         y: _ZoneVars,
     ) -> None:
         centroid = problem.centroids[0]
-        radius = self.options.get("centroid_neighbor_radius", 0)
-        centroid_neighbors = nx.single_source_shortest_path_length(
-            problem.G, centroid, cutoff=radius
-        )
+        radius = self._centroid_neighbor_radius()
         other_school_neighbors = set()
         for school_node in problem.nodes:
             if school_node == centroid or not self._is_school_node(
@@ -772,8 +771,6 @@ class CpSingleZoneSolver(CpBoolSolver):
             var = x[(0, node)]
             if 0 not in problem.candidate_zones(node):
                 m.Add(var == 0)
-            if node in centroid_neighbors:
-                m.Add(var == 1)
             if node in other_school_neighbors:
                 m.Add(var == 0)
             if problem.fixed is not None and problem.fixed.get(node) == 0:

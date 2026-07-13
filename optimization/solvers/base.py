@@ -6,6 +6,8 @@ import os
 import re
 from abc import ABC, abstractmethod
 
+import networkx as nx
+
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
@@ -28,6 +30,25 @@ class Solver(ABC):
 
     @abstractmethod
     def solve(self, problem: ZoneProblem) -> ZoneSolution: ...
+
+    def _centroid_neighbor_radius(self) -> int:
+        radius = self.options.get("centroid_neighbor_radius", 0)
+        if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
+            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+        return radius
+
+    def _centroid_neighborhoods(self, problem: ZoneProblem) -> dict[int, set[int]]:
+        radius = self._centroid_neighbor_radius()
+        return {
+            zone: set(
+                nx.single_source_shortest_path_length(
+                    problem.G,
+                    centroid,
+                    cutoff=radius,
+                )
+            )
+            for zone, centroid in enumerate(problem.centroids)
+        }
 
     def _next_solver_log_path(self, problem: ZoneProblem) -> str | None:
         if not self.options.get("save_solver_logs"):

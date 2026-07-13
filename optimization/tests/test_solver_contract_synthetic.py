@@ -13,6 +13,7 @@ from optimization.tests.solver_contract import (
     solve_contract_problem,
 )
 from optimization.tests.synthetic import make_solver_contract_problem
+from optimization.tests.synthetic import make_grid_problem
 
 
 @pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
@@ -23,6 +24,48 @@ def test_solver_satisfies_complete_contract(solver_name: str) -> None:
 
     assert_valid_solution(problem, solution)
     assert solution.metadata["solver"] == solver_name
+
+
+@pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
+def test_solver_assigns_centroid_neighbor_radius(solver_name: str) -> None:
+    problem = make_grid_problem(3, 3)
+
+    solution = solve_contract_problem(
+        solver_name,
+        problem,
+        centroid_neighbor_radius=1,
+    )
+
+    assert_valid_solution(problem, solution)
+    assert {solution.assignment[node] for node in (0, 1, 3)} == {0}
+    assert {solution.assignment[node] for node in (5, 7, 8)} == {1}
+
+
+@pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
+def test_centroid_neighbor_radius_conflicts_with_candidates(
+    solver_name: str,
+) -> None:
+    problem = make_grid_problem(3, 3, candidates={1: {1}})
+
+    solution = solve_contract_problem(
+        solver_name,
+        problem,
+        centroid_neighbor_radius=1,
+    )
+
+    assert_no_feasible_solution(solution)
+
+
+@pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
+def test_solver_rejects_invalid_centroid_neighbor_radius(solver_name: str) -> None:
+    problem = make_grid_problem(3, 3)
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        solve_contract_problem(
+            solver_name,
+            problem,
+            centroid_neighbor_radius=-1,
+        )
 
 
 @pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)

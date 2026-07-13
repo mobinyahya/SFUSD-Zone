@@ -1,33 +1,29 @@
 # Optimization-native benchmark sweep.
 
-name: overlapping
+name: one-zone
 mode: run  # run | metrics
 
 optimization_defaults:
-  save_solver_logs: true
-  school_solve_time_limit: 60
-  solve_time_limits: [300]
+  strategy: single
+  solve_time_limits: [60]
   hints: voronoi
   levels: [Block_0]
   racial_dev: -1
   workers: 48
-  frl_dev: 0.3
-  overage: 0.5
-  shortage: 0.5
-  boundary_radius: -1
-  max_distance: 5
-  centroid_neighbor_radius: 0
-  centroids_type: '59-zone'
-  seed: 42
-  strategy: 'overlapping'
+  centroids_type:  4-zone-rec-3
+  frl_dev: 0.15
+  overage: 0.3
+  shortage: 0.3
+  max_distance: 8
+
 
 tasks:
   - solver: 'cp_bool'
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/test_overlapping_5'
+  output_dir: '/share/data/school_choice/local_runs/test_5/'
   capacity: 48             # total solver-thread slots available on the machine
-  max_workers: 50         # max concurrent Python worker processes
+  max_workers: 8            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth
   skip_existing: false
   rerun_failed: true
