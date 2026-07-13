@@ -185,6 +185,76 @@ def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
     }
 
 
+def test_overlapping_stages_reconstruct_stage_specific_centroids(tmp_path):
+    run_dir = tmp_path / "overlapping"
+    run_dir.mkdir()
+    base_problem = make_grid_problem(3, 3)
+    base_problem.level = LevelSpec("Block", 0)
+    dataset = FakeDataset(base_problem)
+    child_problem = dataset.problem_for(
+        "Block_0",
+        centroid_school_ids=[100],
+    )
+    final_problem = dataset.problem_for(
+        "Block_0",
+        centroid_school_ids=[100, 200],
+    )
+    solutions = [
+        ZoneSolution(
+            problem=child_problem,
+            assignment={0: 0, 1: 0},
+            status="FEASIBLE",
+            wall_time=0.1,
+            metadata={
+                "partial_assignment": True,
+                "centroid_school_id": 100,
+            },
+        ),
+        ZoneSolution(
+            problem=final_problem,
+            assignment=_assignment(),
+            status="FEASIBLE",
+            wall_time=0.2,
+            metadata={"centroid_school_ids": [100, 200]},
+        ),
+    ]
+    config = OptimizationConfig(
+        levels=["Block_0"],
+        strategy="overlapping",
+        workers=1,
+        graphs_dir=str(tmp_path / "graphs"),
+    )
+    config_dict = optimization_config_to_dict(config)
+    config_hash = stable_hash(config_dict)
+    task = BenchmarkTask(
+        task_id=config_hash[:12],
+        config_hash=config_hash,
+        config=config_dict,
+        output_dir=str(run_dir),
+        capacity_slots=1,
+    )
+    stage_names = stage_names_for(solutions, config)
+    records = save_stage_artifacts(solutions, str(run_dir), stage_names)
+    write_json(
+        os.path.join(run_dir, MANIFEST_FILENAME),
+        manifest_for(
+            task=task,
+            config=config,
+            status="FEASIBLE",
+            started_at="2026-01-01T00:00:00+00:00",
+            completed_at="2026-01-01T00:00:01+00:00",
+            stages=records,
+            final_stage=stage_names[-1],
+            error_message=None,
+        ),
+    )
+
+    loaded, _, _ = load_solutions(str(run_dir), dataset=dataset)
+
+    assert loaded[0].problem.centroids == [0]
+    assert loaded[1].problem.centroids == [0, 8]
+
+
 def test_saved_config_ignores_legacy_level_to_split():
     config = optimization_config_from_dict(
         {"levels": ["BlockGroup_0"], "level_to_split": {"1": 2, "2": 1}}

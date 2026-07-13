@@ -21,7 +21,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `overlapping` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary
@@ -53,6 +53,13 @@ independently.
 - **Shared graph cache.** Parameter-specific graph namespaces are stored below
   `/share/data/school_choice/Zones/Optimization/Graphs` by default. The cache
   key includes ingestion parameters and the graph-partition policy.
+- **Overlapping school zones.** The `overlapping` strategy ignores
+  `centroids_type`, solves one partial zone per eligible school with one worker,
+  and runs those solves concurrently within the configured worker budget. It
+  fixes only nodes belonging to exactly one partial zone and outside every
+  partial-zone boundary band, then solves the complete all-school problem with
+  the configured solver and full worker budget. Schools must resolve to unique
+  graph nodes.
 
 ## Running
 

@@ -493,7 +493,7 @@ def run_matching_for_stages(
     output_root = Path(os.path.expanduser(output_dir)).resolve()
     stages: dict[str, Any] = {}
     for solution, stage in zip(solutions, stage_records):
-        if not solution.feasible:
+        if not solution.feasible or solution.metadata.get("partial_assignment"):
             continue
         stage_name = str(stage.get("name"))
         stage_dir = output_root / str(stage.get("path"))

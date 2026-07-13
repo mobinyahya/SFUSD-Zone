@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
-from optimization.data import graph_builder, loaders
+from optimization.data import edge_overrides, graph_builder, loaders
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
@@ -45,7 +45,7 @@ class Dataset:
             self._graph_cache_namespace(),
         )
         self._graphs: dict[str, nx.Graph] = {}
-        self._centroids: dict[str, list[int]] = {}
+        self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
 
     # ------------------------------------------------------------------ #
     # graphs
@@ -103,6 +103,12 @@ class Dataset:
             "include_k8": bool(self.ingest.include_k8),
             "partition_policy": graph_builder.partition_cache_policy(self.ingest.unit),
         }
+        if self.ingest.unit == "Block":
+            manual_edges = edge_overrides.load_block_edge_overrides()
+            if manual_edges:
+                payload["manual_block_edge_fingerprint"] = (
+                    edge_overrides.block_edge_override_fingerprint()
+                )
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
         return f"{self.ingest.unit}_{digest}"
@@ -110,9 +116,26 @@ class Dataset:
     # ------------------------------------------------------------------ #
     # centroids
     # ------------------------------------------------------------------ #
-    def centroids_for(self, level) -> list[int]:
+    def school_ids_for(self, level) -> list[int]:
+        """Eligible school IDs represented by the graph, in stable order."""
+        G = self.graph_for(level)
+        school_data = G.graph.get("school_data", {})
+        if school_data:
+            return sorted(int(sid) for sid in school_data if sid is not None)
+        return sorted(
+            {
+                int(sid)
+                for _, attrs in G.nodes(data=True)
+                for sid in attrs.get("school_ids", [])
+            }
+        )
+
+    def centroids_for(self, level, school_ids=None) -> list[int]:
         level = LevelSpec.parse(level)
-        key = level.name
+        if school_ids is None:
+            school_ids = loaders.load_centroid_schools(self.config.centroids_type)
+        school_ids = tuple(int(sid) for sid in school_ids)
+        key = (level.name, school_ids)
         if key in self._centroids:
             return self._centroids[key]
 
@@ -124,14 +147,14 @@ class Dataset:
         raw_school_to_node = None
 
         centroids = []
-        for sid in loaders.load_centroid_schools(self.config.centroids_type):
+        for sid in school_ids:
             if sid not in school_to_node:
                 if raw_school_to_node is None:
                     raw_school_to_node = self._raw_centroid_node_lookup(G)
                 if sid not in raw_school_to_node:
                     raise ValueError(
                         f"Centroid school {sid} not found in any node or raw "
-                        f"school location at {key}."
+                        f"school location at {level.name}."
                     )
                 centroids.append(raw_school_to_node[sid])
             else:
@@ -168,13 +191,14 @@ class Dataset:
         hint: Optional[dict[int, int]] = None,
         choice_objective=None,
         constraint_multiplier: float = 1.0,
+        centroid_school_ids=None,
     ) -> ZoneProblem:
         level = LevelSpec.parse(level)
         constraint_multiplier = float(constraint_multiplier)
         return ZoneProblem(
             G=self.graph_for(level),
             level=level,
-            centroids=self.centroids_for(level),
+            centroids=self.centroids_for(level, centroid_school_ids),
             frl_dev=self.config.frl_dev * constraint_multiplier,
             racial_dev=self.config.racial_dev * constraint_multiplier,
             overage=self.config.overage * constraint_multiplier,

@@ -21,7 +21,7 @@ from optimization.problem import ZoneProblem
 
 
 def graph_fingerprint(G) -> str:
-    """Stable hash of graph node labels and their finest geographic units."""
+    """Stable hash of graph nodes, finest geographic units, and topology."""
     digest = hashlib.sha256()
     for node in sorted(G.nodes()):
         attrs = G.nodes[node]
@@ -34,6 +34,9 @@ def graph_fingerprint(G) -> str:
             digest.update(str(int(area_id)).encode("utf-8"))
             digest.update(b",")
         digest.update(b";")
+    digest.update(b"|edges|")
+    for u, v in sorted(tuple(sorted((int(u), int(v)))) for u, v in G.edges()):
+        digest.update(f"{u},{v};".encode("utf-8"))
     return digest.hexdigest()[:16]
 
 

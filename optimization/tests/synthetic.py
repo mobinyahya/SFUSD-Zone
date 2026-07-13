@@ -225,8 +225,18 @@ class FakeDataset:
     def graph_for(self, level):
         return self._problem.G
 
-    def centroids_for(self, level):
-        return self._problem.centroids
+    def school_ids_for(self, level):
+        return sorted(int(sid) for sid in self._problem.G.graph["school_data"])
+
+    def centroids_for(self, level, school_ids=None):
+        if school_ids is None:
+            return self._problem.centroids
+        school_to_node = {
+            int(sid): node
+            for node, attrs in self._problem.G.nodes(data=True)
+            for sid in attrs.get("school_ids", [])
+        }
+        return [school_to_node[int(sid)] for sid in school_ids]
 
     def problem_for(
         self,
@@ -236,12 +246,13 @@ class FakeDataset:
         hint=None,
         choice_objective=None,
         constraint_multiplier=1.0,
+        centroid_school_ids=None,
     ):
         constraint_multiplier = float(constraint_multiplier)
         return ZoneProblem(
             G=self._problem.G,
             level=LevelSpec.parse(level),
-            centroids=self._problem.centroids,
+            centroids=self.centroids_for(level, centroid_school_ids),
             frl_dev=self._problem.frl_dev * constraint_multiplier,
             racial_dev=self._problem.racial_dev * constraint_multiplier,
             overage=self._problem.overage * constraint_multiplier,

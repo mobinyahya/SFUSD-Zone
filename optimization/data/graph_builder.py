@@ -8,7 +8,7 @@ from importlib.metadata import version
 import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES
-from optimization.data import loaders
+from optimization.data import edge_overrides, loaders
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS
@@ -70,6 +70,9 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
     for idx in area.index:
         for nb in neighbors.get(idx, []):
             G.add_edge(idx, nb)
+
+    if cfg.unit == "Block":
+        edge_overrides.apply_block_edge_overrides(G)
 
     G.graph["distance_dict"] = distance_dict
     G.graph["school_data"] = _school_data(cfg)
@@ -161,6 +164,11 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
     new_G.graph["R"] = parent_G.graph["R"]
     new_G.graph["school_data"] = parent_G.graph["school_data"]
     new_G.graph["partition"] = dict(partition)
+    if "manual_block_edges" in parent_G.graph:
+        new_G.graph["manual_block_edges"] = parent_G.graph["manual_block_edges"]
+        new_G.graph["manual_block_edge_fingerprint"] = parent_G.graph[
+            "manual_block_edge_fingerprint"
+        ]
     return new_G
 
 

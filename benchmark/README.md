@@ -93,6 +93,11 @@ Each expanded task is a concrete `OptimizationConfig` plus benchmark metadata.
 
 Capacity scheduling uses `capacity_slots` per task. By default this equals the task's `workers` value, so CP-SAT thread counts are reflected in the scheduler. You can override this globally with `execution.task_capacity`.
 
+For the `overlapping` strategy, that worker budget is used for concurrent
+one-worker school solves. Each school solve receives
+`school_solve_time_limit`; the final all-school solve receives the full worker
+budget.
+
 Important execution fields:
 
 | Field | Description |

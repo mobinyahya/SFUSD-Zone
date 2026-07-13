@@ -52,13 +52,23 @@ def main(argv: list[str] | None = None) -> None:
     )
     solutions = strategy.run(dataset, solver)
 
-    for sol in solutions:
-        sol.save(args.output)
+    for idx, sol in enumerate(solutions):
+        save_dir = args.output
+        if config.strategy == "overlapping":
+            save_dir = os.path.join(
+                args.output,
+                "stages",
+                f"stage_{idx:02d}_{sol.level.name}",
+            )
+        sol.save(save_dir)
         contig = sol.is_contiguous() if sol.feasible else "n/a"
         print(
             f"  {sol.level}: status={sol.status} objective={sol.objective} "
             f"contiguous={contig} ({sol.wall_time:.1f}s)"
         )
+
+    if config.strategy == "overlapping":
+        solutions[-1].save(args.output)
 
     metrics = MetricsCalculator(solutions, config=config).compute()
     result_path = os.path.join(args.output, "result.json")

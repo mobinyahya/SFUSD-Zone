@@ -486,6 +486,48 @@ def test_stage_matching_skips_infeasible_stages(tmp_path, monkeypatch):
     assert sum(len(session.calls) for session in captured["sessions"]) == 1
 
 
+def test_stage_matching_skips_partial_assignment_stages(tmp_path, monkeypatch):
+    problem = make_grid_problem(2, 2)
+    partial = ZoneSolution(
+        problem=problem,
+        assignment={0: 0, 1: 0},
+        status="FEASIBLE",
+        metadata={"partial_assignment": True},
+    )
+    complete = ZoneSolution(
+        problem=problem,
+        assignment={0: 0, 1: 0, 2: 1, 3: 1},
+        status="FEASIBLE",
+    )
+    calls = []
+
+    def fake_run_matching(solution, *args, **kwargs):
+        calls.append(solution)
+        return None
+
+    monkeypatch.setattr(
+        matching_runner,
+        "run_matching_for_solution",
+        fake_run_matching,
+    )
+    result = matching_runner.run_matching_for_stages(
+        [partial, complete],
+        [
+            {"name": "school", "path": "stages/school"},
+            {"name": "final", "path": "stages/final"},
+        ],
+        str(tmp_path),
+        MatchingRunConfig(
+            enabled=True,
+            config=MATCHING_CONFIG,
+            compute_stage_assignments=True,
+        ),
+    )
+
+    assert calls == [complete]
+    assert set(result["stages"]) == {"final"}
+
+
 def test_run_student_assignment_uses_market_constructor_shape(tmp_path, monkeypatch):
     fake_market, _, _ = _install_fake_market_generator(monkeypatch)
     precomputed_dir = tmp_path / "matching" / "precomputed"

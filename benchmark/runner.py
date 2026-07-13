@@ -354,7 +354,17 @@ def load_solutions(
         if os.path.exists(solution_path):
             with open(solution_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
-        problem = dataset.problem_for(level)
+        metadata = dict(info.get("metadata") or stage.get("metadata") or {})
+        centroid_school_ids = metadata.get("centroid_school_ids")
+        if (
+            centroid_school_ids is None
+            and metadata.get("centroid_school_id") is not None
+        ):
+            centroid_school_ids = [metadata["centroid_school_id"]]
+        problem = dataset.problem_for(
+            level,
+            centroid_school_ids=centroid_school_ids,
+        )
         saved_fingerprint = info.get("graph_fingerprint")
         if saved_fingerprint != graph_fingerprint(problem.G):
             if not os.path.exists(area_dict_path):
@@ -376,7 +386,7 @@ def load_solutions(
                 status=str(info.get("status") or stage.get("status") or "UNKNOWN"),
                 objective=info.get("objective", stage.get("objective")),
                 wall_time=info.get("wall_time", stage.get("wall_time")),
-                metadata=dict(info.get("metadata") or stage.get("metadata") or {}),
+                metadata=metadata,
             )
         )
     return solutions, config, manifest

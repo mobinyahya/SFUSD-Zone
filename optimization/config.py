@@ -8,6 +8,7 @@ methods build the concrete :class:`Dataset`, :class:`Solver` and
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field, fields
 
@@ -51,6 +52,7 @@ class OptimizationConfig:
     short_bursts_method: str = "recom"
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
+    school_solve_time_limit: float = 60.0
     max_iterations: int = 5
     choice_model: str = "mnl"
     choice_model_method: str = "logsum"
@@ -96,13 +98,16 @@ class OptimizationConfig:
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
         if (
+            not math.isfinite(float(self.school_solve_time_limit))
+            or self.school_solve_time_limit <= 0
+        ):
+            raise ValueError("school_solve_time_limit must be positive and finite.")
+        if (
             isinstance(self.centroid_neighbor_radius, bool)
             or not isinstance(self.centroid_neighbor_radius, int)
             or self.centroid_neighbor_radius < 0
         ):
-            raise ValueError(
-                "centroid_neighbor_radius must be a non-negative integer."
-            )
+            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
         if self.hints not in {"voronoi", "none"}:
             raise ValueError("hints must be one of: voronoi, none.")
         if self.recom_iterations < 0 and not self.solve_time_limits:
@@ -176,6 +181,7 @@ class OptimizationConfig:
             hints=self.hints,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
+            school_solve_time_limit=self.school_solve_time_limit,
             max_iterations=self.max_iterations,
             choice_model=self.choice_model,
             choice_model_method=self.choice_model_method,

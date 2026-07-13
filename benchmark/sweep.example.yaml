@@ -16,6 +16,7 @@ optimization_defaults:
   looseness: 1.0              # recursive: multiply constraints per configured coarser stage
   max_distance: 5
   solve_time_limits: [45, 60]
+  school_solve_time_limit: 60 # overlapping: per-school solve limit
   carry_over_compute: false    # recursive: add unused level time to the next level
   gap_limits: [0, 0]
   hints: voronoi

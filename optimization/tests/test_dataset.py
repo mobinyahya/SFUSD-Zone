@@ -111,3 +111,22 @@ def test_centroids_fallback_to_raw_school_locations_for_aggregated_graph(
 
     assert dataset.centroids_for("Block_1") == [10]
     assert G.nodes[10]["school_ids"] == []
+
+
+def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path):
+    G = nx.path_graph(2)
+    for node, school_id in enumerate((100, 200)):
+        G.nodes[node].update(
+            {
+                "school_ids": [school_id],
+                "num_schools": 1,
+                "area_id": 1000 + node,
+            }
+        )
+    dataset = Dataset(_config(tmp_path))
+    dataset._graphs["Block_0"] = G
+
+    problem = dataset.problem_for("Block_0", centroid_school_ids=[200])
+
+    assert dataset.school_ids_for("Block_0") == [100, 200]
+    assert problem.centroids == [1]

@@ -1,5 +1,8 @@
 """Strategy tests using a FakeDataset (no SFUSD data required)."""
 
+import threading
+import time
+
 import pytest
 
 from choice.objective import ChoiceCut, ChoiceEvaluation
@@ -11,9 +14,14 @@ from optimization.solvers import get_solver
 from optimization.strategies import (
     iterative_choice as iterative_choice_module,
 )
+from optimization.strategies import overlapping as overlapping_module
 from optimization.strategies import single as single_module
 from optimization.strategies import get_strategy
-from optimization.tests.synthetic import FakeDataset, make_grid_problem
+from optimization.tests.synthetic import (
+    FakeDataset,
+    make_grid_problem,
+    make_single_zone_problem,
+)
 
 
 def test_single_strategy():
@@ -300,6 +308,178 @@ def test_config_passes_choice_utility_hints_to_iterative_strategy():
     assert strategy.options["choice_utility_hints"] is True
 
 
+def test_config_passes_school_solve_time_limit_to_overlapping_strategy():
+    config = OptimizationConfig(
+        levels=["Block_0"],
+        strategy="overlapping",
+        school_solve_time_limit=12.5,
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["school_solve_time_limit"] == 12.5
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf")])
+def test_config_rejects_invalid_school_solve_time_limit(value):
+    with pytest.raises(ValueError, match="school_solve_time_limit"):
+        OptimizationConfig(
+            levels=["Block_0"],
+            strategy="overlapping",
+            school_solve_time_limit=value,
+        )
+
+
+def test_overlapping_strategy_runs_school_solves_in_parallel(monkeypatch):
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    full_solver = RecordingFullSolver(workers=2)
+    child_options = []
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    class ChildSolver:
+        def __init__(self, options):
+            self.options = options
+
+        def solve(self, child_problem):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.03)
+            with lock:
+                active -= 1
+            centroid = child_problem.centroids[0]
+            school_id = child_problem.G.nodes[centroid]["school_ids"][0]
+            selected = {0, 1, 3, 4} if school_id == 100 else {4, 5, 7, 8}
+            return ZoneSolution(
+                problem=child_problem,
+                assignment={node: 0 for node in selected},
+                status="FEASIBLE",
+                wall_time=0.01,
+                metadata={"centroid_school_id": school_id},
+            )
+
+    def fake_get_solver(name, **options):
+        assert name == "cp_single_zone"
+        child_options.append(options)
+        return ChildSolver(options)
+
+    monkeypatch.setattr(overlapping_module, "get_solver", fake_get_solver)
+    strategy = get_strategy(
+        "overlapping",
+        levels=["Block_0"],
+        school_solve_time_limit=7.5,
+        boundary_radius=0,
+    )
+
+    solutions = strategy.run(dataset, full_solver)
+
+    assert len(solutions) == 3
+    assert [solution.metadata["centroid_school_id"] for solution in solutions[:-1]] == [
+        100,
+        200,
+    ]
+    assert max_active == 2
+    assert all(options["workers"] == 1 for options in child_options)
+    assert all(options["solve_time_limit"] == 7.5 for options in child_options)
+    assert full_solver.options["workers"] == 2
+    assert full_solver.problem.centroids == [0, 8]
+    assert solutions[-1].metadata["centroid_school_ids"] == [100, 200]
+    assert solutions[-1].metadata["school_solve_parallelism"] == 2
+
+
+def test_overlapping_strategy_solves_synthetic_problem_end_to_end():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = get_solver("cp_int", solve_time_limit=5, workers=2, seed=1)
+    strategy = get_strategy(
+        "overlapping",
+        levels=["BlockGroup_0"],
+        school_solve_time_limit=5,
+        boundary_radius=0,
+    )
+
+    solutions = strategy.run(dataset, solver)
+
+    assert len(solutions) == 3
+    assert all(solution.feasible for solution in solutions)
+    assert set(solutions[-1].assignment) == set(problem.nodes)
+    assert solutions[-1].problem.centroids == [0, 3]
+    assert solutions[-1].metadata["school_solve_feasible_count"] == 2
+
+
+def test_overlapping_fixed_assignments_exclude_overlap_and_all_boundary_bands():
+    problem = make_single_zone_problem()
+    left = ZoneSolution(
+        problem=problem,
+        assignment={node: 0 for node in range(6)},
+        status="FEASIBLE",
+    )
+    right = ZoneSolution(
+        problem=problem,
+        assignment={node: 0 for node in range(3, 7)},
+        status="FEASIBLE",
+    )
+
+    fixed, boundary_band, counts = (
+        overlapping_module.OverlappingStrategy._fixed_assignments(
+            problem.G,
+            [left, right],
+            radius=0,
+        )
+    )
+
+    assert boundary_band == {2, 3, 5, 6}
+    assert fixed == {0: 0, 1: 0}
+    assert counts == {0: 1, 1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 1}
+
+
+def test_overlapping_fixed_assignments_ignore_boundary_for_negative_one_radius():
+    problem = make_single_zone_problem()
+    left = ZoneSolution(
+        problem=problem,
+        assignment={node: 0 for node in range(6)},
+        status="FEASIBLE",
+    )
+    right = ZoneSolution(
+        problem=problem,
+        assignment={node: 0 for node in range(3, 7)},
+        status="FEASIBLE",
+    )
+
+    fixed, boundary_band, counts = (
+        overlapping_module.OverlappingStrategy._fixed_assignments(
+            problem.G,
+            [left, right],
+            radius=-1,
+        )
+    )
+
+    assert boundary_band == set()
+    assert fixed == {0: 0, 1: 0, 2: 0, 6: 1}
+    assert counts == {0: 1, 1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 1}
+
+
+def test_overlapping_strategy_rejects_colocated_schools():
+    problem = make_grid_problem(2, 2)
+    problem.G.nodes[0]["school_ids"] = [100, 200]
+    problem.G.nodes[0]["num_schools"] = 2
+    problem.G.nodes[3]["school_ids"] = []
+    problem.G.nodes[3]["num_schools"] = 0
+    dataset = FakeDataset(problem)
+    strategy = get_strategy(
+        "overlapping",
+        levels=["BlockGroup_0"],
+        school_solve_time_limit=1,
+    )
+
+    with pytest.raises(ValueError, match="Colocated schools"):
+        strategy.run(dataset, RecordingFullSolver(workers=1))
+
+
 def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
     problem = make_grid_problem(2, 2)
     dataset = FakeDataset(problem)
@@ -399,6 +579,29 @@ class TimedSequenceSolver:
             objective=0.0,
             wall_time=self.wall_times[idx],
             metadata={"solver": "timed_sequence"},
+        )
+
+
+class RecordingFullSolver:
+    name = "cp_int"
+
+    def __init__(self, workers):
+        self.options = {"workers": workers, "solve_time_limit": 10}
+        self.problem = None
+
+    def solve(self, problem):
+        self.problem = problem
+        midpoint = len(problem.nodes) // 2
+        assignment = {
+            node: int(idx >= midpoint) for idx, node in enumerate(problem.nodes)
+        }
+        return ZoneSolution(
+            problem=problem,
+            assignment=assignment,
+            status="FEASIBLE",
+            objective=0.0,
+            wall_time=0.01,
+            metadata={"solver": self.name},
         )
 
 

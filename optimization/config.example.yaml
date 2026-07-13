@@ -7,8 +7,9 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'   # single | recursive | iterative_choice
+strategy: 'single'   # single | recursive | iterative_choice | overlapping
 # cp_single_zone requires a centroids_type containing exactly one school ID.
+# overlapping ignores centroids_type and creates one zone per eligible school.
 
 # --- optimization parameters ---
 frl_dev: 0.3
@@ -38,7 +39,8 @@ recom_iterations: 1000
 short_bursts_length: 25
 short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
-boundary_radius: 2            # recursive/iterative: how far from borders to relax
+boundary_radius: 2            # border width; -1 skips overlapping boundary exclusion
+school_solve_time_limit: 60   # overlapping: seconds for each one-worker school solve
 max_iterations: 5             # iterative_choice
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
