@@ -105,7 +105,7 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
 
     expected = compute_spatial_metrics(
         ZoneSolution(
-            problem=ZoneProblem(block0, LevelSpec("Block", 0), [0]),
+            problem=ZoneProblem(block0, LevelSpec("Block", 0), [0], [100]),
             assignment={0: 0, 1: 0},
             status="FEASIBLE",
         ),
@@ -113,7 +113,7 @@ def test_shape_metrics_use_block0_geometry_after_conversion():
     )
     actual = compute_spatial_metrics(
         ZoneSolution(
-            problem=ZoneProblem(coarse, LevelSpec("Block", 1), [0]),
+            problem=ZoneProblem(coarse, LevelSpec("Block", 1), [0], [100]),
             assignment={0: 0},
             status="FEASIBLE",
         ),

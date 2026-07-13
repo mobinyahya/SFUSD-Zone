@@ -24,6 +24,10 @@ import yaml
 
 from optimization.config import OptimizationConfig
 from optimization.data import loaders
+from optimization.data.closer_neighbors import (
+    CLOSER_NEIGHBORS_GRAPH_KEY,
+    SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY,
+)
 from optimization.data.dataset import Dataset
 from optimization.solution import graph_fingerprint
 
@@ -34,9 +38,14 @@ DEFAULT_MANIFEST = Path(__file__).with_name("manual_case_manifest.json")
 DEFAULT_SUMMARY = Path(__file__).with_name("manual_case_summary.csv")
 DEFAULT_SELECTIONS = Path(__file__).with_name("manual_case_selections.yaml")
 DEFAULT_OVERRIDES = ROOT / "Config" / "manual_block_edges.yaml"
+DEFAULT_EDGE_ADDITIONS = Path(__file__).with_name("manual_block_edge_additions.yaml")
+DEFAULT_COMPILED_EDGE_ADDITIONS = (
+    ROOT / "Config" / "manual_block_edge_additions.yaml"
+)
 BASE_RADIUS_MILES = 0.25
 EARTH_RADIUS_MILES = 3958.7613
 DISTANCE_TOLERANCE = 1e-9
+MANIFEST_SCHEMA_VERSION = 3
 
 ROLE_COLORS = {
     "nearby": "#3b82f6",
@@ -56,17 +65,15 @@ def school_centroids(dataset: Dataset) -> dict[int, int]:
 
 def enumerate_cases(G, centroids_by_school: dict[int, int]) -> list[dict]:
     """Return every node-school pair with no strictly closer graph neighbor."""
+    closer_neighbors = G.graph[CLOSER_NEIGHBORS_GRAPH_KEY]
+    geometry_distances = G.graph[SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY]
     cases = []
     for school_id, centroid in sorted(centroids_by_school.items()):
-        distances = G.graph["distance_dict"][centroid]
         for node in G.nodes():
             if node == centroid:
                 continue
-            node_distance = float(distances[node])
-            if any(
-                float(distances[neighbor]) < node_distance
-                for neighbor in G.neighbors(node)
-            ):
+            node_distance = float(geometry_distances[node][school_id])
+            if closer_neighbors[node][school_id]:
                 continue
             cases.append(
                 {
@@ -120,10 +127,17 @@ def build_manifest(
                 node_indices[focal], latitudes, longitudes
             )
         local_distances = focal_distances[focal]
-        centroid_distances = np.asarray(
-            [float(G.graph["distance_dict"][centroid][node]) for node in nodes]
+        school_distances = np.asarray(
+            [
+                float(
+                    G.graph[SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY][node][
+                        case["school_id"]
+                    ]
+                )
+                for node in nodes
+            ]
         )
-        focal_centroid_distance = centroid_distances[node_indices[focal]]
+        focal_school_distance = school_distances[node_indices[focal]]
         existing_neighbors = set(G.neighbors(focal))
 
         radius = None
@@ -134,17 +148,17 @@ def build_manifest(
                 [
                     node != focal
                     and node not in existing_neighbors
-                    and centroid_distances[index] < focal_centroid_distance
+                    and school_distances[index] < focal_school_distance
                     for index, node in enumerate(nodes)
                 ],
                 dtype=bool,
             )
-            if not missing_closer.any():
-                raise ValueError(
-                    f"Case {case['case_number']} has no possible closer endpoint."
+            radius = base_radius_miles
+            if missing_closer.any():
+                nearest_closer_distance = float(
+                    local_distances[missing_closer].min()
                 )
-            nearest_closer_distance = float(local_distances[missing_closer].min())
-            radius = max(base_radius_miles, nearest_closer_distance)
+                radius = max(radius, nearest_closer_distance)
             within_radius = {
                 node
                 for index, node in enumerate(nodes)
@@ -182,7 +196,7 @@ def build_manifest(
             if node in within_radius:
                 roles.append("within_radius")
             is_closer = (
-                centroid_distances[node_indices[node]] < focal_centroid_distance
+                school_distances[node_indices[node]] < focal_school_distance
             )
             if is_closer:
                 roles.append("strictly_closer")
@@ -202,7 +216,7 @@ def build_manifest(
                     local_distances[node_indices[node]]
                 ),
                 "distance_to_centroid_miles": float(
-                    centroid_distances[node_indices[node]]
+                    school_distances[node_indices[node]]
                 ),
                 "roles": roles,
             }
@@ -231,7 +245,7 @@ def build_manifest(
         )
 
     return {
-        "schema_version": 2,
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "level": "Block_0",
         "case_definition": (
@@ -257,6 +271,11 @@ def build_manifest(
 
 def compile_selections(manifest: dict, selections: dict) -> tuple[list, dict]:
     """Resolve user-facing case labels to stable, deduplicated Block GEOID edges."""
+    if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+        raise ValueError(
+            "Manual case manifest uses an obsolete closer-neighbor definition; "
+            "regenerate it before compiling selections."
+        )
     cases = {int(case["case_number"]): case for case in manifest["cases"]}
     edges_to_cases: dict[tuple[int, int], set[int]] = defaultdict(set)
 
@@ -458,6 +477,7 @@ def generate(
         raise ValueError("Manual edge cases require a Block optimization config.")
     dataset = Dataset(config)
     G = dataset.graph_for("Block_0")
+    dataset.closer_neighbors_for("Block_0")
     centroids = school_centroids(dataset)
     manifest = build_manifest(
         G,
@@ -507,6 +527,57 @@ def compile_file(manifest_path: Path, selections_path: Path, output_path: Path) 
             sort_keys=False,
         )
     print(f"Compiled {len(edges)} unique manual Block edges to {output_path}")
+    return len(edges)
+
+
+def compile_edge_additions(additions: dict) -> list[list[int]]:
+    """Normalize explicit focal-GEOID to neighbor-GEOID declarations."""
+    if not isinstance(additions, dict):
+        raise ValueError("Manual edge additions must be a GEOID-to-neighbors mapping.")
+
+    edges = set()
+    for raw_focal, raw_neighbors in additions.items():
+        if isinstance(raw_focal, bool):
+            raise ValueError("Manual edge addition focal GEOIDs must be integers.")
+        try:
+            focal = int(raw_focal)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid manual edge addition focal GEOID {raw_focal!r}."
+            ) from exc
+
+        neighbors = [] if raw_neighbors is None else raw_neighbors
+        if not isinstance(neighbors, list):
+            raise ValueError(
+                f"Manual edge additions for Block {focal} must be a list."
+            )
+        for raw_neighbor in neighbors:
+            if isinstance(raw_neighbor, bool):
+                raise ValueError(
+                    f"Manual edge additions for Block {focal} contain a Boolean."
+                )
+            try:
+                neighbor = int(raw_neighbor)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid neighbor GEOID {raw_neighbor!r} for Block {focal}."
+                ) from exc
+            if focal == neighbor:
+                raise ValueError(
+                    f"Manual edge addition for Block {focal} is a self-edge."
+                )
+            edges.add(tuple(sorted((focal, neighbor))))
+    return [list(edge) for edge in sorted(edges)]
+
+
+def compile_edge_additions_file(additions_path: Path, output_path: Path) -> int:
+    with additions_path.open("r", encoding="utf-8") as file:
+        additions = yaml.safe_load(file) or {}
+    edges = compile_edge_additions(additions)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as file:
+        yaml.safe_dump({"edges": edges}, file, sort_keys=False)
+    print(f"Compiled {len(edges)} explicit Block edges to {output_path}")
     return len(edges)
 
 
@@ -638,7 +709,7 @@ def _write_summary(path: Path, manifest: dict) -> None:
         "closer_candidate_count",
     ]
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=fields)
+        writer = csv.DictWriter(file, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for case in manifest["cases"]:
             row = {field: case.get(field) for field in fields}
@@ -674,6 +745,14 @@ def _parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     compile_parser.add_argument("--selections", type=Path, default=DEFAULT_SELECTIONS)
     compile_parser.add_argument("--output", type=Path, default=DEFAULT_OVERRIDES)
+
+    additions_parser = subparsers.add_parser("compile-additions")
+    additions_parser.add_argument(
+        "--additions", type=Path, default=DEFAULT_EDGE_ADDITIONS
+    )
+    additions_parser.add_argument(
+        "--output", type=Path, default=DEFAULT_COMPILED_EDGE_ADDITIONS
+    )
     return parser
 
 
@@ -695,8 +774,10 @@ def main(argv: list[str] | None = None) -> None:
             f"Generated {manifest['case_count']} cases for "
             f"{manifest['school_count']} schools."
         )
-    else:
+    elif args.command == "compile":
         compile_file(args.manifest, args.selections, args.output)
+    else:
+        compile_edge_additions_file(args.additions, args.output)
 
 
 if __name__ == "__main__":

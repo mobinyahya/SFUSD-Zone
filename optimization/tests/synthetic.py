@@ -17,6 +17,26 @@ from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
 
 
+def _attach_closer_neighbors(G: nx.Graph) -> None:
+    """Attach a complete synthetic relation without reading production geometry."""
+    school_to_node = {
+        int(school_id): int(node)
+        for node, attrs in G.nodes(data=True)
+        for school_id in attrs.get("school_ids", [])
+    }
+    relation = {int(node): {} for node in G.nodes()}
+    for node in G.nodes():
+        for school_id, school_node in school_to_node.items():
+            node_distance = float(G.graph["distance_dict"][school_node][node])
+            relation[int(node)][school_id] = frozenset(
+                int(neighbor)
+                for neighbor in G.neighbors(node)
+                if float(G.graph["distance_dict"][school_node][neighbor])
+                < node_distance
+            )
+    G.graph["closer_neighbors"] = relation
+
+
 def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
     """A ``rows x cols`` grid with uniform, balanced demographics.
 
@@ -73,6 +93,7 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
     G.graph["F"] = 0.5
     G.graph["R"] = {e: 0.2 for e in AREA_ETHNICITIES}
     G.graph["school_data"] = {100: {}, 200: {}}
+    _attach_closer_neighbors(G)
     return G
 
 
@@ -90,6 +111,7 @@ def make_grid_problem(rows: int = 3, cols: int = 3, **overrides) -> ZoneProblem:
         G=G,
         level=LevelSpec("BlockGroup", 0),
         centroids=[0, rows * cols - 1],
+        centroid_school_ids=[100, 200],
         **params,
     )
 
@@ -127,6 +149,7 @@ def make_solver_contract_problem(**overrides) -> ZoneProblem:
     G.graph["F"] = 0.5
     G.graph["R"] = {ethnicity: 0.2 for ethnicity in AREA_ETHNICITIES}
     G.graph["school_data"] = school_data
+    _attach_closer_neighbors(G)
 
     params = {
         "frl_dev": 0.0,
@@ -141,6 +164,7 @@ def make_solver_contract_problem(**overrides) -> ZoneProblem:
         G=G,
         level=LevelSpec("BlockGroup", 0),
         centroids=[0, 3],
+        centroid_school_ids=[100, 104],
         **params,
     )
 
@@ -178,6 +202,7 @@ def make_single_zone_problem(**overrides) -> ZoneProblem:
         school_id: {"program_types": ["GE"], "ge_capacity": 1.0}
         for school_id in school_nodes.values()
     }
+    _attach_closer_neighbors(G)
 
     params = {
         "frl_dev": 0.0,
@@ -191,6 +216,7 @@ def make_single_zone_problem(**overrides) -> ZoneProblem:
         G=G,
         level=LevelSpec("Block", 0),
         centroids=[3],
+        centroid_school_ids=[100],
         **params,
     )
 
@@ -249,10 +275,13 @@ class FakeDataset:
         centroid_school_ids=None,
     ):
         constraint_multiplier = float(constraint_multiplier)
+        if centroid_school_ids is None:
+            centroid_school_ids = self._problem.centroid_school_ids
         return ZoneProblem(
             G=self._problem.G,
             level=LevelSpec.parse(level),
             centroids=self.centroids_for(level, centroid_school_ids),
+            centroid_school_ids=[int(school_id) for school_id in centroid_school_ids],
             frl_dev=self._problem.frl_dev * constraint_multiplier,
             racial_dev=self._problem.racial_dev * constraint_multiplier,
             overage=self._problem.overage * constraint_multiplier,

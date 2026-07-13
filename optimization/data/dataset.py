@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
-from optimization.data import edge_overrides, graph_builder, loaders
+from optimization.data import closer_neighbors, edge_overrides, graph_builder, loaders
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
@@ -46,6 +46,9 @@ class Dataset:
         )
         self._graphs: dict[str, nx.Graph] = {}
         self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
+        self._closer_neighbor_store = closer_neighbors.CloserNeighborArtifactStore(
+            self.graphs_dir
+        )
 
     # ------------------------------------------------------------------ #
     # graphs
@@ -112,6 +115,14 @@ class Dataset:
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
         return f"{self.ingest.unit}_{digest}"
+
+    def closer_neighbors_for(self, level) -> dict[int, dict[int, frozenset[int]]]:
+        """Load and attach the shared geometry relation for ``level``."""
+        level = LevelSpec.parse(level)
+        data = self._closer_neighbor_store.attach_to_graph(
+            level, self.graph_for(level)
+        )
+        return data.closer_neighbors
 
     # ------------------------------------------------------------------ #
     # centroids
@@ -195,10 +206,18 @@ class Dataset:
     ) -> ZoneProblem:
         level = LevelSpec.parse(level)
         constraint_multiplier = float(constraint_multiplier)
+        if centroid_school_ids is None:
+            centroid_school_ids = loaders.load_centroid_schools(
+                self.config.centroids_type
+            )
+        centroid_school_ids = [int(school_id) for school_id in centroid_school_ids]
+        G = self.graph_for(level)
+        self._closer_neighbor_store.attach_to_graph(level, G)
         return ZoneProblem(
-            G=self.graph_for(level),
+            G=G,
             level=level,
             centroids=self.centroids_for(level, centroid_school_ids),
+            centroid_school_ids=centroid_school_ids,
             frl_dev=self.config.frl_dev * constraint_multiplier,
             racial_dev=self.config.racial_dev * constraint_multiplier,
             overage=self.config.overage * constraint_multiplier,

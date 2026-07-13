@@ -13,48 +13,64 @@ import yaml
 DEFAULT_BLOCK_EDGE_OVERRIDES = (
     Path(__file__).resolve().parents[2] / "Config" / "manual_block_edges.yaml"
 )
+DEFAULT_BLOCK_EDGE_ADDITIONS = (
+    Path(__file__).resolve().parents[2]
+    / "Config"
+    / "manual_block_edge_additions.yaml"
+)
 
 
 def load_block_edge_overrides(
-    path: str | Path = DEFAULT_BLOCK_EDGE_OVERRIDES,
+    path: str | Path | None = None,
 ) -> list[tuple[int, int]]:
     """Load normalized undirected edge pairs expressed as Block GEOIDs."""
-    override_path = Path(path)
-    if not override_path.exists():
-        return []
+    override_paths = (
+        (DEFAULT_BLOCK_EDGE_OVERRIDES, DEFAULT_BLOCK_EDGE_ADDITIONS)
+        if path is None
+        else (Path(path),)
+    )
+    edges = set()
+    for override_path in override_paths:
+        edges.update(_load_block_edge_override_file(override_path))
+    return sorted(edges)
 
-    with override_path.open("r", encoding="utf-8") as file:
+
+def _load_block_edge_override_file(path: Path) -> set[tuple[int, int]]:
+    if not path.exists():
+        return set()
+
+    with path.open("r", encoding="utf-8") as file:
         payload = yaml.safe_load(file) or {}
     rows = payload.get("edges", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
-        raise ValueError(f"Manual Block edges in {override_path} must be a list.")
+        raise ValueError(f"Manual Block edges in {path} must be a list.")
 
     edges = set()
     for index, row in enumerate(rows, start=1):
         if not isinstance(row, (list, tuple)) or len(row) != 2:
             raise ValueError(
-                f"Manual Block edge {index} in {override_path} must have two GEOIDs."
+                f"Manual Block edge {index} in {path} must have two GEOIDs."
             )
         if any(isinstance(value, bool) for value in row):
             raise ValueError(
-                f"Manual Block edge {index} in {override_path} contains a Boolean."
+                f"Manual Block edge {index} in {path} contains a Boolean."
             )
         try:
             u, v = (int(value) for value in row)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                f"Manual Block edge {index} in {override_path} has invalid GEOIDs."
+                f"Manual Block edge {index} in {path} has invalid GEOIDs."
             ) from exc
         if u == v:
             raise ValueError(
-                f"Manual Block edge {index} in {override_path} is a self-edge."
+                f"Manual Block edge {index} in {path} is a self-edge."
             )
         edges.add(tuple(sorted((u, v))))
-    return sorted(edges)
+    return edges
 
 
 def block_edge_override_fingerprint(
-    path: str | Path = DEFAULT_BLOCK_EDGE_OVERRIDES,
+    path: str | Path | None = None,
 ) -> str:
     """Return a content fingerprint for normalized manual Block edges."""
     encoded = json.dumps(

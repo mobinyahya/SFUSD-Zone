@@ -363,10 +363,16 @@ class _CpSatSolver(Solver):
         y: _ZoneVars,
     ) -> None:
         closer_supports = contiguity.closer_supports(
-            problem.G, problem.centroids, problem.candidate_zones
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
+            problem.candidate_zones,
         )
         supports = contiguity.contiguity_supports(
-            problem.G, problem.centroids, problem.candidate_zones
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
+            problem.candidate_zones,
         )
         for (node, z), support_nodes in supports.items():
             if not closer_supports[(node, z)] or not support_nodes:
@@ -691,9 +697,7 @@ class CpSingleZoneSolver(CpBoolSolver):
                 "partial_assignment": True,
                 "objective_kind": "selected_zone_boundary",
                 "centroid_node": problem.centroids[0],
-                "centroid_school_id": self._school_ids(problem, problem.centroids[0])[
-                    0
-                ],
+                "centroid_school_id": problem.centroid_school_ids[0],
                 "selected_node_count": len(solution.assignment),
                 "omitted_node_count": problem.A - len(solution.assignment),
             }

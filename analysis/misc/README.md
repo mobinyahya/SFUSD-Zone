@@ -21,8 +21,10 @@ uv run python analysis/misc/manual_block_edge_cases.py generate \
 ```
 
 The radius expands per case when needed to display at least one strictly closer
-candidate. Every plot uses one local panel, fits the complete geometry of every
-existing neighbor, and draws an arrow toward the school centroid.
+candidate. If a focal block is already at the global minimum school distance,
+the plot keeps the base radius and has no selectable closer candidate. Every
+plot uses one local panel, fits the complete geometry of every existing neighbor,
+and draws an arrow toward the school centroid.
 
 Record reviewed missing neighbors in
 `analysis/misc/manual_case_selections.yaml`:
@@ -44,3 +46,26 @@ neighbor, and is strictly closer to the case's school centroid. It writes stable
 Block GEOID pairs to `Config/manual_block_edges.yaml`. The graph cache namespace
 includes those edges, so the next Block graph request rebuilds Block_0 and every
 higher Block level from the reviewed topology.
+
+## Explicit Missing Edges
+
+For missing adjacencies that are unrelated to a closer-neighbor review, edit
+`analysis/misc/manual_block_edge_additions.yaml`. Keys and values are stable
+Census Block GEOIDs:
+
+```yaml
+60750101001000: [60750101001001, 60750101001002]
+60750101001003: [60750101001004]
+```
+
+Compile and normalize those declarations separately:
+
+```bash
+uv run python analysis/misc/manual_block_edge_cases.py compile-additions
+```
+
+This writes `Config/manual_block_edge_additions.yaml`. Its edges are merged with
+the closer-review edges, deduplicated, and added only to `Block_0`, before closer
+neighbors are generated. Higher `Block_*` levels are then partitioned and built
+from that updated topology. The merged edge fingerprint is part of the graph
+cache namespace, so changing either source rebuilds all affected Block levels.

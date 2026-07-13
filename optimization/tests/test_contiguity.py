@@ -1,4 +1,5 @@
 import networkx as nx
+import pytest
 
 from optimization.data import contiguity
 from optimization.tests.synthetic import make_grid_graph
@@ -73,10 +74,24 @@ def test_boundary_candidates_anchors_centroids_before_relaxing_neighbors():
     assert 0 in cands[3]
 
 
-def test_contiguity_supports_allow_distance_local_minimum():
+def test_contiguity_supports_do_not_fall_back_for_geometry_local_minimum():
     G = nx.path_graph(3)
-    G.graph["distance_dict"] = {0: {0: 0.0, 1: 2.0, 2: 1.0}}
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset()},
+        1: {100: frozenset({0})},
+        2: {100: frozenset()},
+    }
 
-    supports = contiguity.contiguity_supports(G, [0], lambda node: {0})
+    supports = contiguity.contiguity_supports(
+        G, [0], [100], lambda node: {0}
+    )
 
-    assert supports[(2, 0)] == [1]
+    assert supports[(2, 0)] == []
+
+
+def test_closer_supports_require_precomputed_geometry_relation():
+    G = nx.path_graph(2)
+    G.graph["distance_dict"] = {0: {0: 0.0, 1: 1.0}}
+
+    with pytest.raises(ValueError, match="precomputed geometry-based"):
+        contiguity.closer_supports(G, [0], [100], lambda node: {0})

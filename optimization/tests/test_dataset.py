@@ -113,7 +113,7 @@ def test_centroids_fallback_to_raw_school_locations_for_aggregated_graph(
     assert G.nodes[10]["school_ids"] == []
 
 
-def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path):
+def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path, monkeypatch):
     G = nx.path_graph(2)
     for node, school_id in enumerate((100, 200)):
         G.nodes[node].update(
@@ -125,8 +125,14 @@ def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path):
         )
     dataset = Dataset(_config(tmp_path))
     dataset._graphs["Block_0"] = G
+    monkeypatch.setattr(
+        dataset._closer_neighbor_store,
+        "attach_to_graph",
+        lambda level, graph: None,
+    )
 
     problem = dataset.problem_for("Block_0", centroid_school_ids=[200])
 
     assert dataset.school_ids_for("Block_0") == [100, 200]
     assert problem.centroids == [1]
+    assert problem.centroid_school_ids == [200]

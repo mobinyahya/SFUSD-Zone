@@ -3,7 +3,8 @@
 A zone is *contiguous* if the subgraph it induces is connected. The math
 programming solvers enforce this with a centroid-rooted support formulation and
 reject a non-centroid assignment when the block has no candidate neighbor that
-is strictly closer to the zone centroid.
+is strictly closer to the zone's school point under the precomputed polygon
+geometry relation.
 
 This module provides:
 
@@ -21,14 +22,13 @@ from __future__ import annotations
 
 import networkx as nx
 
-
-def _distance(G: nx.Graph, centroid: int, node: int) -> float:
-    return float(G.graph["distance_dict"][centroid][node])
+from optimization.data.closer_neighbors import CLOSER_NEIGHBORS_GRAPH_KEY
 
 
 def closer_supports(
     G: nx.Graph,
     centroids: list[int],
+    centroid_school_ids: list[int],
     candidate_zones,
 ) -> dict[tuple[int, int], list[int]]:
     """Support sets for the contiguity constraint.
@@ -40,23 +40,39 @@ def closer_supports(
 
     Returns
     -------
-    ``{(node, zone): [neighbor, ...]}`` where each neighbor is strictly closer
-    to the zone's centroid and is itself a candidate for that zone. A
+    ``{(node, zone): [neighbor, ...]}`` where each neighbor's geometry is
+    strictly closer to the zone's school point and is itself a candidate for
+    that zone. A
     non-centroid node may join ``zone`` only if at least one listed neighbor
     does too. An empty list means the assignment is infeasible (the solver must
     forbid it).
     """
+    if len(centroid_school_ids) != len(centroids):
+        raise ValueError("Closer-neighbor supports require one school ID per centroid.")
+    relation = G.graph.get(CLOSER_NEIGHBORS_GRAPH_KEY)
+    if relation is None:
+        raise ValueError(
+            "Graph has no precomputed geometry-based closer-neighbor relation."
+        )
+
     supports: dict[tuple[int, int], list[int]] = {}
     for node in G.nodes():
         for z in candidate_zones(node):
             centroid = centroids[z]
             if node == centroid:
                 continue
-            d_node = _distance(G, centroid, node)
+            school_id = int(centroid_school_ids[z])
+            try:
+                precomputed = relation[node][school_id]
+            except KeyError as exc:
+                raise ValueError(
+                    "Precomputed closer-neighbor relation is missing "
+                    f"node {node}, school {school_id}."
+                ) from exc
             supports[(node, z)] = [
-                nb
-                for nb in G.neighbors(node)
-                if _distance(G, centroid, nb) < d_node and z in candidate_zones(nb)
+                neighbor
+                for neighbor in sorted(precomputed)
+                if z in candidate_zones(neighbor)
             ]
     return supports
 
@@ -64,29 +80,13 @@ def closer_supports(
 def contiguity_supports(
     G: nx.Graph,
     centroids: list[int],
+    centroid_school_ids: list[int],
     candidate_zones,
 ) -> dict[tuple[int, int], list[int]]:
-    """Support sets with a fallback for fine-graph distance local minima.
-
-    The preferred support for ``(node, zone)`` is a same-zone candidate neighbor
-    that is strictly closer to the zone centroid and can itself continue toward
-    the centroid. Some fine Block-level geometries have small local minima where
-    every adjacent block is slightly farther from the centroid even though the
-    area is physically connected. For those cases, fall back to any same-zone
-    candidate neighbor that can continue toward the centroid. This mirrors the
-    legacy CP contiguity behavior and avoids forbidding otherwise valid leaf
-    blocks.
-    """
-    closer = closer_supports(G, centroids, candidate_zones)
-    adjacent: dict[tuple[int, int], list[int]] = {}
-    for node in G.nodes():
-        for z in candidate_zones(node):
-            centroid = centroids[z]
-            if node == centroid:
-                continue
-            adjacent[(node, z)] = [
-                nb for nb in G.neighbors(node) if z in candidate_zones(nb)
-            ]
+    """Closer supports that can continue monotonically toward the school."""
+    closer = closer_supports(
+        G, centroids, centroid_school_ids, candidate_zones
+    )
 
     supports: dict[tuple[int, int], list[int]] = {}
     for key, closer_nodes in closer.items():
@@ -96,9 +96,7 @@ def contiguity_supports(
         if good:
             supports[key] = good
             continue
-        supports[key] = [
-            nb for nb in adjacent[key] if nb == centroid or closer.get((nb, z), [])
-        ]
+        supports[key] = []
     return supports
 
 

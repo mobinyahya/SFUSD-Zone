@@ -279,6 +279,17 @@ def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
     return df
 
 
+def load_school_coordinates() -> pd.DataFrame:
+    """Canonical school points used by config-independent geometry artifacts."""
+    path = f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+    df = pd.read_csv(path)
+    required = {"school_id", "lat", "lon"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"School coordinate table missing columns: {sorted(missing)}.")
+    return df[["school_id", "lat", "lon"]].copy()
+
+
 def _attach_capacity(df: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     programs = pd.read_csv(
         f"{DROPBOX_PATH}/Data/Cleaned/stanford_capacities_12.23.21.csv"

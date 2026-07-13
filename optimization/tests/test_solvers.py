@@ -108,9 +108,7 @@ def test_cpsat_solvers_support_distance_to_centroid_search_strategy(name):
 @pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
 def test_cpsat_solvers_forbid_zone_without_closer_neighbor(name):
     problem = make_grid_problem(3, 3, candidates={4: {0}})
-    # Make node 4 a distance-local minimum for zone 0. Its adjacent nodes are
-    # all farther from centroid 0, so its forced assignment must be rejected.
-    problem.G.graph["distance_dict"][0][4] = 0.5
+    problem.G.graph["closer_neighbors"][4][100] = frozenset()
 
     solution = get_solver(name, solve_time_limit=10, workers=1).solve(problem)
 
@@ -324,7 +322,7 @@ def test_mip_solver_supports_secondary_objective():
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
 def test_mip_solver_forbids_zone_without_closer_neighbor():
     problem = make_grid_problem(3, 3, candidates={4: {0}})
-    problem.G.graph["distance_dict"][0][4] = 0.5
+    problem.G.graph["closer_neighbors"][4][100] = frozenset()
     try:
         solution = get_solver("mip", solve_time_limit=10).solve(problem)
     except Exception as exc:  # no usable Gurobi license in this environment

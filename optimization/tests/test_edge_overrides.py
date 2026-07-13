@@ -29,6 +29,24 @@ def test_load_block_edge_overrides_rejects_self_edges(tmp_path):
         edge_overrides.load_block_edge_overrides(path)
 
 
+def test_default_block_edge_overrides_merge_reviewed_and_explicit_files(
+    tmp_path, monkeypatch
+):
+    reviewed = tmp_path / "reviewed.yaml"
+    additions = tmp_path / "additions.yaml"
+    reviewed.write_text("edges:\n  - [1000, 1002]\n", encoding="utf-8")
+    additions.write_text(
+        "edges:\n  - [1002, 1000]\n  - [1001, 1002]\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_OVERRIDES", reviewed)
+    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_ADDITIONS", additions)
+
+    assert edge_overrides.load_block_edge_overrides() == [
+        (1000, 1002),
+        (1001, 1002),
+    ]
+
+
 def test_apply_block_edge_overrides_resolves_stable_area_ids():
     G = nx.Graph()
     G.add_node(20, area_id=1000)
@@ -68,6 +86,24 @@ def test_block_cache_namespace_changes_only_for_nonempty_overrides(
         "block_edge_override_fingerprint",
         lambda: "reviewed1234",
     )
+    changed = Dataset(config).graph_cache_dir
+
+    assert changed != baseline
+
+
+def test_explicit_edge_additions_change_block_cache_namespace(
+    tmp_path, monkeypatch
+):
+    reviewed = tmp_path / "reviewed.yaml"
+    additions = tmp_path / "additions.yaml"
+    reviewed.write_text("edges: []\n", encoding="utf-8")
+    additions.write_text("edges: []\n", encoding="utf-8")
+    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_OVERRIDES", reviewed)
+    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_ADDITIONS", additions)
+    config = OptimizationConfig(levels=["Block_0"], graphs_dir=str(tmp_path))
+    baseline = Dataset(config).graph_cache_dir
+
+    additions.write_text("edges:\n  - [1000, 1001]\n", encoding="utf-8")
     changed = Dataset(config).graph_cache_dir
 
     assert changed != baseline

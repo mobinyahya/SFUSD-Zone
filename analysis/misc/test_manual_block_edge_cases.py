@@ -9,6 +9,8 @@ from shapely.geometry import box
 from analysis.misc.manual_block_edge_cases import (
     BASE_RADIUS_MILES,
     build_manifest,
+    compile_edge_additions,
+    compile_edge_additions_file,
     compile_file,
     compile_selections,
     enumerate_cases,
@@ -29,6 +31,16 @@ def _graph():
         0: {0: 0.0, 1: 2.0, 2: 1.0},
         1: {0: 2.0, 1: 0.0, 2: 1.0},
         2: {0: 1.0, 1: 1.0, 2: 0.0},
+    }
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset()},
+        1: {100: frozenset({0}), 200: frozenset({0})},
+        2: {100: frozenset(), 200: frozenset()},
+    }
+    G.graph["school_geometry_distances_miles"] = {
+        0: {100: 0.0, 200: 0.0},
+        1: {100: 2.0, 200: 2.0},
+        2: {100: 1.0, 200: 1.0},
     }
     return G
 
@@ -79,6 +91,23 @@ def test_optional_radius_labels_closer_missing_nodes_and_compiles_stable_ids():
     assert provenance == {"1000:1002": [1]}
 
 
+def test_optional_radius_allows_case_without_globally_closer_node():
+    G = _graph()
+    G.graph["school_geometry_distances_miles"][0][100] = 0.1
+    G.graph["school_geometry_distances_miles"][2][100] = 0.0
+
+    manifest = build_manifest(
+        G,
+        {100: 0},
+        include_nearby_non_neighbors=True,
+    )
+    case = manifest["cases"][0]
+
+    assert case["plot_radius_miles"] == BASE_RADIUS_MILES
+    assert case["nearest_closer_endpoint_miles"] is None
+    assert case["closer_candidate_labels"] == []
+
+
 def test_compile_selections_rejects_existing_neighbor():
     manifest = build_manifest(
         _graph(),
@@ -89,6 +118,14 @@ def test_compile_selections_rejects_existing_neighbor():
 
     with pytest.raises(ValueError, match="strictly closer non-neighbor"):
         compile_selections(manifest, {1: [neighbor_label]})
+
+
+def test_compile_selections_rejects_old_closer_neighbor_definition():
+    manifest = build_manifest(_graph(), {100: 0})
+    manifest["schema_version"] -= 1
+
+    with pytest.raises(ValueError, match="obsolete closer-neighbor definition"):
+        compile_selections(manifest, {})
 
 
 def test_compile_file_writes_production_override(tmp_path):
@@ -110,6 +147,35 @@ def test_compile_file_writes_production_override(tmp_path):
     assert count == 1
     assert "1000" in output_path.read_text(encoding="utf-8")
     assert "1002" in output_path.read_text(encoding="utf-8")
+
+
+def test_compile_edge_additions_normalizes_and_deduplicates():
+    edges = compile_edge_additions(
+        {
+            1002: [1000, 1001],
+            1000: [1002],
+        }
+    )
+
+    assert edges == [[1000, 1002], [1001, 1002]]
+
+
+def test_compile_edge_additions_rejects_self_edges():
+    with pytest.raises(ValueError, match="self-edge"):
+        compile_edge_additions({1000: [1000]})
+
+
+def test_compile_edge_additions_file_writes_separate_override(tmp_path):
+    additions_path = tmp_path / "additions.yaml"
+    output_path = tmp_path / "compiled.yaml"
+    additions_path.write_text("1002: [1000]\n", encoding="utf-8")
+
+    count = compile_edge_additions_file(additions_path, output_path)
+
+    assert count == 1
+    assert output_path.read_text(encoding="utf-8") == (
+        "edges:\n- - 1000\n  - 1002\n"
+    )
 
 
 @pytest.mark.parametrize("include_nearby_non_neighbors", [False, True])

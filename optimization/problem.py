@@ -54,6 +54,10 @@ class ZoneProblem:
     centroids:
         Node indices anchoring each zone. ``len(centroids) == Z`` and zone ``z``
         is anchored at ``centroids[z]``.
+    centroid_school_ids:
+        School IDs corresponding one-to-one with ``centroids``. Geometry-based
+        closer-neighbor relations are keyed by these IDs rather than by the
+        centroid nodes that contain them.
     frl_dev, racial_dev:
         Maximum allowed deviation of a zone's FRL / per-ethnicity proportion
         from the district-wide proportion.
@@ -78,6 +82,7 @@ class ZoneProblem:
     G: nx.Graph
     level: LevelSpec
     centroids: list[int]
+    centroid_school_ids: list[int]
 
     frl_dev: float = 0.3
     racial_dev: float = 0.3
@@ -94,6 +99,12 @@ class ZoneProblem:
     _candidates: Optional[dict[int, set[int]]] = field(
         default=None, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        if len(self.centroid_school_ids) != len(self.centroids):
+            raise ValueError(
+                "centroid_school_ids must have one school ID per centroid node."
+            )
 
     # ------------------------------------------------------------------ #
     # basic dimensions
