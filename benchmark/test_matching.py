@@ -552,7 +552,7 @@ def test_run_student_assignment_uses_market_constructor_shape(tmp_path, monkeypa
 
 def test_student_assignment_guardrail_patch_allows_fractional_zone_counts():
     matching_runner._patch_student_assignment_guardrail_pandas_compat()
-    from student_assignment.da.guardrail_setup import GuardrailSetup
+    from assignment.student_assignment.da.guardrail_setup import GuardrailSetup
 
     fake_guardrail = type("FakeGuardrail", (), {})()
     fake_guardrail.students = type(
@@ -577,7 +577,7 @@ def test_student_assignment_guardrail_patch_allows_fractional_zone_counts():
 
 def test_student_assignment_empty_excess_match_patch_ignores_empty_heap():
     matching_runner._patch_student_assignment_empty_excess_match_compat()
-    from student_assignment.da.da import School
+    from assignment.student_assignment.da.da import School
 
     school = School(index=-1, capacity=-1)
 

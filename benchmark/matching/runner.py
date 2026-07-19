@@ -790,7 +790,7 @@ def _new_student_assignment_session() -> StudentAssignmentSession:
 
 
 def _install_student_assignment_config(config: dict[str, Any]) -> _StaticConfigurator:
-    from student_assignment.configerator import Configerator
+    from assignment.student_assignment.configerator import Configerator
 
     configurator = _StaticConfigurator(config)
     Configerator.instance = configurator
@@ -800,7 +800,7 @@ def _install_student_assignment_config(config: dict[str, Any]) -> _StaticConfigu
 def _patch_student_assignment_guardrail_pandas_compat() -> None:
     """Allow reserve zone fractions to stay fractional on newer pandas."""
 
-    from student_assignment.da.guardrail_setup import GuardrailSetup
+    from assignment.student_assignment.da.guardrail_setup import GuardrailSetup
 
     if getattr(GuardrailSetup._calculate_zone_fractions, "_sfusd_pandas_compat", False):
         return
@@ -839,7 +839,7 @@ def _patch_student_assignment_guardrail_pandas_compat() -> None:
 def _patch_student_assignment_empty_excess_match_compat() -> None:
     """Avoid strict guardrail evictions when the virtual school is empty."""
 
-    from student_assignment.da.da import School
+    from assignment.student_assignment.da.da import School
 
     if getattr(School.has_excess_matches, "_sfusd_empty_excess_compat", False):
         return
@@ -852,7 +852,7 @@ def _patch_student_assignment_empty_excess_match_compat() -> None:
 
 
 def _market_generator_class():
-    from student_assignment.market_generator.school_choice_market_generator import (
+    from assignment.student_assignment.market_generator.school_choice_market_generator import (
         MarketGenerator,
     )
 

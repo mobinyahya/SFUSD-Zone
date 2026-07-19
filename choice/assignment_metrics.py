@@ -205,7 +205,7 @@ def choice_metric_columns_from_frame(frame: pd.DataFrame) -> list[str]:
 
 
 def _match_evaluator_for_assignment(assignments: pd.DataFrame):
-    from student_assignment.evaluation.match_evaluator import MatchEvaluator
+    from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
 
     assignment_df = _dependency_assignment_df(assignments)
     student_df = assignments.attrs.get("choice_student_data")

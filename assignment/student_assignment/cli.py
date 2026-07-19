@@ -32,7 +32,7 @@ def simulate(config_path: Path, assignments_dir: Path | None) -> None:
 
     from benchmark.matching.runner import _run_student_assignment
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}
     if not isinstance(config, dict):
         raise click.ClickException(f"Config {config_path} must be a YAML mapping.")
@@ -50,9 +50,6 @@ def simulate(config_path: Path, assignments_dir: Path | None) -> None:
 
     assignments_dir.mkdir(parents=True, exist_ok=True)
     _run_student_assignment(config, assignments_dir)
-
-
-__all__ = ["cli"]
 
 
 if __name__ == "__main__":

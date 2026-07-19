@@ -1,10 +1,10 @@
 from click.testing import CliRunner
 
-from sfusd_matching import DeferredAcceptance
-from sfusd_matching.cli import cli
+from assignment.student_assignment.cli import cli
+from assignment.student_assignment.da.da import DeferredAcceptance
 
 
-def test_deferred_acceptance_wrapper_runs_match():
+def test_deferred_acceptance_runs_match():
     matcher = DeferredAcceptance(
         school_caps=[1, 1],
         student_priorities=[
@@ -24,7 +24,7 @@ def test_deferred_acceptance_wrapper_runs_match():
     assert student_proposal.tolist() == [1, 2]
 
 
-def test_sfusd_matching_cli_help():
+def test_assignment_cli_help():
     result = CliRunner().invoke(cli, ["--help"])
 
     assert result.exit_code == 0
