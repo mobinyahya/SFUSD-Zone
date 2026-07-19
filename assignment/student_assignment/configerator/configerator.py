@@ -52,11 +52,13 @@ class Configerator:
             and assign to $USER.
             If $USER doesn't exist, just use DEFAULT.
             """
-            try:
-                user = getpass.getuser()
-            except Exception:  # TODO: Remove this after testing
-                print("getpass.getuser() failed, using default user")
-                user = os.environ.get("USER", "default")
+            user = os.environ.get("SFUSD_ASSIGNMENT_CONFIG_USER")
+            if not user:
+                try:
+                    user = getpass.getuser()
+                except Exception:  # TODO: Remove this after testing
+                    print("getpass.getuser() failed, using default user")
+                    user = os.environ.get("USER", "default")
 
             self._path = f"{CONFIGS_DIR}{user}{USER_CONFIG_SUFFIX}"
 

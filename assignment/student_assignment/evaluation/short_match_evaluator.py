@@ -14,22 +14,15 @@ clearly-marked fallbacks so older local workflows keep working.
 import csv
 import logging
 import os
-import warnings
 from math import asin, cos, isnan, radians, sin, sqrt
 
 import numpy as np
 import pandas as pd
 
-# from pandas.core.common import SettingWithCopyWarning
-# Depending on pandas version, might need to import with the below line:
-from pandas.errors import SettingWithCopyWarning
-
-from student_assignment.definitions.constants import (
+from ..definitions.constants import (
     SPECIAL_PROGRAMS,
     ZONE_COLORS,
 )
-
-warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
 
 logger = logging.getLogger(__name__)
 

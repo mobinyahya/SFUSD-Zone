@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from student_assignment.data_interfaces import Programs, Zones
-from student_assignment.definitions import CW2AA
+from assignment.student_assignment.data_interfaces import Programs, Zones
+from assignment.student_assignment.definitions import CW2AA
 
 from ..utils_for_tests import *
 

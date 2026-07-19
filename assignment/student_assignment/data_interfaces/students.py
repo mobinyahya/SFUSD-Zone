@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from student_assignment.definitions.constants import (
+from ..definitions.constants import (
     LANGUAGE_PATHWAY_PRIORITIES,
     SPECIAL_PROGRAMS,
 )

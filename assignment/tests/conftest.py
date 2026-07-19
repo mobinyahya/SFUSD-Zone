@@ -11,16 +11,17 @@ Two session-level guarantees so the suite runs identically on any machine
    break the tests).
 """
 
-import getpass
+import os
 from pathlib import Path
 
 import pytest
 
-from student_assignment.definitions import CONFIGS_DIR
+from assignment.student_assignment.definitions import CONFIGS_DIR
 
 TEST_FILES_DIR = Path(__file__).parent / "test_files"
 PYTEST_CONFIG_USER = "_pytest"
 PYTEST_CONFIG_PATH = Path(CONFIGS_DIR) / f"{PYTEST_CONFIG_USER}.config.yaml"
+CONFIG_USER_ENV = "SFUSD_ASSIGNMENT_CONFIG_USER"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,14 +34,16 @@ def ensure_test_file_dirs() -> None:
 def hermetic_user_config():
     """Force Configerator to build a fresh pytest-only user config.
 
-    Configerator derives its config path from getpass.getuser(); patching
-    it makes every test session start from base_config + path config,
-    regardless of the developer's personal config file.
+    The explicit config user makes every test session start from base_config +
+    path config, regardless of the developer's personal config file.
     """
-    original_getuser = getpass.getuser
-    getpass.getuser = lambda: PYTEST_CONFIG_USER
+    original_user = os.environ.get(CONFIG_USER_ENV)
+    os.environ[CONFIG_USER_ENV] = PYTEST_CONFIG_USER
     if PYTEST_CONFIG_PATH.exists():
         PYTEST_CONFIG_PATH.unlink()
     yield
-    getpass.getuser = original_getuser
+    if original_user is None:
+        os.environ.pop(CONFIG_USER_ENV, None)
+    else:
+        os.environ[CONFIG_USER_ENV] = original_user
     PYTEST_CONFIG_PATH.unlink(missing_ok=True)

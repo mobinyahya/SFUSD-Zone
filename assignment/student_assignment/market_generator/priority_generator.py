@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from student_assignment.market_generator.policy import Policy
+from .policy import Policy
 
 
 class PriorityGenerator:

@@ -279,7 +279,9 @@ class MatchEvaluator:
         if student_data is None:
             student_data = self.student_data
         district_avg = student_data["frl"].mean()
-        school_frl = student_data.groupby("assigned school").mean()
+        school_frl = student_data.groupby("assigned school").mean(
+            numeric_only=True
+        )
         school_frl["in_range"] = school_frl["frl"].apply(
             lambda x: 1 if x >= district_avg + threshold else 0
         )
@@ -290,7 +292,11 @@ class MatchEvaluator:
     # Fraction of assigned students in student group who are assigned to a school where average FRL status of students assigned to the school is
     #   at least X% above the fraction of all students with FRL status
     def metric_FRL_concentration(self, all_students, group_students, threshold):
-        schools_frl = all_students.groupby("assigned school").mean()["frl"]
+        if group_students.empty:
+            return np.nan
+        schools_frl = all_students.groupby("assigned school").mean(
+            numeric_only=True
+        )["frl"]
         district_avg = all_students["frl"].mean()
         num_students = group_students.shape[0]
         count = 0
@@ -309,7 +315,11 @@ class MatchEvaluator:
     def metric_dissimilarity(self, group_students, total_enrollment):
         students = group_students
         n = students.shape[0]
-        total_n = total_enrollment.sum()
+        total_n = pd.to_numeric(
+            pd.Series(np.asarray(total_enrollment).reshape(-1)), errors="coerce"
+        ).sum()
+        if n == 0 or total_n == 0:
+            return np.nan
         ratio = n / total_n
         school_groups = students.groupby("assigned school")
         enrollment = school_groups.count()[
@@ -382,12 +392,13 @@ class MatchEvaluator:
     # Inputs: assigned_students, number X
     # Fraction of assigned students who are assigned to a school with at least X students from their block group (including themself)
     def metric_BG_cohesion(self, assigned_students, num):
-        return (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, num))
-            .sum()
-            / assigned_students.shape[0]
+        if assigned_students.empty:
+            return np.nan
+        cohesion = sum(
+            self._bgcohesion(group, num)
+            for _, group in assigned_students.groupby("census_blockgroup")
         )
+        return cohesion / assigned_students.shape[0]
 
     def eval_assignment_full(self, school_data, real_match=False):
         metrics = {}
@@ -2686,12 +2697,14 @@ class MatchEvaluator:
         # get % 1st and 3rd choice
         student_data["top1_choice"] = np.where(student_data["rank"] == 1, 1, 0)
         student_data["top3_choice"] = np.where(student_data["rank"] <= 3, 1, 0)
-        topchoice = student_data.groupby("assigned_zone").mean()[
+        topchoice = student_data.groupby("assigned_zone").mean(numeric_only=True)[
             ["top1_choice", "top3_choice"]
         ]
 
         # % designated
-        designated = student_data.groupby("assigned_zone").mean()["designation"]
+        designated = student_data.groupby("assigned_zone").mean(numeric_only=True)[
+            "designation"
+        ]
 
         table = pd.concat(
             [
@@ -2872,7 +2885,11 @@ class MatchEvaluator:
         return total / n
 
     def poverty_concentration(self, all_students, students, threshold):
-        schools_frl = all_students.groupby("assigned school").mean()["frl"]
+        if students.empty:
+            return np.nan
+        schools_frl = all_students.groupby("assigned school").mean(
+            numeric_only=True
+        )["frl"]
         district_avg = all_students["frl"].mean()
         num_students = students.shape[0]
         count = 0
@@ -2888,14 +2905,18 @@ class MatchEvaluator:
         """Calculate the highest FRL school in given assignment."""
         if student_data is None:
             student_data = self.student_data
-        school_frl = student_data.groupby("assigned school").mean()
+        school_frl = student_data.groupby("assigned school").mean(
+            numeric_only=True
+        )
         return school_frl["frl"].max()
 
     def median_frl(self, student_data=None):
         """Calculate the median FRL school in given assignment."""
         if student_data is None:
             student_data = self.student_data
-        school_frl = student_data.groupby("assigned school").mean()
+        school_frl = student_data.groupby("assigned school").mean(
+            numeric_only=True
+        )
         return school_frl["frl"].median()
 
     def isolation(self, ethnic_matrix_norm=None, threshold=0.6, percent=False):
@@ -2919,7 +2940,11 @@ class MatchEvaluator:
 
     def dissimilarity(self, students, total_enrollment):
         n = students.shape[0]
-        total_n = total_enrollment.sum()
+        total_n = pd.to_numeric(
+            pd.Series(np.asarray(total_enrollment).reshape(-1)), errors="coerce"
+        ).sum()
+        if n == 0 or total_n == 0:
+            return np.nan
         ratio = n / total_n
         school_groups = students.groupby("assigned school")
         enrollment = school_groups.count()[
@@ -3372,7 +3397,9 @@ class MatchEvaluator:
     def _get_cutoff_matrix(self, priorities):
         cutoffs = self.student_data
         cutoffs["programno"] = cutoffs["programno"].astype("int64")
-        cutoffs = cutoffs.groupby("programno", as_index=False).mean()
+        cutoffs = cutoffs.groupby("programno", as_index=False).mean(
+            numeric_only=True
+        )
         cutoffs = cutoffs[["programno", "program_cutoff"]]
         cutoffs["program_cutoff"] = cutoffs["program_cutoff"].apply(
             lambda x: max(x - 64, 0)
@@ -3462,7 +3489,9 @@ class MatchEvaluator:
     def poverty_schools_by_race(self, student_data=None):
         if student_data is None:
             student_data = self.student_data
-        sch_frl = student_data.groupby("assigned school", as_index=False).mean()
+        sch_frl = student_data.groupby("assigned school", as_index=False).mean(
+            numeric_only=True
+        )
         quantile66 = sch_frl["frl"].quantile(0.66)
         poverty_schools = list(
             sch_frl.loc[sch_frl["frl"] >= quantile66]["assigned school"]
@@ -3499,7 +3528,7 @@ class MatchEvaluator:
                 lambda x: 1 if x in aalpi else 0
             )
 
-        progs = student_data.groupby("assignment").mean()
+        progs = student_data.groupby("assignment").mean(numeric_only=True)
         ge_idxs = [True if x[4:6] == "GE" else False for x in progs.index]
         progs = progs[ge_idxs]
         return max(progs["aalpi"])
@@ -3512,7 +3541,9 @@ class MatchEvaluator:
         if student_data is None:
             student_data = self.student_data
         district_avg = student_data["frl"].mean()
-        school_frl = student_data.groupby("assigned school").mean()
+        school_frl = student_data.groupby("assigned school").mean(
+            numeric_only=True
+        )
         if above is False:
             school_frl["in_range"] = school_frl["frl"].apply(
                 lambda x: (

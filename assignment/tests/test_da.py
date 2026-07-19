@@ -1,6 +1,6 @@
 import numpy as np
 
-from student_assignment.da.da import DeferredAcceptance
+from assignment.student_assignment.da.da import DeferredAcceptance
 
 
 def test_deferred_acceptance_rejects_lower_priority_students():

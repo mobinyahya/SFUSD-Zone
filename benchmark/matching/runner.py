@@ -718,9 +718,9 @@ def _run_student_assignment(
     MarketGenerator = _market_generator_class()
 
     config["workers"] = max(1, int(workers or 1))
-    _install_student_assignment_config(config)
     market = MarketGenerator(
         assignment_path=str(assignments_dir),
+        config=config,
     )
     MarketGenerator.execute_generator(market.create_iterations_generator())
 
@@ -730,7 +730,6 @@ class StudentAssignmentSession:
 
     def __init__(self) -> None:
         self.market = None
-        self.configurator: _StaticConfigurator | None = None
         self._static_signature: str | None = None
 
     def run(
@@ -754,17 +753,16 @@ class StudentAssignmentSession:
         static_signature: str,
     ) -> None:
         MarketGenerator = _market_generator_class()
-        self.configurator = _install_student_assignment_config(config)
         self.market = MarketGenerator(
             assignment_path=str(assignments_dir),
+            config=config,
         )
         self._static_signature = static_signature
 
     def _update_market(self, config: dict[str, Any], assignments_dir: Path) -> None:
-        if self.configurator is None or self.market is None:
+        if self.market is None:
             raise RuntimeError("StudentAssignmentSession has not been initialized.")
 
-        self.configurator.config = config
         self.market.config = config
         self.market._set_up_save_folder(str(assignments_dir))
 
@@ -776,79 +774,8 @@ class StudentAssignmentSession:
             self.market
         )
 
-
-class _StaticConfigurator:
-    """Minimal Configerator-compatible object for generated in-memory configs."""
-
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
-        self._original_config = None
-
-
 def _new_student_assignment_session() -> StudentAssignmentSession:
     return StudentAssignmentSession()
-
-
-def _install_student_assignment_config(config: dict[str, Any]) -> _StaticConfigurator:
-    from assignment.student_assignment.configerator import Configerator
-
-    configurator = _StaticConfigurator(config)
-    Configerator.instance = configurator
-    return configurator
-
-
-def _patch_student_assignment_guardrail_pandas_compat() -> None:
-    """Allow reserve zone fractions to stay fractional on newer pandas."""
-
-    from assignment.student_assignment.da.guardrail_setup import GuardrailSetup
-
-    if getattr(GuardrailSetup._calculate_zone_fractions, "_sfusd_pandas_compat", False):
-        return
-
-    def _calculate_zone_fractions(self):
-        data = self.students.student_data
-        data["count"] = 1.0
-        data["zone_id"] = [
-            self.student2zone[x] if x in self.student2zone else float("nan")
-            for x in data.index
-        ]
-        count_per_zone = (
-            data[["zone_id", "diversity_category", "count"]]
-            .groupby(["zone_id", "diversity_category"], as_index=False)
-            .sum()
-        )
-        zone_total = data[["zone_id", "count"]].groupby("zone_id", as_index=False).sum()
-        count_per_zone = count_per_zone.merge(
-            zone_total, how="left", on="zone_id", suffixes=("", "_tot")
-        )
-        count_per_zone["count"] = (
-            count_per_zone["count"].astype(float) / count_per_zone["count_tot"]
-        )
-        return pd.pivot_table(
-            count_per_zone,
-            index="zone_id",
-            columns="diversity_category",
-            values="count",
-            fill_value=0,
-        )
-
-    _calculate_zone_fractions._sfusd_pandas_compat = True
-    GuardrailSetup._calculate_zone_fractions = _calculate_zone_fractions
-
-
-def _patch_student_assignment_empty_excess_match_compat() -> None:
-    """Avoid strict guardrail evictions when the virtual school is empty."""
-
-    from assignment.student_assignment.da.da import School
-
-    if getattr(School.has_excess_matches, "_sfusd_empty_excess_compat", False):
-        return
-
-    def has_excess_matches(self):
-        return bool(self.matches) and self.capacity < len(self.matches)
-
-    has_excess_matches._sfusd_empty_excess_compat = True
-    School.has_excess_matches = has_excess_matches
 
 
 def _market_generator_class():
@@ -856,8 +783,6 @@ def _market_generator_class():
         MarketGenerator,
     )
 
-    _patch_student_assignment_guardrail_pandas_compat()
-    _patch_student_assignment_empty_excess_match_compat()
     return MarketGenerator
 
 

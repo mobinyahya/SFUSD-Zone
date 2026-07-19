@@ -12,9 +12,9 @@ Last modified: November 13th, 2023
 import pandas as pd
 import pytest
 
-from student_assignment.data_interfaces import Programs, Schools
-from student_assignment.evaluation.match_evaluator import MatchEvaluator
-from student_assignment.market_generator.school_choice_market_generator import (
+from assignment.student_assignment.data_interfaces import Programs, Schools
+from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
+from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
 

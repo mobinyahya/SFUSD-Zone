@@ -128,7 +128,7 @@ class GuardrailSetup:
 
     def _calculate_zone_fractions(self):
         data = self.students.student_data
-        data.loc[:, "count"] = 1
+        data.loc[:, "count"] = 1.0
         # print(set(data.index) - set(self.student2zone.keys())) # missing for 2 students
         data.loc[:, "zone_id"] = [
             self.student2zone[x] if x in self.student2zone else np.nan
@@ -145,7 +145,9 @@ class GuardrailSetup:
         count_per_zone = count_per_zone.merge(
             zone_total, how="left", on="zone_id", suffixes=("", "_tot")
         )
-        count_per_zone.loc[:, "count"] /= count_per_zone.count_tot
+        count_per_zone["count"] = (
+            count_per_zone["count"].astype(float) / count_per_zone["count_tot"]
+        )
         zone_frac = pd.pivot_table(
             count_per_zone,
             index="zone_id",

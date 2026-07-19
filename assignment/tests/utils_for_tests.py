@@ -5,6 +5,7 @@ Last modified: November 27th, 2023
 """
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,8 +17,9 @@ NUM_STUDENT = 1000
 NUM_SCHOOLS = 100
 
 YEAR_PREFIX = f"{YEAR}{YEAR + 1}"
-TEMP_CLEANED_PAR_FOLDER = "tests/test_files/"
-TEMP_STUDENT_SAVE_FOLDER = "tests/test_files/"
+TEST_FILES_DIR = Path(__file__).parent / "test_files"
+TEMP_CLEANED_PAR_FOLDER = f"{TEST_FILES_DIR}/"
+TEMP_STUDENT_SAVE_FOLDER = f"{TEST_FILES_DIR}/"
 CLEANED_FOLDER_PATH = f"{TEMP_CLEANED_PAR_FOLDER}/Data/Cleaned/"
 SF_ZIPCODES = list(range(94102, 94135)) + [94158]
 

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from student_assignment.definitions import (
+from ..definitions import (
     K8S,
     LANGUAGE_PATHWAYS,
     SPECIAL_PROGRAMS,

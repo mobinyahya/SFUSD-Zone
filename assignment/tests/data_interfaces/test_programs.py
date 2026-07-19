@@ -10,8 +10,8 @@ Last modified: November 27th, 2023
 import numpy as np
 import pytest
 
-from student_assignment.configerator import Configerator
-from student_assignment.data_interfaces.programs import Programs
+from assignment.student_assignment.configerator import Configerator
+from assignment.student_assignment.data_interfaces.programs import Programs
 
 from ..utils_for_tests import *
 

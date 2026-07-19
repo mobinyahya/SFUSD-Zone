@@ -550,8 +550,7 @@ def test_run_student_assignment_uses_market_constructor_shape(tmp_path, monkeypa
     ]
 
 
-def test_student_assignment_guardrail_patch_allows_fractional_zone_counts():
-    matching_runner._patch_student_assignment_guardrail_pandas_compat()
+def test_student_assignment_guardrail_allows_fractional_zone_counts():
     from assignment.student_assignment.da.guardrail_setup import GuardrailSetup
 
     fake_guardrail = type("FakeGuardrail", (), {})()
@@ -575,8 +574,7 @@ def test_student_assignment_guardrail_patch_allows_fractional_zone_counts():
     assert zone_frac.loc[1, 1] == 0.5
 
 
-def test_student_assignment_empty_excess_match_patch_ignores_empty_heap():
-    matching_runner._patch_student_assignment_empty_excess_match_compat()
+def test_student_assignment_empty_excess_match_ignores_empty_heap():
     from assignment.student_assignment.da.da import School
 
     school = School(index=-1, capacity=-1)
@@ -746,13 +744,11 @@ def _install_fake_market_generator(monkeypatch):
         instances = []
         executions = 0
         seen = []
-        active_configurator = None
 
-        def __init__(self, estimate_path=None, assignment_path=None):
+        def __init__(self, estimate_path=None, assignment_path=None, config=None):
             self.estimate_path = estimate_path
-            self.configurator = FakeMarketGenerator.active_configurator
-            assert self.configurator is not None
-            self.config = self.configurator.config
+            assert config is not None
+            self.config = config
             self.priority_generator = FakePriorityGenerator(self)
             self.preference_generator = FakePreferenceGenerator(self)
             self._set_up_save_folder(assignment_path)
@@ -784,17 +780,6 @@ def _install_fake_market_generator(monkeypatch):
         matching_runner,
         "_market_generator_class",
         lambda: FakeMarketGenerator,
-    )
-
-    def fake_install_student_assignment_config(config):
-        configurator = matching_runner._StaticConfigurator(config)
-        FakeMarketGenerator.active_configurator = configurator
-        return configurator
-
-    monkeypatch.setattr(
-        matching_runner,
-        "_install_student_assignment_config",
-        fake_install_student_assignment_config,
     )
     return FakeMarketGenerator, FakePriorityGenerator, FakePreferenceGenerator
 

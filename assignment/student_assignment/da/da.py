@@ -25,7 +25,7 @@ class School:
         return self.capacity > 0
 
     def has_excess_matches(self):
-        return self.capacity < len(self.matches)
+        return bool(self.matches) and self.capacity < len(self.matches)
 
     def give_lowest_priority(self):
         if self.lowest_priority_match is None:

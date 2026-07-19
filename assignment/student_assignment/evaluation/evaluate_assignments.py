@@ -3,7 +3,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from student_assignment.market_generator.school_choice_market_generator import (
+from ..market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
 
@@ -80,7 +80,7 @@ class EvaluateAssignments:
         metric_cols = [x for x in results.columns if x not in label_cols]
         metrics = results[metric_cols]
         metrics = metrics.apply(pd.to_numeric, errors="coerce")
-        metrics = metrics.groupby("sim_number").mean()
+        metrics = metrics.groupby("sim_number").mean(numeric_only=True)
 
         results.loc[:, "Iterations"] = 1
         count = results[["sim_number", "Iterations"]]

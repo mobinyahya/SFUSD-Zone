@@ -11,11 +11,11 @@ Last modified: November 26th, 2023
 import numpy as np
 import pytest
 
-from student_assignment.configerator import Configerator
-from student_assignment.market_generator.priority_generator import (
+from assignment.student_assignment.configerator import Configerator
+from assignment.student_assignment.market_generator.priority_generator import (
     PriorityGenerator,
 )
-from student_assignment.market_generator.school_choice_market import (
+from assignment.student_assignment.market_generator.school_choice_market import (
     SchoolChoiceMarket,
 )
 

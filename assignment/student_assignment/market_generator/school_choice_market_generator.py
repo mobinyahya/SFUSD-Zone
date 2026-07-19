@@ -18,15 +18,22 @@ from .school_choice_market import SchoolChoiceMarket
 
 
 class MarketGenerator(SchoolChoiceMarket):
-    def __init__(self, estimate_path: str = None, assignment_path: str = None):
+    def __init__(
+        self,
+        estimate_path: str = None,
+        assignment_path: str = None,
+        config: dict | None = None,
+    ):
         """Initialize market generator.
 
         Args:
             estimate_path (str, optional): path to folder with estimated utility model parameters.
                 Defaults to None, meaning we use the estimate path specified in the config.
             assignment_path (str, optional): path to folder to save assignments. Defaults to None.
+            config (dict, optional): in-memory configuration. Defaults to loading the
+                configuration through Configerator.
         """
-        super().__init__(estimate_path)
+        super().__init__(estimate_path, config=config)
         self._set_up_save_folder(assignment_path)
         self.priority_generator = PriorityGenerator(self)
         self.preference_generator = PreferenceGenerator(self)

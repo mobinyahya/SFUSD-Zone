@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import re
-from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
-from pandas.core.groupby.generic import DataFrameGroupBy
 
 
 CHOICE_AVG_STUDENT_DISTANCE = "choice_avg_student_distance"
@@ -163,9 +161,7 @@ def prepare_assignment_df(
 
 def choice_metrics_for_assignment(assignments: pd.DataFrame) -> dict[str, Any]:
     evaluator = _match_evaluator_for_assignment(assignments)
-    with _dependency_numeric_groupby_mean():
-        _guard_empty_dependency_methods(evaluator)
-        paper_metrics = evaluator.eval_assignment_paper_metrics()
+    paper_metrics = evaluator.eval_assignment_paper_metrics()
     metrics = dependency_metrics_to_choice_metrics(paper_metrics)
     metrics.update(additional_choice_metrics(evaluator.student_data))
     return metrics
@@ -431,70 +427,6 @@ def _distance_data_for_assignment(
     )
     table.index.name = "studentno"
     return table
-
-
-@contextmanager
-def _dependency_numeric_groupby_mean():
-    original = DataFrameGroupBy.mean
-
-    def mean(self, *args, **kwargs):
-        kwargs.setdefault("numeric_only", True)
-        return original(self, *args, **kwargs)
-
-    DataFrameGroupBy.mean = mean
-    try:
-        yield
-    finally:
-        DataFrameGroupBy.mean = original
-
-
-def _guard_empty_dependency_methods(evaluator) -> None:
-    original_metric_frl_concentration = evaluator.metric_FRL_concentration
-    original_metric_dissimilarity = evaluator.metric_dissimilarity
-    original_dissimilarity = evaluator.dissimilarity
-
-    def metric_frl_concentration(all_students, group_students, threshold):
-        if len(group_students) == 0:
-            return np.nan
-        return original_metric_frl_concentration(
-            all_students, group_students, threshold
-        )
-
-    def metric_dissimilarity(group_students, total_enrollment):
-        if (
-            len(group_students) == 0
-            or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0
-        ):
-            return np.nan
-        return original_metric_dissimilarity(group_students, total_enrollment)
-
-    def dissimilarity(group_students, total_enrollment):
-        if (
-            len(group_students) == 0
-            or pd.to_numeric(total_enrollment, errors="coerce").sum() == 0
-        ):
-            return np.nan
-        return original_dissimilarity(group_students, total_enrollment)
-
-    def metric_bg_cohesion(assigned_students, num):
-        if len(assigned_students) == 0:
-            return np.nan
-        cohesion = assigned_students.groupby("census_blockgroup").apply(
-            lambda group: evaluator._bgcohesion(group, num)
-        )
-        values = (
-            cohesion.to_numpy().reshape(-1)
-            if isinstance(cohesion, pd.DataFrame)
-            else cohesion
-        )
-        numeric = pd.to_numeric(values, errors="coerce")
-        numeric = pd.Series(numeric).dropna()
-        return float(numeric.sum() / len(assigned_students))
-
-    evaluator.metric_FRL_concentration = metric_frl_concentration
-    evaluator.metric_dissimilarity = metric_dissimilarity
-    evaluator.dissimilarity = dissimilarity
-    evaluator.metric_BG_cohesion = metric_bg_cohesion
 
 
 def ensure_studentno(df: pd.DataFrame) -> pd.DataFrame:
