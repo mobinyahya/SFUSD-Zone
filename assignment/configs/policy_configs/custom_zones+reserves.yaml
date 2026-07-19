@@ -1,0 +1,51 @@
+# Example policy config using custom-generated zones from pickle files.
+# 
+# Before using:
+# 1. Run: python scripts/generate_zone_from_pickle.py --input path/to/zone.pkl --output data/zones/custom-zone.csv
+# 2. Add the zone path to local_path_config.yaml under paths.zone-files
+# 3. Update the policy name below to match your zone-file key
+
+assignment-algorithm: DA
+
+ctip-options:
+- 1
+
+restrict-zone: true
+guard-rails: 1
+
+reserve-settings:
+  column: median_hh_income
+  thresholds: [95292]
+  lower_disadvantaged: true
+  citywide_only: false
+  reserve_fraction: [0.57, 0.43]
+
+non_designation_boost: 128
+soft_reserve_boost: 64
+
+# UPDATE THIS to match your zone-file key in local_path_config.yaml
+policies:
+- custom-6zone
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+sibling-access: true
+
+# Set based on your zone building blocks:
+# - "block_group" for census block groups
+# - "block" for census blocks  
+# - "attendance_area" for school attendance areas
+zone-building-blocks: block_group
+
+designate: true
+
+ties-options:
+- MTB

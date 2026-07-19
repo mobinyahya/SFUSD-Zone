@@ -237,7 +237,7 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
     """Per-school rows with capacities, quality scores and the unit column."""
     if cfg.new_schools:
         df = pd.read_csv(
-            f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+            f"{SFUSD_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
         )
     else:
         df = pd.read_csv(f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv")
@@ -264,7 +264,7 @@ def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
     """
     if cfg.new_schools:
         df = pd.read_csv(
-            f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+            f"{SFUSD_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
         )
     else:
         df = pd.read_csv(f"{SFUSD_PATH}/Data/Cleaned/schools_rehauled_1819.csv")
@@ -281,7 +281,7 @@ def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
 
 def load_school_coordinates() -> pd.DataFrame:
     """Canonical school points used by config-independent geometry artifacts."""
-    path = f"{DROPBOX_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
+    path = f"{SFUSD_PATH}/Data/Cleaned/schools_table_for_zone_development_updated.csv"
     df = pd.read_csv(path)
     required = {"school_id", "lat", "lon"}
     missing = required - set(df.columns)
@@ -292,7 +292,7 @@ def load_school_coordinates() -> pd.DataFrame:
 
 def _attach_capacity(df: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     programs = pd.read_csv(
-        f"{DROPBOX_PATH}/Data/Cleaned/stanford_capacities_12.23.21.csv"
+        f"{SFUSD_PATH}/Data/Cleaned/stanford_capacities_12.23.21.csv"
     )
     programs.rename(
         columns={

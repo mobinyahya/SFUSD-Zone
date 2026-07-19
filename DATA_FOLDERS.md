@@ -19,7 +19,7 @@ make the directory layouts easier to read.
 |---|---|---|---|
 | `REPO` | Repository root | Process checkout | Code, checked-in configuration, and default local outputs |
 | `SFUSD_SHARED` | `/share/data/school_choice` | `get_sfusd_path(False)` | Shared source data, graph/artifact caches, and HPC results |
-| `SFUSD_USER` | `~/sfusd-local-data/zones/SFUSD` | `get_dropbox_path(False)` | Per-user school/capacity data and geographic lookup tables |
+| `SFUSD_USER` | `~/sfusd-local-data/zones/SFUSD` | `get_dropbox_path(False)` | Per-user geographic lookup tables and legacy graph artifacts |
 | `SFUSD_LOCAL` | `~/SFUSD` | `get_sfusd_path(True)` | Legacy local-mode source data |
 | `SFUSD_DROPBOX` | `~/Dropbox/SFUSD` | `get_dropbox_path(True)` | Legacy local-mode geographic lookup tables |
 
@@ -67,10 +67,16 @@ choice utility evaluation, metrics, and matching.
 | `enrolled_<YY><YY+1>.csv` | `optimization/data/loaders.py` | Kindergarten enrollment rows used when `drop_optout: true` |
 | `student_<YY><YY+1>.csv` | `optimization/data/loaders.py` | Kindergarten student rows used when `drop_optout: false` |
 | `schools_rehauled_1819.csv` | Optimization loaders | Legacy school table used when `new_schools: false` |
+| `schools_table_for_zone_development_updated.csv` | Optimization loaders | School IDs, census locations, coordinates, categories, and school metrics; used when `new_schools: true` |
+| `stanford_capacities_12.23.21.csv` | Optimization loaders | Program capacities by scenario and school |
 | `programs_withMissionBay_2324.csv` | Program metrics | Fallback school/program mapping when graph data does not contain programs |
 | `r1_filter_student_without_specialprogs_2324.csv` | MNL choice model and matching | Student demographics, locations, and ranked choices |
 | `programs_without_specialprogs_2324.csv` | Matching | Programs available to the assignment simulation |
 | `schools_rehauled_withMissionBay_2324.csv` | Matching | Schools used by the assignment simulation |
+
+The school table is also the canonical source of school point coordinates used
+for map markers and closer-neighbor calculations. Census polygon geometry still
+comes from the shapefile.
 
 The directory also receives generated student caches:
 
@@ -83,20 +89,6 @@ These caches combine and filter the configured source years. The key includes
 Delete the matching cache file to force re-ingestion after source CSVs change.
 Because the cache is written beside source data, an uncached run needs write
 permission to this directory.
-
-### `SFUSD_USER/Data/Cleaned/`
-
-The current loaders obtain newer school and capacity data from the per-user
-mirror rather than `SFUSD_SHARED`:
-
-| File | Description |
-|---|---|
-| `schools_table_for_zone_development_updated.csv` | School IDs, census locations, coordinates, categories, and school metrics; used when `new_schools: true` |
-| `stanford_capacities_12.23.21.csv` | Program capacities by scenario and school |
-
-The school table is also the canonical source of school point coordinates used
-for map markers and closer-neighbor calculations. Census polygon geometry still
-comes from the shapefile.
 
 ### `SFUSD_SHARED/shapefiles/`
 

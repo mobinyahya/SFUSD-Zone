@@ -1,0 +1,16 @@
+school_id,school_name,school_name_long,lat,lon,zip,category,grades,greatschools_rating,ela_color,math_color,chronic_color,suspension_color,index,Block,BlockGroup,Tract
+401,Fake School 401,Fake Elementary School 401,37.794742,-122.401149,94112,Attendance,KG-5,5,Green,Green,Green,Green,0,60750100000001,60750100001,6075010001
+405,Fake School 405,Fake Elementary School 405,37.778797,-122.491506,94127,Attendance,KG-5,1,Green,Green,Green,Green,1,60750100001001,60750100101,6075010011
+413,Fake School 413,Fake Elementary School 413,37.718199,-122.423678,94120,Attendance,KG-5,10,Green,Green,Green,Green,2,60750100002001,60750100201,6075010021
+420,Fake School 420,Fake Elementary School 420,37.785605,-122.504343,94134,Attendance,KG-5,8,Green,Green,Green,Green,3,60750100003001,60750100301,6075010031
+435,Fake School 435,Fake Elementary School 435,37.78294,-122.400136,94134,Attendance,KG-5,5,Green,Green,Green,Green,4,60750100004001,60750100401,6075010041
+449,Fake School 449,Fake Elementary School 449,37.728689,-122.438166,94112,Attendance,KG-5,8,Green,Green,Green,Green,5,60750100005001,60750100501,6075010051
+456,Fake School 456,Fake Elementary School 456,37.757383,-122.417298,94130,Attendance,KG-5,7,Green,Green,Green,Green,6,60750100006001,60750100601,6075010061
+478,Fake School 478,Fake Elementary School 478,37.758756,-122.492696,94105,Attendance,KG-5,4,Green,Green,Green,Green,7,60750100007001,60750100701,6075010071
+485,Fake School 485,Fake Elementary School 485,37.742969,-122.483492,94106,Attendance,KG-5,7,Green,Green,Green,Green,8,60750100008001,60750100801,6075010081
+497,Fake School 497,Fake Elementary School 497,37.752323,-122.436334,94123,Attendance,KG-5,7,Green,Green,Green,Green,9,60750100009001,60750100901,6075010091
+509,Fake School 509,Fake Elementary School 509,37.781698,-122.396064,94110,Attendance,KG-5,6,Green,Green,Green,Green,10,60750100010001,60750101001,6075010101
+521,Fake School 521,Fake Elementary School 521,37.718826,-122.434248,94119,Attendance,KG-5,2,Green,Green,Green,Green,11,60750100011001,60750101101,6075010111
+537,Fake School 537,Fake Elementary School 537,37.768335,-122.432032,94122,Attendance,KG-5,3,Green,Green,Green,Green,12,60750100012001,60750101201,6075010121
+549,Fake School 549,Fake Elementary School 549,37.741237,-122.40421,94108,Attendance,KG-5,1,Green,Green,Green,Green,13,60750100013001,60750101301,6075010131
+562,Fake School 562,Fake Elementary School 562,37.756399,-122.475775,94105,Attendance,KG-5,4,Green,Green,Green,Green,14,60750100014001,60750101401,6075010141

@@ -1,0 +1,42 @@
+# Policy config for distance_05_1_2+reserves_06frl
+
+assignment-algorithm: DA
+ctip-options:
+- 1
+# NOTE: lower_disadvantaged: true selects students with LOWER freelunch_prob values,
+# which is counterintuitive because higher freelunch_prob indicates higher need.
+# This flag remains true here for legacy behavior; revisit if revising reserve logic.
+
+restrict-zone: false
+guard-rails: 1
+reserve-settings: {
+  "column": "freelunch_prob", 
+  "thresholds": "percentile:60", 
+  "lower_disadvantaged": true, 
+  "reserve_fraction": [0.6, 0.4]
+  }
+non_designation_boost: 128
+soft_reserve_boost: 64
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 0
+  distance: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+distance-priority:
+  thresholds: [3]
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB 

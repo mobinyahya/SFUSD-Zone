@@ -1,0 +1,1185 @@
+grade: KG
+iterations:
+  end: 25
+  start: 5
+paths:
+  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_selected/
+  citywide-or-lp-zones:
+    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+  estimate-path: <SFUSD_CHOICE_PATH>/local_outputs/models/selected_2223_k1_prog_gesplit/estimates_2324.csv
+  program-data: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
+  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+  sfusd: /share/data/school_choice/Data/
+  student-data: /share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
+  student-save: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_selected/precomputed/
+  zone-files:
+    10zone: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+    13zone: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+    Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5.csv
+    Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
+    Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4.csv
+    Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5.csv
+    Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone.csv
+    Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone.csv
+    Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5.csv
+    Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone.csv
+    Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone.csv
+    Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone.csv
+    Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5.csv
+    Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone.csv
+    Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4.csv
+    Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone.csv
+    Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7.csv
+    Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5.csv
+    Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
+    Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2.csv
+    Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6.csv
+    Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7.csv
+    Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10.csv
+    Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2.csv
+    Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10.csv
+    Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone.csv
+    Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
+    Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
+    Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2.csv
+    Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone.csv
+    Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1.csv
+    Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2.csv
+    Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6.csv
+    Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6.csv
+    Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4.csv
+    Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1.csv
+    Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5.csv
+    Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2.csv
+    Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3.csv
+    Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3.csv
+    Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3.csv
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5.csv
+    Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3.csv
+    Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2.csv
+    Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5.csv
+    Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5.csv
+    Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3.csv
+    Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3.csv
+    Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5.csv
+    Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3.csv
+    Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5.csv
+    Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4.csv
+    Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3.csv
+    Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1.csv
+    Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5.csv
+    Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone.csv
+    Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
+    Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5.csv
+    Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6.csv
+    Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone.csv
+    Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6.csv
+    Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone.csv
+    Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone.csv
+    Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5.csv
+    Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6.csv
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone.csv
+    Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone.csv
+    Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5.csv
+    Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6.csv
+    Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone.csv
+    Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone.csv
+    Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5.csv
+    Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6.csv
+    Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone.csv
+    Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone.csv
+    Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5.csv
+    Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone.csv
+    Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7.csv
+    Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6.csv
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3.csv
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4.csv
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone.csv
+    Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2.csv
+    Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5.csv
+    Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone.csv
+    Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone.csv
+    Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31.csv
+    Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone.csv
+    Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32.csv
+    Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone.csv
+    Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32.csv
+    Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31.csv
+    Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone.csv
+    Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32.csv
+    Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone.csv
+    Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31.csv
+    Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31.csv
+    Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone.csv
+    Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32.csv
+    Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone.csv
+    Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26.csv
+    Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24.csv
+    Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25.csv
+    Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31.csv
+    Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27.csv
+    Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25.csv
+r1-only: true
+random-seed: 2023
+remove-special-lps: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- small_zones+no_reserves
+- small_zones+reserves
+- small_zones+reserves_05frl
+- small_zones+reserves_06frl
+- medium_zones+no_reserves
+- medium_zones+reserves
+- medium_zones+reserves_05frl
+- medium_zones+reserves_06frl
+- distance_05_1_2+reserves
+- distance_05_1_2+reserves_05frl
+- distance_05_1_2+reserves_06frl
+- status_quo
+- status_quo+guardrails
+- status_quo+reserves
+- status_quo+reserves_05frl
+- status_quo+reserves_06frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5+no_reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5+reserves
+- generated/Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6+reserves_05frl
+- generated/Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5+no_reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5+reserves
+- generated/Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2+reserves_05frl
+- generated/Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10+no_reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10+reserves
+- generated/Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone+no_reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone+reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1+no_reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1+reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6+no_reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6+reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2+no_reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2+reserves
+- generated/Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone+no_reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone+reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1+no_reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1+reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2+no_reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2+reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2+reserves_05frl
+- generated/Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6+no_reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6+reserves
+- generated/Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3+reserves_05frl
+- generated/Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3+no_reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3+reserves
+- generated/Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2+no_reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2+reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4+no_reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4+reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3+no_reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3+reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1+no_reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1+reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1+reserves_05frl
+- generated/Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5+no_reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5+reserves
+- generated/Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2+reserves_05frl
+- generated/Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5+no_reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5+reserves
+- generated/Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32+no_reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32+reserves
+- generated/Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31+no_reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31+reserves
+- generated/Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27+reserves_05frl
+- generated/Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25+no_reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25+reserves
+- generated/Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25+reserves_05frl
+utility-model:
+  designate-lp-for-all: false
+  enable: true
+  list-length: 0.8*round(real_length)
+  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_011926/utility_matrix.csv
+year: 23

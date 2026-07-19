@@ -1,0 +1,27 @@
+output_dir: metrics/all_prog_gesplit/partial_t11_t12_t13_t10_fwd_r2
+
+runs:
+  - label: "t10_fwd_r2_homoph_frl_2324"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/t10_fwd_r2_homoph_frl_2324/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: "t11_2223_k3_prog_gesplit"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/t11_2223_k3_prog_gesplit/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: "t12_2223_k3_prog_gesplit"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/t12_2223_k3_prog_gesplit/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: "t13_2223_k3_prog_gesplit"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/t13_2223_k3_prog_gesplit/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+

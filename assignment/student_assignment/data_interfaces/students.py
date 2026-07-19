@@ -1,0 +1,715 @@
+"""Data interface for students."""
+
+import os
+import pathlib
+import pickle
+
+import numpy as np
+import pandas as pd
+
+from student_assignment.definitions.constants import (
+    LANGUAGE_PATHWAY_PRIORITIES,
+    SPECIAL_PROGRAMS,
+)
+
+
+class Students:
+    def __init__(
+        self,
+        student_data_file: pathlib.Path,
+        programs,
+        school_data_file: pathlib.Path,
+        block_data_file: pathlib.Path,
+        config,
+    ):
+        self.programs = programs
+        self.program_df = programs.program_df
+        self.school_data_file = school_data_file
+        print("Loading school data from:", school_data_file)
+        self.student_data_file = student_data_file
+        self.block_data_file = block_data_file
+        self.config = config
+
+        self.output_path = pathlib.Path(
+            self.config["paths"]["student-save"]
+        ).expanduser()
+
+        self.year = self.config["year"]
+        self.num_programs = programs.num_programs
+        self._create_output_path()
+        self.qualified_program_dict = None
+
+        self.student_data = self._build_student_data()
+        if self.config.get("remove-special-lps", False):
+            self._remove_students_with_special_lps()
+        else:
+            # Record the line to keep for students to remove rows in utility files.
+            # if some rows are removed. Record as None to indicate no rows are removed.
+            self.only_keep_rows = None
+        self.n = len(self.student_data.index)  # number of student
+        self._round_participation = self._calc_round_participation()
+        self.distance_data = self.get_distances()
+
+        # subset students (note: student data needs to be indexed by studentno)
+        self.student_data.set_index("studentno", inplace=True)
+
+        # create idx2studentno and studentno2idx functions (note: student data needs to be indexed by student no)
+        self.student_data.reset_index(inplace=True)
+        self.idx2studentno = dict(
+            zip(self.student_data.index, self.student_data["studentno"])
+        )
+        self.studentno2idx = dict(
+            zip(self.student_data["studentno"], self.student_data.index)
+        )
+        self.student_data.set_index("studentno", inplace=True)
+        self.get_diversity_categories()
+
+        self._prefs = {}
+        self._sibling = None
+        self._prek = None
+
+    def _create_output_path(self):
+        self.output_path.mkdir(parents=True, exist_ok=True)
+
+    def _build_student_data(
+        self,
+    ):
+        """Load student data table and student location data."""
+        print(f"getting student data from {self.student_data_file}...", end="")
+        st_df = pd.read_csv(
+            self.student_data_file, low_memory=False
+        )  # , index_col=0)
+        st_df = st_df.loc[st_df.grade == self.config["grade"]]
+        st_df.reset_index(inplace=True, drop=True)
+        self.rounds = max(
+            [int(x[1]) for x in st_df.columns if "_ranked_idschool" in x]
+        )
+
+        st_df = self._make_cols_lists(st_df)
+        print("done")
+        return st_df
+
+    def _str_to_list(self, x):
+        items = x[1:-1].split(",")
+        return [y.strip() for y in items]
+
+    def _make_cols_lists(self, df):
+        """Helper function used to format the ranking lists as read in from the
+        student data file.
+        """
+        for round in range(1, self.rounds + 1):
+            # format column name
+            col1 = f"r{round}_ranked_idschool"
+            col2 = f"r{round}_programs"
+            if col1 in df.columns:
+                df[col1] = df[col1].fillna("[]")
+                df[col1] = df[col1].apply(self._str_to_list)
+
+                df[col1] = df[col1].apply(
+                    lambda x: [int(val) for val in x if "" not in x]
+                )
+            if col2 in df.columns:
+                print(col2)
+                df[col2] = df[col2].fillna("[]")
+
+                # print the row where this is failing: NameError: name 'nan' is not defined
+                # print("Failing for" + str(df[df[col2].apply(lambda x: "nan" in x)].index.tolist()))
+                df[col2] = df[col2].apply(lambda x: eval(x))
+
+        return df
+
+    def _remove_students_with_special_lps(self):
+        """Remove students who rank special programs in round 1."""
+        student_data = self.student_data
+        student_data["is_special"] = student_data["r1_programs"].apply(
+            lambda x: (
+                False
+                if str(x) == "nan"
+                else len(set(x).intersection(SPECIAL_PROGRAMS)) > 0
+            )
+        )
+        # Record the rows that we keep to filter utility models later.
+        self.only_keep_rows = student_data.index[
+            student_data["is_special"] == 0
+        ].to_numpy()
+        student_data = student_data[student_data["is_special"] == 0].drop(
+            columns=["is_special"]
+        )
+        student_data.reset_index(inplace=True, drop=True)
+        self.student_data = student_data
+
+    def _make_student_preferences(self, round, code2idx):
+        """Compute and save student preferences for a specified round in
+        matrix format.
+        """
+        print("computing student preferences...", end="")
+        st_df = self.student_data
+        prefs = np.zeros((self.n, self.num_programs), dtype=int)
+        col1 = f"r{round}_ranked_idschool"
+        col2 = f"r{round}_programs"
+        indexcounter = 0
+        for idx, row in st_df.iterrows():
+            codes = []
+            for j, sch in enumerate(row[col1]):
+                codes.append(
+                    f"{str(sch)}-{row[col2][j]}-{self.config['grade']}"
+                )
+            prog_idxs = code2idx(codes)
+            prefs[indexcounter, 0 : len(prog_idxs)] = prog_idxs
+            indexcounter += 1
+
+        # don't save over computed preferences if subset of students
+        gr = f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
+        if self.student_data_file.split("/")[-1][:-9] == "drop_optout":
+            filename = (
+                self.output_path
+                / f"student_preferences_drop_optout_r{round}_{gr}{self.year}{self.year + 1}.csv"
+            )
+            # filename = self.output_path / 'student_preferences_r{}_{}{}.csv'.format(round, self.year, self.year+1)
+            with open(filename, "wb") as f:
+                pickle.dump(prefs, f)
+            print(f"saved student preference data to {filename}")
+        return prefs
+
+    def student_preferences(self, round, code2idx):
+        """Get student preference list of lists for a given round. To get the
+        student with index i's 2nd choice, use prefs[i][1] (zero indexed)
+        Checks to see if it's been loaded already, then checks to see if it's
+        been saved to file, then computes it from scratch if both fail.
+        """
+        if round in self._prefs.keys():
+            return self._prefs[round]
+        gr = f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
+        if str(self.student_data_file).split("/")[-1][:-9] == "drop_optout":
+            filename = (
+                self.output_path
+                / f"student_preferences_drop_optout_r{round}_{gr}{self.year}{self.year + 1}.csv"
+            )
+        else:
+            filename = (
+                self.output_path
+                / f"student_preferences_r{round}_{gr}{self.year}{self.year + 1}.csv"
+            )
+
+        if filename.is_file():
+            print("loading preference data...", end="")
+            with open(filename, "rb") as f:
+                pr = pickle.load(f)
+            self._prefs[round] = pr
+            print(f"loaded student preference data from {filename}")
+            return pr
+        pr = self._make_student_preferences(round, code2idx)
+        self._prefs[round] = pr
+        return pr
+
+    def _make_distance_ranking(self, filename):
+        """Create (number of students) by (number of programs) array indicating
+        the pairwise distance between each student and school. Use program code
+        file to translate between program code and index, and self.studentno2idx
+        dictionary to go from student number to index.
+        """
+        print("computing distances...", end="")
+        # codes = pd.read_csv(self.program_codes_file)
+        # codes["school_id"] = codes["code"].apply(lambda x: int(x[:3]))
+        codes = self.program_df[["program_id", "school_id"]]
+
+        # get school latitude and longitude DataFrame
+        sch_latlong = os.path.expanduser(self.school_data_file)
+        sc_ll = pd.read_csv(sch_latlong)
+
+        codes = codes.merge(sc_ll, how="left", on="school_id")
+        codes.loc[:, "key"] = 0
+
+        tmp = self.student_data[["studentno", "latitude", "longitude"]].copy()
+        # if student lat lon is 0, 0, treat that as a missing value
+        tmp["latitude"] = tmp["latitude"].replace({0: np.nan})
+        tmp["longitude"] = tmp["longitude"].replace({0: np.nan})
+        tmp.loc[:, "key"] = 0
+
+        tmp = tmp.merge(codes, how="outer", on="key")
+
+        def get_distance(row):
+            return (
+                6371.01
+                * np.arccos(
+                    np.sin(row["lat"] * np.pi / 180)
+                    * np.sin(row["latitude"] * np.pi / 180)
+                    + np.cos(row["lat"] * np.pi / 180)
+                    * np.cos(row["latitude"] * np.pi / 180)
+                    * np.cos((row["lon"] - row["longitude"]) * np.pi / 180)
+                )
+                * 0.621371
+            )
+
+        tmp["distance"] = tmp.apply(get_distance, axis=1)
+
+        table = pd.pivot_table(
+            tmp,
+            values="distance",
+            index=["studentno"],
+            columns=["program_id"],
+            aggfunc="sum",
+        )
+
+        # Manually zero out distances of students with any distance larger than
+        # 10, indicating that the students' addresses are outside of SFUSD.
+        table.loc[table.ge(10).any(axis=1), :] = 0
+
+        # don't save over computed distances if subset of students
+        table.to_csv(filename)
+        print("Done computing distance data.")
+        return table
+
+    def get_distances(self):
+        """Load student distances to each program if already calculated,
+        otherwise compute them. Description of array in _make_distance_ranking
+        docstring.
+        """
+        f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
+        print("enters")
+        if str(self.student_data_file).split("/")[-1][:-9] == "drop_optout":
+            print("DISTANCES WITH DROP OPTOUT STUDENTS")
+            filename = (
+                self.output_path
+                / "student_program_distances_dropoptout_{}_{}{}.csv".format(
+                    self.config["grade"], self.year, self.year + 1
+                )
+            )
+        else:
+            print(self.output_path)
+            filename = (
+                self.output_path
+                / "student_program_distances_{}_{}{}.csv".format(
+                    self.config["grade"], self.year, self.year + 1
+                )
+            )
+
+        if os.path.isfile(filename):
+            print("loading distance data from", filename)
+            dist = pd.read_csv(filename, index_col="studentno")
+            print("done")
+        else:
+            dist = self._make_distance_ranking(filename)
+        # remove the columns that are not in the program list. Some programs are not in the dist columns as well
+        columns_to_keep = [col for col in self.program_df["program_id"].values]
+        print(
+            "number of columns removed from distance data:",
+            len(dist.columns) - len(columns_to_keep),
+        )
+        print(
+            "program_id not in distance data:",
+            set(self.program_df["program_id"].values) - set(dist.columns),
+        )
+        ## FIXME: here we simply add the missing columns based on the school (first 3 digits of program_id)
+        missing_columns = set(self.program_df["program_id"].values) - set(
+            dist.columns
+        )
+        for col in missing_columns:
+            school_id = int(col.split("-")[0])
+            # find another program in the same school that is in dist
+            similar_programs = self.program_df[
+                self.program_df["school_id"] == school_id
+            ]["program_id"].values
+            found = False
+            for sim_prog in similar_programs:
+                if sim_prog in dist.columns:
+                    dist[col] = dist[sim_prog]
+                    found = True
+                    print(
+                        f"Added missing distance column {col} based on similar program {sim_prog}"
+                    )
+                    break
+            if not found:
+                print(
+                    (
+                        "Warning: Could not find similar program for missing distance column",
+                        col,
+                    )
+                )
+                print("*" * 50)
+                dist[col] = 9999  # assign a large distance
+        dist = dist[columns_to_keep]
+        return dist
+
+    def _calc_round_participation(self):
+        """Array of size 3 for each student indicating in which rounds the
+        student participated.
+        """
+        participated = np.zeros((self.n, self.rounds), dtype=int)
+
+        def find_null(x):
+            return 1 if len(x) > 0 else 0
+
+        for r in range(self.rounds):
+            name = f"r{r + 1}_ranked_idschool"  # column names 1 indexed
+            if name not in self.student_data.columns:
+                participated[:, r] = 0
+            else:
+                participated[:, r] = self.student_data[name].apply(find_null)
+        return participated
+
+    @property
+    def round_participation(self):
+        """Array of size 3 for each student indicating in which rounds the
+        student participated.
+        """
+        return self._round_participation
+
+    @property
+    def first_round(self):
+        """Array of size 3 for each student indicating in which rounds the
+        student participated.
+        """
+        return np.argmax(self._round_participation, axis=1)
+
+    @property
+    def frl(self):
+        """Return a pd.Series of length n containing the free and reduced lunch
+        percentage of that student's block (0 for missing data).
+        """
+        free = self.student_data["freelunch_prob"].fillna(value=0)
+        reduced = self.student_data["reducedlunch_prob"].fillna(value=0)
+        return free + reduced
+
+    @property
+    def ctip(self):
+        """Return an array of length n containing 1 when the student has CTIP1
+        priority, 0 otherwise (0 for missing data as well).
+        """
+        vec = (
+            self.student_data["ctip1"]
+            .fillna(value=0)
+            .astype("int64")
+            .to_numpy()
+        )
+        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+
+    @property
+    def new_ctip(self):
+        """Return an array of length n containing 1 when the student has new_CTIP1
+        priority, 0 otherwise (0 for missing data as well).
+        """
+        # Configure via paths.new-ctip-path; legacy cluster path as default.
+        new_ctip_path = self.config["paths"].get(
+            "new-ctip-path",
+            "/share/data/school_choice/Data/Tie-breakers/ETB_2024.npy",
+        )
+        new_ctip = np.load(new_ctip_path)
+        self.student_data["new_ctip1"] = self.student_data[
+            "census_block"
+        ].apply(lambda x: 1 if x in new_ctip else 0)
+        vec = (
+            self.student_data["new_ctip1"]
+            .fillna(value=0)
+            .astype("int64")
+            .to_numpy()
+        )
+        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+
+    @property
+    def new_ctip_blockgroup(self):
+        """Return an array of length n containing 1 when the student has new_CTIP1 (Blockgroup solution)
+        priority, 0 otherwise (0 for missing data as well).
+        """
+        # Configure via paths.new-ctip-blockgroup-path; legacy default.
+        new_ctip_bg_path = self.config["paths"].get(
+            "new-ctip-blockgroup-path",
+            "/share/data/school_choice/Data/Tie-breakers/ETB_2024_BlockGroup.npy",
+        )
+        new_ctip_bg = np.load(new_ctip_bg_path)
+        self.student_data["new_ctip_blockgroup1"] = self.student_data[
+            "census_blockgroup"
+        ].apply(lambda x: 1 if x in new_ctip_bg else 0)
+        vec = (
+            self.student_data["new_ctip_blockgroup1"]
+            .fillna(value=0)
+            .astype("int64")
+            .to_numpy()
+        )
+        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+
+    @property
+    def language_designation(self):
+        """Return an pd.Series of length n containing 1 when the student requested
+        language program designation priority, 0 otherwise (0 for missing data
+        as well), index is the student number.
+        """
+        return (
+            self.student_data["requestprogramdesignation"]
+            .fillna(value=0)
+            .astype("int64")
+        )
+
+    @property
+    def attendance_area(self):
+        """Return a pd.Series of length n containing the attendance area of each
+        student (0 if missing), index is the student number.
+        """
+        return (
+            self.student_data["idschoolattendance"]
+            .fillna(value=0)
+            .astype("int64")
+        )
+
+    @property
+    def enrolled(self):
+        """Return a pd.Series of enrolled or not."""
+        df = (
+            self.student_data["enrolled_idschool"]
+            .fillna(value=0)
+            .astype("int64")
+        )
+        # df = df[df > 0] = 1
+        return df
+
+    @property
+    def ethnicity(self):
+        """Return an pd.Series of length n containing the student's resolved
+        ethnicity code (epmpty string if missing), index is the student number.
+        """
+        return self.student_data["resolved_ethnicity"].fillna(value="")
+
+    @property
+    def bayview_to_all_ms(self):
+        return self.student_data.bayview_to_all_ms.to_numpy()
+
+    @property
+    def bayview_to_brown_ms(self):
+        return self.student_data.bayview_to_brown_ms.to_numpy()
+
+    @property
+    def brown_ms_to_hs(self):
+        return self.student_data.brown_ms_to_hs.to_numpy()
+
+    @property
+    def zip_94124(self):
+        return np.where(self.student_data.zipcode == 94124, 1, 0)
+
+    @property
+    def lowell_eligible(self):
+        return self.student_data.lowell_ranked.to_numpy()
+
+    @property
+    def sota_eligible(self):
+        return self.student_data.sota_ranked.to_numpy()
+
+    def sibling(self, programs):
+        """Return a (number of students) by (number of programs) array with 1s
+        indicating that student has sibling priority at that program. Sibling
+        priority is given to all programs at that school.
+        """
+        if self._sibling is not None:
+            return self._sibling
+        sibling = np.zeros((self.n, self.num_programs), dtype=int)
+        df = self.student_data.dropna(subset=["sibling"])
+        for idx, row in df.iterrows():
+            sib_schools = eval(row["sibling"])
+            st_idx = self.studentno2idx[idx]
+            for school in sib_schools:
+                if int(school) in programs.school_to_indices:
+                    program_list = [
+                        x - 1 for x in programs.school_to_indices[int(school)]
+                    ]
+                    sibling[st_idx, program_list] = 1
+        self._sibling = sibling
+        return sibling
+
+    def prek(self):
+        if self._prek is not None:
+            return self._prek
+        prek = np.zeros((self.n, self.num_programs), dtype=int)
+        df = self.student_data.dropna(subset=["sibling"])
+        for studentno, row in df.iterrows():
+            prek_id = eval(row["aaprek"]) + eval(row["prek"])
+            if prek_id:
+                program_idx = (
+                    self.programs.index(
+                        f"{prek_id[0]}-GE-{self.config['grade']}"
+                    )
+                    - 1
+                )
+                st_idx = self.studentno2idx[studentno]
+                prek[st_idx, program_idx] = 1
+        self._prek = prek
+        return prek
+
+    def language_pathway_priority(self, program_type2indexes):
+        language_pathway = np.zeros((self.n, self.num_programs), dtype=int)
+        for i, pw in enumerate(self.student_data.previous_pathway):
+            program_types = LANGUAGE_PATHWAY_PRIORITIES.get(pw, [])
+            indices = [
+                y - 1
+                for x in program_types
+                for y in program_type2indexes.get(x, [])
+            ]
+            language_pathway[i, indices] = 1
+        return language_pathway
+
+    def language_pathway_priority_kg(self, program_id2index):
+        language_pathway = np.zeros((self.n, self.num_programs), dtype=int)
+        for studentno, row in self.student_data.iterrows():
+            for r in [1, 2, 3]:
+                cohort = f"r{r}_cohortstring"
+                if cohort not in row or pd.isna(row[cohort]):
+                    continue
+                for idx in [
+                    i for i, x in enumerate(eval(row[cohort])) if "CL;" in x
+                ]:
+                    school = row[f"r{r}_ranked_idschool"][idx]
+                    program = row[f"r{r}_programs"][idx]
+                    program_id = f"{school}-{program}-{self.config['grade']}"
+                    if program_id in program_id2index:
+                        language_pathway[
+                            self.studentno2idx[studentno],
+                            program_id2index[program_id] - 1,
+                        ] = 1
+        return language_pathway
+
+    def language_pathway_sibling(self, program_id2index):
+        language_sibling = np.zeros((self.n, self.num_programs), dtype=int)
+        for i, x in enumerate(self.student_data.currentlpsibling):
+            indices = [
+                program_id2index[i] - 1
+                for i in eval(x)
+                if i in program_id2index
+            ]
+            language_sibling[i, indices] = 1
+        return language_sibling
+
+    def msf(self, school2indices):
+        msf_indicator = np.zeros((self.n, self.num_programs), dtype=int)
+        for i, ms in enumerate(self.student_data.msf):
+            if np.isnan(ms):
+                continue
+            indices = [x - 1 for x in school2indices[int(ms)]]
+            msf_indicator[i, indices] = 1
+        return msf_indicator
+
+    def _make_program_type_lists(self, df):
+        """Create column with each type of program applied to."""
+        for round in range(1, self.rounds + 1):
+            # format column name
+            col = f"r{round}_programs"
+            # format round rankings
+            if col not in self.student_data.columns:
+                continue
+            df[col] = df[col].fillna("")
+            # df[col] = df[col].apply(lambda x: [l[1:-1] for l in x if "" not in x])
+
+            if round == 1:
+                df["program_types"] = df[col]
+            else:
+                df["program_types"] = df["program_types"] + df[col]
+        df["program_types"] = df["program_types"].apply(lambda x: np.unique(x))
+        return df
+
+    def get_qualified_programs_dict(self) -> dict:
+        """Build a dictionary mapping each student ID to the type of language programs they are eligible for.
+
+        Eligibility is based on home language and what types of programs they already applied for.
+
+        Returns:
+            dict: A dictionary mapping student ID to a list of program types they are eligible for.
+        """
+        # if already computed, return it
+        if self.qualified_program_dict is not None:
+            return self.qualified_program_dict
+        if "program_types" not in self.student_data.columns:
+            self.student_data = self._make_program_type_lists(self.student_data)
+
+        homelang = "homelang" if self.year >= 21 else "homelang_desc"
+        homelang2prog = {
+            "CC-Chinese Cantonese": ["CN", "CB", "CT", "NC"],
+            "CM-Chinese Mandarin": ["MN"],
+            "SP-Spanish": ["SN", "SB", "NS"],
+            "KO-Korean": ["KN"],
+            "CC": ["CN", "CB", "CT", "NC"],
+            "CM": ["MN"],
+            "SP": ["SN", "SB", "NS"],
+            "KO": ["KN"],
+            "Cantonese": ["CN", "CB", "CT", "NC"],
+            "Mandarin (Putonghua)": ["MN"],
+            "Spanish": ["SN", "SB", "NS"],
+            "Korean": ["KN"],
+        }
+
+        all_eligible = {"GE", "SE", "CE", "JE", "KE", "ME"}
+        # all_eligible = {"GE", "SE", "CE", "JE", "KE", "ME",'SA', 'MS', 'AF', 'MM', 'TC', 'ED', 'AO'}
+        # all_eligible = {"GE"}
+
+        def combine(row):
+            if any(
+                program in SPECIAL_PROGRAMS for program in row["r1_programs"]
+            ):
+                return list(SPECIAL_PROGRAMS)
+            else:
+                if row[homelang] in homelang2prog:  # add home language programs
+                    both = set(
+                        homelang2prog[row[homelang]]
+                        + list(row["program_types"])
+                    ).union(all_eligible)
+                else:  # otherwise just add program types they ranked and programs everyone is eligible for
+                    both = set(row["program_types"]).union(all_eligible)
+                for v in homelang2prog.values():  # if ranked a language program, can rank any language program of that type
+                    if both.intersection(set(v)):
+                        both.update(v)
+                return list(both - {""})
+
+        self.student_data["qualified"] = self.student_data.apply(
+            combine, axis=1
+        )
+
+        self.qualified_program_dict = dict(
+            zip(self.student_data.index.values, self.student_data["qualified"])
+        )
+
+        return self.qualified_program_dict
+
+    def get_5_ctip_types(self) -> None:
+        print("in get 5 ctip types")
+        CTIPtypes = np.ones(
+            [self.n]
+        )  # CTIPtypes[i] is CTIP status of student i, from 1 to 5, 1 being highest priority
+        block_data = pd.read_excel(
+            self.block_data_file, sheet_name="block database"
+        )
+        block_data_list = list(block_data["Block"])
+        for i in range(self.n):
+            if (
+                self.student_data["census_block"].iloc[i] > -1
+            ):  # eliminates NaN values
+                census_block = int(self.student_data["census_block"].iloc[i])
+                if census_block in block_data_list:
+                    row = block_data_list.index(census_block)
+                    CTIP = block_data["CTIP_2013 assignment"].iloc[
+                        row
+                    ]  # String in the form 'CTIPX', where X is a number
+                    CTIPnum = int(CTIP[4])
+                    CTIPtypes[i] = CTIPnum
+        self.student_data["CTIPtype"] = CTIPtypes
+
+    def get_diversity_categories(self):
+        """Create Diversity Categories from 2020 policy based on HOCidx1."""
+        HOCidx1 = self.student_data.HOCidx1
+        HOCidx1 = np.array(HOCidx1)
+        HOCidx1 = np.nan_to_num(HOCidx1, nan=0.4)
+        percentages3 = 100 * np.array(range(1, 3)) / 3
+        percentages5 = 100 * np.array(range(1, 5)) / 5
+        quantiles3 = np.percentile(HOCidx1, percentages3)
+        quantiles5 = np.percentile(HOCidx1, percentages5)
+        classes3 = np.searchsorted(quantiles3, HOCidx1)
+        classes5 = np.searchsorted(quantiles5, HOCidx1)
+        self.student_data["Diversity_Category3"] = classes3
+        self.student_data["Diversity_Category5"] = classes5
+
+    def get_ses_score(self):
+        self.student_data["SES_score"] = (
+            0.25 * self.student_data["N'hood SES Score"]
+            + 0.25 * self.student_data["FRL Score"]
+        )
+        thresh33, thresh66 = np.percentile(
+            self.student_data["SES_score"].dropna(), [33, 66]
+        )
+        self.student_data["SES_category"] = self.student_data[
+            "SES_score"
+        ].apply(lambda x: 1 if x < thresh33 else (2 if x < thresh66 else 3))

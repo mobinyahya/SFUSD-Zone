@@ -1,0 +1,21 @@
+output_dir: metrics/all_prog_gesplit/partial_exp9
+
+runs:
+  - label: "exp9_topk1_2324"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/exp9_topk1_2324/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: "exp9_topk3_2324"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/exp9_topk3_2324/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: "exp9_topk5_2324"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/exp9_topk5_2324/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+

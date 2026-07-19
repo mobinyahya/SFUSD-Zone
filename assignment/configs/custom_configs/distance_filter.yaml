@@ -1,0 +1,30 @@
+# Config for `python filter_student_choices.py` (Hydra entry point).
+#
+# What it does: for each student, drops the GE choices that are farther than
+# `distance` miles away (or that fall outside the `number` closest schools).
+# Non-GE choices are always kept. The result is written to `output_csv`, which
+# the custom_configs simulators read as their `student-data`.
+#
+# Path convention (same as the rest of the repo): every path is explicit.
+#   - shared cluster data  -> /share/data/school_choice/...
+#   - your checkout        -> <STUDENT_ASSIGNMENT_PATH>/...
+#   - MNL estimates (opt.) -> <SFUSD_CHOICE_PATH>/...
+# Substitute the placeholders with your absolute paths before running (see
+# docs/DATA_SETUP.md), or override any key on the CLI, e.g.
+#   python filter_student_choices.py distance=2.0 \
+#       output_csv=/abs/path/local-data/student_filter/student_2324_filtered.csv
+
+data:
+  # Cleaned student/school records (live in the confidential SFUSD data tree).
+  students_csv: /share/data/school_choice/Data/Cleaned/student_2324.csv
+  schools_csv: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
+  # Optional: overwrite each student's real r1 choices with the MNL model's
+  # top picks before filtering. Leave null to filter the real submitted choices.
+  estimates_csv: null
+
+# Filter mode: set exactly ONE of these (leave the other null).
+distance: 1.5   # keep GE choices within this many miles of the student
+number: null    # OR keep only the GE choices among the N closest schools
+
+# Output: read back as `student-data` by the custom_configs simulators.
+output_csv: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv

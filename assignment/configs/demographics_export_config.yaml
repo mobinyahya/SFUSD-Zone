@@ -1,0 +1,54 @@
+output_dir: "results/demographics"
+
+# Reuse the same runs structure as analysis_config_real.yaml
+runs:
+  - label: "2014-2015"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1415_filtered.csv"
+    year: 14
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1415.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1415_filtered.csv"
+  - label: "2015-2016"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1516_filtered.csv"
+    year: 15
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1516.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1516_filtered.csv"
+  - label: "2016-2017"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1617_filtered.csv"
+    year: 16
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1617.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1617_filtered.csv"
+  - label: "2017-2018"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1718_filtered.csv"
+    year: 17
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1718.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1718_filtered.csv"
+  - label: "2018-2019"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1819_filtered.csv"
+    year: 18
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1819.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1819_filtered.csv"
+  - label: "2019-2020"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1920_filtered.csv"
+    year: 19
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1920.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1920_filtered.csv"
+  - label: "2020-2021"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_2021_filtered.csv"
+    year: 20
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2021.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2021_filtered.csv"
+  - label: "2021-2022"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_2122_filtered.csv"
+    year: 21
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2122.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2122_filtered.csv"
+  - label: "2022-2023"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_2223_filtered.csv"
+    year: 22
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2223.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2223_filtered.csv"
+  - label: "2023-2024"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_2324_filtered.csv"
+    year: 23
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv"

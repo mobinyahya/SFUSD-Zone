@@ -1,0 +1,40 @@
+utility-model:
+  enable: bool()
+  read-precomuted-umodel-prefs: bool(required=False)
+  list-length: str()
+  designate-lp-for-all: bool(required=False)
+  save-path: str(required=False)
+  gumbel-scale: num(required=False)
+
+save-assignment: bool()
+random-seed: int()
+r1-only: bool(required=False)
+
+rounds-merged-options: list(int(), str())
+read-lotteries: bool(required=False)
+
+iterations:
+  start: int()
+  end: int()
+
+paths:
+  sfusd: str()
+  program-codex: str(required=False)
+  student-codex: str(required=False)
+  student-save: str()
+  assignment-folder: str()
+  student-data: str(required=False)
+  program-data: str(required=False)
+  school-data: str(required=False)
+  zone-files: map(str())
+  estimate-path: str()
+  lotteries-path: str(required=False)
+  citywide-or-lp-zones: map(required=False)
+  new-ctip-path: str(required=False)
+  new-ctip-blockgroup-path: str(required=False)
+
+
+year: int()
+grade: str()
+subconfigs: list(str())
+remove-special-lps: bool(required=False)

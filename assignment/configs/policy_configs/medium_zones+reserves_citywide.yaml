@@ -1,0 +1,34 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+- 0
+
+restrict-zone: true
+guard-rails: 0
+reserve-settings: {"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True, "citywide_only": True,  "reserve_fraction": [0.57, 0.43]}
+
+# "reserve_fraction": [0.57, 0.43]}
+# {"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True, "reserve_fraction": [0.5, 0.5]}
+#{"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True, "citywide_only": False}
+#- {"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True, "reserve_fraction": [0.57, 0.43], "citywide_only": False}
+
+
+policies:
+- 6zone-1
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+    
+
+sibling-access: true
+zone-building-blocks: block_group
+designate: true
+ties-options:
+  - MTB_REAL

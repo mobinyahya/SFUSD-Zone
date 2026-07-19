@@ -1,0 +1,107 @@
+grade: KG
+
+iterations:
+  end: 5
+  start: 0
+
+paths:
+  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/augmentation_experiments/baseline/
+  citywide-or-lp-zones:
+    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+  estimate-path: /share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv
+  program-data: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
+  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+  sfusd: /share/data/school_choice/Data/
+  student-data: /share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
+  student-save: /share/data/school_choice/simulation-files/precomputed/
+  zone-files:
+    10zone: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+    13zone: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+    Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
+    Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
+    Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
+    Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
+    Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
+    Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
+    Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
+    Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
+
+r1-only: true
+random-seed: 2023
+remove-special-lps: true
+rounds-merged-options:
+  - 0
+save-assignment: true
+
+subconfigs:
+  - small_zones+no_reserves
+  - small_zones+reserves
+  - small_zones+reserves_05frl
+  - small_zones+reserves_06frl
+  - medium_zones+no_reserves
+  - medium_zones+reserves
+  - medium_zones+reserves_05frl
+  - medium_zones+reserves_06frl
+  - distance_05_1_2+reserves
+  - distance_05_1_2+reserves_05frl
+  - distance_05_1_2+reserves_06frl
+  - distance_05_3
+  - distance_05_3+reserves
+  - distance_05_3+reserves_05frl
+  - distance_05_3+reserves_06frl
+  - distance_05_1_3
+  - distance_05_1_3+reserves
+  - distance_05_1_3+reserves_05frl
+  - distance_05_1_3+reserves_06frl
+  - status_quo
+  - status_quo+guardrails
+  - status_quo+reserves
+  - status_quo+reserves_05frl
+  - status_quo+reserves_06frl
+  - generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+no_reserves
+  - generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+reserves
+  - generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+reserves_05frl
+  - generated/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2+reserves_06frl
+  - generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+no_reserves
+  - generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+reserves
+  - generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+reserves_05frl
+  - generated/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6+reserves_06frl
+  - generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+no_reserves
+  - generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+reserves
+  - generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+reserves_05frl
+  - generated/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3+reserves_06frl
+
+utility-model:
+  designate-lp-for-all: false
+  enable: false
+  list-length: 0.8*round(real_length)
+  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/augmentation_experiments/utility_matrix.csv
+
+year: 23
+
+# --- List Augmentation Config ---
+list-augmentation:
+  enable: true
+  # Targeting: "ctip_x_ethnicity" or "short_list_threshold"
+  targeting-method: ctip_x_ethnicity
+  short-list-threshold: 3
+  # Oversubscribed: "apps_per_seat", "first_choice_per_seat", or "fixed_list"
+  oversubscribed-method: first_choice_per_seat
+  oversubscribed-ratio-threshold: 1.5
+  oversubscribed-fixed-schools:
+    - 420   # Alvarado
+    - 478   # Clarendon
+    - 497   # Webster
+    - 521   # El Dorado
+    - 722   # Miraloma
+    - 735   # New Traditions
+    - 867   # Vis Valley
+  max-augmented-programs: 1

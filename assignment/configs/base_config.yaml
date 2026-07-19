@@ -1,0 +1,17 @@
+rounds-merged-options:
+  - 0
+
+utility-model:
+  enable: true
+  list-length: "7"
+
+save-assignment: true
+random-seed: 2023
+year: 18
+grade: KG
+iterations:
+  start: 0
+  end: 15
+
+subconfigs:
+  - zones+reserves

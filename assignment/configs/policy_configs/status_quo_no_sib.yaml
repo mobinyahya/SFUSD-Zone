@@ -1,0 +1,26 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+- 0
+
+restrict-zone: false
+guard-rails: -1
+
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  zone: 4
+  language-programs:
+    lp: 8
+    ctip: 2
+
+    
+  
+sibling-access: false
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB_REAL

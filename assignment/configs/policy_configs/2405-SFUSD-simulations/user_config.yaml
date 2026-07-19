@@ -1,0 +1,60 @@
+# An example for user config <user>.config.yaml
+utility-model:
+  enable: true
+  list-length: 0.8*round(real_length)
+  designate-lp-for-all: true
+
+grade: KG
+year: 23
+iterations:
+  end: 15
+  start: 0
+remove-special-lps: true
+
+subconfigs:
+# Simulation 1
+# - 2405-SFUSD-simulations/simulation1_aa
+# - 2405-SFUSD-simulations/simulation1_59zones
+# # Simulation 2, need to change the program and student file before running.
+# - 2405-SFUSD-simulations/simulation2_truncateAA
+# Simulation 3
+- 2405-SFUSD-simulations/simulation3_fuzzy
+- 2405-SFUSD-simulations/simulation3_noFuzzy
+
+random-seed: 2023
+# TODO: SFUSD also want to see results with both round 1 and 2 students.
+# Currently using 0: students who apply in earlier rounds are considered first.
+# We might want to merge round 1 & 2 or add round 2 students back in evaluation.
+rounds-merged-options:
+- 0
+save-assignment: true
+
+paths:
+  # Change assignment folder to where you want to store data.
+  assignment-folder: ~/assignments-facility-capacity/simulation3/
+  estimate-path: /share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0604_closure.csv
+  sfusd: /share/data/school_choice/
+  student-save: ~/precomputed/
+  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+  # # Use the below 2 lines for simulation 1 and 3.
+  # Use one of the three program data below:
+  student-data: /share/data/school_choice/Data/Cleaned/student_2324.csv
+  program-data: /share/data/school_choice/Data/Cleaned/programs_facility_capicity.csv
+  # program-data: /share/data/school_choice/Data/Cleaned/programs_closure1.csv
+  # program-data: /share/data/school_choice/Data/Cleaned/programs_closure2.csv
+  # # Change to below 2 lines for simulation 2.
+  # # One of the program data below.
+  # program-data: /share/data/school_choice/simulation-files/summer2024-tempFiles/programs_closure1-afterAutoTop1AA.csv
+  # program-data: /share/data/school_choice/simulation-files/summer2024-tempFiles/programs_closure2-afterAutoTop1AA.csv
+  # program-data: /share/data/school_choice/simulation-files/summer2024-tempFiles/programs_facility_capicity-afterAutoTop1AA.csv
+  # student-data: /share/data/school_choice/simulation-files/summer2024-tempFiles/simulation2-students-afterAutoTop1AA.csv
+  zone-files:
+    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+  citywide-or-lp-zones:
+    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt 

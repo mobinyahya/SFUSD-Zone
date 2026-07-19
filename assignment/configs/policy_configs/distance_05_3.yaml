@@ -1,0 +1,33 @@
+# Policy config for distance_05_3
+# Priority order: sibling > ctip > distance
+# Distance thresholds: 0.5 and 3 miles
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: -1
+non_designation_boost: 128
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  distance: 4
+  zone: 0
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+distance-priority:
+  thresholds: [0.5, 3]
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

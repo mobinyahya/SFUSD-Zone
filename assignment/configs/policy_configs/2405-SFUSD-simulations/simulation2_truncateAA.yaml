@@ -1,0 +1,25 @@
+assignment-algorithm: DA
+# SFUSD mentioned that we can choose to use only one of CTIP/ETB to save time.
+# Use two options: new ctip (ETB) or no CTIP/ETB here.
+ctip-options:
+- new_ctip
+- 0
+- 1
+
+restrict-zone: false
+truncate-at-AA-GE: true
+guard-rails: -1
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  # sibling: 16 # always disabled as suggested by SFUSD
+  zone: 4
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- STB

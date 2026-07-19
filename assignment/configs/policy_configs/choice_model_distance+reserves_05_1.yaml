@@ -1,0 +1,62 @@
+#Assignment policy for 2025 simulations: 
+#
+# Simulates status quo runs with additional distance tiebreakers that give different students closer 
+# to the program a higher tiebreaker priority 
+# 
+# Programs are also given soft reserves. This process classifies each student as high or low income depending on the 
+# listed median hh_income of the student being above or below the district set threshold of 95292. At matching, 
+# students only compete for thier own respective reserved high income or low income seats. If a student cannot be matched
+# to a seat in thier own reserves, they will compete in a soft reserve pool, which is the leftover seats 
+# that have not been matched in other reserve (see da_with_guardrails.py)
+#
+# 
+#1.) Runs w/w-o ctip
+#2.) Runs with GE tie breakers in the following order of importance:
+#   distance -> sibling -> ctip -> zone
+#3.) Distance is calcualted in buckets of decreasing importance, each bucket decreases importance by factor of 
+# 1/2, IE: starts 32, 16, 0 for ranges of [0,0.5](0.5, 1],(1,inf) 
+#4.) Soft Reserves  0.57% of all GE seats for students under the 95292 threshold, 
+#    and 43% for students over the threshold
+
+
+assignment-algorithm: DA
+ctip-options:
+- 0
+- 1 
+
+
+restrict-zone: false
+guard-rails: 0
+reserve-settings: {"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True,  "reserve_fraction": [0.57, 0.43]}
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 4
+  sibling: 16
+  distance: 32
+  zone: 2
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+
+
+distance-priority:
+  # If to define the size (mile) of steps. Default to this option with 1 mile.
+  # step-size: 1
+  # If to use manual thresholds as steps for distance priorities.
+  thresholds: [0.5, 1]
+  # If to use continuous function on distance priorities. Currently only support
+  # 1 / distance^2 (1_over_x_sqaure) or exact distance (x)
+  # continuous: 1_over_x_sqaure
+  #continuous: x
+  
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB_REAL

@@ -15,7 +15,6 @@ optimization_defaults:
   frl_dev: 0.15
   overage: 0.15
   shortage: 0.15
-  max_distance: 2
   centroid_neighbor_radius: 1
 
 sweep:
@@ -26,7 +25,7 @@ tasks:
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/test_single_solver_2/'
-  capacity: 48             # total solver-thread slots available on the machine
+  capacity: 5             # total solver-thread slots available on the machine
   max_workers: 8            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth
   skip_existing: false

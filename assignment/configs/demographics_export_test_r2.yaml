@@ -1,0 +1,9 @@
+output_dir: "results/demographics_test_r2"
+
+# Test with just one year
+runs:
+  - label: "2014-2015"
+    run_csv: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/assignment_1415_filtered.csv"
+    year: 14
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1415.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1415_filtered.csv"

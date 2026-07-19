@@ -1,0 +1,27 @@
+restrict-zone: bool(required=False) #or str() # Options: True, False, or 'CTIP_access'
+sibling-access: bool()
+truncate-at-AA-GE: bool(required=False)
+designate: bool()
+designation-ordering-type: enum('in_zone', 'simple', required=False)  # Controls how designation programs are ordered, defaults to 'in_zone'
+assignment-algorithm: str()
+
+non_designation_boost: int(required=False)
+
+soft_reserve_boost: int(required=False)
+
+guard-rails: int(min=-1, max=1, required=False)
+reserve-settings: map(required=False)
+guard-rails-reserve-options: list(map(), required=False)
+restrict-zone-options: list(map(), required=False)
+priority-weights: map()
+distance-priority: map(required=False)
+distance-boost: map(required=False)  # Optional settings for income-based distance boost, e.g. {"income_threshold": 95292, "low_income_boost": 0.2}
+citywide-separate-reserves: bool(required=False)  # Whether to use separate reserves for citywide schools, defaults to True
+citywide-reserve-ratios: list(num(), required=False)  # Reserve ratios for citywide schools, defaults to [0.57, 0.43]
+
+zone-building-blocks: str()
+policies: list(str())
+citywide-or-lp: list(str(), required=False)
+
+ctip-options: list(int(), str(), map())
+ties-options: list(int(), str())

@@ -1,0 +1,40 @@
+# Pareto frontier from simulation assignment CSVs.
+# Used by: scripts/analysis/plot_simulation_frontier.py
+#   uv run python scripts/analysis/plot_simulation_frontier.py \
+#       --config configs/custom_configs/simulation_frontier.yaml
+#
+# Replace <STUDENT_ASSIGNMENT_PATH> with the absolute path to your checkout.
+
+# Folder searched recursively for simulation *.csv outputs (the "plein de
+# simulations" — e.g. a run directory produced by run_custom_config.py).
+data_folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/choice_08082025_06
+
+year: 23   # 2-digit school year (23 -> 2023-24)
+
+# Evaluator inputs (the same files the simulations were built from).
+program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+schools_data: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
+new_ctip_path:           # optional .npy equity-block file; empty to skip
+
+# Frontier axes. Must be metric names produced by
+# eval_assignment_paper_metrics (e.g. "Distance Av (All Assigned)",
+# "Dissimilarity (High FRL)", "Dissimilarity (Black|Asian|Hispanic|White)",
+# "Prop Top 1 choice (All Assigned)"). Lower-is-better on both axes by default.
+x_metric: "Distance Av (All Assigned)"
+y_metric: "Dissimilarity (High FRL)"
+x_minimize: true
+y_minimize: true
+
+group_iterations: true                      # average iterations -> 1 point/policy
+annotate: true                              # label the frontier points
+label_parts: 2                              # trailing path parts for labels
+skip_substrings: [utility_matrix, precomputed]
+recompute: true                             # false -> reuse results.csv
+
+output_dir: <STUDENT_ASSIGNMENT_PATH>/local-data/results/simulation_frontier
+title: "Pareto frontier from simulations"
+
+# Optional: overlay baseline/current-assignment points as red X markers.
+# CSV with a "scenario" column plus the x_metric and y_metric columns.
+# current_policies_csv: <STUDENT_ASSIGNMENT_PATH>/local-data/current_policies.csv

@@ -1,0 +1,63 @@
+base_dir: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/"
+output_dir: "output/plots/diagnostics/trends"
+
+runs:
+  - label: "2014-2015"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1415/status_quo"
+    year: 2014
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1415.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1415_filtered.csv"
+    
+  - label: "2015-2016"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1516/status_quo"
+    year: 2015
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1516.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1516_filtered.csv"
+    
+  - label: "2016-2017"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1617/status_quo"
+    year: 2016
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1617.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1617_filtered.csv"
+    
+  - label: "2017-2018"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1718/status_quo"
+    year: 2017
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1718.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1718_filtered.csv"
+    
+  - label: "2018-2019"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1819/status_quo"
+    year: 2018
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1819.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1819_filtered.csv"
+    
+  - label: "2019-2020"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_1920/status_quo"
+    year: 2019
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_1920.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_1920_filtered.csv"
+    
+  - label: "2020-2021"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_2021/status_quo"
+    year: 2020
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2021.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2021_filtered.csv"
+    
+  - label: "2021-2022"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_2122/status_quo"
+    year: 2021
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2122.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2122_filtered.csv"
+    
+  - label: "2022-2023"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_2223/status_quo"
+    year: 2022
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2223.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2223_filtered.csv"
+    
+  - label: "2023-2024"
+    folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/status_quo_runs/run_2324/status_quo"
+    year: 2023
+    program_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv"
+    student_data: "<STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv"

@@ -1,0 +1,54 @@
+
+#Assignment policy for 2025 simulations: 
+#
+# Simulates status quo runs with additional distance tiebreakers that give different students closer 
+# to the program a higher tiebreaker priority 
+#
+#1.)Runs w/w-o ctip
+#2.)Runs with GE tie breakers in the following order of importance:
+#   distance -> sibling -> ctip -> zone
+#3.)Distance is calcualted in buckets of decreasing importance, each bucket decreases importance by factor of 
+# 1/3, IE: starts 32, 21.3, 10.6, 0 for ranges of [0,0.5](0.5, 1],(1,2],(2,inf) 
+
+
+
+assignment-algorithm: DA
+ctip-options:
+- 0
+- 1
+  
+restrict-zone: false
+guard-rails: -1
+
+policies:
+- Con1
+
+
+priority-weights:
+  ctip: 4
+  sibling: 16
+  zone: 2
+  distance: 32
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+    
+  
+distance-priority:
+  # If to define the size (mile) of steps. Default to this option with 1 mile.
+  # step-size: 1
+  # If to use manual thresholds as steps for distance priorities.
+  thresholds: [0.5, 1, 2]
+  # If to use continuous function on distance priorities. Currently only support
+  # 1 / distance^2 (1_over_x_sqaure) or exact distance (x)
+  # continuous: 1_over_x_sqaure
+  #continuous: x
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB_REAL

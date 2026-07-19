@@ -1,0 +1,25 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+- 0
+
+restrict-zone: true
+guard-rails: -1
+
+
+policies:
+- 6zone-1
+
+priority-weights:
+  ctip: 8
+  zone: 4
+  language-programs:
+    lp: 8
+    ctip: 2
+    
+
+sibling-access: false
+zone-building-blocks: block_group
+designate: true
+ties-options:
+  - MTB_REAL

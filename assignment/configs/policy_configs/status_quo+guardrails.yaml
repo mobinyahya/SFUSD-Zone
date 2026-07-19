@@ -1,0 +1,36 @@
+# Policy config for status_quo+reserves
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: 0
+reserve-settings: {
+  "column": "median_hh_income", 
+  "thresholds": [95292], 
+  "lower_disadvantaged": True ,  
+  "reserve_fraction": [0.57, 0.43]
+  }
+non_designation_boost: 128
+soft_reserve_boost: 64
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+    
+  
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

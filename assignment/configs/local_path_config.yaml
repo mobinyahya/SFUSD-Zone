@@ -1,0 +1,22 @@
+paths:
+  sfusd: "~/SFUSD/"
+  student-save: '~/Documents/sfusd/local_runs/Data/Precomputed/'
+  assignment-folder: "~/Documents/sfusd/local_runs/assignments"
+  estimate-path: ~/Dropbox/SFUSD/Choice_Model/Oct1estimates.npy
+  zone-files:
+    Medium1: "/share/data/school_choice/simulation-files/optGE862432.csv"
+    Z1: "/share/data/school_choice/simulation-files/optGE862432.csv"
+    optGE780873: "/share/data/school_choice/simulation-files/optGE780873.csv"
+    Large1: "/share/data/school_choice/simulation-files/optGE35532.csv"
+    Con0: /share/data/school_choice/simulation-files/concept0zones.csv
+    Con1: /share/data/school_choice/simulation-files/concept1zones.csv
+    Con2: /share/data/school_choice/simulation-files/concept2zones.csv
+    Con3: /share/data/school_choice/simulation-files/concept3zones.csv
+    59-zone-1_B: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    6-zone-1_BG: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    10-zone-11_BG: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+    13-zone-7_BG: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+    18-zone-1_2_BG: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+  citywide-or-lp-zones:
+    Medium1-citywide: /share/data/school_choice/simulation-files/citywideGE_optGE862432.txt
+    18zone-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone-additiona-0point3miles.txt

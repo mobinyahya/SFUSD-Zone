@@ -1,0 +1,27 @@
+assignment-algorithm: DA
+# SFUSD mentioned that we can choose to use only one of CTIP/ETB to save time.
+# Could ignore (comment out) 1 (CTIP1) to safe time.
+ctip-options:
+- new_ctip
+- 0
+- 1
+
+restrict-zone: false
+truncate-at-AA-GE: false
+guard-rails-reserve-options:
+- {"guard-rails": -1, "reserve-settings": {}}
+- {"guard-rails": 0, "reserve-settings": {"column": "median_hh_income", "thresholds": [95292], "lower_disadvantaged": True, "reserve_fraction": [0.25, 0.75]}}
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  # sibling: 16 # always disabled as suggested by SFUSD
+  zone: 4
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- STB

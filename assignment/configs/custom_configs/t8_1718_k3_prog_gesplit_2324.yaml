@@ -1,0 +1,38 @@
+grade: KG
+iterations:
+  end: 25
+  start: 0
+paths:
+  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/t8_estimates_runs/t8_1718_k3_prog_gesplit/
+  citywide-or-lp-zones:
+    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+  estimate-path: <SFUSD_CHOICE_PATH>/local_outputs/models/t8_1718_k3_prog_gesplit/estimates_1819.csv
+  program-data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
+  sfusd: /share/data/school_choice/Data/
+  student-data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+  student-save: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/t8_estimates_runs/t8_1718_k3_prog_gesplit/precomputed/
+  zone-files:
+    10zone: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+    13zone: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+r1-only: true
+random-seed: 2023
+remove-special-lps: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- status_quo
+utility-model:
+  designate-lp-for-all: false
+  enable: true
+  list-length: 0.8*round(real_length)
+  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/t8_estimates_runs/t8_1718_k3_prog_gesplit/utility_matrix.csv
+year: 23
