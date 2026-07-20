@@ -12,6 +12,7 @@ This class serves as an interface for a Configerator. It,
 
 import getpass
 import os
+import warnings
 
 import yamale
 import yaml
@@ -57,7 +58,10 @@ class Configerator:
                 try:
                     user = getpass.getuser()
                 except Exception:  # TODO: Remove this after testing
-                    print("getpass.getuser() failed, using default user")
+                    warnings.warn(
+                        "getpass.getuser() failed; using the default user.",
+                        stacklevel=2,
+                    )
                     user = os.environ.get("USER", "default")
 
             self._path = f"{CONFIGS_DIR}{user}{USER_CONFIG_SUFFIX}"

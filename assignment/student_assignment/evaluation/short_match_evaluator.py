@@ -639,7 +639,7 @@ class MatchEvaluator:
             the dictionary mapping zone building block to zone id
         """
         if zone_file is None:
-            print("Warning: zone file is none. This might cause error!")
+            logger.warning("Zone file is None; map metrics may be incomplete.")
             return {}
         with open(zone_file) as f:
             reader = csv.reader(f)
@@ -711,8 +711,9 @@ class MatchEvaluator:
                 x: y for [x, y] in school_to_zone_dict.to_numpy()
             }
         else:
-            print(
-                'Error: expect building block to be one of "idschoolattendance", "Block" or "BlockGroup", return None'
+            logger.warning(
+                "Expected building_block to be one of idschoolattendance, "
+                "Block, or BlockGroup; returning None."
             )
             return None
 
@@ -807,8 +808,9 @@ class MatchEvaluator:
                 x: y for [x, y] in school_to_zone_dict.to_numpy()
             }
         else:
-            print(
-                'Error: expect building block to be one of "idschoolattendance", "Block" or "BlockGroup", return None'
+            logger.warning(
+                "Expected building_block to be one of idschoolattendance, "
+                "Block, or BlockGroup; returning None."
             )
             return None
         # Count unassigned student to their located zone based on attandance area.

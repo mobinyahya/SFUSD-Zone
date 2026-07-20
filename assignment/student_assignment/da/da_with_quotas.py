@@ -32,14 +32,11 @@ class DaWithCapSplit:
         self.seats_by_zone = seats_by_zone
 
         # print(student_zones)
-        countnan = 0
         for i in range(len(student_zones)):
             if student_zones[i] > -1:  # To skip nan values
                 student_zones[i] = int(student_zones[i])
             else:
                 student_zones[i] = -1
-                countnan += 1
-        print("nan", countnan)
         self.student_zones = student_zones
         self.numOfClasses = self.seats_by_zone.shape[0]
 
@@ -278,7 +275,6 @@ class DaWithCapSplit:
             for student in self.SchoolMatches[j]:
                 self.StudentMatch[student] = j + 1
 
-        print("final", self.n, self.StudentMatch)
         # return StudentMatch, SchoolMatches
         return self.StudentMatch, StudentProposal
 

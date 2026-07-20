@@ -2052,7 +2052,6 @@ class MatchEvaluator:
                 student_data["assigned school"].iloc[i], int
             ) or isinstance(student_data["assigned school"].iloc[i], str):
                 school_num = int(student_data["assigned school"].iloc[i])
-                print(school_num)
                 counts[school_num] += 1
         num_schools_isolated = 0
         for i in range(len(counts)):
@@ -2328,7 +2327,6 @@ class MatchEvaluator:
         """
         def get_distance(row):
             return self.distance_data.loc[row['studentno'], row['assignment']]
-        print(self.student_data['assignment'])
         match_mask = self.student_data['assignment'].notnull()
         distance_mask = [True if code in self.distance_data.index else False for code in self.student_data.index]
         filtered = self.student_data[match_mask & distance_mask]

@@ -16,6 +16,7 @@ Usage:
 import os
 import re
 import sys
+import warnings
 from collections.abc import Generator
 from itertools import product
 
@@ -63,7 +64,9 @@ def resolve_variables(item: object, root_config: dict) -> object:
             key = match.group(1)
             if key in root_config:
                 return str(root_config[key])
-            print(f"Warning: Could not resolve variable ${{{key}}}")
+            warnings.warn(
+                f"Could not resolve variable ${{{key}}}", stacklevel=2
+            )
             return match.group(0)
 
         return pattern.sub(replace, item)
@@ -98,10 +101,8 @@ class AugmentedMarketGenerator(MarketGenerator):
         self.priority_generator.generate_base_priorities(policy)
 
         if self.config["utility-model"]["enable"]:
-            print("Getting preference from utility model.")
             prefs = self.preference_generator.get_utility_model_preferences_after_truncation()
         else:
-            print("Using real preference from first participation round.")
             prefs = self.preference_generator.initialize_real_preferences()
 
         # --- AUGMENTATION HOOK ---
@@ -172,7 +173,6 @@ class AugmentedMarketGenerator(MarketGenerator):
             pref_lengths,
             aug_config,
         )
-        print(f"--> Targeted students: {targeted.sum()} / {len(targeted)}")
 
         # Identify oversubscribed programs
         capacity = self.programs.capacity.to_numpy()
@@ -182,7 +182,6 @@ class AugmentedMarketGenerator(MarketGenerator):
             self.programs.school_to_indices,
             aug_config,
         )
-        print(f"--> Found {len(oversub_programs)} oversubscribed programs")
 
         # Build distance matrix aligned to program indices
         # distance_data: DataFrame (studentno × program_id)
@@ -199,8 +198,6 @@ class AugmentedMarketGenerator(MarketGenerator):
         student_order = self.students.student_data.index
         dist_aligned = dist_aligned.reindex(student_order).fillna(9999)
         distance_matrix = dist_aligned.to_numpy()
-
-        print(f"--> Distance matrix shape: {distance_matrix.shape}")
 
         # Augment preferences (returns impact_df)
         prefs, new_pref_lengths, impact_df = augment_preferences(
@@ -226,7 +223,6 @@ class AugmentedMarketGenerator(MarketGenerator):
             impact_dir.mkdir(parents=True, exist_ok=True)
             impact_path = impact_dir / "augmentation_impact.csv"
             impact_df.to_csv(impact_path, index=False)
-            print(f"--> Impact stats saved: {impact_path}")
 
         return prefs
 
@@ -246,14 +242,12 @@ def run_augmented_da(config_path: str) -> None:
     Args:
         config_path: Path to the YAML config file.
     """
-    print(f"--> Loading configuration from: {config_path}")
     with open(config_path) as config_file:
         raw_config = yaml.safe_load(config_file)
 
     custom_config = resolve_variables(raw_config, raw_config)
 
     # Initialize Configerator singleton with our config
-    print("--> Initializing Configerator...")
     configurator = Configerator()
     configurator._config = custom_config
     configurator._original_config = custom_config
@@ -263,10 +257,8 @@ def run_augmented_da(config_path: str) -> None:
 
     # Use AugmentedMarketGenerator instead of plain
     # MarketGenerator
-    print("--> Starting Augmented Simulation...")
     market = AugmentedMarketGenerator()
     market.simulate()
-    print("--> Simulation Complete.")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,6 @@ from student_assignment.market_generator.school_choice_market_generator import (
 def generate():
     m = MarketGenerator()
     m.simulate()
-    print("Simulation Complete.")
 
 
 if __name__ == "__main__":

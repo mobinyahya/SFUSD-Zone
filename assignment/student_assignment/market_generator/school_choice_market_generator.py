@@ -1,5 +1,6 @@
 import json
 import pathlib
+import warnings
 from collections.abc import Generator
 from itertools import product
 
@@ -60,12 +61,10 @@ class MarketGenerator(SchoolChoiceMarket):
 
             if self.yaml is None:
                 config_save_path = self.output_assignment_path / "config.json"
-                print("Saving run config information at: ", config_save_path)
                 with open(config_save_path, "w") as config_file:
                     json.dump(self.config, config_file, indent=4)
             else:
                 config_save_path = self.output_assignment_path / "config.yaml"
-                print("Saving run config information at: ", config_save_path)
                 with open(config_save_path, "w") as config_file:
                     yaml.dump(
                         self.config, config_file, default_flow_style=False
@@ -96,9 +95,6 @@ class MarketGenerator(SchoolChoiceMarket):
             self.configurator.load_next_subconfig()
             self.config = self.configurator.config
             self._reset_zones()
-            print(
-                f"\n-------------------- Running policy {self.config['subconfig-name']} --------------------"
-            )
             iterations_generator = self.create_iterations_generator()
             if self.config["save-assignment"]:
                 self.execute_generator(iterations_generator)
@@ -130,10 +126,7 @@ class MarketGenerator(SchoolChoiceMarket):
             # return assignment
             return self._read_real_match()
 
-        for policy_index, policy in enumerate(self.config["policies"]):
-            print(
-                f"Policy {policy}: {policy_index + 1} out of {len(self.config['policies'])}"
-            )
+        for policy in self.config["policies"]:
             # Loop for reserve and restrict settings.
             reserve_options = self._get_reserve_options()
             restrict_options = self._get_restrict_options()
@@ -141,9 +134,6 @@ class MarketGenerator(SchoolChoiceMarket):
             for reserve_option, restrict_option in product(
                 reserve_options, restrict_options
             ):
-                print(
-                    f"- Using reserve-option {reserve_option} and restrict-option {restrict_option}"
-                )
                 self.config["guard-rails"] = reserve_option["guard-rails"]
                 self.config["reserve-settings"] = reserve_option[
                     "reserve-settings"
@@ -160,7 +150,6 @@ class MarketGenerator(SchoolChoiceMarket):
                     self.config["iterations"]["start"],
                     self.config["iterations"]["end"],
                 ):
-                    print(f"Began iteration {iteration}")
                     policy_suboptions_generator = (
                         self._run_single_iteration_of_policy(iteration, policy)
                     )
@@ -177,11 +166,10 @@ class MarketGenerator(SchoolChoiceMarket):
         reserve_options = self.config.get("guard-rails-reserve-options", {})
         if not len(reserve_options):
             if "guard-rails" not in self.config:
-                print(
+                raise ValueError(
                     "Error: must provide at least one of guard-rails or "
                     + "guard-rails-reserve-options in policy configs."
                 )
-                exit()
             reserve_setting = self.config.get("reserve-settings", {})
             reserve_options = [
                 {
@@ -202,11 +190,10 @@ class MarketGenerator(SchoolChoiceMarket):
         restrict_options = self.config.get("restrict-zone-options", {})
         if not len(restrict_options):
             if "restrict-zone" not in self.config:
-                print(
+                raise ValueError(
                     "Error: must provide at least one of restrict-zone or "
                     + "restrict-zone-options in policy configs."
                 )
-                exit()
             citywide_or_lp = self.config.get("citywide-or-lp", [])
             restrict_options = [
                 {
@@ -240,10 +227,9 @@ class MarketGenerator(SchoolChoiceMarket):
                 ),
             )  # re-draw preferences
 
-            if iteration == self.config["iterations"]["start"]:
-                self.umodel.save_utility_matrix(
-                    self.config["utility-model"]["save-path"]
-                )
+            save_path = self.config["utility-model"].get("save-path")
+            if iteration == self.config["iterations"]["start"] and save_path:
+                self.umodel.save_utility_matrix(save_path)
 
         policy_suboptions_generator = self._simulate_policy(policy, iteration)
         yield policy_suboptions_generator
@@ -300,14 +286,9 @@ class MarketGenerator(SchoolChoiceMarket):
         self.priority_generator.generate_base_priorities(policy)
 
         if self.config["utility-model"]["enable"]:
-            print("Getting preference from utility model.")
             prefs = self.preference_generator.get_utility_model_preferences_after_truncation()
 
         else:
-            print(
-                "Using real preference from first participation round. \
-                Designation must be handled manually if real_preference run"
-            )
             prefs = (
                 self.preference_generator.initialize_real_preferences()
             )  # desi
@@ -504,23 +485,18 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         ) and policy != "real_match"
         full_prefs = self.umodel.original_preferences if using_umodel else prefs
+        missing_matches = 0
         for idx in assigned_not_designated_idxs:
             try:
                 rank[idx] = np.where(full_prefs[idx, :] == match[idx])[0][0] + 1
             except IndexError:
-                print(
-                    self.students.get_qualified_programs_dict()[
-                        self.students.idx2studentno[idx]
-                    ]
-                )
-                print(self.programs.codes[match[idx]])
-                print(
-                    [
-                        self.programs.codes[x]
-                        for x in full_prefs[idx, :]
-                        if x > 0
-                    ]
-                )
+                missing_matches += 1
+        if missing_matches:
+            warnings.warn(
+                f"{missing_matches} assigned programs were absent from student "
+                "preference lists; their ranks remain unset.",
+                stacklevel=2,
+            )
         return rank
 
     def _generate_assignment(
@@ -661,7 +637,6 @@ class MarketGenerator(SchoolChoiceMarket):
             # Check if the parent directory exists; if not, create it
             save_path.parent.mkdir(parents=True, exist_ok=True)
 
-            print("Assignment saved to:", save_path)
             assignment_df.to_csv(save_path, index=False)
         else:
             return assignment_df

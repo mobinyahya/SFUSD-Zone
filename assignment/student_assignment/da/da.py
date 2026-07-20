@@ -3,7 +3,6 @@ from collections import OrderedDict
 from itertools import zip_longest
 
 import numpy as np
-import tqdm
 
 
 class School:
@@ -253,8 +252,7 @@ class DeferredAcceptance:
         return self.student_match, self.lowest_priority, self.student_proposal
 
     def check_stability(self):
-        count = 0
-        for i in tqdm.tqdm(range(len(self.students))):
+        for i in range(len(self.students)):
             for k in range(self.student_proposal[i] - 1):
                 school_index = int(self.students[i].preferences[k]) - 1
                 school = self.schools[school_index]
@@ -263,13 +261,5 @@ class DeferredAcceptance:
                     school.give_lowest_priority()
                     < self.students[i].priorities[school_index]
                 ):
-                    print(
-                        f"The student {i} has a higher priority ({self.students[i].priorities[school_index]}) than the school's {school_index} {self.students[i].preferences[k]} lowest priority ({school.give_lowest_priority()})"
-                    )
-                    count += 1
                     break
-                    raise ValueError(
-                        f"The student {i} has a higher priority ({self.students[i].priorities[school_index]}) than the school's {school_index} {self.students[i].preferences[k]} lowest priority ({school.give_lowest_priority()})"
-                    )
-        print("Count of unstable matches: ", count)
         return True

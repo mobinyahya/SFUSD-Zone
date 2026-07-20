@@ -22,7 +22,6 @@ def detectCycle(studentFavs, schoolFavs, current, cycle):
 
 
 def TTC(capacities, priorities, pref):
-    print("starting ttc")
     nStudents = len(pref)
     nSchools = len(capacities)
 
@@ -50,9 +49,6 @@ def TTC(capacities, priorities, pref):
     priority_order = np.argsort(-priorities_t)
 
     pref = pref - np.ones(pref.shape)
-    print("nStudents:", nStudents)
-    print("nSchools:", nSchools)
-
     # repoint to the highest-ranked available school
     def reassignStudent(student):
         nonlocal unassigned
@@ -176,7 +172,6 @@ def TTC(capacities, priorities, pref):
             if unassigned == 0:
                 break
 
-    count = 0
     for i in range(0, nStudents):
         studentRank[i] += 1
         studentMatch[i] += 1
@@ -184,9 +179,7 @@ def TTC(capacities, priorities, pref):
         # Checks if student is matched to a school they have very negative priority to
         if studentMatch[i] > 0:
             if priorities[i, int(studentMatch[i] - 1)] < -50:
-                count += 1
                 studentMatch[i] = 0
                 studentRank[i] = 99
-    print("Ineligible priority count:", count)
 
     return [studentMatch, studentRank]

@@ -95,3 +95,4 @@ configs/robustness/popular_schools_runs/
 
 # Generated config exception: keep curated examples
 !configs/examples/
+assignment/configs/kumar.config.yaml

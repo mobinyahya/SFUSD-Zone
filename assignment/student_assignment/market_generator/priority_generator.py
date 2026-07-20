@@ -7,7 +7,6 @@ documentation (available to collaborators on request).
 """
 
 import pathlib
-import time
 import warnings
 
 import numpy as np
@@ -171,7 +170,6 @@ class PriorityGenerator:
         if cache_key in self._policy_priorities_cache:
             return self._policy_priorities_cache[cache_key]
 
-        t0 = time.time()
         if self.market.config["grade"] == "06":
             priorities = self._sixth_grade_priorities()
             self._policy_priorities_cache[cache_key] = priorities
@@ -215,7 +213,6 @@ class PriorityGenerator:
                 ]
 
                 if distance_boost:
-                    print("Using income-based distance boost")
                     low_income_distances = (
                         self.market.students.distance_data.copy()
                     )
@@ -283,7 +280,6 @@ class PriorityGenerator:
 
                     priorities += v * full_priority_matrix
                 else:
-                    print("Using standard distance priority")
                     distances = self.market.students.distance_data.copy()
                     distances = distances.loc[
                         self.market.students.student_data.index.to_numpy()
@@ -302,7 +298,6 @@ class PriorityGenerator:
                 sibling,
             )
 
-        print(f"done set priorities in {time.time() - t0}")
         self._policy_priorities_cache[cache_key] = priorities
         return priorities
 
@@ -331,8 +326,9 @@ class PriorityGenerator:
         # allowed; the optional ``weights`` key does not count.
         mode_keys = {k: v for k, v in priors.items() if k != "weights"}
         if len(mode_keys) > 1:
-            print(
-                "Only support one distance priority setting at a time. Setting priority with 0s"
+            warnings.warn(
+                "Only one distance priority setting is supported; using zero priorities.",
+                stacklevel=2,
             )
             return np.zeros(distances.shape)
 
@@ -360,18 +356,17 @@ class PriorityGenerator:
         elif f == "thresholds":
             thresholds = vals
         if len(thresholds) == 0:
-            print(
+            warnings.warn(
                 "Invalid or unsupported distance priority setting. "
-                + "Please ensure that you select correct continuous func or "
-                + "setting non-empty thresholds or step sizes correctly. "
-                + "Setting priority with 0s."
+                "Using zero priorities.",
+                stacklevel=2,
             )
             return np.zeros(distances.shape)
         if not np.all(np.diff(thresholds) > 0):
-            print(
-                "Warning: receive a non strictly increasing distance-priority "
-                + f"thresholds: {thresholds}. This might cause errors in distance "
-                + " priority setting. Please ensure that this intentional."
+            warnings.warn(
+                "Received non-strictly-increasing distance-priority "
+                f"thresholds: {thresholds}.",
+                stacklevel=2,
             )
 
         # Assign each cell a band index: 0 (closest), 1, …, N (beyond all).
@@ -383,10 +378,11 @@ class PriorityGenerator:
 
         if custom_weights is not None:
             if len(custom_weights) != len(thresholds):
-                print(
-                    f"Warning: weights has {len(custom_weights)} entries "
+                warnings.warn(
+                    f"Distance-priority weights have {len(custom_weights)} entries "
                     f"but there are {len(thresholds)} thresholds. "
-                    "They must match. Falling back to default."
+                    "Falling back to default weights.",
+                    stacklevel=2,
                 )
                 return (len(thresholds) - band_indices) / len(thresholds)
             # Map band index → custom weight (beyond-all band → 0).

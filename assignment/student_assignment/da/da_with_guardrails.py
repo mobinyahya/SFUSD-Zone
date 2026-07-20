@@ -1,7 +1,6 @@
 from itertools import zip_longest
 
 import numpy as np
-import tqdm
 
 from .da import School, Student
 
@@ -162,7 +161,7 @@ class DeferredAcceptance_with_GuardRails:
         return self.student_match, self.student_proposal
 
     def check_stability(self):
-        for i in tqdm.tqdm(range(len(self.students))):
+        for i in range(len(self.students)):
             iClass = self.students[i].iClass
 
             for k in range(self.student_proposal[i] - 1):

@@ -3,6 +3,7 @@
 import os
 import pathlib
 import pickle
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -25,7 +26,6 @@ class Students:
         self.programs = programs
         self.program_df = programs.program_df
         self.school_data_file = school_data_file
-        print("Loading school data from:", school_data_file)
         self.student_data_file = student_data_file
         self.block_data_file = block_data_file
         self.config = config
@@ -75,7 +75,6 @@ class Students:
         self,
     ):
         """Load student data table and student location data."""
-        print(f"getting student data from {self.student_data_file}...", end="")
         st_df = pd.read_csv(
             self.student_data_file, low_memory=False
         )  # , index_col=0)
@@ -86,7 +85,6 @@ class Students:
         )
 
         st_df = self._make_cols_lists(st_df)
-        print("done")
         return st_df
 
     def _str_to_list(self, x):
@@ -109,7 +107,6 @@ class Students:
                     lambda x: [int(val) for val in x if "" not in x]
                 )
             if col2 in df.columns:
-                print(col2)
                 df[col2] = df[col2].fillna("[]")
 
                 # print the row where this is failing: NameError: name 'nan' is not defined
@@ -142,7 +139,6 @@ class Students:
         """Compute and save student preferences for a specified round in
         matrix format.
         """
-        print("computing student preferences...", end="")
         st_df = self.student_data
         prefs = np.zeros((self.n, self.num_programs), dtype=int)
         col1 = f"r{round}_ranked_idschool"
@@ -168,7 +164,6 @@ class Students:
             # filename = self.output_path / 'student_preferences_r{}_{}{}.csv'.format(round, self.year, self.year+1)
             with open(filename, "wb") as f:
                 pickle.dump(prefs, f)
-            print(f"saved student preference data to {filename}")
         return prefs
 
     def student_preferences(self, round, code2idx):
@@ -192,11 +187,9 @@ class Students:
             )
 
         if filename.is_file():
-            print("loading preference data...", end="")
             with open(filename, "rb") as f:
                 pr = pickle.load(f)
             self._prefs[round] = pr
-            print(f"loaded student preference data from {filename}")
             return pr
         pr = self._make_student_preferences(round, code2idx)
         self._prefs[round] = pr
@@ -208,7 +201,6 @@ class Students:
         file to translate between program code and index, and self.studentno2idx
         dictionary to go from student number to index.
         """
-        print("computing distances...", end="")
         # codes = pd.read_csv(self.program_codes_file)
         # codes["school_id"] = codes["code"].apply(lambda x: int(x[:3]))
         codes = self.program_df[["program_id", "school_id"]]
@@ -257,7 +249,6 @@ class Students:
 
         # don't save over computed distances if subset of students
         table.to_csv(filename)
-        print("Done computing distance data.")
         return table
 
     def get_distances(self):
@@ -265,10 +256,7 @@ class Students:
         otherwise compute them. Description of array in _make_distance_ranking
         docstring.
         """
-        f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
-        print("enters")
         if str(self.student_data_file).split("/")[-1][:-9] == "drop_optout":
-            print("DISTANCES WITH DROP OPTOUT STUDENTS")
             filename = (
                 self.output_path
                 / "student_program_distances_dropoptout_{}_{}{}.csv".format(
@@ -276,7 +264,6 @@ class Students:
                 )
             )
         else:
-            print(self.output_path)
             filename = (
                 self.output_path
                 / "student_program_distances_{}_{}{}.csv".format(
@@ -285,25 +272,16 @@ class Students:
             )
 
         if os.path.isfile(filename):
-            print("loading distance data from", filename)
             dist = pd.read_csv(filename, index_col="studentno")
-            print("done")
         else:
             dist = self._make_distance_ranking(filename)
         # remove the columns that are not in the program list. Some programs are not in the dist columns as well
         columns_to_keep = [col for col in self.program_df["program_id"].values]
-        print(
-            "number of columns removed from distance data:",
-            len(dist.columns) - len(columns_to_keep),
-        )
-        print(
-            "program_id not in distance data:",
-            set(self.program_df["program_id"].values) - set(dist.columns),
-        )
         ## FIXME: here we simply add the missing columns based on the school (first 3 digits of program_id)
         missing_columns = set(self.program_df["program_id"].values) - set(
             dist.columns
         )
+        missing_without_fallback = []
         for col in missing_columns:
             school_id = int(col.split("-")[0])
             # find another program in the same school that is in dist
@@ -315,19 +293,16 @@ class Students:
                 if sim_prog in dist.columns:
                     dist[col] = dist[sim_prog]
                     found = True
-                    print(
-                        f"Added missing distance column {col} based on similar program {sim_prog}"
-                    )
                     break
             if not found:
-                print(
-                    (
-                        "Warning: Could not find similar program for missing distance column",
-                        col,
-                    )
-                )
-                print("*" * 50)
+                missing_without_fallback.append(col)
                 dist[col] = 9999  # assign a large distance
+        if missing_without_fallback:
+            warnings.warn(
+                "Could not infer distances for program columns: "
+                + ", ".join(sorted(missing_without_fallback)),
+                stacklevel=2,
+            )
         dist = dist[columns_to_keep]
         return dist
 
@@ -666,7 +641,6 @@ class Students:
         return self.qualified_program_dict
 
     def get_5_ctip_types(self) -> None:
-        print("in get 5 ctip types")
         CTIPtypes = np.ones(
             [self.n]
         )  # CTIPtypes[i] is CTIP status of student i, from 1 to 5, 1 being highest priority

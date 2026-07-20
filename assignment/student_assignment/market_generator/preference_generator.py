@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import pandas as pd
 
@@ -68,7 +66,6 @@ class PreferenceGenerator:
         the student's preference list when designation is allowed. Note that language eligibility
         testing is done when the designation ordering is appended to preferences.
         """
-        t0 = time.time()
         designation_ordering_type = self.market.config.get(
             "designation-ordering-type", "in_zone"
         )
@@ -211,8 +208,6 @@ class PreferenceGenerator:
             self._designation_ordering_cache[cache_key] = (
                 self._designation_ordering
             )
-        print(f"designation ordering completed in {time.time() - t0}")
-
     def _add_designation_programs_to_preferences(
         self, prefs: np.ndarray, eligible: np.ndarray
     ) -> np.ndarray:
@@ -321,8 +316,6 @@ class PreferenceGenerator:
         students_aa = self.market.students.attendance_area
         grade = self.market.config["grade"]
         truncate_at_aa = self.market.config.get("truncate-at-AA-GE", False)
-        if truncate_at_aa:
-            print("Truncate students' preference at AA GE programs.")
         for i, student_prefs in enumerate(filtered_preferences):
             num_progs = int(min(num_eligible[i], num_ranked_array[i]))
             if truncate_at_aa:

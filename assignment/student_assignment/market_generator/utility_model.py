@@ -7,6 +7,7 @@ Class containing utility model for market simulator
 
 import os
 import pathlib
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -48,11 +49,9 @@ class UtilityModel:
         # Remove students and programs that are not used, and order the dataframe
         # by student and program index. The studentno in the input csv dataframe
         # is in the format <year>-<studentno>.
-        year = estimates_df.studentno.apply(lambda x: int(x.split("-")[0]))[0]
         estimates_df.studentno = estimates_df.studentno.apply(
             lambda x: int(x.split("-")[1])
         )
-        print(f"Loaded utility for students in year {year}.")
         estimates_df = estimates_df.set_index("studentno")
         required_students = self.students.student_data.index.to_numpy()
         available_students = set(estimates_df.index)
@@ -60,9 +59,10 @@ class UtilityModel:
             s for s in required_students if s not in available_students
         ]
         if missing_students:
-            print(
-                f"  Warning: {len(missing_students)} students missing "
-                f"from estimates — filling with -inf."
+            warnings.warn(
+                f"{len(missing_students)} students are missing from estimates; "
+                "filling their utilities with -inf.",
+                stacklevel=2,
             )
             missing_rows = pd.DataFrame(
                 -np.inf,
@@ -81,10 +81,11 @@ class UtilityModel:
             p for p in required_programs if p not in available_programs
         ]
         if missing_programs:
-            print(
-                f"  Warning: {len(missing_programs)} programs missing "
-                f"from estimates — filling with -inf: "
-                f"{missing_programs[:10]}{'...' if len(missing_programs) > 10 else ''}"
+            warnings.warn(
+                f"{len(missing_programs)} programs are missing from estimates; "
+                "filling their utilities with -inf: "
+                f"{missing_programs[:10]}{'...' if len(missing_programs) > 10 else ''}",
+                stacklevel=2,
             )
             for prog in missing_programs:
                 estimates_df[prog] = -np.inf
@@ -139,10 +140,6 @@ class UtilityModel:
             mus = self._load_base_utility_matrix(rows_to_keep, cols_to_keep)
 
         n, p = mus.shape
-        print(f"Loaded utility matrix of shape {mus.shape}.")
-        print(
-            f"Number of students: {self.students.n}, number of programs: {self.programs.num_programs}."
-        )
         # Verify that the utility matrix has the same size as student and programs.
         error_msg = "the utility matrix length does not match the number of {}."
         assert p == self.programs.num_programs, error_msg.format("programs")
@@ -193,12 +190,6 @@ class UtilityModel:
                     if program_idx >= 0:
                         if utilities[i, program_idx] == 0:
                             utilities[i, program_idx] = 1000 - j
-
-            count = 0
-            for i in range(n):
-                if self.original_preferences[i, 60] == 0:
-                    count += 1
-            print("COUNT:", count)
 
             self.original_utilities = utilities
 

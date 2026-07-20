@@ -9,6 +9,7 @@ import copy
 import csv
 import json
 import os
+import warnings
 from collections import defaultdict
 
 import numpy as np
@@ -158,7 +159,6 @@ class Zones:
         lp_area_id2prog_list = {}
         if lp_zone_path_list is not None:
             for zone_path in lp_zone_path_list:
-                print("Loading additional schools for zones from:", zone_path)
                 with open(os.path.expanduser(zone_path)) as f:
                     s = f.read().rstrip("\n")
                 aaDict_new = eval(s)
@@ -223,10 +223,11 @@ class Zones:
         ):
             return dict_to_update
         if self.config["zone-building-blocks"] not in ["block_group", "block"]:
-            print(
-                "Warning: Using AA keys for LP or citiwide schools with"
+            warnings.warn(
+                "Using AA keys for LP or citywide schools with "
                 + self.config["zone-building-blocks"]
-                + "zone-building-blocks might cause errors."
+                + " zone-building-blocks might cause errors.",
+                stacklevel=2,
             )
             return dict_to_update
 
@@ -246,10 +247,12 @@ class Zones:
             .replace(" ", "")
         )
         if len(dict_to_update):
-            print(
-                "Warning: Transforming AA keys for LP or citiwide schools to keys in"
+            warnings.warn(
+                "Transforming AA keys for LP or citywide schools to keys in "
                 + self.config["zone-building-blocks"]
-                + "zone-building-blocks. This might raise issues as we do not have 1-to-1 mapping between AA and BGs/blocks."
+                + " zone-building-blocks may be ambiguous because the mapping "
+                "between attendance areas and blocks is not one-to-one.",
+                stacklevel=2,
             )
         dict_to_match = {
             x: y
@@ -311,15 +314,9 @@ class Zones:
             if self.config["zone-building-blocks"] == "block_group"
             else block
         )
-        area_name = (
-            "block group"
-            if self.config["zone-building-blocks"] == "block_group"
-            else "census block"
-        )
         try:
             return self.area2progs_vec[int(area)]
         except KeyError:
-            print(f"Could not find any programs for {area_name} {area}.")
             return np.zeros(len(self.programs.program_df.index), dtype=int)
         except ValueError:
             # print(f"Missing {area_name} for student.")
@@ -383,8 +380,6 @@ class Zones:
             for area_id in self.area_id2prog_list:
                 if program not in self.area_id2prog_list[area_id]:
                     self.area_id2prog_list[area_id].append(program)
-
-        print(f"Added {len(citywide_programs)} Citywide programs to all zones.")
 
     def set_zone(self, concept: int | str):
         """Set the current zones to a preexisting concept (0, 1, 2, 3) or the zone file passed.

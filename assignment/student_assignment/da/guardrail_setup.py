@@ -83,17 +83,11 @@ class GuardrailSetup:
                     p_val = float(thresholds.split(":")[1])
                     # 2. On calcule la vraie valeur numérique dans les données
                     thresholds = np.percentile(index_col, p_val)
-                    print(
-                        f"Computed dynamic threshold for {thresholds} (percentile {p_val})"
-                    )
                     thresholds = np.atleast_1d(thresholds)
                 except (ValueError, IndexError):
                     raise ValueError(
                         f"Invalid format for thresholds: {thresholds}. Expected format 'percentile:50'"
                     )
-            print(
-                "Using explicit thresholds for reserve categories:", thresholds
-            )
         else:
             raise ValueError(
                 "Neither 'num_categories' nor 'thresholds' defined for reserve settings."
@@ -176,7 +170,6 @@ class GuardrailSetup:
         all_programs_ids = range(self.num_programs)
         if citywide_only:
             # TODO: Change hand-coded citywide schools KG grade to work with different data.
-            print("Reserve only for citywide schools.")
             citywide_schools = [
                 618,
                 449,
@@ -208,7 +201,6 @@ class GuardrailSetup:
         )
 
         if use_citywide_separate_reserves:
-            print("Using separate reserves for citywide schools.")
             citywide_schools = [
                 618,
                 449,

@@ -1,5 +1,7 @@
 """Data interface for programs."""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -15,7 +17,6 @@ class Programs:
         self, program_data_file: str, program_codes_file: str, config: dict
     ):
         self._config = config
-        print("Loading program data from:", program_data_file)
         self.program_df = pd.read_csv(program_data_file)
         if self._config.get("remove-special-lps", False):
             self._remove_special_lps()
@@ -93,14 +94,17 @@ class Programs:
 
         Args:
             program (str): program code
-            quiet (bool, optional): If True, do not print error message if program code is not found. Defaults to False.
+            quiet (bool, optional): If True, do not warn when the program code is not found. Defaults to False.
 
         Returns:
             int: program index
         """
         if program not in self.indices:
             if not quiet:
-                print("Programs.index: no such program: ", program)
+                warnings.warn(
+                    f"Programs.index: no such program: {program}",
+                    stacklevel=2,
+                )
             return -1
         return self.indices[program]
 

@@ -88,7 +88,6 @@ class EvaluateAssignments:
 
         table = labels.join(metrics)
         table = table.join(count)
-        print("Table path:", table_path)
         table.to_csv(table_path, index=False)
 
     @staticmethod

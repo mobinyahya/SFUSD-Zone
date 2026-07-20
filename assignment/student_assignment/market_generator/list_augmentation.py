@@ -225,7 +225,6 @@ def augment_preferences(
         pref_lengths,
         augmented_lengths,
     )
-    _print_impact_table(impact_df)
 
     return augmented_prefs, augmented_lengths, impact_df
 
@@ -375,34 +374,3 @@ def _subgroup_row(
             float(augmented_lengths[in_sub].mean()) if n_total > 0 else 0.0
         ),
     }
-
-
-def _print_impact_table(impact_df: pd.DataFrame) -> None:
-    """Print the subgroup impact table to console.
-
-    Args:
-        impact_df: DataFrame with subgroup impact stats.
-    """
-    print("\n" + "=" * 100)
-    print("LIST AUGMENTATION — IMPACT BY SUBGROUP")
-    print("=" * 100)
-    print(
-        f"{'Subgroup':<35} {'N':>6} "
-        f"{'Targ':>6} {'Elig':>6} {'Augm':>6} "
-        f"{'%Augm':>7} {'AvgAdd':>7} "
-        f"{'ListBef':>8} {'ListAft':>8}"
-    )
-    print("-" * 100)
-    for _, row in impact_df.iterrows():
-        print(
-            f"{row['subgroup']:<35} "
-            f"{row['n_students']:>6} "
-            f"{row['n_targeted']:>6} "
-            f"{row['n_eligible']:>6} "
-            f"{row['n_augmented']:>6} "
-            f"{row['pct_augmented']:>6.1f}% "
-            f"{row['avg_programs_added']:>7.2f} "
-            f"{row['avg_list_before']:>8.2f} "
-            f"{row['avg_list_after']:>8.2f}"
-        )
-    print("=" * 100 + "\n")

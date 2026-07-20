@@ -13,6 +13,7 @@ internally).
 import os
 import re
 import sys
+import warnings
 from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -48,7 +49,9 @@ def resolve_variables(item, root_config):
             if key in root_config:
                 return str(root_config[key])
             else:
-                print(f"Warning: Could not resolve variable ${{{key}}}")
+                warnings.warn(
+                    f"Could not resolve variable ${{{key}}}", stacklevel=2
+                )
                 return match.group(0)
 
         return pattern.sub(replace, item)
@@ -95,10 +98,8 @@ def _run_subconfig_worker(
     c._original_config = single_config
     c.subconfigs = iter(subconfig_names)
 
-    print(f"--> [Worker] Starting subconfigs: {subconfig_names}")
     m = MarketGenerator()
     _run_market_generator(m)
-    print(f"--> [Worker] Completed subconfigs: {subconfig_names}")
 
 
 @click.command()
@@ -129,48 +130,34 @@ def generate(config_path, sample, frac, workers):
     if workers < 1:
         raise click.BadParameter("--workers must be >= 1")
 
-    print(f"--> Loading configuration from: {config_path}")
-
     # 1. Load the raw YAML
     with open(config_path) as f:
         raw_config = yaml.safe_load(f)
 
     # 2. APPLY OVERRIDES HERE
     if sample:
-        print(f"--> Overriding sample: {sample}")
         raw_config["sample"] = sample
     if frac:
-        print(f"--> Overriding frac: {frac}")
         raw_config["frac"] = frac
 
     # 3. Resolve variables using the updated raw_config
-    print("--> Resolving ${variables}...")
     custom_config = resolve_variables(raw_config, raw_config)
 
     subconfigs_list = custom_config.get("subconfigs", [])
 
     # 4. Run simulations — sequentially or in parallel
     if workers == 1:
-        print("--> Initializing Configerator...")
         c = Configerator()
         c._config = custom_config
         c._original_config = custom_config
         c.subconfigs = iter(subconfigs_list)
 
-        print("--> Starting Simulation...")
         m = MarketGenerator()
         _run_market_generator(m)
     else:
         subconfig_chunks = _chunk_subconfigs(subconfigs_list, workers)
         if not subconfig_chunks:
-            print("--> No subconfigs to simulate.")
-            print("--> Simulation Complete.")
             return
-        print(
-            f"--> Starting parallel simulation: "
-            f"{len(subconfigs_list)} subconfigs × "
-            f"{len(subconfig_chunks)} workers..."
-        )
         with ProcessPoolExecutor(max_workers=len(subconfig_chunks)) as executor:
             futures = {
                 executor.submit(
@@ -179,20 +166,20 @@ def generate(config_path, sample, frac, workers):
                 for subconfig_chunk in subconfig_chunks
             }
             failed = []
+            failure_details = []
             for future in as_completed(futures):
                 subconfig_chunk = futures[future]
                 try:
                     future.result()
                 except Exception as exc:
-                    print(
-                        f"--> [ERROR] Subconfigs {subconfig_chunk} failed: {exc}"
-                    )
                     failed.extend(subconfig_chunk)
+                    failure_details.append(f"{subconfig_chunk}: {exc}")
 
         if failed:
-            raise RuntimeError(f"{len(failed)} subconfig(s) failed: {failed}")
-
-    print("--> Simulation Complete.")
+            raise RuntimeError(
+                f"{len(failed)} subconfig(s) failed: {failed}. "
+                + "; ".join(failure_details)
+            )
 
 
 if __name__ == "__main__":
