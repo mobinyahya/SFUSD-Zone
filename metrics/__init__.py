@@ -5,15 +5,11 @@ from metrics.base import (
     MetricsContext,
     MetricsResult,
 )
-from metrics.calculator import (
-    MetricsCalculator,
-    ZoneMetricsCalculator,
-)
+from metrics.calculator import MetricsCalculator
 
 __all__ = [
     "MetricOutput",
     "MetricsContext",
     "MetricsResult",
     "MetricsCalculator",
-    "ZoneMetricsCalculator",
 ]

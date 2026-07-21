@@ -96,9 +96,3 @@ def _module_name(module: MetricFn) -> str:
         + "."
         + getattr(module, "__name__", repr(module))
     )
-
-
-# Temporary name bridge for imports during the migration. The constructor is the
-# optimization-only constructor above; legacy zone_dict/G inputs are intentionally not
-# supported.
-ZoneMetricsCalculator = MetricsCalculator
