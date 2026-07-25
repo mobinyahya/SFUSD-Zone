@@ -11,10 +11,9 @@ from .match_evaluator import MatchEvaluator
 
 
 class EvaluateAssignments:
-    def __init__(self, market):
+    def __init__(self, market, iterations=25):
         self.market = market
         self.distances = market.students.distance_data
-        self.market.students.get_SES_score()
         self.iterations = iterations
 
     def evaluate_results(
@@ -23,7 +22,6 @@ class EvaluateAssignments:
         assignment_names: list[str],
         table_path: pathlib.Path,
     ):
-        school_data = self.market.schools.school_data
         assignment1 = assignment_names[0]
         if assignment1 != "Assignment_real_match":
             filename = assignment_path / (assignment1 + "_iteration0.csv")
@@ -36,12 +34,7 @@ class EvaluateAssignments:
             pd.read_csv(filename, index_col=0),
             self.distances,
         )
-        if assignment1 == "real_match":
-            real_match = True
-        else:
-            real_match = False
-        result = me.eval_assignment_overview(school_data, real_match=real_match)
-        # result = me.eval_assignment_overview(school_data,real_match=real_match)
+        result = me.eval_assignment_basic()
         result["sim_number"] = sim_num
         result = pd.concat([info, result])
         results = pd.DataFrame(result).T
@@ -65,13 +58,12 @@ class EvaluateAssignments:
                     self.distances,
                 )
                 self.me = me
-                # result = me.eval_assignment_overview(school_data)
-                # result = me.eval_assignment_equity(school_data)
-                # result = me.eval_assignment_full(school_data)
-                result = me.eval_assignment_paper_metrics()
+                result = me.eval_assignment_basic()
                 result["sim_number"] = sim_num
                 result = pd.concat([info, result])
-                results = results.append(result, ignore_index=True)
+                results = pd.concat(
+                    [results, pd.DataFrame(result).T], ignore_index=True
+                )
 
         label_cols = ["Assignment"]
         labels = results[label_cols + ["sim_number"]]
@@ -348,7 +340,5 @@ if __name__ == "__main__":
     # market.students.get5CTIPTypes()
     market.students.get_diversity_categories()
     s = EvaluateAssignments(market)
-    s.evaluate_results(
-        assignment_path, assignment_names, table_path=summary_path
-    )
+    s.evaluate_results(assignment_path, assignment_names, table_path=summary_path)
     s.reformat_paper_metrics(summary_path)

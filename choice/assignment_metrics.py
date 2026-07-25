@@ -161,7 +161,7 @@ def prepare_assignment_df(
 
 def choice_metrics_for_assignment(assignments: pd.DataFrame) -> dict[str, Any]:
     evaluator = _match_evaluator_for_assignment(assignments)
-    paper_metrics = evaluator.eval_assignment_paper_metrics()
+    paper_metrics = evaluator.eval_assignment_basic()
     metrics = dependency_metrics_to_choice_metrics(paper_metrics)
     metrics.update(additional_choice_metrics(evaluator.student_data))
     return metrics

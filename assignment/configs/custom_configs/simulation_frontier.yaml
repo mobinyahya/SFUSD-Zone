@@ -18,7 +18,7 @@ schools_data: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
 new_ctip_path:           # optional .npy equity-block file; empty to skip
 
 # Frontier axes. Must be metric names produced by
-# eval_assignment_paper_metrics (e.g. "Distance Av (All Assigned)",
+# eval_assignment_full (e.g. "Distance Av (All Assigned)",
 # "Dissimilarity (High FRL)", "Dissimilarity (Black|Asian|Hispanic|White)",
 # "Prop Top 1 choice (All Assigned)"). Lower-is-better on both axes by default.
 x_metric: "Distance Av (All Assigned)"

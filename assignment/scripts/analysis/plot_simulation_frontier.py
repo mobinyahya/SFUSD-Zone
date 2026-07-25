@@ -4,7 +4,7 @@ This is the student-assignment analogue of RA_SFUSD's
 ``runners/plot_frontier.py``. Instead of RA_SFUSD's metric stack, it reuses
 this project's evaluation pipeline: every simulation CSV under
 ``data_folder`` is scored with the same ``MatchEvaluator`` /
-``eval_assignment_paper_metrics`` path as ``analyze_trends.py``. The two
+``eval_assignment_full`` path as ``analyze_trends.py``. The two
 frontier axes are therefore real "paper metrics" (by default average travel
 distance vs. the high-FRL dissimilarity index), and the script extracts the
 non-dominated (Pareto-optimal) simulations and plots them.
@@ -22,7 +22,7 @@ Config keys (YAML):
     program_data / student_data / schools_data: evaluator input CSVs.
     new_ctip_path: optional ``.npy`` equity-block file.
     x_metric / y_metric: metric names for the two axes (must be produced by
-        ``eval_assignment_paper_metrics``; run with ``--list-metrics`` to see
+        ``eval_assignment_full``; run with ``--list-metrics`` to see
         the available names).
     x_minimize / y_minimize: whether lower is better on each axis (default
         true for both).
@@ -149,9 +149,7 @@ def compute_pareto_frontier(
     # tells us whether the current point is dominated.
     order = np.lexsort((y_obj, x_obj))
     y_sorted = y_obj[order]
-    best_before = np.concatenate(
-        ([np.inf], np.minimum.accumulate(y_sorted)[:-1])
-    )
+    best_before = np.concatenate(([np.inf], np.minimum.accumulate(y_sorted)[:-1]))
     keep = y_sorted <= best_before + tol
 
     frontier_positions = order[keep]
@@ -170,11 +168,7 @@ def _point_label(csv_path: str, label_parts: int) -> str:
         A "/"-joined label with the ``.csv`` suffix stripped.
     """
     parts = Path(csv_path).with_suffix("").parts
-    return (
-        "/".join(parts[-label_parts:])
-        if label_parts > 0
-        else Path(csv_path).stem
-    )
+    return "/".join(parts[-label_parts:]) if label_parts > 0 else Path(csv_path).stem
 
 
 def _group_key(csv_path: str, data_folder: str) -> str:
@@ -194,9 +188,7 @@ def _group_key(csv_path: str, data_folder: str) -> str:
         the CSV sits directly in ``data_folder``.
     """
     try:
-        relative = (
-            Path(csv_path).resolve().relative_to(Path(data_folder).resolve())
-        )
+        relative = Path(csv_path).resolve().relative_to(Path(data_folder).resolve())
     except ValueError:
         return Path(csv_path).stem
     return relative.parts[0] if len(relative.parts) > 1 else Path(csv_path).stem
@@ -279,9 +271,7 @@ def aggregate_by_policy(results: pd.DataFrame) -> pd.DataFrame:
         ``label`` set to the group key.
     """
     numeric_cols = results.select_dtypes("number").columns.tolist()
-    aggregated = results.groupby("group_key", as_index=False)[
-        numeric_cols
-    ].mean()
+    aggregated = results.groupby("group_key", as_index=False)[numeric_cols].mean()
     aggregated["label"] = aggregated["group_key"]
     return aggregated
 
@@ -432,9 +422,7 @@ def plot_frontier(
                 textcoords="offset points",
                 fontsize=8,
                 zorder=7,
-                bbox=dict(
-                    boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7
-                ),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7),
             )
 
     # Colorbar at the bottom, keeping the right side free for the legend.

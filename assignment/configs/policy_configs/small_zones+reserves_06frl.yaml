@@ -7,7 +7,7 @@ ctip-options:
 - 1
 
 restrict-zone: true
-guard-rails: 1
+guard-rails: 0
 reserve-settings: {
   "column": "freelunch_prob", 
   "thresholds": "percentile:60", 
@@ -36,5 +36,4 @@ zone-building-blocks: block_group
 designate: true
 ties-options:
 - MTB 
-
 

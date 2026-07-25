@@ -10,16 +10,16 @@ restrict-zone: true
 guard-rails: 0
 reserve-settings: {
   "column": "freelunch_prob", 
-  "thresholds": "percentile:60", 
+  "thresholds": "percentile:50", 
   "lower_disadvantaged": true, 
   "citywide_only": false,  
-  "reserve_fraction": [0.6, 0.4]
+  "reserve_fraction": [0.5, 0.5]
   }
 non_designation_boost: 128
 soft_reserve_boost: 64
 
 policies:
-- 6zone-1
+- generated_zones
 
 priority-weights:
   ctip: 8
@@ -32,8 +32,11 @@ priority-weights:
     ctip: 2
 
 sibling-access: true
-zone-building-blocks: block_group
+zone-building-blocks: block
 designate: true
 ties-options:
 - MTB 
 
+iterations:
+  start: 1
+  end: 2

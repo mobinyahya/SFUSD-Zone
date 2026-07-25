@@ -5,7 +5,7 @@ ctip-options:
 - 1
 
 restrict-zone: false
-guard-rails: 1
+guard-rails: 0
 reserve-settings: {
   "column": "freelunch_prob", 
   "thresholds": "percentile:50", 
@@ -36,4 +36,4 @@ sibling-access: true
 designate: true
 zone-building-blocks: 'attendance_area'
 ties-options:
-- MTB 
+- MTB

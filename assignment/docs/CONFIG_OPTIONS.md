@@ -146,6 +146,9 @@ Output: `<output_dir>/metrics_comparison.xlsx` with sheets `Mean Values`,
 `Std Values`, `Mean ± Std` (+ per-year sheets when run via the pipeline
 script) and diagnostic plots under `<output_dir>/diagnostics/`.
 
+Metric definitions and the distinction between `eval_assignment_basic()` and
+`eval_assignment_full()` are documented in `ASSIGNMENT_METRICS.md`.
+
 ## 8. Pipeline settings files (`scripts/settings/*.env`)
 
 `scripts/run_models_estimates.sh --settings <file>` sources a bash

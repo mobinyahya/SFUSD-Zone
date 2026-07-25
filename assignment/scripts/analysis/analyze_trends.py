@@ -27,7 +27,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from student_assignment.evaluation.short_match_evaluator import MatchEvaluator
+from student_assignment.evaluation.match_evaluator import MatchEvaluator
 from student_assignment.utils.plotting import (
     apply_plot_style,
     get_color_palette,
@@ -78,7 +78,7 @@ def _evaluate_csv_worker(args: Task) -> pd.Series | None:
             schools_latlon_path=schools_data_path,
             new_ctip_path=new_ctip_path,
         )
-        return match_eval.eval_assignment_paper_metrics().fillna(0)
+        return match_eval.eval_assignment_full().fillna(0)
     except FileNotFoundError as exc:
         logger.error("Student data not found: %s", exc)
         return None
@@ -117,13 +117,16 @@ def _collect_csv_files(run: dict) -> tuple[list[str], bool]:
     if "run_csv" in run:
         return [run["run_csv"]], True
 
-    run_folder = run["folder"]
-    csv_files = [
-        str(Path(root) / fname)
-        for root, _subdirs, files in os.walk(run_folder)
-        for fname in files
-        if fname.endswith(".csv")
-    ]
+    csv_files = []
+    for path in sorted(Path(run["folder"]).rglob("*.csv")):
+        try:
+            columns = set(pd.read_csv(path, nrows=0).columns)
+        except (OSError, pd.errors.ParserError, UnicodeDecodeError) as exc:
+            logger.warning("Could not inspect CSV %s: %s", path, exc)
+            continue
+        required = {"studentno", "programno", "rank"}
+        if required <= columns and "programcodes" in columns:
+            csv_files.append(str(path))
     return csv_files, False
 
 
@@ -173,16 +176,12 @@ def export_to_excel(
     Returns:
         Path to the exported Excel (or CSV fallback) file.
     """
-    df_mean = pd.DataFrame(
-        {lbl: all_metrics_data[lbl]["mean"] for lbl in labels}
-    )
+    df_mean = pd.DataFrame({lbl: all_metrics_data[lbl]["mean"] for lbl in labels})
     df_std = pd.DataFrame({lbl: all_metrics_data[lbl]["std"] for lbl in labels})
 
     if row_order:
         existing_ordered = [r for r in row_order if r in df_mean.index]
-        remaining = sorted(
-            r for r in df_mean.index if r not in set(existing_ordered)
-        )
+        remaining = sorted(r for r in df_mean.index if r not in set(existing_ordered))
         final_order = existing_ordered + remaining
         df_mean = df_mean.reindex(final_order)
         df_std = df_std.reindex(final_order)
@@ -212,14 +211,10 @@ def export_to_excel(
         csv_std = os.path.join(output_dir, "metrics_std.csv")
         df_mean.to_csv(csv_mean)
         df_std.to_csv(csv_std)
-        logger.warning(
-            "openpyxl unavailable. Exported CSVs: %s, %s", csv_mean, csv_std
-        )
+        logger.warning("openpyxl unavailable. Exported CSVs: %s, %s", csv_mean, csv_std)
         excel_path = csv_mean
 
-    logger.info(
-        "  Total metrics: %d | Total runs: %d", len(df_mean), len(labels)
-    )
+    logger.info("  Total metrics: %d | Total runs: %d", len(df_mean), len(labels))
     return excel_path
 
 
@@ -241,8 +236,7 @@ def plot_diagnostic_trends(
     os.makedirs(diag_dir, exist_ok=True)
 
     records = [
-        {"label": lbl, **all_metrics_data[lbl]["mean"].to_dict()}
-        for lbl in labels
+        {"label": lbl, **all_metrics_data[lbl]["mean"].to_dict()} for lbl in labels
     ]
     metrics_df = pd.DataFrame(records)
 
@@ -250,9 +244,7 @@ def plot_diagnostic_trends(
         logger.warning("No diagnostic metrics to plot.")
         return
 
-    def _plot_metric_group(
-        prefix: str, title: str, ylabel: str, filename: str
-    ) -> None:
+    def _plot_metric_group(prefix: str, title: str, ylabel: str, filename: str) -> None:
         cols = [c for c in metrics_df.columns if c.startswith(prefix)]
         if not cols:
             return
@@ -266,9 +258,7 @@ def plot_diagnostic_trends(
         )
         melted["Metric"] = melted["Metric"].str.replace(prefix, "", regex=False)
 
-        sns.lineplot(
-            data=melted, x="label", y="Value", hue="Metric", marker="o"
-        )
+        sns.lineplot(data=melted, x="label", y="Value", hue="Metric", marker="o")
         plt.title(title)
         plt.xlabel("Year")
         plt.ylabel(ylabel)
@@ -414,9 +404,7 @@ def main() -> None:
         if label not in raw_results or label not in run_meta:
             continue
         _, is_single_file = run_meta[label]
-        all_metrics_data[label] = _aggregate_metrics(
-            raw_results[label], is_single_file
-        )
+        all_metrics_data[label] = _aggregate_metrics(raw_results[label], is_single_file)
 
     labels = [r["label"] for r in runs if r["label"] in all_metrics_data]
 
@@ -438,8 +426,7 @@ def main() -> None:
     def get_series(metric_name: str, stat: str = "mean") -> np.ndarray:
         """Return metric values across labels as a float array (NaN for missing)."""
         values = [
-            all_metrics_data[lbl][stat].get(metric_name, np.nan)
-            for lbl in labels
+            all_metrics_data[lbl][stat].get(metric_name, np.nan) for lbl in labels
         ]
         return np.array(values, dtype=float)
 
@@ -461,8 +448,7 @@ def main() -> None:
         plt.tight_layout()
 
         filename = (
-            metric.replace(" ", "_").replace("/", "_").replace("%", "Pct")
-            + ".png"
+            metric.replace(" ", "_").replace("/", "_").replace("%", "Pct") + ".png"
         )
         save_figure(os.path.join(output_dir, filename))
 
@@ -470,9 +456,7 @@ def main() -> None:
     sample_keys = all_metrics_data[labels[0]]["mean"].index.tolist()
 
     for pattern in config.get("group_metrics", []):
-        regex_pattern = (
-            "^" + re.escape(pattern).replace("\\{group\\}", "(.*)") + "$"
-        )
+        regex_pattern = "^" + re.escape(pattern).replace("\\{group\\}", "(.*)") + "$"
 
         matches = [
             (k, re.match(regex_pattern, k).group(1))  # type: ignore[union-attr]

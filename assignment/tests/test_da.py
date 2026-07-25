@@ -1,6 +1,7 @@
 import numpy as np
 
 from assignment.student_assignment.da.da import DeferredAcceptance
+from assignment.student_assignment.da.da_with_guardrails import DAwithGuards
 
 
 def test_deferred_acceptance_rejects_lower_priority_students():
@@ -75,3 +76,22 @@ def test_deferred_acceptance_skips_infeasible_priorities():
     np.testing.assert_array_equal(match, np.array([2, 1]))
     np.testing.assert_array_equal(cutoffs, np.array([3.0, 5.0]))
     np.testing.assert_array_equal(rank, np.array([2, 1]))
+
+
+def test_strict_guardrails_leave_unreserved_programs_open():
+    da = DAwithGuards(
+        SchoolCaps=np.array([1, 0]),
+        StudentPrts=np.array([[10.0, -1.0]]),
+        StudPrefs=np.array([[1, 0]]),
+        classOfStudent=np.array([0]),
+        strictGuards=1,
+    )
+    da.setguards(
+        program_reserve_frac=np.array([[0.0, 0.0], [0.0, 0.0]]),
+        numOfClasses=2,
+    )
+
+    match, rank = da.run()
+
+    np.testing.assert_array_equal(match, np.array([1]))
+    np.testing.assert_array_equal(rank, np.array([1]))

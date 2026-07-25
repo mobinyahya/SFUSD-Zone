@@ -6,20 +6,19 @@ assignment-algorithm: DA
 ctip-options:
 - 1
 
-restrict-zone: true
-guard-rails: 0
+restrict-zone: false
+guard-rails: 1
 reserve-settings: {
   "column": "freelunch_prob", 
   "thresholds": "percentile:60", 
-  "lower_disadvantaged": true, 
-  "citywide_only": false,  
+  "lower_disadvantaged": true ,  
   "reserve_fraction": [0.6, 0.4]
   }
 non_designation_boost: 128
 soft_reserve_boost: 64
 
 policies:
-- 6zone-1
+- Con1
 
 priority-weights:
   ctip: 8
@@ -31,9 +30,9 @@ priority-weights:
     sibling: 4
     ctip: 2
 
+  
 sibling-access: true
-zone-building-blocks: block_group
 designate: true
+zone-building-blocks: 'attendance_area'
 ties-options:
 - MTB 
-

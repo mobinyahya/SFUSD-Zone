@@ -1,2270 +1,676 @@
+"""Assignment outcome metrics for benchmarks and standalone trend analysis.
+
+Created 12/11/2022
+@author vravoson
+
+``eval_assignment_basic`` is the compact metric set consumed by the benchmark
+suite. ``eval_assignment_full`` is the extended standalone report used by
+``scripts/analysis/analyze_trends.py``. The latter intentionally remains a
+config-and-saved-CSV workflow because not every assignment policy uses zones.
+"""
+
+import ast
 import csv
-import math
+import logging
+import os
+from math import asin, cos, isnan, radians, sin, sqrt
 
 import numpy as np
 import pandas as pd
 
-LANG_CODES = (
-    "CN",
-    "CE",
-    "CB",
-    "CT",
-    "NC",
-    "JB",
-    "JE",
-    "JN",
-    "KN",
-    "KE",
-    "MN",
-    "ME",
-    "SB",
-    "SN",
-    "SE",
-    "NS",
-    "FB",
+from ..definitions.constants import (
+    SPECIAL_PROGRAMS,
+    ZONE_COLORS,
 )
-ELL_CODES = (
-    "CN",
-    "CE",
+
+logger = logging.getLogger(__name__)
+
+AALPI = ["Black", "Hispanic", "Pacific Islander"]
+DIAGNOSTIC_ETHNICITIES = [
+    "Asian",
+    "Black",
+    "Decline to State",
+    "Hispanic",
+    "Other",
+    "Pacific Islander",
+    "Two or More Races",
+    "White",
+]
+DIAGNOSTIC_PROGRAM_TYPES = [
     "CB",
+    "CE",
+    "CN",
     "CT",
+    "FB",
+    "GE",
     "JE",
     "JN",
-    "KN",
     "KE",
-    "MN",
+    "KN",
     "ME",
-    "SB",
-    "SN",
-    "SE",
+    "MN",
+    "NC",
     "NS",
+    "SB",
+    "SE",
+    "SN",
+]
+
+# Legacy cluster paths, used only when the caller does not provide the
+# corresponding constructor argument. Prefer setting ``schools_data`` /
+# ``new_ctip_path`` in the analyze_trends config (see
+# scripts/settings/models_cluster.env).
+LEGACY_SCHOOLS_LATLON_PATH = (
+    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/"
+    "schools_rehauled_withMissionBay_2324.csv"
+)
+LEGACY_NEW_CTIP_PATH = (
+    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
 )
 
 
 class MatchEvaluator:
-    def __init__(self, students, assignments, distances):
-        self.students = students
-        self.student_data = students.student_data
-        self.distance_data = distances
+    def __init__(
+        self,
+        student_data,
+        assignments,
+        distances=None,
+        *,
+        first_round=False,
+        dropout=False,
+        low_income=95292,
+        medium_income=95292,
+        high_income=110850,
+        year=None,
+        grade=None,
+        no_special_program=False,
+        program_file=None,
+        schools_latlon_path=None,
+        new_ctip_path=None,
+    ):
+        """Build an evaluator from benchmark objects or standalone data frames.
 
-        if "assigned_utility" in assignments.columns:
-            assignments["assigned_utility"] = assignments[
+        The benchmark passes a ``Students``-like object, an assignment frame
+        indexed by ``studentno``, and a wide student-by-program distance frame.
+        Standalone analysis passes raw student and assignment data frames plus
+        program and school CSV paths.
+        """
+        self._set_program_groups()
+        if not isinstance(student_data, pd.DataFrame):
+            self._init_basic(student_data, assignments, distances)
+            return
+
+        self._mode = "full"
+        self.student_data = student_data.copy()
+        self.low_income = low_income
+        self.medium_income = medium_income
+        self.high_income = high_income
+        self.grade = grade
+        self.year = year
+
+        if schools_latlon_path is None:
+            schools_latlon_path = LEGACY_SCHOOLS_LATLON_PATH
+            logger.warning(
+                "No schools_latlon_path provided; falling back to legacy "
+                "cluster path %s. Set `schools_data` in the analysis config.",
+                schools_latlon_path,
+            )
+        self.schools_latlon = pd.read_csv(schools_latlon_path)
+
+        if new_ctip_path is None and os.path.exists(LEGACY_NEW_CTIP_PATH):
+            new_ctip_path = LEGACY_NEW_CTIP_PATH
+        new_ctip_list = np.load(new_ctip_path) if new_ctip_path else np.array([])
+
+        if program_file is None:
+            raise ValueError(
+                "program_file is required (path to the programs CSV, e.g. "
+                "programs_without_specialprogs_<year>.csv)"
+            )
+        self.programs = pd.read_csv(program_file)
+        if "program_id" in self.programs.columns:
+            self.programs["program_id"] = self.programs["program_id"].astype(str)
+
+        if first_round:
+            self.student_data = self.student_data[
+                self.student_data["r1_ranked_idschool"].notna()
+            ].copy()
+
+        self.assignments = assignments.copy()
+        if "designation" not in self.assignments:
+            self.assignments["designation"] = 0
+        if "In-Zone Rank" not in self.assignments:
+            self.assignments["In-Zone Rank"] = self.assignments["rank"]
+        self.student_data = self.student_data.merge(self.assignments, on="studentno")
+        if "programcodes" not in self.student_data:
+            self.student_data["programcodes"] = ""
+        self.student_data["programcodes"] = (
+            self.student_data["programcodes"].fillna("").astype(str)
+        )
+
+        if no_special_program:
+            self.student_data = self.student_data[
+                ~self.student_data["r1_programs"].apply(self._has_special_program)
+            ].copy()
+
+        equity_blocks = set(new_ctip_list.tolist())
+        self.student_data["et2"] = (
+            self.student_data["census_block"].isin(equity_blocks).astype(int)
+        )
+        self.student_data["assignment"] = self.student_data["programcodes"].mask(
+            self.student_data["programcodes"].str.strip() == "", "000-ZZ"
+        )
+        school_codes = self.student_data["assignment"].str.split("-", n=1).str[0]
+        self.student_data["assigned_school"] = (
+            pd.to_numeric(school_codes, errors="coerce").fillna(0).astype(int)
+        )
+        self.student_data["programtype"] = self.student_data["assignment"].str[4:6]
+        self.student_data["frl"] = pd.to_numeric(
+            self.student_data["freelunch_prob"], errors="coerce"
+        ).fillna(0) + pd.to_numeric(
+            self.student_data["reducedlunch_prob"], errors="coerce"
+        ).fillna(0)
+        self.student_data["is_frl"] = (self.student_data["frl"] >= 0.5).astype(int)
+        self.student_data["assigned school"] = self.student_data["assignment"].str[:3]
+        self.map_ethnicity()
+        self.eval_distance()
+
+    def _set_program_groups(self):
+        self.immersion_programs = [
+            "CE",
+            "CN",
+            "CT",
+            "JE",
+            "JN",
+            "KE",
+            "KN",
+            "ME",
+            "MN",
+            "SE",
+            "SN",
+        ]
+        self.non_immersion_programs = ["CB", "FB", "NC", "NS", "SB"]
+        self.ge = ["GE"]
+        self.ce_se = ["CN", "CE", "CB", "SN", "SB", "SE"]
+        self.ge_immer_notimmer = (
+            self.immersion_programs + self.non_immersion_programs + self.ge
+        )
+
+    @staticmethod
+    def _has_special_program(value):
+        if pd.isna(value):
+            return False
+        try:
+            programs = ast.literal_eval(str(value))
+        except (SyntaxError, ValueError):
+            return False
+        return bool(set(programs).intersection(SPECIAL_PROGRAMS))
+
+    def _init_basic(self, students, assignments, distances):
+        if not hasattr(students, "student_data"):
+            raise TypeError(
+                "student_data must be a DataFrame or a Students-like object"
+            )
+        self._mode = "basic"
+        self.students = students
+        self.distance_data = distances
+        self.assignments = assignments.copy()
+        if "assigned_utility" in self.assignments:
+            self.assignments["assigned_utility"] = self.assignments[
                 "assigned_utility"
             ].replace(-np.inf, np.nan)
-            self.assigned_utility = assignments["assigned_utility"]
-            self.assigned_utility.min()
-            self.utility_exists = 1
-        else:
-            self.utility_exists = 0
 
-        self.assignments = assignments  # .set_index('studentno')
-        self.student_data = self.student_data.merge(
-            self.assignments, how="left", right_index=True, left_index=True
-        )
-        self.student_data.rename(
-            columns={"programcodes": "assignment"}, inplace=True
-        )
+        base = students.student_data.copy()
+        if base.index.name != "studentno":
+            base.index.name = "studentno"
+        self.student_data = base.join(self.assignments, how="left")
+        self.student_data.rename(columns={"programcodes": "assignment"}, inplace=True)
+        for column, default in {
+            "assignment": pd.NA,
+            "programno": 0,
+            "rank": np.nan,
+            "designation": 0,
+            "In-Zone Rank": np.nan,
+            "freelunch_prob": 0.0,
+            "reducedlunch_prob": 0.0,
+            "resolved_ethnicity": "",
+            "SES_category": np.nan,
+            "census_blockgroup": np.nan,
+        }.items():
+            if column not in self.student_data:
+                self.student_data[column] = default
+
+        self.student_data["programtype"] = self.student_data["assignment"].str[4:6]
+        self.student_data["assigned school"] = self.student_data["assignment"].str[:3]
+        self.student_data["frl"] = pd.to_numeric(
+            self.student_data["freelunch_prob"], errors="coerce"
+        ).fillna(0) + pd.to_numeric(
+            self.student_data["reducedlunch_prob"], errors="coerce"
+        ).fillna(0)
+        if self.student_data["SES_category"].isna().all():
+            self.student_data["SES_category"] = self._derive_ses_category(
+                self.student_data
+            )
+        self.student_data["assignment_dist"] = self._assigned_distances(distances)
         self.match_ranks = self.assignments["rank"]
-        self.student_data["main"] = pd.Series(
-            np.argmax(students.round_participation, axis=1) + 1,
-            index=students.student_data.index,
-        )  # should be done in Students
-        self.student_data["programtype"] = self.student_data["assignment"].str[
-            4:6
-        ]
-        self.student_data["frl"] = (
-            self.student_data["freelunch_prob"]
-            + self.student_data["reducedlunch_prob"]
-        )
-        self.student_data["assigned school"] = self.student_data[
-            "assignment"
-        ].str[:3]
-        if "In-Zone Rank" not in self.student_data.columns:
-            self.student_data["In-Zone Rank"] = np.nan
-        self.num_students = self.student_data.shape[0]
+        self.num_students = len(self.student_data)
         self.num_schools = self.student_data["assigned school"].nunique()
-        self.eval_distance()
-        self.eval_matrix = self._make_eval_matrix()
-        (
-            self.ethnic_groups,
-            self.ethnic_matrix,
-            self.ethnic_matrix_norm,
-            self.ethnic_total,
-            self.ethnic_total_norm,
-            self.populations,
-        ) = self._make_ethnic_matrix()
-        self.eths = [
-            "Black or African American",
-            "Asian",
-            "Hispanic/Latino",
-            "Two or More Races",
-            "Pacific Islander",
-            "White",
-        ]
-        self.eth_labels = [
-            "Black",
-            "Asian",
-            "Hispanic",
-            "Multiracial",
-            "PI",
-            "White",
-        ]
 
-    def eval_assignment_paper_metrics(self):
+    def _assigned_distances(self, distances):
+        if distances is None or distances.empty:
+            return pd.Series(np.nan, index=self.student_data.index, dtype=float)
+
+        def lookup(row):
+            program = row["assignment"]
+            if pd.isna(program) or program not in distances.columns:
+                return np.nan
+            studentno = row.name
+            if studentno not in distances.index:
+                return np.nan
+            return distances.at[studentno, program]
+
+        return self.student_data.apply(lookup, axis=1)
+
+    @staticmethod
+    def _derive_ses_category(student_data):
+        if {
+            "N'hood SES Score",
+            "FRL Score",
+        } <= set(student_data.columns):
+            score = 0.25 * pd.to_numeric(
+                student_data["N'hood SES Score"], errors="coerce"
+            ) + 0.25 * pd.to_numeric(student_data["FRL Score"], errors="coerce")
+        else:
+            score = pd.to_numeric(student_data["frl"], errors="coerce")
+        non_null = score.dropna()
+        if non_null.empty:
+            return pd.Series(1, index=student_data.index, dtype=int)
+        lower, upper = np.percentile(non_null, [33, 66])
+        return score.apply(
+            lambda value: 1 if value < lower else (2 if value < upper else 3)
+        )
+
+    def eval_assignment_basic(self):
+        """Return the compact assignment metrics consumed by benchmarks.
+
+        These names and formulas intentionally preserve the existing benchmark
+        contract. In particular, ``Programs with 1-4 AA`` remains the legacy
+        count of schools with one to four Black students; the full evaluator
+        has the correctly scoped Black-or-Pacific-Islander GE-program metric.
+        """
         metrics = {}
         student_data = self.student_data
-        assigned_students = student_data[student_data["programno"] > 0]
-        assigned_students = assigned_students.reindex()
-        assigned_students.shape[0]
+        assigned_students = student_data[self._assigned_mask(student_data)].copy()
+        enrollment = assigned_students.groupby("assigned school").size()
 
-        school_groups = assigned_students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-
-        # PROXIMITY
-        metrics["Distance Av"] = self.metric_dist_av(assigned_students)
-        metrics["Distance < 0.5"] = self.metric_dist_threshold(
-            assigned_students, 0.5, False
-        )
-        metrics["Distance > 3"] = self.metric_dist_threshold(
-            assigned_students, 3, True
-        )
-
-        # DIVERSITY
+        metrics.update(self._basic_distance_metrics(assigned_students))
         metrics["Schools above 10% district FRL"] = (
             self.metric_school_frl_above_district(0.1)
         )
         metrics["Schools above 15% district FRL"] = (
             self.metric_school_frl_above_district(0.15)
         )
-        AALPI = [
+
+        aalpi = [
             "Black or African American",
             "Hispanic/Latino",
+            "Hispanic/Latinx",
             "Pacific Islander",
         ]
         aalpi_students = assigned_students[
-            assigned_students["resolved_ethnicity"].apply(lambda x: x in AALPI)
+            assigned_students["resolved_ethnicity"].isin(aalpi)
         ]
-        metrics["AALPI in school with +10% FRL"] = (
-            self.metric_FRL_concentration(
-                assigned_students, aalpi_students, 0.1
-            )
+        metrics["AALPI in school with +10% FRL"] = self.metric_FRL_concentration(
+            assigned_students, aalpi_students, 0.1
         )
-        metrics["AALPI in school with +15% FRL"] = (
-            self.metric_FRL_concentration(
-                assigned_students, aalpi_students, 0.15
-            )
+        metrics["AALPI in school with +15% FRL"] = self.metric_FRL_concentration(
+            assigned_students, aalpi_students, 0.15
         )
-        metrics["Dissimilarity AALPI"] = self.metric_dissimilarity(
+        metrics["Dissimilarity AALPI"] = self._basic_dissimilarity(
             aalpi_students, enrollment
         )
-        ses3_students = assigned_students[
-            assigned_students["SES_category"] == 3
-        ]
-        metrics["Dissimilarity SES3"] = self.dissimilarity(
+        ses3_students = assigned_students[assigned_students["SES_category"] == 3]
+        metrics["Dissimilarity SES3"] = self._basic_dissimilarity(
             ses3_students, enrollment
         )
-        # black_isolated = sum([1 for x in self.ethnic_matrix['Black or African American'] if 1 <= x <= 4])
-        # metrics["Programs with 1-4 AA"] = black_isolated/len(self.ethnic_matrix)
-        metrics["Programs with 1-4 AA"] = self.metric_isolation(
-            assigned_students[
-                assigned_students["resolved_ethnicity"]
-                == "Black or African American"
+        black_students = assigned_students[
+            assigned_students["resolved_ethnicity"] == "Black or African American"
+        ]
+        metrics["Programs with 1-4 AA"] = self.metric_isolation(black_students, 5)
+        metrics["# Racial majority schools"] = (
+            self.metric_racial_majority_schools(assigned_students)
+        )
+
+        metrics.update(self._basic_choice_metrics(student_data, assigned_students))
+        metrics["BG Cohesion (3)"] = self.metric_BG_cohesion(assigned_students, 3)
+
+        high_frl_assigned = assigned_students[assigned_students["frl"] > 0.5]
+        low_frl_assigned = assigned_students[assigned_students["frl"] <= 0.5]
+        groups = {
+            "Black or African American": assigned_students[
+                assigned_students["resolved_ethnicity"] == "Black or African American"
             ],
-            5,
-        )
-
-        # CHOICE
-        metrics["Unassigned"] = self.metric_unassigned(student_data)
-        metrics["Designated"] = self.metric_designated(assigned_students)
-
-        metrics["Top 3 choice"] = self.metric_top_choice(assigned_students, 3)
-        metrics["Top 1 choice"] = self.metric_top_choice(assigned_students, 1)
-        (assigned_students["In-Zone Rank"] == 1).mean()
-        (assigned_students["In-Zone Rank"] <= 3).mean()
-        metrics["Top 3 in-zone choice"] = self.metric_top_in_zone_choice(
-            assigned_students, 3
-        )
-        metrics["Top 1 in-zone choice"] = self.metric_top_in_zone_choice(
-            assigned_students, 1
-        )
-        metrics["Dist >= 3, Rank >= 5"] = self.metric_dist_and_rank(
-            assigned_students, 3, 5
-        )
-        if "assigned_utility" in assigned_students.columns:
-            average_utility = assigned_students["assigned_utility"].mean()
-        else:
-            average_utility = np.nan
-        metrics["Avg utility"] = average_utility
-
-        # COMMUNITY COHESION
-        metrics["BG Cohesion (3)"] = self.metric_BG_cohesion(
-            assigned_students, 3
-        )
-
-        # EQUITY OF ACCESS
-        high_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) > 0.5  # High FRL students have > 50% estimated chance of being FRL
-        low_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) <= 0.5  # Low FRL students have <= 50% estimated chance of being FRL
-        high_frl_students = student_data[high_frl_prob]
-        low_frl_students = student_data[low_frl_prob]
-        high_frl_assigned = high_frl_students[
-            high_frl_students["programno"] > 0
-        ]
-        low_frl_assigned = low_frl_students[low_frl_students["programno"] > 0]
-        groups = [
-            "Black or African American",
-            "Asian",
-            "Hispanic/Latino",
-            "Pacific Islander",
-            "White",
-            "High FRL",
-            "Low FRL",
-        ]
-        for group in groups:
-            if group == "High FRL":
-                students = high_frl_assigned
-            elif group == "Low FRL":
-                students = low_frl_assigned
-            else:
-                students = assigned_students[
-                    assigned_students["resolved_ethnicity"] == group
-                ]
-
-            metrics[f"Top 3 choice {group}"] = self.metric_top_choice(
-                students, 3
-            )
+            "Asian": assigned_students[
+                assigned_students["resolved_ethnicity"] == "Asian"
+            ],
+            "Hispanic/Latino": assigned_students[
+                assigned_students["resolved_ethnicity"].isin(
+                    ["Hispanic/Latino", "Hispanic/Latinx"]
+                )
+            ],
+            "Pacific Islander": assigned_students[
+                assigned_students["resolved_ethnicity"] == "Pacific Islander"
+            ],
+            "White": assigned_students[
+                assigned_students["resolved_ethnicity"] == "White"
+            ],
+            "High FRL": high_frl_assigned,
+            "Low FRL": low_frl_assigned,
+        }
+        for group, students in groups.items():
+            metrics[f"Top 3 choice {group}"] = self.metric_top_choice(students, 3)
             metrics[f"Distance Av {group}"] = self.metric_dist_av(students)
-            metrics[f"{group} in school with +15% FRL"] = (
-                self.metric_FRL_concentration(assigned_students, students, 0.15)
+            metrics[f"{group} in school with +15% FRL"] = self.metric_FRL_concentration(
+                assigned_students, students, 0.15
             )
-            metrics[f"{group} Dist >= 3, Rank >= 5"] = (
-                self.metric_dist_and_rank(students, 3, 5)
-            )
+            metrics[f"{group} Dist >= 3, Rank >= 5"] = self.metric_dist_and_rank(
+                students, 3, 5
+            ).mean()
 
         return pd.Series(metrics)
 
-    #    BASE METRICS
-    # --------------------
+    def _basic_distance_metrics(self, assigned_students):
+        return {
+            "Distance Av": self.metric_dist_av(assigned_students),
+            "Distance < 0.5": self.metric_dist_threshold(
+                assigned_students, 0.5, above=False
+            ),
+            "Distance > 3": self.metric_dist_threshold(
+                assigned_students, 3, above=True
+            ),
+        }
 
-    #     Proximity
-    # --------------------
+    def _basic_choice_metrics(self, student_data, assigned_students):
+        utility = (
+            assigned_students["assigned_utility"].mean()
+            if "assigned_utility" in assigned_students
+            else np.nan
+        )
+        return {
+            "Unassigned": self.metric_unassigned(student_data),
+            "Designated": self.metric_designated(assigned_students),
+            "Top 3 choice": self.metric_top_choice(assigned_students, 3),
+            "Top 1 choice": self.metric_top_choice(assigned_students, 1),
+            "Top 3 in-zone choice": self.metric_top_in_zone_choice(
+                assigned_students, 3
+            ),
+            "Top 1 in-zone choice": self.metric_top_in_zone_choice(
+                assigned_students, 1
+            ),
+            "Dist >= 3, Rank >= 5": self.metric_dist_and_rank(
+                assigned_students, 3, 5
+            ).mean(),
+            "Avg utility": utility,
+        }
 
-    # Name: Distance Av.
-    # Inputs: Assigned students
-    # Average straight-line distance of assigned students to their assigned school
+    @staticmethod
+    def _assigned_mask(student_data):
+        return pd.to_numeric(student_data["programno"], errors="coerce").fillna(0) > 0
+
     def metric_dist_av(self, assigned_students):
         return assigned_students["assignment_dist"].mean()
 
-    # Name: Distance < X or Distance > X
-    # Inputs: Assigned students, threshold distance X, above = True if Distance > X
-    # Fraction of assigned students with straight-line distance to their assigned school above or below given threshold
     def metric_dist_threshold(self, assigned_students, threshold, above):
-        if above:
-            return (assigned_students["assignment_dist"] > threshold).mean()
-        else:
-            return (assigned_students["assignment_dist"] < threshold).mean()
+        distances = assigned_students["assignment_dist"]
+        return (
+            (distances > threshold).mean() if above else (distances < threshold).mean()
+        )
 
-    #     Diversity
-    # --------------------
-
-    # Name: Schools above X% district FRL
-    # Inputs: Threshold X
-    # Fraction of schools where average FRL status of students assigned to the school is at least X% above the fraction of all students with FRL status
     def metric_school_frl_above_district(self, threshold, student_data=None):
         if student_data is None:
             student_data = self.student_data
         district_avg = student_data["frl"].mean()
-        school_frl = student_data.groupby("assigned school").mean(
-            numeric_only=True
-        )
-        school_frl["in_range"] = school_frl["frl"].apply(
-            lambda x: 1 if x >= district_avg + threshold else 0
-        )
-        return school_frl["in_range"].mean()
+        school_frl = student_data.groupby("assigned school")["frl"].mean()
+        return (school_frl >= district_avg + threshold).mean()
 
-    # Name: [Student group] in School with +X% FRL
-    # Inputs: Assigned students, assigned students in student group, threshold X
-    # Fraction of assigned students in student group who are assigned to a school where average FRL status of students assigned to the school is
-    #   at least X% above the fraction of all students with FRL status
+    @staticmethod
+    def metric_racial_majority_schools(assigned_students):
+        """Count schools where one racial group comprises over half of students."""
+        if assigned_students.empty:
+            return 0
+
+        race_column = (
+            "ethnicity"
+            if "ethnicity" in assigned_students
+            else "resolved_ethnicity"
+        )
+        race = assigned_students[race_column]
+        valid_race = race.notna() & race.astype("string").str.strip().ne("")
+        race_counts = (
+            assigned_students[valid_race]
+            .groupby(["assigned school", race_column])
+            .size()
+        )
+        if race_counts.empty:
+            return 0
+
+        school_enrollment = assigned_students.groupby("assigned school").size()
+        largest_racial_group = race_counts.groupby(level="assigned school").max()
+        racial_share = largest_racial_group / school_enrollment.reindex(
+            largest_racial_group.index
+        )
+        return int((racial_share > 0.5).sum())
+
+    def school_frl_range_district(self, threshold, student_data=None, above=False):
+        """Return the share of schools beyond a district FRL threshold."""
+        if student_data is None:
+            student_data = self.student_data
+        district_avg = student_data["frl"].mean()
+        school_frl = student_data.groupby("assigned school")["frl"].mean()
+        if above:
+            return (school_frl >= district_avg + threshold).mean()
+        return ((school_frl - district_avg).abs() <= threshold).mean()
+
     def metric_FRL_concentration(self, all_students, group_students, threshold):
         if group_students.empty:
             return np.nan
-        schools_frl = all_students.groupby("assigned school").mean(
-            numeric_only=True
-        )["frl"]
+        school_frl = all_students.groupby("assigned school")["frl"].mean()
         district_avg = all_students["frl"].mean()
-        num_students = group_students.shape[0]
-        count = 0
-        for i in range(num_students):
-            school = group_students["assigned school"].iloc[i]
-            if isinstance(school, str):
-                school_frl = schools_frl.loc[school]
-                if school_frl > district_avg + threshold:
-                    count += 1
-        return count / num_students
+        return (
+            group_students["assigned school"].map(school_frl) > district_avg + threshold
+        ).mean()
 
-    # Name: Dissimilarity [student group]
-    # Inputs: students in group, total number of students assigned to each school
-    # Fraction of students in student group who would have to be assigned to a different school so that the student group would be
-    #   uniformly distributed across schools.
-    def metric_dissimilarity(self, group_students, total_enrollment):
-        students = group_students
-        n = students.shape[0]
-        total_n = pd.to_numeric(
-            pd.Series(np.asarray(total_enrollment).reshape(-1)), errors="coerce"
-        ).sum()
+    @staticmethod
+    def _basic_dissimilarity(group_students, total_enrollment):
+        """Preserve the benchmark's historical one-sided dissimilarity formula."""
+        n = len(group_students)
+        total_n = pd.to_numeric(total_enrollment, errors="coerce").sum()
         if n == 0 or total_n == 0:
             return np.nan
         ratio = n / total_n
-        school_groups = students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-        dissimilarity_total = 0
-        for i in range(enrollment.shape[0]):
-            num_students = enrollment.iloc[i]
-            total_students = total_enrollment.iloc[i]
-            dissimilarity_total += (
-                abs(num_students - total_students * ratio) / 2
-            )
-        return dissimilarity_total / n
+        enrollment = group_students.groupby("assigned school").size()
+        total = 0.0
+        for index, count in enumerate(enrollment):
+            total += abs(count - total_enrollment.iloc[index] * ratio) / 2
+        return total / n
 
-    # Name: Isolation [student group] < X
-    # Inputs: students in group, theshold X
-    # Number of schools with at least one and less than X students assigned from the student group
-    def metric_isolation(self, group_students, threshold):
-        school_groups = group_students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-        count = 0
-        for i in range(enrollment.shape[0]):
-            num_students = enrollment.iloc[i]
-            if num_students < threshold and num_students >= 1:
-                count += 1
-        return count
+    @staticmethod
+    def metric_isolation(group_students, threshold):
+        enrollment = group_students.groupby("assigned school").size()
+        return int(((enrollment >= 1) & (enrollment < threshold)).sum())
 
-    #      Choice
-    # --------------------
+    @staticmethod
+    def metric_unassigned(students):
+        if students.empty:
+            return np.nan
+        return (
+            pd.to_numeric(students["programno"], errors="coerce").fillna(0) == 0
+        ).mean()
 
-    # Name: Unassigned
-    # Inputs: students
-    # Fraction of students who are not assigned to any program
-    def metric_unassigned(self, students):
-        return students[students["programno"] == 0].shape[0] / students.shape[0]
+    @staticmethod
+    def metric_designated(assigned_students):
+        return pd.to_numeric(assigned_students["designation"], errors="coerce").mean()
 
-    # Name: Designated
-    # Inputs: assigned students
-    # Fraction of assigned students who are assigned through designation
-    def metric_designated(self, assigned_students):
-        return assigned_students["designation"].mean()
-
-    # Name: Top X choice
-    # Inputs: assigned students, threshold X
-    # Fraction of assigned students who are assigned to one of their top X choices out of *all* choices
-    def metric_top_choice(self, assigned_students, threshold):
+    @staticmethod
+    def metric_top_choice(assigned_students, threshold):
         return (assigned_students["rank"] <= threshold).mean()
 
-    # Name: Top X in-zone choice
-    # Inputs: assigned students, threshold X
-    # Fraction of assigned students who are assigned to one of their top X choices out of the choices in their zone
-    def metric_top_in_zone_choice(self, assigned_students, threshold):
+    @staticmethod
+    def metric_top_in_zone_choice(assigned_students, threshold):
         return (assigned_students["In-Zone Rank"] <= threshold).mean()
 
-    # Name: Dist >= X, Rank >= Y
-    # Inputs: assigned students, threshold X, threshold Y
-    # Fraction of assigned students who have both straight-line distance to school >= X and receiving choice >= Y out of *all* choices
-    def metric_dist_and_rank(self, assigned_students, X, Y):
-        return np.logical_and(
-            assigned_students["assignment_dist"] >= X,
-            assigned_students["rank"] >= Y,
+    @staticmethod
+    def metric_dist_and_rank(assigned_students, distance, rank):
+        return (assigned_students["assignment_dist"] >= distance) & (
+            assigned_students["rank"] >= rank
         )
 
-    # Community Cohesion
-    # --------------------
-
-    # Name: BG cohesion (X)
-    # Inputs: assigned_students, number X
-    # Fraction of assigned students who are assigned to a school with at least X students from their block group (including themself)
-    def metric_BG_cohesion(self, assigned_students, num):
+    def metric_BG_cohesion(self, assigned_students, count):
         if assigned_students.empty:
             return np.nan
-        cohesion = sum(
-            self._bgcohesion(group, num)
+        cohesive = sum(
+            self._bgcohesion(group, count)
             for _, group in assigned_students.groupby("census_blockgroup")
         )
-        return cohesion / assigned_students.shape[0]
+        return cohesive / len(assigned_students)
 
-    def eval_assignment_full(self, school_data, real_match=False):
-        metrics = {}
-        student_data = self.student_data
-        assigned_students = student_data[student_data["programno"] > 0]
-        assigned_students = assigned_students.reindex()
-        assigned_students.shape[0]
+    @staticmethod
+    def _bgcohesion(group, count):
+        school_counts = group["assigned school"].value_counts()
+        return school_counts[school_counts >= count].sum()
 
-        school_groups = assigned_students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
+    @staticmethod
+    def _safe_ratio(numerator, denominator):
+        return numerator / denominator if denominator else np.nan
 
-        metrics["Unassigned"] = (
-            student_data[student_data["programno"] == 0].shape[0]
-            / student_data.shape[0]
-        )
-        all_designated = assigned_students["designation"].mean()
-        metrics["Designated"] = all_designated
-        choice_3 = (assigned_students["rank"] <= 3).mean()
-        metrics["Top 3 choice"] = choice_3
-
-        """
-        if real_match is False:
-            average_utility = assigned_students['assigned_utility'].mean()
-            metrics['Average utility'] = average_utility
-        """
-
-        metrics["Distance Av"] = assigned_students["assignment_dist"].mean()
-        metrics["Distance < 0.5"] = (
-            assigned_students["assignment_dist"] < 0.5
-        ).mean()
-        metrics["Distance > 3"] = (
-            assigned_students["assignment_dist"] > 3
-        ).mean()
-        metrics["All AvgColorIndex"] = self.avg_color_index(
-            assigned_students, school_data
-        )
-
-        high_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) > 0.5
-        low_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) <= 0.5
-        high_frl_students = student_data[high_frl_prob]
-        low_frl_students = student_data[low_frl_prob]
-        high_frl_assigned = high_frl_students[
-            high_frl_students["programno"] > 0
-        ]
-        low_frl_assigned = low_frl_students[low_frl_students["programno"] > 0]
-
-        groups = [
-            "All",
-            "Black or African American",
-            "Asian",
-            "Hispanic/Latino",
-            "Pacific Islander",
-            "White",
-            "High FRL",
-            "Low FRL",
-        ]
-        groups = ["Round One"]
-        for group in groups:
-            if group == "All":
-                students = assigned_students
-                full_students = student_data
-            elif group == "High FRL":
-                students = high_frl_assigned
-                full_students = high_frl_students
-            elif group == "Low FRL":
-                students = low_frl_assigned
-                full_students = low_frl_students
-            elif group == "Round One":
-                full_students = student_data[student_data["main"] == 1]
-                students = full_students[full_students["programno"] > 0]
-            else:
-                students = assigned_students[
-                    assigned_students["resolved_ethnicity"] == group
-                ]
-                full_students = student_data[
-                    student_data["resolved_ethnicity"] == group
-                ]
-
-            metrics[f"Unassigned {group}"] = (
-                full_students.shape[0] - students.shape[0]
-            ) / (full_students.shape[0])
-
-            metrics[f"Distance Av {group}"] = students["assignment_dist"].mean()
-            metrics[f"Distance < 0.5 {group}"] = (
-                students["assignment_dist"] < 0.5
-            ).mean()
-            metrics[f"Distance > 3 {group}"] = (
-                students["assignment_dist"] > 3
-            ).mean()
-            metrics[f"Top 3 choice {group}"] = (students["rank"] <= 3).mean()
-            if group != "All":
-                metrics[f"{group} in school with +10% FRL"] = (
-                    self.poverty_concentration(assigned_students, students, 0.1)
-                )
-                metrics[f"{group} in school with +15% FRL"] = (
-                    self.poverty_concentration(
-                        assigned_students, students, 0.15
-                    )
-                )
-            metrics[f"{group} AvgColorIndex"] = self.avg_color_index(
-                students, school_data
-            )
-            """
-            if real_match is False:
-                average_utility = students['assigned_utility'].mean()
-                metrics['{} Average utility'.format(eth)] = average_utility
-            """
-
-            metrics[f"Dissimilarity {group}"] = self.dissimilarity(
-                students, enrollment
-            )
-
-        metrics["Schools above 10% district FRL"] = (
-            self.school_frl_range_district(0.1, above=True)
-        )
-        metrics["Schools above 15% district FRL"] = (
-            self.school_frl_range_district(0.15, above=True)
-        )
-
-        ge_students = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        ge_students.groupby("assignment")
-        ge_students["assigned school"].nunique()
-
-        AALPI = [
-            "Black or African American",
-            "Hispanic/Latino",
-            "Pacific Islander",
-        ]
-        aalpi_students = assigned_students[
-            assigned_students["resolved_ethnicity"].apply(lambda x: x in AALPI)
-        ]
-        metrics["AALPI in school with +10% FRL"] = self.poverty_concentration(
-            assigned_students, aalpi_students, 0.1
-        )
-        metrics["AALPI in school with +15% FRL"] = self.poverty_concentration(
-            assigned_students, aalpi_students, 0.15
-        )
-
-        metrics["BG Cohesion (3)"] = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 3))
-            .sum()
-            / assigned_students.shape[0]
-        )
-
-        return pd.Series(metrics)
-
-        # ctip_students = student_data[student_data['ctip1'] > 0]
-        # ctip_assigned = assigned_students[assigned_students['ctip1'] > 0]
-        # metrics['Low FRL +10% FRL'] = self.poverty_concentration(low_frl_assigned,0.1)
-
-    def eval_assignment_overview(self, school_data, real_match=False):
-        metrics = {}
-        student_data = self.student_data
-        assigned_students = student_data[student_data["programno"] > 0]
-        assigned_students = assigned_students.reindex()
-        assigned_students.shape[0]
-
-        school_groups = assigned_students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-
-        metrics["Unassigned"] = (
-            student_data[student_data["programno"] == 0].shape[0]
-            / student_data.shape[0]
-        )
-        all_designated = assigned_students["designation"].mean()
-        metrics["Designated"] = all_designated
-        choice_3 = (assigned_students["rank"] <= 3).mean()
-        metrics["Top 3 choice"] = choice_3
-
-        """
-        if real_match is False:
-            average_utility = assigned_students['assigned_utility'].mean()
-            metrics['Average utility'] = average_utility
-        """
-
-        metrics["Distance Av"] = assigned_students["assignment_dist"].mean()
-        metrics["Distance < 0.5"] = (
-            assigned_students["assignment_dist"] < 0.5
-        ).mean()
-        metrics["Distance > 3"] = (
-            assigned_students["assignment_dist"] > 3
-        ).mean()
-
-        high_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) > 0.5
-        low_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) <= 0.5
-        high_frl_students = student_data[high_frl_prob]
-        low_frl_students = student_data[low_frl_prob]
-        high_frl_assigned = high_frl_students[
-            high_frl_students["programno"] > 0
-        ]
-        low_frl_assigned = low_frl_students[low_frl_students["programno"] > 0]
-
-        groups = ["Black or African American", "Hispanic/Latino", "High FRL"]
-        for group in groups:
-            if group == "All":
-                students = assigned_students
-            elif group == "High FRL":
-                students = high_frl_assigned
-            elif group == "Low FRL":
-                students = low_frl_assigned
-            else:
-                students = assigned_students[
-                    assigned_students["resolved_ethnicity"] == group
-                ]
-
-            metrics[f"Dissimilarity {group}"] = self.dissimilarity(
-                students, enrollment
-            )
-
-        metrics["Schools above 10% district FRL"] = (
-            self.school_frl_range_district(0.1, above=True)
-        )
-        metrics["Schools above 15% district FRL"] = (
-            self.school_frl_range_district(0.15, above=True)
-        )
-
-        ge_students = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        ge_students.groupby("assignment")
-        ge_students["assigned school"].nunique()
-
-        AALPI = [
-            "Black or African American",
-            "Hispanic/Latino",
-            "Pacific Islander",
-        ]
-        aalpi_students = assigned_students[
-            assigned_students["resolved_ethnicity"].apply(lambda x: x in AALPI)
-        ]
-        metrics["AALPI in school with +10% FRL"] = self.poverty_concentration(
-            assigned_students, aalpi_students, 0.1
-        )
-        metrics["AALPI in school with +15% FRL"] = self.poverty_concentration(
-            assigned_students, aalpi_students, 0.15
-        )
-
-        return pd.Series(metrics)
-
-    def eval_assignment_equity(self, school_data, real_match=False):
-        metrics = {}
-        student_data = self.student_data
-        assigned_students = student_data[student_data["programno"] > 0]
-        assigned_students = assigned_students.reindex()
-        assigned_students.shape[0]
-
-        school_groups = assigned_students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-
-        high_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) > 0.5
-        low_frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) <= 0.5
-        high_frl_students = student_data[high_frl_prob]
-        low_frl_students = student_data[low_frl_prob]
-        high_frl_assigned = high_frl_students[
-            high_frl_students["programno"] > 0
-        ]
-        low_frl_assigned = low_frl_students[low_frl_students["programno"] > 0]
-
-        groups = [
-            "Black or African American",
-            "Asian",
-            "Hispanic/Latino",
-            "Pacific Islander",
-            "White",
-            "High FRL",
-            "Low FRL",
-        ]
-        for group in groups:
-            if group == "All":
-                students = assigned_students
-                full_students = student_data
-            elif group == "High FRL":
-                students = high_frl_assigned
-                full_students = high_frl_students
-            elif group == "Low FRL":
-                students = low_frl_assigned
-                full_students = low_frl_students
-            else:
-                students = assigned_students[
-                    assigned_students["resolved_ethnicity"] == group
-                ]
-                full_students = student_data[
-                    student_data["resolved_ethnicity"] == group
-                ]
-
-            metrics[f"Unassigned {group}"] = (
-                full_students.shape[0] - students.shape[0]
-            ) / (full_students.shape[0])
-            metrics[f"Distance Av {group}"] = students["assignment_dist"].mean()
-            metrics[f"Top 3 choice {group}"] = (students["rank"] <= 3).mean()
-            metrics[f"{group} in school with +10% FRL"] = (
-                self.poverty_concentration(assigned_students, students, 0.1)
-            )
-            metrics[f"{group} in school with +15% FRL"] = (
-                self.poverty_concentration(assigned_students, students, 0.15)
-            )
-            metrics[f"{group} AvgColorIndex"] = self.avg_color_index(
-                students, school_data
-            )
-            metrics[f"Dissimilarity {group}"] = self.dissimilarity(
-                students, enrollment
-            )
-
-        return pd.Series(metrics)
-
-    def _pctunderserved(self, x, frl=0.67, aalpi=0.5, el=0.2):
-        frl_pct = x["high_poverty"].mean()
-        if frl_pct < frl:
-            return False
-        aalpi_pct = x["aalpi"].mean()
-        el_pct = x["ell"].mean()
-        if aalpi_pct > aalpi:
-            return True
-        if el_pct > el:
-            return True
-        return False
-
-    def _ethnicisolation(self, x, threshold=0.5):
-        eth_counts = x["resolved_ethnicity"].value_counts()
-        # print(eth_counts.index[0])
-        if not eth_counts.shape[0] > 0:
-            return 0
-        top_eth = eth_counts.iloc[0]
-        pct_isolation = top_eth / eth_counts.sum()
-        return pct_isolation > threshold
-
-    def _bgcohesion(self, gp, n):
-        count_byschool = gp["assigned school"].value_counts()
-        over_thresh = count_byschool[(count_byschool >= n)].sum()
-        return over_thresh
-
-    def capacity_unfilled(self, schools, programs, market, priority_weights):
-        student_data = self.student_data
-        assigned_students = student_data[student_data["programno"] > 0]
-        assigned_ge = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        school_groups = assigned_students.groupby("assigned school")
-        school_groups_ge = assigned_ge.groupby("assigned school")
-        enrollments = school_groups.size()
-        enrollments_ge = school_groups_ge.size()
-        programs = programs.program_df
-        programs["school_id"] = programs["school_id"].astype(str)
-        school_capacities = programs.groupby("school_id")["capacity"].sum()
-        programs_ge = programs[programs["program_type"] == "GE"]
-        school_capacities_ge = programs_ge.groupby("school_id")[
-            "capacity"
-        ].sum()
-        unfilled = school_capacities - enrollments
-        unfilled_ge = school_capacities_ge - enrollments_ge
-        designated_students = student_data[student_data["designation"] == 1]
-        designated_liveinaa = designated_students.groupby("aa").size()
-        designated_toaa = designated_students.groupby("assigned school").size()
-        data = {}
-        for sch in enrollments.index:
-            try:
-                data["Assigned<" + sch + ">"] = enrollments.loc[sch]
-                data["AssignedGE<" + sch + ">"] = enrollments_ge.loc[sch]
-                data["Capacity<" + sch + ">"] = school_capacities.loc[sch]
-                data["CapacityGE<" + sch + ">"] = school_capacities_ge.loc[sch]
-                data["Unfilled<" + sch + ">"] = unfilled.loc[sch]
-                data["UnfilledGE<" + sch + ">"] = unfilled_ge.loc[sch]
-                aacode = "[" + str(sch) + "]"
-                data["DesignatedLiveIn<" + sch + ">"] = designated_liveinaa.loc[
-                    aacode
-                ]
-                data["DesignatedTo<" + sch + ">"] = designated_toaa.loc[sch]
-            except Exception:
-                continue
-        return pd.Series(data)
-
-    def distance_rank_CDF(self, students, d, k):
-        count = 0
-        n = students.shape[0]
-        for i in range(n):
-            if students["assignment_dist"].iloc[i] >= d:
-                if (
-                    students["rank"].iloc[i] >= k
-                    or students["designation"].iloc[i] == 1
-                ):
-                    count += 1
-        if n == 0:
-            return 0
-        else:
-            return count / n
-
-    def eval_assignment_Oct7(self, schools, programs, market, priority_weights):
-        student_data = self.student_data
-
-        (
-            eth_groups,
-            eth_matrix,
-            eth_matrix_norm,
-            eth_total,
-            eth_total_norm,
-            populations,
-        ) = self._make_ethnic_matrix(student_data)
-        assigned_students = student_data[student_data["programno"] > 0]
-        ge_students = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        school_groups = assigned_students.groupby("assigned school")
-        program_groups = assigned_students.groupby("assignment")
-
-        # 1. Diversity
-        # a) FRL
-        frl_schools = school_groups.apply(lambda x: x["frl"].mean())
-        average_frl = school_groups.apply(lambda x: x["frl"].mean()).mean()
-
-        frl_schools_10 = 0
-        frl_schools_15 = 0
-        s = frl_schools.shape[0]
-        for i in range(s):
-            frl = frl_schools.iloc[i]
-            if abs(frl - average_frl) < 0.1:
-                frl_schools_10 += 1
-            if abs(frl - average_frl) < 0.15:
-                frl_schools_15 += 1
-        frl_schools_10 = frl_schools_10 / s
-        frl_schools_15 = frl_schools_15 / s
-
-        # b) ethnicity
-        eth_schools_10 = 0
-        eth_schools_15 = 0
-        GE_count = 0
-        for i in range(eth_matrix_norm.shape[0]):
-            program = eth_matrix_norm.index[i]
-            code = program[4:6]
-            if code == "GE":
-                GE_count += 1
-                in_threshold_10 = True
-                in_threshold_15 = True
-                for eth in eth_groups:
-                    if eth in eth_matrix_norm.columns:
-                        if (
-                            abs(
-                                eth_matrix_norm[eth].iloc[i]
-                                - eth_total_norm.loc[eth]
-                            )
-                            > 0.1
-                        ):
-                            in_threshold_10 = False
-                        if (
-                            abs(
-                                eth_matrix_norm[eth].iloc[i]
-                                - eth_total_norm.loc[eth]
-                            )
-                            > 0.15
-                        ):
-                            in_threshold_15 = False
-                if in_threshold_10:
-                    eth_schools_10 += 1
-                if in_threshold_15:
-                    eth_schools_15 += 1
-
-        eth_schools_10 = eth_schools_10 / GE_count
-        eth_schools_15 = eth_schools_15 / GE_count
-
-        diversity_metrics = {
-            "FRL < +-10%": frl_schools_10,
-            "FRL < +-15%": frl_schools_15,
-            "Ethn < +-10% (GE)": eth_schools_10,
-            "Ethn < +-15% (GE)": eth_schools_15,
+    def _full_proximity_metrics(self, student_data, assigned_students):
+        designated = student_data[student_data["designation"] == 1]
+        non_designated = student_data[student_data["designation"] == 0]
+        metrics = {
+            "Total Designated": len(designated),
+            "Not designated": len(non_designated),
+            "Tot Nb Students (Round 1)": len(student_data),
+            "Tot Nb Assigned (Round 1)": len(assigned_students),
+            "Tot Nb Designated (Round 1)": int(
+                (student_data["designation"] != 0).sum()
+            ),
+            "Distance Av (All Assigned)": assigned_students["assignment_dist"].mean(),
+            "Distance Median (All Assigned)": assigned_students[
+                "assignment_dist"
+            ].median(),
+            "Distance < 0.5 (All Assigned)": (
+                assigned_students["assignment_dist"] < 0.5
+            ).mean(),
+            "Distance < 1 (All Assigned)": (
+                assigned_students["assignment_dist"] < 1
+            ).mean(),
+            "Distance > 3 (All Assigned)": (
+                assigned_students["assignment_dist"] > 3
+            ).mean(),
         }
-
-        for eth in eth_groups:
-            vals = []
-            for sch in market.schools.school_ids:
-                code = str(sch) + "-GE-KG"
-                if (
-                    code in eth_matrix_norm.index
-                    and eth in eth_matrix_norm.columns
-                ):
-                    vals.append(eth_matrix_norm[eth].loc[code])
-            if len(vals) > 0:
-                max_val = max(vals)
-                med_val = np.median(vals)
-                diversity_metrics["Max " + eth + " (GE)"] = max_val
-                diversity_metrics["Med " + eth + " (GE)"] = med_val
-
-        high_frl_schools = []  # schools with above average frl
-        frl_60_schools = []
-        frl_65_schools = []
-        for i in range(frl_schools.shape[0]):
-            if frl_schools.iloc[i] > average_frl:
-                high_frl_schools.append(frl_schools.index[i])
-            if frl_schools.iloc[i] > 0.6:
-                frl_60_schools.append(frl_schools.index[i])
-            if frl_schools.iloc[i] > 0.65:
-                frl_65_schools.append(frl_schools.index[i])
-
-        # AALPI
-        aalpi = [
-            "Hispanic/Latino",
-            "Black or African American",
-            "Pacific Islander",
-        ]
-        aalpi_students = student_data[
-            student_data["resolved_ethnicity"].apply(lambda x: x in aalpi)
-        ]
-        not_aalpi_students = student_data[
-            student_data["resolved_ethnicity"].apply(lambda x: x not in aalpi)
-        ]
-        aalpi_in_high_frl = aalpi_students[
-            aalpi_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
+        for group in ["Black", "Asian", "Hispanic", "White"]:
+            metrics[f" Non-designated {group} students"] = len(
+                non_designated[non_designated["ethnicity"] == group]
             )
-        ]
-        not_aalpi_in_high_frl = not_aalpi_students[
-            not_aalpi_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
+            metrics[f" Designated {group} students"] = len(
+                designated[designated["ethnicity"] == group]
             )
-        ]
+        return metrics
 
-        aalpi_high_frl_frac = (
-            aalpi_in_high_frl.shape[0] / aalpi_students.shape[0]
-        )
-        not_aalpi_high_frl_frac = (
-            not_aalpi_in_high_frl.shape[0] / not_aalpi_students.shape[0]
-        )
-        diversity_metrics["AALPI in higher FRL sch"] = aalpi_high_frl_frac
-        diversity_metrics["non-AALPI in higher FRL sch"] = (
-            not_aalpi_high_frl_frac
-        )
-
-        # ELL
-        ell_students = student_data[
-            student_data["englprof_desc"].apply(
-                lambda x: x == "N-Non English" or x == "L-Limited English"
-            )
-        ]
-        not_ell_students = student_data[
-            student_data["englprof_desc"].apply(
-                lambda x: x != "N-Non English" and x != "L-Limited English"
-            )
-        ]
-        ell_in_high_frl = ell_students[
-            ell_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
-            )
-        ]
-        not_ell_in_high_frl = not_ell_students[
-            not_ell_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
-            )
-        ]
-        ell_high_frl_frac = ell_in_high_frl.shape[0] / ell_students.shape[0]
-        not_ell_high_frl_frac = (
-            not_ell_in_high_frl.shape[0] / not_ell_students.shape[0]
-        )
-        diversity_metrics["ELL in higher FRL sch"] = ell_high_frl_frac
-        diversity_metrics["non-ELL in higher FRL sch"] = not_ell_high_frl_frac
-
-        # SpEd
-        speced_students = student_data[student_data["speced"] == "Yes"]
-        not_speced_students = student_data[student_data["speced"] == "No"]
-        speced_in_high_frl = speced_students[
-            speced_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
-            )
-        ]
-        not_speced_in_high_frl = not_speced_students[
-            not_speced_students["assigned school"].apply(
-                lambda x: x in high_frl_schools
-            )
-        ]
-        speced_high_frl_frac = (
-            speced_in_high_frl.shape[0] / speced_students.shape[0]
-        )
-        not_speced_high_frl_frac = (
-            not_speced_in_high_frl.shape[0] / not_speced_students.shape[0]
-        )
-        diversity_metrics["SpEd in higher FRL sch"] = speced_high_frl_frac
-        diversity_metrics["non-SpEd in higher FRL sch"] = (
-            not_speced_high_frl_frac
-        )
-
-        for eth in eth_groups:
-            eth_students = student_data[
-                student_data["resolved_ethnicity"] == eth
-            ]
-            eth_students_frl_60 = eth_students[
-                eth_students["assigned school"].apply(
-                    lambda x: x in frl_60_schools
-                )
-            ]
-            eth_students_frl_65 = eth_students[
-                eth_students["assigned school"].apply(
-                    lambda x: x in frl_65_schools
-                )
-            ]
-            eth_60_frl_frac = (
-                eth_students_frl_60.shape[0] / eth_students.shape[0]
-            )
-            eth_65_frl_frac = (
-                eth_students_frl_65.shape[0] / eth_students.shape[0]
-            )
-            diversity_metrics[">60% FRL " + eth] = eth_60_frl_frac
-            diversity_metrics[">65% FRL " + eth] = eth_65_frl_frac
-
-        for eth in eth_groups:
-            var = 0
-            av = 0
-            total = 0
-            if eth in eth_matrix.columns:
-                for i in range(eth_matrix.shape[0]):
-                    num = eth_matrix[eth].iloc[i]
-                    if num > 0:
-                        total += num
-                        av += num * (num - 1)
-                        var += num * (num - 1) * (num - 1)
-                if total > 0:
-                    var = var / total
-                    av = av / total
-                    std = np.sqrt(var - av * av)
-                    diversity_metrics["std peers " + eth] = std
-
-                frac = eth_total_norm[eth]
-                diversity_metrics["% of district " + eth] = frac
-
-        diversity_metrics = pd.Series(diversity_metrics)
-        # print(diversity_metrics)
-        # 2. Proximity
-        # a) Distance
-        walkzone = (assigned_students["assignment_dist"] < 0.5).mean()
-        dist_15 = (assigned_students["assignment_dist"] > 1.5).mean()
-        dist_30 = (assigned_students["assignment_dist"] > 3).mean()
-
-        proximity_metrics = {
-            "Walkzone": walkzone,
-            "Distance > 1.5": dist_15,
-            "Distance > 3": dist_30,
+    def _add_program_assignment_counts(self, metrics, group, students):
+        program_groups = {
+            "LP program": self.immersion_programs + self.non_immersion_programs,
+            "immersion program": self.immersion_programs,
+            "non-immersion program": self.non_immersion_programs,
+            "GE program": self.ge,
         }
-
-        # b) Travel Time
-        if hasattr(self, "travel_times"):
-            max_GE_time = ge_students[
-                "assignment_time"
-            ].max()  # Maximum travel time for a student to a GE program
-            time_250 = (assigned_students["assignment_time"] > 25).mean()
-            avg_time = assigned_students["assignment_time"].mean()
-
-            proximity_metrics["Average Time"] = avg_time
-            proximity_metrics["Time > 25"] = time_250
-            proximity_metrics["Max GE time"] = max_GE_time
-
-        proximity_metrics = pd.Series(proximity_metrics)
-
-        # 3. Community cohesion
-        bgs_school = school_groups["census_blockgroup"].nunique().mean()
-        bgcohesion_2 = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 2))
-            .sum()
-            / assigned_students.shape[0]
-        )
-
-        predictability_metrics = pd.Series(
-            {
-                "BGs per school": bgs_school,
-                "BG cohesion (2)": bgcohesion_2,
-            }
-        )
-
-        # 4. Predictability / Choice
-
-        choice_3 = (assigned_students["rank"] <= 3).mean()
-        inzone_choice_1 = (assigned_students["In-Zone Rank"] == 1).mean()
-        inzone_choice_3 = (assigned_students["In-Zone Rank"] <= 3).mean()
-        designated = student_data["designation"].mean()
-
-        enrollments = program_groups.size()
-        tmp = programs.program_df.merge(
-            pd.DataFrame(data=enrollments, columns=["assigned_count"]),
-            how="left",
-            left_on="program_id",
-            right_index=True,
-        )
-        pctfull = tmp["assigned_count"].fillna(0) / tmp["capacity"]
-        enrolled_under_80 = (pctfull < 0.8).mean()
-
-        choice_metrics = {
-            "Top 3 choice": choice_3,
-            "Top in-zone choice": inzone_choice_1,
-            "Top 3 in-zone choice": inzone_choice_3,
-            "Designated": designated,
-            "<80% enrolled": enrolled_under_80,
-        }
-
-        for e in range(len(self.eths)):
-            subset = assigned_students[
-                assigned_students["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_choice_3 = (subset["rank"] <= 3).mean()
-            choice_metrics["Top 3 choice - " + self.eth_labels[e]] = (
-                eth_choice_3
+        program_groups.update({code: [code] for code in self.ce_se})
+        for label, program_types in program_groups.items():
+            in_program = students["programtype"].isin(program_types)
+            metrics[f"Nb assigned students ({group}) to {label}"] = int(
+                in_program.sum()
             )
-
-        choice_metrics = pd.Series(choice_metrics)
-
-        # all_metrics = pd.concat([diversity_metrics,  proximity_metrics,
-        #    predictability_metrics, enrollment_metrics, choice_metrics])
-        all_metrics = pd.concat(
-            [
-                proximity_metrics,
-                predictability_metrics,
-                choice_metrics,
-                diversity_metrics,
-            ]
-        )
-
-        return all_metrics
-
-    def updated_eval_assignment(
-        self, schools, programs, market, priority_weights
-    ):
-        student_data = self.student_data
-        (
-            eth_groups,
-            eth_matrix,
-            eth_matrix_norm,
-            eth_total,
-            eth_total_norm,
-            populations,
-        ) = self._make_ethnic_matrix(student_data)
-
-        # 1. Diversity
-        frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        ) > 0.5
-        student_data["high_poverty"] = frl_prob
-        frl_students = student_data[frl_prob]
-        aalpi = [
-            "Hispanic/Latino",
-            "Black or African American",
-            "Pacific Islander",
-        ]
-        aalpi_labels = ["Hispanic", "Black", "PI"]
-        aalpi_students = student_data["resolved_ethnicity"].apply(
-            lambda x: x in aalpi
-        )
-        student_data["aalpi"] = aalpi_students
-        aalpi_students = student_data[student_data["aalpi"]]
-        ell_students = student_data["englprof_desc"].apply(
-            lambda x: x == "N-Non English" or x == "L-Limited English"
-        )
-        student_data["ell"] = ell_students
-        ell_students = student_data[student_data["ell"]]
-
-        student_data["speced"] = student_data["speced"] == "Yes"
-        speced_students = student_data[student_data["speced"]]
-
-        assigned_students = student_data[student_data["programno"] > 0]
-        self.assigned_students = assigned_students
-        ell_assigned = ell_students[ell_students["programno"] > 0]
-        frl_assigned = frl_students[frl_students["programno"] > 0]
-        speced_assigned = speced_students[speced_students["programno"] > 0]
-        program_groups = assigned_students.groupby("assignment")
-        ge_students = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        ge_groups = ge_students.groupby("assignment")
-        school_groups = assigned_students.groupby("assigned school")
-
-        diversity_metrics = {}
-
-        # a) Socioeconomic
-        average_frl = program_groups.apply(lambda x: x["frl"].mean()).mean()
-        median_frl = program_groups.apply(lambda x: x["frl"].mean()).median()
-        max_frl = program_groups.apply(lambda x: x["frl"].mean()).max()
-        std_frl = program_groups.apply(lambda x: x["frl"].mean()).std()
-        frl_peers_std = school_groups.apply(lambda x: x["frl"].sum()).std()
-        diversity_metrics["Average FRL"] = average_frl
-        diversity_metrics["Median FRL"] = median_frl
-        diversity_metrics["Max FRL"] = max_frl
-        diversity_metrics["STD FRL"] = std_frl
-        diversity_metrics["STD peers FRL"] = frl_peers_std
-
-        # b) Socioeconomic + Racial/Ethnic
-        underserved_concentrated = program_groups.apply(
-            lambda x: self._pctunderserved(x, frl=0.67, aalpi=0.5, el=0.2)
-        ).mean()
-        underserved_concentrated_ge = ge_groups.apply(
-            lambda x: self._pctunderserved(x, frl=0.67, aalpi=0.5, el=0.2)
-        ).mean()
-        diversity_metrics["Underserved concentration"] = (
-            underserved_concentrated
-        )
-        diversity_metrics["Underserved concentration - GE"] = (
-            underserved_concentrated_ge
-        )
-
-        # c) Racial/Ethnic
-        thiel = self.theil(eth_matrix, eth_total, eth_total_norm)
-        thiel_ge = self.theil(
-            eth_matrix, eth_total, eth_total_norm, GE_only=True
-        )
-        hellinger = self.hellinger_avg()
-        hellinger_ge = self.hellinger_avg(GE_only=True)
-        ethiso_45_ge = ge_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.45)
-        ).mean()
-        ethiso_50_ge = ge_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.50)
-        ).mean()
-        ethiso_60_ge = ge_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.60)
-        ).mean()
-        ethiso_60 = program_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.60)
-        ).mean()
-        diversity_metrics["Thiel"] = thiel
-        diversity_metrics["Thiel - GE"] = thiel_ge
-        diversity_metrics["Hellinger"] = hellinger
-        diversity_metrics["Hellinger - GE"] = hellinger_ge
-        diversity_metrics["Ethnic isolation 45% - GE"] = ethiso_45_ge
-        diversity_metrics["Ethnic isolation 50% - GE"] = ethiso_50_ge
-        diversity_metrics["Ethnic isolation 60% - GE"] = ethiso_60_ge
-        diversity_metrics["Ethnic isolation 60%"] = ethiso_60
-        for e in range(3):
-            min_to_self = self.mintoself(assigned_students, aalpi[e])
-            diversity_metrics["Min-to-self " + aalpi_labels[e]] = min_to_self
-            eth_std = program_groups.apply(
-                lambda x: (x["resolved_ethnicity"] == aalpi[e]).mean()
-            ).std()
-            diversity_metrics["STD " + aalpi_labels[e]] = eth_std
-            eth_peers_std = school_groups.apply(
-                lambda x: (x["resolved_ethnicity"] == aalpi[e]).sum()
-            ).std()
-            diversity_metrics["STD peers " + aalpi_labels[e]] = eth_peers_std
-
-        # d) Language
-        el_33 = program_groups.apply(lambda x: x["ell"].mean() > 0.33).mean()
-        el_50 = program_groups.apply(lambda x: x["ell"].mean() > 0.50).mean()
-        diversity_metrics["EL concentration 33%"] = el_33
-        diversity_metrics["EL concentration 50%"] = el_50
-
-        # e) Special Education
-        speced_20 = program_groups.apply(
-            lambda x: x["speced"].mean() > 0.2
-        ).mean()
-        diversity_metrics["SpecEd concentration 20%"] = speced_20
-
-        diversity_metrics = pd.Series(diversity_metrics)
-
-        # 2. Proximity
-
-        # a) Distance
-        avg_dist = assigned_students["assignment_dist"].mean()
-        median_dist = assigned_students["assignment_dist"].median()
-        dist_15 = (assigned_students["assignment_dist"] > 1.5).mean()
-        dist_30 = (assigned_students["assignment_dist"] > 3).mean()
-        el_dist_15 = (ell_students["assignment_dist"] > 1.5).mean()
-        frl_dist_15 = (frl_students["assignment_dist"] > 1.5).mean()
-        speced_dist_15 = (speced_students["assignment_dist"] > 1.5).mean()
-
-        proximity_metrics = {
-            "Average distance": avg_dist,
-            "Median distance": median_dist,
-            "Distance > 1.5": dist_15,
-            "Distance > 3": dist_30,
-            "Distance > 1.5 - EL": el_dist_15,
-            "Distance > 1.5 - FRL": frl_dist_15,
-            "Distance > 1.5 - SpecEd": speced_dist_15,
-        }
-
-        for e in range(len(self.eths)):
-            subset = assigned_students[
-                assigned_students["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_dist_15 = (subset["assignment_dist"] > 1.5).mean()
-            proximity_metrics["Distance > 1.5 - " + self.eth_labels[e]] = (
-                eth_dist_15
+            metrics[f"Nb designated students ({group}) to {label}"] = int(
+                (in_program & (students["designation"] == 1)).sum()
             )
-
-        proximity_metrics = pd.Series(proximity_metrics)
-
-        # b) Travel Time
-        if hasattr(self, "travel_times"):
-            max_GE_time = ge_students[
-                "assignment_time"
-            ].max()  # Maximum travel time for a student to a GE program
-            time_250 = (assigned_students["assignment_time"] > 25).mean()
-
-            proximity_metrics["Max GE time"] = max_GE_time
-            proximity_metrics["Time > 25"] = time_250
-
-        # 3. Predictability
-
-        # a) Range of outcomes
-
-        # b) Community cohesion
-        bgs_school = school_groups["census_blockgroup"].nunique().mean()
-        bgcohesion_2 = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 2))
-            .sum()
-            / assigned_students.shape[0]
-        )
-        bgcohesion_3 = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 3))
-            .sum()
-            / assigned_students.shape[0]
-        )
-        bgcohesion_ct = assigned_students.apply(
-            lambda x: self._cohesionct(x), axis=1
-        )
-        median_bgc = bgcohesion_ct.median()
-
-        predictability_metrics = pd.Series(
-            {
-                "BGs per school": bgs_school,
-                "BG cohesion (2)": bgcohesion_2,
-                "BG cohesion (3)": bgcohesion_3,
-                "Median BG cohesion": median_bgc,
-            }
-        )
-
-        # 4. Enrollment
-
-        # a) Percent of capacity
-        enrollments = program_groups.size()
-        tmp = programs.program_df.merge(
-            pd.DataFrame(data=enrollments, columns=["assigned_count"]),
-            how="left",
-            left_on="program_id",
-            right_index=True,
-        )
-        pctfull = tmp["assigned_count"].fillna(0) / tmp["capacity"]
-        enrolled_80 = (pctfull > 0.8).mean()
-        enrolled_90 = (pctfull > 0.9).mean()
-        enrolled_95 = (pctfull > 0.95).mean()
-        lowest_enrollment = pctfull.min()
-        lowest_enrollment_code = pctfull.idxmin()
-
-        enrollment_metrics = {
-            "Above 80% capacity": enrolled_80,
-            "Above 90% capacity": enrolled_90,
-            "Above 95% capacity": enrolled_95,
-            "Lowest % of capacity": lowest_enrollment,
-            "Lowest % of capacity code": lowest_enrollment_code,
-        }
-
-        # b) School KG enrollments
-        target_schools = {
-            "Carver": 625,
-            "Drew": 507,
-            "El Dorado": 521,
-            "Malcolm X": 830,
-            "Muir": 650,
-            "Spring Valley Science": 834,
-            "Visitacion": 867,
-            "Parker": 638,
-            "Harte": 453,
-            "Cobb": 525,
-        }
-        for sch in target_schools:
-            sch_assn = (
-                assigned_students["assigned school"] == str(target_schools[sch])
-            ).sum()
-            enrollment_metrics[sch + " enrollment"] = sch_assn
-
-        enrollment_metrics = pd.Series(enrollment_metrics)
-
-        # 5. Choice
-        choice_1 = (assigned_students["rank"] == 1).mean()
-        choice_3 = (assigned_students["rank"] <= 3).mean()
-        inzone_choice_1 = (assigned_students["In-Zone Rank"] == 1).mean()
-        inzone_choice_3 = (assigned_students["In-Zone Rank"] <= 3).mean()
-        designated = student_data["designation"].mean()
-        unassigned = (student_data["programno"] == 0).mean()
-
-        choice_metrics = {
-            "Top choice": choice_1,
-            "Top 3 choice": choice_3,
-            "Top in-zone choice": inzone_choice_1,
-            "Top 3 in-zone choice": inzone_choice_3,
-            "Designated": designated,
-            "Unassigned": unassigned,
-        }
-
-        for e in range(len(self.eths)):
-            subset = assigned_students[
-                assigned_students["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_choice_1 = (subset["rank"] == 1).mean()
-            eth_choice_3 = (subset["rank"] <= 3).mean()
-            eth_iz_choice_1 = (subset["In-Zone Rank"] == 1).mean()
-            eth_iz_choice_3 = (subset["In-Zone Rank"] <= 3).mean()
-            subset = student_data[
-                student_data["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_designated = subset["designation"].mean()
-            eth_unassigned = (subset["programno"] == 0).mean()
-            choice_metrics["Top choice - " + self.eth_labels[e]] = eth_choice_1
-            choice_metrics["Top 3 choice - " + self.eth_labels[e]] = (
-                eth_choice_3
-            )
-            choice_metrics["Top in-zone choice - " + self.eth_labels[e]] = (
-                eth_iz_choice_1
-            )
-            choice_metrics["Top 3 in-zone choice - " + self.eth_labels[e]] = (
-                eth_iz_choice_3
-            )
-            choice_metrics["Designated - " + self.eth_labels[e]] = (
-                eth_designated
-            )
-            choice_metrics["Unassigned - " + self.eth_labels[e]] = (
-                eth_unassigned
-            )
-
-        el_choice_1 = (ell_assigned["rank"] == 1).mean()
-        el_choice_3 = (ell_assigned["rank"] <= 3).mean()
-        el_iz_choice_1 = (ell_assigned["In-Zone Rank"] == 1).mean()
-        el_iz_choice_3 = (ell_assigned["In-Zone Rank"] <= 3).mean()
-        el_designated = ell_students["designation"].mean()
-        el_unassigned = (ell_students["programno"] == 0).mean()
-        choice_metrics["Top choice - EL"] = el_choice_1
-        choice_metrics["Top 3 choice - EL"] = el_choice_3
-        choice_metrics["Top in-zone choice - EL"] = el_iz_choice_1
-        choice_metrics["Top 3 in-zone choice - EL"] = el_iz_choice_3
-        choice_metrics["Designated - EL"] = el_designated
-        choice_metrics["Unassigned - EL"] = el_unassigned
-        frl_choice_1 = (frl_assigned["rank"] == 1).mean()
-        frl_choice_3 = (frl_assigned["rank"] <= 3).mean()
-        frl_iz_choice_1 = (frl_assigned["In-Zone Rank"] == 1).mean()
-        frl_iz_choice_3 = (frl_assigned["In-Zone Rank"] <= 3).mean()
-        frl_designated = frl_students["designation"].mean()
-        frl_unassigned = (frl_students["programno"] == 0).mean()
-        choice_metrics["Top choice - FRL"] = frl_choice_1
-        choice_metrics["Top 3 choice - FRL"] = frl_choice_3
-        choice_metrics["Top in-zone choice - FRL"] = frl_iz_choice_1
-        choice_metrics["Top 3 in-zone choice - FRL"] = frl_iz_choice_3
-        choice_metrics["Designated - FRL"] = frl_designated
-        choice_metrics["Unassigned - FRL"] = frl_unassigned
-        speced_choice_1 = (speced_assigned["rank"] == 1).mean()
-        speced_choice_3 = (speced_assigned["rank"] <= 3).mean()
-        speced_iz_choice_1 = (speced_assigned["In-Zone Rank"] == 1).mean()
-        speced_iz_choice_3 = (speced_assigned["In-Zone Rank"] <= 3).mean()
-        speced_designated = speced_students["designation"].mean()
-        speced_unassigned = (speced_students["programno"] == 0).mean()
-        choice_metrics["Top choice - SpecEd"] = speced_choice_1
-        choice_metrics["Top 3 choice - SpecEd"] = speced_choice_3
-        choice_metrics["Top in-zone choice - SpecEd"] = speced_iz_choice_1
-        choice_metrics["Top 3 in-zone choice - SpecEd"] = speced_iz_choice_3
-        choice_metrics["Designated - SpecEd"] = speced_designated
-        choice_metrics["Unassigned - SpecEd"] = speced_unassigned
-
-        aa_groups = assigned_students.dropna(subset=["aa"])
-        aa_groups = aa_groups.groupby("aa")
-        for aa in aa_groups:
-            aa_name = aa[0]
-            if len(aa_name) != 5:
-                continue
-            aa_name = aa_name[1:-1]
-            for k in range(1, 4):
-                aa_topk = (aa[1]["rank"] <= k).mean()
-                choice_metrics["Top " + str(k) + " choice - " + aa_name] = (
-                    aa_topk
+            if label != "LP program":
+                metrics[f"Nb non-designated students ({group}) to {label}"] = int(
+                    (in_program & (students["designation"] == 0)).sum()
                 )
 
-        choice_metrics = pd.Series(choice_metrics)
+    def map_ethnicity(self):
+        def ethn(x):
+            if x in [
+                "Asian",
+                "Asian Indian",
+                "Chinese",
+                "Vietnamese",
+                "Filipino",
+                "Japanese",
+                "Korean",
+                "Hmong",
+                "Other Asian",
+                "Cambodian",
+                "Laotian",
+            ]:
+                return "Asian"
+            elif x in ["Hispanic/Latino", "Hispanic/Latinx", "Hispanic"]:
+                return "Hispanic"
+            elif x in ["White", "Middle Eastern/Arabic"]:
+                return "White"
+            elif x in ["Black or African American", "Black/African American"]:
+                return "Black"
+            elif x in [
+                "Other Pacific Islander",
+                "Pacific Islander",
+                "Samoan",
+                "Hawaiian Native",
+            ]:
+                return "Pacific Islander"
+            elif x in ["Two or More Races", "Multi-Racial", "Two or More"]:
+                return "Two or More Races"
+            elif x in ["Decline to State", "Decline To State"]:
+                return "Decline to State"
+            return "Other"
 
-        all_metrics = pd.concat(
-            [
-                diversity_metrics,
-                proximity_metrics,
-                predictability_metrics,
-                enrollment_metrics,
-                choice_metrics,
-            ]
+        self.student_data["ethnicity"] = self.student_data["resolved_ethnicity"].apply(
+            ethn
         )
 
-        if "assigned_utility_x" not in student_data.columns:
-            # print('XYXYXY')
-            return all_metrics
+    def eval_distance(self):
+        """Calculate Haversine distance to each assigned school in miles."""
 
-        # . Utility
-        utility_metrics = {}
-
-        average_utility = student_data["assigned_utility_x"].mean()
-        utility_metrics["Average utility"] = average_utility
-
-        for e in range(len(self.eths)):
-            subset = student_data[
-                student_data["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_utility = subset["assigned_utility_x"].mean()
-            utility_metrics["Average utility - " + self.eth_labels[e]] = (
-                eth_utility
-            )
-
-        aa_utility_min = aa_groups["assigned_utility_x"].min()
-        utility_metrics["Min average utility"] = aa_utility_min
-
-        utility_metrics = pd.Series(utility_metrics)
-
-        all_metrics = pd.concat([all_metrics, utility_metrics])
-        # all_metrics.to_csv('~/Desktop/test.csv')
-        return all_metrics
-
-    def lightweight_eval_assignment(
-        self, schools, programs, market, priority_weights
-    ):
-        student_data = self.student_data
-
-        aalpi = [
-            "Hispanic/Latino",
-            "Black or African American",
-            "Pacific Islander",
-        ]
-
-        aalpi_students = student_data["resolved_ethnicity"].apply(
-            lambda x: x in aalpi
-        )
-        student_data["aalpi"] = aalpi_students
-        frl_prob = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        )
-        student_data["frlprob"] = frl_prob > 0.5
-
-        has_aa = student_data.dropna(subset=["aa"])
-        has_aa["isunassigned"] = has_aa["programno"] == 0
-        by_aa = has_aa.groupby("aa")["isunassigned"].sum()
-        most_unassigned = by_aa.max()
-        most_unassigned_aa = by_aa.idxmax()
-        by_aa = has_aa.groupby("aa")["isunassigned"].mean()
-        by_aa.max()
-        by_aa.idxmax()
-
-        assigned_students = student_data[student_data["programno"] > 0]
-        (
-            ethnic_groups,
-            ethnic_matrix,
-            ethnic_matrix_norm,
-            ethnic_total,
-            ethnic_total_norm,
-            populations,
-        ) = self._make_ethnic_matrix(student_data)
-        self._get_quality_schools(
-            schools, programs, "math_scores_1819", pct=0.33
-        )
-        # print('quality_GEprog_idx_math',quality_GEprog_idx_math)
-        self._colors_quality_schools(schools, programs, pct=0.33)
-        eval_metrics = pd.Series(
-            {
-                "Avg Dist": assigned_students["assignment_dist"].mean(),
-                "Dist > 3": (assigned_students["assignment_dist"] > 3).sum()
-                / assigned_students.shape[0],
-                "Dist < 0.5": (assigned_students["assignment_dist"] < 0.5).sum()
-                / assigned_students.shape[0],
-                "Dist > 1.5": (assigned_students["assignment_dist"] > 1.5).sum()
-                / assigned_students.shape[0],
-                "Avg In-Zone Rank": (assigned_students["In-Zone Rank"]).mean(),
-                "Avg Rank": (assigned_students["rank"]).mean(),
-                "In-Zone Top 3": (
-                    assigned_students["In-Zone Rank"] <= 3
-                ).mean(),
-                "Rank Top 3": (assigned_students["rank"] <= 3).mean(),
-                "In-Zone Top 1": (
-                    assigned_students["In-Zone Rank"] == 1
-                ).mean(),
-                "Rank Top 1": (assigned_students["rank"] == 1).mean(),
-                "Worst avg rank": (
-                    assigned_students.groupby("idschoolattendance")[
-                        "rank"
-                    ].mean()
-                ).max(),
-                "Max School FRL": self.max_frl(),
-                "Median School FRL": self.median_frl(),
-                "School w/in 10% district FRL": self.school_frl_range_district(
-                    0.10
-                ),
-                "School w/in 15% district FRL": self.school_frl_range_district(
-                    0.15
-                ),
-                "Unassigned": (student_data["programno"] == 0).mean(),
-                "Max unassigned ct": most_unassigned,
-                "Max unassigned ct aa": most_unassigned_aa,
-                #'Max unassigned pct': most_unassigned_pct,
-                #'Max unassigned pct aa': most_unassigned_pct_aa,
-                "Thiel": self.theil(
-                    ethnic_matrix, ethnic_total, ethnic_total_norm
-                ),
-                "GE-only Thiel": self.theil(
-                    ethnic_matrix, ethnic_total, ethnic_total_norm, GE_only=True
-                ),
-                "Avg Hellinger": self.hellinger_avg(),
-                "GE-only Avg Hellinger": self.hellinger_avg(GE_only=True),
-                #'Min Quality Access':self.likelihood_of_quality_school(
-                #    quality_GEprog_idx_math,market,priority_weights),
-                #'Min Quality Color': self.likelihood_of_quality_school(
-                #    quality_GEprog_idx_color,market,priority_weights),
-                "Designated": student_data["designation"].mean(),
-                "BG isolation (2)": self.without_blockgroup(threshold=2),
-                "BG isolation (3)": self.without_blockgroup(threshold=3),
-            }
-        )
-        eval_metrics = pd.concat(
-            [
-                eval_metrics,
-                pd.Series(
-                    self.rank_cdf(student_data, "In-Zone Rank"),
-                    index=[f"In-Zone Rank <= {rank}" for rank in range(1, 6)],
-                ),
-            ]
-        )
-        eval_metrics = pd.concat(
-            [
-                eval_metrics,
-                pd.Series(
-                    self.rank_cdf(
-                        student_data, "In-Zone Rank", rank_clusters=1
-                    ),
-                    index=["In-Zone First Choice"],
-                ),
-            ]
-        )
-        student_data[student_data["programtype"] == "GE"]
-        # eval_metrics = pd.concat([eval_metrics, pd.Series(
-        #    self.rank_cdf(ge_data, 'In-Zone Rank'),
-        #    index= ['In-Zone Rank (GE) <= {}'.format(rank) for rank in range(1,6)])])
-        # eval_metrics = pd.concat([eval_metrics, pd.Series(self.rank_cdf(ge_data, 'rank'),
-        #   index= ['Rank (GE) <= {}'.format(rank) for rank in range(1,6)])])
-        # eval_metrics = pd.concat([eval_metrics, pd.Series(self.rank_cdf(student_data, 'rank'),
-        #    index= ['Rank <= {}'.format(rank) for rank in range(1,6)])])
-
-        assigned_ge = student_data[student_data["programtype"] == "GE"]
-        student_data[student_data["programtype"] != "GE"]
-
-        # choice_metrics = self.subset_choice(student_data)
-        quality_bypop = self.subset_quality(student_data, schools.school_data)
-        live_nearby = self.live_nearby(assigned_students)
-        live_nearby_ge = self.live_nearby(assigned_ge)
-        live_nearby_ge.index = [x + " - GE only" for x in live_nearby_ge.index]
-
-        nschools = student_data["assigned school"].nunique()
-        aalpi_iso_50 = (
-            self.group_isolation(student_data, "aalpi", 0.5) / nschools
-        )
-        aalpi_iso_60 = (
-            self.group_isolation(student_data, "aalpi", 0.6) / nschools
-        )
-        aalpi_iso_70 = (
-            self.group_isolation(student_data, "aalpi", 0.7) / nschools
-        )
-        aalpi_iso_50_ge = (
-            self.group_isolation(assigned_ge, "aalpi", 0.5) / nschools
-        )
-        aalpi_iso_60_ge = (
-            self.group_isolation(assigned_ge, "aalpi", 0.6) / nschools
-        )
-        aalpi_iso_70_ge = (
-            self.group_isolation(assigned_ge, "aalpi", 0.7) / nschools
-        )
-        frl_iso_50 = (
-            self.group_isolation(student_data, "frlprob", 0.5) / nschools
-        )
-        frl_iso_60 = (
-            self.group_isolation(student_data, "frlprob", 0.6) / nschools
-        )
-        frl_iso_70 = (
-            self.group_isolation(student_data, "frlprob", 0.7) / nschools
-        )
-        frl_iso_50_ge = (
-            self.group_isolation(assigned_ge, "frlprob", 0.5) / nschools
-        )
-        frl_iso_60_ge = (
-            self.group_isolation(assigned_ge, "frlprob", 0.6) / nschools
-        )
-        frl_iso_70_ge = (
-            self.group_isolation(assigned_ge, "frlprob", 0.7) / nschools
-        )
-        group_isolation = pd.Series(
-            {
-                "aalpi iso 50": aalpi_iso_50,
-                "aalpi iso 60": aalpi_iso_60,
-                "aalpi iso 70": aalpi_iso_70,
-                "aalpi iso 50 - GE": aalpi_iso_50_ge,
-                "aalpi iso 60 - GE": aalpi_iso_60_ge,
-                "aalpi iso 70 - GE": aalpi_iso_70_ge,
-                "frl iso 50": frl_iso_50,
-                "frl iso 60": frl_iso_60,
-                "frl iso 70": frl_iso_70,
-                "frl iso 50 - GE": frl_iso_50_ge,
-                "frl iso 60 - GE": frl_iso_60_ge,
-                "frl iso 70 - GE": frl_iso_70_ge,
-            }
+        school_locations = (
+            self.schools_latlon.drop_duplicates("school_id")
+            .set_index("school_id")[["lat", "lon"]]
+            .to_dict("index")
         )
 
-        """
-        min_to_self_hisp = self.mintoself(assigned_students, 'Hispanic/Latino')
-        min_to_self_black = self.mintoself(assigned_students, 'Black or African American')
-        min_to_self_hisp_ge = self.mintoself(assigned_ge, 'Hispanic/Latino')
-        min_to_self_black_ge = self.mintoself(assigned_ge, 'Black or African American')
-        min_to_self = pd.Series({
-            'min-to-self Hisp.': min_to_self_hisp,
-            'min-to-self Black': min_to_self_black,
-            'min-to-self Hisp.': min_to_self_hisp_ge,
-            'min-to-self Black': min_to_self_black_ge
-        })
+        def haversine_dist(lat1: float, lon1: float, school):
+            if pd.isna(lat1) or pd.isna(lon1) or pd.isna(school) or school <= 0:
+                return np.nan
+            location = school_locations.get(school)
+            if location is None or pd.isna(location["lat"]) or pd.isna(location["lon"]):
+                return np.nan
+            lat2 = float(location["lat"])
+            lon2 = float(location["lon"])
 
-        assigned_ge = assigned_ge['assignment'].value_counts()
-        assigned_lp = assigned_lp['assignment'].value_counts()
-        assigned_ge = pd.DataFrame(assigned_ge).merge(
-                programs.program_df,how='left',left_index=True,right_on='program_id')
-
-
-        """
-        """
-        ge_diffs = assigned_ge['capacity']-assigned_ge['assignment']
-        assigned_lp = pd.DataFrame(assigned_lp).merge(
-                programs.program_df,how='left',left_index=True,right_on='program_id')
-        lp_diffs = assigned_lp['capacity']-assigned_lp['assignment']
-        ge_max_diffs = ge_diffs.nlargest(3).to_frame()
-        ge_max_diffs['program'] = ge_max_diffs.index
-        ge_max_diffs = ge_max_diffs.values
-        lp_max_diffs = lp_diffs.nlargest(3).to_frame()
-        lp_max_diffs['program'] = lp_max_diffs.index
-        lp_max_diffs = lp_max_diffs.values
-        capacity_diffs = pd.Series({
-            'Unfilled GE 1 ct': ge_max_diffs[0][0],
-            'Unfilled GE 1 prog': ge_max_diffs[0][1],
-            'Unfilled GE 2 ct': ge_max_diffs[1][0],
-            'Unfilled GE 2 prog': ge_max_diffs[1][1],
-            'Unfilled GE 3 ct': ge_max_diffs[2][0],
-            'Unfilled GE 3 prog': ge_max_diffs[2][1],
-            'Unfilled LP 1 ct': lp_max_diffs[0][0],
-            'Unfilled LP 1 prog': lp_max_diffs[0][1],
-            'Unfilled LP 2 ct': lp_max_diffs[1][0],
-            'Unfilled LP 2 prog': lp_max_diffs[1][1],
-            'Unfilled LP 3 ct': lp_max_diffs[2][0],
-            'Unfilled LP 3 prog': lp_max_diffs[2][1]
-        })
-        """
-
-        self.assigned_students = assigned_students
-        # ell_assigned = ell_students[ell_students['programno'] > 0]
-        # frl_assigned = frl_students[frl_students['programno'] > 0]
-        # speced_assigned = speced_students[speced_students['programno'] > 0]
-        program_groups = assigned_students.groupby("assignment")
-        ge_students = assigned_students[
-            assigned_students["programtype"] == "GE"
-        ]
-        ge_groups = ge_students.groupby("assignment")
-        school_groups = assigned_students.groupby("assigned school")
-
-        aalpi_labels = ["Hispanic", "Black", "PI"]
-        diversity_metrics = {}
-
-        # a) Socioeconomic
-        average_frl = program_groups.apply(lambda x: x["frl"].mean()).mean()
-        median_frl = program_groups.apply(lambda x: x["frl"].mean()).median()
-        max_frl = program_groups.apply(lambda x: x["frl"].mean()).max()
-        std_frl = program_groups.apply(lambda x: x["frl"].mean()).std()
-        frl_peers_std = school_groups.apply(lambda x: x["frl"].sum()).std()
-        diversity_metrics["Average FRL"] = average_frl
-        diversity_metrics["Median FRL"] = median_frl
-        diversity_metrics["Max FRL"] = max_frl
-        diversity_metrics["STD FRL"] = std_frl
-        diversity_metrics["STD peers FRL"] = frl_peers_std
-
-        # b) Socioeconomic + Racial/Ethnic
-        # underserved_concentrated = program_groups.apply(lambda x:
-        #        self._pctunderserved(x, frl=0.67, aalpi=0.5, el=0.2)).mean()
-        # underserved_concentrated_ge = ge_groups.apply(lambda x:
-        #        self._pctunderserved(x, frl=0.67, aalpi=0.5, el=0.2)).mean()
-        # diversity_metrics['Underserved concentration'] = underserved_concentrated
-        # diversity_metrics['Underserved concentration - GE'] = underserved_concentrated_ge
-
-        # c) Racial/Ethnic
-        # thiel = self.theil(eth_matrix, eth_total, eth_total_norm)
-        # thiel_ge = self.theil(eth_matrix, eth_total, eth_total_norm, GE_only=True)
-        # hellinger = self.hellinger_avg()
-        # hellinger_ge = self.hellinger_avg(GE_only=True)
-        # ethiso_45_ge = ge_groups.apply(lambda x: self._ethnicisolation(x, 0.45)).mean()
-        # ethiso_50_ge = ge_groups.apply(lambda x: self._ethnicisolation(x, 0.50)).mean()
-        # ethiso_60_ge = ge_groups.apply(lambda x: self._ethnicisolation(x, 0.60)).mean()
-        # ethiso_60 = program_groups.apply(lambda x: self._ethnicisolation(x, 0.60)).mean()
-        # diversity_metrics['Thiel'] = thiel
-        # diversity_metrics['Thiel - GE'] = thiel_ge
-        # diversity_metrics['Hellinger'] = hellinger
-        # diversity_metrics['Hellinger - GE'] = hellinger_ge
-        # diversity_metrics['Ethnic isolation 45% - GE'] = ethiso_45_ge
-        # diversity_metrics['Ethnic isolation 50% - GE'] = ethiso_50_ge
-        # diversity_metrics['Ethnic isolation 60% - GE'] = ethiso_60_ge
-        # diversity_metrics['Ethnic isolation 60%'] = ethiso_60
-
-        for e in range(len(self.eths)):
-            if e % 2 != 0:
-                eth_peers_std = school_groups.apply(
-                    lambda x: (
-                        x["resolved_ethnicity"] == self.eth_labels[e]
-                    ).sum()
-                ).std()
-                diversity_metrics["STD peers " + self.eth_labels[e]] = (
-                    eth_peers_std
+            lat1, lat2, lon1, lon2 = [radians(_) for _ in [lat1, lat2, lon1, lon2]]
+            c = 2 * asin(
+                sqrt(
+                    sin((lat2 - lat1) / 2) ** 2
+                    + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2
                 )
+            )  # angle
+            r = 3958.8  # earth radius (in miles)
 
-        for e in range(3):
-            # min_to_self = self.mintoself(assigned_students, aalpi[e])
-            # diversity_metrics['Min-to-self ' + aalpi_labels[e]] = min_to_self
-            eth_std = program_groups.apply(
-                lambda x: (x["resolved_ethnicity"] == aalpi[e]).mean()
-            ).std()
-            diversity_metrics["STD " + aalpi_labels[e]] = eth_std
-            eth_peers_std = school_groups.apply(
-                lambda x: (x["resolved_ethnicity"] == aalpi[e]).sum()
-            ).std()
-            diversity_metrics["STD peers " + aalpi[e]] = eth_peers_std
+            return r * c
 
-        # for e in range(len(self.eths)):
-        #    eth_peers_sum = school_groups.apply(lambda x:
-        #            (x['resolved_ethnicity'] == self.eth_labels[e]).sum()).mean()
-        #    diversity_metrics['Mean  peers ' + self.eth_labels[e]] = eth_peers_sum
-
-        # d) Language
-        # el_33 = program_groups.apply(lambda x: x['ell'].mean() > 0.33).mean()
-        # el_50 = program_groups.apply(lambda x: x['ell'].mean() > 0.50).mean()
-        # diversity_metrics['EL concentration 33%'] = el_33
-        # diversity_metrics['EL concentration 50%'] = el_50
-
-        # e) Special Education
-        # speced_20 = program_groups.apply(lambda x: x['speced'].mean() > 0.2).mean()
-        # diversity_metrics['SpecEd concentration 20%'] = speced_20
-
-        ethiso_45_ge = ge_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.45)
-        ).mean()
-        ethiso_50_ge = ge_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.50)
-        ).mean()
-        ethiso_60 = program_groups.apply(
-            lambda x: self._ethnicisolation(x, 0.60)
-        ).mean()
-
-        diversity_metrics["Ethnic isolation 45% - GE"] = ethiso_45_ge
-        diversity_metrics["Ethnic isolation 50% - GE"] = ethiso_50_ge
-        diversity_metrics["Ethnic isolation 60%"] = ethiso_60
-
-        bgs_school = school_groups["census_blockgroup"].nunique().mean()
-        bgcohesion_2 = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 2))
-            .sum()
-            / assigned_students.shape[0]
+        self.student_data["assignment_dist"] = self.student_data.apply(
+            lambda x: haversine_dist(
+                x["latitude"], x["longitude"], x["assigned_school"]
+            ),
+            axis=1,
         )
-        bgcohesion_3 = (
-            assigned_students.groupby("census_blockgroup")
-            .apply(lambda x: self._bgcohesion(x, 3))
-            .sum()
-            / assigned_students.shape[0]
-        )
-        bgcohesion_ct = assigned_students.apply(
-            lambda x: self._cohesionct(x), axis=1
-        )
-        median_bgc = bgcohesion_ct.median()
-        averaege_bgc = bgcohesion_ct.median()
-
-        predictability_metrics = pd.Series(
-            {
-                "BGs per school": bgs_school,
-                "BG cohesion (2)": bgcohesion_2,
-                "BG cohesion (3)": bgcohesion_3,
-                "Median BG cohesion": median_bgc,
-                "Average BG cohesion": averaege_bgc,
-            }
-        )
-
-        diversity_metrics = pd.Series(diversity_metrics)
-
-        peer_counts = self.peers_same_ethnicity()
-        eval_metrics = pd.concat([eval_metrics, peer_counts])
-        # eval_metrics = pd.concat([eval_metrics, capacity_diffs])
-        eval_metrics = pd.concat([eval_metrics, quality_bypop])
-        eval_metrics = pd.concat(
-            [eval_metrics, live_nearby, live_nearby_ge]
-        )  # min_to_self])
-        eval_metrics = pd.concat([eval_metrics, group_isolation])
-
-        eval_metrics = pd.concat(
-            [eval_metrics, diversity_metrics, predictability_metrics]
-        )
-
-        for threshold in [3, 5, 7]:
-            eval_metrics = pd.concat(
-                [eval_metrics, self.race_isolation(threshold=threshold)]
-            )
-
-        choice_1 = (assigned_students["rank"] == 1).mean()
-        choice_3 = (assigned_students["rank"] == 3).mean()
-        inzone_choice_1 = (assigned_students["In-Zone Rank"] == 1).mean()
-        inzone_choice_3 = (assigned_students["In-Zone Rank"] <= 3).mean()
-        designated = student_data["designation"].mean()
-        unassigned = (student_data["programno"] == 0).mean()
-
-        choice_metrics = {
-            "Top choice": choice_1,
-            "Top 3 choice": choice_3,
-            "Top in-zone choice": inzone_choice_1,
-            "Top 3 in-zone choice": inzone_choice_3,
-            "Designated": designated,
-            "Unassigned": unassigned,
-        }
-
-        for e in range(len(self.eths)):
-            subset = assigned_students[
-                assigned_students["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_choice_1 = (subset["rank"] == 1).mean()
-            eth_choice_3 = (subset["rank"] <= 3).mean()
-            eth_iz_choice_1 = (subset["In-Zone Rank"] == 1).mean()
-            eth_iz_choice_3 = (subset["In-Zone Rank"] <= 3).mean()
-            subset = student_data[
-                student_data["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_designated = subset["designation"].mean()
-            eth_unassigned = (subset["programno"] == 0).mean()
-            choice_metrics["Top choice - " + self.eth_labels[e]] = eth_choice_1
-            choice_metrics["Top 3 choice - " + self.eth_labels[e]] = (
-                eth_choice_3
-            )
-            choice_metrics["Top in-zone choice - " + self.eth_labels[e]] = (
-                eth_iz_choice_1
-            )
-            choice_metrics["Top 3 in-zone choice - " + self.eth_labels[e]] = (
-                eth_iz_choice_3
-            )
-            choice_metrics["Designated - " + self.eth_labels[e]] = (
-                eth_designated
-            )
-            choice_metrics["Unassigned - " + self.eth_labels[e]] = (
-                eth_unassigned
-            )
-
-        choice_metrics = pd.Series(choice_metrics)
-
-        eval_metrics = pd.concat([eval_metrics, choice_metrics])
-
-        """
-        if 'program_cutoff' in student_data.columns:
-            quality_GEprog_idx = self._get_quality_schools(schools,programs,'math_scores_1819',pct=0.33)
-            quality_math_33 = self.likelihood_of_quality_school(quality_GEprog_idx, market,priority_weights)
-            quality_GEprog_idx = self._get_quality_schools(schools,programs,'math_scores_1819',pct=0.50)
-            quality_math_50 = self.likelihood_of_quality_school(quality_GEprog_idx, market,priority_weights)
-            quality_GEprog_idx = self._colors_quality_schools(schools,programs,pct=0.33)
-            quality_color_33 = self.likelihood_of_quality_school(quality_GEprog_idx, market,priority_weights)
-            quality_GEprog_idx = self._colors_quality_schools(schools,programs,pct=0.50)
-            quality_color_50 = self.likelihood_of_quality_school(quality_GEprog_idx, market,priority_weights)
-
-            cuttoff_metrics = pd.Series({'Min Quality Math 33%':quality_math_33,
-                                    'Min Quality Math 50%':quality_math_50,
-                                    'Min Quality Colors 33%':quality_color_33,
-                                    'Min Quality Colors 50%':quality_color_50})
-
-
-        eval_metrics = pd.concat([eval_metrics, cuttoff_metrics])
-        """
-        # distance by race
-        proximity_metrics = {}
-        for e in range(len(self.eths)):
-            subset = assigned_students[
-                assigned_students["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_dist_15 = (subset["assignment_dist"] > 1.5).mean()
-            eth_dist_05 = (subset["assignment_dist"] < 0.5).mean()
-            eth_avg_dist = subset["assignment_dist"].mean()
-            proximity_metrics["Distance > 1.5 - " + self.eth_labels[e]] = (
-                eth_dist_15
-            )
-            proximity_metrics["Distance < 0.5 - " + self.eth_labels[e]] = (
-                eth_dist_05
-            )
-            proximity_metrics["Avg distance - " + self.eth_labels[e]] = (
-                eth_avg_dist
-            )
-        proximity_metrics = pd.Series(proximity_metrics)
-
-        # percent of race at poverty school
-        pov_sch_metrics = self.poverty_schools_by_race()
-        eval_metrics = pd.concat(
-            [eval_metrics, proximity_metrics, pov_sch_metrics]
-        )
-
-        if "assigned_utility_x" not in student_data.columns:
-            # print('XYXYXY')
-            return eval_metrics
-
-        # . Utility
-        utility_metrics = {}
-
-        average_utility = student_data["assigned_utility_x"].mean()
-        utility_metrics["Average utility"] = average_utility
-
-        for e in range(len(self.eths)):
-            subset = student_data[
-                student_data["resolved_ethnicity"] == self.eths[e]
-            ]
-            eth_utility = subset["assigned_utility_x"].mean()
-            utility_metrics["Average utility - " + self.eth_labels[e]] = (
-                eth_utility
-            )
-
-        # aa_utility_min = aa_groups['averaassigned_utility_xge_utility'].min()
-        # utility_metrics['Min average utility'] = aa_utility_min
-
-        utility_metrics = pd.Series(utility_metrics)
-
-        eval_metrics = pd.concat([eval_metrics, utility_metrics])
-        return eval_metrics
-
-    def _cohesionct(self, x):
-        assignment = x["assignment"]
-        bg = x["census_blockgroup"]
-        students = self.assigned_students
-        matches = students[students["assignment"] == assignment]
-        matches = matches[matches["census_blockgroup"] == bg]
-        return matches.shape[0] - 1
-
-    def group_isolation(self, student_data, col, threshold):
-        school_groups = student_data.groupby("assigned school")
-        group_pct = school_groups[col].mean()
-        return (group_pct > threshold).sum()
-
-    def group_isolation_absolute(self, student_data, threshold):
-        counts = np.zeros([1000])
-        for i in range(student_data.shape[0]):
-            if isinstance(
-                student_data["assigned school"].iloc[i], int
-            ) or isinstance(student_data["assigned school"].iloc[i], str):
-                school_num = int(student_data["assigned school"].iloc[i])
-                counts[school_num] += 1
-        num_schools_isolated = 0
-        for i in range(len(counts)):
-            if counts[i] > 0 and counts[i] <= threshold:
-                num_schools_isolated += 1
-        return num_schools_isolated
-
-    def mintoself(self, student_data, ethnicity):
-        school_groups = student_data.groupby("assigned school")
-        total = 0
-        X = (student_data["resolved_ethnicity"] == ethnicity).sum()
-        for group in school_groups:
-            xi = (group[1]["resolved_ethnicity"] == ethnicity).sum()
-            ti = group[1].shape[0]
-            total += (xi / X) * (xi / ti)
-        return total
-
-    def live_nearby(self, student_data):
-        school_groups = student_data.groupby("assigned school")
-        min_06 = 1
-        min_1 = 1
-        for gp in school_groups:
-            if gp[0] == 0:
-                continue
-            nearby_06 = (gp[1]["assignment_dist"] < 0.6).mean()
-            nearby_1 = (gp[1]["assignment_dist"] < 1).mean()
-            if nearby_06 < min_06:
-                min_06 = nearby_06
-            if nearby_1 < min_1:
-                min_1 = nearby_1
-        mins = {"min within 0.6mi": min_06, "min within 1mi": min_1}
-        return pd.Series(mins)
-
-    def subset_quality(self, student_data, school_data):
-        colormap = {
-            "Red": 0,
-            "Orange": 1,
-            "Yellow": 2,
-            "Green": 3,
-            "Blue": 4,
-            "None": 0,
-            0: 0,
-            1: 1,
-            2: 2,
-            3: 3,
-            4: 4,
-        }
-        quality_metrics = {}
-        met33t = school_data["MetStandards"].quantile(0.666)
-        met33 = school_data[school_data["MetStandards"] > met33t]
-        met33 = list(met33.index)
-        met50t = school_data["MetStandards"].quantile(0.5)
-        met50 = school_data[school_data["MetStandards"] > met50t]
-        met50 = list(met50.index)
-        school_data["ela_color"] = school_data["ela_color"].apply(
-            lambda x: colormap[x]
-        )
-        school_data["math_color"] = school_data["math_color"].apply(
-            lambda x: colormap[x]
-        )
-        school_data["chronic_color"] = school_data["chronic_color"].apply(
-            lambda x: colormap[x]
-        )
-        school_data["suspension_color"] = school_data["suspension_color"].apply(
-            lambda x: colormap[x]
-        )
-        school_data["color_total"] = (
-            school_data["ela_color"]
-            + school_data["math_color"]
-            + school_data["chronic_color"]
-            + school_data["suspension_color"]
-        )
-        color33t = school_data["color_total"].quantile(0.666)
-        color33 = school_data[school_data["color_total"] > color33t]
-        color33 = list(color33.index)
-        color50t = school_data["color_total"].quantile(0.5)
-        color50 = school_data[school_data["color_total"] > color50t]
-        color50 = list(color50.index)
-        math33t = school_data["math_scores_1819"].quantile(0.666)
-        math33 = school_data[school_data["math_scores_1819"] > math33t]
-        math33 = list(math33.index)
-        math50t = school_data["math_scores_1819"].quantile(0.50)
-        math50 = school_data[school_data["math_scores_1819"] > math50t]
-        math50 = list(math50.index)
-
-        student_data["assigned school"] = student_data[
-            "assigned school"
-        ].fillna(0)
-
-        def makemetrics(subset, name):
-            met33subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in met33)
-                .mean()
-            )
-            met50subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in met50)
-                .mean()
-            )
-            color33subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in color33)
-                .mean()
-            )
-            color50subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in color50)
-                .mean()
-            )
-            math33subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in math33)
-                .mean()
-            )
-            math50subset = (
-                subset["assigned school"]
-                .apply(lambda x: int(x) in math50)
-                .mean()
-            )
-            quality_metrics["met33-" + name] = met33subset
-            quality_metrics["met50-" + name] = met50subset
-            quality_metrics["color33-" + name] = color33subset
-            quality_metrics["color50-" + name] = color50subset
-            quality_metrics["math33-" + name] = math33subset
-            quality_metrics["math50-" + name] = math50subset
-
-        # 1. by ethnicity
-        eth_names = ["white", "asian", "hisp", "black", "decline"]
-        eth_cols = [
-            "White",
-            "Asian",
-            "Hispanic/Latino",
-            "Black or African American",
-            "Decline to State",
-        ]
-        for eth in range(4):
-            subset = student_data[
-                student_data["resolved_ethnicity"] == eth_cols[eth]
-            ]
-            makemetrics(subset, eth_names[eth])
-        # 2. by FRL
-        student_data["frl_prob"] = (
-            student_data["freelunch_prob"] + student_data["reducedlunch_prob"]
-        )
-        subset = student_data[student_data["frl_prob"] < 0.5]
-        makemetrics(subset, "frl<0.5")
-        subset = student_data[student_data["frl_prob"] > 0.5][
-            student_data["frl_prob"] < 0.7
-        ]
-        makemetrics(subset, "frl0.5-0.7")
-        subset = student_data[student_data["frl_prob"] > 0.7]
-        makemetrics(subset, "frl>0.7")
-        # 3. by ELL
-        subset = student_data[
-            student_data["englprof_desc"] == "L-Limited English"
-        ]
-        subset2 = student_data[student_data["englprof_desc"] == "N-Non English"]
-        subset = pd.concat([subset, subset2])
-        makemetrics(subset, "ELL")
-        subset = student_data[
-            student_data["englprof_desc"] != "L-Limited English"
-        ]
-        subset = subset[subset["englprof_desc"] != "N-Non English"]
-        makemetrics(subset, "nonELL")
-        return pd.Series(quality_metrics)
-
-    def filter_students(self, filter):
-        """If filter['Students']:
-        return self.student_data.loc[filter['Students'], :].
-        """
-        if filter is None:
-            return self.student_data
-        rounds = self.student_data["mainround"].isin(filter["Rounds"])
-        designated = ethnic = enrolled = ses = ctip = np.ones(
-            self.student_data.shape[0], dtype=bool
-        )  # default includes all students
-        if filter["Designation"] == 1:
-            designated = self.is_designated()  # filter designated students
-        if filter["Designation"] == 0:
-            designated = ~self.is_designated()  # filter non-designated students
-        if filter["Ethnicity"] is not None:
-            ethnic = (
-                self.student_data["resolved_ethnicity"] == filter["Ethnicity"]
-            )  # filter students by ethnicity
-        if filter["Enrolled"]:
-            enrolled = self.student_data["enrolled_idschool"].notnull()
-        if filter["SES Quantile"]:
-            baseline = (
-                self.student_data[["freelunch_prob", "reducedlunch_prob"]]
-                .sum(axis=1)
-                .quantile(filter["SES Quantile"])
-            )
-            ses = (
-                self.student_data[["freelunch_prob", "reducedlunch_prob"]].sum(
-                    axis=1
-                )
-                >= baseline
-            )
-        if filter["HasCTIP"] == 1:
-            ctip = self.has_ctip()  # filter students with ctip
-        if filter["HasCTIP"] == 0:
-            ctip = ~self.has_ctip()  # filter students without ctip
-
-        kept_indices = rounds & designated & ethnic & enrolled & ses & ctip
-
-        return self.student_data.loc[kept_indices, :]
-
-    def has_ctip(self, student_data=None):
-        """Output: Series where index = student code, value = True (if student had ctip1) or False( if not)."""
-        if student_data is None:
-            student_data = self.student_data
-        return student_data["ctip1"].astype(bool)
 
     def is_designated(self, student_data=None):
         """Output: Series where index = student code, value = True (if student was assigned) or False( if not)."""
@@ -2276,1282 +682,1487 @@ class MatchEvaluator:
         """Output: Series where index = student code, value = True (if student was assigned) or False (if not)."""
         if student_data is None:
             student_data = self.student_data
-        return student_data["assignment"].notnull()
+        return self._assigned_mask(student_data)
 
-    def is_outside_zone(self, student_data):
-        """Output: Series where index = student code, value = True (if student match is outside zone) or False (if not)."""
+    @staticmethod
+    def _income_composition(all_students, income_threshold, high_income):
+        """Return school and district shares on one side of an income cutoff."""
+        income = pd.to_numeric(all_students["median_hh_income"], errors="coerce")
+        valid = all_students[income.notna()].copy()
+        if valid.empty:
+            return pd.Series(dtype=float), np.nan
+        qualifies = income[income.notna()] >= income_threshold
+        if not high_income:
+            qualifies = income[income.notna()] <= income_threshold
+        totals = valid.groupby("assigned school").size()
+        counts = valid[qualifies].groupby("assigned school").size()
+        return counts.reindex(totals.index, fill_value=0) / totals, qualifies.mean()
 
-        def check_zones(student):
-            aa = student["idschoolattendance"]
-            if (
-                aa.notnull()
-                and student_data.loc[student.name, "assignment"] != 0
-            ):
-                return np.any(
-                    [
-                        False
-                        for zone in self.zones
-                        if student_data.loc[student.name, "assignment"] in zone
-                        and aa in zone
-                    ]
-                )
-            else:
-                return False  # could also be np.nan
-
-        return student_data.apply(check_zones, axis=1)
-
-    def eval_distance(self):
-        """Output: 'distances' -> Series where index = student code, value = distance to matched school."""
-        distances = pd.melt(
-            self.distance_data.reset_index(),
-            id_vars="studentno",
-            var_name="assignment",
-            value_name="assignment_dist",
-        )
-        self.student_data = self.student_data.merge(
-            distances, how="left", on=["studentno", "assignment"]
-        )
-        self.distances = self.student_data.assignment_dist.to_numpy()
-        # distances = []
-        # assignments = self.student_data['assignment']
-        # for i in range(self.student_data.shape[0]):
-        #     assignment = assignments.iloc[i]
-        #     if isinstance(assignment,str):
-        #         distance = self.distance_data[assignment].iloc[i]
-        #     else:
-        #         distance = 0
-        #     distances.append(distance)
-        # self.distances = np.array(distances)
-        # self.student_data['assignment_dist'] = self.distances
-
-        """
-        def get_distance(row):
-            return self.distance_data.loc[row['studentno'], row['assignment']]
-        match_mask = self.student_data['assignment'].notnull()
-        distance_mask = [True if code in self.distance_data.index else False for code in self.student_data.index]
-        filtered = self.student_data[match_mask & distance_mask]
-        self.distances = pd.Series(filtered.reset_index().apply(get_distance, axis=1).values,
-                                   index=filtered.index).replace(0, np.nan)
-        self.student_data['assignment_dist'] = self.distances
-
-        if hasattr(self,'travel_times'):
-            def get_time(row):
-                return self.travel_times.loc[row['studentno'], row['assignment']]
-
-            match_mask = self.student_data['assignment'].notnull()
-            distance_mask = [True if code in self.travel_times.index else False for code in self.student_data.index]
-            filtered = self.student_data[match_mask & distance_mask]
-            self.travel_times = pd.Series(filtered.reset_index().apply(get_time, axis=1).values,
-                                       index=filtered.index).replace(0, np.nan)
-            self.student_data['assignment_time'] = self.travel_times
-        """
-        return self.distances
-
-    def rank_cdf(self, student_data, col, rank_clusters=5):
-        """Input: 'rank_clusters' -> integer indicating how many buckets to consider when making the rank_cdf
-        Output: 'rank_cdf' -> ndarray representing cumulative distribution of student assignment ranks.
-        """
-        student_data = student_data[student_data["programno"] > 0]
-        rank_cdf = np.zeros(rank_clusters)
-        for rank in range(1, rank_clusters + 1):
-            rank_cdf[rank - 1] = np.sum((student_data[col] <= rank).astype(int))
-        rank_cdf /= np.sum(
-            (student_data["assignment"] != 0).astype(int)
-        )  # normalize
-
-        return rank_cdf
-
-    def _make_eval_matrix(self, student_data=None, distance_threshold=3):
-        """Input: 'distance_threshold' -> integer indicating the cutoff for distance calculations."""
-        if student_data is None:
-            student_data = self.student_data
-        eval_matrix = pd.DataFrame(
-            {
-                "Distance": student_data["assignment_dist"],
-                f"Dist. > {distance_threshold}": student_data["assignment_dist"]
-                > distance_threshold,
-                "Rank": student_data["rank"],
-                "Designated": self.is_designated(student_data),
-                "Unassigned": ~self.is_assigned(student_data),
-            }
-        )
-        #'Outside Zone': self.is_outside_zone(), will add back in
-        return eval_matrix
-
-    def aa_metrics(
-        self,
-        student_data,
-        assignment=False,
-        program_level=False,
-        distance_threshold=3,
+    @staticmethod
+    def _schools_outside_composition_range(
+        school_shares, district_share, prop_threshold
     ):
-        """Input: 'distance_threshold' -> integer indicating the cutoff for distance calculations
-        Output: 'aa_metrics' -> DataFrame with index = attendance area, columns = student match metrics.
-        """
-        group_str = "assigned school" if assignment else "idschoolattendance"
-        if program_level:
-            group_str = "assignment"
-        aa_groups = student_data.groupby(group_str)
-        aa_metrics = aa_groups.mean(numeric_only=True)
-        aa_metrics[f"Avg Dist. > {distance_threshold}"] = (
-            aa_metrics["assignment_dist"] > distance_threshold
+        if school_shares.empty or pd.isna(district_share):
+            return pd.Index([])
+        cutoff = district_share + prop_threshold
+        matches = (
+            school_shares >= cutoff if prop_threshold > 0 else school_shares < cutoff
         )
-        aa_metrics["Max Distance"] = aa_groups["assignment_dist"].max()
-        aa_metrics["Min Distance"] = aa_groups["assignment_dist"].min()
-        aa_metrics["STD Distance"] = aa_groups["assignment_dist"].std()
-        aa_metrics["Avg Utility"] = aa_groups["assigned_utility"].std()
+        return school_shares.index[matches]
 
-        return aa_metrics
+    def school_income_range(self, all_students, income_threshold, prop_threshold):
+        school_shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=False
+        )
+        schools = self._schools_outside_composition_range(
+            school_shares, district_share, prop_threshold
+        )
+        return self._safe_ratio(len(schools), len(school_shares))
 
-    def group_metrics(
-        self, student_data=None, group="idschoolattendance", zone_file=""
+    def high_income_school_range(self, all_students, income_threshold, prop_threshold):
+        """Count schools by high-income-student share relative to the district."""
+        school_shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=True
+        )
+        schools = self._schools_outside_composition_range(
+            school_shares, district_share, prop_threshold
+        )
+        return len(schools), self._safe_ratio(len(schools), len(school_shares))
+
+    def aalpi_in_high_income_schools(
+        self, all_students, income_threshold, prop_threshold
     ):
-        """Args:
-            student_data: matrix from Students class
-            group: group to perform analysis, 4 options: 'assignment', 'assigned school', 'idschoolattendance', or 'assigned_zone'.
-
-        Returns:
-            DataFrame with index=group, columns=ethnicities, ctip, FRL > median, total
+        """Computes the proportion of AALPI (African American, Latino, Pacific Islander) students
+        in schools with average income above a specified threshold.
         """
-        if student_data is None:
-            student_data = self.student_data
-        if group == "zone_id" or group == "assigned_zone":
-            student_data, zone_dicts = self._student_zone_cols(
-                zone_file, student_data
-            )
-        groups = student_data.groupby(group)
-        ethnics = (
-            student_data.pivot_table(
-                index=group,
-                columns="resolved_ethnicity",
-                values="grade",
-                aggfunc="count",
-            )
-            .fillna(0)
-            .astype(int)
+        shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=True
         )
-        counts = pd.Series(ethnics.sum(axis=1).astype(int), name="total")
-        ethnics = ethnics.div(ethnics.sum(axis=1), axis=0)  # normalize
-        ctip = groups["ctip1"].mean()
-
-        """
-        high_frl = pd.Series(student_data.loc[student_data['frl'] > student_data['frl'].median(),
-                                              ['frl', group]].groupby(group).count()['frl'] / counts, name='FRL > median')
-        """
-        dist = groups["assignment_dist"].mean()
-        nblockgroups = groups.apply(
-            lambda x: x["census_blockgroup"].value_counts().shape[0]
+        high_income_schools = self._schools_outside_composition_range(
+            shares, district_share, prop_threshold
         )
-        nblockgroups.name = "Number of BGs"
-        hellinger = self.hellinger_at_level(group, student_data)
+        student_data_hi = all_students[
+            all_students["assigned school"].isin(high_income_schools)
+        ]
+        return self._safe_ratio(
+            student_data_hi["ethnicity"].isin(AALPI).sum(), len(student_data_hi)
+        )
 
-        def pct_des(x):
-            init = x.shape[0]
-            x = x["designation"] == 1
-            end = x.shape[0]
-            if end > 0:
-                return init / end
-            else:
-                return 1
+    def aalpi_in_low_income_schools(
+        self, all_students, income_threshold, prop_threshold
+    ):
+        """Computes the proportion of AALPI (African American, Latino, Pacific Islander) students
+        in schools with average income below a specified threshold.
+        """
+        shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=False
+        )
+        low_income_schools = self._schools_outside_composition_range(
+            shares, district_share, prop_threshold
+        )
+        student_data_li = all_students[
+            all_students["assigned school"].isin(low_income_schools)
+        ]
+        return self._safe_ratio(
+            student_data_li["ethnicity"].isin(AALPI).sum(), len(student_data_li)
+        )
 
-        pctdesignated = groups.apply(lambda x: pct_des(x))
-
-        def des_notzone(x):
-            init = x.shape[0]
-            x = x[x["designation"] == 1]
-            x = x[x["inZone"] == 0]
-            end = x.shape[0]
-            if end > 0:
-                return init / end
-            else:
-                return 1
-
-        groups.apply(lambda x: des_notzone(x))
-
-        if isinstance(ethnics, pd.Series):
-            ethnics = ethnics.to_frame()
-        if isinstance(ctip, pd.Series):
-            ctip = ctip.to_frame()
-        if isinstance(dist, pd.Series):
-            dist = dist.to_frame()
-        if isinstance(counts, pd.Series):
-            counts = counts.to_frame()
-        if isinstance(nblockgroups, pd.Series):
-            nblockgroups = nblockgroups.to_frame()
-        if isinstance(pctdesignated, pd.Series):
-            pctdesignated = pctdesignated.to_frame()
-
-        # return ethnics.join(ctip).join(high_frl).join(dist).join(counts).join(nblockgroups).fillna(0)
+    def avg_aalpi_in_high_income_schools(
+        self, all_students, income_threshold, prop_threshold
+    ):
+        """Calculates the average proportion of AALPI (African American, Latino, Pacific Islander)
+        students across high income schools with average income above a threshold.
+        """
+        shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=True
+        )
+        high_income_schools = self._schools_outside_composition_range(
+            shares, district_share, prop_threshold
+        )
+        student_data_hi = all_students[
+            all_students["assigned school"].isin(high_income_schools)
+        ]
+        if student_data_hi.empty:
+            return np.nan
         return (
-            ethnics.join(ctip)
-            .join(dist)
-            .join(counts)
-            .join(nblockgroups)
-            .join(hellinger)
-            .join(pctdesignated)
-            .fillna(0)
+            student_data_hi.assign(is_aalpi=student_data_hi["ethnicity"].isin(AALPI))
+            .groupby("assigned school")["is_aalpi"]
+            .mean()
+            .mean()
         )
 
-    def aa_summary(self, student_data=None):
-        """Input: 'student_data' -> matrix from Students class
-        Output: -> DataFrame with index=aa, columns=[1,2,3,'% Left AA For Lang, '% Left AA For GE'].
+    def avg_frl_in_high_income_schools(
+        self, all_students, income_threshold, prop_threshold
+    ):
+        """Calculates the average proportion of FRL students across high
+        income schools with average income above a threshold.
+        """
+        shares, district_share = self._income_composition(
+            all_students, income_threshold, high_income=True
+        )
+        high_income_schools = self._schools_outside_composition_range(
+            shares, district_share, prop_threshold
+        )
+        student_data_hi = all_students[
+            all_students["assigned school"].isin(high_income_schools)
+        ]
+        if student_data_hi.empty:
+            return np.nan
+        return student_data_hi.groupby("assigned school")["is_frl"].mean().mean()
+
+    def poverty_concentration(
+        self, all_students, students, threshold, return_count=False
+    ):
+        """Proportion of students in schools where the percentage of FRL students
+        exceeds or falls below the district average by a certain threshold.
+        """
+        schools_frl = (
+            all_students[["assigned school", "frl"]]
+            .groupby("assigned school")
+            .mean()["frl"]
+        )
+        district_avg = all_students["frl"].mean()
+        num_students = len(students)
+        group_school_frl = students["assigned school"].map(schools_frl)
+        if threshold >= 0:
+            count = int((group_school_frl > district_avg + threshold).sum())
+        else:
+            count = int((group_school_frl < district_avg + threshold).sum())
+        if return_count:
+            return count
+        return count / num_students if num_students else np.nan
+
+    def ge_frl_range(self, ge_students, ge_groups, threshold):
+        if ge_students.empty:
+            return 0, np.nan
+        ges_frl = ge_groups[["frl"]].mean()
+        district_avg = ge_students["frl"].mean()
+        if threshold >= 0:
+            ges_matching = ges_frl["frl"] >= district_avg + threshold
+            return np.sum(ges_matching), np.mean(ges_matching)
+        else:
+            ges_matching = ges_frl["frl"] <= district_avg + threshold
+            return np.sum(ges_matching), np.mean(ges_matching)
+
+    def metric_ge_FRL_concentration(
+        self, ge_students, group_students, ge_groups, threshold
+    ):
+        """Proportion of students in GE programs where % of FRL students
+        exceeds or falls below the district average by a certain threshold.
+        """
+        ges_frl = ge_groups[["frl"]].mean()["frl"]
+        district_avg = ge_students["frl"].mean()
+        num_students = len(group_students)
+        if not num_students:
+            return np.nan
+        group_ge_frl = group_students["assignment"].map(ges_frl)
+        if threshold >= 0:
+            return (group_ge_frl > district_avg + threshold).mean()
+        return (group_ge_frl < district_avg + threshold).mean()
+
+    def ge_AAPI_range(
+        self,
+        higher_threshold,
+        lower_threshold=0,
+        smaller_strict=True,
+        percentage=True,
+        student_data=None,
+    ):
+        """Compute the number of GE programs that have less than threshold of their
+        capacity or a certain number African American or Pacific Islander students.
         """
         if student_data is None:
             student_data = self.student_data
-        lang_codes = [
-            "CN",
-            "CE",
-            "CB",
-            "CT",
-            "NC",
-            "JB",
-            "JE",
-            "JN",
-            "KN",
-            "KE",
-            "MN",
-            "ME",
-            "SB",
-            "SN",
-            "SE",
-            "NS",
-            "FB",
-        ]
-
-        aa_school_info = (
-            student_data.pivot_table(
-                index="idschoolattendance",
-                values="grade",
-                columns="assigned school",
-                aggfunc="count",
+        assigned = student_data[self._assigned_mask(student_data)]
+        program_aapi_cnts = (
+            assigned[assigned["ethnicity"].isin(["Black", "Pacific Islander"])]
+            .groupby("programcodes")
+            .size()
+            .rename("studentno")
+        )
+        ge_programs = self.programs[self.programs["program_type"] == "GE"].copy()
+        ge_programs["program_id"] = ge_programs["program_id"].astype(str)
+        ge_programs["studentno"] = (
+            ge_programs["program_id"].map(program_aapi_cnts).fillna(0)
+        )
+        if not percentage:
+            counts = ge_programs["studentno"]
+            if smaller_strict:
+                return int(
+                    ((counts >= lower_threshold) & (counts < higher_threshold)).sum()
+                )
+            return int(
+                ((counts >= lower_threshold) & (counts <= higher_threshold)).sum()
             )
-            .fillna(0)
-            .astype(int)
-        )
-        top3 = aa_school_info.apply(
-            lambda row: pd.Series(row.index[np.argsort(-row)].values), axis=1
-        ).iloc[:, :3]
-        top3.rename(
-            columns={0: "school_1", 1: "school_2", 2: "school_3"}, inplace=True
-        )
-        for i in range(1, 4):
-            top3[f"school_{i}"] = top3[f"school_{i}"].astype("int64")
-        aa_program_info = (
-            student_data.pivot_table(
-                index="idschoolattendance",
-                values="grade",
-                columns="assignment",
-                aggfunc="count",
-            )
-            .fillna(0)
-            .astype(int)
-        )
-        aa_counts = aa_program_info.sum(axis=1)
 
-        def make_nan(row):
-            row[row.index.str.contains(str(int(row.name)))] = np.nan
-            return row
+        if smaller_strict:
+            in_range = (
+                ge_programs["studentno"] < higher_threshold * ge_programs["capacity"]
+            ) & (ge_programs["studentno"] >= lower_threshold * ge_programs["capacity"])
+        else:
+            in_range = (
+                ge_programs["studentno"] <= higher_threshold * ge_programs["capacity"]
+            ) & (ge_programs["studentno"] >= lower_threshold * ge_programs["capacity"])
+        return int(in_range.sum())
 
-        aa_program_info = aa_program_info.apply(make_nan, axis=1)
-        aa_lang_program_info = aa_program_info.loc[
-            :, aa_program_info.columns.str.contains("|".join(lang_codes))
-        ]
-        left_for_lang = pd.Series(
-            aa_lang_program_info.sum(axis=1) / aa_counts,
-            name="Left AA For Lang",
-        )
-        aa_ge_program_info = aa_program_info.loc[
-            :, aa_program_info.columns.str.contains("GE")
-        ]
-        left_for_ge = pd.Series(
-            aa_ge_program_info.sum(axis=1) / aa_counts, name="Left GE For Lang"
-        )
+    def load_zone_file_dict(self, zone_file):
+        """Load a dictionary for zone_file mapping zone building block to zone id.
 
-        return pd.concat([top3, left_for_lang, left_for_ge], axis=1)
-
-    def school_summary(self, student_data=None, program_level=False):
-        if student_data is None:
-            student_data = self.student_data
-        group = "assignment" if program_level else "assigned school"
-        school_aa_info = (
-            student_data.pivot_table(
-                index=group,
-                values="grade",
-                columns="idschoolattendance",
-                aggfunc="count",
-            )
-            .fillna(0)
-            .astype(int)
-        )
-        top3 = school_aa_info.apply(
-            lambda row: pd.Series(row.index[np.argsort(-row)].values), axis=1
-        ).iloc[:, :3]
-        top3.rename(columns={0: 1, 1: 2, 2: 3}, inplace=True)
-        avg_dist = student_data.groupby(group)["assignment_dist"].mean()
-
-        return top3.join(avg_dist)
-
-    def _student_zone_cols(self, zone_file, student_data):
-        # get school to zone translation dictionary
+        Input:
+            zone_file: path to the zone file
+        Returns:
+            the dictionary mapping zone building block to zone id
+        """
+        if zone_file is None:
+            logger.warning("Zone file is None; map metrics may be incomplete.")
+            return {}
         with open(zone_file) as f:
             reader = csv.reader(f)
             zones = list(reader)
+
         zone_dict = {}
         for idx, schools in enumerate(zones):
             zone_dict = {
                 **zone_dict,
                 **{int(float(s)): idx for s in schools if s != ""},
             }
+        return zone_dict
 
-        # get students' zone and calc basic stats
-        student_data["zone_id"] = student_data["idschoolattendance"].replace(
-            zone_dict
-        )
-        student_data["assigned_zone"] = student_data["assigned school"].apply(
-            lambda x: (
-                zone_dict[int(x)]
-                if (not pd.isnull(x) and int(x) in zone_dict)
-                else x
-                if pd.isnull(x)
-                else int(x)
-            )
-        )
-        return student_data, zone_dict
+    def eval_assignment_metrics_by_student_area(
+        self,
+        program_data,  # not used here.
+        building_block="idschoolattendance",
+        zone_file=None,
+        school_order=None,
+        zone_order=None,
+    ):
+        """Generate the dataframe for map-level metrics for 2024 summer SFUSD
+        dashboard based on student area.
 
-    def zone_summary(self, zone_file, student_data=None, group="assigned_zone"):
-        """Calculate summary statistics for students assigned to a zone given
-        an assignment. Note that the zone file should match the zones used to
-        create the assignment! There is a function to find this in Simulator.
+        TODO: similar to the function eval_assignment_metrics_by_assigned_area
+        with only differences on grouping students. Refactor if have time.
+
+        Input:
+            program_data: program df used for in capacity and empty seats
+            building_block: one of "idschoolattendance", "Block" or "BlockGroup"
+            zone_file: zone file as used in configs. Can only be none if using "aa" as
+                zone building_block.
+            school_order: a list of ordered schools to order the columns in the outputs
+            zone_order: a list of ordered zones to order the columns in the outputs
+        Returns:
+            the dataframe where rows are metrics, and columns are the zones or AA.
         """
-        if student_data is None:
-            student_data = self.student_data
+        student_data = self.student_data.copy()
+        school_id_to_name = {
+            x: y
+            for [x, y] in self.schools_latlon[["school_id", "school_name"]].to_numpy()
+        }
+        # Map student to their map area by their building block.
+        if building_block == "idschoolattendance":
+            student_data["map_area"] = student_data["idschoolattendance"]
+            school_to_zone_dict = {
+                x: x for x in self.schools_latlon["school_id"].to_numpy()
+            }
+        elif building_block in ["Block", "BlockGroup"]:
+            zone_dict = self.load_zone_file_dict(zone_file)
+            building_block_col = "census_" + building_block.lower()
+            student_data["map_area"] = student_data[building_block_col].apply(
+                lambda x: zone_dict[x] if not isnan(x) else np.nan
+            )
 
-        # get students' zone and calc basic stats
-        student_data, zone_dict = self._student_zone_cols(
-            zone_file, student_data
+            # Count attendance school to zone, and citywide school as itself.
+            school_to_zone_dict = self.schools_latlon[
+                ["school_id", building_block, "category"]
+            ].apply(
+                lambda x: [
+                    x[0],
+                    zone_dict[x[1]] if x[2] == "Attendance" else x[0],
+                ],
+                axis=1,
+            )
+            school_to_zone_dict = {x: y for [x, y] in school_to_zone_dict.to_numpy()}
+        else:
+            logger.warning(
+                "Expected building_block to be one of idschoolattendance, "
+                "Block, or BlockGroup; returning None."
+            )
+            return None
+
+        # Build up program data matched to compute program capacity.
+        program_data = program_data.copy()
+        program_data["program_area"] = program_data["school_id"].apply(
+            lambda x: school_to_zone_dict[x]
         )
-        student_data.loc[:, "num_students"] = 1
-        num_students = student_data.groupby(group)["num_students"].sum()
-        # avg_dist = student_data.groupby(group)['assignment_dist'].mean()
-        assigned_avg_rank = student_data.groupby(group)["rank"].mean()
-        assigned_frl = student_data.groupby(group)["frl"].mean()
-        assigned_frl = pd.DataFrame(assigned_frl).rename(
-            columns={"frl": "avg_frl"}
+        # Gather the area list for building blocks.
+        if building_block == "BlockGroup":
+            # For formatting, have 18 columns no matter how many zones we have.
+            area_list = [x for x in range(18)]
+        elif building_block == "Block":
+            # Adding missing zones
+            area_list = [x for x in range(59)]
+        elif building_block == "idschoolattendance":
+            area_list = [
+                x for x in self.schools_latlon["school_id"].to_numpy() if x != 909
+            ]
+
+        list_metrics = []
+        for area in area_list:
+            cur_students = student_data[student_data["map_area"] == area]
+            # cur_programs = program_data[program_data["program_area"] == area]
+            metrics = self.generate_metrics_by_aera(cur_students, None)
+            list_metrics.append(pd.Series(metrics))
+
+        # Format to return
+        area_list = [self.format_cur_col_name(x, school_id_to_name) for x in area_list]
+        col_names = dict(zip(range(len(area_list)), area_list))
+        all_metrics_df = pd.concat(list_metrics, axis=1).rename(columns=col_names)
+        all_metrics_df = self.reorder_schools_zones(
+            all_metrics_df, school_order=school_order, zone_order=zone_order
         )
+        return all_metrics_df
 
-        # calc number >50% isolated GE programs in each zone
-        (
-            ethnic_groups,
-            ethnic_matrix,
-            ethnic_matrix_norm,
-            ethnic_total,
-            ethnic_total_norm,
-            populations,
-        ) = self._make_ethnic_matrix(
-            student_data.loc[student_data["assignment"].str[4:6] == "GE", :]
-        )
-        ethnic_max = ethnic_matrix_norm.max(axis=1)
-        num_isolated = pd.DataFrame(
-            ethnic_max[ethnic_max >= 0.50], columns=["num_>50%_GE_iso"]
-        )
-        num_isolated["school_id"] = [int(x[:3]) for x in num_isolated.index]
-        num_isolated["assigned_zone"] = num_isolated["school_id"].replace(
-            zone_dict
-        )
-        num_isolated = num_isolated.groupby("assigned_zone").count()[
-            "num_>50%_GE_iso"
-        ]
+    def eval_assignment_metrics_by_assigned_area(
+        self,
+        program_data,
+        building_block="idschoolattendance",
+        zone_file=None,
+        school_order=None,
+        zone_order=None,
+    ):
+        """Generate the dataframe for map-level metrics for 2024 summer SFUSD
+        dashboard based on assigned school area.
 
-        # get num schools per zone
-        num_schools = student_data.groupby("assigned school").first()
-        num_schools = num_schools.groupby("assigned_zone").count()
-        num_schools = num_schools[["num_students"]].rename(
-            columns={"num_students": "num_schools"}
-        )
+        TODO: the current codes are very messy, we need to clean it up and/or optimize
+            it when we have time.
 
-        # get with_blockgroup
-        block_groups = student_data.groupby("census_blockgroup")
-
-        def blockgroup_pct(bg, threshold):
-            by_school = bg["assigned school"].value_counts()
-            min_students = int(threshold * bg.shape[0]) + 1
-            over_threshold = by_school[by_school > min_students].sum()
-            return over_threshold
-
-        n_to_same = pd.DataFrame(
-            block_groups.apply(lambda x: blockgroup_pct(x, 0.1)),
-            columns=["Count 10% BG Cohesion"],
-        )
-        cohesion = (
-            student_data[["census_blockgroup", "assigned_zone"]]
-            .groupby("census_blockgroup")
-            .first()
-        )
-        cohesion = cohesion.join(n_to_same)
-        cohesion = cohesion.groupby("assigned_zone").sum()[
-            "Count 10% BG Cohesion"
-        ]
-
-        # get % 1st and 3rd choice
-        student_data["top1_choice"] = np.where(student_data["rank"] == 1, 1, 0)
-        student_data["top3_choice"] = np.where(student_data["rank"] <= 3, 1, 0)
-        topchoice = student_data.groupby("assigned_zone").mean(numeric_only=True)[
-            ["top1_choice", "top3_choice"]
-        ]
-
-        # % designated
-        designated = student_data.groupby("assigned_zone").mean(numeric_only=True)[
-            "designation"
-        ]
-
-        table = pd.concat(
-            [
-                num_students,
-                num_schools,
-                assigned_avg_rank,
-                assigned_frl,
-                num_isolated,
-                cohesion,
-                topchoice,
-                designated,
-            ],
+        Input:
+            program_data: program df used for in capacity and empty seats
+            building_block: one of "idschoolattendance", "Block" or "BlockGroup"
+            zone_file: zone file as used in configs. Can only be none if using "aa" as
+                zone building_block.
+            school_order: a list of ordered schools to order the columns in the outputs
+            zone_order: a list of ordered zones to order the columns in the outputs
+        Returns:
+            the dataframe where rows are metrics, and columns are the zones or AA.
+        """
+        student_data = self.student_data.copy()
+        school_id_to_name = {
+            x: y
+            for [x, y] in self.schools_latlon[["school_id", "school_name"]].to_numpy()
+        }
+        # Map student to their assigned area by assigned_school.
+        if building_block == "idschoolattendance":
+            school_to_zone_dict = {
+                x: x for x in self.schools_latlon["school_id"].to_numpy()
+            }
+        elif building_block in ["Block", "BlockGroup"]:
+            zone_dict = self.load_zone_file_dict(zone_file)
+            # Count attendance school to zone, and citywide school as itself.
+            school_to_zone_dict = self.schools_latlon[
+                ["school_id", building_block, "category"]
+            ].apply(
+                lambda x: [
+                    x[0],
+                    zone_dict[x[1]] if x[2] == "Attendance" else x[0],
+                ],
+                axis=1,
+            )
+            school_to_zone_dict = {x: y for [x, y] in school_to_zone_dict.to_numpy()}
+        else:
+            logger.warning(
+                "Expected building_block to be one of idschoolattendance, "
+                "Block, or BlockGroup; returning None."
+            )
+            return None
+        # Count unassigned student to their located zone based on attandance area.
+        student_data["assigned_area"] = student_data[
+            ["assigned_school", "idschoolattendance"]
+        ].apply(
+            lambda x: (
+                school_to_zone_dict[x[0]]
+                if not isnan(x[0])
+                else school_to_zone_dict[x[1]]
+            ),
             axis=1,
         )
-        table.rename(columns={"rank": "avg_rank"}, inplace=True)
-        # print(table)
-        # print(pd.concat([num_students,num_schools,assigned_avg_rank,avg_dist],axis=1))
-        # print(pd.concat([assigned_frl,num_isolated,cohesion,topchoice,designated],axis=1))
-        return table
+        # Build up program data matched to compute program capacity.
+        program_data = program_data.copy()
+        program_data["program_area"] = program_data["school_id"].apply(
+            lambda x: school_to_zone_dict[x]
+        )
+        # area_list = ["All"] + list(np.unique(student_data["assigned_area"].to_numpy()))
+        area_list = ["All"]
+        aa_schools = self.schools_latlon[
+            self.schools_latlon["category"] == "Attendance"
+        ]["school_id"].to_numpy()
+        aa_schools = [x for x in aa_schools if x != 909]
+        all_schools = [
+            x for x in self.schools_latlon["school_id"].to_numpy() if x != 909
+        ]
+        citywide_schools = list(set(all_schools) - set(aa_schools))
+        # Fill in what metrics need to be generated for each config.
+        # Zone ids + citywide schools for block or blockgroup and all schools for AA.
+        if building_block == "BlockGroup":
+            # For formatting, have 18 columns no matter how many zones we have.
+            area_list += [x for x in range(18) if x not in area_list]
+            area_list += citywide_schools
+        elif building_block == "Block":
+            # Adding missing zones
+            area_list += [x for x in range(59) if x not in area_list]
+            area_list += citywide_schools
+        elif building_block == "idschoolattendance":
+            area_list += all_schools
 
-    def average_metrics(self, student_data, quantile=0.9):
-        """Input: 'percentile' -> integer indicating percentile cutoff for distance calculation
-        Output: 'av_metrics' -> Series with index = average student match metrics.
+        list_metrics = []
+        for area in area_list:
+            if area == "All":
+                cur_students = student_data
+                cur_programs = program_data
+            else:
+                cur_students = student_data[student_data["assigned_area"] == area]
+                cur_programs = program_data[program_data["program_area"] == area]
+
+            metrics = self.generate_metrics_by_aera(cur_students, cur_programs)
+            list_metrics.append(pd.Series(metrics))
+
+        # Add metrics at attendance school level.
+        # TODO: currently code is messy and redundant. We should clean this up
+        # and/or optimize when we have time. Ideally, we should not seperate
+        # Attendance area school from the citywide schools.
+        if building_block in ["Block", "BlockGroup"]:
+            aa_schools = self.schools_latlon[
+                self.schools_latlon["category"] == "Attendance"
+            ]["school_id"].to_numpy()
+            # 909 is duplicate of 999 and not used in assignment.
+            aa_schools = [x for x in aa_schools if x != 909]
+            area_list += list(aa_schools)
+            for aa_school in aa_schools:
+                cur_students = student_data[
+                    student_data["assigned_school"] == aa_school
+                ]
+                cur_programs = program_data[program_data["school_id"] == aa_school]
+                metrics = self.generate_metrics_by_aera(cur_students, cur_programs)
+                list_metrics.append(pd.Series(metrics))
+
+        area_list = [self.format_cur_col_name(x, school_id_to_name) for x in area_list]
+        col_names = dict(zip(range(len(area_list)), area_list))
+        all_metrics_df = pd.concat(list_metrics, axis=1).rename(columns=col_names)
+        all_metrics_df = self.reorder_schools_zones(
+            all_metrics_df, school_order=school_order, zone_order=zone_order
+        )
+        return all_metrics_df
+
+    def reorder_schools_zones(self, all_metrics_df, school_order=None, zone_order=None):
+        """Reorder columns based on input school and/or zone orders. Assume that
+        the columns of all_metrics_df contains "All", and a list of zones with format
+        "Zone <zone id>" (e.g. "Zone 1") and/or a list of schools in the format
+        "<School id> <school name>".
+        TODO: optimize if have time.
         """
-        return student_data.mean(numeric_only=True)
+        columns = all_metrics_df.columns
+        new_columns = ["All"] if "All" in columns else []
+        # Separate list of zone and schools.
+        list_zones = [x for x in columns if "Zone" in x]
+        list_schools = [x for x in columns if "Zone" not in x and x != "All"]
+        # TODO: zone order if we have.
+        new_columns += list_zones
+        # School orders, need to rename as the school name are different in our
+        # records v.s. the ones given by SFUSD.
+        if school_order is None:
+            new_columns += list_schools
+        else:
+            # Exclude schools not in results from school order
+            existing_schools = set([x[:3] for x in list_schools])
+            school_order = [x for x in school_order if x[:3] in existing_schools]
+            # Rename columns to the new school names.
+            new_schoolid2school = {x[:3]: x for x in school_order}
+            school_old2new = {x: new_schoolid2school[x[:3]] for x in list_schools}
+            all_metrics_df = all_metrics_df.rename(columns=school_old2new)
+            new_columns += school_order
+        return all_metrics_df[new_columns]
 
-    def ell_to_lang(self, student_data=None, ranked=False):
-        """Input: 'student_data' -> student_data table with format from Students class
-               'ranked' -> boolean indicating if calculation is only to programs on students' ranked lists
-        Output: -> if 'ranked' == False: percentage of ELL students who are matched to ANY language program
-                   if 'ranked' == True: percentage of ELL students who are matched to a language program they ranked.
+    def format_cur_col_name(self, area, school_id_to_name):
+        """Helper function for eval_assignment_metrics_by_area to decide the column
+        name for the map-level metrics.
         """
-        if student_data is None:
-            student_data = self.student_data
+        if area == "All":
+            return area
+        # With time limit, assume no zone has id > 100
+        if area > 100:
+            return f"{area} {school_id_to_name[area]}"
+        else:
+            return f"Zone {area + 1} {ZONE_COLORS[area]}"
 
-        ell = student_data["englprof_desc"] == "L-Limited English"
-        if ranked:
-            return (
-                student_data.loc[ell, :]
-                .apply(
-                    lambda row: (
-                        row["programtype"] in set(row["r1_programs"]) - {"GE"}
-                    ),
-                    axis=1,
+    def generate_metrics_by_aera(
+        self,
+        cur_students,
+        cur_programs,
+        all_students=None,
+        ge_over_assigned=True,
+    ):
+        if all_students is None:
+            all_students = self.student_data.copy()
+        ignore_program_related = cur_programs is None
+        assigned_students = all_students[all_students["programno"] > 0]
+
+        metrics = {}
+        cur_assigned_students = cur_students[cur_students["programno"] > 0]
+        cur_aalpi_students = cur_assigned_students[
+            cur_assigned_students["ethnicity"].apply(lambda x: x in AALPI)
+        ]
+        # Counts of assigned, capacity, designated, unassigned.
+        if not ignore_program_related:
+            metrics["Capacity"] = cur_programs["capacity"].sum()
+        metrics["Students"] = len(cur_students)
+        if not ignore_program_related:
+            metrics["# schools"] = len(np.unique(cur_programs["school_id"].to_numpy()))
+        metrics["Assigned students"] = len(cur_assigned_students)
+        metrics["Assigned to language program"] = len(
+            cur_students[
+                cur_students["programtype"].isin(
+                    self.immersion_programs + self.non_immersion_programs
                 )
-                .sum()
-                / ell.sum()
+            ]
+        )
+        metrics["Not assigned"] = len(cur_students[cur_students["programno"] == 0])
+        metrics["Designated"] = len(cur_students[(cur_students["designation"] != 0)])
+        if not ignore_program_related:
+            metrics["Empty Seats"] = metrics["Capacity"] - metrics["Assigned students"]
+            if ge_over_assigned:
+                # Given time limit on implementation, assume over-assignment is only for GE.
+                ge_capacity = cur_programs[cur_programs["program_type"] == "GE"][
+                    ["capacity", "school_id"]
+                ]
+                ge_students = (
+                    cur_students[cur_students["programtype"] == "GE"][
+                        ["assigned_school", "studentno"]
+                    ]
+                    .groupby("assigned_school")
+                    .count()
+                    .reset_index()
+                    .rename(
+                        columns={
+                            "assigned_school": "school_id",
+                            "studentno": "student_count",
+                        }
+                    )
+                )
+                ge_empty_seats = ge_capacity.merge(
+                    ge_students, how="outer", on="school_id"
+                )
+                ge_empty_seats["empty_seats"] = (
+                    ge_empty_seats["capacity"] - ge_empty_seats["student_count"]
+                )
+                metrics["# GE Empty Seats"] = np.sum(
+                    ge_empty_seats[ge_empty_seats["empty_seats"] >= 0][
+                        "empty_seats"
+                    ].to_numpy()
+                )
+                metrics["# GE Over Assigned Seats"] = -np.sum(
+                    ge_empty_seats[ge_empty_seats["empty_seats"] < 0][
+                        "empty_seats"
+                    ].to_numpy()
+                )
+        # School choice.
+        metrics["Assigned to 1st choice"] = (cur_assigned_students["rank"] <= 1).mean()
+        metrics["Assigned top-3 choice"] = (cur_assigned_students["rank"] <= 3).mean()
+        # Distances
+        metrics["Avg. Distance"] = cur_assigned_students["assignment_dist"].mean()
+        metrics["Median Distance"] = cur_assigned_students["assignment_dist"].median()
+        metrics["% assigned within 0.5mi"] = (
+            cur_assigned_students["assignment_dist"] < 0.5
+        ).mean()
+        metrics["% assigned beyond 3mi"] = (
+            cur_assigned_students["assignment_dist"] > 3
+        ).mean()
+        # Schools
+        (
+            metrics["# high-poverty schools"],
+            _,
+            metrics["# students in high-poverty schools"],
+        ) = self.school_frl_range(
+            0.15,
+            student_data=cur_assigned_students,
+            all_student_data=assigned_students,
+        )
+        metrics["# AALPI students in high-poverty schools"] = (
+            self.poverty_concentration(
+                assigned_students, cur_aalpi_students, 0.15, return_count=True
+            )
+        )
+        metrics["# of students from high-poverty area"] = len(
+            cur_assigned_students[cur_assigned_students["frl"] > 0.5]
+        )
+        # Count of students ethnicity groups.
+        groups = ["Black", "Asian", "Hispanic", "White"]
+        for group in groups:
+            group_name = group if group != "Black" else "African American"
+            metrics[f"# {group_name} students"] = len(
+                cur_students[(cur_students["ethnicity"] == group)]
+            )
+        return metrics
+
+    def school_frl_range(
+        self,
+        pct,
+        student_data=None,
+        all_student_data=None,
+        non_desig_only=False,
+    ):
+        """(#of schools, proportion of schools, #of students in those schools) above/below pct
+        the average proportion of FRL students in the district.
+        """
+        if all_student_data is None:
+            all_student_data = self.student_data
+        all_student_data = all_student_data[
+            self._assigned_mask(all_student_data)
+        ].copy()
+        if student_data is None:
+            student_data = all_student_data
+        else:
+            student_data = student_data[self._assigned_mask(student_data)].copy()
+        district_avg = all_student_data["frl"].mean()
+
+        if non_desig_only:
+            student_data = student_data[student_data["designation"] == 0]
+            composition_students = all_student_data[
+                all_student_data["designation"] == 0
+            ]
+        else:
+            composition_students = all_student_data
+        school_frl = composition_students.groupby("assigned school")[["frl"]].mean()
+        if school_frl.empty:
+            return 0, np.nan, 0
+
+        if pct >= 0:
+            schools_matching = school_frl["frl"] >= district_avg + pct
+            school_ids = schools_matching[schools_matching].index.tolist()
+            return (
+                np.sum(schools_matching),
+                np.mean(schools_matching),
+                np.sum(student_data["assigned school"].isin(school_ids)),
             )
         else:
+            schools_matching = school_frl["frl"] <= district_avg + pct
+            school_ids = schools_matching[schools_matching].index.tolist()
             return (
-                student_data.loc[ell, "programtype"].isin(LANG_CODES).sum()
-                / ell.sum()
+                np.sum(schools_matching),
+                np.mean(schools_matching),
+                np.sum(student_data["assigned school"].isin(school_ids)),
             )
 
-    def ell_dist_to_lang(
-        self, student_data=None, distance_data=None, max_dist=1
-    ):
-        """Calculate the percentage of ELL students who are matched to a language program within max_dist miles.
-
-        Args:
-             student_data (pd.DataFrame): student_data DataFrame with format from Students class
-             distance_data (pd.DataFrame): distances DataFrame with format from Students class
-             max_dist (int or float): maximum distance to consider in calculation
-
-        Returns:
-             float: percentage of ELL students with a matching language program within max_dist miles
-        """
-        if student_data is None:
-            student_data = self.student_data
-        if distance_data is None:
-            distance_data = self.distance_data
-
-        ell = student_data["englprof_desc"].isin(
-            ["L-Limited English", "N-Non English", "L", "N"]
-        )
-        ell_homelangs = student_data.loc[ell, "homelang_desc"]
-        ell_distances = distance_data.loc[ell, :]
-
-        def func(row, dist):
-            homelang = ell_homelangs.loc[row.name]
-            if homelang == "SP-Spanish":
-                lang_match = ell_distances.columns.str[4:6].isin(
-                    ["SB", "SN", "SE", "NS"]
-                )
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            if homelang == "CC-Chinese Cantonese":
-                lang_match = ell_distances.columns.str[4:6].isin(
-                    ["CN", "CE", "CB", "CT", "NC"]
-                )
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            if homelang == "CM-Chinese Mandarin":
-                lang_match = ell_distances.columns.str[4:6].isin(["MN", "ME"])
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            if homelang == "JA-Japanese":
-                lang_match = ell_distances.columns.str[4:6].isin(
-                    ["JB", "JE", "JN"]
-                )
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            if homelang == "KO-Korean":
-                lang_match = ell_distances.columns.str[4:6].isin(["KN", "KE"])
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            if homelang == "FT-Filipino Tagalog":
-                lang_match = ell_distances.columns.str[4:6] == "FB"
-                return ell_distances.loc[row.name, lang_match].min() <= dist
-            return False
-
-        return (
-            ell_distances.apply(func, dist=max_dist, axis=1).sum() / ell.sum()
-        )
-
-    def _make_ethnic_matrix(self, student_data=None):
-        if student_data is None:
-            student_data = self.student_data
-
-        ethnic_groups = student_data["resolved_ethnicity"].dropna().unique()
-        ethnic_total = student_data["resolved_ethnicity"].value_counts()
-        ethnic_matrix = (
-            student_data.pivot_table(
-                index="assignment",
-                columns="resolved_ethnicity",
-                values="grade",
-                aggfunc="count",
-            )
-            .fillna(0)
-            .astype(int)
-        )
-        ethnic_matrix_norm = ethnic_matrix.div(
-            ethnic_matrix.sum(axis=1), axis=0
-        )
-        ethnic_total_norm = student_data["resolved_ethnicity"].value_counts(
-            normalize=True
-        )
-        populations = ethnic_matrix.sum(axis=1)
-
-        return (
-            ethnic_groups,
-            ethnic_matrix,
-            ethnic_matrix_norm,
-            ethnic_total,
-            ethnic_total_norm,
-            populations,
-        )
-
-    def diversity_metrics(
-        self, group1, group2, isolation_threshold=(0.5, 0.55, 0.6, 0.65, 0.7)
-    ):
-        """Args:
-            group1: list of ethnic groups to consider as first group
-            group2: list of ethnic groups to consider as second group
-            isolation_threshold: list of isolation fractions to consider in isolation metric.
-
-        Returns:
-            Series with index = diversity metrics of group1, group2, and entire cohort
-        """
-        diversity_summary = pd.Series(dtype=float)
-        for threshold in isolation_threshold:
-            diversity_summary[f"Isolation ({threshold * 100}%)"] = (
-                self.isolation(threshold)
-            )
-        diversity_summary["Dissimilarity"] = self.dissimilarity(group1, group2)
-        diversity_summary["Thiel H"] = self.theil()
-        diversity_summary["Interaction"] = self.interaction(group1, group2)
-        program_isolation = self.ethnic_matrix_norm.max(axis=1)
-
-        return diversity_summary, program_isolation
-
-    def avg_color_index(self, students, school_data):
-        total = 0
-        count = 0
-        color_index_values = school_data["AvgColorIndex"]
-        n = students.shape[0]
-        for i in range(n):
-            assigned_school = self.student_data["assigned school"].iloc[i]
-            if isinstance(assigned_school, str):
-                color_index = color_index_values.loc[int(assigned_school)]
-                total += color_index
-                count += 1
-        return total / n
-
-    def poverty_concentration(self, all_students, students, threshold):
-        if students.empty:
-            return np.nan
-        schools_frl = all_students.groupby("assigned school").mean(
-            numeric_only=True
-        )["frl"]
-        district_avg = all_students["frl"].mean()
-        num_students = students.shape[0]
-        count = 0
-        for i in range(num_students):
-            school = students["assigned school"].iloc[i]
-            if isinstance(school, str):
-                school_frl = schools_frl.loc[school]
-                if school_frl > district_avg + threshold:
-                    count += 1
-        return count / num_students
-
-    def max_frl(self, student_data=None):
-        """Calculate the highest FRL school in given assignment."""
-        if student_data is None:
-            student_data = self.student_data
-        school_frl = student_data.groupby("assigned school").mean(
-            numeric_only=True
-        )
-        return school_frl["frl"].max()
-
-    def median_frl(self, student_data=None):
-        """Calculate the median FRL school in given assignment."""
-        if student_data is None:
-            student_data = self.student_data
-        school_frl = student_data.groupby("assigned school").mean(
-            numeric_only=True
-        )
-        return school_frl["frl"].median()
-
-    def isolation(self, ethnic_matrix_norm=None, threshold=0.6, percent=False):
-        """Args:
-            threshold: isolation percentage to consider as cutoff
-            percent: boolean indicating if the percentage of isolated programs is output (True) or number (False).
-
-        Returns:
-            float or int: the number of isolated programs (if percent = False) or percentage otherwise
-        """
-        if ethnic_matrix_norm is None:
-            ethnic_matrix_norm = self.ethnic_matrix_norm
-
-        ethnic_max = ethnic_matrix_norm.max(axis=1)
-        num_isolated = ethnic_max[ethnic_max >= threshold].count()
-        return (
-            num_isolated / ethnic_matrix_norm.shape[0]
-            if percent
-            else num_isolated
-        )
-
-    def dissimilarity(self, students, total_enrollment):
-        n = students.shape[0]
-        total_n = pd.to_numeric(
-            pd.Series(np.asarray(total_enrollment).reshape(-1)), errors="coerce"
-        ).sum()
+    def metric_dissimilarity(self, students, total_enrollment):
+        """Historical one-sided group dissimilarity, aligned by school."""
+        n = len(students)
+        total_n = pd.to_numeric(total_enrollment, errors="coerce").sum()
         if n == 0 or total_n == 0:
             return np.nan
         ratio = n / total_n
-        school_groups = students.groupby("assigned school")
-        enrollment = school_groups.count()[
-            "SES_category"
-        ]  # Just picking an arbitrary column to get the count
-
+        enrollment = students.groupby("assigned school").size()
         dissimilarity_total = 0
-        for i in range(enrollment.shape[0]):
-            num_students = enrollment.iloc[i]
-            total_students = total_enrollment.iloc[i]
-            dissimilarity_total += (
-                abs(num_students - total_students * ratio) / 2
-            )
-
+        for school in total_enrollment.index:
+            num_students = enrollment.get(school, 0)
+            total_students = total_enrollment.loc[school]
+            dissimilarity_total += abs(num_students - total_students * ratio) / 2
         return dissimilarity_total / n
 
-    def interaction(
-        self, group1, group2, ethnic_total=None, ethnic_matrix=None
-    ):
-        """Args:
-            group1: list of ethnic groups to consider as first group
-            group2: list of ethnic groups to consider as second group.
+    def metrics_segregation(self, group_a, group_b, proportion, total_enrollment):
+        segregation_total = 0
+        en_a = group_a.groupby("assigned school").size()
+        en_a_sum = en_a.sum()
+        en_b = group_b.groupby("assigned school").size()
+        en_b_sum = en_b.sum()
+        if en_a_sum == 0 or en_b_sum == 0:
+            return np.nan
+        prop = proportion.groupby("assigned school").size()
+        for school in total_enrollment.index:
+            num_a = en_a.get(school, 0)
+            num_b = en_b.get(school, 0)
+            prop_school = prop.get(school, 0) / total_enrollment.loc[school]
+            contri = ((num_a / en_a_sum) - (num_b / en_b_sum)) * prop_school
+            segregation_total += contri
+        return segregation_total
+
+    def metrics_exposure(self, group, proportion, total_enrollment):
+        """Compute the absolute exposure of a group to a proportion.
+
+        This calculates the average proportion of 'proportion' students in the
+        schools attended by students in 'group'. Unlike metrics_segregation,
+        this does not compute a difference between two groups.
+
+        Args:
+            group: DataFrame of students in the group of interest.
+            proportion: DataFrame of students representing the proportion
+                (e.g., high FRL students, AALPI students).
+            total_enrollment: Series with school as index and total enrollment
+                as value.
 
         Returns:
-            interaction index between group1 and group2
+            float: The weighted average exposure.
         """
-        if ethnic_total is None and ethnic_matrix is None:
-            ethnic_total = self.ethnic_total
-            ethnic_matrix = self.ethnic_matrix
+        en_group = group.groupby("assigned school").size()
+        en_group_sum = en_group.sum()
+        if en_group_sum == 0:
+            return np.nan
+        prop = proportion.groupby("assigned school").size()
+        exposure_total = 0
+        for school in total_enrollment.index:
+            num_group = en_group.get(school, 0)
+            prop_school = prop.get(school, 0) / total_enrollment.loc[school]
+            contri = (num_group / en_group_sum) * prop_school
+            exposure_total += contri
+        return exposure_total
 
-        total1 = ethnic_total[group1].sum()
-        return ethnic_matrix.apply(
-            lambda row: (
-                (row[group1].sum() * row[group2].sum()) / (total1 * row.sum())
-            ),
-            axis=1,
-        ).sum()
+    def metric_theil(self, student_data=None):
+        """Compute Theil's H (entropy-based) segregation index.
 
-    def entropy(
-        self, ethnic_total_norm=None, evenness=False, max_entropy=False
-    ):
-        """Args:
-            ethnic_array: array of proportions of each ethnic group
-            evenness: boolean indicating if metric is being used to measure only evennes.
+        Measures how evenly ethnic groups are distributed across schools
+        relative to the district-wide composition.
 
         Returns:
-            entropy metric of all ethnic groups in school district
+            float: Theil H index (0 = perfect integration, 1 = complete segregation)
         """
-        if ethnic_total_norm is None:
-            ethnic_total_norm = self.ethnic_total_norm
-        if max_entropy:
-            return math.log(ethnic_total_norm.size)
-
-        entropy = (ethnic_total_norm * np.log(1 / ethnic_total_norm)).sum()
-        return (
-            entropy / math.log(ethnic_total_norm.shape[1])
-            if evenness
-            else entropy
-        )
-
-    def theil(
-        self,
-        ethnic_matrix=None,
-        ethnic_total=None,
-        ethnic_total_norm=None,
-        GE_only=False,
-    ):
-        """Output: Thiel's H index of all ethnic groups in school district."""
-        if (
-            ethnic_matrix is None
-            and ethnic_total is None
-            and ethnic_total_norm is None
-        ):
-            ethnic_matrix = self.ethnic_matrix
-            ethnic_total = self.ethnic_total
-            ethnic_total_norm = self.ethnic_total_norm
-
-        if GE_only:
-            ge_idxs = [
-                True if x[4:6] == "GE" else False for x in ethnic_matrix.index
-            ]
-            ethnic_matrix = ethnic_matrix[ge_idxs]
-
-            student_data = self.student_data
-            student_data["filter"] = student_data["assignment"].apply(
-                lambda x: 1 if not pd.isnull(x) and x[4:6] == "GE" else 0
-            )
-            student_data = student_data.loc[student_data["filter"] == 1]
-            ethnic_total = student_data["resolved_ethnicity"].value_counts()
-            ethnic_total_norm = student_data["resolved_ethnicity"].value_counts(
-                normalize=True
-            )
-
-        district_entropy = self.entropy(ethnic_total_norm)
-        return ethnic_matrix.apply(
-            lambda row: (
-                row.sum() * (district_entropy - self.entropy(row / row.sum()))
-            ),
-            axis=1,
-        ).sum() / (district_entropy * ethnic_total.sum())
-
-    def hellinger(
-        self, school_code, ethnic_matrix_norm=None, ethnic_total_norm=None
-    ):
-        if ethnic_matrix_norm is None:
-            ethnic_matrix_norm = self.ethnic_matrix_norm
-        if ethnic_total_norm is None:
-            ethnic_total_norm = self.ethnic_total_norm
-
-        # if school_code in self.student_data['assignment'].unique():
-        if school_code in ethnic_matrix_norm.index:
-            return math.sqrt(
-                0.5
-                * ethnic_matrix_norm.loc[school_code, :]
-                .reset_index()
-                .apply(
-                    lambda row: (
-                        (
-                            math.sqrt(row.iloc[1])
-                            - math.sqrt(
-                                ethnic_total_norm[row["resolved_ethnicity"]]
-                            )
-                        )
-                        ** 2
-                    ),
-                    axis=1,
-                )
-                .sum()
-            )
-        else:
-            return 0
-
-    def hellinger_at_level(self, level_col, student_data=None):
-        """Compute hellinger metric at attendance area, school, program, or zone level."""
         if student_data is None:
             student_data = self.student_data
+        assigned = student_data[student_data["programno"] > 0].copy()
+        if len(assigned) == 0:
+            return 0.0
 
+        # Build ethnic matrix: rows=schools, cols=ethnicities
         ethnic_matrix = (
-            student_data.pivot_table(
-                index=level_col,
-                columns="resolved_ethnicity",
-                values="grade",
+            assigned.pivot_table(
+                index="assigned school",
+                columns="ethnicity",
+                values="studentno",
                 aggfunc="count",
             )
             .fillna(0)
             .astype(int)
         )
-        ethnic_matrix_norm = ethnic_matrix.div(
-            ethnic_matrix.sum(axis=1), axis=0
+        ethnic_total = assigned["ethnicity"].value_counts()
+        ethnic_total_norm = assigned["ethnicity"].value_counts(normalize=True)
+
+        # District entropy
+        district_entropy = (ethnic_total_norm * np.log(1.0 / ethnic_total_norm)).sum()
+        if district_entropy == 0:
+            return 0.0
+
+        # School-level entropy weighted by school size
+        total_students = ethnic_total.sum()
+        theil_sum = 0.0
+        for school_id, row in ethnic_matrix.iterrows():
+            school_total = row.sum()
+            if school_total == 0:
+                continue
+            school_props = row / school_total
+            # Avoid log(0)
+            school_props = school_props[school_props > 0]
+            school_entropy = (school_props * np.log(1.0 / school_props)).sum()
+            theil_sum += school_total * (district_entropy - school_entropy)
+
+        return theil_sum / (district_entropy * total_students)
+
+    def eval_assignment_full(self):
+        """Return the extended standalone assignment metric report."""
+        if self._mode != "full":
+            raise ValueError(
+                "eval_assignment_full requires raw student/assignment data and "
+                "the program_file and schools_latlon_path resources"
+            )
+        low_income = self.low_income
+        medium_income = self.medium_income
+        metrics = {}
+        student_data = self.student_data
+        assigned_students = student_data[student_data["programno"] > 0].copy()
+
+        designated_students = assigned_students[assigned_students["designation"] != 0]
+
+        # Add total AALPI counts for both all students and assigned students
+        metrics["Total AALPI students"] = len(
+            student_data[student_data["ethnicity"].isin(AALPI)]
         )
-        ethnic_total_norm = student_data["resolved_ethnicity"].value_counts(
-            normalize=True
+        metrics["Total AALPI assigned students"] = len(
+            assigned_students[assigned_students["ethnicity"].isin(AALPI)]
         )
 
-        hellinger = [
-            self.hellinger(x, ethnic_matrix_norm, ethnic_total_norm)
-            for x in ethnic_matrix.index
+        school_groups = assigned_students.groupby("assigned school")
+        enrollment = school_groups.count()["studentno"]
+        metrics["# Racial majority schools"] = (
+            self.metric_racial_majority_schools(assigned_students)
+        )
+
+        non_designated_students = student_data[
+            (student_data["programno"] > 0) & (student_data["designation"] == 0)
         ]
-        hellinger = pd.DataFrame(
-            columns=["Hellinger"], data=hellinger, index=ethnic_matrix.index
-        )
-        return hellinger
+        class_below_medium_income = student_data[
+            (student_data["programno"] > 0)
+            & (student_data["median_hh_income"] <= medium_income)
+        ]
+        class_above_medium_income = student_data[
+            (student_data["programno"] > 0)
+            & (student_data["median_hh_income"] > medium_income)
+        ]
+        high_frl_prob = student_data["frl"] > 0.5
+        low_frl_prob = student_data["frl"] <= 0.5
+        high_frl_students = student_data[high_frl_prob]
+        low_frl_students = student_data[low_frl_prob]
 
-    def hellinger_avg(
-        self,
-        ethnic_matrix_norm=None,
-        ethnic_total_norm=None,
-        populations=None,
-        GE_only=False,
-    ):
-        if ethnic_matrix_norm is None:
-            ethnic_matrix_norm = self.ethnic_matrix_norm
-        if ethnic_total_norm is None:
-            ethnic_total_norm = self.ethnic_total_norm
-        if populations is None:
-            populations = self.populations
+        metrics.update(self._full_proximity_metrics(student_data, assigned_students))
 
-        total = populations.sum()
-        h = ethnic_matrix_norm.apply(
-            lambda row: (
-                (populations[row.name] / total)
-                * self.hellinger(
-                    row.name, ethnic_matrix_norm, ethnic_total_norm
-                )
-            ),
-            axis=1,
+        # DIVERSITY METRICS
+        metrics[
+            "#GE programs that have more than 0% and less than 10% of their capacity as African American or Pacific Islander students"
+        ] = self.ge_AAPI_range(
+            0.1,
+            lower_threshold=0.0001,
+            smaller_strict=True,
+            percentage=True,
         )
-        if GE_only:
-            ge_idxs = [
-                True if x[4:6] == "GE" else False
-                for x in ethnic_matrix_norm.index
-            ]
-            return h[ge_idxs].sum()
+        metrics[
+            "#GE programs that have exactly 0 African American or Pacific Islander students"
+        ] = self.ge_AAPI_range(
+            1,
+            lower_threshold=0,
+            smaller_strict=True,
+            percentage=False,
+        )
+        metrics[
+            "#GE programs that have 1-4 African American or Pacific Islander students"
+        ] = self.ge_AAPI_range(
+            4,
+            lower_threshold=1,
+            smaller_strict=False,
+            percentage=False,
+        )
+
+        for x in [10, 15, -10, -15]:
+            (col1, col2, col3) = (
+                f"#Schools {'above' if x >= 0 else 'below'} {x}% district FRL",
+                f"Schools {'above' if x >= 0 else 'below'} {x}% district FRL",
+                f"#Students in schools {'above' if x >= 0 else 'below'} {x}% district FRL",
+            )
+            (metrics[col1], metrics[col2], metrics[col3]) = self.school_frl_range(
+                x / 100.0
+            )
+            (col1, col2, col3) = (
+                f"#Schools {'above' if x >= 0 else 'below'} {x}% district FRL (Non-Designated)",
+                f"Schools {'above' if x >= 0 else 'below'} {x}% district FRL (Non-Designated)",
+                f"#Students in schools {'above' if x >= 0 else 'below'} {x}% district FRL  (Non-Designated)",
+            )
+            (metrics[col1], metrics[col2], metrics[col3]) = self.school_frl_range(
+                x / 100.0, non_desig_only=True
+            )
+
+        aalpi_students = assigned_students[
+            assigned_students["ethnicity"].apply(lambda x: x in AALPI)
+        ]
+        metrics["AALPI in school with +10% FRL"] = self.poverty_concentration(
+            assigned_students, aalpi_students, 0.1
+        )
+        metrics["AALPI in school with +15% FRL"] = self.poverty_concentration(
+            assigned_students, aalpi_students, 0.15
+        )
+        metrics["AALPI in school with -10% FRL"] = self.poverty_concentration(
+            assigned_students, aalpi_students, -0.1
+        )
+        metrics["AALPI in school with -15% FRL"] = self.poverty_concentration(
+            assigned_students, aalpi_students, -0.15
+        )
+
+        ge_students = assigned_students[assigned_students["programtype"] == "GE"]
+        ge_aalpi_students = ge_students[
+            ge_students["ethnicity"].apply(lambda x: x in AALPI)
+        ]
+        ge_groups = ge_students.groupby("assignment")
+
+        (
+            metrics["#GE above +10% district FRL"],
+            metrics["GE above +10% district FRL"],
+        ) = self.ge_frl_range(ge_students, ge_groups, 0.1)
+        (
+            metrics["#GE above +15% district FRL"],
+            metrics["GE above +15% district FRL"],
+        ) = self.ge_frl_range(ge_students, ge_groups, 0.15)
+        (
+            metrics["#GE below -10% district FRL"],
+            metrics["GE below -10% district FRL"],
+        ) = self.ge_frl_range(ge_students, ge_groups, -0.1)
+        (
+            metrics["#GE below -15% district FRL"],
+            metrics["GE below -15% district FRL"],
+        ) = self.ge_frl_range(ge_students, ge_groups, -0.15)
+
+        metrics["AALPI in GE with +10% FLR"] = self.metric_ge_FRL_concentration(
+            ge_students, ge_aalpi_students, ge_groups, 0.1
+        )
+        metrics["AALPI in GE with +15% FLR"] = self.metric_ge_FRL_concentration(
+            ge_students, ge_aalpi_students, ge_groups, 0.15
+        )
+        metrics["AALPI in GE with -10% FLR"] = self.metric_ge_FRL_concentration(
+            ge_students, ge_aalpi_students, ge_groups, -0.1
+        )
+
+        metrics["AALPI in GE with -15% FLR"] = self.metric_ge_FRL_concentration(
+            ge_students, ge_aalpi_students, ge_groups, -0.15
+        )
+
+        designated_aalpi_students = designated_students[
+            designated_students["ethnicity"].apply(lambda x: x in AALPI)
+        ]
+        if len(designated_students) == 0:
+            metrics["AALPI in designated"] = np.nan
         else:
-            return h.sum()
+            metrics["AALPI in designated"] = len(designated_aalpi_students) / len(
+                designated_students
+            )
 
-    def hellinger_min(self, ethnic_matrix_norm=None, ethnic_total_norm=None):
-        if ethnic_matrix_norm is None:
-            ethnic_matrix_norm = self.ethnic_matrix_norm
-        if ethnic_total_norm is None:
-            ethnic_total_norm = self.ethnic_total_norm
+        (
+            metrics[f"#Schools with +10% High Income ({medium_income})"],
+            metrics[f"Prop schools with +10% High Income ({medium_income})"],
+        ) = self.high_income_school_range(assigned_students, medium_income, 0.1)
+        (
+            metrics[f"#Schools with +15% High Income ({medium_income})"],
+            metrics[f"Prop schools with +15% High Income ({medium_income})"],
+        ) = self.high_income_school_range(assigned_students, medium_income, 0.15)
+        (
+            metrics[f"#Schools with -10% High Income ({medium_income})"],
+            metrics[f"Prop schools with -10% High Income ({medium_income})"],
+        ) = self.high_income_school_range(assigned_students, medium_income, -0.1)
+        (
+            metrics[f"#Schools with -15% High Income ({medium_income})"],
+            metrics[f"Prop schools with -15% High Income ({medium_income})"],
+        ) = self.high_income_school_range(assigned_students, medium_income, -0.15)
 
-        h = ethnic_matrix_norm.apply(
-            lambda row: self.hellinger(
-                row.name, ethnic_matrix_norm, ethnic_total_norm
-            ),
-            axis=1,
+        metrics[f"Prop AALPI in +10% High Income Schools ({medium_income})"] = (
+            self.aalpi_in_high_income_schools(assigned_students, medium_income, 0.1)
         )
-        ge_idxs = [
-            True if x[4:6] == "GE" else False for x in ethnic_matrix_norm.index
-        ]
-        return h[ge_idxs].min()
-
-    def hellinger_max(self, ethnic_matrix_norm=None, ethnic_total_norm=None):
-        if ethnic_matrix_norm is None:
-            ethnic_matrix_norm = self.ethnic_matrix_norm
-        if ethnic_total_norm is None:
-            ethnic_total_norm = self.ethnic_total_norm
-
-        h = ethnic_matrix_norm.apply(
-            lambda row: self.hellinger(
-                row.name, ethnic_matrix_norm, ethnic_total_norm
-            ),
-            axis=1,
+        metrics[f"Prop AALPI in +15% High Income Schools ({medium_income})"] = (
+            self.aalpi_in_high_income_schools(assigned_students, medium_income, 0.15)
         )
-        ge_idxs = [
-            True if x[4:6] == "GE" else False for x in ethnic_matrix_norm.index
-        ]
-        return h[ge_idxs].max()
-
-    def edi(self, code, ethnic_matrix=None):
-        """Output: -> Ethnic Diversity Index at the school level, school/program code required as input."""
-        if ethnic_matrix is None:
-            ethnic_matrix = self.ethnic_matrix
-        groups = [
-            "Asian",
-            "Hispanic/Latino",
-            "White",
-            "Two or More Races",
-            "Black or African American",
-            "Filipino",
-            "Pacific Islander",
-            "American Indian or Alaskan Native",
-        ]
-        ethnic_matrix_norm = ethnic_matrix.loc[:, groups].div(
-            ethnic_matrix.loc[:, groups].sum(axis=1), axis=0
+        metrics[f"Prop AALPI in -10% High Income Schools ({medium_income})"] = (
+            self.aalpi_in_high_income_schools(assigned_students, medium_income, -0.1)
         )
-        d = math.sqrt(
-            ethnic_matrix_norm.loc[code, :]
-            .apply(lambda ethnic: (ethnic - (1 / 8)) ** 2)
-            .sum()
+        metrics[f"Prop AALPI in -15% High Income Schools ({medium_income})"] = (
+            self.aalpi_in_high_income_schools(assigned_students, medium_income, -0.15)
         )
-        return 100 - 100 * (math.sqrt(8 * 7) / 7) * d
 
-    def edi_district(self, ethnic_total=None):
-        """Output: -> Ethnic Diversity Index at the district level."""
-        if ethnic_total is None:
-            ethnic_total = self.ethnic_total
-        groups = [
-            "Asian",
-            "Hispanic/Latino",
-            "White",
-            "Two or More Races",
-            "Black or African American",
-            "Filipino",
-            "Pacific Islander",
-            "American Indian or Alaskan Native",
-        ]
-        ethnic_total_norm = ethnic_total[groups] / ethnic_total[groups].sum()
-        d = math.sqrt(
-            ethnic_total_norm.apply(
-                lambda ethnic: (ethnic - (1 / 8)) ** 2
-            ).sum()
+        metrics[f"Avg Prop AALPI in +10% High Income Schools ({medium_income})"] = (
+            self.avg_aalpi_in_high_income_schools(assigned_students, medium_income, 0.1)
         )
-        return 100 - 100 * (math.sqrt(8 * 7) / 7) * d
-
-    def ell_lang_access(self, student_data=None):
-        """Input: 'student_data' -> student_data table with format from Students class."""
-        if student_data is None:
-            student_data = self.student_data
-        ell = student_data[student_data["englprof_desc"] == "L-Limited English"]
-        return ell["programtype"].apply(
-            lambda x: x in set(ELL_CODES)
-        ).sum() / float(ell.shape[0])
-
-    def ranked_got_lang(self, student_data=None):
-        if student_data is None:
-            student_data = self.student_data
-
-        def rankedlp3(x):
-            for i in range(3):
-                if i >= len(x) or x[i] == "":
-                    return False
-                if x[i][1:-1] in set(LANG_CODES):
-                    return True
-            return False
-
-        rankedlp3_mask = student_data["r1_programs"].apply(
-            lambda x: rankedlp3(x)
+        metrics[f"Avg Prop AALPI in +15% High Income Schools ({medium_income})"] = (
+            self.avg_aalpi_in_high_income_schools(
+                assigned_students, medium_income, 0.15
+            )
         )
-        want_lang = student_data[rankedlp3_mask]
-        got_lang = want_lang[
-            want_lang["programtype"].apply(lambda x: x in set(LANG_CODES))
-        ]
-        if want_lang.shape[0] != 0:
-            return got_lang.shape[0] / want_lang.shape[0]
-        else:
-            return 0
-
-    def with_blockgroup(self, threshold=0.05, student_data=None):
-        """Input: 'threshold' -> pct of students from the block group going to same school
-        'student_data' -> student_data table with format from Students class.
-        """
-        if student_data is None:
-            student_data = self.student_data
-        block_groups = student_data.groupby("census_blockgroup")
-
-        def blockgroup_pct(bg, threshold):
-            by_school = bg["assigned school"].value_counts()
-            min_students = int(threshold * bg.shape[0]) + 1
-            over_threshold = by_school[by_school > min_students].sum()
-            return over_threshold
-
-        n_to_same = block_groups.apply(lambda x: blockgroup_pct(x, threshold))
-        return n_to_same.sum() / student_data.shape[0]
-
-    def without_blockgroup(self, threshold=3, student_data=None):
-        """Input: 'threshold' -> number of students from the block group going to same school
-        'student_data' -> student_data table with format from Students class.
-        """
-        if student_data is None:
-            student_data = self.student_data
-        block_groups = student_data.groupby("census_blockgroup")
-
-        def blockgroup_min(bg, threshold):
-            by_school = bg["assigned school"].value_counts()
-            over_threshold = by_school[by_school < threshold].sum()
-            return over_threshold
-
-        n_to_same = block_groups.apply(lambda x: blockgroup_min(x, threshold))
-        return n_to_same.sum() / student_data.shape[0]
-
-    def race_isolation(self, threshold=3, ethnic_matrix=None):
-        if ethnic_matrix is None:
-            ethnic_matrix = self.ethnic_matrix
-        hispanic_isolated = [
-            x for x in ethnic_matrix["Hispanic/Latino"] if x < threshold
-        ]
-        hispanic_isolated_pct = (
-            sum(hispanic_isolated) / ethnic_matrix["Hispanic/Latino"].sum()
+        metrics[f"Avg Prop AALPI in -10% High Income Schools ({medium_income})"] = (
+            self.avg_aalpi_in_high_income_schools(
+                assigned_students, medium_income, -0.1
+            )
         )
-        black_isolated = [
-            x
-            for x in ethnic_matrix["Black or African American"]
-            if x < threshold
-        ]
-        black_isolated_pct = (
-            sum(black_isolated)
-            / ethnic_matrix["Black or African American"].sum()
+        metrics[f"Avg Prop AALPI in -15% High Income Schools ({medium_income})"] = (
+            self.avg_aalpi_in_high_income_schools(
+                assigned_students, medium_income, -0.15
+            )
         )
-        race_isolated = pd.Series(
-            {
-                f"Hispanic Isolated ({threshold})": hispanic_isolated_pct,
-                f"Black Isolated ({threshold})": black_isolated_pct,
-            }
+
+        metrics[f"Prop AALPI in -10% Low Income Schools ({low_income})"] = (
+            self.aalpi_in_low_income_schools(assigned_students, low_income, -0.10)
         )
-        return race_isolated
 
-    def peers_same_ethnicity(self, ethnic_matrix=None):
-        """Calculate avg number of peers of the same ethnicity."""
-        if ethnic_matrix is None:
-            ethnic_matrix = self.ethnic_matrix
-        asian_counts = ethnic_matrix[["Asian", "Chinese"]].sum(axis=1)
-
-        def nonzero_avg(counts):
-            return np.mean([x for x in counts if x > 0])
-
-        asian_peers = (
-            nonzero_avg(asian_counts) - 1
-        )  # -1 for not counting yourself as your own peer
-        black_peers = (
-            nonzero_avg(ethnic_matrix["Black or African American"]) - 1
+        metrics[f"Prop AALPI in -15% Low Income Schools ({low_income})"] = (
+            self.aalpi_in_low_income_schools(assigned_students, low_income, -0.15)
         )
-        white_peers = nonzero_avg(ethnic_matrix["White"]) - 1
-        hispanic_peers = nonzero_avg(ethnic_matrix["Hispanic/Latino"]) - 1
-        avg_peers = pd.Series(
-            {
-                "Avg Asian Peers": asian_peers,
-                "Avg Black Peers": black_peers,
-                "Avg Hispanic Peers": hispanic_peers,
-                "Avg White Peers": white_peers,
-            }
+
+        metrics[f"Avg Prop FRL in +10% High Income Schools ({medium_income})"] = (
+            self.avg_frl_in_high_income_schools(assigned_students, medium_income, 0.1)
         )
-        return avg_peers
+        metrics[f"Avg Prop FRL in +15% High Income Schools ({medium_income})"] = (
+            self.avg_frl_in_high_income_schools(assigned_students, medium_income, 0.15)
+        )
 
-    def _nonzero_mean(self, col, student_data=None):
-        if student_data is None:
-            student_data = self.student_data
-        data = student_data[student_data[col] > 0]
-        return data[col].mean()
+        # CHOICE METRICS
 
-    def _colors_quality_schools(self, schools, programs, pct=0.33):
-        # identify quality schools
-        sch = schools.school_df
-        color_values = {
-            "Red": 0,
-            "Orange": 1,
-            "Yellow": 2,
-            "Green": 3,
-            "Blue": 4,
-            "None": 0,
-            0: 0,
-            1: 1,
-            2: 2,
-            3: 3,
-            4: 4,
+        metrics["#Unassigned"] = student_data[student_data["programno"] == 0].shape[0]
+        metrics["Unassigned"] = (
+            student_data[student_data["programno"] == 0].shape[0]
+            / student_data.shape[0]
+        )
+        all_designated = assigned_students["designation"].mean()
+        metrics["#Designated"] = assigned_students["designation"].sum()
+        metrics["Designated"] = all_designated
+
+        dico_student_type = {
+            "All Assigned": assigned_students,
+            "Non-Designated": non_designated_students,
+            #  "Designated": designated_students,
         }
-        if "quality" not in sch.columns:
-            sch.loc[:, "quality"] = 0
-            for col in [
-                "ela_color",
-                "math_color",
-                "chronic_color",
-                "suspension_color",
-            ]:
-                sch["quality"] += sch[col].replace(color_values).astype("int64")
-        sch.sort_values("quality", ascending=False, inplace=True)
-        num_quality = int(pct * len(sch.index))
-        quality_GEprog_idx = []
-        for i, row in sch.iterrows():
-            if programs.index(str(i) + "-GE-KG", quiet=True) != -1:
-                quality_GEprog_idx.append(programs.index(str(i) + "-GE-KG"))
-                if len(quality_GEprog_idx) == num_quality:
-                    break
-        return quality_GEprog_idx
 
-    def _get_quality_schools(self, schools, programs, col, pct=0.33):
-        # identify quality schools
-        sch = schools.school_df
-        sch.sort_values(col, ascending=False, inplace=True)
-        num_quality = int(pct * len(sch.index))
-        quality_GEprog_idx = []
-        for i, row in sch.iterrows():
-            if programs.index(str(i) + "-GE-KG", quiet=True) != -1:
-                quality_GEprog_idx.append(programs.index(str(i) + "-GE-KG"))
-                if len(quality_GEprog_idx) == num_quality:
-                    break
-        return quality_GEprog_idx
+        for student_type, data_student in dico_student_type.items():
+            metrics[f"Prop Top 1 choice ({student_type})"] = (
+                data_student["rank"] <= 1
+            ).mean()
+            metrics[f"Prop Top 2 choice ({student_type})"] = (
+                data_student["rank"] <= 2
+            ).mean()
+            metrics[f"Prop Top 3 choice ({student_type})"] = (
+                data_student["rank"] <= 3
+            ).mean()
+            metrics[f"Mean Choice ({student_type})"] = data_student["rank"].mean()
+            metrics[f"Median Choice ({student_type})"] = data_student["rank"].median()
+            metrics[f"Top 1 in-zone choice ({student_type})"] = (
+                data_student["In-Zone Rank"] == 1
+            ).mean()
+            metrics[f"Top 2 in-zone choice ({student_type})"] = (
+                data_student["In-Zone Rank"] <= 2
+            ).mean()
+            metrics[f"Top 3 in-zone choice ({student_type})"] = (
+                data_student["In-Zone Rank"] <= 3
+            ).mean()
 
-    def _get_cutoff_matrix(self, priorities):
-        cutoffs = self.student_data
-        cutoffs["programno"] = cutoffs["programno"].astype("int64")
-        cutoffs = cutoffs.groupby("programno", as_index=False).mean(
-            numeric_only=True
-        )
-        cutoffs = cutoffs[["programno", "program_cutoff"]]
-        cutoffs["program_cutoff"] = cutoffs["program_cutoff"].apply(
-            lambda x: max(x - 64, 0)
-        )  # round 1 priorities boosted by 64
-        cutoffs["programno"] = cutoffs["programno"].astype("int64")
-        cutoff_matrix = np.zeros(priorities.shape[1])
-        for i, row in cutoffs.iterrows():
-            cutoff_matrix[int(row["programno"] - 1)] = row["program_cutoff"]
-        cutoff_matrix = np.tile(cutoff_matrix, (priorities.shape[0], 1))
+            metrics[f"Distance Av ({student_type})"] = data_student[
+                "assignment_dist"
+            ].mean()
+            metrics[f"Distance Median ({student_type})"] = data_student[
+                "assignment_dist"
+            ].median()
 
-        return cutoff_matrix
+        high_frl_assigned = high_frl_students[high_frl_students["programno"] > 0]
+        low_frl_assigned = low_frl_students[low_frl_students["programno"] > 0]
 
-    def likelihood_of_quality_school(
-        self, quality_GEprog_idx, market, priority_weights
-    ):
-        """Identify the probability that a student could get into a 'quality'
-        school if they ranked it first in round 1.
-        """
-        # get student priorities
-        market.setPriorities(priority_weights, designation_antipriority=0)
-        priorities = market.priorities
-
-        # get quality program cutoffs
-        cutoff_matrix = self._get_cutoff_matrix(priorities)
-
-        # compare priorities to cutoffs
-        accessible_probability = np.clip(cutoff_matrix - priorities, 0, 1)
-        shifted = [x - 1 for x in quality_GEprog_idx]
-        quality_accessible_probability = accessible_probability[:, shifted]
-        self.student_data["quality_access"] = 1 - np.min(
-            quality_accessible_probability, axis=1
-        )
-
-        # 2 students with no attendance area have no zone and no priority everywhere.
-        df = self.student_data.dropna(subset=["idschoolattendance"])
-        return np.min(df["quality_access"])
-
-    def ell_likelihood_of_language_prog(
-        self, programs, market, priority_weights, language
-    ):
-        """Determine how likely each ELL student is to get access to a program
-        in their language if they were to rank it first in round 1
-        INPUT: language - 'S' for Spanish, 'C' for Chinese, immersion or biliteracy.
-        """
-        # get language program indices
-        lps = programs.program_df
-        prog_types = [f"{language}B", f"{language}N"]
-        lps["filter"] = lps["program_type"].apply(
-            lambda x: 1 if x in prog_types else 0
-        )
-        lps = lps.loc[lps["filter"] == 1]
-        lp_idxs = np.array(lps.index)
-
-        # get ELL students in that language
-        ell = self.student_data
-        ell["filter"] = ell["englprof_desc"].apply(
-            lambda x: 1 if x in ["L-Limited English", "N-Non English"] else 0
-        )
-        ell = ell.loc[ell["filter"] == 1]
-        self.students.get_qualified_programs_dict()
-        eligible = self.students.qualified_program_dict
-        ell_idxs = []
-        for i, row in ell.iterrows():
-            # if student is eligible for type of language program
-            if set(eligible[i]) & set(prog_types):
-                ell_idxs.append(self.students.studentno2idx[i])
-
-        # get student priorities
-        market.setPriorities(priority_weights, designation_antipriority=0)
-        priorities = market.priorities
-
-        # get quality program cutoffs
-        cutoff_matrix = self._get_cutoff_matrix(priorities)
-
-        # compare priorities to cutoffs
-        accessible_probability = np.clip(cutoff_matrix - priorities, 0, 1)
-        lp_accessible_probability = accessible_probability[ell_idxs, :][
-            :, lp_idxs
+        ctip_assigned = student_data[
+            (student_data["ctip1"] == 1) & (student_data["programno"] > 0)
         ]
-        by_student = 1 - np.min(lp_accessible_probability, axis=1)
-        # print(priorities[ell_idxs[0],lp_idxs])
-        # print(cutoff_matrix[ell_idxs[0],lp_idxs])
-        # print(accessible_probability[ell_idxs[0],lp_idxs])
-        # print('SMALLEST CHANCE:',np.min(by_student))
-        return np.min(by_student)
+        non_ctip_assigned = student_data[
+            (student_data["ctip1"] == 0) & (student_data["programno"] > 0)
+        ]
 
-    def poverty_schools_by_race(self, student_data=None):
-        if student_data is None:
-            student_data = self.student_data
-        sch_frl = student_data.groupby("assigned school", as_index=False).mean(
-            numeric_only=True
-        )
-        quantile66 = sch_frl["frl"].quantile(0.66)
-        poverty_schools = list(
-            sch_frl.loc[sch_frl["frl"] >= quantile66]["assigned school"]
-        )
+        et2_assigned = student_data[
+            (student_data["et2"] == 1) & (student_data["programno"] > 0)
+        ]
+        non_et2_assigned = student_data[
+            (student_data["et2"] == 0) & (student_data["programno"] > 0)
+        ]
 
-        student_data["high_pov"] = student_data["assigned school"].apply(
-            lambda x: 1 if x in poverty_schools else 0
-        )
-        pov_df = student_data.loc[student_data["high_pov"] == 1]
+        groups = [
+            "All Assigned",
+            "Black",
+            "Asian",
+            "Hispanic",
+            "White",
+            # "Pacific Islander",
+            "Two or More Races",
+            "Decline to State",
+            "High FRL",
+            "Low FRL",
+            "CTIP",
+            "non-CTIP",
+            "ET (2024)",
+            "non-ET (2024)",
+            "AALPI",
+        ]
 
-        pct_pov = {}
-        for e in range(len(self.eths)):
-            subset = pov_df[pov_df["resolved_ethnicity"] == self.eths[e]]
-            total = student_data[
-                student_data["resolved_ethnicity"] == self.eths[e]
+        dico_income = {
+            f"Income below {medium_income}": class_below_medium_income,
+            f"Income above {medium_income}": class_above_medium_income,
+        }
+
+        white_students = assigned_students[assigned_students["ethnicity"] == "White"]
+        for ethnicity in ["Black", "Hispanic"]:
+            ethnic_students = assigned_students[
+                assigned_students["ethnicity"] == ethnicity
             ]
-            pct_pov["% at poverty school - " + self.eth_labels[e]] = len(
-                subset.index
-            ) / len(total.index)
-
-        return pd.Series(pct_pov)
-
-    def max_aalpi_pct_GE(self, student_data=None):
-        if student_data is None:
-            student_data = self.student_data
-        # identify aalpi students
-        if "aalpi" not in student_data.columns:
-            aalpi = [
-                "Hispanic/Latino",
-                "Black or African American",
-                "Pacific Islander",
-            ]
-            student_data["aalpi"] = student_data["resolved_ethnicity"].apply(
-                lambda x: 1 if x in aalpi else 0
+            metrics[f"{ethnicity}/White exposure to AALPI"] = self.metrics_segregation(
+                ethnic_students, white_students, aalpi_students, enrollment
             )
-
-        progs = student_data.groupby("assignment").mean(numeric_only=True)
-        ge_idxs = [True if x[4:6] == "GE" else False for x in progs.index]
-        progs = progs[ge_idxs]
-        return max(progs["aalpi"])
-
-    def school_frl_range_district(self, pct, student_data=None, above=False):
-        """Fraction of schools where average FRL status of students assigned
-        to the school is at least X% above or in the range of X% below to X%
-        above the fraction of all students with FRL status.
-        """
-        if student_data is None:
-            student_data = self.student_data
-        district_avg = student_data["frl"].mean()
-        school_frl = student_data.groupby("assigned school").mean(
-            numeric_only=True
-        )
-        if above is False:
-            school_frl["in_range"] = school_frl["frl"].apply(
-                lambda x: (
-                    1
-                    if x <= district_avg + pct and x >= district_avg - pct
-                    else 0
+            metrics[f"{ethnicity}/White exposure to poverty"] = (
+                self.metrics_segregation(
+                    ethnic_students,
+                    white_students,
+                    high_frl_assigned,
+                    enrollment,
                 )
             )
-        else:
-            school_frl["in_range"] = school_frl["frl"].apply(
-                lambda x: 1 if x >= district_avg + pct else 0
+            # New: exposure difference to low FRL
+            metrics[f"{ethnicity}/White exposure to low FRL"] = (
+                self.metrics_segregation(
+                    ethnic_students,
+                    white_students,
+                    low_frl_assigned,
+                    enrollment,
+                )
             )
-        return school_frl["in_range"].mean()
+
+        # Absolute exposure metrics (no difference between groups)
+        # Exposure to high FRL and low FRL for key groups
+        exposure_groups = {
+            "AALPI": aalpi_students,
+            "White": white_students,
+            "Black": assigned_students[assigned_students["ethnicity"] == "Black"],
+            "Hispanic": assigned_students[assigned_students["ethnicity"] == "Hispanic"],
+            "High FRL": high_frl_assigned,
+            "Low FRL": low_frl_assigned,
+        }
+
+        for group_name, group_students in exposure_groups.items():
+            # Exposure to AALPI
+            metrics[f"{group_name} exposure to AALPI"] = self.metrics_exposure(
+                group_students, aalpi_students, enrollment
+            )
+            # Exposure to high FRL (poverty)
+            metrics[f"{group_name} exposure to high FRL"] = self.metrics_exposure(
+                group_students, high_frl_assigned, enrollment
+            )
+            # Exposure to low FRL
+            metrics[f"{group_name} exposure to low FRL"] = self.metrics_exposure(
+                group_students, low_frl_assigned, enrollment
+            )
+
+        # Precompute school FRL probabilities for efficiency
+        # Average probability of FRL students in each school
+        school_frl_probs = (
+            assigned_students[["assigned school", "frl"]]
+            .groupby("assigned school")["frl"]
+            .mean()
+        )
+        district_frl_prob = assigned_students["frl"].mean()  # District average FRL prob
+
+        # Precalculate schools meeting relative thresholds
+        # Schools with FRL > District Avg + 10%
+        schools_high_frl_rel = school_frl_probs[
+            school_frl_probs > district_frl_prob + 0.1
+        ].index
+        # Schools with FRL > District Avg + 15%
+        schools_high_frl_rel_15 = school_frl_probs[
+            school_frl_probs > district_frl_prob + 0.15
+        ].index
+        # Schools with FRL > District Avg
+        schools_avg_frl_rel = school_frl_probs[
+            school_frl_probs > district_frl_prob
+        ].index
+
+        for group in groups + list(dico_income.keys()):
+            if group == "All Assigned":
+                students = self.student_data[self.student_data["programno"] > 0]
+            elif group == "High FRL":
+                students = high_frl_assigned
+            elif group == "Low FRL":
+                students = low_frl_assigned
+            elif group == "CTIP":
+                students = ctip_assigned
+            elif group == "non-CTIP":
+                students = non_ctip_assigned
+            elif group == "ET (2024)":
+                students = et2_assigned
+            elif group == "non-ET (2024)":
+                students = non_et2_assigned
+            elif group == "AALPI":
+                students = aalpi_students
+            elif group in groups:
+                students = assigned_students[assigned_students["ethnicity"] == group]
+            else:
+                students = dico_income[group]
+            students = students.copy()
+
+            metrics[f"Number of assigned students ({group})"] = len(students)
+
+            # --- New FRL Metrics ---
+            if len(students) > 0:
+                # 1. Exposure to High FRL (threshold 0.5)
+                # Note: This is exposure to PEERS who are High FRL
+                metrics[f"{group} exposure to high FRL"] = self.metrics_exposure(
+                    students, high_frl_assigned, enrollment
+                )
+
+                # 2. Exposure to FRL (prob)
+                # Average school FRL probability for students in this group
+                # Maps each student's school to its avg FRL prob, then takes mean over group
+                metrics[f"{group} exposure to FRL prob"] = (
+                    students["assigned school"].map(school_frl_probs).mean()
+                )
+
+                # 3. Relative High FRL (>+10% dist FRL)
+                # Proportion of group in schools with > Dist + 10% FRL
+                metrics[f"{group} in school with +10% FRL"] = (
+                    students["assigned school"].isin(schools_high_frl_rel).mean()
+                )
+
+                metrics[f"{group} in school with +15% FRL"] = (
+                    students["assigned school"].isin(schools_high_frl_rel_15).mean()
+                )
+
+                # 4. FRL district average (Relative FRL > Avg)
+                # Proportion of group in schools with > Dist Avg FRL
+                metrics[f"{group} in school with > avg FRL"] = (
+                    students["assigned school"].isin(schools_avg_frl_rel).mean()
+                )
+            else:
+                metrics[f"{group} exposure to high FRL"] = np.nan
+                metrics[f"{group} exposure to FRL prob"] = np.nan
+                metrics[f"{group} in school with +10% FRL"] = np.nan
+                metrics[f"{group} in school with +15% FRL"] = np.nan
+                metrics[f"{group} in school with > avg FRL"] = np.nan
+            # -----------------------
+
+            # --- Added Choice Metrics for Subgroups ---
+            if len(students) > 0:
+                metrics[f"Prop Top 1 choice ({group})"] = (students["rank"] <= 1).mean()
+                metrics[f"Prop Top 2 choice ({group})"] = (students["rank"] <= 2).mean()
+                metrics[f"Prop Top 3 choice ({group})"] = (students["rank"] <= 3).mean()
+                metrics[f"Distance Av ({group})"] = students["assignment_dist"].mean()
+                metrics[f"Distance Median ({group})"] = students[
+                    "assignment_dist"
+                ].median()
+            else:
+                metrics[f"Prop Top 1 choice ({group})"] = np.nan
+                metrics[f"Prop Top 2 choice ({group})"] = np.nan
+                metrics[f"Prop Top 3 choice ({group})"] = np.nan
+                metrics[f"Distance Av ({group})"] = np.nan
+                metrics[f"Distance Median ({group})"] = np.nan
+            # ------------------------------------------
+
+            metrics[f"Dissimilarity ({group})"] = self.metric_dissimilarity(
+                students, enrollment
+            )
+            self._add_program_assignment_counts(metrics, group, students)
+
+            (
+                _,
+                _,
+                metrics[f"#Students in schools above +15% district FRL ({group})"],
+            ) = self.school_frl_range(0.15, student_data=students)
+            metrics[f"Prop students in schools above +15% district FRL ({group})"] = (
+                self._safe_ratio(
+                    metrics[f"#Students in schools above +15% district FRL ({group})"],
+                    len(students),
+                )
+            )
+
+            # when students are designated, assign rank 999
+            students.loc[students["designation"] == 1, "rank"] = 999
+
+            if group != "All Assigned":
+                metrics[f"Number of designated students ({group})"] = len(
+                    students[students["designation"] == 1]
+                )
+                metrics[f"Prop Top 1 choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["rank"] <= 1
+                ).mean()
+
+                metrics[f"Prop Top 2 choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["rank"] <= 2
+                ).mean()
+
+                for i in range(1, 11):
+                    metrics[f"Proportion of students in top {i} ({group})"] = (
+                        students["rank"] <= i
+                    ).mean()
+                    metrics[f"Proportion of students in top {i} (All Students)"] = (
+                        student_data["rank"] <= i
+                    ).mean()
+                metrics[f"Prop Top 3 choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["rank"] <= 3
+                ).mean()
+                metrics[f"Top 1 in-zone choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["In-Zone Rank"] == 1
+                ).mean()
+                metrics[f"Top 2 in-zone choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["In-Zone Rank"] <= 2
+                ).mean()
+                metrics[f"Top 3 in-zone choice Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["In-Zone Rank"] <= 3
+                ).mean()
+                metrics[f"Mean Choice Non-Designated ({group})"] = students[
+                    students["designation"] == 0
+                ]["rank"].mean()
+                metrics[f"Median Choice Non-Designated ({group})"] = students[
+                    students["designation"] == 0
+                ]["rank"].median()
+                metrics[f"Distance Av Non-Designated ({group})"] = students[
+                    students["designation"] == 0
+                ]["assignment_dist"].mean()
+                metrics[f"Distance Median Non-Designated ({group})"] = students[
+                    students["designation"] == 0
+                ]["assignment_dist"].median()
+                metrics[f"Distance < 0.5 Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["assignment_dist"] < 0.5
+                ).mean()
+                metrics[f"Distance > 3 Non-Designated ({group})"] = (
+                    students[students["designation"] == 0]["assignment_dist"] > 3
+                ).mean()
+
+            # Evaluate for all groups, append together as distances.
+            metrics[f"Prop Distance > 3 and Rank>=5 ({group})"] = (
+                (students["assignment_dist"] > 3) & (students["rank"] >= 5)
+            ).mean()
+            metrics[f"Prop Distance > 3 and in-zone Rank>=5 ({group})"] = (
+                (students["assignment_dist"] > 3) & (students["In-Zone Rank"] >= 5)
+            ).mean()
+
+            cur_non_designatd_student = students[students["designation"] == 0]
+            metrics[f"Prop Distance > 3 and Rank>=5 Non-Designated ({group})"] = (
+                (cur_non_designatd_student["assignment_dist"] > 3)
+                & (cur_non_designatd_student["rank"] >= 5)
+            ).mean()
+            metrics[
+                f"Prop Distance > 3 and in-zone Rank>=5 Non-Designated ({group})"
+            ] = (
+                (cur_non_designatd_student["assignment_dist"] > 3)
+                & (cur_non_designatd_student["In-Zone Rank"] >= 5)
+            ).mean()
+
+            # --- Prop Distance > 3 and Rank>=4 ---
+            metrics[f"Prop Distance > 3 and Rank>=4 ({group})"] = (
+                (students["assignment_dist"] > 3) & (students["rank"] >= 4)
+            ).mean()
+            metrics[f"Prop Distance > 3 and Rank>=4 Non-Designated ({group})"] = (
+                (cur_non_designatd_student["assignment_dist"] > 3)
+                & (cur_non_designatd_student["rank"] >= 4)
+            ).mean()
+            # Prop Distance > 3 and (Rank>=4 or designated)
+            metrics[f"Prop Distance > 3 and (Rank>=4 or designated) ({group})"] = (
+                (students["assignment_dist"] > 3)
+                & ((students["rank"] >= 4) | (students["designation"] == 1))
+            ).mean()
+            # Prop Distance > 3 and (Rank>=5 or designated)
+            metrics[f"Prop Distance > 3 and (Rank>=5 or designated) ({group})"] = (
+                (students["assignment_dist"] > 3)
+                & ((students["rank"] >= 5) | (students["designation"] == 1))
+            ).mean()
+            # Prop Distance > 3 and (in-zone Rank>=5 or designated)
+            metrics[
+                f"Prop Distance > 3 and (in-zone Rank>=5 or designated) ({group})"
+            ] = (
+                (students["assignment_dist"] > 3)
+                & ((students["In-Zone Rank"] >= 5) | (students["designation"] == 1))
+            ).mean()
+
+            # --- Variance metrics ---
+            if len(students) > 0:
+                metrics[f"Variance of rank ({group})"] = students["rank"].var()
+                metrics[f"Variance of in-zone rank ({group})"] = students[
+                    "In-Zone Rank"
+                ].var()
+                metrics[f"Variance of distance ({group})"] = students[
+                    "assignment_dist"
+                ].var()
+            else:
+                metrics[f"Variance of rank ({group})"] = np.nan
+                metrics[f"Variance of in-zone rank ({group})"] = np.nan
+                metrics[f"Variance of distance ({group})"] = np.nan
+
+        # --- Theil's H segregation index ---
+        metrics["Theil H"] = self.metric_theil()
+
+        # Add diagnostic metrics
+        diagnostic_metrics = self.eval_diagnostic_metrics()
+        metrics.update(diagnostic_metrics)
+
+        return pd.Series(metrics)
+
+    def eval_assignment_paper_metrics(self):
+        """Compatibility alias; new callers should choose basic or full."""
+        if self._mode == "basic":
+            return self.eval_assignment_basic()
+        return self.eval_assignment_full()
+
+    def eval_diagnostic_metrics(self):
+        """Compute diagnostic metrics for trend analysis.
+
+        Returns:
+            Dict[str, float]: Dictionary of diagnostic metrics including:
+                - count_students_{ethnicity}: Count per ethnic group
+                - count_students_Total: Total student count
+                - enrollment_count_{ethnicity}: Assigned students per group
+                - enrollment_rate_{ethnicity}: Assignment rate per group
+                - utilization_{program_type}: Capacity utilization per type
+        """
+        metrics = {}
+        student_data = self.student_data
+        programs = self.programs
+
+        # ===== Demographic Metrics =====
+        if "ethnicity" in student_data.columns:
+            counts = student_data["ethnicity"].value_counts()
+            assigned = student_data[self._assigned_mask(student_data)]
+            enrolled_counts = assigned["ethnicity"].value_counts()
+            for group in DIAGNOSTIC_ETHNICITIES:
+                total = int(counts.get(group, 0))
+                enrolled = int(enrolled_counts.get(group, 0))
+                metrics[f"count_students_{group}"] = total
+                metrics[f"enrollment_count_{group}"] = enrolled
+                metrics[f"enrollment_rate_{group}"] = self._safe_ratio(enrolled, total)
+            metrics["count_students_Total"] = len(student_data)
+            metrics["enrollment_count_Total"] = len(assigned)
+            metrics["enrollment_rate_Total"] = self._safe_ratio(
+                len(assigned), len(student_data)
+            )
+
+        # ===== Capacity Utilization Metrics =====
+        metrics.update(
+            {
+                f"utilization_{program_type}": np.nan
+                for program_type in DIAGNOSTIC_PROGRAM_TYPES
+            }
+        )
+        metrics["utilization_rate_avg"] = np.nan
+        if "programno" in student_data.columns and not programs.empty:
+            # Count enrollment per program
+            # Use programcodes from student_data to match program_id in programs
+            if (
+                "programcodes" in student_data.columns
+                and "program_id" in programs.columns
+            ):
+                enrollment = (
+                    student_data[student_data["programno"] > 0]
+                    .groupby("programcodes")
+                    .size()
+                    .reset_index(name="enrollment")
+                )
+                # Ensure types match for merge
+                enrollment["programcodes"] = enrollment["programcodes"].astype(str)
+                programs_copy = programs.copy()
+                programs_copy["program_id"] = programs_copy["program_id"].astype(str)
+                stats = programs_copy.merge(
+                    enrollment,
+                    left_on="program_id",
+                    right_on="programcodes",
+                    how="left",
+                )
+            elif "programno" in programs.columns:
+                enrollment = (
+                    student_data[student_data["programno"] > 0]
+                    .groupby("programno")
+                    .size()
+                    .reset_index(name="enrollment")
+                )
+                stats = programs.merge(
+                    enrollment,
+                    left_on="programno",
+                    right_on="programno",
+                    how="left",
+                )
+            else:
+                # Cannot compute utilization without matching keys
+                stats = pd.DataFrame()
+
+            if not stats.empty:
+                stats["enrollment"] = stats["enrollment"].fillna(0)
+                total_cap = (
+                    stats["capacity"].sum() if "capacity" in stats.columns else 0
+                )
+                if total_cap > 0:
+                    metrics["utilization_rate_avg"] = (
+                        stats.loc[stats["capacity"] > 0, "enrollment"]
+                        / stats.loc[stats["capacity"] > 0, "capacity"]
+                    ).mean()
+
+                # By program type
+                type_col = "program_type" if "program_type" in stats.columns else "type"
+                if type_col in stats.columns:
+                    for p_type, group in stats.groupby(type_col):
+                        cap = group["capacity"].sum()
+                        enr = group["enrollment"].sum()
+                        if cap > 0:
+                            metrics[f"utilization_{p_type}"] = enr / cap
+
+        return metrics

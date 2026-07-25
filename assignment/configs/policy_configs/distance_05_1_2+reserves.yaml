@@ -4,7 +4,7 @@ ctip-options:
 - 1
 
 restrict-zone: false
-guard-rails: 1
+guard-rails: 0
 reserve-settings: {
   "column": "median_hh_income", 
   "thresholds": [95292], 

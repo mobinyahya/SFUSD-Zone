@@ -46,6 +46,8 @@ run_commands.txt
 r1_filter_student_without_specialprogs_2324.numbers
 .DS_Store
 choice_model.npy
+analysis/plots/*
+analysis/matches/*
 
 # Local-only shell scripts (kept outside version control for now)
 _local_scripts/

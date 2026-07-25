@@ -54,9 +54,7 @@ def me_real(market):
         SIMULATED_ASSIGNMENT_FILE,
         index_col=0,
     )
-    return MatchEvaluator(
-        market.students, assignments, market.students.get_distances()
-    )
+    return MatchEvaluator(market.students, assignments, market.students.get_distances())
 
 
 # Match Evaluator with empty initialization to test function with generated
@@ -71,16 +69,7 @@ class MatchEvaluatorEmpty(MatchEvaluator):
 # so we skip it. Comment out the next line to run the test if needed.
 @pytest.mark.skip(reason="Skip this test as it requires real data.")
 def test_run_all_metrics(programs, schools, market, me_real):
-    priority_weights = {"sibling": 4, "zone": 2, "ctip": 1}
-    school_data = market.schools.school_data
-
-    me_real.lightweight_eval_assignment(
-        schools, programs, market, priority_weights
-    )
-    me_real.eval_assignment_paper_metrics()
-    me_real.eval_assignment_overview(schools, real_match=False)
-    me_real.eval_assignment_full(school_data, real_match=False)
-    me_real.eval_assignment_equity(school_data, real_match=False)
+    me_real.eval_assignment_basic()
 
 
 # Test the distance metrics for average distance and fractions of distances
@@ -120,18 +109,40 @@ def test_metric_diversity():
     assert me.metric_FRL_concentration(students_df, group_students, 0.1) == 0.4
     assert me.poverty_concentration(students_df, group_students, 0.1) == 0.4
 
-    enrollments = pd.DataFrame(data={"col_1": [x // 10 for x in range(0, 100)]})
-    assert (me.metric_dissimilarity(group_students, enrollments) == 0.5).all()
-    assert (me.dissimilarity(group_students, enrollments) == 0.5).all()
+    enrollments = students_df.groupby("assigned school").size()
+    assert me.metric_dissimilarity(group_students, enrollments) == pytest.approx(0.9)
 
     group_students = students_df[
         students_df["frl"].isin(
-            [x / 10 for x in range(0, 100)]
-            + [x / 10 + 0.001 for x in range(0, 100)]
+            [x / 10 for x in range(0, 100)] + [x / 10 + 0.001 for x in range(0, 100)]
         )
     ]
     assert me.metric_isolation(group_students, 2) == 0
     assert me.metric_isolation(group_students, 3) == 10
+
+
+def test_metric_racial_majority_schools():
+    me = MatchEvaluatorEmpty()
+    students = pd.DataFrame(
+        {
+            "assigned school": ["101"] * 3 + ["202"] * 4 + ["303"] * 3,
+            "resolved_ethnicity": [
+                "Asian",
+                "Asian",
+                "White",
+                "Black",
+                "Black",
+                "White",
+                "White",
+                "Hispanic",
+                None,
+                None,
+            ],
+        }
+    )
+
+    assert me.metric_racial_majority_schools(students) == 1
+    assert me.metric_racial_majority_schools(students.iloc[0:0]) == 0
 
 
 # Test the school choice metrics with manually created students data.
@@ -155,13 +166,11 @@ def test_metric_choice():
     assert me.metric_top_in_zone_choice(students_df, 3) == 0.6
     correct_output = [False] * 60 + [True] * 40
     assert (
-        me.metric_dist_and_rank(students_df, 0.2, 4).values.tolist()
-        == correct_output
+        me.metric_dist_and_rank(students_df, 0.2, 4).values.tolist() == correct_output
     )
     correct_output = [False] * 39 + [True] * 61
     assert (
-        me.metric_dist_and_rank(students_df, 0.4, 1).values.tolist()
-        == correct_output
+        me.metric_dist_and_rank(students_df, 0.4, 1).values.tolist() == correct_output
     )
 
 
