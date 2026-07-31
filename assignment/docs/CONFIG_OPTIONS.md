@@ -107,6 +107,9 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 | `designate` | Append designation programs (closest eligible GE/LP) to preference lists. |
 | `designation-ordering-type` | `in_zone` (default; in-zone programs first) or `simple` (pure distance order). |
 | `non_designation_boost` / `soft_reserve_boost` | Priority boosts for ranked (non-designation) programs / soft reserves. |
+| `add_aa_schools` | Append each student's grade-specific attendance-area GE program to their ranked list when it is not already present. |
+| `remove_non_aa_or_citywide` | Keep only programs at each student's attendance-area school or schools categorized as citywide, including designation options. Utility-model lists select their top allowed programs before list-length truncation. |
+| `aa_boost` | Add this priority boost for a student at their grade-specific attendance-area GE program. |
 | `truncate-at-AA-GE` | Truncate utility-model lists at the student's attendance-area GE program. |
 
 ## 6. `list-augmentation` (alternative programs, `run_augmented_da.py`)

@@ -32,8 +32,11 @@ class School_with_class:
             for frac_iClass in frac_reserve_class
         ]
         self.assignedPerClass = np.zeros(len(frac_reserve_class))
+        has_reserves = any(fraction > 0 for fraction in frac_reserve_class)
         self.virtual_school = (
-            School(-1, 0) if strictGuards else School(-1, capacity)
+            School(-1, 0)
+            if strictGuards and has_reserves
+            else School(-1, capacity)
         )
 
     def matches(self):

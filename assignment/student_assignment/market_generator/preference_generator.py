@@ -24,11 +24,17 @@ class PreferenceGenerator:
                 jth program on the preference list of the ith student.
         """
         cache_context = self._cache_context()
-        cache_key = (cache_context, designate)
-        if (
-            cache_context is not None
-            and cache_key in self._real_preferences_cache
-        ):
+        add_aa_schools = self.market.config.get("add_aa_schools", False)
+        remove_non_aa_or_citywide = self.market.config.get(
+            "remove_non_aa_or_citywide", False
+        )
+        cache_key = (
+            cache_context,
+            designate,
+            add_aa_schools,
+            remove_non_aa_or_citywide,
+        )
+        if cache_context is not None and cache_key in self._real_preferences_cache:
             prefs, pref_length = self._real_preferences_cache[cache_key]
             self.pref_length = pref_length.copy()
             return prefs
@@ -45,17 +51,93 @@ class PreferenceGenerator:
 
         self.pref_length = (prefs == 0).argmax(axis=1)
 
+        if add_aa_schools:
+            prefs = self._add_attendance_area_schools_to_preferences(prefs)
         if designate:
             eligible = self._get_eligibility()
             prefs = self._add_designation_programs_to_preferences(
                 prefs, eligible
             )
+        if remove_non_aa_or_citywide:
+            prefs = self._remove_non_aa_or_citywide_programs(prefs)
         if cache_context is not None:
             self._real_preferences_cache[cache_key] = (
                 prefs,
                 self.pref_length.copy(),
             )
         return prefs
+
+    def _add_attendance_area_schools_to_preferences(
+        self, prefs: np.ndarray
+    ) -> np.ndarray:
+        """Append each student's attendance-area GE program when not already ranked."""
+        combined_prefs = prefs.copy()
+        pref_lengths = np.count_nonzero(combined_prefs, axis=1)
+        attendance_areas = self.market.students.attendance_area
+        grade = self.market.config["grade"]
+
+        for student_idx, studentno in self.market.students.idx2studentno.items():
+            attendance_area = attendance_areas.get(studentno, 0)
+            program_idx = self.market.programs.indices.get(
+                f"{attendance_area}-GE-{grade}"
+            )
+            pref_length = pref_lengths[student_idx]
+            if (
+                program_idx is None
+                or program_idx in combined_prefs[student_idx, :pref_length]
+                or pref_length >= combined_prefs.shape[1]
+            ):
+                continue
+            combined_prefs[student_idx, pref_length] = program_idx
+            pref_lengths[student_idx] += 1
+
+        self.pref_length = pref_lengths
+        return combined_prefs
+
+    def _get_aa_or_citywide_eligibility(self) -> np.ndarray:
+        """Identify programs at each student's AA school or a citywide school."""
+        eligible = np.zeros((self.market.n, self.market.num_programs), dtype=bool)
+        citywide_programs = self.market.programs.citywide_program_indices(
+            self.market.schools.citywide_schools
+        )
+        if citywide_programs:
+            eligible[:, np.asarray(citywide_programs, dtype=int) - 1] = True
+
+        attendance_areas = self.market.students.attendance_area
+        school_to_indices = self.market.programs.school_to_indices
+        for student_idx, studentno in self.market.students.idx2studentno.items():
+            attendance_area = attendance_areas.get(studentno, 0)
+            aa_programs = school_to_indices.get(attendance_area, [])
+            if aa_programs:
+                eligible[student_idx, np.asarray(aa_programs, dtype=int) - 1] = True
+        return eligible
+
+    def _remove_non_aa_or_citywide_programs(
+        self,
+        preferences: np.ndarray,
+        eligible: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Keep only programs at each student's AA school or citywide schools."""
+        if eligible is None:
+            eligible = self._get_aa_or_citywide_eligibility()
+
+        ranked_lengths = self.pref_length.copy()
+        filtered_preferences = np.zeros_like(preferences)
+        filtered_ranked_lengths = np.zeros(self.market.n, dtype=int)
+        for student_idx, student_prefs in enumerate(preferences):
+            ranked_prefs = student_prefs[: int(ranked_lengths[student_idx])]
+            ranked_prefs = ranked_prefs[ranked_prefs != 0].astype(int)
+            if len(ranked_prefs):
+                filtered_ranked_lengths[student_idx] = np.count_nonzero(
+                    eligible[student_idx, ranked_prefs - 1]
+                )
+
+            student_prefs = student_prefs[student_prefs != 0].astype(int)
+            allowed_prefs = student_prefs[eligible[student_idx, student_prefs - 1]]
+            filtered_preferences[student_idx, : len(allowed_prefs)] = allowed_prefs
+
+        self.pref_length = filtered_ranked_lengths
+        return filtered_preferences
 
     def _generate_designation_program_ordering(self):
         """For each student, create the ordering of programs for designation consideration.
@@ -491,9 +573,23 @@ class PreferenceGenerator:
                 of programs are listed after removing ineligible programs.
         """
         eligible = self._get_eligibility()
+        aa_or_citywide_eligible = None
+        remove_non_aa_or_citywide = self.market.config.get(
+            "remove_non_aa_or_citywide", False
+        )
+        if remove_non_aa_or_citywide:
+            aa_or_citywide_eligible = self._get_aa_or_citywide_eligibility()
+            eligible = np.logical_and(eligible, aa_or_citywide_eligible)
         prefs = self._truncate_utility_model_preferences(eligible)
+        self.pref_length = np.count_nonzero(prefs, axis=1)
+        if self.market.config.get("add_aa_schools", False):
+            prefs = self._add_attendance_area_schools_to_preferences(prefs)
         if self.market.config["designate"]:
             prefs = self._add_designation_programs_to_preferences(
                 prefs, eligible
+            )
+        if remove_non_aa_or_citywide:
+            prefs = self._remove_non_aa_or_citywide_programs(
+                prefs, aa_or_citywide_eligible
             )
         return prefs

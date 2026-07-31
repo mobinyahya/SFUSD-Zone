@@ -56,6 +56,7 @@ SUBCONFIGS = (
     "status_quo+reserves",
     "status_quo+reserves_05frl",
     "status_quo+reserves_06frl",
+    "distance_05_1_2+reserves_05frl_#3"
 )
 DEFAULT_POLICY_DIR = PROJECT_ROOT / "assignment/configs/policy_configs"
 DEFAULT_ZONE_ROOT = Path("~/sfusd-local-data/zones/zone_backend")

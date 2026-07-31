@@ -47,6 +47,7 @@ class PriorityGenerator:
             repr(self.market.config.get("priority-weights")),
             repr(self.market.config.get("distance-priority")),
             repr(self.market.config.get("distance-boost")),
+            self.market.config.get("aa_boost", 0),
         )
 
     def generate_base_priorities(self, policy: str):
@@ -172,10 +173,12 @@ class PriorityGenerator:
 
         if self.market.config["grade"] == "06":
             priorities = self._sixth_grade_priorities()
+            priorities += self._get_attendance_area_priorities()
             self._policy_priorities_cache[cache_key] = priorities
             return priorities
         if self.market.config["grade"] == "09":
             priorities = self._ninth_grade_priorities()
+            priorities += self._get_attendance_area_priorities()
             self._policy_priorities_cache[cache_key] = priorities
             return priorities
 
@@ -298,7 +301,26 @@ class PriorityGenerator:
                 sibling,
             )
 
+        priorities += self._get_attendance_area_priorities()
         self._policy_priorities_cache[cache_key] = priorities
+        return priorities
+
+    def _get_attendance_area_priorities(self) -> np.ndarray:
+        """Return the configured priority boost at each student's AA GE program."""
+        priorities = np.zeros((self.market.n, self.market.num_programs))
+        boost = self.market.config.get("aa_boost", 0)
+        if not boost:
+            return priorities
+
+        attendance_areas = self.market.students.attendance_area
+        grade = self.market.config["grade"]
+        for student_idx, studentno in self.market.students.idx2studentno.items():
+            attendance_area = attendance_areas.get(studentno, 0)
+            program_idx = self.market.programs.indices.get(
+                f"{attendance_area}-GE-{grade}"
+            )
+            if program_idx is not None:
+                priorities[student_idx, program_idx - 1] = boost
         return priorities
 
     def _get_distance_priority(self, distances, boost=0):
