@@ -6,6 +6,10 @@ does not rerun matching. Every student's FRL probability is replaced by the
 ``FRL Rate`` for their census block when that rate is available; otherwise the
 evaluator's legacy free-plus-reduced-lunch calculation is retained.
 
+A CSV lists the KG census blocks for which that legacy fallback is used. It
+distinguishes blocks absent from the updated lookup, blocks with blank updated
+rates, and students whose census block is missing.
+
 Zone metrics are appended for geographic zone configurations, including:
 
 * FRL proportion by zone among all 2023-24 KG applicants
@@ -76,6 +80,9 @@ DEFAULT_ZONE_MATCHES_ROOT = (
     / "analysis/matches/zone_subconfigs_choice_model_25_soft_reserves_updated"
 )
 DEFAULT_UPDATED_FRL = PROJECT_ROOT / "analysis/updated_frl_block.csv"
+DEFAULT_FALLBACK_BLOCKS = (
+    PROJECT_ROOT / "analysis/recalculate_updated_frl_fallback_blocks.csv"
+)
 DEFAULT_ALL_STUDENTS = Path("/share/data/school_choice/Data/Cleaned/student_2324.csv")
 DEFAULT_NEW_CTIP = Path(
     "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
@@ -133,6 +140,12 @@ def parse_args() -> argparse.Namespace:
         "--zone-matches-root", type=Path, default=DEFAULT_ZONE_MATCHES_ROOT
     )
     parser.add_argument("--updated-frl", type=Path, default=DEFAULT_UPDATED_FRL)
+    parser.add_argument(
+        "--fallback-blocks-output",
+        type=Path,
+        default=DEFAULT_FALLBACK_BLOCKS,
+        help="CSV listing KG blocks that use legacy FRL data.",
+    )
     parser.add_argument("--all-students", type=Path, default=DEFAULT_ALL_STUDENTS)
     parser.add_argument(
         "--new-ctip-path",
@@ -224,6 +237,64 @@ def enrich_student_frl(students: pd.DataFrame, lookup: pd.Series) -> pd.DataFram
     result["freelunch_prob"] = effective_frl.astype(float)
     result["reducedlunch_prob"] = 0.0
     return result
+
+
+def fallback_block_report(
+    students: pd.DataFrame,
+    lookup: pd.Series,
+    grade: object = "KG",
+) -> pd.DataFrame:
+    """List blocks whose students retain legacy FRL values."""
+    required = {
+        "grade",
+        "census_block",
+        "freelunch_prob",
+        "reducedlunch_prob",
+    }
+    missing = required - set(students.columns)
+    if missing:
+        raise ValueError(f"student data is missing columns {sorted(missing)}")
+
+    grade_students = students.loc[students["grade"].astype("string") == str(grade)]
+    block_ids = normalized_geoids(grade_students["census_block"])
+    updated_frl = block_ids.map(lookup)
+    legacy_frl = pd.to_numeric(
+        grade_students["freelunch_prob"], errors="coerce"
+    ).fillna(0) + pd.to_numeric(
+        grade_students["reducedlunch_prob"], errors="coerce"
+    ).fillna(0)
+
+    reason = pd.Series(pd.NA, index=grade_students.index, dtype="string")
+    reason.loc[block_ids.isna()] = "missing student census block"
+    reason.loc[block_ids.notna() & ~block_ids.isin(lookup.index)] = (
+        "absent from updated lookup"
+    )
+    blank_rate = block_ids.notna() & block_ids.isin(lookup.index) & updated_frl.isna()
+    reason.loc[blank_rate] = "blank updated FRL rate"
+
+    fallback = pd.DataFrame(
+        {
+            "census_block": block_ids,
+            "frl_fallback_reason": reason,
+            "legacy_frl": legacy_frl,
+        }
+    ).loc[updated_frl.isna()]
+    report = (
+        fallback.groupby(
+            ["census_block", "frl_fallback_reason"],
+            dropna=False,
+            sort=False,
+        )
+        .agg(
+            student_count=("legacy_frl", "size"),
+            legacy_frl=("legacy_frl", "sum"),
+        )
+        .reset_index()
+        .sort_values("census_block", na_position="last")
+        .reset_index(drop=True)
+    )
+    report["legacy_frl"] = report["legacy_frl"].round(6)
+    return report
 
 
 def resolve_config_value(config: Mapping[str, Any], value: object) -> Path:
@@ -850,6 +921,18 @@ def main() -> int:
 
     updated_frl_path = checked_file(args.updated_frl)
     all_students_path = checked_file(args.all_students)
+    fallback_report = fallback_block_report(
+        pd.read_csv(all_students_path, low_memory=False),
+        load_frl_lookup(updated_frl_path),
+    )
+    fallback_output = args.fallback_blocks_output.expanduser().resolve()
+    fallback_output.parent.mkdir(parents=True, exist_ok=True)
+    fallback_report.to_csv(fallback_output, index=False)
+    LOGGER.info(
+        "Wrote %d FRL fallback block rows to %s",
+        len(fallback_report),
+        fallback_output,
+    )
     new_ctip_path = args.new_ctip_path.expanduser().resolve()
     if not new_ctip_path.is_file():
         LOGGER.warning(

@@ -5,36 +5,36 @@
 centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
-levels: ['Block_1']
-solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs
+levels: ['Block_4']
+solver: 'cp_bool'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
+strategy: 'cutoffs'   # single | recursive | iterative_choice | overlapping | cutoffs
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
 # --- optimization parameters ---
-frl_dev: 0.3
-racial_dev: 0.3
-overage: 0.8
-shortage: 0.2
+frl_dev: 0.5
+racial_dev: -1
+overage: -1
+shortage: -1
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
-max_distance: 5
+max_distance: 4
 # CP/MIP: force each centroid's graph-hop neighborhood into its zone.
 # cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
 centroid_neighbor_radius: 0
-solve_time_limits: [45, 45]   # one per level
+solve_time_limits: [5000]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level
 gap_limits: [0, 0]
 hints: voronoi                # voronoi | none
-save_solver_logs: false       # write solver logs under output/solver_logs
+save_solver_logs: True       # write solver logs under output/solver_logs
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 secondary_objective: false    # cp_bool/mip: use alternative boundary objective formulation
 seed: 42
-workers: 8
+workers: 5
 # CP-SAT-only solver parameters. Leave unset to use OR-Tools defaults.
-# linearization_level: 1
+linearization_level: 1
 # cp_model_probing_level: 2
 # symmetry_level: 2
-# cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
+cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
 # ReCom-only parameters. Negative recom_iterations uses only the solve time limit.
 recom_iterations: 1000
 short_bursts_length: 25
@@ -55,9 +55,9 @@ cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
 
 # --- data ingestion ---
-years: [21, 22, 23]
-population_type: 'GE'
+years: [23]
+population_type: 'All'
 capacity_scenario: 'A'
 new_schools: true
-include_k8: false
+include_k8: true
 # graphs_dir: leave unset to use /share/data/school_choice/Zones/Optimization/Graphs.

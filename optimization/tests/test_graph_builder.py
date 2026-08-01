@@ -1,7 +1,9 @@
 import kahip
+import pandas as pd
 import pytest
 
 from optimization.data import graph_builder
+from optimization.data.loaders import IngestConfig
 from optimization.tests.synthetic import make_grid_graph
 
 
@@ -139,6 +141,47 @@ def test_partition_population_attribute_follows_population_type():
     assert graph_builder.population_attribute("GE") == "ge_students"
     assert graph_builder.population_attribute("All") == "all_prog_students"
     assert graph_builder.population_attribute("SB") == "all_prog_students"
+
+
+def test_base_graph_district_frl_uses_selected_population(monkeypatch):
+    rows = []
+    for index, (ge_students, all_students, frl) in enumerate(
+        [(1.0, 1.0, 1.0), (0.0, 1.0, 0.0)]
+    ):
+        row = {
+            "BlockGroup": 100 + index,
+            "ge_students": ge_students,
+            "ge_capacity": 0.0,
+            "all_prog_students": all_students,
+            "all_prog_capacity": 0.0,
+            "num_schools": 0,
+            "FRL": frl,
+            "school_ids": [],
+            "Lat": 0.0,
+            "Lon": float(index),
+        }
+        row.update({ethnicity: 0.0 for ethnicity in graph_builder.AREA_ETHNICITIES})
+        rows.append(row)
+    area = pd.DataFrame(rows)
+
+    monkeypatch.setattr(graph_builder.loaders, "load_area_table", lambda cfg: area)
+    monkeypatch.setattr(
+        graph_builder.loaders,
+        "load_distance_dict",
+        lambda cfg, area2idx: {node: {} for node in area.index},
+    )
+    monkeypatch.setattr(
+        graph_builder.loaders,
+        "load_neighbors",
+        lambda cfg, area2idx: {},
+    )
+    monkeypatch.setattr(graph_builder, "_school_data", lambda cfg: {})
+
+    graph = graph_builder.build_base_graph(
+        IngestConfig(unit="BlockGroup", population_type="All")
+    )
+
+    assert graph.graph["F"] == pytest.approx(0.5)
 
 
 def test_component_partitioning_keeps_disconnected_inputs_separate(monkeypatch):

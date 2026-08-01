@@ -41,6 +41,40 @@ def test_student_cache_path_includes_student_filtering_inputs():
     assert baseline != different_optout
 
 
+def test_all_program_school_loading_keeps_citywide_and_k8(monkeypatch):
+    schools = pd.DataFrame(
+        {
+            "school_id": [100, 618],
+            "category": ["Attendance", "Citywide"],
+            "Block": [1000, 2000],
+        }
+    )
+    programs = pd.DataFrame(
+        {
+            "SchNum": [100, 618],
+            "PathwayCode": ["GE", "GE"],
+            "Scenario_A_Capacity": [10, 10],
+        }
+    )
+
+    def read_csv(path, *args, **kwargs):
+        if "stanford_capacities" in str(path):
+            return programs.copy()
+        return schools.copy()
+
+    monkeypatch.setattr(loaders.pd, "read_csv", read_csv)
+
+    all_program = loaders.load_schools(
+        IngestConfig(unit="Block", population_type="All", include_k8=False)
+    )
+    ge = loaders.load_schools(
+        IngestConfig(unit="Block", population_type="GE", include_k8=False)
+    )
+
+    assert set(all_program["school_id"]) == {100, 618}
+    assert set(ge["school_id"]) == {100}
+
+
 def test_load_census_shapefile_enriches_geographic_ids(tmp_path, monkeypatch):
     source = gpd.GeoDataFrame(
         {

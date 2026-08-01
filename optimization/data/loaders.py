@@ -46,6 +46,7 @@ SFUSD_PATH = get_sfusd_path(False)
 DROPBOX_PATH = get_dropbox_path(False)
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
+STUDENT_CACHE_SCHEMA_VERSION = 2
 
 # Maps the post-dummies ethnicity columns to the canonical Ethnicity_* names.
 _ETHNICITY_RENAME = {
@@ -103,7 +104,8 @@ def _student_cache_path(cfg: IngestConfig) -> str:
     population = _safe_cache_value(cfg.population_type)
     return os.path.join(
         f"{SFUSD_PATH}/Data/Cleaned",
-        f"Cleaned_Students_{years}_pop{population}_drop{int(cfg.drop_optout)}.csv",
+        f"Cleaned_Students_v{STUDENT_CACHE_SCHEMA_VERSION}_{years}_"
+        f"pop{population}_drop{int(cfg.drop_optout)}.csv",
     )
 
 
@@ -158,10 +160,13 @@ def _load_students_for_year(cfg: IngestConfig, year: int) -> pd.DataFrame:
 
     df = pd.get_dummies(df, columns=["resolved_ethnicity"])
 
-    # Only count demographics for the GE portion of each student.
+    # Count demographics in the same population units used by the optimization.
+    population_weight = (
+        df["ge_students"] if cfg.population_type == "GE" else df["all_prog_students"]
+    )
     for col in ETHNICITY_COLS + ["FRL"]:
         if col in df.columns:
-            df[col] = df[col] * df["ge_students"]
+            df[col] = df[col] * population_weight
 
     df = _tag_program_types(df)
     df = _filter_to_population(df, cfg.population_type, year)
@@ -312,13 +317,14 @@ def _attach_capacity(df: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     df = df.merge(allp, how="outer", on="school_id")
     df = df.merge(ge, how="outer", on="school_id")
 
-    if cfg.capacity_scenario == "Closure":
+    if cfg.capacity_scenario == "Closure" or cfg.population_type == "All":
         df = df[df["all_prog_capacity"] > 0]
     else:
         df = df.loc[df["ge_capacity"] > 0]
-    if not cfg.include_k8:
-        df = df.loc[df["K-8"] == 0]
-    df = df.loc[df["category"] != "Citywide"]
+    if cfg.population_type != "All":
+        if not cfg.include_k8:
+            df = df.loc[df["K-8"] == 0]
+        df = df.loc[df["category"] != "Citywide"]
     return df
 
 

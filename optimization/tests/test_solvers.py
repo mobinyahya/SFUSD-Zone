@@ -10,6 +10,7 @@ from choice.models import DistanceChoiceModel
 from choice.objective import ChoiceObjective
 from optimization.config import OptimizationConfig
 from optimization.data import contiguity
+from optimization.problem import CutoffMarket, CutoffStudent
 from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
@@ -215,6 +216,7 @@ def test_cpsat_solver_saves_logs(tmp_path):
     contents = first_log_path.read_text(encoding="utf-8")
     assert contents.strip()
     assert "CP-SAT" in contents or "CpSolverResponse" in contents
+    assert any(line.startswith("Parameters:") for line in contents.splitlines())
 
 
 def test_cpsat_solver_saves_progress(tmp_path):
@@ -281,6 +283,106 @@ def test_cpsat_solvers_support_choice_objective(name):
     assert solution.objective == pytest.approx(
         model.evaluate(problem, solution.assignment), abs=0.05
     )
+
+
+def test_cp_bool_cutoffs_share_vertex_school_indicators_across_students():
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        overage=0.0,
+        shortage=0.0,
+    )
+    for node in problem.nodes:
+        problem.G.nodes[node]["all_prog_students"] = 1.0
+        problem.G.nodes[node]["all_prog_capacity"] = 0.0
+    problem.cutoff_market = CutoffMarket(
+        students=(
+            CutoffStudent(
+                studentno=1,
+                node=1,
+                preferences=(100, 200),
+                priorities={100: 0, 200: 0},
+            ),
+            CutoffStudent(
+                studentno=2,
+                node=1,
+                preferences=(100, 200),
+                priorities={100: 0, 200: 0},
+            ),
+        ),
+        school_nodes={100: 0, 200: 3},
+        school_capacities={100: 1, 200: 2},
+        zone_restricted_schools=frozenset({100, 200}),
+        lottery_scale=10,
+    )
+
+    solver = get_solver("cp_bool", solve_time_limit=10, workers=1)
+    model = cp_model.CpModel()
+    x, _ = solver._build_assignment_vars(model, problem)
+    solver._add_core_constraints(model, problem, x, {})
+    solver._add_cutoff_objective(model, problem, x)
+
+    names = [variable.name for variable in model.Proto().variables]
+    assert names.count("same_zone_1_100") == 1
+    assert names.count("same_zone_1_200") == 1
+    assert names.count("threshold_100_0") == 1
+    assert names.count("threshold_200_0") == 1
+    assert sum(name.startswith("effective_threshold_") for name in names) == 4
+
+    solution = solver.solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    assert solution.assignment[1] == 1
+    assert solution.objective == 0.0
+    assert solution.metadata["objective_kind"] == "school_cutoffs"
+    assert solution.metadata["same_zone_indicator_count"] == 2
+    assert solution.metadata["normalized_school_cutoffs"] == {100: 0.0, 200: 0.0}
+
+
+def test_cp_bool_cutoffs_keep_citywide_school_accessible_outside_zone():
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        fixed={1: 0},
+    )
+    problem.cutoff_market = CutoffMarket(
+        students=(
+            CutoffStudent(
+                studentno=1,
+                node=1,
+                preferences=(200,),
+                priorities={200: 0},
+            ),
+        ),
+        school_nodes={200: 3},
+        school_capacities={200: 0},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+
+    solution = get_solver("cp_bool", solve_time_limit=10, workers=1).solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    assert solution.assignment[1] == 0
+    assert solution.objective == 1.0
+    assert solution.metadata["same_zone_indicator_count"] == 0
+    assert solution.metadata["normalized_school_cutoffs"] == {200: 1.0}
+
+
+def test_cp_int_rejects_cutoff_objective():
+    problem = make_grid_problem(2, 2)
+    problem.cutoff_market = CutoffMarket(
+        students=(),
+        school_nodes={100: 0, 200: 3},
+        school_capacities={100: 1, 200: 1},
+        zone_restricted_schools=frozenset({100, 200}),
+        lottery_scale=10,
+    )
+
+    with pytest.raises(ValueError, match="only for cp_bool"):
+        get_solver("cp_int", solve_time_limit=1, workers=1).solve(problem)
 
 
 def test_explicit_candidates_cannot_unassign_centroids():

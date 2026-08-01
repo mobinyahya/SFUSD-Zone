@@ -308,6 +308,43 @@ def test_config_passes_choice_utility_hints_to_iterative_strategy():
     assert strategy.options["choice_utility_hints"] is True
 
 
+def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="cutoffs",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.name == "cutoffs"
+    assert strategy.options["cutoff_lottery_scale"] == 20
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"solver": "cp_int"}, "cp_bool"),
+        ({"years": [22]}, "years"),
+        ({"population_type": "GE"}, "population_type"),
+    ],
+)
+def test_cutoffs_config_rejects_unsupported_inputs(overrides, message):
+    params = {
+        "levels": ["BlockGroup_0"],
+        "strategy": "cutoffs",
+        "solver": "cp_bool",
+        "years": [23],
+        "population_type": "All",
+    }
+    params.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        OptimizationConfig(**params)
+
+
 def test_config_passes_school_solve_time_limit_to_overlapping_strategy():
     config = OptimizationConfig(
         levels=["Block_0"],

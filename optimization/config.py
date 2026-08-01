@@ -59,6 +59,13 @@ class OptimizationConfig:
     choice_utility_scale: float = 100.0
     choice_utility_hints: bool = False
     tolerance: float = 1e-6
+    cutoff_assignment_config: str = "assignment/configs/kumar.config.yaml"
+    cutoff_ctip_path: str = (
+        "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
+    )
+    cutoff_lottery_scale: int = 20
+    cutoff_gumbel_scale: float = 1.0
+    cutoff_preference_seed: int = 2023
 
     # --- data ingestion ----------------------------------------------- #
     years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
@@ -97,6 +104,28 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
+        if self.strategy == "cutoffs":
+            if self.solver != "cp_bool":
+                raise ValueError("cutoffs requires solver='cp_bool'.")
+            if self.years != [23]:
+                raise ValueError("cutoffs currently requires years: [23].")
+            if self.population_type != "All":
+                raise ValueError("cutoffs requires population_type: 'All'.")
+        if (
+            isinstance(self.cutoff_lottery_scale, bool)
+            or not isinstance(self.cutoff_lottery_scale, int)
+            or self.cutoff_lottery_scale <= 0
+        ):
+            raise ValueError("cutoff_lottery_scale must be a positive integer.")
+        if (
+            not math.isfinite(float(self.cutoff_gumbel_scale))
+            or self.cutoff_gumbel_scale < 0
+        ):
+            raise ValueError("cutoff_gumbel_scale must be finite and non-negative.")
+        if isinstance(self.cutoff_preference_seed, bool) or not isinstance(
+            self.cutoff_preference_seed, int
+        ):
+            raise ValueError("cutoff_preference_seed must be an integer.")
         if (
             not math.isfinite(float(self.school_solve_time_limit))
             or self.school_solve_time_limit <= 0
@@ -188,4 +217,9 @@ class OptimizationConfig:
             choice_utility_scale=self.choice_utility_scale,
             choice_utility_hints=self.choice_utility_hints,
             tolerance=self.tolerance,
+            cutoff_assignment_config=self.cutoff_assignment_config,
+            cutoff_ctip_path=self.cutoff_ctip_path,
+            cutoff_lottery_scale=self.cutoff_lottery_scale,
+            cutoff_gumbel_scale=self.cutoff_gumbel_scale,
+            cutoff_preference_seed=self.cutoff_preference_seed,
         )

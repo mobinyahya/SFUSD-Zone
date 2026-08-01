@@ -27,7 +27,7 @@ _SUM_ATTRS = [
 # GRAPH_CACHE_SCHEMA_VERSION changed from 4 to 5 after moving its distance-cache
 # source row from Block 60750607001031 to Block 60750607001053.
 # /home/kumarc/sfusd-local-data/zones/SFUSD/Optimization/distances_b2b_schools.before_mission_bay_row_update.csv
-GRAPH_CACHE_SCHEMA_VERSION = 5
+GRAPH_CACHE_SCHEMA_VERSION = 7
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
@@ -47,6 +47,7 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
     distance_dict = loaders.load_distance_dict(cfg, area2idx)
     neighbors = loaders.load_neighbors(cfg, area2idx)
 
+    population_attr = population_attribute(cfg.population_type)
     total_students = 0.0
     total_frl = 0.0
     total_eth = {eth: 0.0 for eth in AREA_ETHNICITIES}
@@ -67,7 +68,7 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
         for eth in AREA_ETHNICITIES:
             attrs[eth] = float(row[eth])
             total_eth[eth] += attrs[eth]
-        total_students += attrs["ge_students"]
+        total_students += attrs[population_attr]
         total_frl += attrs["FRL"]
         G.add_node(idx, **attrs)
 
@@ -80,6 +81,7 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
 
     G.graph["distance_dict"] = distance_dict
     G.graph["school_data"] = _school_data(cfg)
+    G.graph["population_type"] = cfg.population_type
     G.graph["F"] = (total_frl / total_students) if total_students else 0.0
     G.graph["R"] = {
         eth: (total_eth[eth] / total_students if total_students else 0.0)
@@ -167,6 +169,7 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
     new_G.graph["F"] = parent_G.graph["F"]
     new_G.graph["R"] = parent_G.graph["R"]
     new_G.graph["school_data"] = parent_G.graph["school_data"]
+    new_G.graph["population_type"] = parent_G.graph.get("population_type", "GE")
     new_G.graph["partition"] = dict(partition)
     if "manual_block_edges" in parent_G.graph:
         new_G.graph["manual_block_edges"] = parent_G.graph["manual_block_edges"]

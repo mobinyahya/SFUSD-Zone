@@ -40,6 +40,28 @@ class NoCandidateZonesError(ValueError):
         super().__init__(problem.no_candidate_zones_message(node))
 
 
+@dataclass(frozen=True)
+class CutoffStudent:
+    """One individual applicant in a cutoff market."""
+
+    studentno: int
+    node: int
+    preferences: tuple[int, ...]
+    priorities: dict[int, int]
+
+
+@dataclass(frozen=True)
+class CutoffMarket:
+    """School-level data needed by the CP-SAT cutoff formulation."""
+
+    students: tuple[CutoffStudent, ...]
+    school_nodes: dict[int, int]
+    school_capacities: dict[int, int]
+    zone_restricted_schools: frozenset[int]
+    lottery_scale: int
+    metadata: dict = field(default_factory=dict)
+
+
 @dataclass
 class ZoneProblem:
     """One optimization instance.
@@ -83,6 +105,7 @@ class ZoneProblem:
     level: LevelSpec
     centroids: list[int]
     centroid_school_ids: list[int]
+    population_type: str = "GE"
 
     frl_dev: float = 0.3
     racial_dev: float = 0.3
@@ -94,6 +117,7 @@ class ZoneProblem:
     candidates: Optional[dict[int, set[int]]] = None
     hint: Optional[dict[int, int]] = None
     choice_objective: Optional[ChoiceObjective] = None
+    cutoff_market: Optional[CutoffMarket] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(
@@ -128,10 +152,18 @@ class ZoneProblem:
     # node / graph attributes
     # ------------------------------------------------------------------ #
     def students(self, node: int) -> float:
-        return float(self.G.nodes[node]["ge_students"])
+        return float(self.G.nodes[node][self.student_attribute])
 
     def capacity(self, node: int) -> float:
-        return float(self.G.nodes[node]["ge_capacity"])
+        return float(self.G.nodes[node][self.capacity_attribute])
+
+    @property
+    def student_attribute(self) -> str:
+        return "ge_students" if self.population_type == "GE" else "all_prog_students"
+
+    @property
+    def capacity_attribute(self) -> str:
+        return "ge_capacity" if self.population_type == "GE" else "all_prog_capacity"
 
     def frl(self, node: int) -> float:
         return float(self.G.nodes[node]["FRL"])

@@ -218,6 +218,7 @@ class Dataset:
             level=level,
             centroids=self.centroids_for(level, centroid_school_ids),
             centroid_school_ids=centroid_school_ids,
+            population_type=self.config.population_type,
             frl_dev=self.config.frl_dev * constraint_multiplier,
             racial_dev=self.config.racial_dev * constraint_multiplier,
             overage=self.config.overage * constraint_multiplier,

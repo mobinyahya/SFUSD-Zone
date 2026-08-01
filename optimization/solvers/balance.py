@@ -12,6 +12,7 @@ from optimization.problem import ZoneProblem
 class BalanceConstraint:
     """A zone-level ratio bound of ``value / students``."""
 
+    kind: str
     value: Callable[[int], float]
     lower_ratio: float
     upper_ratio: float
@@ -25,11 +26,13 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
 
     constraints = [
         BalanceConstraint(
+            kind="capacity",
             value=problem.capacity,
             lower_ratio=1.0 - problem.shortage,
             upper_ratio=1.0 + problem.overage,
         ),
         BalanceConstraint(
+            kind="frl",
             value=problem.frl,
             lower_ratio=problem.district_frl - problem.frl_dev,
             upper_ratio=problem.district_frl + problem.frl_dev,
@@ -41,6 +44,7 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
         for ethnicity in problem.ethnicities:
             constraints.append(
                 BalanceConstraint(
+                    kind="racial",
                     value=lambda node, e=ethnicity: problem.ethnicity(node, e),
                     lower_ratio=racial[ethnicity] - problem.racial_dev,
                     upper_ratio=racial[ethnicity] + problem.racial_dev,

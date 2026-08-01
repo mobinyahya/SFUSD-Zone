@@ -46,6 +46,30 @@ def test_load_frl_lookup_preserves_blank_rates_for_fallback(tmp_path):
     assert pd.isna(lookup.loc["60750000000002"])
 
 
+def test_fallback_block_report_lists_absent_blank_and_missing_blocks():
+    students = pd.DataFrame(
+        {
+            "grade": ["KG", "KG", "KG", "KG", "01"],
+            "census_block": [100, 200, 300, None, 400],
+            "freelunch_prob": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "reducedlunch_prob": [0.05, 0.1, 0.15, 0.2, 0.25],
+        }
+    )
+    lookup = pd.Series({"100": 0.8, "200": float("nan")})
+
+    result = recalculate.fallback_block_report(students, lookup)
+
+    assert result["census_block"].iloc[:2].tolist() == ["200", "300"]
+    assert pd.isna(result["census_block"].iloc[2])
+    assert result["frl_fallback_reason"].tolist() == [
+        "blank updated FRL rate",
+        "absent from updated lookup",
+        "missing student census block",
+    ]
+    assert result["student_count"].tolist() == [1, 1, 1]
+    assert result["legacy_frl"].tolist() == pytest.approx([0.3, 0.45, 0.6])
+
+
 def test_zone_population_metrics_use_strict_ascending_zone_order():
     zone = recalculate.ZoneDefinition(
         unit="block_group",

@@ -31,8 +31,12 @@ def compute(context: MetricsContext) -> MetricOutput:
         counts = _empty_counts()
         for node in nodes:
             attrs = context.G.nodes[node]
-            counts["ge_students"] += float(attrs.get("ge_students", 0.0))
-            counts["ge_capacity"] += float(attrs.get("ge_capacity", 0.0))
+            counts["ge_students"] += float(
+                attrs.get(context.problem.student_attribute, 0.0)
+            )
+            counts["ge_capacity"] += float(
+                attrs.get(context.problem.capacity_attribute, 0.0)
+            )
             counts["FRL"] += float(attrs.get("FRL", 0.0))
             for ethnicity in AREA_ETHNICITIES:
                 counts[ethnicity] += float(attrs.get(ethnicity, 0.0))

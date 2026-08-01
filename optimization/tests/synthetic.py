@@ -282,6 +282,7 @@ class FakeDataset:
             level=LevelSpec.parse(level),
             centroids=self.centroids_for(level, centroid_school_ids),
             centroid_school_ids=[int(school_id) for school_id in centroid_school_ids],
+            population_type=self._problem.population_type,
             frl_dev=self._problem.frl_dev * constraint_multiplier,
             racial_dev=self._problem.racial_dev * constraint_multiplier,
             overage=self._problem.overage * constraint_multiplier,
