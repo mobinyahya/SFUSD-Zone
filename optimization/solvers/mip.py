@@ -256,8 +256,10 @@ class MipSolver(Solver):
             nodes = self._candidate_nodes(problem, z)
             for constraint in constraints:
                 lower, upper = balance_terms(problem, constraint, z, nodes)
-                self._add_linear_constraint(m, x, lower, ">=", 0.0)
-                self._add_linear_constraint(m, x, upper, "<=", 0.0)
+                if lower:
+                    self._add_linear_constraint(m, x, lower, ">=", 0.0)
+                if upper:
+                    self._add_linear_constraint(m, x, upper, "<=", 0.0)
 
     def _add_school_count_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars

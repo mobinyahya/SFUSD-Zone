@@ -77,8 +77,10 @@ def assert_valid_solution(
         assert students > tolerance
         for constraint in balance_constraints(problem):
             value = sum(constraint.value(node) for node in zone_nodes)
-            assert value >= constraint.lower_ratio * students - tolerance
-            assert value <= constraint.upper_ratio * students + tolerance
+            if constraint.lower_ratio is not None:
+                assert value >= constraint.lower_ratio * students - tolerance
+            if constraint.upper_ratio is not None:
+                assert value <= constraint.upper_ratio * students + tolerance
 
     total_schools = sum(problem.num_schools(node) for node in problem.nodes)
     if total_schools:

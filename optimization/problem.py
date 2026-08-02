@@ -86,6 +86,7 @@ class ZoneProblem:
     overage, shortage:
         Capacity tolerance: a zone's seats must lie within
         ``[(1 - shortage), (1 + overage)]`` times its students (proportions).
+        A negative value disables its corresponding bound.
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
         that centroid's zone.

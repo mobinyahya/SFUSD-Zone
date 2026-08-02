@@ -472,8 +472,10 @@ class _CpSatSolver(Solver):
                 if problem.cutoff_market is not None and constraint.kind == "capacity":
                     continue
                 lower, upper = balance_terms(problem, constraint, z, nodes)
-                self._add_linear_constraint(m, x, lower, ">=", 0.0)
-                self._add_linear_constraint(m, x, upper, "<=", 0.0)
+                if lower:
+                    self._add_linear_constraint(m, x, lower, ">=", 0.0)
+                if upper:
+                    self._add_linear_constraint(m, x, upper, "<=", 0.0)
 
     def _add_school_count_constraints(
         self,

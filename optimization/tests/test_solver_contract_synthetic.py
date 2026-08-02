@@ -31,6 +31,17 @@ def test_solver_satisfies_complete_contract(solver_name: str) -> None:
 
 
 @pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
+def test_solver_allows_negative_capacity_tolerances(solver_name: str) -> None:
+    problem = make_grid_problem(3, 3, overage=-1, shortage=-1)
+    for node in problem.nodes:
+        problem.G.nodes[node]["ge_capacity"] = 0.0
+
+    solution = solve_contract_problem(solver_name, problem)
+
+    assert_valid_solution(problem, solution)
+
+
+@pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
 @pytest.mark.parametrize(
     "boundary_prop, feasible",
     [(0.49, False), (0.5, True)],

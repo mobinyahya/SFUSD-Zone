@@ -192,6 +192,36 @@ def test_negative_racial_dev_disables_racial_balance_constraints():
     assert len(balance_constraints(problem)) == 2
 
 
+@pytest.mark.parametrize(
+    ("overage", "shortage", "expected_bounds"),
+    [
+        (-1, -1, (None, None)),
+        (-1, 0.2, (0.8, None)),
+        (0.8, -1, (None, 1.8)),
+    ],
+)
+def test_negative_capacity_tolerances_disable_corresponding_bounds(
+    overage, shortage, expected_bounds
+):
+    problem = make_grid_problem(
+        3,
+        3,
+        overage=overage,
+        shortage=shortage,
+    )
+
+    constraints = balance_constraints(problem)
+    capacity = next(
+        (constraint for constraint in constraints if constraint.kind == "capacity"),
+        None,
+    )
+    if expected_bounds == (None, None):
+        assert capacity is None
+    else:
+        assert capacity is not None
+        assert (capacity.lower_ratio, capacity.upper_ratio) == expected_bounds
+
+
 def test_cpsat_solver_saves_logs(tmp_path):
     problem = make_grid_problem(3, 3)
     solver = get_solver(

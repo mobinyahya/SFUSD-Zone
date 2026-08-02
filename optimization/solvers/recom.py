@@ -246,15 +246,22 @@ class _ReComContext:
 
     @property
     def violation_count(self) -> int:
-        return 2 * len(self.constraints) + (2 if self.school_bounds else 0)
+        balance_bounds = sum(
+            int(constraint.lower_ratio is not None)
+            + int(constraint.upper_ratio is not None)
+            for constraint in self.constraints
+        )
+        return balance_bounds + (2 if self.school_bounds else 0)
 
     def zone_violations(self, stats: _ZoneStats) -> tuple[float, ...]:
         violations: list[float] = []
         for value, constraint in zip(stats.values, self.constraints):
-            lower = constraint.lower_ratio * stats.students
-            upper = constraint.upper_ratio * stats.students
-            violations.append(max(0.0, lower - value))
-            violations.append(max(0.0, value - upper))
+            if constraint.lower_ratio is not None:
+                lower = constraint.lower_ratio * stats.students
+                violations.append(max(0.0, lower - value))
+            if constraint.upper_ratio is not None:
+                upper = constraint.upper_ratio * stats.students
+                violations.append(max(0.0, value - upper))
         if self.school_bounds is not None:
             lower, upper = self.school_bounds
             violations.append(max(0.0, lower - stats.schools))

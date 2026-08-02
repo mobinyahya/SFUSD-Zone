@@ -14,8 +14,8 @@ class BalanceConstraint:
 
     kind: str
     value: Callable[[int], float]
-    lower_ratio: float
-    upper_ratio: float
+    lower_ratio: float | None
+    upper_ratio: float | None
 
 
 Term = tuple[float, int, int]
@@ -26,18 +26,25 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
 
     constraints = [
         BalanceConstraint(
-            kind="capacity",
-            value=problem.capacity,
-            lower_ratio=1.0 - problem.shortage,
-            upper_ratio=1.0 + problem.overage,
-        ),
-        BalanceConstraint(
             kind="frl",
             value=problem.frl,
             lower_ratio=problem.district_frl - problem.frl_dev,
             upper_ratio=problem.district_frl + problem.frl_dev,
         ),
     ]
+
+    if problem.shortage >= 0 or problem.overage >= 0:
+        constraints.insert(
+            0,
+            BalanceConstraint(
+                kind="capacity",
+                value=problem.capacity,
+                lower_ratio=1.0 - problem.shortage
+                if problem.shortage >= 0
+                else None,
+                upper_ratio=1.0 + problem.overage if problem.overage >= 0 else None,
+            ),
+        )
 
     if problem.racial_dev >= 0:
         racial = problem.district_racial
@@ -62,20 +69,30 @@ def balance_terms(
 ) -> tuple[list[Term], list[Term]]:
     """Build lower and upper linear terms for one zone balance constraint."""
 
-    lower = [
-        (
-            constraint.value(node) - constraint.lower_ratio * problem.students(node),
-            zone,
-            node,
-        )
-        for node in nodes
-    ]
-    upper = [
-        (
-            constraint.value(node) - constraint.upper_ratio * problem.students(node),
-            zone,
-            node,
-        )
-        for node in nodes
-    ]
+    lower = (
+        [
+            (
+                constraint.value(node)
+                - constraint.lower_ratio * problem.students(node),
+                zone,
+                node,
+            )
+            for node in nodes
+        ]
+        if constraint.lower_ratio is not None
+        else []
+    )
+    upper = (
+        [
+            (
+                constraint.value(node)
+                - constraint.upper_ratio * problem.students(node),
+                zone,
+                node,
+            )
+            for node in nodes
+        ]
+        if constraint.upper_ratio is not None
+        else []
+    )
     return lower, upper

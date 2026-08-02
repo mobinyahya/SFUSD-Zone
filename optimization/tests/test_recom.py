@@ -90,6 +90,17 @@ def test_recom_solver_can_generate_voronoi_hint(solver_name: str) -> None:
 
 
 @pytest.mark.parametrize("solver_name", RECOM_SOLVERS)
+def test_recom_solver_allows_negative_capacity_tolerances(solver_name: str) -> None:
+    problem = make_solver_contract_problem(overage=-1, shortage=-1)
+    for node in problem.nodes:
+        problem.G.nodes[node]["ge_capacity"] = 0.0
+
+    solution = get_solver(solver_name, recom_iterations=0).solve(problem)
+
+    _assert_valid_recom_solution(problem, solution)
+
+
+@pytest.mark.parametrize("solver_name", RECOM_SOLVERS)
 def test_recom_ignores_centroid_anchors_and_max_distance(solver_name: str) -> None:
     swapped = {0: 1, 1: 1, 2: 0, 3: 0}
     problem = make_solver_contract_problem(hint=swapped, max_distance=0.0)
@@ -364,8 +375,10 @@ def _assert_valid_recom_solution(problem, solution) -> None:
         students = sum(problem.students(node) for node in nodes)
         for constraint in balance_constraints(problem):
             value = sum(constraint.value(node) for node in nodes)
-            assert value >= constraint.lower_ratio * students - 1e-6
-            assert value <= constraint.upper_ratio * students + 1e-6
+            if constraint.lower_ratio is not None:
+                assert value >= constraint.lower_ratio * students - 1e-6
+            if constraint.upper_ratio is not None:
+                assert value <= constraint.upper_ratio * students + 1e-6
 
     total_schools = sum(problem.num_schools(node) for node in problem.nodes)
     if total_schools:
