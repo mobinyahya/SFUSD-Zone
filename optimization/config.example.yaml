@@ -54,6 +54,7 @@ cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/E
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
+remove_city_wide: false         # cutoffs: exclude city-wide schools and zone-gate all others
 
 # --- data ingestion ---
 years: [21, 22, 23]

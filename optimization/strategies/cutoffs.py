@@ -33,5 +33,6 @@ class CutoffsStrategy(Strategy):
             lottery_scale=int(self.options["cutoff_lottery_scale"]),
             gumbel_scale=float(self.options["cutoff_gumbel_scale"]),
             preference_seed=int(self.options["cutoff_preference_seed"]),
+            remove_city_wide=bool(self.options["remove_city_wide"]),
         )
         return [solver.solve(problem)]

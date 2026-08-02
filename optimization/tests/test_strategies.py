@@ -330,6 +330,7 @@ def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
     assert strategy.name == "cutoffs"
     assert strategy.options["cutoff_lottery_scale"] == 20
     assert strategy.options["boundary_prop"] == 0.5
+    assert strategy.options["remove_city_wide"] is False
 
 
 def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
@@ -345,11 +346,13 @@ def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
         zone_restricted_schools=frozenset(),
         lottery_scale=10,
     )
-    monkeypatch.setattr(
-        cutoffs_module,
-        "build_cutoff_market",
-        lambda *args, **kwargs: market,
-    )
+    cutoff_options = {}
+
+    def build_market(*args, **kwargs):
+        cutoff_options.update(kwargs)
+        return market
+
+    monkeypatch.setattr(cutoffs_module, "build_cutoff_market", build_market)
     strategy = OptimizationConfig(
         levels=["BlockGroup_0"],
         strategy="cutoffs",
@@ -357,11 +360,18 @@ def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
         years=[23],
         population_type="All",
         boundary_prop=0.5,
+        remove_city_wide=True,
     ).make_strategy()
 
     strategy.run(dataset, solver)
 
     assert solver.problems[0].boundary_prop == 0.5
+    assert cutoff_options["remove_city_wide"] is True
+
+
+def test_config_rejects_non_boolean_remove_city_wide():
+    with pytest.raises(ValueError, match="remove_city_wide"):
+        OptimizationConfig(levels=["BlockGroup_0"], remove_city_wide=1)
 
 
 @pytest.mark.parametrize("value", [1.01, float("nan"), True, "invalid"])

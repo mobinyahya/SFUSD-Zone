@@ -30,6 +30,7 @@ def build_cutoff_market(
     lottery_scale: int,
     gumbel_scale: float,
     preference_seed: int,
+    remove_city_wide: bool,
 ) -> CutoffMarket:
     """Construct individual school preferences after optimization filtering."""
     config_path = _resolve_project_path(assignment_config)
@@ -39,6 +40,16 @@ def build_cutoff_market(
     config["paths"]["new-ctip-path"] = resolved_ctip_path
 
     market = MarketGenerator(config=config)
+    citywide_school_ids = frozenset(map(int, market.schools.citywide_schools))
+    if remove_city_wide:
+        citywide_centroids = sorted(
+            citywide_school_ids & set(map(int, problem.centroid_school_ids))
+        )
+        if citywide_centroids:
+            raise ValueError(
+                "remove_city_wide cannot use city-wide centroid schools: "
+                f"{citywide_centroids}."
+            )
     policy = config["policies"][0]
     market.umodel.draw_utility_model_randomness(
         rows_to_keep=market.students.only_keep_rows,
@@ -63,6 +74,21 @@ def build_cutoff_market(
     )
     if school_ids != utility_school_ids:
         raise RuntimeError("Priority and utility school columns do not align.")
+    excluded_citywide_school_ids = []
+    if remove_city_wide:
+        (
+            school_ids,
+            school_priorities,
+            school_utilities,
+            excluded_citywide_school_ids,
+        ) = _exclude_citywide_school_columns(
+            citywide_school_ids,
+            school_ids,
+            school_priorities,
+            school_utilities,
+        )
+        if not school_ids:
+            raise ValueError("remove_city_wide removed every school from the market.")
 
     school_eligibility = np.column_stack(
         [
@@ -89,7 +115,11 @@ def build_cutoff_market(
         )
         for school_id in school_ids
     }
-    zone_restricted_schools = _zone_restricted_schools(market, school_ids)
+    zone_restricted_schools = _zone_restricted_schools(
+        market,
+        school_ids,
+        restrict_all=remove_city_wide,
+    )
 
     optimization_students = loaders.load_students(dataset.ingest)
     if optimization_students["studentno"].duplicated().any():
@@ -161,10 +191,15 @@ def build_cutoff_market(
         "empty_preference_student_count": len(empty_preference_studentnos),
         "empty_preference_studentnos": empty_preference_studentnos,
         "school_count": len(school_ids),
+        "remove_city_wide": bool(remove_city_wide),
+        "excluded_citywide_school_count": len(excluded_citywide_school_ids),
+        "excluded_citywide_schools": excluded_citywide_school_ids,
         "zone_restricted_school_count": len(zone_restricted_schools),
         "zone_restricted_schools": sorted(zone_restricted_schools),
         "zone_access_definition": (
-            "Only schools categorized as Attendance that offer GE are zone-gated; "
+            "City-wide schools are excluded and every remaining school is zone-gated."
+            if remove_city_wide
+            else "Only schools categorized as Attendance that offer GE are zone-gated; "
             "schools categorized as Citywide remain accessible from every zone."
         ),
         "preference_definition": (
@@ -230,8 +265,12 @@ def _school_nodes(
 def _zone_restricted_schools(
     market: MarketGenerator,
     school_ids: list[int],
+    *,
+    restrict_all: bool = False,
 ) -> frozenset[int]:
     """Return attendance-area schools whose GE access is controlled by zones."""
+    if restrict_all:
+        return frozenset(map(int, school_ids))
     attendance_schools = {
         int(school_id)
         for school_id in market.schools.school_df.index[
@@ -245,6 +284,30 @@ def _zone_restricted_schools(
         ]
     }
     return frozenset(map(int, school_ids)) & attendance_schools & ge_schools
+
+
+def _exclude_citywide_school_columns(
+    citywide_school_ids: frozenset[int],
+    school_ids: list[int],
+    school_priorities: np.ndarray,
+    school_utilities: np.ndarray,
+) -> tuple[list[int], np.ndarray, np.ndarray, list[int]]:
+    retained_columns = [
+        column
+        for column, school_id in enumerate(school_ids)
+        if int(school_id) not in citywide_school_ids
+    ]
+    excluded_school_ids = sorted(
+        int(school_id)
+        for school_id in school_ids
+        if int(school_id) in citywide_school_ids
+    )
+    return (
+        [int(school_ids[column]) for column in retained_columns],
+        school_priorities[:, retained_columns],
+        school_utilities[:, retained_columns],
+        excluded_school_ids,
+    )
 
 
 def _nonnegative_integer(value, label: str) -> int:

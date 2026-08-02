@@ -67,6 +67,7 @@ class OptimizationConfig:
     cutoff_lottery_scale: int = 20
     cutoff_gumbel_scale: float = 1.0
     cutoff_preference_seed: int = 2023
+    remove_city_wide: bool = False
 
     # --- data ingestion ----------------------------------------------- #
     years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
@@ -137,6 +138,8 @@ class OptimizationConfig:
             self.cutoff_preference_seed, int
         ):
             raise ValueError("cutoff_preference_seed must be an integer.")
+        if not isinstance(self.remove_city_wide, bool):
+            raise ValueError("remove_city_wide must be a boolean.")
         if (
             not math.isfinite(float(self.school_solve_time_limit))
             or self.school_solve_time_limit <= 0
@@ -234,4 +237,5 @@ class OptimizationConfig:
             cutoff_lottery_scale=self.cutoff_lottery_scale,
             cutoff_gumbel_scale=self.cutoff_gumbel_scale,
             cutoff_preference_seed=self.cutoff_preference_seed,
+            remove_city_wide=self.remove_city_wide,
         )

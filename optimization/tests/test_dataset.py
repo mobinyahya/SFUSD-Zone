@@ -27,6 +27,7 @@ def _config(tmp_path, **overrides):
         {"capacity_scenario": "B"},
         {"new_schools": False},
         {"include_k8": True},
+        {"remove_city_wide": True},
     ],
 )
 def test_graph_cache_path_changes_for_graph_data_parameters(tmp_path, override):

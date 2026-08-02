@@ -192,6 +192,18 @@ def test_negative_racial_dev_disables_racial_balance_constraints():
     assert len(balance_constraints(problem)) == 2
 
 
+def test_negative_frl_dev_disables_frl_balance_constraint():
+    problem = make_grid_problem(3, 3, frl_dev=-1)
+
+    frl = next(
+        constraint
+        for constraint in balance_constraints(problem)
+        if constraint.kind == "frl"
+    )
+
+    assert (frl.lower_ratio, frl.upper_ratio) == (None, None)
+
+
 @pytest.mark.parametrize(
     ("overage", "shortage", "expected_bounds"),
     [
@@ -421,6 +433,37 @@ def test_cp_bool_cutoffs_keep_citywide_school_accessible_outside_zone():
     assert solution.objective == 1.0
     assert solution.metadata["same_zone_indicator_count"] == 0
     assert solution.metadata["normalized_school_cutoffs"] == {200: 1.0}
+
+
+def test_cp_bool_cutoffs_disallow_restricted_school_outside_zone():
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        fixed={1: 0},
+    )
+    problem.cutoff_market = CutoffMarket(
+        students=(
+            CutoffStudent(
+                studentno=1,
+                node=1,
+                preferences=(200,),
+                priorities={200: 0},
+            ),
+        ),
+        school_nodes={200: 3},
+        school_capacities={200: 0},
+        zone_restricted_schools=frozenset({200}),
+        lottery_scale=10,
+    )
+
+    solution = get_solver("cp_bool", solve_time_limit=10, workers=1).solve(problem)
+
+    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    assert solution.assignment[1] == 0
+    assert solution.objective == 0.0
+    assert solution.metadata["same_zone_indicator_count"] == 1
+    assert solution.metadata["normalized_school_cutoffs"] == {200: 0.0}
 
 
 def test_cp_int_rejects_cutoff_objective():

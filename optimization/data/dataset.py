@@ -38,6 +38,7 @@ class Dataset:
             capacity_scenario=config.capacity_scenario,
             new_schools=config.new_schools,
             include_k8=config.include_k8,
+            remove_city_wide=config.remove_city_wide,
         )
         self.graphs_dir = config.graphs_dir
         self.graph_cache_dir = os.path.join(
@@ -104,6 +105,7 @@ class Dataset:
             "capacity_scenario": self.ingest.capacity_scenario,
             "new_schools": bool(self.ingest.new_schools),
             "include_k8": bool(self.ingest.include_k8),
+            "remove_city_wide": bool(self.ingest.remove_city_wide),
             "partition_policy": graph_builder.partition_cache_policy(self.ingest.unit),
         }
         if self.ingest.unit == "Block":

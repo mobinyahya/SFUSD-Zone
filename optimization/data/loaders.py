@@ -72,6 +72,7 @@ class IngestConfig:
     capacity_scenario: str = "A"
     new_schools: bool = True
     include_k8: bool = False
+    remove_city_wide: bool = False
 
     def __post_init__(self):
         if self.unit not in ("Block", "BlockGroup"):
@@ -324,6 +325,7 @@ def _attach_capacity(df: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     if cfg.population_type != "All":
         if not cfg.include_k8:
             df = df.loc[df["K-8"] == 0]
+    if cfg.population_type != "All" or cfg.remove_city_wide:
         df = df.loc[df["category"] != "Citywide"]
     return df
 

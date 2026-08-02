@@ -82,7 +82,8 @@ class ZoneProblem:
         centroid nodes that contain them.
     frl_dev, racial_dev:
         Maximum allowed deviation of a zone's FRL / per-ethnicity proportion
-        from the district-wide proportion.
+        from the district-wide proportion. A negative value disables the
+        corresponding constraint.
     overage, shortage:
         Capacity tolerance: a zone's seats must lie within
         ``[(1 - shortage), (1 + overage)]`` times its students (proportions).

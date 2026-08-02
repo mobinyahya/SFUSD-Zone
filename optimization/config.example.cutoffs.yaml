@@ -7,44 +7,45 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_2']
 solver: 'cp_bool'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'iterative_choice'   # single | recursive | iterative_choice | overlapping | cutoffs
-max_iterations: 1             # iterative_choice
+strategy: 'cutoffs'   # single | recursive | iterative_choice | overlapping | cutoffs
+# max_iterations: 1             # iterative_choice
 
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
 # --- optimization parameters ---
-frl_dev: 0.15
+frl_dev: -1
 racial_dev: -1
 overage: -1                      # negative disables maximum seats/student bound
 shortage: -1                     # negative disables minimum seats/student bound
-max_distance: 5
+# max_distance: 5
 # CP/MIP: force each centroid's graph-hop neighborhood into its zone.
 # cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
-centroid_neighbor_radius: 0
-solve_time_limits: [5000]   # one per level
+# centroid_neighbor_radius: 0
+solve_time_limits: [900]   # one per level
 gap_limits: [0]
 hints: none             # voronoi | none
 save_solver_logs: True       # write solver logs under output/solver_logs
 seed: 42
-workers: 1
+workers: 5
 # CP-SAT-only solver parameters. Leave unset to use OR-Tools defaults.
 linearization_level: 1
 # cp_model_probing_level: 2
 # symmetry_level: 2
 # cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
 # --- strategy-specific ---
-boundary_prop: -1             # cutoffs/iterative_choice: 0..1; negative disables
+# boundary_prop: 0.2           # cutoffs/iterative_choice: 0..1; negative disables
 # cutoffs requires solver: cp_bool, years: [23], and population_type: All.
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
+remove_city_wide: true          # exclude city-wide schools; gate every other school by zone
 
 # --- data ingestion ---
 years: [23]
 population_type: 'All'
 capacity_scenario: 'A'
 new_schools: true
-include_k8: true
+include_k8: false

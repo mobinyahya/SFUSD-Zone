@@ -67,11 +67,20 @@ def test_all_program_school_loading_keeps_citywide_and_k8(monkeypatch):
     all_program = loaders.load_schools(
         IngestConfig(unit="Block", population_type="All", include_k8=False)
     )
+    all_program_without_citywide = loaders.load_schools(
+        IngestConfig(
+            unit="Block",
+            population_type="All",
+            include_k8=False,
+            remove_city_wide=True,
+        )
+    )
     ge = loaders.load_schools(
         IngestConfig(unit="Block", population_type="GE", include_k8=False)
     )
 
     assert set(all_program["school_id"]) == {100, 618}
+    assert set(all_program_without_citywide["school_id"]) == {100}
     assert set(ge["school_id"]) == {100}
 
 

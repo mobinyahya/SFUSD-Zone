@@ -28,8 +28,16 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
         BalanceConstraint(
             kind="frl",
             value=problem.frl,
-            lower_ratio=problem.district_frl - problem.frl_dev,
-            upper_ratio=problem.district_frl + problem.frl_dev,
+            lower_ratio=(
+                problem.district_frl - problem.frl_dev
+                if problem.frl_dev >= 0
+                else None
+            ),
+            upper_ratio=(
+                problem.district_frl + problem.frl_dev
+                if problem.frl_dev >= 0
+                else None
+            ),
         ),
     ]
 
