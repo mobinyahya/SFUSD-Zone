@@ -7,6 +7,7 @@ from optimization.data.dataset import Dataset
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.solvers.base import Solver
+from optimization.solvers.cutoff_decomposition import CutoffDecompositionSolver
 from optimization.strategies.base import Strategy, register
 
 
@@ -35,4 +36,6 @@ class CutoffsStrategy(Strategy):
             preference_seed=int(self.options["cutoff_preference_seed"]),
             remove_city_wide=bool(self.options["remove_city_wide"]),
         )
-        return [solver.solve(problem)]
+        if not hasattr(solver, "_build_assignment_vars"):
+            return [solver.solve(problem)]
+        return [CutoffDecompositionSolver(solver).solve(problem)]
