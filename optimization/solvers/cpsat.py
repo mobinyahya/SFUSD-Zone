@@ -390,6 +390,34 @@ class _CpSatSolver(Solver):
         self._add_contiguity_constraints(m, problem, x, y)
         self._add_balance_constraints(m, problem, x)
         self._add_school_count_constraints(m, problem, x)
+        self._add_boundary_constraint(m, problem, x)
+
+    def _add_boundary_constraint(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+    ) -> None:
+        if problem.boundary_prop < 0:
+            return
+
+        boundary_vars = []
+        for u, v in problem.G.edges():
+            boundary = m.NewBoolVar(f"boundary_limit_{u}_{v}")
+            for zone in problem.candidate_zones(u) | problem.candidate_zones(v):
+                xu = x.get((zone, u))
+                xv = x.get((zone, v))
+                if xu is not None and xv is not None:
+                    m.Add(boundary >= xu - xv)
+                    m.Add(boundary >= xv - xu)
+                elif xu is not None:
+                    m.Add(boundary >= xu)
+                elif xv is not None:
+                    m.Add(boundary >= xv)
+            boundary_vars.append(boundary)
+
+        max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())
+        m.Add(sum(boundary_vars) <= max_cut_edges)
 
     def _add_centroid_constraints(
         self,
@@ -624,19 +652,12 @@ class _CpSatSolver(Solver):
                 m.Add(same == 1)
                 continue
 
-            common_zones = sorted(
-                problem.candidate_zones(vertex) & problem.candidate_zones(school_node)
-            )
-            matches = []
-            for zone in common_zones:
-                both = m.NewBoolVar(f"same_zone_{vertex}_{school}_{zone}")
-                vertex_assignment = x[(zone, vertex)]
-                school_assignment = x[(zone, school_node)]
-                m.Add(both <= vertex_assignment)
-                m.Add(both <= school_assignment)
-                m.Add(both >= vertex_assignment + school_assignment - 1)
-                matches.append(both)
-            m.Add(same == sum(matches))
+            for zone in sorted(problem.candidate_zones(vertex)):
+                # Exactly one vertex assignment is true, so it selects which
+                # school assignment determines the same-zone indicator.
+                m.Add(same == x.get((zone, school_node), 0)).OnlyEnforceIf(
+                    x[(zone, vertex)]
+                )
         return indicators
 
     # ------------------------------------------------------------------ #

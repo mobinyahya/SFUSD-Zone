@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from Config.Constants import AREA_ETHNICITIES
+from choice.objective import ChoiceObjective
+from optimization.data.contiguity import boundary_edges
 from optimization.problem import NoCandidateZonesError
 from optimization.tests.solver_contract import (
     CONTRACT_SOLVERS,
@@ -24,6 +28,35 @@ def test_solver_satisfies_complete_contract(solver_name: str) -> None:
 
     assert_valid_solution(problem, solution)
     assert solution.metadata["solver"] == solver_name
+
+
+@pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)
+@pytest.mark.parametrize(
+    "boundary_prop, feasible",
+    [(0.49, False), (0.5, True)],
+)
+def test_solver_enforces_boundary_proportion(
+    solver_name: str,
+    boundary_prop: float,
+    feasible: bool,
+) -> None:
+    problem = make_grid_problem(2, 2, boundary_prop=boundary_prop)
+    problem.choice_objective = ChoiceObjective(
+        cuts=(),
+        lower_bound=0.0,
+        upper_bound=1.0,
+        scale=1.0,
+    )
+
+    solution = solve_contract_problem(solver_name, problem)
+
+    if not feasible:
+        assert_no_feasible_solution(solution)
+        return
+    assert_valid_solution(problem, solution, check_boundary_objective=False)
+    assert boundary_edges(problem.G, solution.assignment) <= math.floor(
+        boundary_prop * problem.G.number_of_edges()
+    )
 
 
 @pytest.mark.parametrize("solver_name", CONTRACT_SOLVERS)

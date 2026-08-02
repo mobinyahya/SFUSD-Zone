@@ -52,6 +52,7 @@ class OptimizationConfig:
     short_bursts_method: str = "recom"
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
+    boundary_prop: float = -1.0
     school_solve_time_limit: float = 60.0
     max_iterations: int = 5
     choice_model: str = "mnl"
@@ -111,6 +112,16 @@ class OptimizationConfig:
                 raise ValueError("cutoffs currently requires years: [23].")
             if self.population_type != "All":
                 raise ValueError("cutoffs requires population_type: 'All'.")
+        if isinstance(self.boundary_prop, bool):
+            raise ValueError("boundary_prop must be at most 1; negative disables it.")
+        try:
+            self.boundary_prop = float(self.boundary_prop)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "boundary_prop must be at most 1; negative disables it."
+            ) from exc
+        if math.isnan(self.boundary_prop) or self.boundary_prop > 1:
+            raise ValueError("boundary_prop must be at most 1; negative disables it.")
         if (
             isinstance(self.cutoff_lottery_scale, bool)
             or not isinstance(self.cutoff_lottery_scale, int)
@@ -210,6 +221,7 @@ class OptimizationConfig:
             hints=self.hints,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
+            boundary_prop=self.boundary_prop,
             school_solve_time_limit=self.school_solve_time_limit,
             max_iterations=self.max_iterations,
             choice_model=self.choice_model,

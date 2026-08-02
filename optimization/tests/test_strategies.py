@@ -2,18 +2,20 @@
 
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from choice.objective import ChoiceCut, ChoiceEvaluation
 from optimization.config import OptimizationConfig
 from optimization.data.initial_solutions import InitialSolution
-from optimization.problem import DuplicateCentroidError
+from optimization.problem import CutoffMarket, DuplicateCentroidError
 from optimization.solution import ZoneSolution
 from optimization.solvers import get_solver
 from optimization.strategies import (
     iterative_choice as iterative_choice_module,
 )
+from optimization.strategies import cutoffs as cutoffs_module
 from optimization.strategies import overlapping as overlapping_module
 from optimization.strategies import single as single_module
 from optimization.strategies import get_strategy
@@ -28,11 +30,12 @@ def test_single_strategy():
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)
     solver = get_solver("cp_int", solve_time_limit=10, workers=1)
-    strat = get_strategy("single", levels=["BlockGroup_0"])
+    strat = get_strategy("single", levels=["BlockGroup_0"], boundary_prop=0.0)
     solutions = strat.run(dataset, solver)
     assert len(solutions) == 1
     assert solutions[-1].status in ("OPTIMAL", "FEASIBLE")
     assert solutions[-1].is_contiguous()
+    assert solutions[-1].problem.boundary_prop < 0
 
 
 def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
@@ -286,6 +289,7 @@ def test_iterative_choice_strategy_terminates():
         levels=["BlockGroup_0"],
         max_iterations=3,
         choice_model="distance",
+        boundary_prop=0.5,
     )
     solutions = strat.run(dataset, solver)
     assert 1 <= len(solutions) <= 3
@@ -294,6 +298,7 @@ def test_iterative_choice_strategy_terminates():
     assert solutions[0].metadata["choice_objective_cuts"] == 0
     assert solutions[0].metadata["choice_cuts_added"] > 0
     assert last.is_contiguous()
+    assert all(solution.problem.boundary_prop == 0.5 for solution in solutions)
 
 
 def test_config_passes_choice_utility_hints_to_iterative_strategy():
@@ -301,11 +306,13 @@ def test_config_passes_choice_utility_hints_to_iterative_strategy():
         levels=["BlockGroup_0"],
         strategy="iterative_choice",
         choice_utility_hints=True,
+        boundary_prop=0.25,
     )
 
     strategy = config.make_strategy()
 
     assert strategy.options["choice_utility_hints"] is True
+    assert strategy.options["boundary_prop"] == 0.25
 
 
 def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
@@ -315,12 +322,59 @@ def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
         solver="cp_bool",
         years=[23],
         population_type="All",
+        boundary_prop=0.5,
     )
 
     strategy = config.make_strategy()
 
     assert strategy.name == "cutoffs"
     assert strategy.options["cutoff_lottery_scale"] == 20
+    assert strategy.options["boundary_prop"] == 0.5
+
+
+def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
+    problem = make_grid_problem(2, 2, population_type="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(years=[23], population_type="All")
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "cp_bool"
+    market = CutoffMarket(
+        students=(),
+        school_nodes={},
+        school_capacities={},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+    monkeypatch.setattr(
+        cutoffs_module,
+        "build_cutoff_market",
+        lambda *args, **kwargs: market,
+    )
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="cutoffs",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        boundary_prop=0.5,
+    ).make_strategy()
+
+    strategy.run(dataset, solver)
+
+    assert solver.problems[0].boundary_prop == 0.5
+
+
+@pytest.mark.parametrize("value", [1.01, float("nan"), True, "invalid"])
+def test_config_rejects_invalid_boundary_prop(value):
+    with pytest.raises(ValueError, match="boundary_prop"):
+        OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=value)
+
+
+@pytest.mark.parametrize("value", [-1, -0.25, 0, 1])
+def test_config_accepts_boundary_prop_and_disabled_values(value):
+    config = OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=value)
+
+    assert config.boundary_prop == float(value)
 
 
 @pytest.mark.parametrize(

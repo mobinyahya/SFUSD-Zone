@@ -326,6 +326,8 @@ def test_cp_bool_cutoffs_share_vertex_school_indicators_across_students():
     names = [variable.name for variable in model.Proto().variables]
     assert names.count("same_zone_1_100") == 1
     assert names.count("same_zone_1_200") == 1
+    assert not any(name.startswith("same_zone_1_100_") for name in names)
+    assert not any(name.startswith("same_zone_1_200_") for name in names)
     assert names.count("threshold_100_0") == 1
     assert names.count("threshold_200_0") == 1
     assert sum(name.startswith("effective_threshold_") for name in names) == 4
@@ -338,6 +340,26 @@ def test_cp_bool_cutoffs_share_vertex_school_indicators_across_students():
     assert solution.metadata["objective_kind"] == "school_cutoffs"
     assert solution.metadata["same_zone_indicator_count"] == 2
     assert solution.metadata["normalized_school_cutoffs"] == {100: 0.0, 200: 0.0}
+
+
+def test_cp_bool_cutoffs_enforce_boundary_proportion():
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        boundary_prop=0.49,
+    )
+    problem.cutoff_market = CutoffMarket(
+        students=(),
+        school_nodes={},
+        school_capacities={},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+
+    solution = get_solver("cp_bool", solve_time_limit=10, workers=1).solve(problem)
+
+    assert solution.status == "INFEASIBLE"
 
 
 def test_cp_bool_cutoffs_keep_citywide_school_accessible_outside_zone():

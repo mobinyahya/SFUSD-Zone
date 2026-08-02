@@ -6,6 +6,7 @@ Gurobi model with Boolean assignment variables ``x[z, i]``.
 
 from __future__ import annotations
 
+import math
 import time
 
 import gurobipy as gp
@@ -179,6 +180,31 @@ class MipSolver(Solver):
         self._add_contiguity_constraints(m, problem, x)
         self._add_balance_constraints(m, problem, x)
         self._add_school_count_constraints(m, problem, x)
+        self._add_boundary_constraint(m, problem, x)
+
+    def _add_boundary_constraint(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        if problem.boundary_prop < 0:
+            return
+
+        boundary_vars = []
+        for u, v in problem.G.edges():
+            boundary = m.addVar(vtype=GRB.BINARY, name=f"boundary_limit_{u}_{v}")
+            for zone in problem.candidate_zones(u) | problem.candidate_zones(v):
+                xu = x.get((zone, u))
+                xv = x.get((zone, v))
+                if xu is not None and xv is not None:
+                    m.addConstr(boundary >= xu - xv)
+                    m.addConstr(boundary >= xv - xu)
+                elif xu is not None:
+                    m.addConstr(boundary >= xu)
+                elif xv is not None:
+                    m.addConstr(boundary >= xv)
+            boundary_vars.append(boundary)
+
+        max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())
+        m.addConstr(gp.quicksum(boundary_vars) <= max_cut_edges)
 
     def _add_assignment_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars

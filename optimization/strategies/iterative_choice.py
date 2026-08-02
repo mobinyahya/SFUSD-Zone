@@ -67,6 +67,7 @@ class IterativeChoiceStrategy(Strategy):
                 hint=hint,
                 choice_objective=choice_objective,
             )
+            problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
             sol = solver.solve(problem)
             sol.metadata["choice_iteration"] = iteration
             sol.metadata["choice_objective_cuts"] = len(cuts)

@@ -24,6 +24,7 @@ class CutoffsStrategy(Strategy):
 
         levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         problem = dataset.problem_for(levels[-1])
+        problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
         problem.cutoff_market = build_cutoff_market(
             dataset,
             problem,

@@ -16,7 +16,6 @@ frl_dev: 0.3
 racial_dev: 0.3
 overage: 0.8
 shortage: 0.2
-looseness: 1.0              # recursive: multiply constraints per configured coarser stage
 max_distance: 5
 # CP/MIP: force each centroid's graph-hop neighborhood into its zone.
 # cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
@@ -41,6 +40,8 @@ short_bursts_length: 25
 short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # border width; -1 skips overlapping boundary exclusion
+looseness: 1.0              # recursive: multiply constraints per configured coarser stage
+boundary_prop: -1             # cutoffs/iterative_choice: 0..1; negative disables
 school_solve_time_limit: 60   # overlapping: seconds for each one-worker school solve
 max_iterations: 5             # iterative_choice
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl

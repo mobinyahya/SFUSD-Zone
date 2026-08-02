@@ -89,6 +89,9 @@ class ZoneProblem:
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
         that centroid's zone.
+    boundary_prop:
+        Maximum proportion of graph edges whose endpoints may be assigned to
+        different zones. A negative value disables the constraint.
     fixed:
         Optional ``{node: zone}`` assignments forced by a strategy (e.g. a
         coarse solution projected down in recursive zoning).
@@ -112,6 +115,7 @@ class ZoneProblem:
     overage: float = 0.8
     shortage: float = 0.2
     max_distance: float = float("inf")
+    boundary_prop: float = -1.0
 
     fixed: Optional[dict[int, int]] = None
     candidates: Optional[dict[int, set[int]]] = None
