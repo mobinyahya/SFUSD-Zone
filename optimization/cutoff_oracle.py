@@ -64,7 +64,7 @@ class ZonedCutoffResult:
 
 @dataclass(frozen=True)
 class ContinuumCutoffResult:
-    """Market-clearing Azevedo-Leshno cutoffs with a continuous STB lottery."""
+    """Numerical Azevedo-Leshno cutoffs with a continuous STB lottery."""
 
     cutoffs: dict[int, float]
     demands: dict[int, float]
@@ -266,7 +266,7 @@ def solve_continuum_market_cutoffs(
     tolerance: float = 1e-10,
     max_iterations: int = 10_000,
 ) -> ContinuumCutoffResult:
-    """Solve exact continuous single-tie-breaker score limits for one market."""
+    """Numerically solve continuous single-tie-breaker score limits."""
     if tolerance <= 0:
         raise ValueError("tolerance must be positive.")
     if max_iterations <= 0:
@@ -342,7 +342,7 @@ def solve_zoned_continuum_cutoffs(
     *,
     num_zones: int | None = None,
 ) -> ZonedContinuumCutoffResult:
-    """Solve exact continuous score-limit equilibria in every isolated zone."""
+    """Numerically solve continuous score-limit equilibria in every zone."""
     zone_students, zone_capacities = _zoned_markets(
         market, node_assignment, num_zones=num_zones
     )

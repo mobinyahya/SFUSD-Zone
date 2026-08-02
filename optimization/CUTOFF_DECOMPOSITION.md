@@ -18,8 +18,9 @@ sum of integer cutoffs divided by `L`.
 This is an expected-demand score-limit approximation, not an expectation of
 finite realized DA outcomes. Integer rounding can leave less than one cutoff
 grid step of slack at a positive-cutoff school. Output therefore calls this
-vector `grid_minimal`, not stable. A separate continuous Azevedo-Leshno oracle
-checks exact market clearing and stability of every reported isolated market.
+vector `grid_minimal`, not stable. A separate numerical continuous
+Azevedo-Leshno oracle checks market clearing and stability to tolerance in
+every reported isolated market.
 
 ## Fixed-market oracle
 
