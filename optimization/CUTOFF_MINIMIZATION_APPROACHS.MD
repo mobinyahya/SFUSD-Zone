@@ -200,7 +200,8 @@ took `0.12-0.25` seconds. A fixed-zoning direct CP-SAT verification of the
 ### 4.5 Weaknesses
 
 - Does not optimize geography.
-- The current zoned wrapper requires all schools to be zone-restricted.
+- The isolated zoned wrapper requires all schools to be zone-restricted; the
+  coupled wrapper handles mixed restricted and citywide access globally.
 - Integer-grid minimality allows rounding slack at positive cutoffs.
 - Continuous expected-demand equilibrium is not the expectation of finite
   realized DA cutoffs.
@@ -538,8 +539,9 @@ illustrating why deterministic incumbent construction matters.
 - The final lower bound, 16.65, is still 85.3 percent below the incumbent.
 - A large number of school-access patterns remain indistinguishable until
   separated.
-- Universally accessible schools currently violate the isolated-market
-  assumption and are rejected.
+- Universally accessible schools require the global-access branch documented in
+  `optimization/CUTOFF_CITYWIDE_EXTENSION.md`; they cannot be duplicated across
+  isolated markets.
 - Finer grids increase the cutoff domain and can slow both oracle and master.
 - Exactness in principle did not yield a finite-instance certificate within
   ten minutes.
@@ -572,7 +574,38 @@ the analytical oracle made exact local evaluation cheap, and revealed-
 preference cuts restored a globally valid lower bound. The unresolved issue is
 bound strength, not incumbent feasibility or stable-market validation.
 
-## 12. Data and reproducibility caveats
+## 12. Requested scalability and citywide verification
+
+`optimization/verify_cutoff_scenarios.py` runs the real-data acceptance matrix
+and independently recomputes assignment completeness, contiguity, enabled FRL
+and boundary constraints, grid minimality, and continuous stability. Each run
+used a 120-second CP-SAT limit; measured time also includes data construction,
+validation, and solution serialization.
+
+| Case | Nodes | Zones | FRL / boundary | Time (s) | Grid objective | Result |
+|---|---:|---:|---|---:|---:|---|
+| `Block_1` | 1,125 | 6 | disabled | 124.06 | 106.15 | Pass |
+| `Block_0` | 7,319 | 6 | disabled | 127.54 | 217.35 | Pass |
+| Policy constraints | 432 | 6 | 0.15 / 0.25 | 125.40 | 229.50 | Pass |
+| 10 zones | 432 | 10 | disabled | 123.55 | 160.30 | Pass |
+| 13 zones | 432 | 13 | disabled | 123.63 | 156.60 | Pass |
+| 18 zones | 432 | 18 | disabled | 123.72 | 182.20 | Pass |
+| Citywide, policy constraints | 516 | 6 | 0.15 / 0.25 | 171.93 | 215.90 | Pass |
+
+All saved results are complete, contiguous, grid-minimal zonings with stable
+continuous fixed-zoning markets. They are `FEASIBLE` incumbents and do not claim
+a closed global zoning gap.
+
+The dimensions were tested separately. In particular, a direct core-model
+preflight proved that every geographically valid 18-centroid set is infeasible
+with `frl_dev=0.15`; this is a constraint interaction, not a cutoff-oracle
+failure. The unconstrained `18-zone-1` cutoff case is feasible and passed.
+
+The citywide formulation, finite-cut proof, large-market expected-optimality
+theorem, assumptions, and independent audit results are in
+`optimization/CUTOFF_CITYWIDE_EXTENSION.md`.
+
+## 13. Data and reproducibility caveats
 
 The run depends on local files referenced by the config, including:
 

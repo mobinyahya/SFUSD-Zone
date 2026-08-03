@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from ortools.sat.python import cp_model
 
 from optimization.cutoff_oracle import (
+    CoupledCutoffResult,
     ZonedCutoffResult,
+    solve_coupled_continuum_cutoffs,
+    solve_coupled_cutoffs,
     solve_zoned_continuum_cutoffs,
     solve_zoned_cutoffs,
 )
@@ -28,12 +31,13 @@ from optimization.solution import ZoneSolution
 @dataclass(frozen=True)
 class _Incumbent:
     assignment: dict[int, int]
-    result: ZonedCutoffResult
+    result: ZonedCutoffResult | CoupledCutoffResult
 
 
 @dataclass(frozen=True)
 class _DemandInterval:
     student: CutoffStudent
+    zone: int
     low: int
     high: int
 
@@ -60,19 +64,13 @@ class CutoffDecompositionSolver:
         unrestricted = set(market.school_capacities) - set(
             market.zone_restricted_schools
         )
-        if unrestricted:
-            raise ValueError(
-                "Cutoff decomposition requires isolated markets; unrestricted "
-                f"schools: {sorted(unrestricted)}."
-            )
+        coupled_market = bool(unrestricted)
 
         started = time.monotonic()
         time_limit = float(self.options.get("solve_time_limit", 60.0))
         deadline = started + time_limit
         incumbent, heuristic_rows = self._initial_incumbent(problem, deadline)
-        local_deadline = min(
-            deadline, time.monotonic() + min(45.0, time_limit * 0.4)
-        )
+        local_deadline = min(deadline, time.monotonic() + min(45.0, time_limit * 0.4))
         local_starts = getattr(self, "_local_starts", [incumbent])
         for index, start in enumerate(local_starts):
             if time.monotonic() >= local_deadline:
@@ -80,17 +78,13 @@ class CutoffDecompositionSolver:
             starts_left = len(local_starts) - index
             remaining_local = local_deadline - time.monotonic()
             allocation = (
-                remaining_local * 0.55
-                if index == 0
-                else remaining_local / starts_left
+                remaining_local * 0.55 if index == 0 else remaining_local / starts_left
             )
             slot_deadline = min(
                 local_deadline,
                 time.monotonic() + allocation,
             )
-            local, local_rows = self._local_improve(
-                problem, start, slot_deadline
-            )
+            local, local_rows = self._local_improve(problem, start, slot_deadline)
             heuristic_rows.extend(local_rows)
             if local.result.objective < incumbent.result.objective:
                 incumbent = local
@@ -124,9 +118,7 @@ class CutoffDecompositionSolver:
             remaining = deadline - time.monotonic()
             solver = self._new_solver(min(30.0, remaining), round_index)
             model.ClearHints()
-            self._add_incumbent_hints(
-                model, problem, x, cutoffs, incumbent
-            )
+            self._add_incumbent_hints(model, problem, x, cutoffs, incumbent)
             round_started = time.monotonic()
             status = solver.Solve(model)
             round_seconds = time.monotonic() - round_started
@@ -163,29 +155,26 @@ class CutoffDecompositionSolver:
                 problem, market, assignment, candidate_cutoffs
             )
             overloaded = [
-                (zone, school)
-                for (zone, school), demand in demands.items()
+                school
+                for school, demand in demands.items()
                 if demand > market.school_capacities[school] * market.lottery_scale
             ]
 
-            candidate_oracle = solve_zoned_cutoffs(
-                market, assignment, num_zones=problem.Z
-            )
+            candidate_oracle = _solve_cutoffs(problem, assignment)
             if candidate_oracle.objective < incumbent.result.objective:
                 incumbent = _Incumbent(assignment, candidate_oracle)
                 model.Add(cutoff_total < incumbent.result.objective)
 
             cuts_added = 0
-            for zone, school in overloaded:
+            for school in overloaded:
                 self._add_interval_capacity_cut(
                     model,
                     problem,
                     market,
                     x,
                     cutoffs,
-                    zone,
                     school,
-                    intervals[zone, school],
+                    intervals[school],
                     max_cutoff,
                 )
                 cuts_added += 1
@@ -220,15 +209,30 @@ class CutoffDecompositionSolver:
 
         wall_time = time.monotonic() - started
         raw_cutoffs = incumbent.result.school_cutoffs
-        continuum = solve_zoned_continuum_cutoffs(
-            market, incumbent.assignment, num_zones=problem.Z
-        )
+        continuum = _solve_continuum_cutoffs(problem, incumbent.assignment)
+        grid_demands = _grid_demands(incumbent.result)
         positive_grid_underfill = {
             school: market.school_capacities[school] * market.lottery_scale
-            - incumbent.result.zones[zone].demands[school]
-            for zone in range(problem.Z)
-            for school, cutoff in incumbent.result.zones[zone].cutoffs.items()
+            - grid_demands[school]
+            for school, cutoff in raw_cutoffs.items()
             if cutoff > 0
+        }
+        if coupled_market:
+            zone_stable = continuum.zone_stable
+            zone_stability_checks = continuum.zone_checks
+        else:
+            zone_stable = {
+                zone: result.stable for zone, result in continuum.zones.items()
+            }
+            zone_stability_checks = {
+                zone: {"isolated_market_clears": stable}
+                for zone, stable in zone_stable.items()
+            }
+        serialized_zone_stable = {
+            str(zone): stable for zone, stable in zone_stable.items()
+        }
+        serialized_zone_checks = {
+            str(zone): checks for zone, checks in zone_stability_checks.items()
         }
         metadata = {
             **market.metadata,
@@ -246,14 +250,26 @@ class CutoffDecompositionSolver:
                 positive_grid_underfill.values(), default=0
             ),
             "stable": continuum.stable,
+            "zone_stable": serialized_zone_stable,
+            "zone_stability_checks": serialized_zone_checks,
+            "stable_zone_count": sum(zone_stable.values()),
+            "market_coupling": (
+                "global_citywide_access" if coupled_market else "isolated_zones"
+            ),
+            "unrestricted_school_count": len(unrestricted),
+            "unrestricted_schools": sorted(unrestricted),
+            "stability_definition": (
+                "Global market stability with shared citywide capacity; zone checks "
+                "use the common citywide cutoffs."
+                if coupled_market
+                else "Independent continuous market clearing in every zone."
+            ),
             "continuum_objective": continuum.objective,
             "continuum_school_cutoffs": continuum.school_cutoffs,
             "global_optimum_certified": certified,
             "raw_objective": incumbent.result.objective,
             "raw_best_bound": min(best_bound, incumbent.result.objective),
-            "normalized_best_bound": min(
-                best_bound, incumbent.result.objective
-            )
+            "normalized_best_bound": min(best_bound, incumbent.result.objective)
             / market.lottery_scale,
             "termination": termination,
             "decomposition_rounds": rounds,
@@ -274,18 +290,39 @@ class CutoffDecompositionSolver:
         self, problem: ZoneProblem, deadline: float
     ) -> tuple[_Incumbent, list[dict]]:
         market = problem.cutoff_market
-        student_counts = Counter(student.node for student in market.students)
+        student_counts = Counter(
+            student.node for student in market.students if student.preferences
+        )
         capacity_counts = Counter()
         for school, capacity in market.school_capacities.items():
             capacity_counts[market.school_nodes[school]] += capacity
         pressure_coeff = {
-            node: student_counts[node] - capacity_counts[node]
-            for node in problem.nodes
+            node: student_counts[node] - capacity_counts[node] for node in problem.nodes
         }
 
         rows = []
         incumbents = []
         best_by_target = {}
+        neutral_coefficients = {node: 0 for node in problem.nodes}
+        assignment, status, elapsed = self._solve_pressure_model(
+            problem,
+            neutral_coefficients,
+            (0,),
+            min(15.0, max(0.05, deadline - time.monotonic())),
+            -1,
+        )
+        if assignment is not None:
+            result = _solve_cutoffs(problem, assignment)
+            incumbents.append(_Incumbent(assignment, result))
+            rows.append(
+                {
+                    "kind": "feasible_start",
+                    "zones": [],
+                    "status": status,
+                    "wall_time": elapsed,
+                    "raw_objective": result.objective,
+                }
+            )
         for target in range(problem.Z):
             if time.monotonic() >= deadline:
                 break
@@ -298,7 +335,7 @@ class CutoffDecompositionSolver:
             )
             if assignment is None:
                 continue
-            result = solve_zoned_cutoffs(market, assignment, num_zones=problem.Z)
+            result = _solve_cutoffs(problem, assignment)
             candidate = _Incumbent(assignment, result)
             incumbents.append(candidate)
             best_by_target[target] = candidate
@@ -312,9 +349,32 @@ class CutoffDecompositionSolver:
                 }
             )
         if not incumbents:
+            assignment, status, elapsed = self._solve_pressure_model(
+                problem,
+                neutral_coefficients,
+                (0,),
+                max(0.05, deadline - time.monotonic()),
+                -2,
+            )
+            if assignment is not None:
+                result = _solve_cutoffs(problem, assignment)
+                incumbents.append(_Incumbent(assignment, result))
+                rows.append(
+                    {
+                        "kind": "extended_feasible_start",
+                        "zones": [],
+                        "status": status,
+                        "wall_time": elapsed,
+                        "raw_objective": result.objective,
+                    }
+                )
+        if not incumbents:
             raise RuntimeError("Could not construct an initial feasible cutoff zoning.")
 
         best = min(incumbents, key=lambda item: item.result.objective)
+        if not best_by_target:
+            self._local_starts = [best]
+            return best, rows
         # Refine the most promising overloaded-zone family with deterministic
         # one-worker solves. This avoids arbitrary parallel tie choices among
         # pressure-optimal zonings with very different exact cutoff costs.
@@ -322,9 +382,7 @@ class CutoffDecompositionSolver:
             best_by_target,
             key=lambda zone: best_by_target[zone].result.objective,
         )
-        refine_others = [
-            zone for zone in range(problem.Z) if zone != refine_target
-        ]
+        refine_others = [zone for zone in range(problem.Z) if zone != refine_target]
         for secondary, tertiary in itertools.permutations(refine_others, 2):
             if time.monotonic() >= deadline:
                 break
@@ -337,9 +395,7 @@ class CutoffDecompositionSolver:
             )
             if assignment is None:
                 continue
-            result = solve_zoned_cutoffs(
-                market, assignment, num_zones=problem.Z
-            )
+            result = _solve_cutoffs(problem, assignment)
             candidate = _Incumbent(assignment, result)
             incumbents.append(candidate)
             if result.objective < best_by_target[refine_target].result.objective:
@@ -358,9 +414,7 @@ class CutoffDecompositionSolver:
         local_starts = [best, *best_by_target.values()]
         unique = {}
         for candidate in local_starts:
-            signature = tuple(
-                candidate.assignment[node] for node in problem.nodes
-            )
+            signature = tuple(candidate.assignment[node] for node in problem.nodes)
             unique.setdefault(signature, candidate)
         self._local_starts = list(unique.values())
         return best, rows
@@ -372,14 +426,21 @@ class CutoffDecompositionSolver:
         deadline: float,
     ) -> tuple[_Incumbent, list[dict]]:
         """Use exact-oracle school swaps and support-closed boundary moves."""
-        if self.zoning_solver._centroid_neighbor_radius() > 0 or any(
-            value >= 0
-            for value in (
-                problem.frl_dev,
-                problem.racial_dev,
-                problem.overage,
-                problem.shortage,
-                problem.boundary_prop,
+        unrestricted = set(problem.cutoff_market.school_capacities) - set(
+            problem.cutoff_market.zone_restricted_schools
+        )
+        if (
+            unrestricted
+            or self.zoning_solver._centroid_neighbor_radius() > 0
+            or any(
+                value >= 0
+                for value in (
+                    problem.frl_dev,
+                    problem.racial_dev,
+                    problem.overage,
+                    problem.shortage,
+                    problem.boundary_prop,
+                )
             )
         ):
             return incumbent, []
@@ -387,16 +448,13 @@ class CutoffDecompositionSolver:
         relation = problem.G.graph["closer_neighbors"]
         supports = {
             zone: {
-                node: tuple(
-                    relation[node][problem.centroid_school_ids[zone]]
-                )
+                node: tuple(relation[node][problem.centroid_school_ids[zone]])
                 for node in problem.nodes
             }
             for zone in range(problem.Z)
         }
         reverse = {
-            zone: {node: [] for node in problem.nodes}
-            for zone in range(problem.Z)
+            zone: {node: [] for node in problem.nodes} for zone in range(problem.Z)
         }
         for zone in range(problem.Z):
             for node in problem.nodes:
@@ -447,8 +505,7 @@ class CutoffDecompositionSolver:
                 if node == problem.centroids[zone]:
                     continue
                 if not any(
-                    assignment[neighbor] == zone
-                    for neighbor in supports[zone][node]
+                    assignment[neighbor] == zone for neighbor in supports[zone][node]
                 ):
                     return False
             counts = Counter()
@@ -461,8 +518,7 @@ class CutoffDecompositionSolver:
 
         def local_rank(candidate):
             costs = [
-                candidate.result.zones[zone].objective
-                for zone in range(problem.Z)
+                candidate.result.zones[zone].objective for zone in range(problem.Z)
             ]
             return (
                 candidate.result.objective,
@@ -476,9 +532,7 @@ class CutoffDecompositionSolver:
             if signature in seen:
                 return None
             seen.add(signature)
-            result = solve_zoned_cutoffs(
-                problem.cutoff_market, candidate, num_zones=problem.Z
-            )
+            result = _solve_cutoffs(problem, candidate)
             evaluated = _Incumbent(candidate, result)
             if update and local_rank(evaluated) < local_rank(incumbent):
                 rows.append(
@@ -491,9 +545,7 @@ class CutoffDecompositionSolver:
                 incumbent = evaluated
             return evaluated
 
-        school_nodes = [
-            node for node in problem.nodes if problem.num_schools(node) > 0
-        ]
+        school_nodes = [node for node in problem.nodes if problem.num_schools(node) > 0]
         base = dict(incumbent.assignment)
         for left_index, left in enumerate(school_nodes):
             if time.monotonic() >= deadline:
@@ -529,9 +581,9 @@ class CutoffDecompositionSolver:
                 if time.monotonic() >= deadline:
                     break
                 source = base[node]
-                targets = {
-                    base[neighbor] for neighbor in problem.G.neighbors(node)
-                } - {source}
+                targets = {base[neighbor] for neighbor in problem.G.neighbors(node)} - {
+                    source
+                }
                 moving = closure(base, source, node, 16)
                 if not moving:
                     continue
@@ -546,9 +598,8 @@ class CutoffDecompositionSolver:
                             moving,
                             update=False,
                         )
-                        if (
-                            evaluated is not None
-                            and local_rank(evaluated) < local_rank(pass_best)
+                        if evaluated is not None and local_rank(evaluated) < local_rank(
+                            pass_best
                         ):
                             pass_best = evaluated
                             pass_move = sorted(moving)
@@ -575,6 +626,8 @@ class CutoffDecompositionSolver:
         model = cp_model.CpModel()
         x, y = self.zoning_solver._build_assignment_vars(model, problem)
         self.zoning_solver._add_core_constraints(model, problem, x, y)
+        self.zoning_solver._add_hints(model, problem, x, y)
+        self.zoning_solver._add_search_strategy(model, problem, x, y)
         expressions = [
             sum(
                 coefficients[node] * x[(zone, node)]
@@ -650,13 +703,12 @@ class CutoffDecompositionSolver:
         market,
         x,
         cutoffs,
-        zone,
         school,
         intervals,
         max_cutoff,
     ) -> None:
         school_node = market.school_nodes[school]
-        school_zone = x[(zone, school_node)]
+        restricted = market.zone_restricted_schools
         profiles = Counter()
         for interval in intervals:
             student = interval.student
@@ -673,17 +725,15 @@ class CutoffDecompositionSolver:
                     )
                 )
             qualify_limit = (
-                student.priorities[school] * market.lottery_scale
-                + interval.low
-                - 1
+                student.priorities[school] * market.lottery_scale + interval.low - 1
             )
-            profiles[(student.node, qualify_limit, tuple(higher))] += (
+            profiles[(student.node, interval.zone, qualify_limit, tuple(higher))] += (
                 interval.high - interval.low + 1
             )
 
         terms = []
         for profile_index, (
-            (student_node, qualify_limit, higher),
+            (student_node, zone, qualify_limit, higher),
             weight,
         ) in enumerate(profiles.items()):
             student_zone = x[(zone, student_node)]
@@ -692,10 +742,6 @@ class CutoffDecompositionSolver:
             )
             blockers = []
             for preferred, qualify_limit_at_high in higher:
-                preferred_node = market.school_nodes[preferred]
-                preferred_zone = x.get((zone, preferred_node))
-                if preferred_zone is None:
-                    continue
                 preferred_qualifies = self._comparison(
                     model,
                     cutoffs[preferred],
@@ -703,32 +749,37 @@ class CutoffDecompositionSolver:
                     qualify_limit_at_high,
                     max_cutoff,
                 )
-                blockers.append(
-                    self._blocking(
-                        model,
-                        zone,
-                        preferred,
-                        qualify_limit_at_high,
-                        preferred_zone,
-                        preferred_qualifies,
+                if preferred in restricted:
+                    preferred_node = market.school_nodes[preferred]
+                    preferred_zone = x.get((zone, preferred_node))
+                    if preferred_zone is None:
+                        continue
+                    blockers.append(
+                        self._blocking(
+                            model,
+                            zone,
+                            preferred,
+                            qualify_limit_at_high,
+                            preferred_zone,
+                            preferred_qualifies,
+                        )
                     )
-                )
-            demand = model.NewBoolVar(
-                f"demand_cut_{self._cut_count}_{profile_index}"
-            )
+                else:
+                    blockers.append(preferred_qualifies)
+            demand = model.NewBoolVar(f"demand_cut_{self._cut_count}_{profile_index}")
+            access_terms = [student_zone]
+            if school in restricted:
+                access_terms.append(x[(zone, school_node)])
             model.Add(
                 demand
-                >= student_zone
-                + school_zone
+                >= sum(access_terms)
                 + school_qualifies
-                - 2
+                - len(access_terms)
                 - sum(blockers)
             )
             terms.append(weight * demand)
 
-        model.Add(
-            sum(terms) <= market.school_capacities[school] * market.lottery_scale
-        )
+        model.Add(sum(terms) <= market.school_capacities[school] * market.lottery_scale)
         self._cut_count += 1
         self._cut_profile_count += len(profiles)
 
@@ -773,26 +824,18 @@ def _candidate_demands(
     assignment: dict[int, int],
     cutoffs: dict[int, int],
 ) -> tuple[
-    dict[tuple[int, int], int],
-    dict[tuple[int, int], list[_DemandInterval]],
+    dict[int, int],
+    dict[int, list[_DemandInterval]],
 ]:
-    schools_by_zone = {zone: set() for zone in range(problem.Z)}
-    for school, node in market.school_nodes.items():
-        schools_by_zone[assignment[node]].add(school)
-
-    demands = {
-        (zone, school): 0
-        for zone, schools in schools_by_zone.items()
-        for school in schools
-    }
+    restricted = market.zone_restricted_schools
+    demands = {school: 0 for school in market.school_capacities}
     intervals = defaultdict(list)
     scale = market.lottery_scale
     for student in market.students:
         zone = assignment[student.node]
-        zone_schools = schools_by_zone[zone]
         remaining = scale
         for school in student.preferences:
-            if school not in zone_schools:
+            if school in restricted and assignment[market.school_nodes[school]] != zone:
                 continue
             threshold = min(
                 scale,
@@ -800,9 +843,35 @@ def _candidate_demands(
             )
             if remaining > threshold:
                 mass = remaining - threshold
-                demands[zone, school] += mass
-                intervals[zone, school].append(
-                    _DemandInterval(student, threshold + 1, remaining)
+                demands[school] += mass
+                intervals[school].append(
+                    _DemandInterval(student, zone, threshold + 1, remaining)
                 )
             remaining = min(remaining, threshold)
     return demands, intervals
+
+
+def _solve_cutoffs(problem: ZoneProblem, assignment: dict[int, int]):
+    market = problem.cutoff_market
+    unrestricted = set(market.school_capacities) - set(market.zone_restricted_schools)
+    if unrestricted:
+        return solve_coupled_cutoffs(market, assignment, num_zones=problem.Z)
+    return solve_zoned_cutoffs(market, assignment, num_zones=problem.Z)
+
+
+def _solve_continuum_cutoffs(problem: ZoneProblem, assignment: dict[int, int]):
+    market = problem.cutoff_market
+    unrestricted = set(market.school_capacities) - set(market.zone_restricted_schools)
+    if unrestricted:
+        return solve_coupled_continuum_cutoffs(market, assignment, num_zones=problem.Z)
+    return solve_zoned_continuum_cutoffs(market, assignment, num_zones=problem.Z)
+
+
+def _grid_demands(result) -> dict[int, int]:
+    if isinstance(result, CoupledCutoffResult):
+        return result.market.demands
+    return {
+        school: demand
+        for zone in result.zones.values()
+        for school, demand in zone.demands.items()
+    }

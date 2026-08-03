@@ -1,4 +1,4 @@
-"""Analytical DA-STB cutoffs for fixed isolated school markets.
+"""Analytical DA-STB cutoffs for fixed school-access markets.
 
 The zoning model represents one common lottery as ``lottery_scale`` units of
 mass per student.  This module solves the same integer-grid score-limit market
@@ -63,6 +63,34 @@ class ZonedCutoffResult:
 
 
 @dataclass(frozen=True)
+class CoupledCutoffResult:
+    """One global cutoff market containing zoned and citywide schools."""
+
+    market: MarketCutoffResult
+    zone_demands: dict[int, dict[int, int]]
+
+    @property
+    def school_cutoffs(self) -> dict[int, int]:
+        return self.market.cutoffs
+
+    @property
+    def objective(self) -> int:
+        return self.market.objective
+
+    @property
+    def normalized_objective(self) -> float:
+        return self.market.normalized_objective
+
+    @property
+    def lottery_scale(self) -> int:
+        return self.market.lottery_scale
+
+    @property
+    def grid_minimal(self) -> bool:
+        return self.market.grid_minimal
+
+
+@dataclass(frozen=True)
 class ContinuumCutoffResult:
     """Numerical Azevedo-Leshno cutoffs with a continuous STB lottery."""
 
@@ -93,6 +121,31 @@ class ZonedContinuumCutoffResult:
         return all(result.stable for result in self.zones.values())
 
 
+@dataclass(frozen=True)
+class CoupledContinuumCutoffResult:
+    """Continuous equilibrium for one globally coupled access market."""
+
+    market: ContinuumCutoffResult
+    zone_demands: dict[int, dict[int, float]]
+    zone_checks: dict[int, dict[str, bool]]
+
+    @property
+    def school_cutoffs(self) -> dict[int, float]:
+        return self.market.cutoffs
+
+    @property
+    def objective(self) -> float:
+        return self.market.objective
+
+    @property
+    def zone_stable(self) -> dict[int, bool]:
+        return {zone: all(checks.values()) for zone, checks in self.zone_checks.items()}
+
+    @property
+    def stable(self) -> bool:
+        return self.market.stable and all(self.zone_stable.values())
+
+
 def solve_market_cutoffs(
     students: Iterable[CutoffStudent],
     school_capacities: Mapping[int, int],
@@ -110,7 +163,9 @@ def solve_market_cutoffs(
     if lottery_scale <= 0:
         raise ValueError("lottery_scale must be a positive integer.")
 
-    capacities = {int(school): int(capacity) for school, capacity in school_capacities.items()}
+    capacities = {
+        int(school): int(capacity) for school, capacity in school_capacities.items()
+    }
     if any(capacity < 0 for capacity in capacities.values()):
         raise ValueError("School capacities must be non-negative.")
 
@@ -148,9 +203,7 @@ def solve_market_cutoffs(
     while True:
         changed = False
         for school in schools:
-            terms = _school_demand_terms(
-                student_list, school, cutoffs, lottery_scale
-            )
+            terms = _school_demand_terms(student_list, school, cutoffs, lottery_scale)
             required = _minimum_clearing_cutoff(
                 terms,
                 capacities[school] * lottery_scale,
@@ -160,14 +213,15 @@ def solve_market_cutoffs(
                 updates += 1
                 changed = True
                 if updates > max_updates:
-                    raise RuntimeError("Cutoff iteration exceeded its finite update bound.")
+                    raise RuntimeError(
+                        "Cutoff iteration exceeded its finite update bound."
+                    )
 
         assignments, demands = assignments_and_demands(
             student_list, cutoffs, lottery_scale
         )
         clears = all(
-            demands[school] <= capacities[school] * lottery_scale
-            for school in schools
+            demands[school] <= capacities[school] * lottery_scale for school in schools
         )
         if not changed and clears:
             break
@@ -203,10 +257,10 @@ def solve_zoned_cutoffs(
         )
 
     missing_nodes = {
-        student.node for student in market.students if student.node not in node_assignment
-    } | {
-        node for node in market.school_nodes.values() if node not in node_assignment
-    }
+        student.node
+        for student in market.students
+        if student.node not in node_assignment
+    } | {node for node in market.school_nodes.values() if node not in node_assignment}
     if missing_nodes:
         raise ValueError(f"Zoning omits market nodes: {sorted(missing_nodes)}.")
 
@@ -243,8 +297,7 @@ def solve_zoned_cutoffs(
     all_cutoffs = {}
     for zone in range(num_zones):
         capacities = {
-            school: market.school_capacities[school]
-            for school in schools_by_zone[zone]
+            school: market.school_capacities[school] for school in schools_by_zone[zone]
         }
         result = solve_market_cutoffs(
             students_by_zone[zone], capacities, market.lottery_scale
@@ -257,6 +310,29 @@ def solve_zoned_cutoffs(
         school_cutoffs=all_cutoffs,
         lottery_scale=market.lottery_scale,
     )
+
+
+def solve_coupled_cutoffs(
+    market: CutoffMarket,
+    node_assignment: Mapping[int, int],
+    *,
+    num_zones: int | None = None,
+) -> CoupledCutoffResult:
+    """Solve one global market with zoning-dependent restricted access."""
+    students, student_zones, num_zones = _access_market_students(
+        market, node_assignment, num_zones=num_zones
+    )
+    result = solve_market_cutoffs(
+        students, market.school_capacities, market.lottery_scale
+    )
+    zone_demands = {
+        zone: {school: 0 for school in market.school_capacities}
+        for zone in range(num_zones)
+    }
+    for student_index, zone in enumerate(student_zones):
+        for school, mass in result.assignments[student_index].items():
+            zone_demands[zone][school] += mass
+    return CoupledCutoffResult(result, zone_demands)
 
 
 def solve_continuum_market_cutoffs(
@@ -273,8 +349,7 @@ def solve_continuum_market_cutoffs(
         raise ValueError("max_iterations must be positive.")
     students = tuple(students)
     capacities = {
-        int(school): int(capacity)
-        for school, capacity in school_capacities.items()
+        int(school): int(capacity) for school, capacity in school_capacities.items()
     }
     if any(capacity < 0 for capacity in capacities.values()):
         raise ValueError("School capacities must be non-negative.")
@@ -357,6 +432,41 @@ def solve_zoned_continuum_cutoffs(
     return ZonedContinuumCutoffResult(results, cutoffs)
 
 
+def solve_coupled_continuum_cutoffs(
+    market: CutoffMarket,
+    node_assignment: Mapping[int, int],
+    *,
+    num_zones: int | None = None,
+) -> CoupledContinuumCutoffResult:
+    """Solve continuous cutoffs with citywide capacity imposed once globally."""
+    students, student_zones, num_zones = _access_market_students(
+        market, node_assignment, num_zones=num_zones
+    )
+    result = solve_continuum_market_cutoffs(students, market.school_capacities)
+    zone_demands = {
+        zone: {school: 0.0 for school in market.school_capacities}
+        for zone in range(num_zones)
+    }
+    for student, zone in zip(students, student_zones, strict=True):
+        remaining = 1.0
+        for school in student.preferences:
+            threshold = _continuous_threshold(
+                result.cutoffs[school], student.priorities[school]
+            )
+            zone_demands[zone][school] += max(0.0, remaining - threshold)
+            remaining = min(remaining, threshold)
+
+    zone_checks = _coupled_zone_stability_checks(
+        market,
+        node_assignment,
+        result,
+        zone_demands,
+        student_zones,
+        num_zones,
+    )
+    return CoupledContinuumCutoffResult(result, zone_demands, zone_checks)
+
+
 def assignments_and_demands(
     students: Iterable[CutoffStudent],
     cutoffs: Mapping[int, int],
@@ -434,8 +544,7 @@ def _zoned_markets(
         schools_by_zone[zone].append(school)
     capacities = {
         zone: {
-            school: market.school_capacities[school]
-            for school in schools_by_zone[zone]
+            school: market.school_capacities[school] for school in schools_by_zone[zone]
         }
         for zone in range(num_zones)
     }
@@ -455,6 +564,112 @@ def _zoned_markets(
             )
         )
     return students, capacities
+
+
+def _access_market_students(
+    market: CutoffMarket,
+    node_assignment: Mapping[int, int],
+    *,
+    num_zones: int | None,
+) -> tuple[tuple[CutoffStudent, ...], tuple[int, ...], int]:
+    """Filter preferences using zoned access while retaining citywide schools."""
+    missing_nodes = {
+        student.node
+        for student in market.students
+        if student.node not in node_assignment
+    } | {node for node in market.school_nodes.values() if node not in node_assignment}
+    if missing_nodes:
+        raise ValueError(f"Zoning omits market nodes: {sorted(missing_nodes)}.")
+    if num_zones is None:
+        num_zones = max(node_assignment.values(), default=-1) + 1
+    if num_zones < 0:
+        raise ValueError("num_zones must be non-negative.")
+    for school, node in market.school_nodes.items():
+        zone = int(node_assignment[node])
+        if zone < 0 or zone >= num_zones:
+            raise ValueError(f"School {school} has invalid zone {zone}.")
+
+    restricted = market.zone_restricted_schools
+    students = []
+    student_zones = []
+    for student in market.students:
+        zone = int(node_assignment[student.node])
+        if zone < 0 or zone >= num_zones:
+            raise ValueError(f"Student {student.studentno} has invalid zone {zone}.")
+        preferences = tuple(
+            school
+            for school in student.preferences
+            if school not in restricted
+            or int(node_assignment[market.school_nodes[school]]) == zone
+        )
+        students.append(
+            CutoffStudent(
+                student.studentno,
+                student.node,
+                preferences,
+                {school: student.priorities[school] for school in preferences},
+            )
+        )
+        student_zones.append(zone)
+    return tuple(students), tuple(student_zones), num_zones
+
+
+def _coupled_zone_stability_checks(
+    market: CutoffMarket,
+    node_assignment: Mapping[int, int],
+    result: ContinuumCutoffResult,
+    zone_demands: Mapping[int, Mapping[int, float]],
+    student_zones: tuple[int, ...],
+    num_zones: int,
+) -> dict[int, dict[str, bool]]:
+    """Check each zone's access outcomes under common citywide cutoffs."""
+    tolerance = 1e-9 * max(1, len(student_zones))
+    restricted = market.zone_restricted_schools
+    unrestricted = set(market.school_capacities) - set(restricted)
+
+    demand_reconciles = all(
+        abs(
+            sum(zone_demands[zone][school] for zone in range(num_zones))
+            - result.demands[school]
+        )
+        <= tolerance
+        for school in market.school_capacities
+    )
+    shared_citywide_capacity = all(
+        result.demands[school] <= market.school_capacities[school] + tolerance
+        and (
+            result.cutoffs[school] <= tolerance
+            or abs(result.demands[school] - market.school_capacities[school])
+            <= tolerance
+        )
+        for school in unrestricted
+    )
+
+    checks = {}
+    for zone in range(num_zones):
+        access_respected = all(
+            int(node_assignment[market.school_nodes[school]]) == zone
+            or zone_demands[zone][school] <= tolerance
+            for school in restricted
+        )
+        local_restricted_capacity = all(
+            zone_demands[zone][school] <= market.school_capacities[school] + tolerance
+            and (
+                result.cutoffs[school] <= tolerance
+                or abs(zone_demands[zone][school] - market.school_capacities[school])
+                <= tolerance
+            )
+            for school in restricted
+            if int(node_assignment[market.school_nodes[school]]) == zone
+        )
+        checks[zone] = {
+            "access_respected": access_respected,
+            "restricted_market_clears": local_restricted_capacity,
+            "citywide_market_clears_globally": shared_citywide_capacity,
+            "zone_demands_reconcile_globally": demand_reconciles,
+            "global_no_blocking_pairs": result.stable,
+        }
+    return checks
 
 
 def _continuum_demands(

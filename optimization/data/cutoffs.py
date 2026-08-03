@@ -135,19 +135,29 @@ def build_cutoff_market(
     students = []
     missing_studentnos = []
     empty_preference_studentnos = []
+    outside_option_only_studentnos = []
     for row in optimization_students.itertuples(index=False):
         studentno = int(row.studentno)
-        market_row = market_rows.get(studentno)
-        if market_row is None:
-            missing_studentnos.append(studentno)
-            continue
-
         area_id = int(getattr(row, dataset.ingest.unit))
         if area_id not in area_to_node:
             raise ValueError(
                 f"Optimization student {studentno} has unmapped "
                 f"{dataset.ingest.unit} {area_id}."
             )
+
+        market_row = market_rows.get(studentno)
+        if market_row is None:
+            missing_studentnos.append(studentno)
+            outside_option_only_studentnos.append(studentno)
+            students.append(
+                CutoffStudent(
+                    studentno=studentno,
+                    node=area_to_node[area_id],
+                    preferences=(),
+                    priorities={},
+                )
+            )
+            continue
 
         eligible_columns = np.flatnonzero(
             school_eligibility[market_row] & np.isfinite(shocked_utilities[market_row])
@@ -161,6 +171,7 @@ def build_cutoff_market(
         preferences = tuple(int(school_ids[column]) for column in order)
         if not preferences:
             empty_preference_studentnos.append(studentno)
+            outside_option_only_studentnos.append(studentno)
 
         priorities = {
             int(school_ids[column]): _integer_priority(
@@ -185,11 +196,15 @@ def build_cutoff_market(
         "gumbel_scale": float(gumbel_scale),
         "preference_seed": int(preference_seed),
         "optimization_student_count": int(len(optimization_students)),
-        "matched_student_count": len(students),
+        "matched_student_count": len(students) - len(missing_studentnos),
+        "matched_preference_student_count": len(students) - len(missing_studentnos),
+        "cutoff_student_count": len(students),
         "missing_preference_student_count": len(missing_studentnos),
         "missing_preference_studentnos": missing_studentnos,
         "empty_preference_student_count": len(empty_preference_studentnos),
         "empty_preference_studentnos": empty_preference_studentnos,
+        "outside_option_only_student_count": len(outside_option_only_studentnos),
+        "outside_option_only_studentnos": outside_option_only_studentnos,
         "school_count": len(school_ids),
         "remove_city_wide": bool(remove_city_wide),
         "excluded_citywide_school_count": len(excluded_citywide_school_ids),
@@ -204,7 +219,9 @@ def build_cutoff_market(
         ),
         "preference_definition": (
             "All policy-eligible schools ordered by best eligible-program utility "
-            "plus one student-school Gumbel shock."
+            "plus one student-school Gumbel shock; optimization students without "
+            "a matching preference record are modeled as accepting only the "
+            "outside option."
         ),
         "priority_definition": (
             "Best eligible-program status-quo base policy score using ETB CTIP; "
