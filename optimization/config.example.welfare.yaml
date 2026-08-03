@@ -1,0 +1,35 @@
+# Stable finite-grid utilitarian-welfare benchmark.
+
+centroids_type: '6-zone-9'
+levels: ['Block_1']
+solver: 'cp_bool'
+strategy: 'welfare'
+
+frl_dev: 0.15
+racial_dev: -1
+overage: -1
+shortage: -1
+boundary_prop: 0.2
+solve_time_limits: [1000]
+gap_limits: [0]
+hints: voronoi
+seed: 42
+workers: 5
+# linearization_level: 1
+# cp_sat_search_strategy: distance_to_centroid
+
+cutoff_assignment_config: assignment/configs/kumar.config.yaml
+cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
+cutoff_lottery_scale: 100
+cutoff_gumbel_scale: 1.0
+cutoff_preference_seed: 2023
+remove_city_wide: true
+welfare_utility_scale: 10000
+welfare_prefix_depth: 10
+# welfare_initial_assignment_path: benchmark_output/prior/zone_dict_Block_2.json
+
+years: [23]
+population_type: 'All'
+capacity_scenario: 'A'
+new_schools: true
+include_k8: false

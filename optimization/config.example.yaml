@@ -7,7 +7,7 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs
+strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs | welfare
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
@@ -41,20 +41,22 @@ short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # border width; -1 skips overlapping boundary exclusion
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
-boundary_prop: -1             # cutoffs/iterative_choice: 0..1; negative disables
+boundary_prop: -1             # cutoffs/welfare/iterative_choice: 0..1; negative disables
 school_solve_time_limit: 60   # overlapping: seconds for each one-worker school solve
 max_iterations: 5             # iterative_choice
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
-# cutoffs requires solver: cp_bool, years: [23], and population_type: All.
+# cutoffs/welfare require solver: cp_bool, years: [23], and population_type: All.
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
-remove_city_wide: false         # cutoffs: exclude city-wide schools and zone-gate all others
+remove_city_wide: false         # cutoffs/welfare: exclude citywide schools
+# welfare_utility_scale: 1000000 # welfare: fixed-point utility precision
+# welfare_prefix_depth: 10       # welfare: exact global recurrence through top ranks
 
 # --- data ingestion ---
 years: [21, 22, 23]

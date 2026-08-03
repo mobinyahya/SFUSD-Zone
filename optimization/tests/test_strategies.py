@@ -333,6 +333,25 @@ def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
     assert strategy.options["remove_city_wide"] is False
 
 
+def test_welfare_config_requires_isolated_year_23_all_program_markets():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="welfare",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        remove_city_wide=True,
+        welfare_utility_scale=10_000,
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.name == "welfare"
+    assert strategy.options["remove_city_wide"] is True
+    assert strategy.options["welfare_utility_scale"] == 10_000
+    assert strategy.options["welfare_prefix_depth"] == 10
+
+
 def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
     problem = make_grid_problem(2, 2, population_type="All")
     dataset = FakeDataset(problem)

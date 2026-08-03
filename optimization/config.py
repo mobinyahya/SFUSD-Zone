@@ -68,6 +68,9 @@ class OptimizationConfig:
     cutoff_gumbel_scale: float = 1.0
     cutoff_preference_seed: int = 2023
     remove_city_wide: bool = False
+    welfare_utility_scale: int = 1_000_000
+    welfare_initial_assignment_path: str = ""
+    welfare_prefix_depth: int = 10
 
     # --- data ingestion ----------------------------------------------- #
     years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
@@ -106,13 +109,17 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
-        if self.strategy == "cutoffs":
+        if self.strategy in {"cutoffs", "welfare"}:
             if self.solver != "cp_bool":
-                raise ValueError("cutoffs requires solver='cp_bool'.")
+                raise ValueError(f"{self.strategy} requires solver='cp_bool'.")
             if self.years != [23]:
-                raise ValueError("cutoffs currently requires years: [23].")
+                raise ValueError(f"{self.strategy} currently requires years: [23].")
             if self.population_type != "All":
-                raise ValueError("cutoffs requires population_type: 'All'.")
+                raise ValueError(
+                    f"{self.strategy} requires population_type: 'All'."
+                )
+        if self.strategy == "welfare" and not self.remove_city_wide:
+            raise ValueError("welfare currently requires remove_city_wide: true.")
         if isinstance(self.boundary_prop, bool):
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
         try:
@@ -140,6 +147,18 @@ class OptimizationConfig:
             raise ValueError("cutoff_preference_seed must be an integer.")
         if not isinstance(self.remove_city_wide, bool):
             raise ValueError("remove_city_wide must be a boolean.")
+        if (
+            isinstance(self.welfare_utility_scale, bool)
+            or not isinstance(self.welfare_utility_scale, int)
+            or self.welfare_utility_scale <= 0
+        ):
+            raise ValueError("welfare_utility_scale must be a positive integer.")
+        if (
+            isinstance(self.welfare_prefix_depth, bool)
+            or not isinstance(self.welfare_prefix_depth, int)
+            or self.welfare_prefix_depth <= 0
+        ):
+            raise ValueError("welfare_prefix_depth must be a positive integer.")
         if (
             not math.isfinite(float(self.school_solve_time_limit))
             or self.school_solve_time_limit <= 0
@@ -238,4 +257,7 @@ class OptimizationConfig:
             cutoff_gumbel_scale=self.cutoff_gumbel_scale,
             cutoff_preference_seed=self.cutoff_preference_seed,
             remove_city_wide=self.remove_city_wide,
+            welfare_utility_scale=self.welfare_utility_scale,
+            welfare_initial_assignment_path=self.welfare_initial_assignment_path,
+            welfare_prefix_depth=self.welfare_prefix_depth,
         )

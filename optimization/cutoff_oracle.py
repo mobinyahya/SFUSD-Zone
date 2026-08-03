@@ -290,6 +290,11 @@ def solve_zoned_cutoffs(
                 priorities={
                     school: student.priorities[school] for school in preferences
                 },
+                utilities={
+                    school: student.utilities[school]
+                    for school in preferences
+                    if school in student.utilities
+                },
             )
         )
 
@@ -561,6 +566,11 @@ def _zoned_markets(
                 student.node,
                 preferences,
                 {school: student.priorities[school] for school in preferences},
+                {
+                    school: student.utilities[school]
+                    for school in preferences
+                    if school in student.utilities
+                },
             )
         )
     return students, capacities
@@ -608,6 +618,11 @@ def _access_market_students(
                 student.node,
                 preferences,
                 {school: student.priorities[school] for school in preferences},
+                {
+                    school: student.utilities[school]
+                    for school in preferences
+                    if school in student.utilities
+                },
             )
         )
         student_zones.append(zone)

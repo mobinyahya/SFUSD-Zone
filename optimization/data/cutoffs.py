@@ -31,6 +31,7 @@ def build_cutoff_market(
     gumbel_scale: float,
     preference_seed: int,
     remove_city_wide: bool,
+    outside_option_utility: float | None = None,
 ) -> CutoffMarket:
     """Construct individual school preferences after optimization filtering."""
     config_path = _resolve_project_path(assignment_config)
@@ -155,13 +156,17 @@ def build_cutoff_market(
                     node=area_to_node[area_id],
                     preferences=(),
                     priorities={},
+                    utilities={},
                 )
             )
             continue
 
-        eligible_columns = np.flatnonzero(
-            school_eligibility[market_row] & np.isfinite(shocked_utilities[market_row])
+        eligible_mask = school_eligibility[market_row] & np.isfinite(
+            shocked_utilities[market_row]
         )
+        if outside_option_utility is not None:
+            eligible_mask &= shocked_utilities[market_row] > outside_option_utility
+        eligible_columns = np.flatnonzero(eligible_mask)
         utility_values = shocked_utilities[market_row, eligible_columns]
         if np.unique(utility_values).size != utility_values.size:
             raise ValueError(
@@ -181,12 +186,17 @@ def build_cutoff_market(
             )
             for column in order
         }
+        utilities = {
+            int(school_ids[column]): float(shocked_utilities[market_row, column])
+            for column in order
+        }
         students.append(
             CutoffStudent(
                 studentno=studentno,
                 node=area_to_node[area_id],
                 preferences=preferences,
                 priorities=priorities,
+                utilities=utilities,
             )
         )
 
@@ -223,6 +233,17 @@ def build_cutoff_market(
             "a matching preference record are modeled as accepting only the "
             "outside option."
         ),
+        "utility_definition": (
+            "Best eligible-program systematic utility plus one fixed "
+            "student-school Gumbel shock. Welfare integrates the common STB "
+            "lottery analytically; no applicant tie-break scores are sampled."
+        ),
+        "outside_option_utility": outside_option_utility,
+        "outside_option_definition": (
+            "Schools weakly below the outside option are omitted from preferences."
+            if outside_option_utility is not None
+            else "The outside option follows every policy-eligible school."
+        ),
         "priority_definition": (
             "Best eligible-program status-quo base policy score using ETB CTIP; "
             "lottery, round, and listed/designation boosts excluded."
@@ -234,6 +255,9 @@ def build_cutoff_market(
         school_capacities=school_capacities,
         zone_restricted_schools=zone_restricted_schools,
         lottery_scale=lottery_scale,
+        outside_option_utility=(
+            0.0 if outside_option_utility is None else float(outside_option_utility)
+        ),
         metadata=metadata,
     )
 

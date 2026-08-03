@@ -48,6 +48,7 @@ class CutoffStudent:
     node: int
     preferences: tuple[int, ...]
     priorities: dict[int, int]
+    utilities: dict[int, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ class CutoffMarket:
     school_capacities: dict[int, int]
     zone_restricted_schools: frozenset[int]
     lottery_scale: int
+    outside_option_utility: float = 0.0
     metadata: dict = field(default_factory=dict)
 
 
