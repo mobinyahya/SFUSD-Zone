@@ -64,6 +64,32 @@ class CutoffMarket:
     metadata: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class AnalyticalWelfareSegment:
+    """One observable mass point in the analytical random-utility market."""
+
+    segment_id: int
+    node: int
+    mass: float
+    eligible_schools: tuple[int, ...]
+    priorities: dict[int, float]
+    systematic_utilities: dict[int, float]
+    outside_utility: float = 0.0
+
+
+@dataclass(frozen=True)
+class AnalyticalWelfareMarket:
+    """Primitives for expected-MNL welfare in isolated DA-STB markets."""
+
+    segments: tuple[AnalyticalWelfareSegment, ...]
+    school_nodes: dict[int, int]
+    school_capacities: dict[int, int]
+    zone_restricted_schools: frozenset[int]
+    beta: float
+    lottery_scale: int
+    metadata: dict = field(default_factory=dict)
+
+
 @dataclass
 class ZoneProblem:
     """One optimization instance.
@@ -126,6 +152,7 @@ class ZoneProblem:
     hint: Optional[dict[int, int]] = None
     choice_objective: Optional[ChoiceObjective] = None
     cutoff_market: Optional[CutoffMarket] = None
+    analytical_welfare_market: Optional[AnalyticalWelfareMarket] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(

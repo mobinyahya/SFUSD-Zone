@@ -1,0 +1,31 @@
+# Policy config for status_quo
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: -1
+non_designation_boost: 128
+
+policies:
+- Con1
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+
+aa_boost: 1000
+add_aa_schools: true
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

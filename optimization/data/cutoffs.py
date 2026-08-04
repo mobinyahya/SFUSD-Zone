@@ -15,7 +15,13 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
     MarketGenerator,
 )
 from optimization.data import loaders
-from optimization.problem import CutoffMarket, CutoffStudent, ZoneProblem
+from optimization.problem import (
+    AnalyticalWelfareMarket,
+    AnalyticalWelfareSegment,
+    CutoffMarket,
+    CutoffStudent,
+    ZoneProblem,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -258,6 +264,223 @@ def build_cutoff_market(
         outside_option_utility=(
             0.0 if outside_option_utility is None else float(outside_option_utility)
         ),
+        metadata=metadata,
+    )
+
+
+def build_analytical_welfare_market(
+    dataset,
+    problem: ZoneProblem,
+    *,
+    assignment_config: str,
+    ctip_path: str,
+    lottery_scale: int,
+    beta: float,
+    remove_city_wide: bool,
+    outside_systematic_utility: float = 0.0,
+) -> AnalyticalWelfareMarket:
+    """Build the systematic-utility market before any Gumbel draw or filtering."""
+    if not np.isfinite(beta) or beta <= 0:
+        raise ValueError("beta must be positive and finite.")
+    if not np.isfinite(outside_systematic_utility):
+        raise ValueError("outside_systematic_utility must be finite.")
+    if isinstance(lottery_scale, bool) or not isinstance(lottery_scale, int):
+        raise ValueError("lottery_scale must be a positive integer.")
+    if lottery_scale <= 0:
+        raise ValueError("lottery_scale must be a positive integer.")
+
+    config_path = _resolve_project_path(assignment_config)
+    resolved_ctip_path = str(Path(ctip_path).expanduser().resolve())
+    config = load_config(config_path, "status_quo")
+    config["ctip-options"] = ["new_ctip"]
+    config["paths"]["new-ctip-path"] = resolved_ctip_path
+
+    source_market = MarketGenerator(config=config)
+    citywide_school_ids = frozenset(
+        map(int, source_market.schools.citywide_schools)
+    )
+    if remove_city_wide:
+        citywide_centroids = sorted(
+            citywide_school_ids & set(map(int, problem.centroid_school_ids))
+        )
+        if citywide_centroids:
+            raise ValueError(
+                "remove_city_wide cannot use city-wide centroid schools: "
+                f"{citywide_centroids}."
+            )
+
+    policy = config["policies"][0]
+    source_market.umodel.draw_utility_model_randomness(
+        rows_to_keep=source_market.students.only_keep_rows,
+        cols_to_keep=source_market.programs.only_keep_cols,
+        gumbel_scale=0,
+    )
+    source_market.priority_generator.generate_base_priorities(policy)
+    program_eligibility = (
+        source_market.preference_generator._get_eligibility().astype(bool)
+    )
+    program_priorities = source_market.priority_generator._set_policy_priorities(
+        "new_ctip", policy
+    )
+    school_priorities, school_ids = aggregate_best_eligible_by_school(
+        program_priorities,
+        program_eligibility,
+        source_market.programs.school_to_indices,
+    )
+    school_utilities, utility_school_ids = aggregate_best_eligible_by_school(
+        source_market.umodel.original_utilities,
+        program_eligibility,
+        source_market.programs.school_to_indices,
+    )
+    if school_ids != utility_school_ids:
+        raise RuntimeError("Priority and utility school columns do not align.")
+    excluded_citywide_school_ids = []
+    if remove_city_wide:
+        (
+            school_ids,
+            school_priorities,
+            school_utilities,
+            excluded_citywide_school_ids,
+        ) = _exclude_citywide_school_columns(
+            citywide_school_ids,
+            school_ids,
+            school_priorities,
+            school_utilities,
+        )
+        if not school_ids:
+            raise ValueError("remove_city_wide removed every school from the market.")
+
+    school_eligibility = np.column_stack(
+        [
+            program_eligibility[
+                :,
+                np.asarray(source_market.programs.school_to_indices[school_id]) - 1,
+            ].any(axis=1)
+            for school_id in school_ids
+        ]
+    )
+    capacities = build_school_capacities(source_market)["all_program_capacity"]
+    school_nodes = _school_nodes(problem, source_market, school_ids)
+    school_capacities = {
+        int(school_id): _nonnegative_integer(
+            capacities.loc[school_id], f"capacity for school {school_id}"
+        )
+        for school_id in school_ids
+    }
+    zone_restricted_schools = _zone_restricted_schools(
+        source_market,
+        school_ids,
+        restrict_all=remove_city_wide,
+    )
+
+    optimization_students = loaders.load_students(dataset.ingest)
+    if optimization_students["studentno"].duplicated().any():
+        raise ValueError(
+            "analytical welfare requires unique studentno values after filtering."
+        )
+    market_rows = {
+        int(studentno): int(row)
+        for studentno, row in source_market.students.studentno2idx.items()
+    }
+    area_to_node = _area_to_node(problem)
+    segments = []
+    missing_studentnos = []
+    incidence_count = 0
+    for row in optimization_students.itertuples(index=False):
+        studentno = int(row.studentno)
+        area_id = int(getattr(row, dataset.ingest.unit))
+        if area_id not in area_to_node:
+            raise ValueError(
+                f"Optimization student {studentno} has unmapped "
+                f"{dataset.ingest.unit} {area_id}."
+            )
+        market_row = market_rows.get(studentno)
+        if market_row is None:
+            missing_studentnos.append(studentno)
+            segments.append(
+                AnalyticalWelfareSegment(
+                    segment_id=studentno,
+                    node=area_to_node[area_id],
+                    mass=1.0,
+                    eligible_schools=(),
+                    priorities={},
+                    systematic_utilities={},
+                    outside_utility=float(outside_systematic_utility),
+                )
+            )
+            continue
+
+        eligible_columns = np.flatnonzero(
+            school_eligibility[market_row]
+            & np.isfinite(school_utilities[market_row])
+        )
+        eligible_schools = tuple(
+            int(school_ids[column]) for column in eligible_columns
+        )
+        priorities = {
+            int(school_ids[column]): float(
+                _integer_priority(
+                    school_priorities[market_row, column],
+                    studentno,
+                    int(school_ids[column]),
+                )
+            )
+            for column in eligible_columns
+        }
+        utilities = {
+            int(school_ids[column]): float(school_utilities[market_row, column])
+            for column in eligible_columns
+        }
+        incidence_count += len(eligible_schools)
+        segments.append(
+            AnalyticalWelfareSegment(
+                segment_id=studentno,
+                node=area_to_node[area_id],
+                mass=1.0,
+                eligible_schools=eligible_schools,
+                priorities=priorities,
+                systematic_utilities=utilities,
+                outside_utility=float(outside_systematic_utility),
+            )
+        )
+
+    metadata = {
+        "objective_kind": "analytical_gumbel_stable_welfare",
+        "assignment_config": str(config_path),
+        "ctip_path": resolved_ctip_path,
+        "beta": float(beta),
+        "lottery_scale": int(lottery_scale),
+        "outside_systematic_utility": float(outside_systematic_utility),
+        "optimization_student_count": int(len(optimization_students)),
+        "matched_student_count": len(segments) - len(missing_studentnos),
+        "missing_student_count": len(missing_studentnos),
+        "missing_studentnos": missing_studentnos,
+        "eligible_student_school_incidence_count": incidence_count,
+        "school_count": len(school_ids),
+        "remove_city_wide": bool(remove_city_wide),
+        "excluded_citywide_schools": excluded_citywide_school_ids,
+        "zone_restricted_schools": sorted(zone_restricted_schools),
+        "utility_definition": (
+            "Best eligible-program systematic utility at each school; iid "
+            "same-scale Gumbels for schools and outside are integrated analytically."
+        ),
+        "priority_definition": (
+            "Best eligible-program status-quo base policy score using ETB CTIP; "
+            "lottery, round, and listed/designation boosts excluded."
+        ),
+        "missing_student_definition": (
+            "Optimization students without a source-market row have unit mass and "
+            "only the outside option."
+        ),
+        "alternative_definition": "One school is one choice alternative.",
+    }
+    return AnalyticalWelfareMarket(
+        segments=tuple(segments),
+        school_nodes=school_nodes,
+        school_capacities=school_capacities,
+        zone_restricted_schools=zone_restricted_schools,
+        beta=float(beta),
+        lottery_scale=lottery_scale,
         metadata=metadata,
     )
 
