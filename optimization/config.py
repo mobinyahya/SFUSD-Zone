@@ -71,6 +71,7 @@ class OptimizationConfig:
     welfare_utility_scale: int = 1_000_000
     welfare_initial_assignment_path: str = ""
     welfare_prefix_depth: int = 10
+    welfare_method: str = "decomposition"
 
     # --- data ingestion ----------------------------------------------- #
     years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
@@ -159,6 +160,10 @@ class OptimizationConfig:
             or self.welfare_prefix_depth <= 0
         ):
             raise ValueError("welfare_prefix_depth must be a positive integer.")
+        if self.welfare_method not in {"decomposition", "direct"}:
+            raise ValueError(
+                "welfare_method must be one of: decomposition, direct."
+            )
         if (
             not math.isfinite(float(self.school_solve_time_limit))
             or self.school_solve_time_limit <= 0
@@ -260,4 +265,5 @@ class OptimizationConfig:
             welfare_utility_scale=self.welfare_utility_scale,
             welfare_initial_assignment_path=self.welfare_initial_assignment_path,
             welfare_prefix_depth=self.welfare_prefix_depth,
+            welfare_method=self.welfare_method,
         )

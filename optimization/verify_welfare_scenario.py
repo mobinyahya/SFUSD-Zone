@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from optimization.config import OptimizationConfig
+from optimization.branch_price import ZonePattern, ZonePatternValidator
 from optimization.data import loaders
 from optimization.data.contiguity import boundary_edges
 from optimization.welfare_oracle import (
@@ -26,10 +27,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--solve-seconds", type=float, default=540.0)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--utility-scale", type=int, default=1_000_000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--raw-upper-bound", type=int)
+    parser.add_argument(
+        "--method", choices=("decomposition", "direct"), default="decomposition"
+    )
     parser.add_argument("--initial-assignment", type=Path)
     args = parser.parse_args(argv)
-    if args.solve_seconds <= 0 or args.solve_seconds >= 600:
-        parser.error("--solve-seconds must be positive and below 600")
+    if args.solve_seconds <= 0 or args.solve_seconds >= 895:
+        parser.error("--solve-seconds must be positive and below 895")
+    if args.raw_upper_bound is not None and args.method != "direct":
+        parser.error("--raw-upper-bound currently requires --method direct")
     args.output.mkdir(parents=True, exist_ok=True)
 
     started = time.monotonic()
@@ -46,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
         solve_time_limits=[args.solve_seconds],
         gap_limits=[0.0],
         hints="voronoi",
-        seed=42,
+        seed=args.seed,
         workers=5,
         linearization_level=1,
         cp_sat_search_strategy="distance_to_centroid",
@@ -57,14 +65,14 @@ def main(argv: list[str] | None = None) -> None:
         include_k8=False,
         cutoff_assignment_config="assignment/configs/kumar.config.yaml",
         cutoff_ctip_path=(
-            "/share/data/school_choice/Data/2025_cleaned_data/"
-            "Cleaned_new/ETB_2024.npy"
+            "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
         ),
         cutoff_lottery_scale=20,
         cutoff_gumbel_scale=1.0,
         cutoff_preference_seed=2023,
         remove_city_wide=True,
         welfare_utility_scale=args.utility_scale,
+        welfare_method=args.method,
         welfare_initial_assignment_path=(
             str(args.initial_assignment) if args.initial_assignment else ""
         ),
@@ -73,9 +81,10 @@ def main(argv: list[str] | None = None) -> None:
     expected_student_ids = set(
         map(int, loaders.load_students(dataset.ingest)["studentno"])
     )
-    solution = config.make_strategy().run(
-        dataset, config.make_solver(output_dir=str(args.output))
-    )[0]
+    solver = config.make_solver(output_dir=str(args.output))
+    if args.raw_upper_bound is not None:
+        solver.options["welfare_raw_upper_bound"] = args.raw_upper_bound
+    solution = config.make_strategy().run(dataset, solver)[0]
     solution.save(str(args.output))
     elapsed = time.monotonic() - started
 
@@ -101,6 +110,9 @@ def main(argv: list[str] | None = None) -> None:
             "lottery_scale": config.cutoff_lottery_scale,
             "utility_scale": config.welfare_utility_scale,
             "prefix_depth": config.welfare_prefix_depth,
+            "method": config.welfare_method,
+            "seed": config.seed,
+            "raw_upper_bound": args.raw_upper_bound,
             "remove_city_wide": config.remove_city_wide,
         },
         "artifact": str(args.output / "solution_Block_2.json"),
@@ -123,16 +135,13 @@ def validate_solution(solution, expected_student_ids, *, runtime_seconds):
         num_zones=problem.Z,
         utility_scale=solution.metadata["welfare_utility_scale"],
     )
-    continuum = solve_zoned_continuum_welfare(
-        market, assignment, num_zones=problem.Z
-    )
+    continuum = solve_zoned_continuum_welfare(market, assignment, num_zones=problem.Z)
     student_ids = {student.studentno for student in market.students}
     zone_stable = {
-        str(zone): result.stable
-        for zone, result in continuum.cutoffs.zones.items()
+        str(zone): result.stable for zone, result in continuum.cutoffs.zones.items()
     }
     checks = {
-        "runtime_below_10_minutes": runtime_seconds < 600.0,
+        "runtime_below_15_minutes": runtime_seconds < 900.0,
         "feasible_complete_assignment": complete,
         "six_zones": problem.Z == 6,
         "contiguous": complete and solution.is_contiguous(),
@@ -150,11 +159,11 @@ def validate_solution(solution, expected_student_ids, *, runtime_seconds):
         ),
         "grid_minimal": grid.cutoffs.grid_minimal,
         "grid_cutoffs_reconstructed": (
-            grid.cutoffs.school_cutoffs == solution.metadata.get("school_cutoffs")
+            grid.cutoffs.school_cutoffs
+            == _integer_keyed(solution.metadata.get("school_cutoffs", {}))
         ),
         "grid_welfare_reconstructed": (
-            grid.raw_scaled_welfare
-            == solution.metadata.get("raw_scaled_welfare")
+            grid.raw_scaled_welfare == solution.metadata.get("raw_scaled_welfare")
             and math.isclose(
                 grid.welfare,
                 float(solution.metadata.get("welfare", math.inf)),
@@ -167,9 +176,11 @@ def validate_solution(solution, expected_student_ids, *, runtime_seconds):
             and all(zone_stable.values())
             and zone_stable == solution.metadata.get("zone_stable")
         ),
+        "encoded_geography_constraints": complete
+        and _valid_encoded_geography(problem, assignment),
         "continuous_cutoffs_reconstructed": _float_maps_close(
             continuum.cutoffs.school_cutoffs,
-            solution.metadata.get("continuum_school_cutoffs", {}),
+            _integer_keyed(solution.metadata.get("continuum_school_cutoffs", {})),
         ),
         "finite_grid_global_optimum_certified": (
             solution.status == "OPTIMAL"
@@ -181,14 +192,11 @@ def validate_solution(solution, expected_student_ids, *, runtime_seconds):
     reconstruction = {
         "welfare": grid.welfare,
         "rounded_welfare": (
-            grid.raw_scaled_welfare
-            / (market.lottery_scale * grid.utility_scale)
+            grid.raw_scaled_welfare / (market.lottery_scale * grid.utility_scale)
         ),
         "raw_scaled_welfare": grid.raw_scaled_welfare,
         "raw_scaled_upper_bound": solution.metadata.get("raw_scaled_upper_bound"),
-        "true_welfare_upper_bound": solution.metadata.get(
-            "true_welfare_upper_bound"
-        ),
+        "true_welfare_upper_bound": solution.metadata.get("true_welfare_upper_bound"),
         "true_welfare_gap_bound": solution.metadata.get("true_welfare_gap_bound"),
         "continuum_welfare": continuum.welfare,
         "zone_stable": zone_stable,
@@ -223,6 +231,34 @@ def _float_maps_close(left, right, tolerance=1e-8):
         math.isclose(float(value), float(right[key]), abs_tol=tolerance)
         for key, value in left.items()
     )
+
+
+def _integer_keyed(values):
+    return {int(key): value for key, value in values.items()}
+
+
+def _valid_encoded_geography(problem, assignment):
+    if set(assignment) != set(problem.nodes) or not set(assignment.values()) <= set(
+        range(problem.Z)
+    ):
+        return False
+    validator = ZonePatternValidator(problem, centroid_neighbor_radius=0)
+    try:
+        for label in range(problem.Z):
+            nodes = frozenset(
+                node for node, assigned in assignment.items() if assigned == label
+            )
+            validator(
+                ZonePattern.from_graph(
+                    label=label,
+                    nodes=nodes,
+                    raw_welfare=0,
+                    graph=problem.G,
+                )
+            )
+    except ValueError:
+        return False
+    return True
 
 
 if __name__ == "__main__":

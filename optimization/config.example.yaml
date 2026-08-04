@@ -57,6 +57,7 @@ cutoff_preference_seed: 2023
 remove_city_wide: false         # cutoffs/welfare: exclude citywide schools
 # welfare_utility_scale: 1000000 # welfare: fixed-point utility precision
 # welfare_prefix_depth: 10       # welfare: exact global recurrence through top ranks
+# welfare_method: decomposition   # welfare: decomposition or direct benchmark
 
 # --- data ingestion ---
 years: [21, 22, 23]

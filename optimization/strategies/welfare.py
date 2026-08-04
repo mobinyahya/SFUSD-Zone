@@ -10,6 +10,7 @@ from optimization.data.dataset import Dataset
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.solvers.base import Solver
+from optimization.solvers.welfare import WelfareSolver
 from optimization.solvers.welfare_decomposition import WelfareDecompositionSolver
 from optimization.strategies.base import Strategy, register
 
@@ -62,10 +63,19 @@ class WelfareStrategy(Strategy):
             remove_city_wide=True,
             outside_option_utility=0.0,
         )
+        method = self.options.get("welfare_method", "decomposition")
+        solver_class = {
+            "decomposition": WelfareDecompositionSolver,
+            "direct": WelfareSolver,
+        }.get(method)
+        if solver_class is None:
+            raise ValueError(f"Unknown welfare_method: {method!r}.")
+        solver_options = {"utility_scale": int(self.options["welfare_utility_scale"])}
+        if method == "decomposition":
+            solver_options["prefix_depth"] = int(self.options["welfare_prefix_depth"])
         return [
-            WelfareDecompositionSolver(
+            solver_class(
                 solver,
-                utility_scale=int(self.options["welfare_utility_scale"]),
-                prefix_depth=int(self.options["welfare_prefix_depth"]),
+                **solver_options,
             ).solve(problem)
         ]
