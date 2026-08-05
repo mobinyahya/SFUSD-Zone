@@ -14,7 +14,7 @@ strategy: 'cutoffs'   # single | recursive | iterative_choice | overlapping | cu
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
 # --- optimization parameters ---
-frl_dev: -1
+frl_dev: 0.15
 racial_dev: -1
 overage: -1                      # negative disables maximum seats/student bound
 shortage: -1                     # negative disables minimum seats/student bound
@@ -34,7 +34,7 @@ linearization_level: 1
 # symmetry_level: 2
 # cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
 # --- strategy-specific ---
-# boundary_prop: 0.2           # cutoffs/iterative_choice: 0..1; negative disables
+boundary_prop: 0.2           # cutoffs/iterative_choice: 0..1; negative disables
 # cutoffs requires solver: cp_bool, years: [23], and population_type: All.
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy

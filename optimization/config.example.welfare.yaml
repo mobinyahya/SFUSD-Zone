@@ -1,7 +1,7 @@
 # Stable finite-grid utilitarian-welfare benchmark.
 
 centroids_type: '6-zone-9'
-levels: ['Block_1']
+levels: ['Block_2']
 solver: 'cp_bool'
 strategy: 'welfare'
 
@@ -24,7 +24,7 @@ cutoff_lottery_scale: 100
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
 remove_city_wide: true
-welfare_utility_scale: 10000
+welfare_utility_scale: 1000
 welfare_prefix_depth: 10
 welfare_method: decomposition
 # welfare_initial_assignment_path: benchmark_output/prior/zone_dict_Block_2.json

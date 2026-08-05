@@ -71,10 +71,7 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
         if self.utility_scale <= 0:
             raise ValueError("welfare_utility_scale must be a positive integer.")
         validate_welfare_market(market, utility_scale=self.utility_scale)
-        self._comparison_vars = {}
-        self._blocking_vars = {}
-        self._cut_count = 0
-        self._cut_profile_count = 0
+        self._reset_cut_state()
         self._welfare_cut_count = 0
         self._welfare_term_count = 0
         self._zoning_no_good_count = 0
@@ -288,7 +285,7 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                 reverse=True,
             )[:20]
             for school in separated_schools:
-                self._add_interval_capacity_cut(
+                capacity_cuts += self._add_interval_capacity_cut(
                     model,
                     problem,
                     market,
@@ -298,7 +295,6 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                     intervals[school],
                     max_cutoff,
                 )
-                capacity_cuts += 1
 
             oracle = solve_zoned_welfare(
                 market,

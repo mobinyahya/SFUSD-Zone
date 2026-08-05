@@ -37,9 +37,9 @@ class _Incumbent:
 @dataclass(frozen=True)
 class _DemandInterval:
     student: CutoffStudent
-    zone: int
     low: int
     high: int
+    higher: tuple[int, ...]
 
 
 class CutoffDecompositionSolver:
@@ -48,16 +48,20 @@ class CutoffDecompositionSolver:
     def __init__(self, zoning_solver) -> None:
         self.zoning_solver = zoning_solver
         self.options = zoning_solver.options
+        self._reset_cut_state()
+
+    def _reset_cut_state(self) -> None:
         self._comparison_vars = {}
+        self._zone_access_vars = {}
+        self._affordability_vars = {}
         self._blocking_vars = {}
+        self._demand_vars = {}
+        self._capacity_cut_signatures = set()
         self._cut_count = 0
         self._cut_profile_count = 0
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
-        self._comparison_vars = {}
-        self._blocking_vars = {}
-        self._cut_count = 0
-        self._cut_profile_count = 0
+        self._reset_cut_state()
         market = problem.cutoff_market
         if market is None:
             raise ValueError("Cutoff decomposition requires a cutoff market.")
@@ -167,7 +171,7 @@ class CutoffDecompositionSolver:
 
             cuts_added = 0
             for school in overloaded:
-                self._add_interval_capacity_cut(
+                cuts_added += self._add_interval_capacity_cut(
                     model,
                     problem,
                     market,
@@ -177,7 +181,6 @@ class CutoffDecompositionSolver:
                     intervals[school],
                     max_cutoff,
                 )
-                cuts_added += 1
 
             row.update(
                 {
@@ -706,40 +709,44 @@ class CutoffDecompositionSolver:
         school,
         intervals,
         max_cutoff,
-    ) -> None:
-        school_node = market.school_nodes[school]
+    ) -> bool:
         restricted = market.zone_restricted_schools
         profiles = Counter()
         for interval in intervals:
             student = interval.student
-            higher = []
-            for preferred in student.preferences:
-                if preferred == school:
-                    break
-                higher.append(
+            higher = tuple(
+                sorted(
                     (
                         preferred,
                         student.priorities[preferred] * market.lottery_scale
                         + interval.high
                         - 1,
                     )
+                    for preferred in interval.higher
                 )
+            )
             qualify_limit = (
                 student.priorities[school] * market.lottery_scale + interval.low - 1
             )
-            profiles[(student.node, interval.zone, qualify_limit, tuple(higher))] += (
+            profiles[(student.node, qualify_limit, higher)] += (
                 interval.high - interval.low + 1
             )
 
+        signature = (school, tuple(sorted(profiles.items())))
+        if signature in self._capacity_cut_signatures:
+            return False
+        self._capacity_cut_signatures.add(signature)
+
         terms = []
-        for profile_index, (
-            (student_node, zone, qualify_limit, higher),
-            weight,
-        ) in enumerate(profiles.items()):
-            student_zone = x[(zone, student_node)]
+        for (student_node, qualify_limit, higher), weight in profiles.items():
             school_qualifies = self._comparison(
                 model, cutoffs[school], school, qualify_limit, max_cutoff
             )
+            target_access = None
+            if school in restricted:
+                target_access = self._zone_access(
+                    model, problem, market, x, student_node, school
+                )
             blockers = []
             for preferred, qualify_limit_at_high in higher:
                 preferred_qualifies = self._comparison(
@@ -750,53 +757,103 @@ class CutoffDecompositionSolver:
                     max_cutoff,
                 )
                 if preferred in restricted:
-                    preferred_node = market.school_nodes[preferred]
-                    preferred_zone = x.get((zone, preferred_node))
-                    if preferred_zone is None:
-                        continue
+                    preferred_access = self._zone_access(
+                        model, problem, market, x, student_node, preferred
+                    )
                     blockers.append(
-                        self._blocking(
+                        self._affordability(
                             model,
-                            zone,
+                            student_node,
                             preferred,
                             qualify_limit_at_high,
-                            preferred_zone,
+                            preferred_access,
                             preferred_qualifies,
+                            max_cutoff,
                         )
                     )
                 else:
                     blockers.append(preferred_qualifies)
-            demand = model.NewBoolVar(f"demand_cut_{self._cut_count}_{profile_index}")
-            access_terms = [student_zone]
-            if school in restricted:
-                access_terms.append(x[(zone, school_node)])
-            model.Add(
-                demand
-                >= sum(access_terms)
-                + school_qualifies
-                - len(access_terms)
-                - sum(blockers)
-            )
+            profile = (school, student_node, qualify_limit, higher)
+            demand = self._demand_vars.get(profile)
+            if demand is None:
+                demand = model.NewBoolVar(f"interval_demand_{len(self._demand_vars)}")
+                self._demand_vars[profile] = demand
+                clause = [demand, school_qualifies.Not(), *blockers]
+                if target_access is not None:
+                    clause.append(target_access.Not())
+                model.AddBoolOr(clause)
+                self._cut_profile_count += 1
             terms.append(weight * demand)
 
         model.Add(sum(terms) <= market.school_capacities[school] * market.lottery_scale)
         self._cut_count += 1
-        self._cut_profile_count += len(profiles)
+        return True
 
     def _comparison(self, model, cutoff, school, limit, max_cutoff):
         key = (school, limit)
         if key in self._comparison_vars:
             return self._comparison_vars[key]
-        var = model.NewBoolVar(f"cutoff_le_{school}_{limit}")
         if limit < 0:
-            model.Add(var == 0)
+            var = model.NewConstant(0)
         elif limit >= max_cutoff:
-            model.Add(var == 1)
+            var = model.NewConstant(1)
         else:
+            var = model.NewBoolVar(f"cutoff_le_{school}_{limit}")
             model.Add(cutoff <= limit).OnlyEnforceIf(var)
             model.Add(cutoff > limit).OnlyEnforceIf(var.Not())
         self._comparison_vars[key] = var
         return var
+
+    def _zone_access(self, model, problem, market, x, block, school):
+        """Return whether a block and restricted school share a zone."""
+        key = (block, school)
+        if key in self._zone_access_vars:
+            return self._zone_access_vars[key]
+
+        school_node = market.school_nodes[school]
+        if block == school_node:
+            access = model.NewConstant(1)
+            self._zone_access_vars[key] = access
+            return access
+
+        access = model.NewBoolVar(f"block_zone_access_{block}_{school}")
+        self._zone_access_vars[key] = access
+        for zone in sorted(problem.candidate_zones(school_node)):
+            school_zone = x[(zone, school_node)]
+            block_zone = x.get((zone, block))
+            if block_zone is None:
+                model.AddImplication(school_zone, access.Not())
+                continue
+            # One school-zone literal is true, so these one-way implications
+            # determine access without encoding the converse implication.
+            model.AddBoolOr([school_zone.Not(), access.Not(), block_zone])
+            model.AddBoolOr([school_zone.Not(), access, block_zone.Not()])
+        return access
+
+    def _affordability(
+        self,
+        model,
+        block,
+        school,
+        limit,
+        access,
+        qualifies,
+        max_cutoff,
+    ):
+        """Return the conjunction of zone access and cutoff qualification."""
+        if limit < 0:
+            return qualifies
+        if limit >= max_cutoff:
+            return access
+        key = (block, school, limit)
+        if key in self._affordability_vars:
+            return self._affordability_vars[key]
+        affordable = model.NewBoolVar(f"affordable_{block}_{school}_{limit}")
+        model.AddImplication(affordable, access)
+        model.AddImplication(affordable, qualifies)
+        model.AddBoolOr([affordable, access.Not(), qualifies.Not()])
+        self._affordability_vars[key] = affordable
+        return affordable
 
     def _blocking(
         self,
@@ -811,9 +868,9 @@ class CutoffDecompositionSolver:
         if key in self._blocking_vars:
             return self._blocking_vars[key]
         var = model.NewBoolVar(f"blocking_{zone}_{school}_{limit}")
-        model.Add(var <= school_zone)
-        model.Add(var <= school_qualifies)
-        model.Add(var >= school_zone + school_qualifies - 1)
+        model.AddImplication(var, school_zone)
+        model.AddImplication(var, school_qualifies)
+        model.AddBoolOr([var, school_zone.Not(), school_qualifies.Not()])
         self._blocking_vars[key] = var
         return var
 
@@ -834,7 +891,7 @@ def _candidate_demands(
     for student in market.students:
         zone = assignment[student.node]
         remaining = scale
-        for school in student.preferences:
+        for rank, school in enumerate(student.preferences):
             if school in restricted and assignment[market.school_nodes[school]] != zone:
                 continue
             threshold = min(
@@ -845,7 +902,12 @@ def _candidate_demands(
                 mass = remaining - threshold
                 demands[school] += mass
                 intervals[school].append(
-                    _DemandInterval(student, zone, threshold + 1, remaining)
+                    _DemandInterval(
+                        student,
+                        threshold + 1,
+                        remaining,
+                        student.preferences[:rank],
+                    )
                 )
             remaining = min(remaining, threshold)
     return demands, intervals

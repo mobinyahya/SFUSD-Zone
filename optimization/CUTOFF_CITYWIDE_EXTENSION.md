@@ -87,19 +87,22 @@ For every school `r` preferred to `s`, define the high-end blocker
 
 ```text
 B_ir^b = 1{kappa_r <= L p_ir + b - 1}                  if r is citywide,
-B_ir^b = x_(z,h(r)) AND 1{kappa_r <= L p_ir + b - 1}  if r is restricted.
+B_ir^b = A_(v(i),r) AND 1{kappa_r <= L p_ir + b - 1}  if r is restricted,
 ```
 
-The generated demand indicator has the valid lower bound
+where `A_(v(i),r)` says that the applicant block and school share a zone. The
+generated demand indicator is linked by the clause
 
 ```text
-d_J >= x_(z,v(i)) + Q_is^a - 1 - sum_(r preferred to s) B_ir^b
+d_J OR NOT Q_is^a OR OR_(r preferred to s) B_ir^b
 ```
 
-for a citywide target. For a restricted target, add `x_(z,h(s))` to the
-right-hand side and subtract one more. Requiring a citywide target's applicant
-to remain in the generating zone is conservative: it can omit demand after a
-zoning change but cannot invent demand.
+for a citywide target. For a restricted target, add `NOT A_(v(i),s)` to the
+clause. Access literals are shared by every interval involving the same block
+and school. For every candidate school zone they are encoded only as
+`school_in_z -> (A_(v(i),s) == block_in_z)`, not as a biconditional. The
+exactly-one school assignment makes those implications sufficient to determine
+access.
 
 Capacity is imposed once per school over intervals generated in every zone:
 

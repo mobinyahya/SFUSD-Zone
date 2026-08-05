@@ -55,20 +55,30 @@ The master in `optimization/solvers/cutoff_decomposition.py` contains only:
 - One integer cutoff per school.
 - Revealed-preference interval cuts separated from candidate solutions.
 
-Suppose candidate lottery interval `[a,b]` of student `i` chooses school `s` in
-zone `z`. It must continue choosing `s` whenever:
+Suppose candidate lottery interval `[a,b]` of student `i` chooses school `s`.
+It must continue choosing `s` whenever:
 
 ```text
-i and s remain in z,
+s remains accessible to i,
 c_s <= L p_is + a - 1,
-for every r preferred to s: r is outside z or c_r >= L p_ir + b.
+for every accessible r preferred to s: c_r >= L p_ir + b.
 ```
 
 Under these conditions `s` admits the interval's lowest lottery value and all
-preferred in-zone schools reject its highest value. Monotonicity covers the
-whole interval. A Boolean lower bound counts that mass against `s`'s capacity.
-The cut may undercount demand away from the candidate, but can never exclude a
-capacity-feasible zoning/cutoff vector. Identical conditions are grouped.
+preferred accessible schools reject its highest value. Monotonicity covers the
+whole interval. The implementation adds the clause saying that target access
+and qualification, together with the absence of an affordable higher choice,
+imply the interval-demand literal. Identical literals are shared and their
+cumulative mass is counted against `s`'s capacity.
+
+Zone-restricted access means that the applicant block and school share a zone;
+citywide schools are always accessible. For each restricted block-school pair,
+one shared access literal is defined by
+`school_in_z -> (access == block_in_z)` for every candidate school zone. This is
+intentionally not a biconditional. Exactly one school assignment is true, so
+the one-way implications still determine access completely in the zoning
+master. The cut may undercount demand away from the candidate, but can never
+exclude a capacity-feasible zoning/cutoff vector.
 
 The algorithm is finite because zoning and cutoff domains are finite and every
 infeasible master candidate receives a violated cut. It reports `OPTIMAL` only

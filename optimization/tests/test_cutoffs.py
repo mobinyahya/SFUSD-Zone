@@ -6,6 +6,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
+from ortools.sat.python import cp_model
 
 from optimization.cutoff_oracle import (
     _coupled_zone_stability_checks,
@@ -24,7 +25,10 @@ from optimization.data.cutoffs import (
 )
 from optimization.problem import CutoffMarket, CutoffStudent
 from optimization.solvers import get_solver
-from optimization.solvers.cutoff_decomposition import CutoffDecompositionSolver
+from optimization.solvers.cutoff_decomposition import (
+    CutoffDecompositionSolver,
+    _DemandInterval,
+)
 from optimization.tests.synthetic import make_grid_problem
 
 
@@ -234,6 +238,134 @@ def test_grid_oracle_matches_brute_force_least_cutoffs():
         for cutoffs in feasible
         for school in capacities
     )
+
+
+@pytest.mark.parametrize(
+    ("block_zone", "school_zone", "expected_access"),
+    ((0, 0, 1), (0, 1, 0), (1, 0, 0), (1, 1, 1)),
+)
+def test_block_school_access_follows_the_assigned_school_zone(
+    block_zone, school_zone, expected_access
+):
+    model = cp_model.CpModel()
+    x = {
+        (zone, node): model.NewBoolVar(f"x_{zone}_{node}")
+        for zone in range(2)
+        for node in range(2)
+    }
+    for node, assigned_zone in ((0, block_zone), (1, school_zone)):
+        for zone in range(2):
+            model.Add(x[zone, node] == (zone == assigned_zone))
+    problem = SimpleNamespace(candidate_zones=lambda _node: {0, 1})
+    market = SimpleNamespace(school_nodes={100: 1})
+    decomposition = CutoffDecompositionSolver(SimpleNamespace(options={}))
+
+    access = decomposition._zone_access(model, problem, market, x, 0, 100)
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(model) == cp_model.OPTIMAL
+    assert solver.Value(access) == expected_access
+
+
+def test_block_school_access_does_not_imply_a_school_zone_assignment():
+    model = cp_model.CpModel()
+    x = {
+        (zone, node): model.NewBoolVar(f"x_{zone}_{node}")
+        for zone in range(2)
+        for node in range(2)
+    }
+    problem = SimpleNamespace(candidate_zones=lambda _node: {0, 1})
+    market = SimpleNamespace(school_nodes={100: 1})
+    decomposition = CutoffDecompositionSolver(SimpleNamespace(options={}))
+    access = decomposition._zone_access(model, problem, market, x, 0, 100)
+    model.Add(access == 1)
+    model.Add(x[0, 1] == 0)
+    model.Add(x[1, 1] == 0)
+
+    assert cp_model.CpSolver().Solve(model) == cp_model.OPTIMAL
+
+
+@pytest.mark.parametrize(
+    (
+        "restricted_schools",
+        "block_zone",
+        "target_zone",
+        "higher_zone",
+        "higher_cutoff",
+        "expected_status",
+    ),
+    (
+        (frozenset({100, 200}), 1, 1, 0, 0, cp_model.INFEASIBLE),
+        (frozenset({100, 200}), 1, 1, 1, 0, cp_model.OPTIMAL),
+        (frozenset({100, 200}), 1, 1, 1, 4, cp_model.INFEASIBLE),
+        (frozenset({100, 200}), 1, 0, 0, 4, cp_model.OPTIMAL),
+        (frozenset({200}), 1, 0, 0, 0, cp_model.INFEASIBLE),
+        (frozenset({100}), 1, 1, 0, 0, cp_model.OPTIMAL),
+    ),
+)
+def test_interval_capacity_clause_uses_access_and_higher_affordability(
+    restricted_schools,
+    block_zone,
+    target_zone,
+    higher_zone,
+    higher_cutoff,
+    expected_status,
+):
+    student = CutoffStudent(1, 0, (200, 100), {100: 0, 200: 0})
+    market = CutoffMarket(
+        students=(student,),
+        school_nodes={100: 1, 200: 2},
+        school_capacities={100: 0, 200: 1},
+        zone_restricted_schools=restricted_schools,
+        lottery_scale=4,
+    )
+    problem = SimpleNamespace(candidate_zones=lambda _node: {0, 1})
+    model = cp_model.CpModel()
+    x = {
+        (zone, node): model.NewBoolVar(f"x_{zone}_{node}")
+        for zone in range(2)
+        for node in range(3)
+    }
+    for node, assigned_zone in (
+        (0, block_zone),
+        (1, target_zone),
+        (2, higher_zone),
+    ):
+        for zone in range(2):
+            model.Add(x[zone, node] == (zone == assigned_zone))
+    cutoffs = {
+        100: model.NewIntVar(0, 4, "cutoff_100"),
+        200: model.NewIntVar(0, 4, "cutoff_200"),
+    }
+    model.Add(cutoffs[100] == 0)
+    model.Add(cutoffs[200] == higher_cutoff)
+    decomposition = CutoffDecompositionSolver(SimpleNamespace(options={}))
+
+    added = decomposition._add_interval_capacity_cut(
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        100,
+        [_DemandInterval(student, 1, 4, (200,))],
+        4,
+    )
+
+    assert added
+    assert not decomposition._add_interval_capacity_cut(
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        100,
+        [_DemandInterval(student, 1, 4, (200,))],
+        4,
+    )
+    assert decomposition._cut_count == 1
+    assert decomposition._cut_profile_count == 1
+    assert cp_model.CpSolver().Solve(model) == expected_status
 
 
 def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
