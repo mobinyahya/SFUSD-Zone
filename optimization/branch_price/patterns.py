@@ -81,7 +81,7 @@ class ZonePatternValidator:
         centroid_neighbor_radius: int = 0,
     ) -> None:
         from optimization.data import contiguity
-        from optimization.solvers.balance import balance_constraints
+        from optimization.solvers.balance import enforced_balance_constraints
 
         if (
             isinstance(centroid_neighbor_radius, bool)
@@ -117,11 +117,7 @@ class ZonePatternValidator:
                 problem.candidate_zones,
             ).items()
         }
-        self.constraints = tuple(
-            constraint
-            for constraint in balance_constraints(problem)
-            if problem.cutoff_market is None or constraint.kind != "capacity"
-        )
+        self.constraints = tuple(enforced_balance_constraints(problem))
         total_schools = sum(problem.num_schools(node) for node in problem.nodes)
         if total_schools:
             average = total_schools / problem.Z
@@ -139,27 +135,48 @@ class ZonePatternValidator:
 
     def __call__(self, pattern: ZonePattern) -> None:
         """Validate one column against the zoning constraints encoded by CP-SAT."""
+        self.validate_membership(
+            label=pattern.label,
+            nodes=pattern.nodes,
+            perimeter=pattern.perimeter,
+        )
+
+    def validate_membership(
+        self,
+        *,
+        label: int,
+        nodes: frozenset[int] | set[int],
+        perimeter: int,
+    ) -> None:
+        """Validate objective-independent complete-zone membership data."""
         problem = self.problem
-        if pattern.label not in range(problem.Z):
-            raise ValueError(f"Unknown pattern label {pattern.label}.")
-        if not pattern.nodes <= self.graph_nodes:
+        label = _as_int("label", label)
+        nodes = frozenset(_as_int("node", node) for node in nodes)
+        perimeter = _as_int("perimeter", perimeter)
+        if not nodes:
+            raise ValueError("A zone pattern must contain at least one node.")
+        if perimeter < 0:
+            raise ValueError("Pattern perimeter must be nonnegative.")
+        if label not in range(problem.Z):
+            raise ValueError(f"Unknown pattern label {label}.")
+        if not nodes <= self.graph_nodes:
             raise ValueError("Pattern contains nodes outside the problem graph.")
-        centroid = problem.centroids[pattern.label]
-        if pattern.nodes & self.centroids != {centroid}:
+        centroid = problem.centroids[label]
+        if nodes & self.centroids != {centroid}:
             raise ValueError("Pattern must contain exactly its labeled centroid.")
         if any(
-            pattern.label not in problem.candidate_zones(node) for node in pattern.nodes
+            label not in problem.candidate_zones(node) for node in nodes
         ):
             raise ValueError("Pattern violates node-zone candidate restrictions.")
-        if not self.neighborhoods[pattern.label] <= pattern.nodes:
+        if not self.neighborhoods[label] <= nodes:
             raise ValueError("Pattern omits a required centroid-neighborhood node.")
-        if not nx.is_connected(problem.G.subgraph(pattern.nodes)):
+        if not nx.is_connected(problem.G.subgraph(nodes)):
             raise ValueError("Pattern nodes must induce a connected subgraph.")
 
-        for node in pattern.nodes - {centroid}:
-            key = (node, pattern.label)
+        for node in nodes - {centroid}:
+            key = (node, label)
             if not self.closer.get(key) or not (
-                self.supports.get(key, frozenset()) & pattern.nodes
+                self.supports.get(key, frozenset()) & nodes
             ):
                 raise ValueError(
                     "Pattern violates centroid-monotone contiguity supports."
@@ -175,7 +192,7 @@ class ZonePatternValidator:
                             - constraint.lower_ratio * problem.students(node)
                         )
                     )
-                    for node in pattern.nodes
+                    for node in nodes
                 )
                 if lower < 0:
                     raise ValueError(
@@ -190,7 +207,7 @@ class ZonePatternValidator:
                             - constraint.upper_ratio * problem.students(node)
                         )
                     )
-                    for node in pattern.nodes
+                    for node in nodes
                 )
                 if upper > 0:
                     raise ValueError(
@@ -199,17 +216,17 @@ class ZonePatternValidator:
 
         if self.school_bounds is not None:
             school_count = 100 * sum(
-                problem.num_schools(node) for node in pattern.nodes
+                problem.num_schools(node) for node in nodes
             )
             if not self.school_bounds[0] <= school_count <= self.school_bounds[1]:
                 raise ValueError("Pattern violates graph-school count bounds.")
 
-        exact_perimeter = zone_perimeter(problem.G, pattern.nodes)
-        if pattern.perimeter != exact_perimeter:
+        exact_perimeter = zone_perimeter(problem.G, nodes)
+        if perimeter != exact_perimeter:
             raise ValueError(
-                f"Pattern perimeter is {pattern.perimeter}, expected {exact_perimeter}."
+                f"Pattern perimeter is {perimeter}, expected {exact_perimeter}."
             )
-        if self.max_cut_edges is not None and pattern.perimeter > self.max_cut_edges:
+        if self.max_cut_edges is not None and perimeter > self.max_cut_edges:
             raise ValueError("Pattern exceeds the necessary per-zone perimeter bound.")
 
 

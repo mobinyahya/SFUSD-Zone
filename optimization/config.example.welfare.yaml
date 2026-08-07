@@ -26,6 +26,7 @@ cutoff_preference_seed: 2023
 remove_city_wide: true
 welfare_utility_scale: 1000
 welfare_prefix_depth: 10
+# budget is the explicit Boolean base model; lbbd adds the paper's generated cuts.
 welfare_method: decomposition
 # welfare_initial_assignment_path: benchmark_output/prior/zone_dict_Block_2.json
 

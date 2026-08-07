@@ -22,7 +22,7 @@ shortage: -1                     # negative disables minimum seats/student bound
 # CP/MIP: force each centroid's graph-hop neighborhood into its zone.
 # cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
 # centroid_neighbor_radius: 0
-solve_time_limits: [540]   # one per level; exact decomposition stays under 10 minutes
+solve_time_limits: [1200]  # one per level; twenty-minute pair-generation run
 gap_limits: [0]
 hints: none             # voronoi | none
 save_solver_logs: True       # write solver logs under output/solver_logs
@@ -41,6 +41,7 @@ cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/E
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
+cutoff_method: pair_generation  # decomposition | pair_generation | conditional_demand
 remove_city_wide: true          # exclude city-wide schools; gate every other school by zone
 
 # --- data ingestion ---

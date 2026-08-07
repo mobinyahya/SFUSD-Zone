@@ -1,9 +1,11 @@
-"""Exact oracle-separated CP-SAT solver for cutoff zoning.
+"""Exact oracle-separated CP-SAT solvers for cutoff zoning.
 
 The master contains the geographic zoning variables and one cutoff per school.
-School-capacity constraints are separated as revealed-preference interval cuts.
-Each cut is valid for every zoning and cutoff vector, so a master lower bound
-that reaches an oracle-feasible incumbent certifies global optimality.
+School-capacity constraints are generated either as revealed-preference interval
+cuts or as exact conditional demands for observed student-school pairs. Each
+partial capacity constraint is valid for every zoning and cutoff vector, so a
+master lower bound that reaches an oracle-feasible incumbent certifies global
+optimality.
 """
 
 from __future__ import annotations
@@ -45,9 +47,10 @@ class _DemandInterval:
 class CutoffDecompositionSolver:
     """Solve a cutoff problem by exact finite constraint generation."""
 
-    def __init__(self, zoning_solver) -> None:
+    def __init__(self, zoning_solver, *, generate_assigned_pairs: bool = False) -> None:
         self.zoning_solver = zoning_solver
         self.options = zoning_solver.options
+        self.generate_assigned_pairs = generate_assigned_pairs
         self._reset_cut_state()
 
     def _reset_cut_state(self) -> None:
@@ -57,6 +60,15 @@ class CutoffDecompositionSolver:
         self._blocking_vars = {}
         self._demand_vars = {}
         self._capacity_cut_signatures = set()
+        self._conditional_positive_threshold_vars = {}
+        self._conditional_threshold_vars = {}
+        self._conditional_effective_threshold_vars = {}
+        self._conditional_prefix_vars = {}
+        self._conditional_demand_vars = {}
+        self._conditional_school_demands = defaultdict(list)
+        self._conditional_profile_counts = None
+        self._conditional_active_pair_count = 0
+        self._conditional_capacity_constraint_count = 0
         self._cut_count = 0
         self._cut_profile_count = 0
 
@@ -69,6 +81,11 @@ class CutoffDecompositionSolver:
             market.zone_restricted_schools
         )
         coupled_market = bool(unrestricted)
+        if self.generate_assigned_pairs and coupled_market:
+            raise ValueError(
+                "Assigned-pair cutoff generation currently requires every school "
+                "to be zone restricted."
+            )
 
         started = time.monotonic()
         time_limit = float(self.options.get("solve_time_limit", 60.0))
@@ -93,9 +110,6 @@ class CutoffDecompositionSolver:
             if local.result.objective < incumbent.result.objective:
                 incumbent = local
 
-        model = cp_model.CpModel()
-        x, y = self.zoning_solver._build_assignment_vars(model, problem)
-        self.zoning_solver._add_core_constraints(model, problem, x, y)
         max_priority = max(
             (
                 priority
@@ -105,13 +119,26 @@ class CutoffDecompositionSolver:
             default=0,
         )
         max_cutoff = (max_priority + 1) * market.lottery_scale
-        cutoffs = {
-            school: model.NewIntVar(0, max_cutoff, f"master_cutoff_{school}")
-            for school in market.school_capacities
-        }
-        cutoff_total = sum(cutoffs.values())
-        model.Minimize(cutoff_total)
-        model.Add(cutoff_total < incumbent.result.objective)
+        active_profiles = {}
+        profile_counts, profile_representatives = self._conditional_profile_data(
+            market
+        )
+        if not self.generate_assigned_pairs:
+            model = cp_model.CpModel()
+            x, y = self.zoning_solver._build_assignment_vars(model, problem)
+            self.zoning_solver._add_core_constraints(model, problem, x, y)
+            cutoffs = {
+                school: model.NewIntVar(
+                    0, max_cutoff, f"master_cutoff_{school}"
+                )
+                for school in market.school_capacities
+            }
+            cutoff_total = sum(cutoffs.values())
+            model.Minimize(cutoff_total)
+            model.Add(cutoff_total <= incumbent.result.objective)
+
+        seeded_pair_count = 0
+        seeded_pair_cuts = 0
 
         rounds = []
         best_bound = 0
@@ -119,10 +146,21 @@ class CutoffDecompositionSolver:
         termination = "time_limit"
         round_index = 0
         while time.monotonic() < deadline:
+            if self.generate_assigned_pairs:
+                model, x, cutoffs, cutoff_total = self._build_pair_master(
+                    problem,
+                    market,
+                    incumbent,
+                    active_profiles,
+                    profile_counts,
+                    profile_representatives,
+                    max_cutoff,
+                )
             remaining = deadline - time.monotonic()
             solver = self._new_solver(min(30.0, remaining), round_index)
-            model.ClearHints()
-            self._add_incumbent_hints(model, problem, x, cutoffs, incumbent)
+            if not self.generate_assigned_pairs:
+                model.ClearHints()
+                self._add_incumbent_hints(model, problem, x, cutoffs, incumbent)
             round_started = time.monotonic()
             status = solver.Solve(model)
             round_seconds = time.monotonic() - round_started
@@ -143,6 +181,10 @@ class CutoffDecompositionSolver:
                 best_bound = incumbent.result.objective
                 rounds.append(row)
                 break
+            if status == cp_model.UNKNOWN and self.generate_assigned_pairs:
+                rounds.append(row)
+                round_index += 1
+                continue
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 termination = status_name.lower()
                 rounds.append(row)
@@ -167,20 +209,40 @@ class CutoffDecompositionSolver:
             candidate_oracle = _solve_cutoffs(problem, assignment)
             if candidate_oracle.objective < incumbent.result.objective:
                 incumbent = _Incumbent(assignment, candidate_oracle)
-                model.Add(cutoff_total < incumbent.result.objective)
+                if not self.generate_assigned_pairs:
+                    model.Add(cutoff_total <= incumbent.result.objective)
 
             cuts_added = 0
-            for school in overloaded:
-                cuts_added += self._add_interval_capacity_cut(
-                    model,
-                    problem,
-                    market,
-                    x,
-                    cutoffs,
-                    school,
-                    intervals[school],
-                    max_cutoff,
-                )
+            pairs_added = 0
+            profiles_added = 0
+            if self.generate_assigned_pairs:
+                changed_schools = set()
+                for school in overloaded:
+                    for interval in intervals[school]:
+                        key = self._conditional_profile_key(
+                            interval.student,
+                            school,
+                            interval.higher,
+                        )
+                        if key in active_profiles:
+                            continue
+                        active_profiles[key] = profile_representatives[key]
+                        pairs_added += profile_counts[key]
+                        profiles_added += 1
+                        changed_schools.add(school)
+                cuts_added = len(changed_schools)
+            else:
+                for school in overloaded:
+                    cuts_added += self._add_interval_capacity_cut(
+                        model,
+                        problem,
+                        market,
+                        x,
+                        cutoffs,
+                        school,
+                        intervals[school],
+                        max_cutoff,
+                    )
 
             row.update(
                 {
@@ -188,6 +250,8 @@ class CutoffDecompositionSolver:
                     "best_bound": round_bound,
                     "overloaded_schools": len(overloaded),
                     "cuts_added": cuts_added,
+                    "conditional_demand_pairs_added": pairs_added,
+                    "conditional_demand_profiles_added": profiles_added,
                     "oracle_incumbent": incumbent.result.objective,
                 }
             )
@@ -205,7 +269,7 @@ class CutoffDecompositionSolver:
                 certified = True
                 termination = "lower_bound_reached_incumbent"
                 break
-            if cuts_added == 0:
+            if cuts_added == 0 and overloaded:
                 termination = "no_separating_cut"
                 break
             round_index += 1
@@ -241,7 +305,11 @@ class CutoffDecompositionSolver:
             **market.metadata,
             "solver": "cp_bool",
             "objective_kind": "school_cutoffs",
-            "optimization_method": "exact_revealed_preference_decomposition",
+            "optimization_method": (
+                "exact_overloaded_pair_generation"
+                if self.generate_assigned_pairs
+                else "exact_revealed_preference_decomposition"
+            ),
             "lottery_scale": market.lottery_scale,
             "school_cutoffs": raw_cutoffs,
             "normalized_school_cutoffs": {
@@ -278,6 +346,15 @@ class CutoffDecompositionSolver:
             "decomposition_rounds": rounds,
             "revealed_preference_cut_count": self._cut_count,
             "revealed_preference_profile_count": self._cut_profile_count,
+            "conditional_demand_pair_count": sum(
+                profile_counts[key] for key in active_profiles
+            ),
+            "conditional_demand_profile_count": len(active_profiles),
+            "conditional_demand_capacity_constraint_count": (
+                self._conditional_capacity_constraint_count
+            ),
+            "assigned_pair_seed_count": seeded_pair_count,
+            "assigned_pair_seed_cut_count": seeded_pair_cuts,
             "heuristic_candidates": heuristic_rows,
         }
         return ZoneSolution(
@@ -698,6 +775,403 @@ class CutoffDecompositionSolver:
             model.AddHint(var, int(incumbent.assignment[node] == zone))
         for school, var in cutoffs.items():
             model.AddHint(var, incumbent.result.school_cutoffs[school])
+
+    def _build_pair_master(
+        self,
+        problem,
+        market,
+        incumbent,
+        active_profiles,
+        profile_counts,
+        profile_representatives,
+        max_cutoff,
+    ):
+        """Rebuild a cutoff-minimization master from active profiles."""
+        self._zone_access_vars = {}
+        self._conditional_positive_threshold_vars = {}
+        self._conditional_threshold_vars = {}
+        self._conditional_effective_threshold_vars = {}
+        self._conditional_prefix_vars = {}
+        self._conditional_demand_vars = {}
+        self._conditional_school_demands = defaultdict(list)
+        self._conditional_capacity_constraint_count = 0
+
+        model = cp_model.CpModel()
+        x, y = self.zoning_solver._build_assignment_vars(model, problem)
+        self.zoning_solver._add_core_constraints(model, problem, x, y)
+        cutoffs = {
+            school: model.NewIntVar(0, max_cutoff, f"master_cutoff_{school}")
+            for school in market.school_capacities
+        }
+        cutoff_total = sum(cutoffs.values())
+        model.Add(cutoff_total <= incumbent.result.objective)
+        model.Minimize(cutoff_total)
+
+        for profile_index, key in enumerate(sorted(active_profiles)):
+            student, school, higher = profile_representatives[key]
+            demand = self._conditional_demand(
+                model,
+                problem,
+                market,
+                x,
+                cutoffs,
+                profile_index,
+                key,
+                student,
+                school,
+                higher,
+                max_cutoff,
+            )
+            self._conditional_demand_vars[key] = demand
+            self._conditional_school_demands[school].append(
+                (profile_counts[key], demand)
+            )
+
+        for school, terms in self._conditional_school_demands.items():
+            model.Add(
+                sum(weight * demand for weight, demand in terms)
+                <= market.school_capacities[school] * market.lottery_scale
+            )
+            self._conditional_capacity_constraint_count += 1
+
+        hint_cutoffs = dict(incumbent.result.school_cutoffs)
+        self._add_complete_pair_hints(
+            model,
+            problem,
+            market,
+            x,
+            cutoffs,
+            incumbent.assignment,
+            hint_cutoffs,
+            profile_representatives,
+        )
+        return model, x, cutoffs, cutoff_total
+
+    def _add_complete_pair_hints(
+        self,
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        assignment,
+        hint_cutoffs,
+        profile_representatives,
+    ) -> None:
+        scale = market.lottery_scale
+        for (zone, node), var in x.items():
+            model.AddHint(var, int(assignment[node] == zone))
+        for school, var in cutoffs.items():
+            model.AddHint(var, hint_cutoffs[school])
+        for (block, school), var in self._zone_access_vars.items():
+            if block == market.school_nodes[school]:
+                continue
+            access = assignment[block] == assignment[market.school_nodes[school]]
+            model.AddHint(var, int(access))
+        for (school, priority), var in self._conditional_positive_threshold_vars.items():
+            positive = max(0, hint_cutoffs[school] - priority * scale)
+            model.AddHint(var, positive)
+        for (school, priority), var in self._conditional_threshold_vars.items():
+            threshold = min(
+                scale,
+                max(0, hint_cutoffs[school] - priority * scale),
+            )
+            model.AddHint(var, threshold)
+        for (block, school, priority), var in (
+            self._conditional_effective_threshold_vars.items()
+        ):
+            value = self._fixed_effective_threshold(
+                problem,
+                market,
+                assignment,
+                hint_cutoffs,
+                block,
+                school,
+                priority,
+            )
+            model.AddHint(var, value)
+        for key, var in self._conditional_prefix_vars.items():
+            student, _school, higher = profile_representatives[key]
+            prefix = min(
+                [
+                    self._fixed_effective_threshold(
+                        problem,
+                        market,
+                        assignment,
+                        hint_cutoffs,
+                        student.node,
+                        preferred,
+                        student.priorities[preferred],
+                    )
+                    for preferred in higher
+                ],
+                default=scale,
+            )
+            model.AddHint(var, prefix)
+        for key, var in self._conditional_demand_vars.items():
+            student, school, higher = profile_representatives[key]
+            demand = self._fixed_profile_demand(
+                problem,
+                market,
+                assignment,
+                hint_cutoffs,
+                student,
+                school,
+                higher,
+            )
+            model.AddHint(var, demand)
+        for (left, right), var in getattr(
+            self.zoning_solver, "_boundary_limit_vars", {}
+        ).items():
+            boundary = int(assignment[left] != assignment[right])
+            model.AddHint(var, boundary)
+
+    @staticmethod
+    def _fixed_effective_threshold(
+        problem,
+        market,
+        assignment,
+        cutoffs,
+        block,
+        school,
+        priority,
+    ) -> int:
+        scale = market.lottery_scale
+        if assignment[block] != assignment[market.school_nodes[school]]:
+            return scale
+        return min(scale, max(0, cutoffs[school] - priority * scale))
+
+    @classmethod
+    def _fixed_profile_demand(
+        cls,
+        problem,
+        market,
+        assignment,
+        cutoffs,
+        student,
+        school,
+        higher,
+    ) -> int:
+        scale = market.lottery_scale
+        prefix = min(
+            [
+                cls._fixed_effective_threshold(
+                    problem,
+                    market,
+                    assignment,
+                    cutoffs,
+                    student.node,
+                    preferred,
+                    student.priorities[preferred],
+                )
+                for preferred in higher
+            ],
+            default=scale,
+        )
+        target = cls._fixed_effective_threshold(
+            problem,
+            market,
+            assignment,
+            cutoffs,
+            student.node,
+            school,
+            student.priorities[school],
+        )
+        return max(0, prefix - target)
+
+    def _activate_conditional_demand_pairs(
+        self,
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        intervals_by_school,
+        max_cutoff,
+    ) -> tuple[int, int, int]:
+        """Activate exact demand profiles represented in an overloaded school."""
+        if self._conditional_profile_counts is None:
+            self._conditional_profile_counts = self._conditional_profiles(market)
+        changed_schools = set()
+        pairs_added = 0
+        profiles_added = 0
+        for school, intervals in intervals_by_school.items():
+            for interval in intervals:
+                student = interval.student
+                key = self._conditional_profile_key(
+                    student,
+                    school,
+                    interval.higher,
+                )
+                if key in self._conditional_demand_vars:
+                    continue
+                weight = self._conditional_profile_counts[key]
+                profile_index = len(self._conditional_demand_vars)
+                demand = self._conditional_demand(
+                    model,
+                    problem,
+                    market,
+                    x,
+                    cutoffs,
+                    profile_index,
+                    key,
+                    student,
+                    school,
+                    interval.higher,
+                    max_cutoff,
+                )
+                self._conditional_demand_vars[key] = demand
+                self._conditional_school_demands[school].append((weight, demand))
+                changed_schools.add(school)
+                pairs_added += weight
+                profiles_added += 1
+                self._conditional_active_pair_count += weight
+
+        for school in changed_schools:
+            model.Add(
+                sum(
+                    weight * demand
+                    for weight, demand in self._conditional_school_demands[school]
+                )
+                <= market.school_capacities[school] * market.lottery_scale
+            )
+            self._conditional_capacity_constraint_count += 1
+        return pairs_added, profiles_added, len(changed_schools)
+
+    @classmethod
+    def _conditional_profiles(cls, market) -> Counter:
+        profiles, _representatives = cls._conditional_profile_data(market)
+        return profiles
+
+    @classmethod
+    def _conditional_profile_data(cls, market):
+        profiles = Counter()
+        representatives = {}
+        for student in market.students:
+            prefix = []
+            for rank, school in enumerate(student.preferences):
+                prefix.append((school, student.priorities[school]))
+                key = (student.node, tuple(prefix))
+                profiles[key] += 1
+                representatives.setdefault(
+                    key,
+                    (student, school, student.preferences[:rank]),
+                )
+        return profiles, representatives
+
+    @staticmethod
+    def _conditional_profile_key(student, school, higher):
+        prefix = tuple(
+            (preferred, student.priorities[preferred])
+            for preferred in (*higher, school)
+        )
+        return student.node, prefix
+
+    def _conditional_demand(
+        self,
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        profile_index,
+        profile_key,
+        student,
+        school,
+        higher,
+        max_cutoff,
+    ):
+        scale = market.lottery_scale
+        target_threshold = self._conditional_effective_threshold(
+            model,
+            problem,
+            market,
+            x,
+            cutoffs,
+            student.node,
+            school,
+            student.priorities[school],
+            max_cutoff,
+        )
+        higher_thresholds = [
+            self._conditional_effective_threshold(
+                model,
+                problem,
+                market,
+                x,
+                cutoffs,
+                student.node,
+                preferred,
+                student.priorities[preferred],
+                max_cutoff,
+            )
+            for preferred in higher
+        ]
+        if higher_thresholds:
+            prefix_min = model.NewIntVar(
+                0,
+                scale,
+                f"conditional_prefix_{profile_index}_{school}",
+            )
+            model.AddMinEquality(prefix_min, [scale, *higher_thresholds])
+            self._conditional_prefix_vars[profile_key] = prefix_min
+        else:
+            prefix_min = scale
+
+        demand = model.NewIntVar(
+            0,
+            scale,
+            f"conditional_demand_{profile_index}_{school}",
+        )
+        model.AddMaxEquality(demand, [prefix_min - target_threshold, 0])
+        return demand
+
+    def _conditional_effective_threshold(
+        self,
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        block,
+        school,
+        priority,
+        max_cutoff,
+    ):
+        """Return the clipped rejection threshold, using scale if inaccessible."""
+        scale = market.lottery_scale
+        threshold_key = (school, priority)
+        threshold = self._conditional_threshold_vars.get(threshold_key)
+        if threshold is None:
+            positive = model.NewIntVar(
+                0,
+                max_cutoff,
+                f"conditional_positive_threshold_{school}_{priority}",
+            )
+            model.AddMaxEquality(positive, [cutoffs[school] - priority * scale, 0])
+            self._conditional_positive_threshold_vars[threshold_key] = positive
+            threshold = model.NewIntVar(
+                0,
+                scale,
+                f"conditional_threshold_{school}_{priority}",
+            )
+            model.AddMinEquality(threshold, [positive, scale])
+            self._conditional_threshold_vars[threshold_key] = threshold
+
+        effective_key = (block, school, priority)
+        effective = self._conditional_effective_threshold_vars.get(effective_key)
+        if effective is not None:
+            return effective
+        access = self._zone_access(model, problem, market, x, block, school)
+        effective = model.NewIntVar(
+            0,
+            scale,
+            f"conditional_effective_threshold_{block}_{school}_{priority}",
+        )
+        model.Add(effective == threshold).OnlyEnforceIf(access)
+        model.Add(effective == scale).OnlyEnforceIf(access.Not())
+        self._conditional_effective_threshold_vars[effective_key] = effective
+        return effective
 
     def _add_interval_capacity_cut(
         self,

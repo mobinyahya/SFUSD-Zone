@@ -23,7 +23,11 @@ from optimization.data import contiguity
 from optimization.data.initial_solutions import normalize_hints
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
-from optimization.solvers.balance import balance_constraints
+from optimization.solvers.balance import (
+    BalanceConstraint,
+    enforced_balance_constraints,
+    rounded_balance_coefficient,
+)
 from optimization.solvers.base import Solver, register
 
 _EPS = 1e-6
@@ -60,18 +64,32 @@ class _ZoneStats:
     values: tuple[float, ...]
     schools: float
     internal_edges: int
+    seat_value: float | None = None
+    frl_value: float | None = None
 
     @property
     def seats(self) -> float:
-        return self.values[0]
+        if self.seat_value is not None:
+            return self.seat_value
+        return self.values[0] if self.values else 0.0
 
     @property
     def frl(self) -> float:
-        return self.values[1]
+        if self.frl_value is not None:
+            return self.frl_value
+        return self.values[1] if len(self.values) > 1 else 0.0
 
     @property
     def cycle_rank(self) -> int:
         return max(0, self.internal_edges - self.node_count + 1)
+
+
+@dataclass(frozen=True)
+class _BalanceRow:
+    constraint: BalanceConstraint
+    sense: str
+    ratio: float
+    rounded: bool
 
 
 @dataclass
@@ -208,10 +226,38 @@ class _ReComContext:
             incident[v].append(edge_id)
         self.incident_edges = tuple(tuple(edge_ids) for edge_ids in incident)
 
-        self.constraints = tuple(balance_constraints(problem))
+        self.constraints = tuple(enforced_balance_constraints(problem))
+        self.balance_rows = tuple(
+            _BalanceRow(
+                constraint,
+                sense,
+                ratio,
+                problem.has_school_capacity_recourse,
+            )
+            for constraint in self.constraints
+            for sense, ratio in (
+                ("lower", constraint.lower_ratio),
+                ("upper", constraint.upper_ratio),
+            )
+            if ratio is not None
+        )
         self.students = tuple(problem.students(node) for node in self.nodes)
+        self.seats = tuple(problem.capacity(node) for node in self.nodes)
+        self.frl = tuple(problem.frl(node) for node in self.nodes)
         self.values = tuple(
-            tuple(constraint.value(node) for constraint in self.constraints)
+            tuple(
+                float(
+                    rounded_balance_coefficient(
+                        problem,
+                        row.constraint,
+                        node,
+                        row.ratio,
+                    )
+                )
+                if row.rounded
+                else row.constraint.value(node)
+                for row in self.balance_rows
+            )
             for node in self.nodes
         )
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
@@ -246,22 +292,19 @@ class _ReComContext:
 
     @property
     def violation_count(self) -> int:
-        balance_bounds = sum(
-            int(constraint.lower_ratio is not None)
-            + int(constraint.upper_ratio is not None)
-            for constraint in self.constraints
-        )
-        return balance_bounds + (2 if self.school_bounds else 0)
+        return len(self.balance_rows) + (2 if self.school_bounds else 0)
 
     def zone_violations(self, stats: _ZoneStats) -> tuple[float, ...]:
         violations: list[float] = []
-        for value, constraint in zip(stats.values, self.constraints):
-            if constraint.lower_ratio is not None:
-                lower = constraint.lower_ratio * stats.students
-                violations.append(max(0.0, lower - value))
-            if constraint.upper_ratio is not None:
-                upper = constraint.upper_ratio * stats.students
-                violations.append(max(0.0, value - upper))
+        for value, row in zip(stats.values, self.balance_rows, strict=True):
+            if row.rounded:
+                violations.append(
+                    max(0.0, -value) if row.sense == "lower" else max(0.0, value)
+                )
+            elif row.sense == "lower":
+                violations.append(max(0.0, row.ratio * stats.students - value))
+            else:
+                violations.append(max(0.0, value - row.ratio * stats.students))
         if self.school_bounds is not None:
             lower, upper = self.school_bounds
             violations.append(max(0.0, lower - stats.schools))
@@ -273,7 +316,9 @@ class _ReComContext:
         node_counts = [0] * self.zone_count
         students = [0.0] * self.zone_count
         schools = [0.0] * self.zone_count
-        values = [[0.0] * len(self.constraints) for _ in range(self.zone_count)]
+        seats = [0.0] * self.zone_count
+        frl = [0.0] * self.zone_count
+        values = [[0.0] * len(self.balance_rows) for _ in range(self.zone_count)]
         internal_edges = [0] * self.zone_count
 
         for pos, zone in enumerate(assignment):
@@ -281,6 +326,8 @@ class _ReComContext:
             node_counts[zone] += 1
             students[zone] += self.students[pos]
             schools[zone] += self.schools[pos]
+            seats[zone] += self.seats[pos]
+            frl[zone] += self.frl[pos]
             for idx, value in enumerate(self.values[pos]):
                 values[zone][idx] += value
 
@@ -303,6 +350,8 @@ class _ReComContext:
                 values=tuple(values[zone]),
                 schools=schools[zone],
                 internal_edges=internal_edges[zone],
+                seat_value=seats[zone],
+                frl_value=frl[zone],
             )
             for zone in range(self.zone_count)
         ]
@@ -590,6 +639,8 @@ class _ReComKernel:
         subtree_nodes = [1] * count
         subtree_students = [context.students[node] for node in preorder]
         subtree_schools = [context.schools[node] for node in preorder]
+        subtree_seats = [context.seats[node] for node in preorder]
+        subtree_frl = [context.frl[node] for node in preorder]
         subtree_values = [list(context.values[node]) for node in preorder]
         subtree_volume = [len(pair_adjacency[node]) for node in preorder]
         illegal_a = [int(zone_a not in context.allowed[node]) for node in preorder]
@@ -600,6 +651,8 @@ class _ReComKernel:
             subtree_nodes[parent_idx] += subtree_nodes[idx]
             subtree_students[parent_idx] += subtree_students[idx]
             subtree_schools[parent_idx] += subtree_schools[idx]
+            subtree_seats[parent_idx] += subtree_seats[idx]
+            subtree_frl[parent_idx] += subtree_frl[idx]
             subtree_volume[parent_idx] += subtree_volume[idx]
             illegal_a[parent_idx] += illegal_a[idx]
             illegal_b[parent_idx] += illegal_b[idx]
@@ -624,6 +677,8 @@ class _ReComKernel:
 
         total_students = subtree_students[0]
         total_schools = subtree_schools[0]
+        total_seats = subtree_seats[0]
+        total_frl = subtree_frl[0]
         total_values = subtree_values[0]
         total_illegal_a = illegal_a[0]
         total_illegal_b = illegal_b[0]
@@ -644,6 +699,8 @@ class _ReComKernel:
                 values=tuple(subtree_values[idx]),
                 schools=subtree_schools[idx],
                 internal_edges=internal_sub,
+                seat_value=subtree_seats[idx],
+                frl_value=subtree_frl[idx],
             )
             stats_other = _ZoneStats(
                 node_count=nodes_other,
@@ -654,6 +711,8 @@ class _ReComKernel:
                 ),
                 schools=total_schools - subtree_schools[idx],
                 internal_edges=internal_other,
+                seat_value=total_seats - subtree_seats[idx],
+                frl_value=total_frl - subtree_frl[idx],
             )
             cut_edges = state.cut_edges - old_pair_boundary + crossing
 
@@ -756,10 +815,11 @@ class _ReComKernel:
         log_weight = _RELAXED_WEIGHTS["trees"] * (
             stats_a.cycle_rank + stats_b.cycle_rank
         )
-        metrics_a = self._relaxed_metrics(stats_a)
-        metrics_b = self._relaxed_metrics(stats_b)
+        recourse = self.context.problem.has_school_capacity_recourse
+        metrics_a = self._relaxed_metrics(stats_a, capacity_recourse=recourse)
+        metrics_b = self._relaxed_metrics(stats_b, capacity_recourse=recourse)
         for metric, weight in _RELAXED_WEIGHTS.items():
-            if metric == "trees":
+            if metric == "trees" or metric not in metrics_a:
                 continue
             value_a = metrics_a[metric]
             value_b = metrics_b[metric]
@@ -769,19 +829,25 @@ class _ReComKernel:
         return log_weight
 
     @staticmethod
-    def _relaxed_metrics(stats: _ZoneStats) -> dict[str, float]:
+    def _relaxed_metrics(
+        stats: _ZoneStats,
+        *,
+        capacity_recourse: bool = False,
+    ) -> dict[str, float]:
         shortage_percent = max(
             abs(stats.students - stats.seats) / max(stats.students, _WEIGHT_EPS),
             _WEIGHT_EPS,
         )
-        return {
+        metrics = {
             "nodes": float(stats.node_count),
             "frl": stats.frl,
             "students": stats.students,
-            "seats": stats.seats,
-            "shortage%": shortage_percent,
             "sch_count": stats.schools,
         }
+        if not capacity_recourse:
+            metrics["seats"] = stats.seats
+            metrics["shortage%"] = shortage_percent
+        return metrics
 
     def _check_deadline(self) -> None:
         if self.deadline is None:

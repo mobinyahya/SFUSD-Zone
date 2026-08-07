@@ -180,6 +180,14 @@ class ZoneProblem:
     def A(self) -> int:
         return self.G.number_of_nodes()
 
+    @property
+    def has_school_capacity_recourse(self) -> bool:
+        """Whether school-level market constraints replace graph capacity balance."""
+        return (
+            self.cutoff_market is not None
+            or self.analytical_welfare_market is not None
+        )
+
     def neighbors(self, node: int) -> list[int]:
         return list(self.G.neighbors(node))
 

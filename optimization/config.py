@@ -67,11 +67,39 @@ class OptimizationConfig:
     cutoff_lottery_scale: int = 20
     cutoff_gumbel_scale: float = 1.0
     cutoff_preference_seed: int = 2023
+    cutoff_method: str = "decomposition"
     remove_city_wide: bool = False
     welfare_utility_scale: int = 1_000_000
     welfare_initial_assignment_path: str = ""
     welfare_prefix_depth: int = 10
     welfare_method: str = "decomposition"
+    zoned_cg_wall_time_limit: float = 2700.0
+    zoned_cg_max_rounds: int = 100
+    zoned_cg_pricing_time_limit: float = 300.0
+    zoned_cg_pricing_node_limit: int = 10_000
+    zoned_cg_columns_per_label: int = 10
+    zoned_cg_reduced_cost_tolerance: float = 1e-7
+    zoned_cg_menu_tolerance: float = 1e-9
+    zoned_cg_master_feasibility_tolerance: float = 1e-8
+    zoned_cg_optimality_tolerance: float = 1e-6
+    zoned_cg_mip_time_limit: float = 300.0
+    zoned_cg_seed_paths: list[str] = field(default_factory=list)
+    zoned_cg_recom_seed_runs: int = 4
+    zoned_cg_local_move_rounds: int = 100
+    zoned_cg_save_mechanism: bool = True
+    zoned_cg_evaluate_stable_diagnostics: bool = True
+    zoned_benders_wall_time_limit: float = 2700.0
+    zoned_benders_max_rounds: int = 100
+    zoned_benders_master_time_limit: float = 180.0
+    zoned_benders_menu_tolerance: float = 1e-9
+    zoned_benders_menu_max_rounds: int = 1000
+    zoned_benders_master_feasibility_tolerance: float = 1e-8
+    zoned_benders_optimality_tolerance: float = 1e-6
+    zoned_benders_seed_paths: list[str] = field(default_factory=list)
+    zoned_benders_recom_seed_runs: int = 4
+    zoned_benders_local_move_rounds: int = 100
+    zoned_benders_save_mechanism: bool = True
+    zoned_benders_evaluate_stable_diagnostics: bool = True
 
     # --- data ingestion ----------------------------------------------- #
     years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
@@ -121,6 +149,10 @@ class OptimizationConfig:
                 )
         if self.strategy == "welfare" and not self.remove_city_wide:
             raise ValueError("welfare currently requires remove_city_wide: true.")
+        if self.strategy == "zoned_column_generation":
+            self._validate_zoned_column_generation()
+        if self.strategy == "zoned_benders":
+            self._validate_zoned_benders()
         if isinstance(self.boundary_prop, bool):
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
         try:
@@ -146,6 +178,15 @@ class OptimizationConfig:
             self.cutoff_preference_seed, int
         ):
             raise ValueError("cutoff_preference_seed must be an integer.")
+        if self.cutoff_method not in {
+            "decomposition",
+            "pair_generation",
+            "conditional_demand",
+        }:
+            raise ValueError(
+                "cutoff_method must be one of: decomposition, pair_generation, "
+                "conditional_demand."
+            )
         if not isinstance(self.remove_city_wide, bool):
             raise ValueError("remove_city_wide must be a boolean.")
         if (
@@ -160,9 +201,14 @@ class OptimizationConfig:
             or self.welfare_prefix_depth <= 0
         ):
             raise ValueError("welfare_prefix_depth must be a positive integer.")
-        if self.welfare_method not in {"decomposition", "direct"}:
+        if self.welfare_method not in {
+            "budget",
+            "decomposition",
+            "direct",
+            "lbbd",
+        }:
             raise ValueError(
-                "welfare_method must be one of: decomposition, direct."
+                "welfare_method must be one of: budget, decomposition, direct, lbbd."
             )
         if (
             not math.isfinite(float(self.school_solve_time_limit))
@@ -187,6 +233,157 @@ class OptimizationConfig:
             raise ValueError(
                 "short_bursts_method must be one of: recom, relaxed_recom."
             )
+
+    def _validate_zoned_column_generation(self) -> None:
+        if self.years != [23]:
+            raise ValueError("zoned_column_generation currently requires years: [23].")
+        if self.population_type != "All":
+            raise ValueError("zoned_column_generation requires population_type: 'All'.")
+        if not self.remove_city_wide:
+            raise ValueError("zoned_column_generation requires remove_city_wide: true.")
+        accepted_solvers = {
+            "cp_int",
+            "cp_bool",
+            "mip",
+            "recom",
+            "relaxed_recom",
+            "short_bursts",
+        }
+        if self.solver not in accepted_solvers:
+            raise ValueError(
+                "zoned_column_generation seed solver must be one of: "
+                + ", ".join(sorted(accepted_solvers))
+                + "."
+            )
+        if (
+            not math.isfinite(float(self.cutoff_gumbel_scale))
+            or self.cutoff_gumbel_scale <= 0
+        ):
+            raise ValueError(
+                "zoned_column_generation requires a positive finite cutoff_gumbel_scale."
+            )
+        positive_finite = {
+            "zoned_cg_wall_time_limit": self.zoned_cg_wall_time_limit,
+            "zoned_cg_pricing_time_limit": self.zoned_cg_pricing_time_limit,
+            "zoned_cg_reduced_cost_tolerance": self.zoned_cg_reduced_cost_tolerance,
+            "zoned_cg_menu_tolerance": self.zoned_cg_menu_tolerance,
+            "zoned_cg_master_feasibility_tolerance": self.zoned_cg_master_feasibility_tolerance,
+            "zoned_cg_optimality_tolerance": self.zoned_cg_optimality_tolerance,
+            "zoned_cg_mip_time_limit": self.zoned_cg_mip_time_limit,
+        }
+        for name, value in positive_finite.items():
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be positive and finite.")
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be positive and finite.") from exc
+            if not math.isfinite(numeric_value) or numeric_value <= 0:
+                raise ValueError(f"{name} must be positive and finite.")
+        nonnegative_counts = {
+            "zoned_cg_max_rounds": self.zoned_cg_max_rounds,
+            "zoned_cg_pricing_node_limit": self.zoned_cg_pricing_node_limit,
+            "zoned_cg_recom_seed_runs": self.zoned_cg_recom_seed_runs,
+            "zoned_cg_local_move_rounds": self.zoned_cg_local_move_rounds,
+        }
+        for name, value in nonnegative_counts.items():
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer.")
+        if (
+            isinstance(self.zoned_cg_columns_per_label, bool)
+            or not isinstance(self.zoned_cg_columns_per_label, int)
+            or self.zoned_cg_columns_per_label <= 0
+        ):
+            raise ValueError("zoned_cg_columns_per_label must be a positive integer.")
+        if not isinstance(self.zoned_cg_seed_paths, list) or any(
+            not isinstance(path, str) or not path.strip()
+            for path in self.zoned_cg_seed_paths
+        ):
+            raise ValueError("zoned_cg_seed_paths must be a list of nonempty paths.")
+        for name in (
+            "zoned_cg_save_mechanism",
+            "zoned_cg_evaluate_stable_diagnostics",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be a boolean.")
+
+    def _validate_zoned_benders(self) -> None:
+        if self.years != [23]:
+            raise ValueError("zoned_benders currently requires years: [23].")
+        if self.population_type != "All":
+            raise ValueError("zoned_benders requires population_type: 'All'.")
+        if not self.remove_city_wide:
+            raise ValueError("zoned_benders requires remove_city_wide: true.")
+        accepted_solvers = {
+            "cp_int",
+            "cp_bool",
+            "mip",
+            "recom",
+            "relaxed_recom",
+            "short_bursts",
+        }
+        if self.solver not in accepted_solvers:
+            raise ValueError(
+                "zoned_benders seed solver must be one of: "
+                + ", ".join(sorted(accepted_solvers))
+                + "."
+            )
+        if (
+            not math.isfinite(float(self.cutoff_gumbel_scale))
+            or self.cutoff_gumbel_scale <= 0
+        ):
+            raise ValueError(
+                "zoned_benders requires a positive finite cutoff_gumbel_scale."
+            )
+        positive_finite = {
+            "zoned_benders_wall_time_limit": self.zoned_benders_wall_time_limit,
+            "zoned_benders_master_time_limit": self.zoned_benders_master_time_limit,
+            "zoned_benders_menu_tolerance": self.zoned_benders_menu_tolerance,
+            "zoned_benders_master_feasibility_tolerance": (
+                self.zoned_benders_master_feasibility_tolerance
+            ),
+            "zoned_benders_optimality_tolerance": (
+                self.zoned_benders_optimality_tolerance
+            ),
+        }
+        for name, value in positive_finite.items():
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be positive and finite.")
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be positive and finite.") from exc
+            if not math.isfinite(numeric_value) or numeric_value <= 0:
+                raise ValueError(f"{name} must be positive and finite.")
+        nonnegative_counts = {
+            "zoned_benders_max_rounds": self.zoned_benders_max_rounds,
+            "zoned_benders_recom_seed_runs": self.zoned_benders_recom_seed_runs,
+            "zoned_benders_local_move_rounds": self.zoned_benders_local_move_rounds,
+        }
+        for name, value in nonnegative_counts.items():
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer.")
+        if (
+            isinstance(self.zoned_benders_menu_max_rounds, bool)
+            or not isinstance(self.zoned_benders_menu_max_rounds, int)
+            or self.zoned_benders_menu_max_rounds <= 0
+        ):
+            raise ValueError(
+                "zoned_benders_menu_max_rounds must be a positive integer."
+            )
+        if not isinstance(self.zoned_benders_seed_paths, list) or any(
+            not isinstance(path, str) or not path.strip()
+            for path in self.zoned_benders_seed_paths
+        ):
+            raise ValueError(
+                "zoned_benders_seed_paths must be a list of nonempty paths."
+            )
+        for name in (
+            "zoned_benders_save_mechanism",
+            "zoned_benders_evaluate_stable_diagnostics",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be a boolean.")
 
     # ------------------------------------------------------------------ #
     # loading
@@ -261,9 +458,43 @@ class OptimizationConfig:
             cutoff_lottery_scale=self.cutoff_lottery_scale,
             cutoff_gumbel_scale=self.cutoff_gumbel_scale,
             cutoff_preference_seed=self.cutoff_preference_seed,
+            cutoff_method=self.cutoff_method,
             remove_city_wide=self.remove_city_wide,
             welfare_utility_scale=self.welfare_utility_scale,
             welfare_initial_assignment_path=self.welfare_initial_assignment_path,
             welfare_prefix_depth=self.welfare_prefix_depth,
             welfare_method=self.welfare_method,
+            centroid_neighbor_radius=self.centroid_neighbor_radius,
+            seed=self.seed,
+            workers=self.workers,
+            recom_iterations=self.recom_iterations,
+            short_bursts_length=self.short_bursts_length,
+            short_bursts_method=self.short_bursts_method,
+            zoned_cg_wall_time_limit=self.zoned_cg_wall_time_limit,
+            zoned_cg_max_rounds=self.zoned_cg_max_rounds,
+            zoned_cg_pricing_time_limit=self.zoned_cg_pricing_time_limit,
+            zoned_cg_pricing_node_limit=self.zoned_cg_pricing_node_limit,
+            zoned_cg_columns_per_label=self.zoned_cg_columns_per_label,
+            zoned_cg_reduced_cost_tolerance=self.zoned_cg_reduced_cost_tolerance,
+            zoned_cg_menu_tolerance=self.zoned_cg_menu_tolerance,
+            zoned_cg_master_feasibility_tolerance=self.zoned_cg_master_feasibility_tolerance,
+            zoned_cg_optimality_tolerance=self.zoned_cg_optimality_tolerance,
+            zoned_cg_mip_time_limit=self.zoned_cg_mip_time_limit,
+            zoned_cg_seed_paths=self.zoned_cg_seed_paths,
+            zoned_cg_recom_seed_runs=self.zoned_cg_recom_seed_runs,
+            zoned_cg_local_move_rounds=self.zoned_cg_local_move_rounds,
+            zoned_cg_save_mechanism=self.zoned_cg_save_mechanism,
+            zoned_cg_evaluate_stable_diagnostics=self.zoned_cg_evaluate_stable_diagnostics,
+            zoned_benders_wall_time_limit=self.zoned_benders_wall_time_limit,
+            zoned_benders_max_rounds=self.zoned_benders_max_rounds,
+            zoned_benders_master_time_limit=self.zoned_benders_master_time_limit,
+            zoned_benders_menu_tolerance=self.zoned_benders_menu_tolerance,
+            zoned_benders_menu_max_rounds=self.zoned_benders_menu_max_rounds,
+            zoned_benders_master_feasibility_tolerance=self.zoned_benders_master_feasibility_tolerance,
+            zoned_benders_optimality_tolerance=self.zoned_benders_optimality_tolerance,
+            zoned_benders_seed_paths=self.zoned_benders_seed_paths,
+            zoned_benders_recom_seed_runs=self.zoned_benders_recom_seed_runs,
+            zoned_benders_local_move_rounds=self.zoned_benders_local_move_rounds,
+            zoned_benders_save_mechanism=self.zoned_benders_save_mechanism,
+            zoned_benders_evaluate_stable_diagnostics=self.zoned_benders_evaluate_stable_diagnostics,
         )

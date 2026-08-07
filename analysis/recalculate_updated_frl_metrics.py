@@ -2,13 +2,19 @@
 """Recalculate saved assignment reports with updated block-level FRL rates.
 
 The script reuses the 25 raw assignments behind two existing metric reports. It
-does not rerun matching. Every student's FRL probability is replaced by the
-``FRL Rate`` for their census block when that rate is available; otherwise the
-evaluator's legacy free-plus-reduced-lunch calculation is retained.
+does not rerun matching. Student latitude and longitude are mapped to a 2020
+Census block, and each student's FRL probability is replaced by that block's
+``FRL Rate`` when available. Otherwise, the evaluator's legacy
+free-plus-reduced-lunch calculation is retained.
 
-A CSV lists the KG census blocks for which that legacy fallback is used. It
-distinguishes blocks absent from the updated lookup, blocks with blank updated
-rates, and students whose census block is missing.
+Passing ``--zone-real-matches-root`` evaluates each zone subconfiguration with
+both the source choice-model assignments and observed-preference assignments.
+The resulting CSV has adjacent ``__choice_model`` and ``__real_preferences``
+columns for every source subconfiguration.
+
+A CSV lists the KG 2020 Census blocks for which that legacy fallback is used.
+It distinguishes missing or invalid coordinates, coordinates outside the block
+geometry, blocks absent from the updated lookup, and blank updated rates.
 
 Zone metrics are appended for geographic zone configurations, including:
 
@@ -42,9 +48,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
@@ -80,6 +88,7 @@ DEFAULT_ZONE_MATCHES_ROOT = (
     / "analysis/matches/zone_subconfigs_choice_model_25_soft_reserves_updated"
 )
 DEFAULT_UPDATED_FRL = PROJECT_ROOT / "analysis/updated_frl_block.csv"
+DEFAULT_2020_BLOCKS = PROJECT_ROOT / "analysis/tl_2020_06075_tabblock20.zip"
 DEFAULT_FALLBACK_BLOCKS = (
     PROJECT_ROOT / "analysis/recalculate_updated_frl_fallback_blocks.csv"
 )
@@ -125,6 +134,7 @@ class ConfigurationTask:
     config_path: str
     assignment_paths: tuple[str, ...]
     updated_frl_path: str
+    block_geometry_path: str
     all_students_path: str
     new_ctip_path: str | None
 
@@ -139,7 +149,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--zone-matches-root", type=Path, default=DEFAULT_ZONE_MATCHES_ROOT
     )
+    parser.add_argument(
+        "--zone-real-matches-root",
+        type=Path,
+        help="Optional observed-preference assignments for a paired zone report.",
+    )
     parser.add_argument("--updated-frl", type=Path, default=DEFAULT_UPDATED_FRL)
+    parser.add_argument(
+        "--block-geometry",
+        type=Path,
+        default=DEFAULT_2020_BLOCKS,
+        help="2020 Census tabulation-block geometry containing GEOID20.",
+    )
     parser.add_argument(
         "--fallback-blocks-output",
         type=Path,
@@ -197,6 +218,87 @@ def normalized_geoids(values: pd.Series) -> pd.Series:
     return values.map(normalize_geoid)
 
 
+@lru_cache(maxsize=None)
+def load_2020_block_geometry(path: Path) -> gpd.GeoDataFrame:
+    """Load 2020 Census blocks and normalize GEOID20 like the FRL lookup."""
+    blocks = gpd.read_file(path, columns=["GEOID20"])
+    if "GEOID20" not in blocks:
+        raise ValueError(f"2020 block geometry has no GEOID20 column: {path}")
+    if blocks.crs is None:
+        raise ValueError(
+            f"2020 block geometry has no coordinate reference system: {path}"
+        )
+    if blocks.geometry.isna().any() or blocks.geometry.is_empty.any():
+        raise ValueError(f"2020 block geometry contains empty geometries: {path}")
+    if (~blocks.geometry.is_valid).any():
+        raise ValueError(f"2020 block geometry contains invalid geometries: {path}")
+
+    result = blocks.rename(columns={"GEOID20": "census_block_2020"}).copy()
+    result["census_block_2020"] = normalized_geoids(result["census_block_2020"])
+    if result["census_block_2020"].isna().any():
+        raise ValueError(f"2020 block geometry contains blank GEOID20 values: {path}")
+    if result["census_block_2020"].duplicated().any():
+        raise ValueError(
+            f"2020 block geometry contains duplicate GEOID20 values: {path}"
+        )
+    return result[["census_block_2020", "geometry"]]
+
+
+def student_2020_block_ids(
+    students: pd.DataFrame,
+    block_geometry: gpd.GeoDataFrame,
+) -> pd.Series:
+    """Map student WGS84 coordinates to normalized 2020 Census block IDs."""
+    required = {"latitude", "longitude"}
+    missing = required - set(students.columns)
+    if missing:
+        raise ValueError(f"student data is missing columns {sorted(missing)}")
+    if "census_block_2020" not in block_geometry:
+        raise ValueError("2020 block geometry has no census_block_2020 column")
+    if block_geometry.crs is None:
+        raise ValueError("2020 block geometry has no coordinate reference system")
+
+    latitude = pd.to_numeric(students["latitude"], errors="coerce")
+    longitude = pd.to_numeric(students["longitude"], errors="coerce")
+    valid = latitude.between(-90, 90, inclusive="both") & longitude.between(
+        -180, 180, inclusive="both"
+    )
+    result = pd.Series(pd.NA, index=students.index, dtype="string")
+    if not valid.any():
+        return result
+
+    positions = np.flatnonzero(valid.to_numpy())
+    points = gpd.GeoDataFrame(
+        {"student_position": positions},
+        geometry=gpd.points_from_xy(
+            longitude.loc[valid].to_numpy(),
+            latitude.loc[valid].to_numpy(),
+        ),
+        crs="EPSG:4326",
+    ).to_crs(block_geometry.crs)
+    matches = gpd.sjoin(
+        points,
+        block_geometry[["census_block_2020", "geometry"]],
+        how="left",
+        predicate="intersects",
+    ).dropna(subset=["census_block_2020"])
+
+    duplicate_positions = matches.loc[
+        matches["student_position"].duplicated(keep=False), "student_position"
+    ].unique()
+    if len(duplicate_positions):
+        examples = duplicate_positions[:3].tolist()
+        raise ValueError(
+            "student coordinates intersect multiple 2020 Census blocks, "
+            f"including row positions {examples}"
+        )
+
+    result.iloc[matches["student_position"].astype(int).to_numpy()] = (
+        matches["census_block_2020"].astype("string").to_numpy()
+    )
+    return result
+
+
 def load_frl_lookup(path: Path) -> pd.Series:
     frame = pd.read_csv(path, dtype={"BlockID": "string"})
     required = {"BlockID", "FRL Rate"}
@@ -215,39 +317,86 @@ def load_frl_lookup(path: Path) -> pd.Series:
     return pd.Series(rates[present].to_numpy(), index=block_ids[present], dtype=float)
 
 
-def enrich_student_frl(students: pd.DataFrame, lookup: pd.Series) -> pd.DataFrame:
-    """Override legacy student FRL with non-null updated block rates."""
-    if "census_block" not in students:
-        raise ValueError("student data has no census_block column")
-
-    result = students.copy()
+def student_frl_data(
+    students: pd.DataFrame,
+    lookup: pd.Series,
+    block_geometry: gpd.GeoDataFrame,
+) -> pd.DataFrame:
+    """Return legacy, updated, and effective FRL data keyed by 2020 block."""
     free = pd.to_numeric(
-        result.get("freelunch_prob", pd.Series(0, index=result.index)),
+        students.get("freelunch_prob", pd.Series(0, index=students.index)),
         errors="coerce",
     ).fillna(0)
     reduced = pd.to_numeric(
-        result.get("reducedlunch_prob", pd.Series(0, index=result.index)),
+        students.get("reducedlunch_prob", pd.Series(0, index=students.index)),
         errors="coerce",
     ).fillna(0)
     legacy_frl = free + reduced
-    updated_frl = normalized_geoids(result["census_block"]).map(lookup)
+    block_ids = student_2020_block_ids(students, block_geometry)
+    updated_frl = block_ids.map(lookup)
     effective_frl = updated_frl.fillna(legacy_frl)
 
+    latitude = pd.to_numeric(students["latitude"], errors="coerce")
+    longitude = pd.to_numeric(students["longitude"], errors="coerce")
+    coordinates_present = latitude.notna() & longitude.notna()
+    coordinates_valid = (
+        coordinates_present
+        & latitude.between(-90, 90, inclusive="both")
+        & longitude.between(-180, 180, inclusive="both")
+    )
+    fallback_reason = pd.Series(pd.NA, index=students.index, dtype="string")
+    fallback_reason.loc[~coordinates_present] = "missing student coordinates"
+    fallback_reason.loc[coordinates_present & ~coordinates_valid] = (
+        "invalid student coordinates"
+    )
+    fallback_reason.loc[coordinates_valid & block_ids.isna()] = (
+        "outside 2020 census block geometry"
+    )
+    fallback_reason.loc[block_ids.notna() & ~block_ids.isin(lookup.index)] = (
+        "absent from updated lookup"
+    )
+    blank_rate = block_ids.notna() & block_ids.isin(lookup.index) & updated_frl.isna()
+    fallback_reason.loc[blank_rate] = "blank updated FRL rate"
+
+    return pd.DataFrame(
+        {
+            "census_block_2020": block_ids,
+            "legacy_frl": legacy_frl,
+            "updated_frl": updated_frl,
+            "effective_frl": effective_frl,
+            "frl_fallback_reason": fallback_reason,
+        },
+        index=students.index,
+    )
+
+
+def enrich_student_frl(
+    students: pd.DataFrame,
+    lookup: pd.Series,
+    block_geometry: gpd.GeoDataFrame,
+) -> pd.DataFrame:
+    """Override legacy student FRL with non-null updated 2020-block rates."""
+    result = students.copy()
+    frl_data = student_frl_data(result, lookup, block_geometry)
+
     # MatchEvaluator derives `frl` by adding these two source columns.
-    result["freelunch_prob"] = effective_frl.astype(float)
+    result["freelunch_prob"] = frl_data["effective_frl"].astype(float)
     result["reducedlunch_prob"] = 0.0
+    result["census_block_2020"] = frl_data["census_block_2020"]
     return result
 
 
 def fallback_block_report(
     students: pd.DataFrame,
     lookup: pd.Series,
+    block_geometry: gpd.GeoDataFrame,
     grade: object = "KG",
 ) -> pd.DataFrame:
-    """List blocks whose students retain legacy FRL values."""
+    """List 2020 blocks whose students retain legacy FRL values."""
     required = {
         "grade",
-        "census_block",
+        "latitude",
+        "longitude",
         "freelunch_prob",
         "reducedlunch_prob",
     }
@@ -256,32 +405,18 @@ def fallback_block_report(
         raise ValueError(f"student data is missing columns {sorted(missing)}")
 
     grade_students = students.loc[students["grade"].astype("string") == str(grade)]
-    block_ids = normalized_geoids(grade_students["census_block"])
-    updated_frl = block_ids.map(lookup)
-    legacy_frl = pd.to_numeric(
-        grade_students["freelunch_prob"], errors="coerce"
-    ).fillna(0) + pd.to_numeric(
-        grade_students["reducedlunch_prob"], errors="coerce"
-    ).fillna(0)
-
-    reason = pd.Series(pd.NA, index=grade_students.index, dtype="string")
-    reason.loc[block_ids.isna()] = "missing student census block"
-    reason.loc[block_ids.notna() & ~block_ids.isin(lookup.index)] = (
-        "absent from updated lookup"
-    )
-    blank_rate = block_ids.notna() & block_ids.isin(lookup.index) & updated_frl.isna()
-    reason.loc[blank_rate] = "blank updated FRL rate"
+    frl_data = student_frl_data(grade_students, lookup, block_geometry)
 
     fallback = pd.DataFrame(
         {
-            "census_block": block_ids,
-            "frl_fallback_reason": reason,
-            "legacy_frl": legacy_frl,
+            "census_block_2020": frl_data["census_block_2020"],
+            "frl_fallback_reason": frl_data["frl_fallback_reason"],
+            "legacy_frl": frl_data["legacy_frl"],
         }
-    ).loc[updated_frl.isna()]
+    ).loc[frl_data["updated_frl"].isna()]
     report = (
         fallback.groupby(
-            ["census_block", "frl_fallback_reason"],
+            ["census_block_2020", "frl_fallback_reason"],
             dropna=False,
             sort=False,
         )
@@ -290,7 +425,7 @@ def fallback_block_report(
             legacy_frl=("legacy_frl", "sum"),
         )
         .reset_index()
-        .sort_values("census_block", na_position="last")
+        .sort_values("census_block_2020", na_position="last")
         .reset_index(drop=True)
     )
     report["legacy_frl"] = report["legacy_frl"].round(6)
@@ -676,9 +811,11 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
             raise FileNotFoundError(path)
 
     lookup = load_frl_lookup(Path(task.updated_frl_path))
+    block_geometry = load_2020_block_geometry(Path(task.block_geometry_path))
     students = enrich_student_frl(
         pd.read_csv(student_path, low_memory=False),
         lookup,
+        block_geometry,
     )
     programs = pd.read_csv(program_path)
     schools = pd.read_csv(school_path)
@@ -738,6 +875,7 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
     all_students = enrich_student_frl(
         pd.read_csv(task.all_students_path, low_memory=False),
         lookup,
+        block_geometry,
     )
     population = zone_population_metrics(
         all_students,
@@ -803,8 +941,10 @@ def build_tasks(
     matches_root: Path,
     artifact_type: str,
     updated_frl_path: Path,
+    block_geometry_path: Path,
     all_students_path: Path,
     new_ctip_path: Path | None,
+    label_suffix: str = "",
 ) -> list[ConfigurationTask]:
     tasks = []
     for label in labels:
@@ -821,10 +961,11 @@ def build_tasks(
             raise FileNotFoundError(config_path)
         tasks.append(
             ConfigurationTask(
-                label=label,
+                label=f"{label}{label_suffix}",
                 config_path=str(config_path),
                 assignment_paths=discover_assignments(assignments_root),
                 updated_frl_path=str(updated_frl_path),
+                block_geometry_path=str(block_geometry_path),
                 all_students_path=str(all_students_path),
                 new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
             )
@@ -881,10 +1022,12 @@ def recalculate_report(
     matches_root: Path,
     artifact_type: str,
     updated_frl_path: Path,
+    block_geometry_path: Path,
     all_students_path: Path,
     new_ctip_path: Path | None,
     workers: int,
     timestamp: str,
+    comparison_matches_root: Path | None = None,
 ) -> Path:
     source = pd.read_csv(source_metrics, index_col="metric")
     labels = source.columns.tolist()
@@ -893,9 +1036,27 @@ def recalculate_report(
         matches_root,
         artifact_type,
         updated_frl_path,
+        block_geometry_path,
         all_students_path,
         new_ctip_path,
+        "__choice_model" if comparison_matches_root is not None else "",
     )
+    if comparison_matches_root is not None:
+        comparison_tasks = build_tasks(
+            labels,
+            comparison_matches_root,
+            artifact_type,
+            updated_frl_path,
+            block_geometry_path,
+            all_students_path,
+            new_ctip_path,
+            "__real_preferences",
+        )
+        tasks = [
+            task
+            for pair in zip(tasks, comparison_tasks, strict=True)
+            for task in pair
+        ]
     metrics = run_tasks(tasks, source.index.tolist(), workers)
     frame = pd.DataFrame(metrics)
     frame.index.name = "metric"
@@ -920,10 +1081,13 @@ def main() -> int:
     )
 
     updated_frl_path = checked_file(args.updated_frl)
+    block_geometry_path = checked_file(args.block_geometry)
+    block_geometry = load_2020_block_geometry(block_geometry_path)
     all_students_path = checked_file(args.all_students)
     fallback_report = fallback_block_report(
         pd.read_csv(all_students_path, low_memory=False),
         load_frl_lookup(updated_frl_path),
+        block_geometry,
     )
     fallback_output = args.fallback_blocks_output.expanduser().resolve()
     fallback_output.parent.mkdir(parents=True, exist_ok=True)
@@ -950,6 +1114,7 @@ def main() -> int:
                 args.soft_matches_root.expanduser().resolve(),
                 "soft",
                 updated_frl_path,
+                block_geometry_path,
                 all_students_path,
                 new_ctip_path,
                 args.workers,
@@ -963,10 +1128,14 @@ def main() -> int:
                 args.zone_matches_root.expanduser().resolve(),
                 "zone",
                 updated_frl_path,
+                block_geometry_path,
                 all_students_path,
                 new_ctip_path,
                 args.workers,
                 timestamp,
+                args.zone_real_matches_root.expanduser().resolve()
+                if args.zone_real_matches_root
+                else None,
             )
         )
 

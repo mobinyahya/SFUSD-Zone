@@ -181,6 +181,7 @@ def solve_analytical_market(
     cutoff_grid: int | None = None,
     tolerance: float = 1e-10,
     max_iterations: int = 10_000,
+    deadline: float | None = None,
 ) -> AnalyticalMarketResult:
     """Compute the componentwise-least feasible cutoff vector from zero."""
     started = time.monotonic()
@@ -210,9 +211,13 @@ def solve_analytical_market(
     updates = 0
     converged = False
     for _ in range(max_iterations):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Analytical welfare solve reached its deadline.")
         changed = False
         max_change = 0.0
         for school in schools:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("Analytical welfare solve reached its deadline.")
             profiles = _school_demand_profiles(prepared, school, cutoffs)
             if cutoff_grid is None:
                 required = _minimum_continuum_cutoff(
@@ -363,6 +368,7 @@ def evaluate_zoned_analytical_welfare(
     cutoff_grid: int | None = None,
     tolerance: float = 1e-10,
     max_iterations: int = 10_000,
+    deadline: float | None = None,
 ) -> ZonedAnalyticalWelfareResult:
     """Evaluate independent analytical matching markets induced by a zoning."""
     started = time.monotonic()
@@ -436,6 +442,7 @@ def evaluate_zoned_analytical_welfare(
             cutoff_grid=cutoff_grid,
             tolerance=tolerance,
             max_iterations=max_iterations,
+            deadline=deadline,
         )
         results[zone] = result
         all_cutoffs.update(result.cutoffs)

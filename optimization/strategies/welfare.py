@@ -10,7 +10,8 @@ from optimization.data.dataset import Dataset
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.solvers.base import Solver
-from optimization.solvers.welfare import WelfareSolver
+from optimization.solvers.budget_lbbd import BudgetSetLbbdSolver
+from optimization.solvers.welfare import BooleanBudgetWelfareSolver, WelfareSolver
 from optimization.solvers.welfare_decomposition import WelfareDecompositionSolver
 from optimization.strategies.base import Strategy, register
 
@@ -65,8 +66,10 @@ class WelfareStrategy(Strategy):
         )
         method = self.options.get("welfare_method", "decomposition")
         solver_class = {
+            "budget": BooleanBudgetWelfareSolver,
             "decomposition": WelfareDecompositionSolver,
             "direct": WelfareSolver,
+            "lbbd": BudgetSetLbbdSolver,
         }.get(method)
         if solver_class is None:
             raise ValueError(f"Unknown welfare_method: {method!r}.")

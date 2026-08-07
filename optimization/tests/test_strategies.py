@@ -329,6 +329,7 @@ def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
 
     assert strategy.name == "cutoffs"
     assert strategy.options["cutoff_lottery_scale"] == 20
+    assert strategy.options["cutoff_method"] == "decomposition"
     assert strategy.options["boundary_prop"] == 0.5
     assert strategy.options["remove_city_wide"] is False
 
@@ -342,6 +343,7 @@ def test_welfare_config_requires_isolated_year_23_all_program_markets():
         population_type="All",
         remove_city_wide=True,
         welfare_utility_scale=10_000,
+        welfare_method="lbbd",
     )
 
     strategy = config.make_strategy()
@@ -350,6 +352,7 @@ def test_welfare_config_requires_isolated_year_23_all_program_markets():
     assert strategy.options["remove_city_wide"] is True
     assert strategy.options["welfare_utility_scale"] == 10_000
     assert strategy.options["welfare_prefix_depth"] == 10
+    assert strategy.options["welfare_method"] == "lbbd"
 
 
 def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
@@ -391,6 +394,24 @@ def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
 def test_config_rejects_non_boolean_remove_city_wide():
     with pytest.raises(ValueError, match="remove_city_wide"):
         OptimizationConfig(levels=["BlockGroup_0"], remove_city_wide=1)
+
+
+def test_config_rejects_invalid_cutoff_method():
+    with pytest.raises(ValueError, match="cutoff_method"):
+        OptimizationConfig(levels=["BlockGroup_0"], cutoff_method="invalid")
+
+
+def test_config_passes_pair_generation_cutoff_method():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="cutoffs",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        cutoff_method="pair_generation",
+    )
+
+    assert config.make_strategy().options["cutoff_method"] == "pair_generation"
 
 
 @pytest.mark.parametrize("value", [1.01, float("nan"), True, "invalid"])

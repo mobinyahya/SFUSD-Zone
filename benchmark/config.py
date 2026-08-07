@@ -17,7 +17,14 @@ import yaml
 from optimization.config import OptimizationConfig
 
 
-SEQUENCE_OPTIMIZATION_FIELDS = {"levels", "solve_time_limits", "gap_limits", "years"}
+SEQUENCE_OPTIMIZATION_FIELDS = {
+    "levels",
+    "solve_time_limits",
+    "gap_limits",
+    "years",
+    "zoned_cg_seed_paths",
+    "zoned_benders_seed_paths",
+}
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
 
 

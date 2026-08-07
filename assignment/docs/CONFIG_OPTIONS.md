@@ -110,6 +110,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 | `add_aa_schools` | Append each student's grade-specific attendance-area GE program to their ranked list when it is not already present. |
 | `remove_non_aa_or_citywide` | Keep only programs at each student's attendance-area school or schools categorized as citywide, including designation options. Utility-model lists select their top allowed programs before list-length truncation. |
 | `aa_boost` | Add this priority boost for a student at their grade-specific attendance-area GE program. |
+| `overscribe_aa` | Assign otherwise-unassigned students to their attendance-area GE program even when it is at capacity (default `false`). |
 | `truncate-at-AA-GE` | Truncate utility-model lists at the student's attendance-area GE program. |
 
 ## 6. `list-augmentation` (alternative programs, `run_augmented_da.py`)

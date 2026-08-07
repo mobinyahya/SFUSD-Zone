@@ -30,14 +30,20 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--raw-upper-bound", type=int)
     parser.add_argument(
-        "--method", choices=("decomposition", "direct"), default="decomposition"
+        "--method",
+        choices=("budget", "decomposition", "direct", "lbbd"),
+        default="decomposition",
     )
     parser.add_argument("--initial-assignment", type=Path)
     args = parser.parse_args(argv)
-    if args.solve_seconds <= 0 or args.solve_seconds >= 895:
-        parser.error("--solve-seconds must be positive and below 895")
-    if args.raw_upper_bound is not None and args.method != "direct":
-        parser.error("--raw-upper-bound currently requires --method direct")
+    if args.solve_seconds <= 0:
+        parser.error("--solve-seconds must be positive")
+    if args.raw_upper_bound is not None and args.method not in {
+        "budget",
+        "direct",
+        "lbbd",
+    }:
+        parser.error("--raw-upper-bound requires --method budget, direct, or lbbd")
     args.output.mkdir(parents=True, exist_ok=True)
 
     started = time.monotonic()
@@ -88,9 +94,30 @@ def main(argv: list[str] | None = None) -> None:
     solution.save(str(args.output))
     elapsed = time.monotonic() - started
 
-    checks, reconstruction = validate_solution(
-        solution, expected_student_ids, runtime_seconds=elapsed
-    )
+    if solution.feasible:
+        checks, reconstruction = validate_solution(
+            solution, expected_student_ids, runtime_seconds=elapsed
+        )
+    else:
+        checks = {
+            "runtime_below_15_minutes": elapsed < 900.0,
+            "solver_returned_feasible_solution": False,
+        }
+        reconstruction = {
+            "solver_status": solution.status,
+            "pre_solve_wall_time": solution.metadata.get("pre_solve_wall_time"),
+            "budget_profile_count": solution.metadata.get("budget_profile_count"),
+            "qualification_boolean_count": solution.metadata.get(
+                "qualification_boolean_count"
+            ),
+            "budget_boolean_count": solution.metadata.get("budget_boolean_count"),
+            "assignment_measure_count": solution.metadata.get(
+                "assignment_measure_count"
+            ),
+            "cell_utility_variable_count": solution.metadata.get(
+                "cell_utility_variable_count"
+            ),
+        }
     payload = {
         "passed": all(checks.values()),
         "status": solution.status,

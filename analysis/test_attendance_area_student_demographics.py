@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely.geometry import box
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,19 +17,28 @@ from analysis.attendance_area_student_demographics import (  # noqa: E402
 )
 
 
+def block_geometry() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {"census_block_2020": ["100", "200", "300"]},
+        geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1), box(2, 0, 3, 1)],
+        crs="EPSG:4326",
+    )
+
+
 def test_add_frl_datasets_uses_fallback_without_changing_old_values():
     students = pd.DataFrame(
         {
             "studentno": [1, 2, 3],
             "idschoolattendance": [10, 20, 30],
-            "census_block": [100, 200, 300],
+            "latitude": [0.5, 0.5, 0.5],
+            "longitude": [0.5, 1.5, 2.5],
             "freelunch_prob": [0.1, 0.2, 0.3],
             "reducedlunch_prob": [0.05, 0.1, 0.15],
         }
     )
     lookup = pd.Series({"100": 0.8, "200": float("nan")})
 
-    result = add_frl_datasets(students, lookup)
+    result = add_frl_datasets(students, lookup, block_geometry())
 
     assert result["new_frl"].tolist() == pytest.approx([0.8, 0.3, 0.45])
     assert result["old_frl"].tolist() == pytest.approx([0.15, 0.3, 0.45])
@@ -38,7 +49,7 @@ def test_add_frl_datasets_uses_fallback_without_changing_old_values():
     ]
 
     report = fallback_block_report(result)
-    assert report["census_block"].tolist() == ["300", "200"]
+    assert report["census_block_2020"].tolist() == ["300", "200"]
     assert report["student_count"].tolist() == [1, 1]
 
 

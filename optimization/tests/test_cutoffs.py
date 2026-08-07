@@ -368,6 +368,54 @@ def test_interval_capacity_clause_uses_access_and_higher_affordability(
     assert cp_model.CpSolver().Solve(model) == expected_status
 
 
+def test_conditional_demand_groups_identical_block_prefix_priority_profiles():
+    students = (
+        CutoffStudent(1, 0, (100,), {100: 0}),
+        CutoffStudent(2, 0, (100,), {100: 0}),
+    )
+    market = CutoffMarket(
+        students=students,
+        school_nodes={100: 1},
+        school_capacities={100: 1},
+        zone_restricted_schools=frozenset({100}),
+        lottery_scale=4,
+    )
+    problem = SimpleNamespace(candidate_zones=lambda _node: {0, 1})
+    model = cp_model.CpModel()
+    x = {
+        (zone, node): model.NewBoolVar(f"x_{zone}_{node}")
+        for zone in range(2)
+        for node in range(2)
+    }
+    for node in range(2):
+        model.Add(x[0, node] == 1)
+        model.Add(x[1, node] == 0)
+    cutoffs = {100: model.NewIntVar(0, 4, "cutoff_100")}
+    model.Add(cutoffs[100] == 0)
+    decomposition = CutoffDecompositionSolver(
+        SimpleNamespace(options={}), generate_assigned_pairs=True
+    )
+
+    pairs, profiles, cuts = decomposition._activate_conditional_demand_pairs(
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        {
+            100: [
+                _DemandInterval(student, 1, 4, ()) for student in students
+            ]
+        },
+        4,
+    )
+
+    assert (pairs, profiles, cuts) == (2, 1, 1)
+    assert len(decomposition._conditional_demand_vars) == 1
+    # One shared demand of four has multiplicity two, exceeding capacity four.
+    assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
+
+
 def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
     problem = make_grid_problem(
         2,
@@ -415,11 +463,40 @@ def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
 
     zoning_solver = get_solver("cp_bool", solve_time_limit=10, workers=1, seed=42)
     solution = CutoffDecompositionSolver(zoning_solver).solve(problem)
+    pair_solution = CutoffDecompositionSolver(
+        zoning_solver, generate_assigned_pairs=True
+    ).solve(problem)
+    direct_solution = zoning_solver.solve(problem)
 
     assert solution.status == "OPTIMAL"
     assert solution.metadata["raw_objective"] == min(brute_objectives)
     assert solution.metadata["global_optimum_certified"]
     assert solution.metadata["stable"]
+    assert pair_solution.status == "OPTIMAL"
+    assert pair_solution.metadata["raw_objective"] == min(brute_objectives)
+    assert pair_solution.metadata["optimization_method"] == (
+        "exact_overloaded_pair_generation"
+    )
+    assert pair_solution.metadata["assigned_pair_seed_count"] == 0
+    assert pair_solution.metadata["assigned_pair_seed_cut_count"] == 0
+    assert pair_solution.metadata["conditional_demand_pair_count"] > 0
+    assert pair_solution.metadata["conditional_demand_capacity_constraint_count"] <= len(
+        problem.cutoff_market.school_capacities
+    )
+    assert all(
+        row.get("conditional_demand_pairs_added", 0) == 0
+        for row in pair_solution.metadata["decomposition_rounds"]
+        if row["overloaded_schools"] == 0
+    )
+    assert direct_solution.status == "OPTIMAL"
+    assert direct_solution.metadata["raw_objective"] == min(brute_objectives)
+    assert direct_solution.metadata["global_optimum_certified"]
+    assert (
+        solve_zoned_cutoffs(
+            problem.cutoff_market, direct_solution.assignment, num_zones=2
+        ).objective
+        == direct_solution.metadata["raw_objective"]
+    )
 
 
 def test_citywide_decomposition_matches_exhaustive_tiny_zonings():

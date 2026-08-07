@@ -17,6 +17,7 @@ soft_reserve_boost: 64
 
 aa_boost: 1000
 add_aa_schools: true
+overscribe_aa: true
 
 policies:
 - Con1

@@ -9,7 +9,7 @@ from ortools.sat.python import cp_model
 
 from optimization.data import contiguity
 from optimization.problem import ZoneProblem
-from optimization.solvers.balance import balance_constraints
+from optimization.solvers.balance import enforced_balance_constraints
 
 
 def add_zone_pattern_constraints(
@@ -56,9 +56,7 @@ def add_zone_pattern_constraints(
         else:
             model.Add(selected[node] <= sum(selected[other] for other in support_nodes))
 
-    for constraint in balance_constraints(problem):
-        if problem.cutoff_market is not None and constraint.kind == "capacity":
-            continue
+    for constraint in enforced_balance_constraints(problem):
         if constraint.lower_ratio is not None:
             model.Add(
                 sum(

@@ -2,10 +2,10 @@
 """Export configured student demographics by elementary attendance area.
 
 The ``new_frl`` and ``old_frl`` columns are independent expected student counts.
-``new_frl`` follows the updated-metrics definition: use the updated census-block
-rate when available and the legacy rate as its fallback. ``old_frl`` uses only
-the original student-file free-plus-reduced probabilities. The columns are not
-added together.
+``new_frl`` follows the updated-metrics definition: map student coordinates to a
+2020 Census block, use its updated rate when available, and use the legacy rate
+as a fallback. ``old_frl`` uses only the original student-file free-plus-reduced
+probabilities. The columns are not added together.
 
 Usage:
     uv run python analysis/attendance_area_student_demographics.py
@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import geopandas as gpd
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -25,12 +26,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.recalculate_updated_frl_metrics import (  # noqa: E402
+    DEFAULT_2020_BLOCKS,
     DEFAULT_UPDATED_FRL,
     load_frl_lookup,
+    load_2020_block_geometry,
     load_yaml,
-    normalized_geoids,
     parse_ranked_list,
     resolve_data_path,
+    student_frl_data,
 )
 from assignment.student_assignment.definitions.constants import (  # noqa: E402
     SPECIAL_PROGRAMS,
@@ -91,12 +94,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--updated-frl", type=Path, default=DEFAULT_UPDATED_FRL)
+    parser.add_argument("--block-geometry", type=Path, default=DEFAULT_2020_BLOCKS)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--fallback-output", type=Path, default=DEFAULT_FALLBACK_OUTPUT)
     return parser.parse_args()
 
 
-def configured_students(config: dict[str, Any], lookup: pd.Series) -> pd.DataFrame:
+def configured_students(
+    config: dict[str, Any],
+    lookup: pd.Series,
+    block_geometry: gpd.GeoDataFrame,
+) -> pd.DataFrame:
     students = pd.read_csv(resolve_data_path(config, "student-data"), low_memory=False)
     grade = str(config.get("grade", "KG"))
     students = students.loc[students["grade"].astype("string") == grade].copy()
@@ -116,7 +124,8 @@ def configured_students(config: dict[str, Any], lookup: pd.Series) -> pd.DataFra
         "studentno",
         "idschoolattendance",
         "resolved_ethnicity",
-        "census_block",
+        "latitude",
+        "longitude",
         "freelunch_prob",
         "reducedlunch_prob",
     }
@@ -126,26 +135,20 @@ def configured_students(config: dict[str, Any], lookup: pd.Series) -> pd.DataFra
     if students["studentno"].duplicated().any():
         raise ValueError("studentno must be unique after applying config filters")
 
-    return add_frl_datasets(students, lookup)
+    return add_frl_datasets(students, lookup, block_geometry)
 
 
-def add_frl_datasets(students: pd.DataFrame, lookup: pd.Series) -> pd.DataFrame:
+def add_frl_datasets(
+    students: pd.DataFrame,
+    lookup: pd.Series,
+    block_geometry: gpd.GeoDataFrame,
+) -> pd.DataFrame:
     result = students.copy()
-    free = pd.to_numeric(result["freelunch_prob"], errors="coerce").fillna(0)
-    reduced = pd.to_numeric(result["reducedlunch_prob"], errors="coerce").fillna(0)
-    result["old_frl"] = free + reduced
-    block_ids = normalized_geoids(result["census_block"])
-    updated_frl = block_ids.map(lookup)
-    result["new_frl"] = updated_frl.fillna(result["old_frl"])
-    result["normalized_census_block"] = block_ids
-
-    fallback_reason = pd.Series(pd.NA, index=result.index, dtype="string")
-    fallback_reason.loc[block_ids.isna()] = "missing student census block"
-    absent = block_ids.notna() & ~block_ids.isin(lookup.index)
-    fallback_reason.loc[absent] = "absent from updated lookup"
-    blank = block_ids.notna() & block_ids.isin(lookup.index) & updated_frl.isna()
-    fallback_reason.loc[blank] = "blank updated FRL rate"
-    result["frl_fallback_reason"] = fallback_reason
+    frl_data = student_frl_data(result, lookup, block_geometry)
+    result["old_frl"] = frl_data["legacy_frl"]
+    result["new_frl"] = frl_data["effective_frl"]
+    result["census_block_2020"] = frl_data["census_block_2020"]
+    result["frl_fallback_reason"] = frl_data["frl_fallback_reason"]
     return result
 
 
@@ -153,7 +156,7 @@ def fallback_block_report(students: pd.DataFrame) -> pd.DataFrame:
     required = {
         "studentno",
         "idschoolattendance",
-        "normalized_census_block",
+        "census_block_2020",
         "frl_fallback_reason",
         "old_frl",
     }
@@ -171,7 +174,7 @@ def fallback_block_report(students: pd.DataFrame) -> pd.DataFrame:
 
     report = (
         fallback.groupby(
-            ["frl_fallback_reason", "normalized_census_block"],
+            ["frl_fallback_reason", "census_block_2020"],
             dropna=False,
             sort=True,
         )
@@ -181,12 +184,11 @@ def fallback_block_report(students: pd.DataFrame) -> pd.DataFrame:
             old_frl=("old_frl", "sum"),
         )
         .reset_index()
-        .rename(columns={"normalized_census_block": "census_block"})
     )
     report["old_frl"] = report["old_frl"].round(6)
     return report[
         [
-            "census_block",
+            "census_block_2020",
             "frl_fallback_reason",
             "student_count",
             "attendance_areas",
@@ -276,7 +278,10 @@ def main() -> int:
     args = parse_args()
     config = load_yaml(args.config.expanduser().resolve())
     lookup = load_frl_lookup(args.updated_frl.expanduser().resolve())
-    students = configured_students(config, lookup)
+    block_geometry = load_2020_block_geometry(
+        args.block_geometry.expanduser().resolve()
+    )
+    students = configured_students(config, lookup, block_geometry)
     schools = attendance_schools(config)
     summary = build_summary(students, schools)
     fallback_report = fallback_block_report(students)

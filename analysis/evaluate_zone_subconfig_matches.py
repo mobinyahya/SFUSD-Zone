@@ -9,6 +9,7 @@ assignment outputs are reused, and each CSV column is the mean of
 
 Usage:
     uv run python analysis/evaluate_zone_subconfig_matches.py
+    uv run python analysis/evaluate_zone_subconfig_matches.py --real-preferences
 """
 
 from __future__ import annotations
@@ -53,6 +54,8 @@ SUBCONFIGS = (
     "distance_05_1_2+reserves_05frl",
     "distance_05_1_2+reserves_06frl",
     "status_quo",
+    "status_quo_3",
+    "status_quo_4",
     "status_quo+reserves",
     "status_quo+reserves_05frl",
     "status_quo+reserves_06frl",
@@ -64,6 +67,12 @@ DEFAULT_ZONE_ROOT = Path("~/sfusd-local-data/zones/zone_backend")
 DEFAULT_SMALL_ZONES = DEFAULT_ZONE_ROOT / "Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv"
 DEFAULT_MEDIUM_ZONES = DEFAULT_ZONE_ROOT / "Zones_6-FRL_Dev_0.10-Objective_1430_BG.csv"
 DEFAULT_MATCHES_ROOT = PROJECT_ROOT / "analysis/matches/zone_subconfigs_25"
+DEFAULT_REAL_MATCHES_ROOT = (
+    PROJECT_ROOT / "analysis/matches/zone_subconfigs_real_preferences_25"
+)
+DEFAULT_REAL_STUDENTS = Path(
+    "/share/data/school_choice/Data/Cleaned/student_2324.csv"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,7 +81,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-dir", type=Path, default=DEFAULT_POLICY_DIR)
     parser.add_argument("--small-zones", type=Path, default=DEFAULT_SMALL_ZONES)
     parser.add_argument("--medium-zones", type=Path, default=DEFAULT_MEDIUM_ZONES)
-    parser.add_argument("--matches-root", type=Path, default=DEFAULT_MATCHES_ROOT)
+    parser.add_argument(
+        "--matches-root",
+        type=Path,
+        help="Output root; defaults to a separate root for each preference mode.",
+    )
+    parser.add_argument(
+        "--real-preferences",
+        action="store_true",
+        help="Disable the utility model and use observed student preferences.",
+    )
+    parser.add_argument(
+        "--real-student-data",
+        type=Path,
+        default=DEFAULT_REAL_STUDENTS,
+        help="Student CSV used with --real-preferences.",
+    )
     parser.add_argument(
         "--new-ctip-path",
         type=Path,
@@ -93,6 +117,8 @@ def build_simulation_config(
     matches_root: Path,
     small_zones: Path,
     medium_zones: Path,
+    *,
+    real_student_data: Path | None = None,
 ) -> dict[str, Any]:
     """Set the requested subconfigs, outputs, and selected zone plans."""
     config = build_policy_simulation_config(base_config, list(SUBCONFIGS), matches_root)
@@ -100,8 +126,21 @@ def build_simulation_config(
     zone_files = copy.deepcopy(paths.get("zone-files") or {})
     zone_files["18zone_2"] = str(small_zones)
     zone_files["6zone-1"] = str(medium_zones)
+    if real_student_data is not None:
+        paths["student-data"] = str(real_student_data)
+        paths["student-save"] = str(matches_root / "precomputed")
     paths["zone-files"] = zone_files
     config["paths"] = paths
+    if real_student_data is not None:
+        config["utility-model"] = {
+            "designate-lp-for-all": False,
+            "enable": False,
+            "list-length": "0.8*round(real_length)",
+        }
+        config["random-seed"] = 2023
+        config["r1-only"] = True
+        config["remove-special-lps"] = True
+        config["rounds-merged-options"] = [0]
     return config
 
 
@@ -136,7 +175,16 @@ def main() -> int:
     policy_dir = args.policy_dir.expanduser().resolve()
     small_zones = args.small_zones.expanduser().resolve()
     medium_zones = args.medium_zones.expanduser().resolve()
-    matches_root = args.matches_root.expanduser().resolve()
+    matches_root_arg = args.matches_root or (
+        DEFAULT_REAL_MATCHES_ROOT if args.real_preferences else DEFAULT_MATCHES_ROOT
+    )
+    matches_root = matches_root_arg.expanduser().resolve()
+
+    real_student_data = None
+    if args.real_preferences:
+        real_student_data = args.real_student_data.expanduser().resolve()
+        if not real_student_data.is_file():
+            raise FileNotFoundError(real_student_data)
 
     for zone_path in (small_zones, medium_zones):
         if not zone_path.is_file():
@@ -144,12 +192,20 @@ def main() -> int:
 
     policies = load_policies(policy_dir)
     config = build_simulation_config(
-        load_yaml(base_config_path), matches_root, small_zones, medium_zones
+        load_yaml(base_config_path),
+        matches_root,
+        small_zones,
+        medium_zones,
+        real_student_data=real_student_data,
     )
 
     if args.dry_run:
         LOGGER.info("Small-zone plan: %s", small_zones)
         LOGGER.info("Medium-zone plan: %s", medium_zones)
+        LOGGER.info(
+            "Preferences: %s",
+            "real" if args.real_preferences else "choice model",
+        )
         for label in SUBCONFIGS:
             LOGGER.info("Would run %s", label)
         return 0

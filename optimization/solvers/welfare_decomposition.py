@@ -925,9 +925,9 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             ):
                 return False
 
-        for constraint in balance_constraints(problem):
-            if problem.cutoff_market is not None and constraint.kind == "capacity":
-                continue
+        from optimization.solvers.balance import enforced_balance_constraints
+
+        for constraint in enforced_balance_constraints(problem):
             for zone in range(problem.Z):
                 if constraint.lower_ratio is not None:
                     lower = sum(

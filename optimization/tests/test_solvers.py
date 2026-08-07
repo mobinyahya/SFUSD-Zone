@@ -372,7 +372,8 @@ def test_cp_bool_cutoffs_share_vertex_school_indicators_across_students():
     assert not any(name.startswith("same_zone_1_200_") for name in names)
     assert names.count("threshold_100_0") == 1
     assert names.count("threshold_200_0") == 1
-    assert sum(name.startswith("effective_threshold_") for name in names) == 4
+    assert sum(name.startswith("effective_threshold_") for name in names) == 2
+    assert not any(name.startswith("assignment_measure_") for name in names)
 
     solution = solver.solve(problem)
 
@@ -380,6 +381,10 @@ def test_cp_bool_cutoffs_share_vertex_school_indicators_across_students():
     assert solution.assignment[1] == 1
     assert solution.objective == 0.0
     assert solution.metadata["objective_kind"] == "school_cutoffs"
+    assert solution.metadata["optimization_method"] == (
+        "direct_chained_conditional_demand"
+    )
+    assert solution.metadata["global_optimum_certified"]
     assert solution.metadata["same_zone_indicator_count"] == 2
     assert solution.metadata["normalized_school_cutoffs"] == {100: 0.0, 200: 0.0}
 

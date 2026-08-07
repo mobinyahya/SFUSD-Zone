@@ -21,7 +21,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `overlapping`, `cutoffs`, `welfare` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `overlapping`, `cutoffs`, `welfare`, `zoned_column_generation`, `zoned_benders` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary
@@ -64,11 +64,43 @@ independently.
   isolated finite-grid DA-STB markets, and maximizes expected fixed-point
   cardinal utility. A top-rank recurrence and all-rank preference-interval cuts
   provide global upper bounds; timed runs remain `FEASIBLE` unless bounds close.
+- **Zoned Shi welfare.** `zoned_column_generation` jointly selects complete
+  labeled zones and an optimal randomized priority mechanism inside every zone.
+  It optimizes Shi's analytical expected-MNL welfare, not finite-grid stable
+  welfare. The reported objective removes the zoning-independent outside-option
+  and Euler-gamma constant; metadata reports that constant and raw welfare.
+  Every modeled school is zone restricted and citywide schools are unsupported.
+  The root complete-zone LP is priced across every label to a configured
+  tolerance, followed by an integer master over generated zones. A closed
+  fractional root does not by itself prove the integer zoning optimal.
+  Results are ordinary floating numerical evidence under
+  `FLOATING_ANALYTICAL_NOT_PROOF_GRADE`, never proof-grade real certificates.
+  The optional `artifacts/shi_mechanism_<level>.json` is a sparse
+  continuum/large-market priority witness with fractional quotas, not an exact
+  finite-student assignment.
+- **Direct Shi Benders.** `zoned_benders` optimizes the same isolated analytical
+  Shi objective with a persistent binary geography master. Globally valid
+  full-menu school-price cuts strengthen its relaxation, while source-state
+  logic cuts cap every exactly evaluated integer zone. This avoids embedding
+  menu generation inside geographic branch nodes. A closed result is still
+  ordinary floating numerical evidence, not a proof-grade real certificate.
 
 ## Running
 
 ```bash
 uv run python -m optimization.run optimization/config.example.yaml -o ./out
+```
+
+The canonical six-zone `Block_2` Shi run is:
+
+```bash
+uv run python -m optimization.run optimization/config.example.zoned_column_generation.yaml -o ./out
+```
+
+The direct Benders alternative is:
+
+```bash
+uv run python -m optimization.run optimization/config.example.zoned_benders.yaml -o ./out
 ```
 
 Save a PNG visualization of the final solution:

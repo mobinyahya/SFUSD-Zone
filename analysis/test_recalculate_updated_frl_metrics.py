@@ -2,14 +2,24 @@ import json
 import sys
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely.geometry import box
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis import recalculate_updated_frl_metrics as recalculate  # noqa: E402
+
+
+def block_geometry(*block_ids: int) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {"census_block_2020": [str(block_id) for block_id in block_ids]},
+        geometry=[box(index, 0, index + 1, 1) for index in range(len(block_ids))],
+        crs="EPSG:4326",
+    )
 
 
 def test_default_soft_matches_root_matches_source_report_policy():
@@ -19,17 +29,23 @@ def test_default_soft_matches_root_matches_source_report_policy():
 def test_enrich_student_frl_overrides_rate_and_uses_legacy_fallback():
     students = pd.DataFrame(
         {
-            "census_block": ["100.0", 200, 300, None],
+            "census_block": [999, 999, 999, 999],
+            "latitude": [0.5, 0.5, 0.5, None],
+            "longitude": [0.5, 1.5, 2.5, None],
             "freelunch_prob": [0.1, 0.2, None, 0.4],
             "reducedlunch_prob": [0.05, 0.1, None, 0.2],
         }
     )
     lookup = pd.Series({"100": 0.8, "200": float("nan")})
 
-    result = recalculate.enrich_student_frl(students, lookup)
+    result = recalculate.enrich_student_frl(
+        students, lookup, block_geometry(100, 200, 300)
+    )
 
     assert result["freelunch_prob"].tolist() == pytest.approx([0.8, 0.3, 0, 0.6])
     assert result["reducedlunch_prob"].tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert result["census_block_2020"].iloc[:3].tolist() == ["100", "200", "300"]
+    assert pd.isna(result["census_block_2020"].iloc[3])
     assert students["freelunch_prob"].tolist()[:2] == [0.1, 0.2]
 
 
@@ -50,21 +66,24 @@ def test_fallback_block_report_lists_absent_blank_and_missing_blocks():
     students = pd.DataFrame(
         {
             "grade": ["KG", "KG", "KG", "KG", "01"],
-            "census_block": [100, 200, 300, None, 400],
+            "latitude": [0.5, 0.5, 0.5, None, 0.5],
+            "longitude": [0.5, 1.5, 2.5, None, 3.5],
             "freelunch_prob": [0.1, 0.2, 0.3, 0.4, 0.5],
             "reducedlunch_prob": [0.05, 0.1, 0.15, 0.2, 0.25],
         }
     )
     lookup = pd.Series({"100": 0.8, "200": float("nan")})
 
-    result = recalculate.fallback_block_report(students, lookup)
+    result = recalculate.fallback_block_report(
+        students, lookup, block_geometry(100, 200, 300, 400)
+    )
 
-    assert result["census_block"].iloc[:2].tolist() == ["200", "300"]
-    assert pd.isna(result["census_block"].iloc[2])
+    assert result["census_block_2020"].iloc[:2].tolist() == ["200", "300"]
+    assert pd.isna(result["census_block_2020"].iloc[2])
     assert result["frl_fallback_reason"].tolist() == [
         "blank updated FRL rate",
         "absent from updated lookup",
-        "missing student census block",
+        "missing student coordinates",
     ]
     assert result["student_count"].tolist() == [1, 1, 1]
     assert result["legacy_frl"].tolist() == pytest.approx([0.3, 0.45, 0.6])
@@ -166,7 +185,8 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
     pd.DataFrame(
         {
             "studentno": [1],
-            "census_block": [100],
+            "latitude": [0.5],
+            "longitude": [0.5],
             "freelunch_prob": [0.1],
             "reducedlunch_prob": [0.0],
         }
@@ -198,11 +218,17 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
             return pd.Series({"base metric": 1.0})
 
     monkeypatch.setattr(recalculate, "MatchEvaluator", FakeEvaluator)
+    monkeypatch.setattr(
+        recalculate,
+        "load_2020_block_geometry",
+        lambda _: block_geometry(100),
+    )
     task = recalculate.ConfigurationTask(
         label="status_quo",
         config_path=str(config),
         assignment_paths=(str(assignment),) * recalculate.ITERATION_COUNT,
         updated_frl_path=str(lookup),
+        block_geometry_path=str(tmp_path / "blocks.zip"),
         all_students_path=str(students),
         new_ctip_path=None,
     )
@@ -230,3 +256,25 @@ def test_output_path_adds_updated_frl_before_new_timestamp(tmp_path):
     result = recalculate.output_path_for(source, "20260724T000000000000Z")
 
     assert result.name == "report_updated_frl_20260724T000000000000Z.csv"
+
+
+def test_build_tasks_adds_preference_label_suffix(tmp_path):
+    root = tmp_path / "matches"
+    policy_root = root / "policy"
+    policy_root.mkdir(parents=True)
+    (policy_root / "policy_config.generated.yaml").write_text("grade: KG\n")
+    for iteration in range(recalculate.ITERATION_COUNT):
+        (policy_root / f"assignment_iteration{iteration}.csv").touch()
+
+    tasks = recalculate.build_tasks(
+        ["policy"],
+        root,
+        "zone",
+        tmp_path / "frl.csv",
+        tmp_path / "blocks.zip",
+        tmp_path / "students.csv",
+        None,
+        "__real_preferences",
+    )
+
+    assert [task.label for task in tasks] == ["policy__real_preferences"]

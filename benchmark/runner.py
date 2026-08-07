@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from optimization.config import OptimizationConfig
-from optimization.solution import ZoneSolution, graph_fingerprint
+from optimization.solution import JsonArtifact, ZoneSolution, graph_fingerprint
 from benchmark.config import (
     BenchmarkTask,
     ChoiceMetricsRunConfig,
@@ -119,6 +119,7 @@ def run_optimization_task(
             config=config,
             solutions=solutions,
             task=task,
+            final_solution=final_solution,
         )
         if matching_result is not None:
             from benchmark.matching import (
@@ -260,6 +261,7 @@ def stage_record(
         "num_zones": solution.problem.Z,
         "contiguous": contiguous,
         "metadata": dict(solution.metadata),
+        "artifacts": solution.artifact_manifest(),
     }
 
 
@@ -269,6 +271,7 @@ def result_payload_for(
     config: OptimizationConfig,
     solutions: Sequence[ZoneSolution],
     task: BenchmarkTask,
+    final_solution: ZoneSolution | None = None,
 ) -> dict[str, Any]:
     payload = metrics.to_full_dict()
     run = payload.get("run", {})
@@ -286,6 +289,9 @@ def result_payload_for(
             },
         }
     )
+    final_solution = final_solution or (solutions[-1] if solutions else None)
+    if final_solution is not None and final_solution.artifacts:
+        payload["artifacts"] = final_solution.artifact_manifest()
     return payload
 
 
@@ -355,6 +361,15 @@ def load_solutions(
             with open(solution_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
         metadata = dict(info.get("metadata") or stage.get("metadata") or {})
+        artifact_info = info.get("artifacts") or stage.get("artifacts") or {}
+        artifacts = {
+            str(name): JsonArtifact(
+                filename=str(descriptor["path"]),
+                summary=dict(descriptor.get("summary") or {}),
+                source_path=os.path.join(stage_dir, str(descriptor["path"])),
+            )
+            for name, descriptor in artifact_info.items()
+        }
         centroid_school_ids = metadata.get("centroid_school_ids")
         if (
             centroid_school_ids is None
@@ -387,6 +402,7 @@ def load_solutions(
                 objective=info.get("objective", stage.get("objective")),
                 wall_time=info.get("wall_time", stage.get("wall_time")),
                 metadata=metadata,
+                artifacts=artifacts,
             )
         )
     return solutions, config, manifest

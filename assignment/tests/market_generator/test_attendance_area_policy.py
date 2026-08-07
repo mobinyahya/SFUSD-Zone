@@ -10,6 +10,9 @@ from assignment.student_assignment.market_generator.preference_generator import 
 from assignment.student_assignment.market_generator.priority_generator import (
     PriorityGenerator,
 )
+from assignment.student_assignment.market_generator.school_choice_market_generator import (
+    MarketGenerator,
+)
 
 
 def _preference_market(config, initial_preferences):
@@ -253,3 +256,68 @@ def test_aa_boost_applies_only_to_attendance_area_ge_program():
     market.config["aa_boost"] = 500
     updated_priorities = generator._set_policy_priorities(0, "Con1")
     assert updated_priorities[0, 0] == 500
+
+
+def test_overscribe_aa_defaults_to_false():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {"grade": "KG"}
+
+    match = np.array([0])
+    rank = np.array([1])
+    updated_match, updated_rank = market._overscribe_attendance_area(
+        np.array([[1]]), match, rank
+    )
+
+    np.testing.assert_array_equal(updated_match, match)
+    np.testing.assert_array_equal(updated_rank, rank)
+
+
+def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {"grade": "KG", "overscribe_aa": True}
+    market.students = SimpleNamespace(
+        attendance_area=pd.Series({10: 101, 11: 102, 12: 999}),
+        idx2studentno={0: 10, 1: 11, 2: 12},
+    )
+    market.programs = SimpleNamespace(
+        indices={"101-GE-KG": 1, "200-GE-KG": 2, "102-GE-KG": 3}
+    )
+    market.preference_generator = SimpleNamespace(
+        pref_length=np.array([2, 2, 1])
+    )
+
+    match, rank = market._overscribe_attendance_area(
+        np.array([[2, 1, 0], [2, 3, 0], [2, 0, 0]]),
+        np.array([0, 2, 0]),
+        np.array([2, 1, 2]),
+    )
+
+    np.testing.assert_array_equal(match, [1, 2, 0])
+    np.testing.assert_array_equal(rank, [2, 1, 2])
+
+
+def test_overscribe_aa_allows_enrollment_above_capacity():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {
+        "assignment-algorithm": "DA",
+        "grade": "KG",
+        "overscribe_aa": True,
+    }
+    market.students = SimpleNamespace(
+        attendance_area=pd.Series({10: 101, 11: 101}),
+        idx2studentno={0: 10, 1: 11},
+        studentno2idx={10: 0, 11: 1},
+    )
+    market.programs = SimpleNamespace(
+        capacity=np.array([1, 0]),
+        indices={"101-GE-KG": 1, "200-GE-KG": 2},
+    )
+    market.preference_generator = SimpleNamespace(pref_length=np.array([1, 1]))
+    prefs = np.array([[1], [1]])
+
+    match, rank, _ = market._generate_assignment(
+        prefs, np.array([[10, 0], [20, 0]])
+    )
+
+    np.testing.assert_array_equal(match, [1, 1])
+    assert np.count_nonzero(match == 1) > market.programs.capacity[0]

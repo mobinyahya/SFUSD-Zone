@@ -7,7 +7,7 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs | welfare
+strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs | welfare | zoned_column_generation | zoned_benders
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
@@ -48,6 +48,8 @@ choice_model: 'mnl'           # iterative choice and preassignment metric: dista
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
+# Analytical Shi strategies have dedicated examples in
+# config.example.zoned_column_generation.yaml and config.example.zoned_benders.yaml.
 # cutoffs/welfare require solver: cp_bool, years: [23], and population_type: All.
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy

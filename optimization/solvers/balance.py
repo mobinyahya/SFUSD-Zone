@@ -69,6 +69,30 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
     return constraints
 
 
+def enforced_balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
+    """Return graph-level rows that remain active for this problem."""
+    return [
+        constraint
+        for constraint in balance_constraints(problem)
+        if not (
+            problem.has_school_capacity_recourse
+            and constraint.kind == "capacity"
+        )
+    ]
+
+
+def rounded_balance_coefficient(
+    problem: ZoneProblem,
+    constraint: BalanceConstraint,
+    node: int,
+    ratio: float,
+) -> int:
+    """Return the per-node coefficient used by the CP-SAT balance rows."""
+    return round(
+        100 * (constraint.value(node) - ratio * problem.students(node))
+    )
+
+
 def balance_terms(
     problem: ZoneProblem,
     constraint: BalanceConstraint,

@@ -20,6 +20,8 @@ from optimization.strategies import (  # noqa: E402,F401
     overlapping,
     cutoffs,
     welfare,
+    zoned_column_generation,
+    zoned_benders,
 )
 
 __all__ = ["Strategy", "get_strategy", "register"]

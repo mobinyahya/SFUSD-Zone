@@ -29,8 +29,8 @@ from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
-    balance_constraints,
     balance_terms,
+    enforced_balance_constraints,
 )
 from optimization.solvers.base import Solver, register
 
@@ -334,6 +334,7 @@ class _CpSatSolver(Solver):
             metadata.update(
                 {
                     "objective_kind": "school_cutoffs",
+                    "optimization_method": "direct_chained_conditional_demand",
                     "lottery_scale": market.lottery_scale,
                     "same_zone_indicator_count": len(
                         {
@@ -358,6 +359,17 @@ class _CpSatSolver(Solver):
                     school: cutoff / market.lottery_scale
                     for school, cutoff in raw_cutoffs.items()
                 }
+                raw_objective = int(round(solver.ObjectiveValue()))
+                raw_best_bound = int(math.ceil(solver.BestObjectiveBound() - 1e-9))
+                metadata.update(
+                    {
+                        "raw_objective": raw_objective,
+                        "raw_best_bound": raw_best_bound,
+                        "normalized_best_bound": raw_best_bound
+                        / market.lottery_scale,
+                        "global_optimum_certified": status == cp_model.OPTIMAL,
+                    }
+                )
         elif problem.choice_objective is not None:
             metadata.update(
                 {
@@ -385,6 +397,7 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
+        self._boundary_limit_vars = {}
         self._add_assignment_constraints(m, problem, x, y)
         self._add_centroid_constraints(m, problem, x, y)
         self._add_contiguity_constraints(m, problem, x, y)
@@ -404,6 +417,7 @@ class _CpSatSolver(Solver):
         boundary_vars = []
         for u, v in problem.G.edges():
             boundary = m.NewBoolVar(f"boundary_limit_{u}_{v}")
+            self._boundary_limit_vars[(u, v)] = boundary
             for zone in problem.candidate_zones(u) | problem.candidate_zones(v):
                 xu = x.get((zone, u))
                 xv = x.get((zone, v))
@@ -465,12 +479,10 @@ class _CpSatSolver(Solver):
         problem: ZoneProblem,
         x: _AssignmentVars,
     ) -> None:
-        constraints = balance_constraints(problem)
+        constraints = enforced_balance_constraints(problem)
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             for constraint in constraints:
-                if problem.cutoff_market is not None and constraint.kind == "capacity":
-                    continue
                 lower, upper = balance_terms(problem, constraint, z, nodes)
                 if lower:
                     self._add_linear_constraint(m, x, lower, ">=", 0.0)
@@ -543,6 +555,7 @@ class _CpSatSolver(Solver):
         same_zone = self._add_vertex_school_same_zone_indicators(m, problem, x, market)
 
         shared_thresholds = {}
+        effective_thresholds = {}
         cumulative_cutoffs = {}
         assignment_measures = {}
         for student_index, student in enumerate(market.students):
@@ -581,21 +594,25 @@ class _CpSatSolver(Solver):
                     shared_thresholds[threshold_key] = threshold
                 threshold = shared_thresholds[threshold_key]
 
-                effective_threshold = m.NewIntVar(
-                    0,
-                    max_cutoff,
-                    f"effective_threshold_{student_index}_{school}",
-                )
                 if school in market.zone_restricted_schools:
-                    zoned_together = same_zone[(student.node, school)]
-                    m.Add(effective_threshold == threshold).OnlyEnforceIf(
-                        zoned_together
-                    )
-                    m.Add(effective_threshold == lottery_scale).OnlyEnforceIf(
-                        zoned_together.Not()
-                    )
+                    effective_key = (student.node, school, priority)
+                    if effective_key not in effective_thresholds:
+                        effective_threshold = m.NewIntVar(
+                            0,
+                            max_cutoff,
+                            f"effective_threshold_{student.node}_{school}_{priority}",
+                        )
+                        zoned_together = same_zone[(student.node, school)]
+                        m.Add(effective_threshold == threshold).OnlyEnforceIf(
+                            zoned_together
+                        )
+                        m.Add(effective_threshold == lottery_scale).OnlyEnforceIf(
+                            zoned_together.Not()
+                        )
+                        effective_thresholds[effective_key] = effective_threshold
+                    effective_threshold = effective_thresholds[effective_key]
                 else:
-                    m.Add(effective_threshold == threshold)
+                    effective_threshold = threshold
 
                 previous_cumulative = cumulative_cutoffs[student_index, rank - 1]
                 cumulative = m.NewIntVar(
@@ -609,13 +626,9 @@ class _CpSatSolver(Solver):
                     [previous_cumulative, effective_threshold],
                 )
 
-                assignment = m.NewIntVar(
-                    0,
-                    lottery_scale,
-                    f"assignment_measure_{student_index}_{school}",
+                assignment_measures[student_index, school] = (
+                    previous_cumulative - cumulative
                 )
-                m.Add(assignment == previous_cumulative - cumulative)
-                assignment_measures[student_index, school] = assignment
 
         # Assignments must respect school capacities, scaled by lottery_scale.
         for school, capacity in market.school_capacities.items():

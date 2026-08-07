@@ -99,6 +99,19 @@ class LevelConverter:
         node as "no hint".
         """
         area = base_area_assignment(src_G, src_assignment)
+        return self.from_area_assignment(area, src_level, dst_G, dst_level)
+
+    def from_area_assignment(
+        self,
+        src_area_assignment: Mapping[int, int],
+        src_level: LevelSpec | str,
+        dst_G: nx.Graph,
+        dst_level: LevelSpec | str,
+    ) -> dict[int, int]:
+        """Convert an already portable finest-area assignment to ``dst_G``."""
+        src_level = LevelSpec.parse(src_level)
+        dst_level = LevelSpec.parse(dst_level)
+        area = {int(area_id): int(zone) for area_id, zone in src_area_assignment.items()}
         lookup = self._zone_lookup(area, src_level.unit, dst_level.unit)
 
         result: dict[int, int] = {}

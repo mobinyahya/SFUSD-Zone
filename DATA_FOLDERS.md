@@ -306,12 +306,15 @@ optimization_output/
   solution_<level>.json
   zone_dict_<level>.json
   zone_dict_area_<level>.json
+  artifacts/
+    shi_mechanism_<level>.json             # optional zoned Shi witness
   visualization_<stage>.png
   stages/
     stage_<index>_<level>/
       solution_<level>.json
       zone_dict_<level>.json
       zone_dict_area_<level>.json
+      artifacts/shi_mechanism_<level>.json
   solver_logs/
     solver_<index>_<level>_<solver>.log
     school_solves/<school-id>/...             # overlapping strategy
@@ -334,6 +337,11 @@ iteration. In a standalone run, `result.json` reports the selected metrics, but
 the same-level root assignment files retain whichever iteration was saved last.
 Benchmark output avoids this ambiguity by saving every stage separately and
 explicitly saving its metrics-selected final solution at the task root.
+
+The Shi mechanism artifact is a sparse continuum/large-market witness with
+fractional quotas. `solution_<level>.json`, benchmark manifests, and
+`result.json` store only its filename and summary; they do not inline the menu
+probabilities. It is not an exact finite-student assignment artifact.
 
 The output path is arbitrary when `--output` is supplied, so
 `optimization_output/` describes a default layout rather than a required

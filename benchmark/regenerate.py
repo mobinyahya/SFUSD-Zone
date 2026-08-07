@@ -80,6 +80,7 @@ def regenerate_metrics(
                 config=config,
                 solutions=solutions,
                 task=task,
+                final_solution=calculator.context.solution,
             )
             previous_payload = _load_previous_result(
                 os.path.join(run_dir, RESULT_FILENAME)

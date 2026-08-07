@@ -23,6 +23,7 @@ priority-weights:
 
 aa_boost: 1000
 add_aa_schools: true
+overscribe_aa: true
 
 sibling-access: true
 designate: true

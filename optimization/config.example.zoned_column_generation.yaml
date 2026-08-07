@@ -1,0 +1,49 @@
+# Canonical isolated-market Shi column-generation run.
+# uv run python -m optimization.run optimization/config.example.zoned_column_generation.yaml
+
+centroids_type: '6-zone-9'
+levels: ['Block_2']
+solver: 'cp_bool'
+strategy: 'zoned_column_generation'
+
+frl_dev: 0.15
+racial_dev: -1
+overage: -1
+shortage: -1
+max_distance: 5
+centroid_neighbor_radius: 0
+boundary_prop: 0.2
+solve_time_limits: [300]
+gap_limits: [0]
+hints: voronoi
+seed: 42
+workers: 5
+
+cutoff_assignment_config: assignment/configs/kumar.config.yaml
+cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
+cutoff_lottery_scale: 20
+cutoff_gumbel_scale: 1.0
+cutoff_preference_seed: 2023
+remove_city_wide: true
+
+zoned_cg_wall_time_limit: 3000
+zoned_cg_max_rounds: 100
+zoned_cg_pricing_time_limit: 600
+zoned_cg_pricing_node_limit: 10000
+zoned_cg_columns_per_label: 10
+zoned_cg_reduced_cost_tolerance: 1.0e-7
+zoned_cg_menu_tolerance: 1.0e-9
+zoned_cg_master_feasibility_tolerance: 1.0e-8
+zoned_cg_optimality_tolerance: 1.0e-6
+zoned_cg_mip_time_limit: 300
+zoned_cg_seed_paths: []
+zoned_cg_recom_seed_runs: 4
+zoned_cg_local_move_rounds: 100
+zoned_cg_save_mechanism: true
+zoned_cg_evaluate_stable_diagnostics: true
+
+years: [23]
+population_type: 'All'
+capacity_scenario: 'A'
+new_schools: true
+include_k8: false

@@ -12,6 +12,7 @@ from scipy.optimize import linprog
 from optimization.analytical_bounds import (
     _best_shi_cardinality,
     _best_shi_prefix,
+    shi_dual_potentials,
     solve_shi_menu_bound,
 )
 from optimization.analytical_welfare_oracle import solve_analytical_market
@@ -52,6 +53,25 @@ def test_shi_prefix_pricing_matches_exhaustive_assortments():
 
     assert value == pytest.approx(max(exhaustive)[0])
     assert set(menu) == set(max(exhaustive)[1])
+
+
+def test_shi_dual_potentials_cover_every_menu():
+    segment = _segment(1, {100: 2.0, 200: 0.5, 300: 1.0})
+    prices = {100: 0.7, 200: 0.1, 300: 1.2}
+    potential = shi_dual_potentials((segment,), prices, beta=1.0)[1]
+
+    for size in range(4):
+        for menu in itertools.combinations(prices, size):
+            attractions = {
+                school: math.exp(segment.systematic_utilities[school])
+                for school in prices
+            }
+            denominator = 1 + sum(attractions[school] for school in menu)
+            priced_value = math.log(denominator) - sum(
+                prices[school] * attractions[school] / denominator
+                for school in menu
+            )
+            assert priced_value <= potential
 
 
 def test_complete_shi_bound_matches_extensive_primal_and_dominates_q20():

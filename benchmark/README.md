@@ -137,6 +137,15 @@ stages/
 
 Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases for the metrics-selected final solution.
 
+`zoned_cg_seed_paths` and `zoned_benders_seed_paths` are sequence-valued. A
+flat list is one task's complete seed-path list; use a list of lists to sweep
+over alternative path sets. When a zoned analytical strategy saves its
+mechanism, each stage and the final
+root alias contain `artifacts/shi_mechanism_<level>.json`. Solution, manifest,
+and result payloads contain only its relative filename and compact summary.
+Metrics-only reconstruction preserves that reference and does not duplicate or
+rewrite the sparse mechanism payload.
+
 ## Modes
 
 `run` expands the YAML into tasks, executes optimization, writes artifacts, computes final-solution metrics, and writes aggregate CSVs. Recursive/iterative stage objective and timing metadata are always preserved; expensive per-stage cut-edge/compactness metrics run only when `metrics.compute_stage_metrics: true`.

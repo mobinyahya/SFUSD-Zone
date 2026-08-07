@@ -9,6 +9,7 @@ non_designation_boost: int(required=False)
 aa_boost: int(required=False)
 add_aa_schools: bool(required=False)
 remove_non_aa_or_citywide: bool(required=False)
+overscribe_aa: bool(required=False)
 
 soft_reserve_boost: int(required=False)
 

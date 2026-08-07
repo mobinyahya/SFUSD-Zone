@@ -31,9 +31,18 @@ from optimization.branch_price.patterns import (
     zone_perimeter,
 )
 from optimization.branch_price.root import PatternRootResult, solve_pattern_root
+from optimization.branch_price.analytical_patterns import (
+    AnalyticalPatternKey,
+    AnalyticalZonePattern,
+)
+from optimization.branch_price.analytical_pricing import AnalyticalPricingResult
+from optimization.branch_price.analytical_root import ZonedColumnGenerationResult
 
 __all__ = [
     "AccessPricingResult",
+    "AnalyticalPatternKey",
+    "AnalyticalPricingResult",
+    "AnalyticalZonePattern",
     "AccessPricingTemplate",
     "ExactPricingResult",
     "LagrangianCertificate",
@@ -45,6 +54,7 @@ __all__ = [
     "RestrictedPatternMaster",
     "ZonePattern",
     "ZonePatternValidator",
+    "ZonedColumnGenerationResult",
     "analytic_access_pricing_bound",
     "assemble_lagrangian_certificate",
     "build_access_pricing_template",

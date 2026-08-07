@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import time
+from collections import Counter
+from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
 
@@ -19,6 +21,9 @@ from optimization.welfare_oracle import (
 
 class WelfareSolver:
     """Jointly optimize zoning and stable assignment-measure welfare."""
+
+    optimization_method = "direct_finite_grid_stable_welfare"
+    finite_grid_formulation = "cumulative_rejection_thresholds"
 
     def __init__(self, zoning_solver, *, utility_scale: int) -> None:
         self.zoning_solver = zoning_solver
@@ -85,19 +90,14 @@ class WelfareSolver:
         for node, variable in y.items():
             model.AddHint(variable, initial_assignment[node])
 
-        cutoffs, raw_welfare = add_finite_grid_welfare_model(
-            model,
-            problem,
-            x,
-            initial_assignment,
-            initial_grid,
-            zoning_solver=self.zoning_solver,
-            utility_scale=self.utility_scale,
+        cutoffs, raw_welfare = self._add_market(
+            model, problem, x, initial_assignment, initial_grid
         )
         if initial_grid.raw_scaled_welfare > global_raw_upper_bound:
             raise ValueError("welfare_raw_upper_bound is below the initial incumbent.")
         model.Add(raw_welfare <= global_raw_upper_bound)
         model.Maximize(raw_welfare)
+        pre_solve_wall_time = time.monotonic() - started
 
         solver = cp_model.CpSolver()
         self.zoning_solver._configure_solver_parameters(solver)
@@ -117,7 +117,13 @@ class WelfareSolver:
                     **market.metadata,
                     "solver": "cp_bool",
                     "objective_kind": "stable_assignment_welfare",
-                    "optimization_method": "direct_finite_grid_stable_welfare",
+                    "optimization_method": self.optimization_method,
+                    "finite_grid_formulation": self.finite_grid_formulation,
+                    "lottery_scale": market.lottery_scale,
+                    "welfare_utility_scale": self.utility_scale,
+                    "pre_solve_wall_time": pre_solve_wall_time,
+                    "model_stats": model.ModelStats(),
+                    **self._formulation_metadata(),
                 },
             )
 
@@ -162,7 +168,8 @@ class WelfareSolver:
             **market.metadata,
             "solver": "cp_bool",
             "objective_kind": "stable_assignment_welfare",
-            "optimization_method": "direct_finite_grid_stable_welfare",
+            "optimization_method": self.optimization_method,
+            "finite_grid_formulation": self.finite_grid_formulation,
             "market_coupling": "isolated_zones",
             "lottery_scale": market.lottery_scale,
             "welfare_utility_scale": self.utility_scale,
@@ -206,7 +213,9 @@ class WelfareSolver:
             "stability_definition": (
                 "Independent continuous student-optimal market clearing in every zone."
             ),
+            "pre_solve_wall_time": pre_solve_wall_time,
             "model_stats": model.ModelStats(),
+            **self._formulation_metadata(),
         }
         return ZoneSolution(
             problem=problem,
@@ -242,6 +251,341 @@ class WelfareSolver:
             zoning_solver=self.zoning_solver,
             utility_scale=self.utility_scale,
         )
+
+    def _formulation_metadata(self):
+        return {}
+
+
+class BooleanBudgetWelfareSolver(WelfareSolver):
+    """Exact paper base model with reified finite-grid budget sets."""
+
+    optimization_method = "boolean_budget_finite_grid_stable_welfare"
+    finite_grid_formulation = "priority_contingent_budget_sets"
+
+    def __init__(self, zoning_solver, *, utility_scale: int) -> None:
+        super().__init__(zoning_solver, utility_scale=utility_scale)
+        self._budget_model_counts = {}
+
+    def _add_market(self, model, problem, x, initial_assignment, initial_grid):
+        variables = add_boolean_budget_welfare_model(
+            model,
+            problem,
+            x,
+            initial_assignment,
+            initial_grid,
+            zoning_solver=self.zoning_solver,
+            utility_scale=self.utility_scale,
+        )
+        self._budget_model_counts = variables.counts
+        return variables.cutoffs, variables.raw_welfare
+
+    def _formulation_metadata(self):
+        return dict(self._budget_model_counts)
+
+
+@dataclass(frozen=True)
+class BooleanBudgetModel:
+    """Variables in the explicit priority-contingent budget-set model."""
+
+    cutoffs: dict
+    qualifications: dict
+    budgets: dict
+    assignment_measures: dict
+    utilities: dict
+    raw_welfare: object
+    profile_count: int
+
+    @property
+    def counts(self):
+        return {
+            "budget_profile_count": self.profile_count,
+            "qualification_boolean_count": len(self.qualifications),
+            "budget_boolean_count": len(self.budgets),
+            "assignment_measure_count": len(self.assignment_measures),
+            "cell_utility_variable_count": len(self.utilities),
+        }
+
+
+def add_boolean_budget_welfare_model(
+    model,
+    problem,
+    x,
+    initial_assignment,
+    initial_grid,
+    *,
+    zoning_solver,
+    utility_scale,
+):
+    """Add the paper's exact finite-grid budget-set base formulation."""
+    market = problem.cutoff_market
+    same_zone = zoning_solver._add_vertex_school_same_zone_indicators(
+        model, problem, x, market
+    )
+    same_zone_hints = {}
+    for (node, school), variable in same_zone.items():
+        hint = int(
+            initial_assignment[node] == initial_assignment[market.school_nodes[school]]
+        )
+        model.AddHint(variable, hint)
+        same_zone_hints[node, school] = hint
+    return add_boolean_budget_reification(
+        model,
+        market,
+        same_zone,
+        utility_scale=utility_scale,
+        cutoff_hints=initial_grid.cutoffs.school_cutoffs,
+        same_zone_hints=same_zone_hints,
+    )
+
+
+def add_boolean_budget_reification(
+    model,
+    market,
+    same_zone,
+    *,
+    utility_scale,
+    cutoff_hints=None,
+    same_zone_hints=None,
+):
+    """Add exact Boolean qualification, budget, utility, and demand logic.
+
+    Qualification literals are shared by school, priority tier, and lottery
+    cell. Budget literals are additionally shared by applicant node. Utility
+    profiles and preference-priority demand profiles are aggregated separately.
+    """
+    scale = market.lottery_scale
+    cutoff_domains = {school: {0} for school in market.school_capacities}
+    for student in market.students:
+        for school in student.preferences:
+            priority = student.priorities[school]
+            cutoff_domains[school].update(
+                priority * scale + cell for cell in range(1, scale + 1)
+            )
+    cutoffs = {
+        school: model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues(sorted(cutoff_domains[school])),
+            f"budget_cutoff_{school}",
+        )
+        for school in market.school_capacities
+    }
+    if cutoff_hints is not None:
+        cutoff_hints = {
+            school: max(
+                value
+                for value in cutoff_domains[school]
+                if value <= cutoff_hints[school]
+            )
+            for school in market.school_capacities
+        }
+        for school, variable in cutoffs.items():
+            model.AddHint(variable, cutoff_hints[school])
+
+    profiles = Counter()
+    for student in market.students:
+        entries = tuple(
+            (
+                school,
+                student.priorities[school],
+                round(student.utilities[school] * utility_scale),
+            )
+            for school in student.preferences
+        )
+        profiles[(student.node, entries)] += 1
+
+    qualifications = {}
+    budgets = {}
+    assignment_measures = {}
+    utilities = {}
+    school_demands = {school: [] for school in market.school_capacities}
+    objective_terms = []
+
+    def qualification(school, priority, cell):
+        key = (school, priority, cell)
+        variable = qualifications.get(key)
+        if variable is not None:
+            return variable
+        score_limit = scale * priority + cell - 1
+        variable = model.NewBoolVar(
+            f"qualifies_{school}_{priority}_{cell}"
+        )
+        model.Add(cutoffs[school] <= score_limit).OnlyEnforceIf(variable)
+        model.Add(cutoffs[school] > score_limit).OnlyEnforceIf(variable.Not())
+        if cutoff_hints is not None:
+            model.AddHint(variable, int(cutoff_hints[school] <= score_limit))
+        qualifications[key] = variable
+        return variable
+
+    def budget(node, school, priority, cell):
+        key = (node, school, priority, cell)
+        variable = budgets.get(key)
+        if variable is not None:
+            return variable
+        qualifies = qualification(school, priority, cell)
+        access = same_zone[(node, school)]
+        variable = model.NewBoolVar(
+            f"budget_{node}_{school}_{priority}_{cell}"
+        )
+        model.AddBoolAnd([access, qualifies]).OnlyEnforceIf(variable)
+        model.AddBoolOr([variable, access.Not(), qualifies.Not()])
+        if cutoff_hints is not None and same_zone_hints is not None:
+            score_limit = scale * priority + cell - 1
+            model.AddHint(
+                variable,
+                int(
+                    same_zone_hints[node, school]
+                    and cutoff_hints[school] <= score_limit
+                ),
+            )
+        budgets[key] = variable
+        return variable
+
+    nonempty_profiles = 0
+    for profile_index, ((node, entries), profile_mass) in enumerate(
+        sorted(profiles.items())
+    ):
+        if not entries:
+            continue
+        nonempty_profiles += 1
+        for cell in range(1, scale + 1):
+            available = [
+                budget(node, school, priority, cell)
+                for school, priority, _coefficient in entries
+            ]
+            utility_upper = max(coefficient for _school, _priority, coefficient in entries)
+            utility = model.NewIntVar(
+                0,
+                utility_upper,
+                f"budget_utility_{profile_index}_{cell}",
+            )
+            model.AddMaxEquality(
+                utility,
+                [
+                    coefficient * affordable
+                    for affordable, (_school, _priority, coefficient) in zip(
+                        available, entries, strict=True
+                    )
+                ],
+            )
+            if cutoff_hints is not None and same_zone_hints is not None:
+                utility_hint = max(
+                    (
+                        coefficient
+                        for school, priority, coefficient in entries
+                        if same_zone_hints[node, school]
+                        and cutoff_hints[school]
+                        <= scale * priority + cell - 1
+                    ),
+                    default=0,
+                )
+                model.AddHint(utility, utility_hint)
+            utilities[profile_index, cell] = utility
+            objective_terms.append(profile_mass * utility)
+
+    positive_thresholds = {}
+    clipped_thresholds = {}
+    effective_thresholds = {}
+
+    def effective_threshold(node, school, priority):
+        threshold_key = (school, priority)
+        threshold = clipped_thresholds.get(threshold_key)
+        if threshold is None:
+            positive = model.NewIntVar(
+                0,
+                max(cutoff_domains[school]),
+                f"budget_positive_threshold_{school}_{priority}",
+            )
+            model.AddMaxEquality(
+                positive,
+                [cutoffs[school] - priority * scale, 0],
+            )
+            threshold = model.NewIntVar(
+                0,
+                scale,
+                f"budget_threshold_{school}_{priority}",
+            )
+            model.AddMinEquality(threshold, [positive, scale])
+            positive_thresholds[threshold_key] = positive
+            clipped_thresholds[threshold_key] = threshold
+            if cutoff_hints is not None:
+                positive_hint = max(0, cutoff_hints[school] - priority * scale)
+                model.AddHint(positive, positive_hint)
+                model.AddHint(threshold, min(scale, positive_hint))
+
+        effective_key = (node, school, priority)
+        effective = effective_thresholds.get(effective_key)
+        if effective is not None:
+            return effective
+        access = same_zone[(node, school)]
+        effective = model.NewIntVar(
+            0,
+            scale,
+            f"budget_effective_threshold_{node}_{school}_{priority}",
+        )
+        model.Add(effective == threshold).OnlyEnforceIf(access)
+        model.Add(effective == scale).OnlyEnforceIf(access.Not())
+        if cutoff_hints is not None and same_zone_hints is not None:
+            threshold_hint = min(
+                scale,
+                max(0, cutoff_hints[school] - priority * scale),
+            )
+            model.AddHint(
+                effective,
+                threshold_hint if same_zone_hints[node, school] else scale,
+            )
+        effective_thresholds[effective_key] = effective
+        return effective
+
+    demand_profiles = Counter(
+        (
+            student.node,
+            tuple(
+                (school, student.priorities[school])
+                for school in student.preferences
+            ),
+        )
+        for student in market.students
+        if student.preferences
+    )
+    for demand_profile, ((node, entries), profile_mass) in enumerate(
+        sorted(demand_profiles.items())
+    ):
+        previous = scale
+        previous_hint = scale
+        for rank, (school, priority) in enumerate(entries, start=1):
+            effective = effective_threshold(node, school, priority)
+            cumulative = model.NewIntVar(
+                0,
+                scale,
+                f"budget_remaining_{demand_profile}_{rank}",
+            )
+            model.AddMinEquality(cumulative, [previous, effective])
+            assignment_mass = previous - cumulative
+            assignment_measures[demand_profile, rank] = assignment_mass
+            school_demands[school].append(profile_mass * assignment_mass)
+            if cutoff_hints is not None and same_zone_hints is not None:
+                threshold_hint = min(
+                    scale,
+                    max(0, cutoff_hints[school] - priority * scale),
+                )
+                effective_hint = (
+                    threshold_hint if same_zone_hints[node, school] else scale
+                )
+                previous_hint = min(previous_hint, effective_hint)
+                model.AddHint(cumulative, previous_hint)
+            previous = cumulative
+
+    for school, capacity in market.school_capacities.items():
+        model.Add(sum(school_demands[school]) <= scale * capacity)
+
+    return BooleanBudgetModel(
+        cutoffs=cutoffs,
+        qualifications=qualifications,
+        budgets=budgets,
+        assignment_measures=assignment_measures,
+        utilities=utilities,
+        raw_welfare=sum(objective_terms),
+        profile_count=nonempty_profiles,
+    )
 
 
 def add_finite_grid_welfare_model(

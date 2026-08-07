@@ -36,6 +36,16 @@ class CutoffsStrategy(Strategy):
             preference_seed=int(self.options["cutoff_preference_seed"]),
             remove_city_wide=bool(self.options["remove_city_wide"]),
         )
-        if not hasattr(solver, "_build_assignment_vars"):
+        method = self.options.get("cutoff_method", "decomposition")
+        if method == "conditional_demand" or not hasattr(
+            solver, "_build_assignment_vars"
+        ):
             return [solver.solve(problem)]
-        return [CutoffDecompositionSolver(solver).solve(problem)]
+        if method in {"decomposition", "pair_generation"}:
+            return [
+                CutoffDecompositionSolver(
+                    solver,
+                    generate_assigned_pairs=method == "pair_generation",
+                ).solve(problem)
+            ]
+        raise ValueError(f"Unknown cutoff_method: {method!r}.")

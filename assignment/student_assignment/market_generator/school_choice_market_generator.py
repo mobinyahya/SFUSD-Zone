@@ -324,6 +324,42 @@ class MarketGenerator(SchoolChoiceMarket):
                 prefs, policy_data, iteration, match, in_zone_rank, cutoffs
             )
 
+    def _overscribe_attendance_area(
+        self,
+        prefs: np.ndarray,
+        match: np.ndarray,
+        in_zone_rank: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Place otherwise-unassigned students at their attendance-area school."""
+        if not self.config.get("overscribe_aa", False):
+            return match, in_zone_rank
+
+        match = match.copy()
+        in_zone_rank = in_zone_rank.copy()
+        attendance_areas = self.students.attendance_area
+        grade = self.config["grade"]
+
+        for student_idx in np.flatnonzero(match == 0):
+            studentno = self.students.idx2studentno[student_idx]
+            attendance_area = attendance_areas.get(studentno, 0)
+            program_idx = self.programs.indices.get(
+                f"{attendance_area}-GE-{grade}"
+            )
+            if program_idx is None:
+                continue
+
+            match[student_idx] = program_idx
+            preference_ranks = np.flatnonzero(
+                prefs[student_idx] == program_idx
+            )
+            in_zone_rank[student_idx] = (
+                preference_ranks[0] + 1
+                if preference_ranks.size
+                else self.preference_generator.pref_length[student_idx] + 1
+            )
+
+        return match, in_zone_rank
+
     def _get_final_program(self, df: pd.DataFrame):
         """Modify dataframe in place to add final program column.
 
@@ -542,6 +578,7 @@ class MarketGenerator(SchoolChoiceMarket):
         rank = np.clip(
             rank, a_min=None, a_max=self.preference_generator.pref_length + 1
         )
+        match, rank = self._overscribe_attendance_area(prefs, match, rank)
         return match, rank, cutoffs
 
     def _generate_assignment_with_guardrails(
@@ -578,6 +615,9 @@ class MarketGenerator(SchoolChoiceMarket):
         cutoffs = np.zeros(
             [len(match)]
         )  # TODO: calculate cutoffs in reserve setting
+        match, rank = self._overscribe_attendance_area(
+            preferences, match, rank
+        )
         return match, rank, cutoffs
 
     def _save_assignment(

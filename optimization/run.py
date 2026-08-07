@@ -113,6 +113,8 @@ def _result_payload(metrics, config: OptimizationConfig, solutions) -> dict:
             "config": _config_snapshot(config),
         }
     )
+    if solutions and solutions[-1].artifacts:
+        payload["artifacts"] = solutions[-1].artifact_manifest()
     return payload
 
 

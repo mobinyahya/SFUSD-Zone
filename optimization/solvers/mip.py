@@ -19,8 +19,9 @@ from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
-    balance_constraints,
     balance_terms,
+    enforced_balance_constraints,
+    rounded_balance_coefficient,
 )
 from optimization.solvers.base import Solver, register
 
@@ -30,6 +31,19 @@ _SENSE = {"<=", ">=", "=="}
 _Term = tuple[float, int, int]
 _AssignmentVars = dict[tuple[int, int], gp.Var]
 _ProgressCaptureData = tuple[list[gp.Var], list[tuple[int, int, tuple[int, ...]]]]
+
+
+def add_gurobi_zoning_geography(
+    model: gp.Model,
+    problem: ZoneProblem,
+    *,
+    centroid_neighbor_radius: int = 0,
+) -> _AssignmentVars:
+    """Add the canonical complete-zoning variables and constraints to a model."""
+    builder = MipSolver(centroid_neighbor_radius=centroid_neighbor_radius)
+    assignment = builder._build_assignment_vars(model, problem)
+    builder._add_core_constraints(model, problem, assignment)
+    return assignment
 
 
 @register("mip")
@@ -251,10 +265,46 @@ class MipSolver(Solver):
     def _add_balance_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
-        constraints = balance_constraints(problem)
+        constraints = enforced_balance_constraints(problem)
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             for constraint in constraints:
+                if problem.has_school_capacity_recourse:
+                    if constraint.lower_ratio is not None:
+                        terms = [
+                            (
+                                float(
+                                    rounded_balance_coefficient(
+                                        problem,
+                                        constraint,
+                                        node,
+                                        constraint.lower_ratio,
+                                    )
+                                ),
+                                z,
+                                node,
+                            )
+                            for node in nodes
+                        ]
+                        self._add_linear_constraint(m, x, terms, ">=", 0.0)
+                    if constraint.upper_ratio is not None:
+                        terms = [
+                            (
+                                float(
+                                    rounded_balance_coefficient(
+                                        problem,
+                                        constraint,
+                                        node,
+                                        constraint.upper_ratio,
+                                    )
+                                ),
+                                z,
+                                node,
+                            )
+                            for node in nodes
+                        ]
+                        self._add_linear_constraint(m, x, terms, "<=", 0.0)
+                    continue
                 lower, upper = balance_terms(problem, constraint, z, nodes)
                 if lower:
                     self._add_linear_constraint(m, x, lower, ">=", 0.0)

@@ -53,3 +53,26 @@ def test_write_metrics_csv_preserves_requested_subconfig_order(tmp_path):
     assert frame.loc["metric one"].tolist() == list(
         range(len(zone_subconfigs.SUBCONFIGS))
     )
+
+
+def test_build_simulation_config_applies_real_preference_settings(tmp_path):
+    students = tmp_path / "student_2324.csv"
+    result = zone_subconfigs.build_simulation_config(
+        {"paths": {"zone-files": {}}},
+        tmp_path / "matches",
+        tmp_path / "small.csv",
+        tmp_path / "medium.csv",
+        real_student_data=students,
+    )
+
+    assert result["paths"]["student-data"] == str(students)
+    assert result["paths"]["student-save"] == str(tmp_path / "matches/precomputed")
+    assert result["utility-model"] == {
+        "designate-lp-for-all": False,
+        "enable": False,
+        "list-length": "0.8*round(real_length)",
+    }
+    assert result["random-seed"] == 2023
+    assert result["r1-only"] is True
+    assert result["remove-special-lps"] is True
+    assert result["rounds-merged-options"] == [0]
