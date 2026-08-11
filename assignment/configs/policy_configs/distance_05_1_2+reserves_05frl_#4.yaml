@@ -4,7 +4,7 @@ assignment-algorithm: DA
 ctip-options:
 - 1
 
-restrict-zone: false
+restrict-zone: true
 guard-rails: 0
 reserve-settings: {
   "column": "freelunch_prob", 
@@ -15,9 +15,10 @@ reserve-settings: {
 non_designation_boost: 128
 soft_reserve_boost: 64
 
-aa_boost: 1000
+# aa_boost: 1000
 add_aa_schools: true
-remove_non_aa_or_citywide: true 
+drop_below_aa: true
+# remove_non_aa_or_citywide: true 
 overscribe_aa: true
 
 policies:
@@ -26,7 +27,7 @@ policies:
 priority-weights:
   ctip: 8
   sibling: 16
-  zone: 0
+  zone: 256
   distance: 4
   language-programs:
     lp-sibling: 16
@@ -38,7 +39,7 @@ distance-priority:
   thresholds: [0.5, 1, 2]
 
 sibling-access: true
-designate: true
+designate: false
 zone-building-blocks: 'attendance_area'
 ties-options:
 - MTB

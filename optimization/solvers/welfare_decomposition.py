@@ -14,9 +14,9 @@ from optimization.branch_price import ZonePattern, solve_pattern_root
 from optimization.data import contiguity
 from optimization.problem import CutoffMarket, CutoffStudent
 from optimization.solution import ZoneSolution
-from optimization.solvers.balance import balance_constraints
 from optimization.solvers.cutoff_decomposition import (
     CutoffDecompositionSolver,
+    _Incumbent,
     _candidate_demands,
 )
 from optimization.solvers.welfare import add_finite_grid_welfare_model
@@ -46,15 +46,104 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
     """Separate stable demand and submodular welfare from geographic zoning."""
 
     def __init__(
-        self, zoning_solver, *, utility_scale: int, prefix_depth: int = 10
+        self,
+        zoning_solver,
+        *,
+        utility_scale: int,
+        generate_assigned_pairs: bool = True,
+        prefix_depth: int = 10,
+        round_time_limit: float = 180.0,
+        assignment_relaxation_enabled: bool = True,
+        submodular_access_start_enabled: bool = False,
+        adjacent_zone_subset_improvement_enabled: bool = False,
+        pressure_starts_enabled: bool = False,
+        local_moves_enabled: bool = False,
+        recom_seed_runs: int = 0,
+        recom_time_limit: float = 600.0,
+        branch_price_enabled: bool = False,
+        branch_price_time_limit: float = 45.0,
+        theta_enabled: bool = True,
     ) -> None:
-        super().__init__(zoning_solver)
+        super().__init__(
+            zoning_solver,
+            generate_assigned_pairs=generate_assigned_pairs,
+            pressure_starts_enabled=pressure_starts_enabled,
+            local_moves_enabled=local_moves_enabled,
+        )
         self.utility_scale = int(utility_scale)
         self.prefix_depth = int(prefix_depth)
+        if isinstance(round_time_limit, bool):
+            raise ValueError("round_time_limit must be positive and finite.")
+        try:
+            self.round_time_limit = float(round_time_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("round_time_limit must be positive and finite.") from exc
+        if not math.isfinite(self.round_time_limit) or self.round_time_limit <= 0:
+            raise ValueError("round_time_limit must be positive and finite.")
+        if not isinstance(assignment_relaxation_enabled, bool):
+            raise ValueError("assignment_relaxation_enabled must be a boolean.")
+        if not isinstance(submodular_access_start_enabled, bool):
+            raise ValueError("submodular_access_start_enabled must be a boolean.")
+        if not isinstance(adjacent_zone_subset_improvement_enabled, bool):
+            raise ValueError(
+                "adjacent_zone_subset_improvement_enabled must be a boolean."
+            )
+        if (
+            isinstance(recom_seed_runs, bool)
+            or not isinstance(recom_seed_runs, int)
+            or recom_seed_runs < 0
+        ):
+            raise ValueError("recom_seed_runs must be a non-negative integer.")
+        self.recom_time_limit = self._time_limit(
+            recom_time_limit,
+            "recom_time_limit",
+            allow_zero=recom_seed_runs == 0,
+        )
+        if not isinstance(branch_price_enabled, bool):
+            raise ValueError("branch_price_enabled must be a boolean.")
+        if not isinstance(theta_enabled, bool):
+            raise ValueError("theta_enabled must be a boolean.")
+        if not theta_enabled and not generate_assigned_pairs:
+            raise ValueError(
+                "theta_enabled=False requires generate_assigned_pairs=True."
+            )
+        if branch_price_enabled and recom_seed_runs == 0:
+            raise ValueError("branch_price_enabled requires recom_seed_runs > 0.")
+        self.branch_price_time_limit = self._time_limit(
+            branch_price_time_limit,
+            "branch_price_time_limit",
+            allow_zero=False,
+        )
+        self.assignment_relaxation_enabled = assignment_relaxation_enabled
+        self.submodular_access_start_enabled = submodular_access_start_enabled
+        self.adjacent_zone_subset_improvement_enabled = (
+            adjacent_zone_subset_improvement_enabled
+        )
+        self.recom_seed_runs = recom_seed_runs
+        self.branch_price_enabled = branch_price_enabled
+        self.theta_enabled = theta_enabled
         self._welfare_cut_count = 0
         self._welfare_term_count = 0
-        self._zoning_no_good_count = 0
+        self._direct_objective_variable_count = 0
+        self._direct_active_profile_count = 0
+        self._utility_gap_pair_count = 0
+        self._direct_demand_hints_enabled = (
+            self.options.get("hints", "voronoi") != "none"
+        )
         self._pattern_root_upper_bound = None
+
+    @staticmethod
+    def _time_limit(value, name, *, allow_zero):
+        requirement = "non-negative" if allow_zero else "positive"
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be {requirement} and finite.")
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be {requirement} and finite.") from exc
+        if not math.isfinite(value) or value < 0 or (not allow_zero and value == 0):
+            raise ValueError(f"{name} must be {requirement} and finite.")
+        return value
 
     def solve(self, problem) -> ZoneSolution:
         market = problem.cutoff_market
@@ -74,7 +163,10 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
         self._reset_cut_state()
         self._welfare_cut_count = 0
         self._welfare_term_count = 0
-        self._zoning_no_good_count = 0
+        self._direct_objective_variable_count = 0
+        self._direct_active_profile_count = 0
+        self._utility_gap_pair_count = 0
+        self._pattern_root_upper_bound = None
 
         started = time.monotonic()
         time_limit = float(self.options.get("solve_time_limit", 60.0))
@@ -82,35 +174,51 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
         incumbent, heuristic_rows, starts = self._initial_welfare_incumbent(
             problem, min(deadline, started + min(45.0, time_limit * 0.2))
         )
-        incumbent, access_rows, access_starts = self._submodular_access_improve(
-            problem,
-            incumbent,
-            min(
-                deadline,
-                time.monotonic() + min(60.0, time_limit * 0.1),
-            ),
+        if self.submodular_access_start_enabled:
+            incumbent, access_rows, access_starts = self._submodular_access_improve(
+                problem,
+                incumbent,
+                min(
+                    deadline,
+                    time.monotonic() + min(60.0, time_limit * 0.1),
+                ),
+            )
+            heuristic_rows.extend(access_rows)
+            starts.extend(access_starts)
+        recom_deadline = min(
+            deadline,
+            time.monotonic() + self.recom_time_limit,
         )
-        heuristic_rows.extend(access_rows)
-        starts.extend(access_starts)
-        incumbent, recom_rows, recom_starts = self._recom_welfare_improve(
-            problem,
-            incumbent,
-            min(
-                deadline,
-                time.monotonic() + min(600.0, time_limit * 0.75),
-            ),
-        )
-        heuristic_rows.extend(recom_rows)
-        starts.extend(recom_starts)
-        relaxation = self._assignment_relaxation(
-            problem,
-            incumbent,
-            min(
-                60.0,
-                max(1.0, time_limit * 0.05),
-                max(1.0, deadline - time.monotonic()),
-            ),
-        )
+        for run_index in range(self.recom_seed_runs):
+            if time.monotonic() >= recom_deadline:
+                break
+            runs_left = self.recom_seed_runs - run_index
+            run_deadline = time.monotonic() + (
+                (recom_deadline - time.monotonic()) / runs_left
+            )
+            incumbent, recom_rows, recom_starts = self._recom_welfare_improve(
+                problem,
+                incumbent,
+                run_deadline,
+                run_index=run_index,
+                run_branch_price=(
+                    self.branch_price_enabled and run_index == self.recom_seed_runs - 1
+                ),
+            )
+            heuristic_rows.extend(recom_rows)
+            starts.extend(recom_starts)
+        if self.assignment_relaxation_enabled:
+            relaxation = self._assignment_relaxation(
+                problem,
+                incumbent,
+                min(
+                    60.0,
+                    max(1.0, time_limit * 0.05),
+                    max(1.0, deadline - time.monotonic()),
+                ),
+            )
+        else:
+            relaxation = (None, None, "DISABLED")
         relaxation_bound = relaxation[1]
         capacity_upper_bound = self._global_capacity_upper_bound(market)
         if relaxation[0] is not None:
@@ -139,20 +247,18 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                 }
             )
 
-        incumbent, subset_rows, subset_starts = self._subset_market_improve(
-            problem,
-            incumbent,
-            min(
-                deadline,
-                time.monotonic() + min(120.0, time_limit * 0.1),
-            ),
-        )
-        heuristic_rows.extend(subset_rows)
-        starts.extend(subset_starts)
+        if self.adjacent_zone_subset_improvement_enabled:
+            incumbent, subset_rows, subset_starts = self._subset_market_improve(
+                problem,
+                incumbent,
+                min(
+                    deadline,
+                    time.monotonic() + min(120.0, time_limit * 0.1),
+                ),
+            )
+            heuristic_rows.extend(subset_rows)
+            starts.extend(subset_starts)
 
-        model = cp_model.CpModel()
-        x, y = self.zoning_solver._build_assignment_vars(model, problem)
-        self.zoning_solver._add_core_constraints(model, problem, x, y)
         max_priority = max(
             (
                 priority
@@ -162,53 +268,81 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             default=0,
         )
         max_cutoff = (max_priority + 1) * market.lottery_scale
-        cutoffs = {
-            school: model.NewIntVar(0, max_cutoff, f"welfare_master_cutoff_{school}")
-            for school in market.school_capacities
-        }
-        upper_bound = raw_welfare_upper_bound(market, self.utility_scale)
-        upper_bound = min(upper_bound, relaxation_bound, capacity_upper_bound)
+        raw_upper_bound = raw_welfare_upper_bound(market, self.utility_scale)
+        upper_bound = raw_upper_bound
+        upper_bound = min(upper_bound, capacity_upper_bound)
+        if relaxation_bound is not None:
+            upper_bound = min(upper_bound, relaxation_bound)
         if self._pattern_root_upper_bound is not None:
             upper_bound = min(upper_bound, self._pattern_root_upper_bound)
-        node_upper_bounds = defaultdict(int)
-        for student in market.students:
-            node_upper_bounds[student.node] += market.lottery_scale * max(
-                (
-                    round(student.utilities[school] * self.utility_scale)
-                    for school in student.preferences
-                ),
-                default=0,
-            )
-        theta = {
-            node: model.NewIntVar(
-                0, node_upper_bounds[node], f"stable_welfare_upper_bound_{node}"
-            )
-            for node in node_upper_bounds
-        }
-        theta_total = sum(theta.values())
-        model.Add(theta_total <= upper_bound)
-        model.Maximize(theta_total)
-        self._add_prefix_welfare_bounds(
-            model,
-            problem,
-            market,
-            theta,
-            x,
-            cutoffs,
-            max_cutoff,
-            self.prefix_depth,
-        )
-        for start in starts:
-            self._add_interval_welfare_cut(
+
+        active_profiles = {}
+        profile_counts = None
+        profile_representatives = None
+        if self.theta_enabled:
+            model = cp_model.CpModel()
+            x, y = self.zoning_solver._build_assignment_vars(model, problem)
+            self.zoning_solver._add_core_constraints(model, problem, x, y)
+            cutoffs = {
+                school: model.NewIntVar(
+                    0, max_cutoff, f"welfare_master_cutoff_{school}"
+                )
+                for school in market.school_capacities
+            }
+            node_upper_bounds = defaultdict(int)
+            for student in market.students:
+                node_upper_bounds[student.node] += market.lottery_scale * max(
+                    (
+                        round(student.utilities[school] * self.utility_scale)
+                        for school in student.preferences
+                    ),
+                    default=0,
+                )
+            theta = {
+                node: model.NewIntVar(
+                    0, node_upper_bounds[node], f"stable_welfare_upper_bound_{node}"
+                )
+                for node in node_upper_bounds
+            }
+            objective = sum(theta.values())
+            model.Add(objective <= upper_bound)
+            model.Maximize(objective)
+            self._add_prefix_welfare_bounds(
                 model,
                 problem,
                 market,
                 theta,
                 x,
                 cutoffs,
-                start.assignment,
-                start.result.cutoffs.school_cutoffs,
                 max_cutoff,
+                self.prefix_depth,
+            )
+            for start in starts:
+                self._add_interval_welfare_cut(
+                    model,
+                    problem,
+                    market,
+                    theta,
+                    x,
+                    cutoffs,
+                    start.assignment,
+                    start.result.cutoffs.school_cutoffs,
+                    max_cutoff,
+                )
+        else:
+            theta = {}
+            profile_counts, profile_representatives = self._conditional_profile_data(
+                market
+            )
+            model, x, cutoffs, objective = self._build_direct_demand_master(
+                problem,
+                market,
+                incumbent,
+                active_profiles,
+                profile_counts,
+                profile_representatives,
+                max_cutoff,
+                raw_upper_bound,
             )
 
         rounds = []
@@ -218,9 +352,12 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
         round_index = 0
         while time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
-            solver = self._new_solver(min(180.0, remaining), round_index)
-            model.ClearHints()
-            self._add_hints(model, market, x, cutoffs, theta, incumbent)
+            solver = self._new_solver(
+                min(self.round_time_limit, remaining), round_index
+            )
+            if self.theta_enabled:
+                model.ClearHints()
+                self._add_hints(model, market, x, cutoffs, theta, incumbent)
             round_started = time.monotonic()
             status = solver.Solve(model)
             round_seconds = time.monotonic() - round_started
@@ -230,12 +367,18 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                 "status": status_name,
                 "wall_time": round_seconds,
                 "master_objective": None,
+                "master_round_upper_bound": None,
                 "best_upper_bound": None,
+                "oracle_candidate_welfare": None,
+                "master_oracle_welfare_gap": None,
                 "oracle_incumbent": incumbent.result.raw_scaled_welfare,
                 "overloaded_schools": 0,
                 "capacity_cuts_added": 0,
+                "conditional_demand_pairs_added": 0,
+                "conditional_demand_profiles_added": 0,
+                "utility_gap_pairs_added": 0,
+                "utility_gap_profiles_added": 0,
                 "welfare_cuts_added": 0,
-                "zoning_no_goods_added": 0,
             }
             if status == cp_model.INFEASIBLE:
                 certified = True
@@ -264,37 +407,99 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                 for school, demand in demands.items()
                 if demand > market.school_capacities[school] * market.lottery_scale
             ]
-            candidate_welfare = self._add_interval_welfare_cut(
-                model,
-                problem,
-                market,
-                theta,
-                x,
-                cutoffs,
-                assignment,
-                candidate_cutoffs,
-                max_cutoff,
-            )
             capacity_cuts = 0
-            separated_schools = sorted(
-                overloaded,
-                key=lambda school: (
-                    demands[school]
-                    - market.school_capacities[school] * market.lottery_scale
-                ),
-                reverse=True,
-            )[:20]
-            for school in separated_schools:
-                capacity_cuts += self._add_interval_capacity_cut(
+            pairs_added = 0
+            profiles_added = 0
+            utility_gap_pairs_added = 0
+            utility_gap_profiles_added = 0
+            if self.theta_enabled:
+                candidate_welfare = self._add_interval_welfare_cut(
                     model,
                     problem,
                     market,
+                    theta,
                     x,
                     cutoffs,
-                    school,
-                    intervals[school],
+                    assignment,
+                    candidate_cutoffs,
                     max_cutoff,
                 )
+                if self.generate_assigned_pairs:
+                    pairs_added, profiles_added, capacity_cuts = (
+                        self._activate_conditional_demand_pairs(
+                            model,
+                            problem,
+                            market,
+                            x,
+                            cutoffs,
+                            {school: intervals[school] for school in overloaded},
+                            max_cutoff,
+                        )
+                    )
+                else:
+                    separated_schools = sorted(
+                        overloaded,
+                        key=lambda school: (
+                            demands[school]
+                            - market.school_capacities[school] * market.lottery_scale
+                        ),
+                        reverse=True,
+                    )[:20]
+                    for school in separated_schools:
+                        capacity_cuts += self._add_interval_capacity_cut(
+                            model,
+                            problem,
+                            market,
+                            x,
+                            cutoffs,
+                            school,
+                            intervals[school],
+                            max_cutoff,
+                        )
+            else:
+                optimistic_welfare, candidate_welfare, gap_keys = (
+                    self._evaluate_direct_demand_candidate(
+                        problem,
+                        market,
+                        assignment,
+                        candidate_cutoffs,
+                        active_profiles,
+                    )
+                )
+                if optimistic_welfare != master_objective:
+                    raise RuntimeError(
+                        "Direct-demand objective does not reconstruct the master "
+                        f"candidate: {optimistic_welfare} != {master_objective}."
+                    )
+                capacity_keys = {
+                    self._conditional_profile_key(
+                        interval.student,
+                        school,
+                        interval.higher,
+                    )
+                    for school in overloaded
+                    for interval in intervals[school]
+                }
+                inactive_keys = set(profile_representatives) - set(active_profiles)
+                new_capacity_keys = capacity_keys & inactive_keys
+                new_utility_keys = gap_keys & inactive_keys
+                newly_active = new_capacity_keys | new_utility_keys
+                for key in sorted(newly_active):
+                    active_profiles[key] = profile_representatives[key]
+                pairs_added = sum(profile_counts[key] for key in newly_active)
+                profiles_added = len(newly_active)
+                utility_gap_pairs_added = sum(
+                    profile_counts[key] for key in new_utility_keys
+                )
+                utility_gap_profiles_added = len(new_utility_keys)
+                capacity_cuts = len(
+                    {profile_representatives[key][1] for key in newly_active}
+                )
+                self._conditional_active_pair_count = sum(
+                    profile_counts[key] for key in active_profiles
+                )
+                self._direct_active_profile_count = len(active_profiles)
+                self._utility_gap_pair_count += utility_gap_pairs_added
 
             oracle = solve_zoned_welfare(
                 market,
@@ -304,22 +509,25 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             )
             if oracle.raw_scaled_welfare > incumbent.result.raw_scaled_welfare:
                 incumbent = _WelfareIncumbent(assignment, oracle)
-            model.Add(
-                sum(x[assignment[node], node] for node in problem.nodes)
-                <= problem.A - 1
-            )
-            self._zoning_no_good_count += 1
 
             row.update(
                 {
                     "master_objective": master_objective,
-                    "best_upper_bound": round_upper_bound,
+                    "master_round_upper_bound": round_upper_bound,
+                    "best_upper_bound": best_upper_bound,
                     "candidate_welfare": candidate_welfare,
+                    "oracle_candidate_welfare": oracle.raw_scaled_welfare,
+                    "master_oracle_welfare_gap": (
+                        master_objective - oracle.raw_scaled_welfare
+                    ),
                     "oracle_incumbent": incumbent.result.raw_scaled_welfare,
                     "overloaded_schools": len(overloaded),
                     "capacity_cuts_added": capacity_cuts,
-                    "welfare_cuts_added": 1,
-                    "zoning_no_goods_added": 1,
+                    "conditional_demand_pairs_added": pairs_added,
+                    "conditional_demand_profiles_added": profiles_added,
+                    "utility_gap_pairs_added": utility_gap_pairs_added,
+                    "utility_gap_profiles_added": utility_gap_profiles_added,
+                    "welfare_cuts_added": int(self.theta_enabled),
                 }
             )
             rounds.append(row)
@@ -335,8 +543,19 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                 certified = True
                 termination = "master_candidate_exact_and_feasible"
                 incumbent = _WelfareIncumbent(assignment, oracle)
-                best_upper_bound = candidate_welfare
+                best_upper_bound = master_objective
                 break
+            if not self.theta_enabled:
+                model, x, cutoffs, objective = self._build_direct_demand_master(
+                    problem,
+                    market,
+                    incumbent,
+                    active_profiles,
+                    profile_counts,
+                    profile_representatives,
+                    max_cutoff,
+                    raw_upper_bound,
+                )
             round_index += 1
 
         wall_time = time.monotonic() - started
@@ -356,8 +575,9 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
         )
 
     def _initial_welfare_incumbent(self, problem, deadline):
+        provided_start = None
         if problem.hint and self._valid_geographic_hint(problem, problem.hint):
-            start = _WelfareIncumbent(
+            provided_start = _WelfareIncumbent(
                 dict(problem.hint),
                 solve_zoned_welfare(
                     problem.cutoff_market,
@@ -366,20 +586,47 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                     utility_scale=self.utility_scale,
                 ),
             )
+        if provided_start is not None and not (
+            self.pressure_starts_enabled or self.local_moves_enabled
+        ):
             return (
-                start,
+                provided_start,
                 [
                     {
                         "kind": "welfare_start",
                         "source": "provided_assignment",
-                        "raw_scaled_welfare": start.result.raw_scaled_welfare,
-                        "welfare": start.result.welfare,
+                        "raw_scaled_welfare": (
+                            provided_start.result.raw_scaled_welfare
+                        ),
+                        "welfare": provided_start.result.welfare,
                     }
                 ],
-                [start],
+                [provided_start],
             )
         cutoff_incumbent, rows = self._initial_incumbent(problem, deadline)
-        cutoff_starts = getattr(self, "_local_starts", [cutoff_incumbent])
+        cutoff_starts = list(getattr(self, "_local_starts", [cutoff_incumbent]))
+        if provided_start is not None:
+            cutoff_starts.append(
+                _Incumbent(
+                    provided_start.assignment,
+                    provided_start.result.cutoffs,
+                )
+            )
+        if self.local_moves_enabled:
+            improved_starts = []
+            for index, start in enumerate(cutoff_starts):
+                if time.monotonic() >= deadline:
+                    break
+                starts_left = len(cutoff_starts) - index
+                slot_deadline = time.monotonic() + (
+                    (deadline - time.monotonic()) / starts_left
+                )
+                improved, local_rows = self._local_improve(
+                    problem, start, slot_deadline
+                )
+                rows.extend(local_rows)
+                improved_starts.append(improved)
+            cutoff_starts.extend(improved_starts)
         by_signature = {}
         for start in [cutoff_incumbent, *cutoff_starts]:
             signature = tuple(start.assignment[node] for node in problem.nodes)
@@ -510,7 +757,15 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             return start, [row], [start]
         return incumbent, [row], [start]
 
-    def _recom_welfare_improve(self, problem, incumbent, deadline):
+    def _recom_welfare_improve(
+        self,
+        problem,
+        incumbent,
+        deadline,
+        *,
+        run_index,
+        run_branch_price,
+    ):
         """Search exact welfare over CP-compatible ReCom proposals."""
         explicit_candidates = {
             node: set(problem.candidate_zones(node)) for node in problem.nodes
@@ -522,8 +777,15 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             _candidates=None,
         )
         context = _ReComContext(recom_problem)
-        rng = random.Random(int(self.options.get("seed", 42)) + 25_000)
-        column_seconds = min(45.0, max(0.0, deadline - time.monotonic()) * 0.25)
+        rng = random.Random(int(self.options.get("seed", 42)) + 25_000 + int(run_index))
+        column_seconds = (
+            min(
+                self.branch_price_time_limit,
+                max(0.0, deadline - time.monotonic()) * 0.25,
+            )
+            if run_branch_price
+            else 0.0
+        )
         recom_deadline = max(time.monotonic(), deadline - column_seconds)
         kernel = _ReComKernel(context, rng, recom_deadline)
         supports = contiguity.contiguity_supports(
@@ -712,21 +974,27 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             burst_best_score = burst_base_score
             completed_bursts += 1
 
-        combined, column_row = self._combine_zone_patterns(
-            problem,
-            cache,
-            best,
-            max(0.0, deadline - time.monotonic()),
-        )
-        if combined is not None:
-            starts.append(combined)
-            if combined.result.raw_scaled_welfare > best.result.raw_scaled_welfare:
-                best = combined
-                improvements += 1
+        column_row = None
+        if run_branch_price:
+            combined, column_row = self._combine_zone_patterns(
+                problem,
+                cache,
+                best,
+                min(
+                    self.branch_price_time_limit,
+                    max(0.0, deadline - time.monotonic()),
+                ),
+            )
+            if combined is not None:
+                starts.append(combined)
+                if combined.result.raw_scaled_welfare > best.result.raw_scaled_welfare:
+                    best = combined
+                    improvements += 1
 
         rows = [
             {
                 "kind": "recom_welfare_search",
+                "run": run_index,
                 "wall_time": time.monotonic() - started,
                 "attempted_moves": attempted,
                 "geographically_feasible_moves": geographic_feasible,
@@ -1328,6 +1596,229 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             iteration += 1
         return incumbent, rows, starts
 
+    def _build_direct_demand_master(
+        self,
+        problem,
+        market,
+        incumbent,
+        active_profiles,
+        profile_counts,
+        profile_representatives,
+        max_cutoff,
+        raw_upper_bound,
+    ):
+        """Build the optimistic direct-welfare master for active demand pairs."""
+        self._zone_access_vars = {}
+        self._conditional_positive_threshold_vars = {}
+        self._conditional_threshold_vars = {}
+        self._conditional_effective_threshold_vars = {}
+        self._conditional_prefix_vars = {}
+        self._conditional_demand_vars = {}
+        self._conditional_school_demands = defaultdict(list)
+        self._conditional_capacity_constraints = {}
+        self._conditional_capacity_constraint_count = 0
+        self._conditional_profile_counts = profile_counts
+
+        model = cp_model.CpModel()
+        x, y = self.zoning_solver._build_assignment_vars(model, problem)
+        self.zoning_solver._add_core_constraints(model, problem, x, y)
+        cutoffs = {
+            school: model.NewIntVar(
+                0, max_cutoff, f"direct_welfare_master_cutoff_{school}"
+            )
+            for school in market.school_capacities
+        }
+        for profile_index, key in enumerate(sorted(active_profiles)):
+            student, school, higher = profile_representatives[key]
+            demand = self._conditional_demand(
+                model,
+                problem,
+                market,
+                x,
+                cutoffs,
+                profile_index,
+                key,
+                student,
+                school,
+                higher,
+                max_cutoff,
+            )
+            self._conditional_demand_vars[key] = demand
+            self._conditional_school_demands[school].append(
+                (profile_counts[key], demand)
+            )
+
+        for school, terms in self._conditional_school_demands.items():
+            constraint = model.Add(
+                sum(weight * demand for weight, demand in terms)
+                <= market.school_capacities[school] * market.lottery_scale
+            )
+            self._conditional_capacity_constraints[school] = constraint.Index()
+            self._conditional_capacity_constraint_count += 1
+
+        objective = self._add_direct_demand_objective(
+            model,
+            problem,
+            market,
+            x,
+            active_profiles,
+        )
+        model.Add(objective <= raw_upper_bound)
+        model.Maximize(objective)
+        if self._direct_demand_hints_enabled:
+            self._add_complete_pair_hints(
+                model,
+                problem,
+                market,
+                x,
+                cutoffs,
+                incumbent.assignment,
+                incumbent.result.cutoffs.school_cutoffs,
+                profile_representatives,
+            )
+        self._direct_active_profile_count = len(active_profiles)
+        return model, x, cutoffs, objective
+
+    def _add_direct_demand_objective(
+        self,
+        model,
+        problem,
+        market,
+        x,
+        active_profiles,
+    ):
+        """Maximize exact active-pair utility plus optimistic fallback utility."""
+        scale = market.lottery_scale
+        student_welfare = []
+        variable_count = 0
+        for student_index, student in enumerate(market.students):
+            active_terms = []
+            scenarios = []
+            unresolved = model.NewConstant(1)
+            for rank, school in enumerate(student.preferences):
+                key = self._conditional_profile_key(
+                    student,
+                    school,
+                    student.preferences[:rank],
+                )
+                utility = round(student.utilities[school] * self.utility_scale)
+                if key in active_profiles:
+                    active_terms.append((self._conditional_demand_vars[key], utility))
+                    continue
+
+                access = self._zone_access(
+                    model,
+                    problem,
+                    market,
+                    x,
+                    student.node,
+                    school,
+                )
+                fallback = model.NewBoolVar(f"direct_fallback_{student_index}_{rank}")
+                model.AddBoolAnd([unresolved, access]).OnlyEnforceIf(fallback)
+                model.AddBoolOr([fallback, unresolved.Not(), access.Not()])
+                scenarios.append(
+                    (
+                        fallback,
+                        scale * utility
+                        + sum(
+                            demand * (higher_utility - utility)
+                            for demand, higher_utility in active_terms
+                        ),
+                    )
+                )
+
+                next_unresolved = model.NewBoolVar(
+                    f"direct_fallback_remaining_{student_index}_{rank}"
+                )
+                model.AddBoolAnd([unresolved, access.Not()]).OnlyEnforceIf(
+                    next_unresolved
+                )
+                model.AddBoolOr([next_unresolved, unresolved.Not(), access])
+                unresolved = next_unresolved
+                variable_count += 2
+
+            scenarios.append(
+                (
+                    unresolved,
+                    sum(demand * utility for demand, utility in active_terms),
+                )
+            )
+            model.AddExactlyOne(selector for selector, _expression in scenarios)
+            upper = scale * max(
+                (
+                    round(student.utilities[school] * self.utility_scale)
+                    for school in student.preferences
+                ),
+                default=0,
+            )
+            welfare = model.NewIntVar(
+                0,
+                upper,
+                f"direct_student_welfare_{student_index}",
+            )
+            for selector, expression in scenarios:
+                model.Add(welfare == expression).OnlyEnforceIf(selector)
+            student_welfare.append(welfare)
+            variable_count += 1
+
+        self._direct_objective_variable_count = variable_count
+        return sum(student_welfare)
+
+    def _evaluate_direct_demand_candidate(
+        self,
+        problem,
+        market,
+        assignment,
+        cutoffs,
+        active_profiles,
+    ):
+        """Evaluate the optimistic master objective and find its first gaps."""
+        scale = market.lottery_scale
+        optimistic_total = 0
+        exact_total = 0
+        gap_keys = set()
+        for student in market.students:
+            zone = assignment[student.node]
+            remaining = scale
+            active_welfare = 0
+            optimistic_welfare = None
+            fallback_key = None
+            exact_welfare = 0
+            for rank, school in enumerate(student.preferences):
+                key = self._conditional_profile_key(
+                    student,
+                    school,
+                    student.preferences[:rank],
+                )
+                if assignment[market.school_nodes[school]] != zone:
+                    continue
+                utility = round(student.utilities[school] * self.utility_scale)
+                threshold = min(
+                    scale,
+                    max(
+                        0,
+                        cutoffs[school] - student.priorities[school] * scale,
+                    ),
+                )
+                demand = max(0, remaining - threshold)
+                exact_welfare += demand * utility
+                if optimistic_welfare is None:
+                    if key in active_profiles:
+                        active_welfare += demand * utility
+                    else:
+                        optimistic_welfare = active_welfare + remaining * utility
+                        fallback_key = key
+                remaining = min(remaining, threshold)
+
+            if optimistic_welfare is None:
+                optimistic_welfare = active_welfare
+            if optimistic_welfare > exact_welfare and fallback_key is not None:
+                gap_keys.add(fallback_key)
+            optimistic_total += optimistic_welfare
+            exact_total += exact_welfare
+        return optimistic_total, exact_total, gap_keys
+
     def _add_prefix_welfare_bounds(
         self,
         model,
@@ -1375,8 +1866,7 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
                     )
                     model.AddMaxEquality(
                         threshold,
-                        cutoffs[school] - priority * scale,
-                        0,
+                        [cutoffs[school] - priority * scale, 0],
                     )
                     thresholds[threshold_key] = threshold
                 threshold = thresholds[threshold_key]
@@ -2184,7 +2674,11 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             **market.metadata,
             "solver": "cp_bool",
             "objective_kind": "stable_assignment_welfare",
-            "optimization_method": "submodular_welfare_lbbd",
+            "optimization_method": (
+                "submodular_welfare_lbbd"
+                if self.theta_enabled
+                else "direct_demand_welfare_decomposition"
+            ),
             "market_coupling": "isolated_zones",
             "lottery_scale": market.lottery_scale,
             "welfare_utility_scale": self.utility_scale,
@@ -2220,13 +2714,50 @@ class WelfareDecompositionSolver(CutoffDecompositionSolver):
             ),
             "termination": termination,
             "decomposition_rounds": rounds,
+            "welfare_decomposition_theta_enabled": self.theta_enabled,
             "welfare_cut_count": self._welfare_cut_count,
             "welfare_cut_term_count": self._welfare_term_count,
-            "welfare_prefix_depth": getattr(self, "_prefix_depth", 0),
-            "welfare_prefix_variable_count": getattr(self, "_prefix_variable_count", 0),
+            "welfare_prefix_depth": (
+                getattr(self, "_prefix_depth", 0) if self.theta_enabled else 0
+            ),
+            "welfare_prefix_variable_count": (
+                getattr(self, "_prefix_variable_count", 0) if self.theta_enabled else 0
+            ),
+            "direct_demand_objective_variable_count": (
+                self._direct_objective_variable_count
+            ),
+            "direct_demand_complete_pair_hints_enabled": (
+                self._direct_demand_hints_enabled
+            ),
+            "utility_gap_pair_count": self._utility_gap_pair_count,
+            "welfare_decomposition_round_time_limit": self.round_time_limit,
+            "welfare_assignment_relaxation_enabled": (
+                self.assignment_relaxation_enabled
+            ),
+            "welfare_submodular_access_start_enabled": (
+                self.submodular_access_start_enabled
+            ),
+            "welfare_adjacent_zone_subset_improvement_enabled": (
+                self.adjacent_zone_subset_improvement_enabled
+            ),
+            "decomposition_pressure_starts_enabled": self.pressure_starts_enabled,
+            "decomposition_local_moves_enabled": self.local_moves_enabled,
+            "zoned_recom_seed_runs": self.recom_seed_runs,
+            "welfare_recom_time_limit": self.recom_time_limit,
+            "welfare_branch_price_enabled": self.branch_price_enabled,
+            "welfare_branch_price_time_limit": self.branch_price_time_limit,
+            "decomposition_generate_assigned_pairs": self.generate_assigned_pairs,
             "revealed_preference_cut_count": self._cut_count,
             "revealed_preference_profile_count": self._cut_profile_count,
-            "zoning_no_good_count": self._zoning_no_good_count,
+            "conditional_demand_pair_count": self._conditional_active_pair_count,
+            "conditional_demand_profile_count": (
+                len(self._conditional_demand_vars)
+                if self.theta_enabled
+                else self._direct_active_profile_count
+            ),
+            "conditional_demand_capacity_constraint_count": (
+                self._conditional_capacity_constraint_count
+            ),
             "heuristic_candidates": heuristic_rows,
             "assignment_relaxation_status": relaxation_status,
             "assignment_relaxation_raw_upper_bound": relaxation_bound,

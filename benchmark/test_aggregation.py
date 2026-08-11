@@ -264,6 +264,23 @@ def test_saved_config_ignores_legacy_level_to_split():
     assert not hasattr(config, "level_to_split")
 
 
+def test_saved_config_migrates_strategy_specific_recom_seed_runs():
+    config = optimization_config_from_dict(
+        {
+            "levels": ["BlockGroup_0"],
+            "strategy": "zoned_column_generation",
+            "solver": "cp_bool",
+            "years": [23],
+            "population_type": "All",
+            "remove_city_wide": True,
+            "zoned_cg_recom_seed_runs": 3,
+            "zoned_benders_recom_seed_runs": 7,
+        }
+    )
+
+    assert config.zoned_recom_seed_runs == 3
+
+
 def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     run_dir, problem = _write_synthetic_run(tmp_path)
     write_json(

@@ -148,6 +148,10 @@ class MatchEvaluator:
         )
 
         if no_special_program:
+            if "program_type" in self.programs:
+                self.programs = self.programs[
+                    ~self.programs["program_type"].isin(SPECIAL_PROGRAMS)
+                ].copy()
             self.student_data = self.student_data[
                 ~self.student_data["r1_programs"].apply(self._has_special_program)
             ].copy()
@@ -1991,6 +1995,19 @@ class MatchEvaluator:
                 ).mean()
 
             # Evaluate for all groups, append together as distances.
+            distance_over_3 = students["assignment_dist"] > 3
+            designated = students["designation"] == 1
+            non_designated = students["designation"] == 0
+            metrics[f"Prop Distance > 3 and designated ({group})"] = (
+                distance_over_3 & designated
+            ).mean()
+            metrics[f"Prop Distance > 3 and Top 3 choice, non-designated ({group})"] = (
+                distance_over_3 & (students["rank"] <= 3) & non_designated
+            ).mean()
+            metrics[f"Prop Distance > 3 and non-designated ({group})"] = (
+                distance_over_3 & non_designated
+            ).mean()
+
             metrics[f"Prop Distance > 3 and Rank>=5 ({group})"] = (
                 (students["assignment_dist"] > 3) & (students["rank"] >= 5)
             ).mean()

@@ -137,6 +137,26 @@ def main(argv: list[str] | None = None) -> None:
             "lottery_scale": config.cutoff_lottery_scale,
             "utility_scale": config.welfare_utility_scale,
             "prefix_depth": config.welfare_prefix_depth,
+            "decomposition_round_time_limit": (
+                config.welfare_decomposition_round_time_limit
+            ),
+            "decomposition_theta_enabled": (config.welfare_decomposition_theta_enabled),
+            "generate_assigned_pairs": (config.decomposition_generate_assigned_pairs),
+            "assignment_relaxation_enabled": (
+                config.welfare_assignment_relaxation_enabled
+            ),
+            "submodular_access_start_enabled": (
+                config.welfare_submodular_access_start_enabled
+            ),
+            "adjacent_zone_subset_improvement_enabled": (
+                config.welfare_adjacent_zone_subset_improvement_enabled
+            ),
+            "pressure_starts_enabled": config.decomposition_pressure_starts_enabled,
+            "local_moves_enabled": config.decomposition_local_moves_enabled,
+            "recom_seed_runs": config.zoned_recom_seed_runs,
+            "recom_time_limit": config.welfare_recom_time_limit,
+            "branch_price_enabled": config.welfare_branch_price_enabled,
+            "branch_price_time_limit": config.welfare_branch_price_time_limit,
             "method": config.welfare_method,
             "seed": config.seed,
             "raw_upper_bound": args.raw_upper_bound,

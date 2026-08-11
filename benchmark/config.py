@@ -14,7 +14,10 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
-from optimization.config import OptimizationConfig
+from optimization.config import (
+    OptimizationConfig,
+    migrate_legacy_zoned_recom_seed_runs,
+)
 
 
 SEQUENCE_OPTIMIZATION_FIELDS = {
@@ -260,6 +263,7 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     restored = _restore_special_values(dict(data))
     # Existing benchmark manifests persisted the pre-KaHIP split-depth setting.
     restored.pop("level_to_split", None)
+    migrate_legacy_zoned_recom_seed_runs(restored)
     field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:

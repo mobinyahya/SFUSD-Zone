@@ -103,7 +103,9 @@ class AugmentedMarketGenerator(MarketGenerator):
         if self.config["utility-model"]["enable"]:
             prefs = self.preference_generator.get_utility_model_preferences_after_truncation()
         else:
-            prefs = self.preference_generator.initialize_real_preferences()
+            prefs = self.preference_generator.initialize_real_preferences(
+                designate=self.config["designate"]
+            )
 
         # --- AUGMENTATION HOOK ---
         # Applies whether prefs came from the utility model or real submissions.

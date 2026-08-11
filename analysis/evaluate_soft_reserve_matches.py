@@ -83,6 +83,7 @@ class EvaluationTask:
     school_path: str
     new_ctip_path: str | None
     year: int
+    no_special_program: bool = True
 
 
 @dataclass(frozen=True)
@@ -404,7 +405,7 @@ def evaluate_assignment(task: EvaluationTask) -> pd.Series:
         high_income=110850,
         grade=None,
         year=task.year,
-        no_special_program=True,
+        no_special_program=task.no_special_program,
         program_file=task.program_path,
         schools_latlon_path=task.school_path,
         new_ctip_path=task.new_ctip_path,

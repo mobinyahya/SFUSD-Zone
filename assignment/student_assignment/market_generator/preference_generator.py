@@ -25,6 +25,7 @@ class PreferenceGenerator:
         """
         cache_context = self._cache_context()
         add_aa_schools = self.market.config.get("add_aa_schools", False)
+        drop_below_aa = self.market.config.get("drop_below_aa", False)
         remove_non_aa_or_citywide = self.market.config.get(
             "remove_non_aa_or_citywide", False
         )
@@ -32,6 +33,7 @@ class PreferenceGenerator:
             cache_context,
             designate,
             add_aa_schools,
+            drop_below_aa,
             remove_non_aa_or_citywide,
         )
         if cache_context is not None and cache_key in self._real_preferences_cache:
@@ -53,6 +55,8 @@ class PreferenceGenerator:
 
         if add_aa_schools:
             prefs = self._add_attendance_area_schools_to_preferences(prefs)
+        if drop_below_aa:
+            prefs = self._drop_preferences_below_attendance_area(prefs)
         if designate:
             eligible = self._get_eligibility()
             prefs = self._add_designation_programs_to_preferences(
@@ -93,6 +97,36 @@ class PreferenceGenerator:
 
         self.pref_length = pref_lengths
         return combined_prefs
+
+    def _drop_preferences_below_attendance_area(
+        self, prefs: np.ndarray
+    ) -> np.ndarray:
+        """Drop programs ranked after each student's attendance-area GE program."""
+        truncated_prefs = prefs.copy()
+        pref_lengths = np.count_nonzero(truncated_prefs, axis=1)
+        attendance_areas = self.market.students.attendance_area
+        grade = self.market.config["grade"]
+
+        for student_idx, studentno in self.market.students.idx2studentno.items():
+            attendance_area = attendance_areas.get(studentno, 0)
+            program_idx = self.market.programs.indices.get(
+                f"{attendance_area}-GE-{grade}"
+            )
+            if program_idx is None:
+                continue
+
+            aa_ranks = np.flatnonzero(
+                truncated_prefs[student_idx] == program_idx
+            )
+            if not aa_ranks.size:
+                continue
+
+            pref_length = int(aa_ranks[0]) + 1
+            truncated_prefs[student_idx, pref_length:] = 0
+            pref_lengths[student_idx] = pref_length
+
+        self.pref_length = pref_lengths
+        return truncated_prefs
 
     def _get_aa_or_citywide_eligibility(self) -> np.ndarray:
         """Identify programs at each student's AA school or a citywide school."""
@@ -308,7 +342,7 @@ class PreferenceGenerator:
         self._generate_designation_program_ordering()
 
         combined_prefs = prefs.copy()
-        self.pref_length = (prefs == 0).argmax(axis=1)
+        self.pref_length = np.count_nonzero(prefs, axis=1)
 
         for i, studentno in self.market.students.idx2studentno.items():
             with_duplicates = (
@@ -584,6 +618,8 @@ class PreferenceGenerator:
         self.pref_length = np.count_nonzero(prefs, axis=1)
         if self.market.config.get("add_aa_schools", False):
             prefs = self._add_attendance_area_schools_to_preferences(prefs)
+        if self.market.config.get("drop_below_aa", False):
+            prefs = self._drop_preferences_below_attendance_area(prefs)
         if self.market.config["designate"]:
             prefs = self._add_designation_programs_to_preferences(
                 prefs, eligible

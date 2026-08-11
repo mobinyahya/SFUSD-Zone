@@ -588,8 +588,7 @@ class _CpSatSolver(Solver):
                     )
                     m.AddMaxEquality(
                         threshold,
-                        cutoffs[school] - priority * lottery_scale,
-                        0,
+                        [cutoffs[school] - priority * lottery_scale, 0],
                     )
                     shared_thresholds[threshold_key] = threshold
                 threshold = shared_thresholds[threshold_key]

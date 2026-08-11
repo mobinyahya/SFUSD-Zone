@@ -242,6 +242,7 @@ def evaluation_tasks(
             school_path=str(school_path),
             new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
             year=evaluator_year,
+            no_special_program=bool(config.get("remove-special-lps", True)),
         )
         for path in assignments
     ]

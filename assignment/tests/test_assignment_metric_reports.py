@@ -99,11 +99,11 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     original_assignments = assignments.copy(deep=True)
     programs = pd.DataFrame(
         {
-            "program_id": ["101-GE-KG", "202-GE-KG"],
-            "school_id": [101, 202],
-            "program_type": ["GE", "GE"],
-            "capacity": [10, 10],
-            "programno": [1, 2],
+            "program_id": ["101-GE-KG", "202-GE-KG", "202-SA-KG"],
+            "school_id": [101, 202, 202],
+            "program_type": ["GE", "GE", "SA"],
+            "capacity": [10, 10, 2],
+            "programno": [1, 2, 3],
         }
     )
     schools = pd.DataFrame(
@@ -126,6 +126,10 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         program_file=program_path,
         schools_latlon_path=school_path,
     )
+    evaluator.student_data["assignment_dist"] = evaluator.student_data["studentno"].map(
+        {1: 4.0, 2: 4.0, 3: 4.0, 4: 4.0, 5: np.nan, 6: 2.0}
+    )
+    assert evaluator.programs["program_id"].tolist() == ["101-GE-KG", "202-GE-KG"]
     metrics = evaluator.eval_assignment_full()
 
     expected = {
@@ -155,6 +159,12 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         == 1
     )
     assert metrics["#Students in schools above +15% district FRL (ET (2024))"] == 0
+    assert metrics["Prop Distance > 3 and designated (All Assigned)"] == 1 / 5
+    assert (
+        metrics["Prop Distance > 3 and Top 3 choice, non-designated (All Assigned)"]
+        == 2 / 5
+    )
+    assert metrics["Prop Distance > 3 and non-designated (All Assigned)"] == 3 / 5
     pd.testing.assert_frame_equal(assignments, original_assignments)
 
     legacy_evaluator = MatchEvaluator(

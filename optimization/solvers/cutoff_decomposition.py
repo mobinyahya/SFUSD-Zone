@@ -47,10 +47,25 @@ class _DemandInterval:
 class CutoffDecompositionSolver:
     """Solve a cutoff problem by exact finite constraint generation."""
 
-    def __init__(self, zoning_solver, *, generate_assigned_pairs: bool = False) -> None:
+    def __init__(
+        self,
+        zoning_solver,
+        *,
+        generate_assigned_pairs: bool = True,
+        pressure_starts_enabled: bool = False,
+        local_moves_enabled: bool = False,
+    ) -> None:
         self.zoning_solver = zoning_solver
         self.options = zoning_solver.options
+        if not isinstance(generate_assigned_pairs, bool):
+            raise ValueError("generate_assigned_pairs must be a boolean.")
         self.generate_assigned_pairs = generate_assigned_pairs
+        if not isinstance(pressure_starts_enabled, bool):
+            raise ValueError("pressure_starts_enabled must be a boolean.")
+        if not isinstance(local_moves_enabled, bool):
+            raise ValueError("local_moves_enabled must be a boolean.")
+        self.pressure_starts_enabled = pressure_starts_enabled
+        self.local_moves_enabled = local_moves_enabled
         self._reset_cut_state()
 
     def _reset_cut_state(self) -> None:
@@ -66,6 +81,7 @@ class CutoffDecompositionSolver:
         self._conditional_prefix_vars = {}
         self._conditional_demand_vars = {}
         self._conditional_school_demands = defaultdict(list)
+        self._conditional_capacity_constraints = {}
         self._conditional_profile_counts = None
         self._conditional_active_pair_count = 0
         self._conditional_capacity_constraint_count = 0
@@ -81,34 +97,33 @@ class CutoffDecompositionSolver:
             market.zone_restricted_schools
         )
         coupled_market = bool(unrestricted)
-        if self.generate_assigned_pairs and coupled_market:
-            raise ValueError(
-                "Assigned-pair cutoff generation currently requires every school "
-                "to be zone restricted."
-            )
-
         started = time.monotonic()
         time_limit = float(self.options.get("solve_time_limit", 60.0))
         deadline = started + time_limit
         incumbent, heuristic_rows = self._initial_incumbent(problem, deadline)
-        local_deadline = min(deadline, time.monotonic() + min(45.0, time_limit * 0.4))
-        local_starts = getattr(self, "_local_starts", [incumbent])
-        for index, start in enumerate(local_starts):
-            if time.monotonic() >= local_deadline:
-                break
-            starts_left = len(local_starts) - index
-            remaining_local = local_deadline - time.monotonic()
-            allocation = (
-                remaining_local * 0.55 if index == 0 else remaining_local / starts_left
+        if self.local_moves_enabled:
+            local_deadline = min(
+                deadline, time.monotonic() + min(45.0, time_limit * 0.4)
             )
-            slot_deadline = min(
-                local_deadline,
-                time.monotonic() + allocation,
-            )
-            local, local_rows = self._local_improve(problem, start, slot_deadline)
-            heuristic_rows.extend(local_rows)
-            if local.result.objective < incumbent.result.objective:
-                incumbent = local
+            local_starts = getattr(self, "_local_starts", [incumbent])
+            for index, start in enumerate(local_starts):
+                if time.monotonic() >= local_deadline:
+                    break
+                starts_left = len(local_starts) - index
+                remaining_local = local_deadline - time.monotonic()
+                allocation = (
+                    remaining_local * 0.55
+                    if index == 0
+                    else remaining_local / starts_left
+                )
+                slot_deadline = min(
+                    local_deadline,
+                    time.monotonic() + allocation,
+                )
+                local, local_rows = self._local_improve(problem, start, slot_deadline)
+                heuristic_rows.extend(local_rows)
+                if local.result.objective < incumbent.result.objective:
+                    incumbent = local
 
         max_priority = max(
             (
@@ -120,17 +135,13 @@ class CutoffDecompositionSolver:
         )
         max_cutoff = (max_priority + 1) * market.lottery_scale
         active_profiles = {}
-        profile_counts, profile_representatives = self._conditional_profile_data(
-            market
-        )
+        profile_counts, profile_representatives = self._conditional_profile_data(market)
         if not self.generate_assigned_pairs:
             model = cp_model.CpModel()
             x, y = self.zoning_solver._build_assignment_vars(model, problem)
             self.zoning_solver._add_core_constraints(model, problem, x, y)
             cutoffs = {
-                school: model.NewIntVar(
-                    0, max_cutoff, f"master_cutoff_{school}"
-                )
+                school: model.NewIntVar(0, max_cutoff, f"master_cutoff_{school}")
                 for school in market.school_capacities
             }
             cutoff_total = sum(cutoffs.values())
@@ -355,6 +366,9 @@ class CutoffDecompositionSolver:
             ),
             "assigned_pair_seed_count": seeded_pair_count,
             "assigned_pair_seed_cut_count": seeded_pair_cuts,
+            "decomposition_generate_assigned_pairs": self.generate_assigned_pairs,
+            "decomposition_pressure_starts_enabled": self.pressure_starts_enabled,
+            "decomposition_local_moves_enabled": self.local_moves_enabled,
             "heuristic_candidates": heuristic_rows,
         }
         return ZoneSolution(
@@ -403,7 +417,8 @@ class CutoffDecompositionSolver:
                     "raw_objective": result.objective,
                 }
             )
-        for target in range(problem.Z):
+        targets = range(problem.Z) if self.pressure_starts_enabled else ()
+        for target in targets:
             if time.monotonic() >= deadline:
                 break
             assignment, status, elapsed = self._solve_pressure_model(
@@ -730,7 +745,11 @@ class CutoffDecompositionSolver:
             )
         model.Maximize(objective)
         solver = self._new_solver(time_limit, 0)
-        solver.parameters.num_search_workers = 1
+        solver.parameters.num_search_workers = (
+            int(self.options.get("workers", 5))
+            if self.options.get("hints", "voronoi") == "none"
+            else 1
+        )
         started = time.monotonic()
         status = solver.Solve(model)
         elapsed = time.monotonic() - started
@@ -794,6 +813,7 @@ class CutoffDecompositionSolver:
         self._conditional_prefix_vars = {}
         self._conditional_demand_vars = {}
         self._conditional_school_demands = defaultdict(list)
+        self._conditional_capacity_constraints = {}
         self._conditional_capacity_constraint_count = 0
 
         model = cp_model.CpModel()
@@ -828,10 +848,11 @@ class CutoffDecompositionSolver:
             )
 
         for school, terms in self._conditional_school_demands.items():
-            model.Add(
+            constraint = model.Add(
                 sum(weight * demand for weight, demand in terms)
                 <= market.school_capacities[school] * market.lottery_scale
             )
+            self._conditional_capacity_constraints[school] = constraint.Index()
             self._conditional_capacity_constraint_count += 1
 
         hint_cutoffs = dict(incumbent.result.school_cutoffs)
@@ -868,7 +889,10 @@ class CutoffDecompositionSolver:
                 continue
             access = assignment[block] == assignment[market.school_nodes[school]]
             model.AddHint(var, int(access))
-        for (school, priority), var in self._conditional_positive_threshold_vars.items():
+        for (
+            school,
+            priority,
+        ), var in self._conditional_positive_threshold_vars.items():
             positive = max(0, hint_cutoffs[school] - priority * scale)
             model.AddHint(var, positive)
         for (school, priority), var in self._conditional_threshold_vars.items():
@@ -877,9 +901,11 @@ class CutoffDecompositionSolver:
                 max(0, hint_cutoffs[school] - priority * scale),
             )
             model.AddHint(var, threshold)
-        for (block, school, priority), var in (
-            self._conditional_effective_threshold_vars.items()
-        ):
+        for (
+            block,
+            school,
+            priority,
+        ), var in self._conditional_effective_threshold_vars.items():
             value = self._fixed_effective_threshold(
                 problem,
                 market,
@@ -937,7 +963,10 @@ class CutoffDecompositionSolver:
         priority,
     ) -> int:
         scale = market.lottery_scale
-        if assignment[block] != assignment[market.school_nodes[school]]:
+        if (
+            school in market.zone_restricted_schools
+            and assignment[block] != assignment[market.school_nodes[school]]
+        ):
             return scale
         return min(scale, max(0, cutoffs[school] - priority * scale))
 
@@ -993,6 +1022,7 @@ class CutoffDecompositionSolver:
         if self._conditional_profile_counts is None:
             self._conditional_profile_counts = self._conditional_profiles(market)
         changed_schools = set()
+        added_school_demands = defaultdict(list)
         pairs_added = 0
         profiles_added = 0
         for school, intervals in intervals_by_school.items():
@@ -1022,20 +1052,29 @@ class CutoffDecompositionSolver:
                 )
                 self._conditional_demand_vars[key] = demand
                 self._conditional_school_demands[school].append((weight, demand))
+                added_school_demands[school].append((weight, demand))
                 changed_schools.add(school)
                 pairs_added += weight
                 profiles_added += 1
                 self._conditional_active_pair_count += weight
 
         for school in changed_schools:
-            model.Add(
-                sum(
-                    weight * demand
-                    for weight, demand in self._conditional_school_demands[school]
+            capacity_index = self._conditional_capacity_constraints.get(school)
+            if capacity_index is None:
+                constraint = model.Add(
+                    sum(
+                        weight * demand
+                        for weight, demand in self._conditional_school_demands[school]
+                    )
+                    <= market.school_capacities[school] * market.lottery_scale
                 )
-                <= market.school_capacities[school] * market.lottery_scale
-            )
-            self._conditional_capacity_constraint_count += 1
+                self._conditional_capacity_constraints[school] = constraint.Index()
+                self._conditional_capacity_constraint_count += 1
+                continue
+            linear = model.Proto().constraints[capacity_index].linear
+            for weight, demand in added_school_demands[school]:
+                linear.vars.append(demand.Index())
+                linear.coeffs.append(weight)
         return pairs_added, profiles_added, len(changed_schools)
 
     @classmethod
@@ -1162,6 +1201,8 @@ class CutoffDecompositionSolver:
         effective = self._conditional_effective_threshold_vars.get(effective_key)
         if effective is not None:
             return effective
+        if school not in market.zone_restricted_schools:
+            return threshold
         access = self._zone_access(model, problem, market, x, block, school)
         effective = model.NewIntVar(
             0,

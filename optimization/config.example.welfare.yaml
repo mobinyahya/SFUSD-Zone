@@ -1,7 +1,7 @@
 # Stable finite-grid utilitarian-welfare benchmark.
 
 centroids_type: '6-zone-9'
-levels: ['Block_2']
+levels: ['Block_3']
 solver: 'cp_bool'
 strategy: 'welfare'
 
@@ -10,7 +10,7 @@ racial_dev: -1
 overage: -1
 shortage: -1
 boundary_prop: 0.2
-solve_time_limits: [1000]
+solve_time_limits: [450]
 gap_limits: [0]
 hints: voronoi
 seed: 42
@@ -20,14 +20,26 @@ workers: 5
 
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
-cutoff_lottery_scale: 100
-cutoff_gumbel_scale: 1.0
+cutoff_lottery_scale: 20
+cutoff_gumbel_scale: 0
 cutoff_preference_seed: 2023
 remove_city_wide: true
-welfare_utility_scale: 1000
+welfare_utility_scale: 20
 welfare_prefix_depth: 10
+welfare_decomposition_round_time_limit: 30 # seconds per decomposition master round
+welfare_decomposition_theta_enabled: false # false uses direct demand utility and utility-gap pair generation
+decomposition_generate_assigned_pairs: true
+welfare_assignment_relaxation_enabled: false # optional zoning-aware transport start/bound
+welfare_submodular_access_start_enabled: false # optional capacity-blind access start
+welfare_adjacent_zone_subset_improvement_enabled: false # optional pairwise local search (uses Gurobi when installed)
+decomposition_pressure_starts_enabled: true
+decomposition_local_moves_enabled: false
+zoned_recom_seed_runs: 0
+welfare_recom_time_limit: 0 # total seconds; 0 allowed because seed runs is 0
+welfare_branch_price_enabled: false # requires zoned_recom_seed_runs > 0
+welfare_branch_price_time_limit: 45
 # budget is the explicit Boolean base model; lbbd adds the paper's generated cuts.
-welfare_method: decomposition
+welfare_method: direct
 # welfare_initial_assignment_path: benchmark_output/prior/zone_dict_Block_2.json
 
 years: [23]

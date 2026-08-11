@@ -34,8 +34,8 @@ zoned_benders_menu_max_rounds: 1000
 zoned_benders_master_feasibility_tolerance: 1.0e-8
 zoned_benders_optimality_tolerance: 1.0e-6
 zoned_benders_seed_paths: []
-zoned_benders_recom_seed_runs: 4
-zoned_benders_local_move_rounds: 100
+zoned_recom_seed_runs: 0
+zoned_benders_local_move_rounds: 0
 zoned_benders_save_mechanism: true
 zoned_benders_evaluate_stable_diagnostics: true
 

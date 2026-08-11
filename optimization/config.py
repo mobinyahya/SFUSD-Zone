@@ -18,6 +18,23 @@ from Config.Constants import get_sfusd_path
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
+def migrate_legacy_zoned_recom_seed_runs(raw: dict) -> None:
+    """Collapse strategy-specific saved ReCom counts into the shared setting."""
+    legacy = {
+        "zoned_column_generation": raw.pop("zoned_cg_recom_seed_runs", None),
+        "zoned_benders": raw.pop("zoned_benders_recom_seed_runs", None),
+    }
+    if "zoned_recom_seed_runs" in raw:
+        return
+    strategy = raw.get("strategy")
+    if strategy in legacy and legacy[strategy] is not None:
+        raw["zoned_recom_seed_runs"] = legacy[strategy]
+        return
+    values = {value for value in legacy.values() if value is not None}
+    if len(values) == 1:
+        raw["zoned_recom_seed_runs"] = values.pop()
+
+
 @dataclass
 class OptimizationConfig:
     # --- what to solve ------------------------------------------------- #
@@ -68,11 +85,23 @@ class OptimizationConfig:
     cutoff_gumbel_scale: float = 1.0
     cutoff_preference_seed: int = 2023
     cutoff_method: str = "decomposition"
+    decomposition_generate_assigned_pairs: bool = True
     remove_city_wide: bool = False
     welfare_utility_scale: int = 1_000_000
     welfare_initial_assignment_path: str = ""
     welfare_prefix_depth: int = 10
+    welfare_decomposition_round_time_limit: float = 180.0
+    welfare_decomposition_theta_enabled: bool = True
+    welfare_assignment_relaxation_enabled: bool = True
+    welfare_submodular_access_start_enabled: bool = False
+    welfare_adjacent_zone_subset_improvement_enabled: bool = False
+    welfare_branch_price_enabled: bool = False
+    welfare_recom_time_limit: float = 600.0
+    welfare_branch_price_time_limit: float = 45.0
     welfare_method: str = "decomposition"
+    decomposition_pressure_starts_enabled: bool = False
+    decomposition_local_moves_enabled: bool = False
+    zoned_recom_seed_runs: int = 0
     zoned_cg_wall_time_limit: float = 2700.0
     zoned_cg_max_rounds: int = 100
     zoned_cg_pricing_time_limit: float = 300.0
@@ -84,8 +113,7 @@ class OptimizationConfig:
     zoned_cg_optimality_tolerance: float = 1e-6
     zoned_cg_mip_time_limit: float = 300.0
     zoned_cg_seed_paths: list[str] = field(default_factory=list)
-    zoned_cg_recom_seed_runs: int = 4
-    zoned_cg_local_move_rounds: int = 100
+    zoned_cg_local_move_rounds: int = 0
     zoned_cg_save_mechanism: bool = True
     zoned_cg_evaluate_stable_diagnostics: bool = True
     zoned_benders_wall_time_limit: float = 2700.0
@@ -96,8 +124,7 @@ class OptimizationConfig:
     zoned_benders_master_feasibility_tolerance: float = 1e-8
     zoned_benders_optimality_tolerance: float = 1e-6
     zoned_benders_seed_paths: list[str] = field(default_factory=list)
-    zoned_benders_recom_seed_runs: int = 4
-    zoned_benders_local_move_rounds: int = 100
+    zoned_benders_local_move_rounds: int = 0
     zoned_benders_save_mechanism: bool = True
     zoned_benders_evaluate_stable_diagnostics: bool = True
 
@@ -138,17 +165,20 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
-        if self.strategy in {"cutoffs", "welfare"}:
+        if self.strategy in {"cutoffs", "welfare", "approximate_welfare"}:
             if self.solver != "cp_bool":
                 raise ValueError(f"{self.strategy} requires solver='cp_bool'.")
             if self.years != [23]:
                 raise ValueError(f"{self.strategy} currently requires years: [23].")
             if self.population_type != "All":
-                raise ValueError(
-                    f"{self.strategy} requires population_type: 'All'."
-                )
-        if self.strategy == "welfare" and not self.remove_city_wide:
-            raise ValueError("welfare currently requires remove_city_wide: true.")
+                raise ValueError(f"{self.strategy} requires population_type: 'All'.")
+        if (
+            self.strategy in {"welfare", "approximate_welfare"}
+            and not self.remove_city_wide
+        ):
+            raise ValueError(
+                f"{self.strategy} currently requires remove_city_wide: true."
+            )
         if self.strategy == "zoned_column_generation":
             self._validate_zoned_column_generation()
         if self.strategy == "zoned_benders":
@@ -201,6 +231,92 @@ class OptimizationConfig:
             or self.welfare_prefix_depth <= 0
         ):
             raise ValueError("welfare_prefix_depth must be a positive integer.")
+        if isinstance(self.welfare_decomposition_round_time_limit, bool):
+            raise ValueError(
+                "welfare_decomposition_round_time_limit must be positive and finite."
+            )
+        try:
+            self.welfare_decomposition_round_time_limit = float(
+                self.welfare_decomposition_round_time_limit
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "welfare_decomposition_round_time_limit must be positive and finite."
+            ) from exc
+        if (
+            not math.isfinite(self.welfare_decomposition_round_time_limit)
+            or self.welfare_decomposition_round_time_limit <= 0
+        ):
+            raise ValueError(
+                "welfare_decomposition_round_time_limit must be positive and finite."
+            )
+        for name in (
+            "decomposition_generate_assigned_pairs",
+            "welfare_decomposition_theta_enabled",
+            "welfare_assignment_relaxation_enabled",
+            "welfare_submodular_access_start_enabled",
+            "welfare_adjacent_zone_subset_improvement_enabled",
+            "welfare_branch_price_enabled",
+            "decomposition_pressure_starts_enabled",
+            "decomposition_local_moves_enabled",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be a boolean.")
+        if (
+            self.strategy == "welfare"
+            and self.welfare_method == "decomposition"
+            and not self.welfare_decomposition_theta_enabled
+            and not self.decomposition_generate_assigned_pairs
+        ):
+            raise ValueError(
+                "welfare_decomposition_theta_enabled=false requires "
+                "decomposition_generate_assigned_pairs=true."
+            )
+        if (
+            isinstance(self.zoned_recom_seed_runs, bool)
+            or not isinstance(self.zoned_recom_seed_runs, int)
+            or self.zoned_recom_seed_runs < 0
+        ):
+            raise ValueError("zoned_recom_seed_runs must be a non-negative integer.")
+        recom_time_limit_error = (
+            "welfare_recom_time_limit must be non-negative and finite, and "
+            "positive when zoned_recom_seed_runs > 0."
+        )
+        if isinstance(self.welfare_recom_time_limit, bool):
+            raise ValueError(recom_time_limit_error)
+        try:
+            self.welfare_recom_time_limit = float(self.welfare_recom_time_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(recom_time_limit_error) from exc
+        if (
+            not math.isfinite(self.welfare_recom_time_limit)
+            or self.welfare_recom_time_limit < 0
+            or (self.zoned_recom_seed_runs > 0 and self.welfare_recom_time_limit == 0)
+        ):
+            raise ValueError(recom_time_limit_error)
+        if isinstance(self.welfare_branch_price_time_limit, bool):
+            raise ValueError(
+                "welfare_branch_price_time_limit must be positive and finite."
+            )
+        try:
+            self.welfare_branch_price_time_limit = float(
+                self.welfare_branch_price_time_limit
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "welfare_branch_price_time_limit must be positive and finite."
+            ) from exc
+        if (
+            not math.isfinite(self.welfare_branch_price_time_limit)
+            or self.welfare_branch_price_time_limit <= 0
+        ):
+            raise ValueError(
+                "welfare_branch_price_time_limit must be positive and finite."
+            )
+        if self.welfare_branch_price_enabled and self.zoned_recom_seed_runs == 0:
+            raise ValueError(
+                "welfare_branch_price_enabled requires zoned_recom_seed_runs > 0."
+            )
         if self.welfare_method not in {
             "budget",
             "decomposition",
@@ -283,7 +399,6 @@ class OptimizationConfig:
         nonnegative_counts = {
             "zoned_cg_max_rounds": self.zoned_cg_max_rounds,
             "zoned_cg_pricing_node_limit": self.zoned_cg_pricing_node_limit,
-            "zoned_cg_recom_seed_runs": self.zoned_cg_recom_seed_runs,
             "zoned_cg_local_move_rounds": self.zoned_cg_local_move_rounds,
         }
         for name, value in nonnegative_counts.items():
@@ -357,7 +472,6 @@ class OptimizationConfig:
                 raise ValueError(f"{name} must be positive and finite.")
         nonnegative_counts = {
             "zoned_benders_max_rounds": self.zoned_benders_max_rounds,
-            "zoned_benders_recom_seed_runs": self.zoned_benders_recom_seed_runs,
             "zoned_benders_local_move_rounds": self.zoned_benders_local_move_rounds,
         }
         for name, value in nonnegative_counts.items():
@@ -394,6 +508,7 @@ class OptimizationConfig:
             raw = yaml.safe_load(f) or {}
         # Persisted pre-KaHIP configs included this obsolete partition setting.
         raw.pop("level_to_split", None)
+        migrate_legacy_zoned_recom_seed_runs(raw)
         known = {f.name for f in fields(cls)}
         unknown = set(raw) - known
         if unknown:
@@ -459,11 +574,37 @@ class OptimizationConfig:
             cutoff_gumbel_scale=self.cutoff_gumbel_scale,
             cutoff_preference_seed=self.cutoff_preference_seed,
             cutoff_method=self.cutoff_method,
+            decomposition_generate_assigned_pairs=(
+                self.decomposition_generate_assigned_pairs
+            ),
             remove_city_wide=self.remove_city_wide,
             welfare_utility_scale=self.welfare_utility_scale,
             welfare_initial_assignment_path=self.welfare_initial_assignment_path,
             welfare_prefix_depth=self.welfare_prefix_depth,
+            welfare_decomposition_round_time_limit=(
+                self.welfare_decomposition_round_time_limit
+            ),
+            welfare_decomposition_theta_enabled=(
+                self.welfare_decomposition_theta_enabled
+            ),
+            welfare_assignment_relaxation_enabled=(
+                self.welfare_assignment_relaxation_enabled
+            ),
+            welfare_submodular_access_start_enabled=(
+                self.welfare_submodular_access_start_enabled
+            ),
+            welfare_adjacent_zone_subset_improvement_enabled=(
+                self.welfare_adjacent_zone_subset_improvement_enabled
+            ),
+            welfare_branch_price_enabled=self.welfare_branch_price_enabled,
+            welfare_recom_time_limit=self.welfare_recom_time_limit,
+            welfare_branch_price_time_limit=self.welfare_branch_price_time_limit,
             welfare_method=self.welfare_method,
+            decomposition_pressure_starts_enabled=(
+                self.decomposition_pressure_starts_enabled
+            ),
+            decomposition_local_moves_enabled=self.decomposition_local_moves_enabled,
+            zoned_recom_seed_runs=self.zoned_recom_seed_runs,
             centroid_neighbor_radius=self.centroid_neighbor_radius,
             seed=self.seed,
             workers=self.workers,
@@ -481,7 +622,6 @@ class OptimizationConfig:
             zoned_cg_optimality_tolerance=self.zoned_cg_optimality_tolerance,
             zoned_cg_mip_time_limit=self.zoned_cg_mip_time_limit,
             zoned_cg_seed_paths=self.zoned_cg_seed_paths,
-            zoned_cg_recom_seed_runs=self.zoned_cg_recom_seed_runs,
             zoned_cg_local_move_rounds=self.zoned_cg_local_move_rounds,
             zoned_cg_save_mechanism=self.zoned_cg_save_mechanism,
             zoned_cg_evaluate_stable_diagnostics=self.zoned_cg_evaluate_stable_diagnostics,
@@ -493,7 +633,6 @@ class OptimizationConfig:
             zoned_benders_master_feasibility_tolerance=self.zoned_benders_master_feasibility_tolerance,
             zoned_benders_optimality_tolerance=self.zoned_benders_optimality_tolerance,
             zoned_benders_seed_paths=self.zoned_benders_seed_paths,
-            zoned_benders_recom_seed_runs=self.zoned_benders_recom_seed_runs,
             zoned_benders_local_move_rounds=self.zoned_benders_local_move_rounds,
             zoned_benders_save_mechanism=self.zoned_benders_save_mechanism,
             zoned_benders_evaluate_stable_diagnostics=self.zoned_benders_evaluate_stable_diagnostics,

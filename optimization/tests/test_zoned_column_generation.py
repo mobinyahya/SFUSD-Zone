@@ -259,6 +259,8 @@ def test_strategy_config_contract_and_registration():
     assert strategy.name == "zoned_column_generation"
     assert get_strategy("zoned_column_generation").name == ("zoned_column_generation")
     assert strategy.options["zoned_cg_wall_time_limit"] == 2700
+    assert strategy.options["zoned_recom_seed_runs"] == 0
+    assert strategy.options["zoned_cg_local_move_rounds"] == 0
 
     with pytest.raises(ValueError, match="positive and finite"):
         OptimizationConfig(

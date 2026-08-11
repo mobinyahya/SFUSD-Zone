@@ -45,7 +45,18 @@ class CutoffsStrategy(Strategy):
             return [
                 CutoffDecompositionSolver(
                     solver,
-                    generate_assigned_pairs=method == "pair_generation",
+                    generate_assigned_pairs=(
+                        method == "pair_generation"
+                        or self.options.get(
+                            "decomposition_generate_assigned_pairs", True
+                        )
+                    ),
+                    pressure_starts_enabled=self.options.get(
+                        "decomposition_pressure_starts_enabled", False
+                    ),
+                    local_moves_enabled=self.options.get(
+                        "decomposition_local_moves_enabled", False
+                    ),
                 ).solve(problem)
             ]
         raise ValueError(f"Unknown cutoff_method: {method!r}.")

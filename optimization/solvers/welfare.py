@@ -22,6 +22,7 @@ from optimization.welfare_oracle import (
 class WelfareSolver:
     """Jointly optimize zoning and stable assignment-measure welfare."""
 
+    objective_kind = "stable_assignment_welfare"
     optimization_method = "direct_finite_grid_stable_welfare"
     finite_grid_formulation = "cumulative_rejection_thresholds"
 
@@ -116,7 +117,7 @@ class WelfareSolver:
                 metadata={
                     **market.metadata,
                     "solver": "cp_bool",
-                    "objective_kind": "stable_assignment_welfare",
+                    "objective_kind": self.objective_kind,
                     "optimization_method": self.optimization_method,
                     "finite_grid_formulation": self.finite_grid_formulation,
                     "lottery_scale": market.lottery_scale,
@@ -167,7 +168,7 @@ class WelfareSolver:
         metadata = {
             **market.metadata,
             "solver": "cp_bool",
-            "objective_kind": "stable_assignment_welfare",
+            "objective_kind": self.objective_kind,
             "optimization_method": self.optimization_method,
             "finite_grid_formulation": self.finite_grid_formulation,
             "market_coupling": "isolated_zones",
@@ -254,6 +255,46 @@ class WelfareSolver:
 
     def _formulation_metadata(self):
         return {}
+
+
+class ApproximateWelfareSolver(WelfareSolver):
+    """Optimize welfare with shared school-priority rejection thresholds."""
+
+    objective_kind = "approximate_welfare"
+    optimization_method = "direct_shared_rejection_thresholds"
+    finite_grid_formulation = "cumulative_rejection_thresholds"
+
+    def _add_market(self, model, problem, x, initial_assignment, initial_grid):
+        market = problem.cutoff_market
+        self._approximate_model_counts = {
+            "same_zone_indicator_count": len(
+                {
+                    (student.node, school)
+                    for student in market.students
+                    for school in student.preferences
+                }
+            ),
+            "rejection_threshold_count": len(
+                {
+                    (school, student.priorities[school])
+                    for student in market.students
+                    for school in student.preferences
+                }
+            ),
+            "demand_expression_count": sum(
+                len(student.preferences) for student in market.students
+            ),
+        }
+        return super()._add_market(
+            model,
+            problem,
+            x,
+            initial_assignment,
+            initial_grid,
+        )
+
+    def _formulation_metadata(self):
+        return dict(self._approximate_model_counts)
 
 
 class BooleanBudgetWelfareSolver(WelfareSolver):
@@ -665,8 +706,7 @@ def add_finite_grid_recurrence(
                 )
                 model.AddMaxEquality(
                     threshold,
-                    cutoffs[school] - priority * scale,
-                    0,
+                    [cutoffs[school] - priority * scale, 0],
                 )
                 if cutoff_hints is not None:
                     model.AddHint(

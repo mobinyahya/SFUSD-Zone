@@ -63,7 +63,7 @@ class ZonedColumnGenerationStrategy(Strategy):
             solver,
             valuator,
             seed_paths=tuple(self.options.get("zoned_cg_seed_paths") or ()),
-            recom_seed_runs=int(self.options["zoned_cg_recom_seed_runs"]),
+            recom_seed_runs=int(self.options["zoned_recom_seed_runs"]),
             local_move_rounds=int(self.options["zoned_cg_local_move_rounds"]),
             centroid_neighbor_radius=radius,
             random_seed=int(self.options.get("seed", 0)),

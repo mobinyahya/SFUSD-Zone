@@ -10,6 +10,8 @@ assignment outputs are reused, and each CSV column is the mean of
 Usage:
     uv run python analysis/evaluate_zone_subconfig_matches.py
     uv run python analysis/evaluate_zone_subconfig_matches.py --real-preferences
+    uv run python analysis/evaluate_zone_subconfig_matches.py \
+        --real-preferences --include-special-programs
 """
 
 from __future__ import annotations
@@ -70,6 +72,10 @@ DEFAULT_MATCHES_ROOT = PROJECT_ROOT / "analysis/matches/zone_subconfigs_25"
 DEFAULT_REAL_MATCHES_ROOT = (
     PROJECT_ROOT / "analysis/matches/zone_subconfigs_real_preferences_25"
 )
+DEFAULT_REAL_WITH_SPECIAL_MATCHES_ROOT = (
+    PROJECT_ROOT
+    / "analysis/matches/zone_subconfigs_real_preferences_with_special_programs_25"
+)
 DEFAULT_REAL_STUDENTS = Path(
     "/share/data/school_choice/Data/Cleaned/student_2324.csv"
 )
@@ -98,6 +104,14 @@ def parse_args() -> argparse.Namespace:
         help="Student CSV used with --real-preferences.",
     )
     parser.add_argument(
+        "--include-special-programs",
+        action="store_true",
+        help=(
+            "Retain special-program applicants and alternatives; requires "
+            "--real-preferences."
+        ),
+    )
+    parser.add_argument(
         "--new-ctip-path",
         type=Path,
         default=DEFAULT_NEW_CTIP_PATH,
@@ -119,6 +133,7 @@ def build_simulation_config(
     medium_zones: Path,
     *,
     real_student_data: Path | None = None,
+    include_special_programs: bool = False,
 ) -> dict[str, Any]:
     """Set the requested subconfigs, outputs, and selected zone plans."""
     config = build_policy_simulation_config(base_config, list(SUBCONFIGS), matches_root)
@@ -126,9 +141,9 @@ def build_simulation_config(
     zone_files = copy.deepcopy(paths.get("zone-files") or {})
     zone_files["18zone_2"] = str(small_zones)
     zone_files["6zone-1"] = str(medium_zones)
+    paths["student-save"] = str(matches_root / "precomputed")
     if real_student_data is not None:
         paths["student-data"] = str(real_student_data)
-        paths["student-save"] = str(matches_root / "precomputed")
     paths["zone-files"] = zone_files
     config["paths"] = paths
     if real_student_data is not None:
@@ -139,7 +154,7 @@ def build_simulation_config(
         }
         config["random-seed"] = 2023
         config["r1-only"] = True
-        config["remove-special-lps"] = True
+        config["remove-special-lps"] = not include_special_programs
         config["rounds-merged-options"] = [0]
     return config
 
@@ -175,9 +190,16 @@ def main() -> int:
     policy_dir = args.policy_dir.expanduser().resolve()
     small_zones = args.small_zones.expanduser().resolve()
     medium_zones = args.medium_zones.expanduser().resolve()
-    matches_root_arg = args.matches_root or (
-        DEFAULT_REAL_MATCHES_ROOT if args.real_preferences else DEFAULT_MATCHES_ROOT
-    )
+    if args.include_special_programs and not args.real_preferences:
+        raise ValueError("--include-special-programs requires --real-preferences")
+    if args.matches_root:
+        matches_root_arg = args.matches_root
+    elif args.include_special_programs:
+        matches_root_arg = DEFAULT_REAL_WITH_SPECIAL_MATCHES_ROOT
+    elif args.real_preferences:
+        matches_root_arg = DEFAULT_REAL_MATCHES_ROOT
+    else:
+        matches_root_arg = DEFAULT_MATCHES_ROOT
     matches_root = matches_root_arg.expanduser().resolve()
 
     real_student_data = None
@@ -197,6 +219,7 @@ def main() -> int:
         small_zones,
         medium_zones,
         real_student_data=real_student_data,
+        include_special_programs=args.include_special_programs,
     )
 
     if args.dry_run:
@@ -204,7 +227,13 @@ def main() -> int:
         LOGGER.info("Medium-zone plan: %s", medium_zones)
         LOGGER.info(
             "Preferences: %s",
-            "real" if args.real_preferences else "choice model",
+            (
+                "real, with special programs"
+                if args.include_special_programs
+                else "real, without special programs"
+                if args.real_preferences
+                else "choice model, without special programs"
+            ),
         )
         for label in SUBCONFIGS:
             LOGGER.info("Would run %s", label)

@@ -16,9 +16,11 @@ from optimization.solvers.budget_lbbd import (
     submodular_supergradient,
 )
 from optimization.solvers.welfare import (
+    ApproximateWelfareSolver,
     BooleanBudgetWelfareSolver,
     WelfareSolver,
     add_boolean_budget_reification,
+    add_finite_grid_recurrence,
 )
 from optimization.solvers.welfare_decomposition import (
     WelfareDecompositionSolver,
@@ -48,9 +50,7 @@ def _student(studentno, node, preferences, utilities):
 def test_submodular_supergradients_bound_every_budget(kind):
     coefficients = (9, 6, 6, 2)
     for reference_mask in range(1 << len(coefficients)):
-        constant, slopes = submodular_supergradient(
-            coefficients, reference_mask, kind
-        )
+        constant, slopes = submodular_supergradient(coefficients, reference_mask, kind)
         for target_mask in range(1 << len(coefficients)):
             value = max(
                 (
@@ -98,9 +98,7 @@ def test_lbbd_interval_capacity_cut_separates_persistent_overload(
         high=2,
         higher=(),
     )
-    solver = BudgetSetLbbdSolver(
-        get_solver("cp_bool", workers=1), utility_scale=100
-    )
+    solver = BudgetSetLbbdSolver(get_solver("cp_bool", workers=1), utility_scale=100)
 
     assert solver._add_interval_capacity_cut(master, market, 100, [interval]) == 1
     assert cp_model.CpSolver().Solve(model) == expected_status
@@ -125,9 +123,7 @@ def test_lbbd_complete_school_activation_enforces_exact_demand():
         model.Add(budget == 1)
         budgets[0, 100, 0, cell] = budget
     master = SimpleNamespace(model=model, budgets=budgets)
-    solver = BudgetSetLbbdSolver(
-        get_solver("cp_bool", workers=1), utility_scale=100
-    )
+    solver = BudgetSetLbbdSolver(get_solver("cp_bool", workers=1), utility_scale=100)
 
     assert solver._activate_complete_school(master, market, 100) == 1
     assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
@@ -181,8 +177,7 @@ def test_boolean_budget_model_reifies_qualification_utility_and_demand():
     assert status == cp_model.OPTIMAL
     assert solver.Value(formulation.cutoffs[100]) == 2
     assert [
-        solver.Value(formulation.qualifications[100, 0, cell])
-        for cell in range(1, 5)
+        solver.Value(formulation.qualifications[100, 0, cell]) for cell in range(1, 5)
     ] == [0, 0, 1, 1]
     assert [
         solver.Value(expression)
@@ -256,6 +251,132 @@ def test_boolean_budget_model_matches_oracle_with_priority_tiers():
 
     assert status == cp_model.OPTIMAL
     assert int(round(solver.ObjectiveValue())) == oracle.raw_scaled_welfare
+
+
+def test_approximate_welfare_recurrence_enforces_priority_cutoff_off_by_one():
+    market = CutoffMarket(
+        students=(
+            CutoffStudent(1, 0, (100,), {100: 1}, {100: 1.0}),
+            CutoffStudent(2, 0, (100,), {100: 0}, {100: 10.0}),
+            CutoffStudent(3, 0, (100,), {100: 0}, {100: 9.0}),
+        ),
+        school_nodes={100: 1},
+        school_capacities={100: 1},
+        zone_restricted_schools=frozenset({100}),
+        lottery_scale=4,
+    )
+    model = cp_model.CpModel()
+    cutoffs, raw_welfare = add_finite_grid_recurrence(
+        model,
+        market,
+        {(0, 100): model.NewConstant(1)},
+        utility_scale=1,
+    )
+    model.Maximize(raw_welfare)
+
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    assert status == cp_model.OPTIMAL
+    # A priority-zero applicant's lottery scores are 0, 1, 2, 3. A cutoff of
+    # four rejects all four cells while admitting all priority-one cells.
+    assert solver.Value(cutoffs[100]) == 4
+    assert int(round(solver.ObjectiveValue())) == 4
+    variable_names = [variable.name for variable in model.Proto().variables]
+    assert variable_names.count("welfare_threshold_100_0") == 1
+    assert variable_names.count("welfare_threshold_100_1") == 1
+
+
+def test_approximate_welfare_uses_cumulative_preference_rejections():
+    market = CutoffMarket(
+        students=(
+            CutoffStudent(
+                1,
+                0,
+                (100, 200),
+                {100: 0, 200: 0},
+                {100: 5.0, 200: 3.0},
+            ),
+        ),
+        school_nodes={100: 1, 200: 2},
+        school_capacities={100: 1, 200: 1},
+        zone_restricted_schools=frozenset({100, 200}),
+        lottery_scale=4,
+    )
+    model = cp_model.CpModel()
+    cutoffs, raw_welfare = add_finite_grid_recurrence(
+        model,
+        market,
+        {
+            (0, 100): model.NewConstant(1),
+            (0, 200): model.NewConstant(1),
+        },
+        utility_scale=1,
+    )
+    model.Add(cutoffs[100] == 2)
+    model.Add(cutoffs[200] == 1)
+
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    assert status == cp_model.OPTIMAL
+    # r0=4, r1=min(4,2)=2, r2=min(2,1)=1, so d100=2 and d200=1.
+    assert solver.Value(raw_welfare) == 2 * 5 + 1 * 3
+
+
+def test_approximate_welfare_jointly_optimizes_feasible_zoning_and_access():
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        frl_dev=-1,
+        racial_dev=-1,
+        overage=-1,
+        shortage=-1,
+        hint={0: 0, 1: 0, 2: 1, 3: 1},
+    )
+    problem.cutoff_market = CutoffMarket(
+        students=(
+            CutoffStudent(
+                1,
+                1,
+                (200, 100),
+                {200: 0, 100: 0},
+                {200: 10.0, 100: 1.0},
+            ),
+            CutoffStudent(
+                2,
+                1,
+                (200, 100),
+                {200: 0, 100: 0},
+                {200: 8.0, 100: 2.0},
+            ),
+        ),
+        school_nodes={100: 0, 200: 3},
+        school_capacities={100: 2, 200: 2},
+        zone_restricted_schools=frozenset({100, 200}),
+        lottery_scale=4,
+    )
+    zoning_solver = get_solver(
+        "cp_bool",
+        solve_time_limit=10,
+        workers=1,
+        seed=42,
+    )
+
+    solution = ApproximateWelfareSolver(
+        zoning_solver,
+        utility_scale=100,
+    ).solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.assignment[1] == solution.assignment[3] == 1
+    assert solution.is_contiguous()
+    assert solution.objective == pytest.approx(18.0)
+    assert solution.metadata["objective_kind"] == "approximate_welfare"
+    assert solution.metadata["same_zone_indicator_count"] == 2
+    assert solution.metadata["rejection_threshold_count"] == 2
+    assert solution.metadata["demand_expression_count"] == 4
 
 
 def test_serialized_school_cutoff_keys_are_normalized():
@@ -427,7 +548,43 @@ def test_gurobi_transport_bound_remains_diagnostic():
     )
 
 
-def test_welfare_decomposition_matches_exhaustive_tiny_zonings():
+def test_welfare_decomposition_allows_zero_recom_time_when_disabled():
+    solver = WelfareDecompositionSolver(
+        get_solver("cp_bool", workers=1),
+        utility_scale=100,
+        recom_seed_runs=0,
+        recom_time_limit=0,
+    )
+
+    assert solver.recom_time_limit == 0.0
+
+
+def test_welfare_decomposition_rejects_zero_recom_time_when_enabled():
+    with pytest.raises(ValueError, match="recom_time_limit"):
+        WelfareDecompositionSolver(
+            get_solver("cp_bool", workers=1),
+            utility_scale=100,
+            recom_seed_runs=1,
+            recom_time_limit=0,
+        )
+
+
+def test_direct_demand_decomposition_keeps_lns_with_hints():
+    decomposition = WelfareDecompositionSolver(
+        get_solver("cp_bool", workers=5, hints="voronoi"),
+        utility_scale=100,
+        theta_enabled=False,
+    )
+    solver = decomposition._new_solver(1.0, 0)
+
+    assert solver.parameters.num_search_workers == 5
+    assert solver.parameters.use_lns
+    assert solver.parameters.use_rins_lns
+    assert solver.parameters.use_lb_relax_lns
+
+
+@pytest.mark.parametrize("theta_enabled", [True, False])
+def test_welfare_decomposition_matches_exhaustive_tiny_zonings(theta_enabled):
     problem = make_grid_problem(
         2,
         2,
@@ -472,15 +629,206 @@ def test_welfare_decomposition_matches_exhaustive_tiny_zonings():
         )
 
     zoning_solver = get_solver("cp_bool", solve_time_limit=10, workers=1, seed=42)
-    solution = WelfareDecompositionSolver(zoning_solver, utility_scale=100).solve(
-        problem
-    )
+    solution = WelfareDecompositionSolver(
+        zoning_solver,
+        utility_scale=100,
+        assignment_relaxation_enabled=False,
+        theta_enabled=theta_enabled,
+    ).solve(problem)
 
     assert solution.status == "OPTIMAL"
     assert solution.metadata["raw_scaled_welfare"] == max(brute_force)
     assert solution.metadata["global_optimum_certified"]
     assert solution.metadata["grid_minimal"]
     assert solution.metadata["stable"]
+    assert solution.metadata["welfare_decomposition_theta_enabled"] is theta_enabled
+    assert solution.metadata["welfare_decomposition_round_time_limit"] == 180.0
+    assert solution.metadata["welfare_assignment_relaxation_enabled"] is False
+    assert solution.metadata["welfare_submodular_access_start_enabled"] is False
+    assert (
+        solution.metadata["welfare_adjacent_zone_subset_improvement_enabled"] is False
+    )
+    assert solution.metadata["assignment_relaxation_status"] == "DISABLED"
+    assert solution.metadata["assignment_relaxation_raw_upper_bound"] is None
+    assert solution.metadata["decomposition_pressure_starts_enabled"] is False
+    assert solution.metadata["decomposition_local_moves_enabled"] is False
+    assert solution.metadata["zoned_recom_seed_runs"] == 0
+    assert solution.metadata["welfare_recom_time_limit"] == 600.0
+    assert solution.metadata["welfare_branch_price_enabled"] is False
+    assert solution.metadata["welfare_branch_price_time_limit"] == 45.0
+    assert solution.metadata["decomposition_generate_assigned_pairs"] is True
+    assert solution.metadata["revealed_preference_cut_count"] == 0
+    assert solution.metadata["conditional_demand_pair_count"] > 0
+    assert solution.metadata["conditional_demand_profile_count"] > 0
+    assert solution.metadata["conditional_demand_capacity_constraint_count"] > 0
+    if theta_enabled:
+        assert solution.metadata["welfare_cut_count"] > 0
+        assert solution.metadata["welfare_prefix_variable_count"] > 0
+        assert solution.metadata["direct_demand_objective_variable_count"] == 0
+    else:
+        assert solution.metadata["welfare_cut_count"] == 0
+        assert solution.metadata["welfare_prefix_depth"] == 0
+        assert solution.metadata["welfare_prefix_variable_count"] == 0
+        assert solution.metadata["direct_demand_objective_variable_count"] > 0
+        assert solution.metadata["direct_demand_complete_pair_hints_enabled"] is True
+    heuristic_kinds = {row["kind"] for row in solution.metadata["heuristic_candidates"]}
+    assert "recom_welfare_search" not in heuristic_kinds
+    assert "branch_price_root" not in heuristic_kinds
+    assert "submodular_access_start" not in heuristic_kinds
+    assert "exact_subset_welfare" not in heuristic_kinds
+    assert "pressure" not in heuristic_kinds
+    assert "refined_lexicographic_pressure" not in heuristic_kinds
+    evaluated_rounds = [
+        row
+        for row in solution.metadata["decomposition_rounds"]
+        if row["master_objective"] is not None
+    ]
+    assert evaluated_rounds
+    assert "zoning_no_good_count" not in solution.metadata
+    for row in evaluated_rounds:
+        assert "zoning_no_goods_added" not in row
+        assert row["master_oracle_welfare_gap"] == (
+            row["master_objective"] - row["oracle_candidate_welfare"]
+        )
+
+
+def test_direct_demand_candidate_activates_zero_demand_utility_gap():
+    student = _student(1, 0, (100,), {100: 5.0})
+    market = CutoffMarket(
+        students=(student,),
+        school_nodes={100: 1},
+        school_capacities={100: 1},
+        zone_restricted_schools=frozenset({100}),
+        lottery_scale=4,
+    )
+    problem = make_grid_problem(1, 2, population_type="All")
+    problem.cutoff_market = market
+    decomposition = WelfareDecompositionSolver(
+        get_solver("cp_bool", workers=1),
+        utility_scale=100,
+        theta_enabled=False,
+    )
+    assignment = {0: 0, 1: 0}
+    cutoffs = {100: 4}
+
+    optimistic, exact, gap_keys = decomposition._evaluate_direct_demand_candidate(
+        problem,
+        market,
+        assignment,
+        cutoffs,
+        {},
+    )
+
+    expected_key = decomposition._conditional_profile_key(student, 100, ())
+    assert optimistic == 2000
+    assert exact == 0
+    assert gap_keys == {expected_key}
+    assert decomposition._evaluate_direct_demand_candidate(
+        problem,
+        market,
+        assignment,
+        cutoffs,
+        {expected_key: (student, 100, ())},
+    ) == (0, 0, set())
+
+
+def test_direct_demand_master_bounds_exact_welfare_for_every_active_subset():
+    students = (
+        _student(1, 0, (100, 200), {100: 6.0, 200: 1.0}),
+        _student(2, 0, (100, 200), {100: 4.0, 200: 3.0}),
+    )
+    market = CutoffMarket(
+        students=students,
+        school_nodes={100: 0, 200: 0},
+        school_capacities={100: 2, 200: 2},
+        zone_restricted_schools=frozenset({100, 200}),
+        lottery_scale=2,
+    )
+    problem = make_grid_problem(
+        2,
+        2,
+        population_type="All",
+        frl_dev=-1,
+        racial_dev=-1,
+        overage=-1,
+        shortage=-1,
+    )
+    problem.cutoff_market = market
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    incumbent = _WelfareIncumbent(
+        assignment,
+        solve_zoned_welfare(
+            market,
+            assignment,
+            num_zones=2,
+            utility_scale=100,
+        ),
+    )
+    template = WelfareDecompositionSolver(
+        get_solver("cp_bool", workers=1, hints="none"),
+        utility_scale=100,
+        theta_enabled=False,
+    )
+    profile_counts, representatives = template._conditional_profile_data(market)
+    profile_keys = sorted(representatives)
+
+    for active_mask in range(1 << len(profile_keys)):
+        active_profiles = {
+            key: representatives[key]
+            for index, key in enumerate(profile_keys)
+            if active_mask & (1 << index)
+        }
+        for cutoff_100, cutoff_200 in itertools.product(range(3), repeat=2):
+            decomposition = WelfareDecompositionSolver(
+                get_solver("cp_bool", workers=1, hints="none"),
+                utility_scale=100,
+                theta_enabled=False,
+            )
+            model, x, cutoffs, _objective = decomposition._build_direct_demand_master(
+                problem,
+                market,
+                incumbent,
+                active_profiles,
+                profile_counts,
+                representatives,
+                max_cutoff=2,
+                raw_upper_bound=raw_welfare_upper_bound(market, 100),
+            )
+            assert not model.Proto().solution_hint.vars
+            if active_profiles:
+                assert decomposition._conditional_capacity_constraint_count > 0
+            for (zone, node), variable in x.items():
+                model.Add(variable == int(assignment[node] == zone))
+            model.Add(cutoffs[100] == cutoff_100)
+            model.Add(cutoffs[200] == cutoff_200)
+
+            cp_solver = cp_model.CpSolver()
+            assert cp_solver.Solve(model) == cp_model.OPTIMAL
+            optimistic, exact, _gap_keys = (
+                decomposition._evaluate_direct_demand_candidate(
+                    problem,
+                    market,
+                    assignment,
+                    {100: cutoff_100, 200: cutoff_200},
+                    active_profiles,
+                )
+            )
+            assert int(round(cp_solver.ObjectiveValue())) == optimistic
+            assert optimistic >= exact
+            if len(active_profiles) == len(profile_keys):
+                assert optimistic == exact
+            for key, demand in decomposition._conditional_demand_vars.items():
+                student, school, higher = representatives[key]
+                expected = decomposition._fixed_profile_demand(
+                    problem,
+                    market,
+                    assignment,
+                    {100: cutoff_100, 200: cutoff_200},
+                    student,
+                    school,
+                    higher,
+                )
+                assert cp_solver.Value(demand) == expected
 
 
 def test_boolean_budget_solver_matches_exhaustive_tiny_zonings():
@@ -529,9 +877,9 @@ def test_boolean_budget_solver_matches_exhaustive_tiny_zonings():
 
     problem.hint = {0: 0, 1: 0, 2: 1, 3: 1}
     zoning_solver = get_solver("cp_bool", solve_time_limit=10, workers=1, seed=42)
-    solution = BooleanBudgetWelfareSolver(
-        zoning_solver, utility_scale=100
-    ).solve(problem)
+    solution = BooleanBudgetWelfareSolver(zoning_solver, utility_scale=100).solve(
+        problem
+    )
 
     assert solution.status == "OPTIMAL"
     assert solution.metadata["raw_scaled_welfare"] == max(brute_force)

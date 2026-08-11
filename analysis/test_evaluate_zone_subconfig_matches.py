@@ -37,6 +37,7 @@ def test_build_simulation_config_overrides_selected_zone_plans(tmp_path):
         "6zone-1": str(medium_zones),
         "Con1": "attendance-areas.csv",
     }
+    assert result["paths"]["student-save"] == str(tmp_path / "matches/precomputed")
     assert base["paths"]["zone-files"]["18zone_2"] == "old-small.csv"
 
 
@@ -76,3 +77,17 @@ def test_build_simulation_config_applies_real_preference_settings(tmp_path):
     assert result["r1-only"] is True
     assert result["remove-special-lps"] is True
     assert result["rounds-merged-options"] == [0]
+
+
+def test_build_simulation_config_can_retain_special_programs(tmp_path):
+    result = zone_subconfigs.build_simulation_config(
+        {"paths": {"zone-files": {}}},
+        tmp_path / "matches",
+        tmp_path / "small.csv",
+        tmp_path / "medium.csv",
+        real_student_data=tmp_path / "student_2324.csv",
+        include_special_programs=True,
+    )
+
+    assert result["utility-model"]["enable"] is False
+    assert result["remove-special-lps"] is False

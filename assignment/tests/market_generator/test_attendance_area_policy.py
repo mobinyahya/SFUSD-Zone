@@ -105,6 +105,125 @@ def test_add_aa_schools_applies_to_utility_model_preferences():
     np.testing.assert_array_equal(generator.pref_length, [2, 2, 1])
 
 
+def test_drop_below_aa_truncates_real_preferences_after_aa_is_added():
+    initial_preferences = np.array(
+        [
+            [2, 1, 4, 3],
+            [1, 2, 0, 0],
+            [4, 2, 3, 0],
+        ]
+    )
+    market = _preference_market(
+        {
+            "add_aa_schools": True,
+            "drop_below_aa": True,
+            "grade": "KG",
+        },
+        initial_preferences,
+    )
+    generator = PreferenceGenerator(market)
+
+    preferences = generator.initialize_real_preferences(designate=False)
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                [2, 1, 0, 0],
+                [1, 2, 3, 0],
+                [4, 2, 3, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [2, 3, 3])
+
+
+def test_drop_below_aa_truncates_utility_model_preferences():
+    initial_preferences = np.array(
+        [
+            [2, 1, 4, 0],
+            [1, 3, 2, 0],
+            [4, 2, 3, 0],
+        ]
+    )
+    market = _preference_market(
+        {"drop_below_aa": True, "designate": False, "grade": "KG"},
+        initial_preferences,
+    )
+    generator = PreferenceGenerator(market)
+    generator._get_eligibility = Mock(return_value=np.ones((3, 4)))
+    generator._truncate_utility_model_preferences = Mock(
+        return_value=initial_preferences
+    )
+
+    preferences = generator.get_utility_model_preferences_after_truncation()
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                [2, 1, 0, 0],
+                [1, 3, 0, 0],
+                [4, 2, 3, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [2, 2, 3])
+
+
+def test_drop_below_aa_defaults_to_false():
+    initial_preferences = np.array(
+        [
+            [2, 1, 4, 0],
+            [1, 3, 2, 0],
+            [4, 2, 3, 0],
+        ]
+    )
+    market = _preference_market({"grade": "KG"}, initial_preferences)
+    generator = PreferenceGenerator(market)
+
+    preferences = generator.initialize_real_preferences(designate=False)
+
+    np.testing.assert_array_equal(preferences, initial_preferences)
+    np.testing.assert_array_equal(generator.pref_length, [3, 3, 3])
+
+
+def test_drop_below_aa_keeps_full_ranked_length_before_designation():
+    initial_preferences = np.array(
+        [
+            [2, 4, 3, 0],
+            [1, 2, 0, 0],
+            [4, 2, 3, 0],
+        ]
+    )
+    market = _preference_market(
+        {
+            "add_aa_schools": True,
+            "drop_below_aa": True,
+            "grade": "KG",
+        },
+        initial_preferences,
+    )
+    generator = PreferenceGenerator(market)
+    generator._get_eligibility = Mock(return_value=np.ones((3, 4)))
+    generator._generate_designation_program_ordering = Mock()
+    generator._designation_ordering = {10: [], 11: [], 12: []}
+
+    preferences = generator.initialize_real_preferences(designate=True)
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                [2, 4, 3, 1],
+                [1, 2, 3, 0],
+                [4, 2, 3, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [4, 3, 3])
+
+
 def test_remove_non_aa_or_citywide_filters_real_preferences_by_school():
     initial_preferences = np.array(
         [

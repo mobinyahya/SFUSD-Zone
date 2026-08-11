@@ -108,6 +108,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 | `designation-ordering-type` | `in_zone` (default; in-zone programs first) or `simple` (pure distance order). |
 | `non_designation_boost` / `soft_reserve_boost` | Priority boosts for ranked (non-designation) programs / soft reserves. |
 | `add_aa_schools` | Append each student's grade-specific attendance-area GE program to their ranked list when it is not already present. |
+| `drop_below_aa` | Remove programs ranked after the student's attendance-area GE program (default `false`). Runs after `add_aa_schools` when both are enabled. |
 | `remove_non_aa_or_citywide` | Keep only programs at each student's attendance-area school or schools categorized as citywide, including designation options. Utility-model lists select their top allowed programs before list-length truncation. |
 | `aa_boost` | Add this priority boost for a student at their grade-specific attendance-area GE program. |
 | `overscribe_aa` | Assign otherwise-unassigned students to their attendance-area GE program even when it is at capacity (default `false`). |

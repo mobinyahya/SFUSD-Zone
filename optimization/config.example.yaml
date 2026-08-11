@@ -7,7 +7,7 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs | welfare | zoned_column_generation | zoned_benders
+strategy: 'single'   # single | recursive | iterative_choice | overlapping | cutoffs | welfare | approximate_welfare | zoned_column_generation | zoned_benders
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # overlapping ignores centroids_type and creates one zone per eligible school.
 
@@ -41,7 +41,7 @@ short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # border width; -1 skips overlapping boundary exclusion
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
-boundary_prop: -1             # cutoffs/welfare/iterative_choice: 0..1; negative disables
+boundary_prop: -1             # cutoffs/welfare/approximate_welfare/iterative_choice: 0..1; negative disables
 school_solve_time_limit: 60   # overlapping: seconds for each one-worker school solve
 max_iterations: 5             # iterative_choice
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
@@ -50,15 +50,27 @@ choice_utility_scale: 100     # CP-SAT integer scaling for choice objective vari
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 # Analytical Shi strategies have dedicated examples in
 # config.example.zoned_column_generation.yaml and config.example.zoned_benders.yaml.
-# cutoffs/welfare require solver: cp_bool, years: [23], and population_type: All.
+# cutoffs/welfare/approximate_welfare require cp_bool, years: [23], population_type: All.
 cutoff_assignment_config: assignment/configs/kumar.config.yaml
 cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
-remove_city_wide: false         # cutoffs/welfare: exclude citywide schools
+decomposition_generate_assigned_pairs: true # cutoff/welfare decomposition capacity rows
+remove_city_wide: false         # cutoffs/welfare/approximate_welfare: exclude citywide schools
 # welfare_utility_scale: 1000000 # welfare: fixed-point utility precision
 # welfare_prefix_depth: 10       # welfare: exact global recurrence through top ranks
+# welfare_decomposition_round_time_limit: 180 # welfare decomposition: seconds per master round
+# welfare_decomposition_theta_enabled: true # false: direct-demand objective with utility-gap pairs
+# welfare_assignment_relaxation_enabled: true # optional transport start/bound
+# welfare_submodular_access_start_enabled: false # optional capacity-blind access start
+# welfare_adjacent_zone_subset_improvement_enabled: false # optional pairwise local search
+# decomposition_pressure_starts_enabled: false # optional pressure-targeted starts
+# decomposition_local_moves_enabled: false # optional boundary/school moves
+zoned_recom_seed_runs: 0         # shared by welfare, zoned CG, and zoned Benders
+# welfare_recom_time_limit: 0    # total seconds; 0 allowed when seed runs is 0
+# welfare_branch_price_enabled: false # requires zoned_recom_seed_runs > 0
+# welfare_branch_price_time_limit: 45 # seconds for welfare pattern-root work
 # welfare_method: decomposition   # welfare: decomposition or direct benchmark
 
 # --- data ingestion ---

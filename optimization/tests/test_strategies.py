@@ -15,9 +15,11 @@ from optimization.solvers import get_solver
 from optimization.strategies import (
     iterative_choice as iterative_choice_module,
 )
+from optimization.strategies import approximate_welfare as approximate_welfare_module
 from optimization.strategies import cutoffs as cutoffs_module
 from optimization.strategies import overlapping as overlapping_module
 from optimization.strategies import single as single_module
+from optimization.strategies import welfare as welfare_module
 from optimization.strategies import get_strategy
 from optimization.tests.synthetic import (
     FakeDataset,
@@ -332,6 +334,35 @@ def test_cutoffs_config_requires_cp_bool_year_23_all_programs():
     assert strategy.options["cutoff_method"] == "decomposition"
     assert strategy.options["boundary_prop"] == 0.5
     assert strategy.options["remove_city_wide"] is False
+    assert strategy.options["decomposition_generate_assigned_pairs"] is True
+    assert strategy.options["decomposition_pressure_starts_enabled"] is False
+    assert strategy.options["decomposition_local_moves_enabled"] is False
+
+
+def test_config_enables_optional_decomposition_start_moves():
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        decomposition_pressure_starts_enabled=True,
+        decomposition_local_moves_enabled=True,
+        welfare_submodular_access_start_enabled=True,
+        welfare_adjacent_zone_subset_improvement_enabled=True,
+    ).make_strategy()
+
+    assert strategy.options["decomposition_pressure_starts_enabled"] is True
+    assert strategy.options["decomposition_local_moves_enabled"] is True
+    assert strategy.options["welfare_submodular_access_start_enabled"] is True
+    assert (
+        strategy.options["welfare_adjacent_zone_subset_improvement_enabled"] is True
+    )
+
+
+def test_config_can_disable_decomposition_assigned_pairs():
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        decomposition_generate_assigned_pairs=False,
+    ).make_strategy()
+
+    assert strategy.options["decomposition_generate_assigned_pairs"] is False
 
 
 def test_welfare_config_requires_isolated_year_23_all_program_markets():
@@ -343,6 +374,8 @@ def test_welfare_config_requires_isolated_year_23_all_program_markets():
         population_type="All",
         remove_city_wide=True,
         welfare_utility_scale=10_000,
+        welfare_decomposition_round_time_limit=12.5,
+        welfare_assignment_relaxation_enabled=False,
         welfare_method="lbbd",
     )
 
@@ -352,7 +385,100 @@ def test_welfare_config_requires_isolated_year_23_all_program_markets():
     assert strategy.options["remove_city_wide"] is True
     assert strategy.options["welfare_utility_scale"] == 10_000
     assert strategy.options["welfare_prefix_depth"] == 10
+    assert strategy.options["welfare_decomposition_round_time_limit"] == 12.5
+    assert strategy.options["welfare_decomposition_theta_enabled"] is True
+    assert strategy.options["welfare_assignment_relaxation_enabled"] is False
+    assert strategy.options["welfare_submodular_access_start_enabled"] is False
+    assert (
+        strategy.options["welfare_adjacent_zone_subset_improvement_enabled"] is False
+    )
+    assert strategy.options["decomposition_generate_assigned_pairs"] is True
+    assert strategy.options["decomposition_pressure_starts_enabled"] is False
+    assert strategy.options["decomposition_local_moves_enabled"] is False
+    assert strategy.options["zoned_recom_seed_runs"] == 0
+    assert strategy.options["welfare_recom_time_limit"] == 600.0
+    assert strategy.options["welfare_branch_price_enabled"] is False
+    assert strategy.options["welfare_branch_price_time_limit"] == 45.0
     assert strategy.options["welfare_method"] == "lbbd"
+
+
+def test_approximate_welfare_config_requires_isolated_year_23_all_program_markets():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="approximate_welfare",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        remove_city_wide=True,
+        welfare_utility_scale=10_000,
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.name == "approximate_welfare"
+    assert strategy.options["remove_city_wide"] is True
+    assert strategy.options["cutoff_lottery_scale"] == 20
+    assert strategy.options["welfare_utility_scale"] == 10_000
+
+
+def test_approximate_welfare_strategy_builds_zone_gated_market(monkeypatch):
+    problem = make_grid_problem(2, 2, population_type="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(years=[23], population_type="All")
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "cp_bool"
+    market = CutoffMarket(
+        students=(),
+        school_nodes={},
+        school_capacities={},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+    cutoff_options = {}
+    solved = {}
+
+    def build_market(*args, **kwargs):
+        cutoff_options.update(kwargs)
+        return market
+
+    class RecordingApproximateWelfareSolver:
+        def __init__(self, zoning_solver, *, utility_scale):
+            assert zoning_solver is solver
+            solved["utility_scale"] = utility_scale
+
+        def solve(self, welfare_problem):
+            solved["problem"] = welfare_problem
+            return ZoneSolution(
+                problem=welfare_problem,
+                assignment=_split_assignment(welfare_problem),
+                status="OPTIMAL",
+            )
+
+    monkeypatch.setattr(welfare_module, "build_cutoff_market", build_market)
+    monkeypatch.setattr(
+        approximate_welfare_module,
+        "ApproximateWelfareSolver",
+        RecordingApproximateWelfareSolver,
+    )
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="approximate_welfare",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        boundary_prop=0.5,
+        remove_city_wide=True,
+        welfare_utility_scale=250,
+    ).make_strategy()
+
+    solutions = strategy.run(dataset, solver)
+
+    assert len(solutions) == 1
+    assert solved["problem"].boundary_prop == 0.5
+    assert solved["problem"].cutoff_market is market
+    assert solved["utility_scale"] == 250
+    assert cutoff_options["remove_city_wide"] is True
+    assert cutoff_options["outside_option_utility"] == 0.0
 
 
 def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
@@ -391,6 +517,120 @@ def test_cutoffs_strategy_applies_boundary_prop(monkeypatch):
     assert cutoff_options["remove_city_wide"] is True
 
 
+def test_cutoffs_strategy_passes_assigned_pair_flag(monkeypatch):
+    problem = make_grid_problem(2, 2, population_type="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(years=[23], population_type="All")
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "cp_bool"
+    solver._build_assignment_vars = object()
+    market = CutoffMarket(
+        students=(),
+        school_nodes={},
+        school_capacities={},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+    recorded = {}
+
+    class RecordingCutoffDecompositionSolver:
+        def __init__(self, zoning_solver, **options):
+            assert zoning_solver is solver
+            recorded.update(options)
+
+        def solve(self, cutoff_problem):
+            return ZoneSolution(
+                problem=cutoff_problem,
+                assignment=_split_assignment(cutoff_problem),
+                status="OPTIMAL",
+            )
+
+    monkeypatch.setattr(
+        cutoffs_module, "build_cutoff_market", lambda *args, **kwargs: market
+    )
+    monkeypatch.setattr(
+        cutoffs_module,
+        "CutoffDecompositionSolver",
+        RecordingCutoffDecompositionSolver,
+    )
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="cutoffs",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        decomposition_generate_assigned_pairs=False,
+    ).make_strategy()
+
+    strategy.run(dataset, solver)
+
+    assert recorded["generate_assigned_pairs"] is False
+
+
+@pytest.mark.parametrize(
+    ("generate_assigned_pairs", "theta_enabled"),
+    [(False, True), (True, False)],
+)
+def test_welfare_strategy_passes_decomposition_objective_flags(
+    monkeypatch,
+    generate_assigned_pairs,
+    theta_enabled,
+):
+    problem = make_grid_problem(2, 2, population_type="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(years=[23], population_type="All")
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "cp_bool"
+    market = CutoffMarket(
+        students=(),
+        school_nodes={},
+        school_capacities={},
+        zone_restricted_schools=frozenset(),
+        lottery_scale=10,
+    )
+    recorded = {}
+
+    class RecordingWelfareDecompositionSolver:
+        def __init__(self, zoning_solver, **options):
+            assert zoning_solver is solver
+            recorded.update(options)
+
+        def solve(self, welfare_problem):
+            return ZoneSolution(
+                problem=welfare_problem,
+                assignment=_split_assignment(welfare_problem),
+                status="OPTIMAL",
+            )
+
+    monkeypatch.setattr(
+        welfare_module, "build_cutoff_market", lambda *args, **kwargs: market
+    )
+    monkeypatch.setattr(
+        welfare_module,
+        "WelfareDecompositionSolver",
+        RecordingWelfareDecompositionSolver,
+    )
+    strategy = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="welfare",
+        solver="cp_bool",
+        years=[23],
+        population_type="All",
+        remove_city_wide=True,
+        decomposition_generate_assigned_pairs=generate_assigned_pairs,
+        welfare_decomposition_theta_enabled=theta_enabled,
+        welfare_submodular_access_start_enabled=True,
+        welfare_adjacent_zone_subset_improvement_enabled=True,
+    ).make_strategy()
+
+    strategy.run(dataset, solver)
+
+    assert recorded["generate_assigned_pairs"] is generate_assigned_pairs
+    assert recorded["theta_enabled"] is theta_enabled
+    assert recorded["submodular_access_start_enabled"] is True
+    assert recorded["adjacent_zone_subset_improvement_enabled"] is True
+
+
 def test_config_rejects_non_boolean_remove_city_wide():
     with pytest.raises(ValueError, match="remove_city_wide"):
         OptimizationConfig(levels=["BlockGroup_0"], remove_city_wide=1)
@@ -399,6 +639,113 @@ def test_config_rejects_non_boolean_remove_city_wide():
 def test_config_rejects_invalid_cutoff_method():
     with pytest.raises(ValueError, match="cutoff_method"):
         OptimizationConfig(levels=["BlockGroup_0"], cutoff_method="invalid")
+
+
+@pytest.mark.parametrize("value", [True, 0, -1, float("inf"), float("nan")])
+def test_config_rejects_invalid_welfare_decomposition_round_time_limit(value):
+    with pytest.raises(ValueError, match="welfare_decomposition_round_time_limit"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            welfare_decomposition_round_time_limit=value,
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "decomposition_generate_assigned_pairs",
+        "welfare_decomposition_theta_enabled",
+        "welfare_assignment_relaxation_enabled",
+        "welfare_submodular_access_start_enabled",
+        "welfare_adjacent_zone_subset_improvement_enabled",
+        "welfare_branch_price_enabled",
+        "decomposition_pressure_starts_enabled",
+        "decomposition_local_moves_enabled",
+    ],
+)
+def test_config_rejects_non_boolean_welfare_optional_phase_flags(name):
+    with pytest.raises(ValueError, match=name):
+        OptimizationConfig(levels=["BlockGroup_0"], **{name: 1})
+
+
+def test_config_requires_assigned_pairs_for_direct_demand_decomposition():
+    with pytest.raises(ValueError, match="requires.*assigned_pairs"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            strategy="welfare",
+            solver="cp_bool",
+            years=[23],
+            population_type="All",
+            remove_city_wide=True,
+            welfare_decomposition_theta_enabled=False,
+            decomposition_generate_assigned_pairs=False,
+        )
+
+
+def test_config_requires_recom_for_welfare_branch_price():
+    with pytest.raises(ValueError, match="requires zoned_recom_seed_runs"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            welfare_branch_price_enabled=True,
+        )
+
+
+def test_config_enables_shared_recom_and_welfare_branch_price_controls():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        zoned_recom_seed_runs=3,
+        welfare_recom_time_limit=90,
+        welfare_branch_price_enabled=True,
+        welfare_branch_price_time_limit=12,
+    )
+
+    strategy = config.make_strategy()
+    assert strategy.options["zoned_recom_seed_runs"] == 3
+    assert strategy.options["welfare_recom_time_limit"] == 90.0
+    assert strategy.options["welfare_branch_price_enabled"] is True
+    assert strategy.options["welfare_branch_price_time_limit"] == 12.0
+
+
+@pytest.mark.parametrize("value", [True, -1, 1.5])
+def test_config_rejects_invalid_zoned_recom_seed_runs(value):
+    with pytest.raises(ValueError, match="zoned_recom_seed_runs"):
+        OptimizationConfig(levels=["BlockGroup_0"], zoned_recom_seed_runs=value)
+
+
+@pytest.mark.parametrize(
+    "name", ["welfare_recom_time_limit", "welfare_branch_price_time_limit"]
+)
+@pytest.mark.parametrize("value", [True, -1, float("inf"), float("nan")])
+def test_config_rejects_invalid_welfare_optional_phase_time_limits(name, value):
+    with pytest.raises(ValueError, match=name):
+        OptimizationConfig(levels=["BlockGroup_0"], **{name: value})
+
+
+def test_config_allows_zero_recom_time_when_recom_is_disabled():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        zoned_recom_seed_runs=0,
+        welfare_recom_time_limit=0,
+    )
+
+    assert config.welfare_recom_time_limit == 0.0
+
+
+def test_config_rejects_zero_recom_time_when_recom_is_enabled():
+    with pytest.raises(ValueError, match="welfare_recom_time_limit"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            zoned_recom_seed_runs=1,
+            welfare_recom_time_limit=0,
+        )
+
+
+def test_config_rejects_zero_branch_price_time_limit():
+    with pytest.raises(ValueError, match="welfare_branch_price_time_limit"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            welfare_branch_price_time_limit=0,
+        )
 
 
 def test_config_passes_pair_generation_cutoff_method():
@@ -442,6 +789,30 @@ def test_cutoffs_config_rejects_unsupported_inputs(overrides, message):
         "solver": "cp_bool",
         "years": [23],
         "population_type": "All",
+    }
+    params.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        OptimizationConfig(**params)
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"solver": "cp_int"}, "cp_bool"),
+        ({"years": [22]}, "years"),
+        ({"population_type": "GE"}, "population_type"),
+        ({"remove_city_wide": False}, "remove_city_wide"),
+    ],
+)
+def test_approximate_welfare_config_rejects_unsupported_inputs(overrides, message):
+    params = {
+        "levels": ["BlockGroup_0"],
+        "strategy": "approximate_welfare",
+        "solver": "cp_bool",
+        "years": [23],
+        "population_type": "All",
+        "remove_city_wide": True,
     }
     params.update(overrides)
 

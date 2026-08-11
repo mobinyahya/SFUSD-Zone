@@ -1074,8 +1074,8 @@ zoned_cg_master_feasibility_tolerance: 1.0e-8
 zoned_cg_optimality_tolerance: 1.0e-6
 zoned_cg_mip_time_limit: 300
 zoned_cg_seed_paths: []
-zoned_cg_recom_seed_runs: 4
-zoned_cg_local_move_rounds: 100
+zoned_recom_seed_runs: 0
+zoned_cg_local_move_rounds: 0
 zoned_cg_save_mechanism: true
 zoned_cg_evaluate_stable_diagnostics: true
 ```

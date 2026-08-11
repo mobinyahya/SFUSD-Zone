@@ -161,6 +161,8 @@ def test_zoned_benders_config_and_registration():
     assert strategy.name == "zoned_benders"
     assert get_strategy("zoned_benders").name == "zoned_benders"
     assert strategy.options["zoned_benders_wall_time_limit"] == 2700
+    assert strategy.options["zoned_recom_seed_runs"] == 0
+    assert strategy.options["zoned_benders_local_move_rounds"] == 0
 
     with pytest.raises(ValueError, match="positive and finite"):
         OptimizationConfig(

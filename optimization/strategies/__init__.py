@@ -20,6 +20,7 @@ from optimization.strategies import (  # noqa: E402,F401
     overlapping,
     cutoffs,
     welfare,
+    approximate_welfare,
     zoned_column_generation,
     zoned_benders,
 )

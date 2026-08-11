@@ -289,9 +289,9 @@ class MarketGenerator(SchoolChoiceMarket):
             prefs = self.preference_generator.get_utility_model_preferences_after_truncation()
 
         else:
-            prefs = (
-                self.preference_generator.initialize_real_preferences()
-            )  # desi
+            prefs = self.preference_generator.initialize_real_preferences(
+                designate=self.config["designate"]
+            )
 
         for ctip, rounds_merged, ties in product(
             self.config["ctip-options"],

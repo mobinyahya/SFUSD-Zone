@@ -41,7 +41,8 @@ cutoff_ctip_path: /share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/E
 cutoff_lottery_scale: 20
 cutoff_gumbel_scale: 1.0
 cutoff_preference_seed: 2023
-cutoff_method: pair_generation  # decomposition | pair_generation | conditional_demand
+cutoff_method: decomposition    # decomposition | pair_generation | conditional_demand
+decomposition_generate_assigned_pairs: true
 remove_city_wide: true          # exclude city-wide schools; gate every other school by zone
 
 # --- data ingestion ---

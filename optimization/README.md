@@ -21,7 +21,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `overlapping`, `cutoffs`, `welfare`, `zoned_column_generation`, `zoned_benders` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `overlapping`, `cutoffs`, `welfare`, `approximate_welfare`, `zoned_column_generation`, `zoned_benders` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary
@@ -64,6 +64,16 @@ independently.
   isolated finite-grid DA-STB markets, and maximizes expected fixed-point
   cardinal utility. A top-rank recurrence and all-rank preference-interval cuts
   provide global upper bounds; timed runs remain `FEASIBLE` unless bounds close.
+  Setting `welfare_decomposition_theta_enabled: false` instead values generated
+  conditional demands directly and assigns residual lottery mass to the best
+  accessible ungenerated pair. Utility-gap separation activates optimistic
+  pairs until the direct-demand bound closes; assigned-pair generation is required.
+  With `hints: none`, the direct master omits both Voronoi and complete-pair
+  solution hints while retaining CP-SAT's LNS subsolvers.
+- **Approximate welfare.** The `approximate_welfare` strategy directly embeds
+  shared school-priority rejection thresholds in the zoning model. Integer
+  assignment mass follows the cumulative minimum recurrence over each student's
+  preference order, and one block-school Boolean gates all students in a block.
 - **Zoned Shi welfare.** `zoned_column_generation` jointly selects complete
   labeled zones and an optimal randomized priority mechanism inside every zone.
   It optimizes Shi's analytical expected-MNL welfare, not finite-grid stable

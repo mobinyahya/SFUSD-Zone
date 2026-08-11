@@ -94,6 +94,7 @@ preprocessing utilities take plain CLI flags. Prefix each with `uv run`.
 | `create_simulator_input.py` | CLI flags | Build simulator input tables. |
 | `recompute_lottery_number.py` | `--students --schools --output` | Recompute tie-breaker lotteries. |
 | `scripts/preprocessing/filter_programs.py` | `--data-dir --output-dir` | Drop special programs from program CSVs. |
+| `scripts/preprocessing/prepare_kg_r1_inputs.py` | `--students --programs --output-dir` | Build paired KG round-one inputs with and without special programs. |
 | `scripts/generators/generate_zone_from_pickle.py` | CLI flags | Build a zone CSV from a pickled plan. |
 | `scripts/generators/generate_fake_dataset.py` | `--out-dir --num-students --seed` | Regenerate the committed fake test dataset. |
 

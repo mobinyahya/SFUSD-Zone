@@ -32,3 +32,22 @@ def test_utility_matrix_save_path_is_optional(save_path, expected_calls):
     assert [
         call.args[0] for call in market.umodel.save_utility_matrix.call_args_list
     ] == expected_calls
+
+
+def test_real_preferences_honor_designate_policy_setting():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {
+        "utility-model": {"enable": False},
+        "designate": False,
+        "ctip-options": [],
+        "rounds-merged-options": [],
+        "ties-options": [],
+    }
+    market.priority_generator = Mock()
+    market.preference_generator = Mock()
+
+    list(market._simulate_policy("status_quo", 0))
+
+    market.preference_generator.initialize_real_preferences.assert_called_once_with(
+        designate=False
+    )

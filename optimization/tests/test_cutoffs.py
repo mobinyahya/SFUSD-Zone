@@ -402,11 +402,7 @@ def test_conditional_demand_groups_identical_block_prefix_priority_profiles():
         market,
         x,
         cutoffs,
-        {
-            100: [
-                _DemandInterval(student, 1, 4, ()) for student in students
-            ]
-        },
+        {100: [_DemandInterval(student, 1, 4, ()) for student in students]},
         4,
     )
 
@@ -414,6 +410,75 @@ def test_conditional_demand_groups_identical_block_prefix_priority_profiles():
     assert len(decomposition._conditional_demand_vars) == 1
     # One shared demand of four has multiplicity two, exceeding capacity four.
     assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
+
+
+def test_conditional_demand_updates_one_capacity_constraint_per_school():
+    students = (
+        CutoffStudent(1, 0, (100,), {100: 0}),
+        CutoffStudent(2, 2, (100,), {100: 0}),
+    )
+    market = CutoffMarket(
+        students=students,
+        school_nodes={100: 1},
+        school_capacities={100: 1},
+        zone_restricted_schools=frozenset({100}),
+        lottery_scale=4,
+    )
+    problem = SimpleNamespace(candidate_zones=lambda _node: {0, 1})
+    model = cp_model.CpModel()
+    x = {
+        (zone, node): model.NewBoolVar(f"x_{zone}_{node}")
+        for zone in range(2)
+        for node in range(3)
+    }
+    for node in range(3):
+        model.Add(x[0, node] == 1)
+        model.Add(x[1, node] == 0)
+    cutoffs = {100: model.NewIntVar(0, 4, "cutoff_100")}
+    model.Add(cutoffs[100] == 0)
+    decomposition = CutoffDecompositionSolver(
+        SimpleNamespace(options={}), generate_assigned_pairs=True
+    )
+
+    first = decomposition._activate_conditional_demand_pairs(
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        {100: [_DemandInterval(students[0], 1, 4, ())]},
+        4,
+    )
+
+    assert first == (1, 1, 1)
+    assert decomposition._conditional_capacity_constraint_count == 1
+    assert cp_model.CpSolver().Solve(model) == cp_model.OPTIMAL
+
+    second = decomposition._activate_conditional_demand_pairs(
+        model,
+        problem,
+        market,
+        x,
+        cutoffs,
+        {100: [_DemandInterval(students[1], 1, 4, ())]},
+        4,
+    )
+
+    assert second == (1, 1, 1)
+    assert decomposition._conditional_capacity_constraint_count == 1
+    assert len(decomposition._conditional_capacity_constraints) == 1
+    assert model.Validate() == ""
+    demand_vars = list(decomposition._conditional_demand_vars.values())
+    capacity_index = decomposition._conditional_capacity_constraints[100]
+    capacity_proto = model.Proto().constraints[capacity_index]
+    assert list(capacity_proto.linear.vars) == [
+        demand.Index() for demand in demand_vars
+    ]
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+    assert status == cp_model.INFEASIBLE, [
+        solver.Value(demand) for demand in demand_vars
+    ]
 
 
 def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
@@ -463,8 +528,8 @@ def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
 
     zoning_solver = get_solver("cp_bool", solve_time_limit=10, workers=1, seed=42)
     solution = CutoffDecompositionSolver(zoning_solver).solve(problem)
-    pair_solution = CutoffDecompositionSolver(
-        zoning_solver, generate_assigned_pairs=True
+    interval_solution = CutoffDecompositionSolver(
+        zoning_solver, generate_assigned_pairs=False
     ).solve(problem)
     direct_solution = zoning_solver.solve(problem)
 
@@ -472,21 +537,32 @@ def test_cutoff_decomposition_matches_exhaustive_tiny_zonings():
     assert solution.metadata["raw_objective"] == min(brute_objectives)
     assert solution.metadata["global_optimum_certified"]
     assert solution.metadata["stable"]
-    assert pair_solution.status == "OPTIMAL"
-    assert pair_solution.metadata["raw_objective"] == min(brute_objectives)
-    assert pair_solution.metadata["optimization_method"] == (
+    assert solution.metadata["decomposition_generate_assigned_pairs"] is True
+    assert solution.metadata["optimization_method"] == (
         "exact_overloaded_pair_generation"
     )
-    assert pair_solution.metadata["assigned_pair_seed_count"] == 0
-    assert pair_solution.metadata["assigned_pair_seed_cut_count"] == 0
-    assert pair_solution.metadata["conditional_demand_pair_count"] > 0
-    assert pair_solution.metadata["conditional_demand_capacity_constraint_count"] <= len(
+    assert solution.metadata["assigned_pair_seed_count"] == 0
+    assert solution.metadata["assigned_pair_seed_cut_count"] == 0
+    assert solution.metadata["conditional_demand_pair_count"] > 0
+    assert solution.metadata["conditional_demand_capacity_constraint_count"] <= len(
         problem.cutoff_market.school_capacities
     )
     assert all(
         row.get("conditional_demand_pairs_added", 0) == 0
-        for row in pair_solution.metadata["decomposition_rounds"]
+        for row in solution.metadata["decomposition_rounds"]
         if row["overloaded_schools"] == 0
+    )
+    assert not solution.metadata["decomposition_pressure_starts_enabled"]
+    assert not solution.metadata["decomposition_local_moves_enabled"]
+    assert all(
+        row["kind"] not in {"pressure", "refined_lexicographic_pressure"}
+        for row in solution.metadata["heuristic_candidates"]
+    )
+    assert interval_solution.status == "OPTIMAL"
+    assert interval_solution.metadata["raw_objective"] == min(brute_objectives)
+    assert interval_solution.metadata["decomposition_generate_assigned_pairs"] is False
+    assert interval_solution.metadata["optimization_method"] == (
+        "exact_revealed_preference_decomposition"
     )
     assert direct_solution.status == "OPTIMAL"
     assert direct_solution.metadata["raw_objective"] == min(brute_objectives)
@@ -550,6 +626,10 @@ def test_citywide_decomposition_matches_exhaustive_tiny_zonings():
     assert solution.metadata["raw_objective"] == min(brute_objectives)
     assert solution.metadata["global_optimum_certified"]
     assert solution.metadata["market_coupling"] == "global_citywide_access"
+    assert solution.metadata["decomposition_generate_assigned_pairs"] is True
+    assert solution.metadata["optimization_method"] == (
+        "exact_overloaded_pair_generation"
+    )
     assert solution.metadata["stable"]
     assert solution.metadata["zone_stable"] == {"0": True, "1": True}
 

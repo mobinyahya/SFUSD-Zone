@@ -61,6 +61,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from assignment.student_assignment.definitions.constants import (  # noqa: E402
+    SPECIAL_PROGRAMS,
+)
 from assignment.student_assignment.evaluation.match_evaluator import (  # noqa: E402
     MatchEvaluator,
 )
@@ -817,7 +820,12 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
         lookup,
         block_geometry,
     )
+    no_special_program = bool(config.get("remove-special-lps", True))
     programs = pd.read_csv(program_path)
+    if no_special_program and "program_type" in programs:
+        programs = programs.loc[
+            ~programs["program_type"].isin(SPECIAL_PROGRAMS)
+        ].copy()
     schools = pd.read_csv(school_path)
     zone = resolve_zone_definition(config)
 
@@ -841,7 +849,7 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
             high_income=110850,
             grade=None,
             year=evaluator_year,
-            no_special_program=True,
+            no_special_program=no_special_program,
             program_file=str(program_path),
             schools_latlon_path=str(school_path),
             new_ctip_path=task.new_ctip_path,

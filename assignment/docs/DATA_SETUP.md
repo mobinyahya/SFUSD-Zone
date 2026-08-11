@@ -109,6 +109,42 @@ above (used by experiment configs in `configs/custom_configs/`):
 | `program-data` | programs records CSV | `<sfusd>/Data/Cleaned/programs_{yy}{yy+1}.csv` |
 | `school-data` | schools records CSV | `<sfusd>/Data/Cleaned/schools_rehauled_{yy}{yy+1}.csv` |
 
+### Prepared 2023-24 KG round-one inputs
+
+Generate student and program inputs directly from the unmodified source files:
+
+```bash
+uv run python -m assignment.scripts.preprocessing.prepare_kg_r1_inputs \
+  --output-dir /share/data/school_choice/Data/Cleaned/choice_inputs_2324
+```
+
+The command restricts students to KG and a non-empty round-one school list. It
+does not apply a distance filter or modify any submitted choices. It writes:
+
+```text
+student_2324_kg_r1.csv
+student_2324_kg_r1_no_special.csv
+programs_2324_kg_r1.csv
+programs_2324_kg_r1_no_special.csv
+```
+
+For a config that can switch modes without changing paths, use the full student
+and program files and set `remove-special-lps: true` to exclude special-program
+students and alternatives or `false` to retain them:
+
+```yaml
+paths:
+  student-data: /share/data/school_choice/Data/Cleaned/choice_inputs_2324/student_2324_kg_r1.csv
+  program-data: /share/data/school_choice/Data/Cleaned/choice_inputs_2324/programs_2324_kg_r1.csv
+remove-special-lps: true
+```
+
+The explicit `_no_special.csv` pair is for consumers that do not apply the
+runtime option. Schools that also offer GE or language programs remain present;
+only their special-program alternatives are removed. The current MNL estimate
+file has no special-program utility columns, so `utility-model.enable: true`
+still requires the no-special mode unless new estimates are generated.
+
 ### Zone keys (needed only for zone-restricted policies)
 
 | Config key | What it points to | Notes |
