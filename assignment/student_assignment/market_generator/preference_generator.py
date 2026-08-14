@@ -51,7 +51,7 @@ class PreferenceGenerator:
             round_idxs = np.where(main_round == round)[0]
             prefs[round_idxs, :] = round_preferences[round_idxs, :]
 
-        self.pref_length = (prefs == 0).argmax(axis=1)
+        self.pref_length = np.count_nonzero(prefs, axis=1)
 
         if add_aa_schools:
             prefs = self._add_attendance_area_schools_to_preferences(prefs)
@@ -341,22 +341,23 @@ class PreferenceGenerator:
         """
         self._generate_designation_program_ordering()
 
-        combined_prefs = prefs.copy()
-        self.pref_length = np.count_nonzero(prefs, axis=1)
+        combined_prefs = np.zeros_like(prefs)
+        pref_lengths = np.zeros(self.market.n, dtype=int)
 
         for i, studentno in self.market.students.idx2studentno.items():
-            with_duplicates = (
-                list(combined_prefs[i, : self.pref_length[i]])
-                + self._designation_ordering[studentno]
+            ranked = list(
+                dict.fromkeys(int(program) for program in prefs[i] if program != 0)
             )
-            no_duplicates = list(
-                dict.fromkeys(with_duplicates)
-            )  # remove duplicates while preserving first seen order
-            combined_prefs[i, : len(no_duplicates)] = no_duplicates  # noqa
+            pref_lengths[i] = sum(
+                bool(eligible[i, program - 1]) for program in ranked
+            )
+            combined = list(
+                dict.fromkeys(ranked + self._designation_ordering[studentno])
+            )
+            combined_prefs[i, : len(combined)] = combined
 
-        self._remove_ineligible_programs(combined_prefs, eligible)
-        {value: key for key, value in self.market.programs.indices.items()}
-        return combined_prefs
+        self.pref_length = pref_lengths
+        return self._remove_ineligible_programs(combined_prefs, eligible)
 
     def _get_program_type_eligibility_matrix(self) -> np.ndarray:
         """Create a matrix of program type eligibility for each student.
@@ -401,11 +402,13 @@ class PreferenceGenerator:
         """
         filtered_preferences = np.zeros_like(preferences)
         for student_idx, student_prefs in enumerate(preferences):
-            mask = eligible[student_idx, [int(x - 1) for x in student_prefs]]
-            filtered_student_prefs = student_prefs.compress(mask)
-            filtered_preferences[student_idx, : len(filtered_student_prefs)] = (
-                filtered_student_prefs
-            )
+            program_prefs = student_prefs[student_prefs != 0].astype(int)
+            if np.any((program_prefs < 1) | (program_prefs > eligible.shape[1])):
+                raise ValueError("preference contains an invalid program index")
+            allowed_prefs = program_prefs[
+                eligible[student_idx, program_prefs - 1].astype(bool)
+            ]
+            filtered_preferences[student_idx, : len(allowed_prefs)] = allowed_prefs
         return filtered_preferences
 
     def _truncate_utility_model_preferences(

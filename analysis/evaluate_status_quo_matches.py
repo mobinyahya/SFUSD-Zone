@@ -224,6 +224,8 @@ def evaluation_tasks(
     assignments: list[Path],
     config: Mapping[str, Any],
     new_ctip_path: Path | None,
+    *,
+    first_round: bool = True,
 ) -> list[EvaluationTask]:
     student_path = resolve_config_path(config, "student-data")
     program_path = resolve_config_path(config, "program-data")
@@ -243,6 +245,7 @@ def evaluation_tasks(
             new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
             year=evaluator_year,
             no_special_program=bool(config.get("remove-special-lps", True)),
+            first_round=first_round,
         )
         for path in assignments
     ]
@@ -252,10 +255,14 @@ def evaluate_policy(
     assignments: list[Path],
     config: Mapping[str, Any],
     new_ctip_path: Path | None,
+    *,
+    first_round: bool = True,
 ) -> pd.Series:
     metrics = [
         evaluate_assignment(task)
-        for task in evaluation_tasks(assignments, config, new_ctip_path)
+        for task in evaluation_tasks(
+            assignments, config, new_ctip_path, first_round=first_round
+        )
     ]
     if len(metrics) != ITERATION_COUNT:
         raise ValueError(

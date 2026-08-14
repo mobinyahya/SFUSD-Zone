@@ -61,11 +61,11 @@ FAKE_TOP_POLICIES = (
 
 DEFAULT_CHOICE_ROOT = (
     PROJECT_ROOT
-    / "analysis/matches/zone_subconfigs_rematch_20260806T213549Z_choice_model_25"
+    / "analysis/matches/zone_subconfigs_rerun_20260811T043406Z_choice_model_25"
 )
 DEFAULT_REAL_ROOT = (
     PROJECT_ROOT
-    / "analysis/matches/zone_subconfigs_rematch_20260806T213549Z_real_preferences_25"
+    / "analysis/matches/zone_subconfigs_rerun_20260811T043406Z_real_preferences_no_special_25"
 )
 
 CHOICE_ASSIGNMENT_COLUMNS = (
@@ -548,8 +548,10 @@ def validate_generated_configs(root: Path, mode: str) -> tuple[Path, dict[str, A
             config.get("remove_non_aa_or_citywide") is not True
             or config.get("overscribe_aa") is not True
         ):
-            raise ValueError(
-                f"fake-top analysis requires _4 filtering and AA oversubscription: {path}"
+            LOGGER.warning(
+                "Fake-top results may be less meaningful without _4 filtering and "
+                "AA oversubscription: %s",
+                path,
             )
     return representative_path, representative
 

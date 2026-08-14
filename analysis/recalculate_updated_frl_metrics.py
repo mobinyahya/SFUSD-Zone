@@ -140,6 +140,7 @@ class ConfigurationTask:
     block_geometry_path: str
     all_students_path: str
     new_ctip_path: str | None
+    first_round: bool = True
 
 
 def parse_args() -> argparse.Namespace:
@@ -189,6 +190,11 @@ def parse_args() -> argparse.Namespace:
         default=min(8, os.cpu_count() or 1),
         help="Independent output columns evaluated in parallel.",
     )
+    parser.add_argument(
+        "--all-rounds",
+        action="store_true",
+        help="Evaluate every matched student instead of round-one applicants only.",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args()
 
@@ -199,6 +205,15 @@ def load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"expected a YAML mapping: {path}")
     return data
+
+
+def evaluation_first_round(config: Mapping[str, Any]) -> bool:
+    population = config.get("evaluation-population", "first_round")
+    if population == "first_round":
+        return True
+    if population == "all_rounds":
+        return False
+    raise ValueError(f"unknown evaluation population: {population!r}")
 
 
 def normalize_geoid(value: object) -> str | None:
@@ -842,7 +857,7 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
         evaluator = MatchEvaluator(
             students,
             assignment,
-            first_round=True,
+            first_round=task.first_round,
             dropout=False,
             low_income=95292,
             medium_income=95292,
@@ -953,6 +968,7 @@ def build_tasks(
     all_students_path: Path,
     new_ctip_path: Path | None,
     label_suffix: str = "",
+    first_round: bool | None = None,
 ) -> list[ConfigurationTask]:
     tasks = []
     for label in labels:
@@ -967,6 +983,11 @@ def build_tasks(
             raise ValueError(f"unknown artifact type: {artifact_type}")
         if not config_path.is_file():
             raise FileNotFoundError(config_path)
+        task_first_round = (
+            evaluation_first_round(load_yaml(config_path))
+            if first_round is None
+            else first_round
+        )
         tasks.append(
             ConfigurationTask(
                 label=f"{label}{label_suffix}",
@@ -976,6 +997,7 @@ def build_tasks(
                 block_geometry_path=str(block_geometry_path),
                 all_students_path=str(all_students_path),
                 new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
+                first_round=task_first_round,
             )
         )
     return tasks
@@ -1036,6 +1058,7 @@ def recalculate_report(
     workers: int,
     timestamp: str,
     comparison_matches_root: Path | None = None,
+    first_round: bool | None = None,
 ) -> Path:
     source = pd.read_csv(source_metrics, index_col="metric")
     labels = source.columns.tolist()
@@ -1048,6 +1071,7 @@ def recalculate_report(
         all_students_path,
         new_ctip_path,
         "__choice_model" if comparison_matches_root is not None else "",
+        first_round,
     )
     if comparison_matches_root is not None:
         comparison_tasks = build_tasks(
@@ -1059,6 +1083,7 @@ def recalculate_report(
             all_students_path,
             new_ctip_path,
             "__real_preferences",
+            first_round,
         )
         tasks = [
             task
@@ -1127,6 +1152,7 @@ def main() -> int:
                 new_ctip_path,
                 args.workers,
                 timestamp,
+                first_round=False if args.all_rounds else None,
             )
         )
     if args.dataset in {"both", "zone"}:
@@ -1144,6 +1170,7 @@ def main() -> int:
                 args.zone_real_matches_root.expanduser().resolve()
                 if args.zone_real_matches_root
                 else None,
+                first_round=False if args.all_rounds else None,
             )
         )
 

@@ -38,6 +38,45 @@ def test_defaults_use_fresh_roots_and_current_policy_order():
     assert len(outcomes.SUBCONFIGS) == 19
 
 
+def test_generated_config_validation_warns_for_unfiltered_fake_top(tmp_path, caplog):
+    base_config = {
+        "grade": "KG",
+        "year": 23,
+        "iterations": {"start": 0, "end": 25},
+        "random-seed": 2023,
+        "remove-special-lps": True,
+        "r1-only": True,
+        "paths": {
+            "student-data": "students.csv",
+            "program-data": "programs.csv",
+            "school-data": "schools.csv",
+            "estimate-path": "estimates.csv",
+        },
+        "utility-model": {"enable": True, "list-length": 10},
+        "ties-options": ["MTB"],
+    }
+    (tmp_path / "simulation_config.yaml").write_text(
+        "subconfigs:\n" + "".join(f"- {label}\n" for label in SUBCONFIGS),
+        encoding="utf-8",
+    )
+    for label in SUBCONFIGS:
+        policy_dir = tmp_path / label
+        policy_dir.mkdir()
+        config = {**base_config, "subconfig-name": label}
+        (policy_dir / "policy_config.generated.yaml").write_text(
+            json.dumps(config), encoding="utf-8"
+        )
+
+    path, _ = outcomes.validate_generated_configs(tmp_path, "choice_model")
+
+    assert path == tmp_path / outcomes.BASELINE_POLICY / "policy_config.generated.yaml"
+    assert caplog.messages == [
+        f"Fake-top results may be less meaningful without _4 filtering and AA "
+        f"oversubscription: {tmp_path / label / 'policy_config.generated.yaml'}"
+        for label in outcomes.FAKE_TOP_POLICIES
+    ]
+
+
 def test_inverse_preference_ranks_uses_full_exact_program_order():
     preferences = np.array([[3, 1, 2], [2, 3, 1]])
 

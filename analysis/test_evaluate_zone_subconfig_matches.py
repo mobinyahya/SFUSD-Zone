@@ -56,6 +56,18 @@ def test_write_metrics_csv_preserves_requested_subconfig_order(tmp_path):
     )
 
 
+def test_write_metrics_csv_accepts_scope_suffix(tmp_path):
+    output = zone_subconfigs.write_metrics_csv(
+        {"policy": pd.Series({"metric one": 1})},
+        tmp_path,
+        suffix="_all_rounds",
+    )
+
+    assert output.name.startswith(
+        "zone_subconfigs_25_eval_assignment_full_all_rounds_"
+    )
+
+
 def test_build_simulation_config_applies_real_preference_settings(tmp_path):
     students = tmp_path / "student_2324.csv"
     result = zone_subconfigs.build_simulation_config(
@@ -91,3 +103,30 @@ def test_build_simulation_config_can_retain_special_programs(tmp_path):
 
     assert result["utility-model"]["enable"] is False
     assert result["remove-special-lps"] is False
+
+
+def test_build_simulation_config_selects_policies_and_program_data(tmp_path):
+    programs = tmp_path / "programs.csv"
+    result = zone_subconfigs.build_simulation_config(
+        {"paths": {"zone-files": {}}},
+        tmp_path / "matches",
+        tmp_path / "small.csv",
+        tmp_path / "medium.csv",
+        subconfigs=("policy_a", "policy_b"),
+        program_data=programs,
+    )
+
+    assert result["subconfigs"] == ["policy_a", "policy_b"]
+    assert result["paths"]["program-data"] == str(programs)
+
+
+def test_build_simulation_config_records_all_round_evaluation(tmp_path):
+    result = zone_subconfigs.build_simulation_config(
+        {"paths": {"zone-files": {}}},
+        tmp_path / "matches",
+        tmp_path / "small.csv",
+        tmp_path / "medium.csv",
+        evaluation_population="all_rounds",
+    )
+
+    assert result["evaluation-population"] == "all_rounds"

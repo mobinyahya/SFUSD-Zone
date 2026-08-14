@@ -84,6 +84,7 @@ class EvaluationTask:
     new_ctip_path: str | None
     year: int
     no_special_program: bool = True
+    first_round: bool = True
 
 
 @dataclass(frozen=True)
@@ -398,7 +399,7 @@ def evaluate_assignment(task: EvaluationTask) -> pd.Series:
     evaluator = MatchEvaluator(
         _load_students(task.student_path),
         assignment,
-        first_round=True,
+        first_round=task.first_round,
         dropout=False,
         low_income=95292,
         medium_income=95292,

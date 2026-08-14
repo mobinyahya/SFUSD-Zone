@@ -210,9 +210,11 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
         encoding="utf-8",
     )
 
+    first_round_values = []
+
     class FakeEvaluator:
         def __init__(self, *args, **kwargs):
-            pass
+            first_round_values.append(kwargs["first_round"])
 
         def eval_assignment_full(self):
             return pd.Series({"base metric": 1.0})
@@ -231,6 +233,7 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
         block_geometry_path=str(tmp_path / "blocks.zip"),
         all_students_path=str(students),
         new_ctip_path=None,
+        first_round=False,
     )
 
     _, result = recalculate.evaluate_configuration(task)
@@ -248,6 +251,7 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
         [],
     ]
     assert pd.isna(result[recalculate.FRL_MAX_DEV_METRIC])
+    assert first_round_values == [False] * recalculate.ITERATION_COUNT
 
 
 def test_output_path_adds_updated_frl_before_new_timestamp(tmp_path):
@@ -278,3 +282,31 @@ def test_build_tasks_adds_preference_label_suffix(tmp_path):
     )
 
     assert [task.label for task in tasks] == ["policy__real_preferences"]
+
+
+@pytest.mark.parametrize(
+    ("population", "expected"),
+    [("first_round", True), ("all_rounds", False)],
+)
+def test_build_tasks_reads_evaluation_population(tmp_path, population, expected):
+    root = tmp_path / "matches"
+    policy_root = root / "policy"
+    policy_root.mkdir(parents=True)
+    (policy_root / "policy_config.generated.yaml").write_text(
+        f"evaluation-population: {population}\n",
+        encoding="utf-8",
+    )
+    for iteration in range(recalculate.ITERATION_COUNT):
+        (policy_root / f"assignment_iteration{iteration}.csv").touch()
+
+    tasks = recalculate.build_tasks(
+        ["policy"],
+        root,
+        "zone",
+        tmp_path / "frl.csv",
+        tmp_path / "blocks.zip",
+        tmp_path / "students.csv",
+        None,
+    )
+
+    assert tasks[0].first_round is expected

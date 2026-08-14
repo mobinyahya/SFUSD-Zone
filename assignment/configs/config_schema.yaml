@@ -9,6 +9,7 @@ utility-model:
 save-assignment: bool()
 random-seed: int()
 r1-only: bool(required=False)
+evaluation-population: enum('first_round', 'all_rounds', required=False)
 
 rounds-merged-options: list(int(), str())
 read-lotteries: bool(required=False)

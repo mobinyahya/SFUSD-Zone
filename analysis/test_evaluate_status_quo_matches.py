@@ -74,3 +74,23 @@ def test_write_metrics_csv_matches_reference_layout(tmp_path):
     frame = pd.read_csv(output, index_col="metric")
     assert list(frame.columns) == ["status_quo+reserves_06frl", "status_quo"]
     assert frame.loc["metric one"].tolist() == [1.5, 2.5]
+
+
+def test_evaluation_tasks_can_include_all_rounds(tmp_path):
+    assignments = [tmp_path / "assignment.csv"]
+    paths = {
+        key: tmp_path / f"{key}.csv"
+        for key in ("student-data", "program-data", "school-data")
+    }
+    for path in paths.values():
+        path.touch()
+
+    tasks = status_quo.evaluation_tasks(
+        assignments,
+        {"paths": {key: str(path) for key, path in paths.items()}},
+        None,
+        first_round=False,
+    )
+
+    assert len(tasks) == 1
+    assert tasks[0].first_round is False

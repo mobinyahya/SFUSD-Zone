@@ -9,6 +9,7 @@ Last modified: November 16th, 2023
 
 import json
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -422,3 +423,44 @@ def test_programs_for_area_id_home_based(
         for area in zone:
             actual = z.programs_for_area_id(0, 0, 0, area)
             assert np.equal(expected_programs_vec, actual).all()
+
+
+def test_zone_eligibility_does_not_mutate_zone_priority(aa_config):
+    base_priority = np.array([[1, 0, 0], [0, 1, 0]])
+    sibling = np.array([[0, 0, 1], [1, 0, 0]])
+    students = SimpleNamespace(
+        n=2,
+        studentno2idx={10: 0, 11: 1},
+        student_data=pd.DataFrame(
+            {
+                "idschoolattendance": [101, 102],
+                "census_blockgroup": [1001, 1002],
+                "census_block": [10001, 10002],
+                "ctip1": [np.nan, 1],
+            },
+            index=pd.Index([10, 11], name="studentno"),
+        ),
+        sibling=lambda _programs: sibling,
+    )
+    zones = Zones(
+        {
+            **aa_config,
+            "sibling-access": True,
+            "restrict-zone": "CTIP_access",
+        },
+        pd.DataFrame(),
+        SimpleNamespace(num_programs=3),
+        students,
+    )
+    zones.programs_for_area_id = (
+        lambda _aa, _bg, _block, studentno: base_priority[
+            students.studentno2idx[studentno]
+        ].copy()
+    )
+
+    priority = zones.zone_priority_matrix
+    eligibility = zones.zone_eligibility_matrix
+
+    np.testing.assert_array_equal(eligibility, [[1, 0, 1], [1, 1, 1]])
+    np.testing.assert_array_equal(priority, base_priority)
+    np.testing.assert_array_equal(zones.zone_priority_matrix, base_priority)

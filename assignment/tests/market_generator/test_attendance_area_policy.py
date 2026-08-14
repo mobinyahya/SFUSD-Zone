@@ -224,6 +224,79 @@ def test_drop_below_aa_keeps_full_ranked_length_before_designation():
     np.testing.assert_array_equal(generator.pref_length, [4, 3, 3])
 
 
+def test_designation_filters_programs_and_updates_ranked_boundary():
+    initial_preferences = np.array(
+        [
+            [1, 3, 0, 0],
+            [4, 4, 0, 0],
+            [4, 3, 2, 2],
+        ]
+    )
+    eligible = np.array(
+        [
+            [1, 1, 0, 1],
+            [1, 1, 1, 0],
+            [1, 1, 1, 1],
+        ],
+        dtype=bool,
+    )
+    generator = PreferenceGenerator(_preference_market({}, initial_preferences))
+    generator._generate_designation_program_ordering = Mock()
+    generator._designation_ordering = {
+        10: [3, 2, 2, 4, 1],
+        11: [4, 2, 3, 3],
+        12: [4, 3],
+    }
+
+    preferences = generator._add_designation_programs_to_preferences(
+        initial_preferences, eligible
+    )
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                [1, 2, 4, 0],
+                [2, 3, 0, 0],
+                [4, 3, 2, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [1, 0, 3])
+
+
+def test_remove_ineligible_programs_treats_zero_as_padding():
+    preferences = np.array(
+        [
+            [1, 0, 3, 2],
+            [4, 0, 0, 0],
+            [0, 0, 0, 0],
+        ]
+    )
+    eligible = np.array(
+        [
+            [1, 1, 0, 1],
+            [0, 0, 0, 1],
+            [0, 0, 0, 1],
+        ],
+        dtype=bool,
+    )
+    generator = PreferenceGenerator(_preference_market({}, preferences))
+
+    filtered = generator._remove_ineligible_programs(preferences, eligible)
+
+    np.testing.assert_array_equal(
+        filtered,
+        np.array(
+            [
+                [1, 2, 0, 0],
+                [4, 0, 0, 0],
+                [0, 0, 0, 0],
+            ]
+        ),
+    )
+
+
 def test_remove_non_aa_or_citywide_filters_real_preferences_by_school():
     initial_preferences = np.array(
         [

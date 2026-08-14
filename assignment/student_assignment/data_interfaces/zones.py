@@ -503,9 +503,9 @@ class Zones:
         if self._zone_eligibility_matrix is not None:
             return self._zone_eligibility_matrix
 
-        in_zone = self.zone_priority_matrix
+        in_zone = self.zone_priority_matrix.copy()
         ctip = np.outer(
-            self.students.student_data.ctip1.to_numpy(dtype=int),
+            self.students.student_data.ctip1.fillna(0).to_numpy(dtype=int),
             np.ones(self.programs.num_programs, dtype=int),
         )
         sibling_array = self.students.sibling(self.programs)
@@ -514,4 +514,4 @@ class Zones:
         in_zone += int(self.config["restrict-zone"] == "CTIP_access") * ctip
         in_zone = np.clip(in_zone, 0, 1)
         self._zone_eligibility_matrix = in_zone
-        return self.zone_eligibility_matrix
+        return self._zone_eligibility_matrix
