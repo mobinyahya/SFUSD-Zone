@@ -61,34 +61,16 @@ Everyone who runs `uv sync` gets the identical pinned environment, so
 dependencies stay synchronized across users. To add an external dependency, run
 `uv add <package-name>`.
   
-### Setting up Local Files
-  
-It is quite possible that you will be unable to open some file in the codebase because a "file was not found". In this case, you should move a copy of the file to the cluster, and then update the path with the configs to point to the cluster. First check to see if the file is present in the `shared` file directory, where all the files are located. That is, run `cd /share/data/school_choice/` and see if the file lives in there.
-  
-For example, you will have to copy the dropout rates file locally from the Cluster's shared directory, which you can do with
-  
-```
-Note: Only run these two commands after running the two commands later in this section.
-$ mkdir ~/sfusd/sfusd-local-data/Data/Precomputed
-$ cp /share/data/school_choice/Data/Precomputed/student_program_distances_1819.csv ~/sfusd/sfusd-local-data/Data/Precomputed/student_program_distances_dropoptout_1819.csv
-```
-  
-Otherwise, you should add the file locally. Any Unix system comes with SCP, which will allow you to move files to folders onto the clusters. If you installed putty for windows, it should also come with SCP. Using SCP is fairly simple -- it's mostly cd'ing to the directory that contains the files you want to move, and running the right command. For example, I ran this command to move some local data files I had, into a folder I called `sfusd-local-data` in my `sfusd` directory.
+### Data Files
 
-That is, on my local machine I went to the Dropbox SFUSD folder, went into the starter-data directory, and ran
-  
-```
-$ cd ~/Dropbox/SFUSD/starter-data  
-$ scp * $USER@soal-cluster.stanford.edu:~/sfusd/sfusd-local-data
-```
-
-For some more tricks, visit https://www.simplified.guide/ssh/copy-file.
+Application source data is read directly from `/share/data/school_choice/`.
+Do not create per-user copies or change generated configs to point into a home
+directory. If a required file is missing, add it to the documented shared
+location in `DATA_FOLDERS.md`.
 
 ### Setting up your Config
   
-The first time you run any entry point (e.g. `uv run python run_custom_config.py --config-path ...`), the `Configerator` automatically populates your personal `configs/<sunet-id>.config.yaml` by merging `base_config.yaml` with the environment-specific path config. 
-  
-Then, you can go into the `configs` subdirectory in `simulator_engine`, and you should see `<sunet-id>.config.yaml`. Open this file, and change your config to replace my username (hguru) with your username in the paths below "Local paths" (if you're wondering how to edit files on the cluster, look below at the Development Workflow section, to learn how to write code directly on the cluster).
+The first time you run any entry point (e.g. `uv run python run_custom_config.py --config-path ...`), the `Configerator` automatically populates your personal `configs/<sunet-id>.config.yaml` by merging `base_config.yaml` with the environment-specific path config. Both path configs use shared source data and repository-relative output directories, so no username-specific path edits are required.
   
 # Life after the setup
   

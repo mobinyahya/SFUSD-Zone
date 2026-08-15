@@ -89,12 +89,13 @@ class DeferredAcceptance_with_GuardRails:
                 iClass = student.iClass
 
                 school_index = student.propose() - 1
-                priority = student.priorities[int(school_index)]
-                school = self.schools[int(school_index)]
 
-                if self.students[i].check_exhausted(school_index):
+                if student.check_exhausted(school_index):
                     unmatched_students.discard(i)
                     continue
+
+                priority = student.priorities[int(school_index)]
+                school = self.schools[int(school_index)]
 
                 if priority < 0:
                     continue

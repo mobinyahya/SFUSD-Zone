@@ -29,14 +29,10 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
             kind="frl",
             value=problem.frl,
             lower_ratio=(
-                problem.district_frl - problem.frl_dev
-                if problem.frl_dev >= 0
-                else None
+                problem.district_frl - problem.frl_dev if problem.frl_dev >= 0 else None
             ),
             upper_ratio=(
-                problem.district_frl + problem.frl_dev
-                if problem.frl_dev >= 0
-                else None
+                problem.district_frl + problem.frl_dev if problem.frl_dev >= 0 else None
             ),
         ),
     ]
@@ -47,9 +43,7 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
             BalanceConstraint(
                 kind="capacity",
                 value=problem.capacity,
-                lower_ratio=1.0 - problem.shortage
-                if problem.shortage >= 0
-                else None,
+                lower_ratio=1.0 - problem.shortage if problem.shortage >= 0 else None,
                 upper_ratio=1.0 + problem.overage if problem.overage >= 0 else None,
             ),
         )
@@ -67,30 +61,6 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
             )
 
     return constraints
-
-
-def enforced_balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
-    """Return graph-level rows that remain active for this problem."""
-    return [
-        constraint
-        for constraint in balance_constraints(problem)
-        if not (
-            problem.has_school_capacity_recourse
-            and constraint.kind == "capacity"
-        )
-    ]
-
-
-def rounded_balance_coefficient(
-    problem: ZoneProblem,
-    constraint: BalanceConstraint,
-    node: int,
-    ratio: float,
-) -> int:
-    """Return the per-node coefficient used by the CP-SAT balance rows."""
-    return round(
-        100 * (constraint.value(node) - ratio * problem.students(node))
-    )
 
 
 def balance_terms(

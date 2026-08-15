@@ -23,8 +23,12 @@ from collections.abc import Mapping
 import networkx as nx
 import pandas as pd
 
-from Config.Constants import get_dropbox_path
+from Config.Constants import SFUSD_DATA_ROOT
 from optimization.levels import LevelSpec
+
+CROSSWALK_PATH = (
+    f"{SFUSD_DATA_ROOT}/Zones/Optimization/block_blockgroup_tract.csv"
+)
 
 
 def base_area_assignment(G: nx.Graph, assignment: dict[int, int]) -> dict[int, int]:
@@ -47,10 +51,9 @@ def _node_base_ids(G: nx.Graph, node: int) -> list[int]:
     return list(attrs["block_ids"])
 
 
-def _load_block_to_blockgroup(is_local: bool = False) -> dict[int, int]:
+def _load_block_to_blockgroup() -> dict[int, int]:
     """Load the geographic crosswalk used for Block/BlockGroup conversion."""
-    path = f"{get_dropbox_path(is_local)}/Optimization/block_blockgroup_tract.csv"
-    crosswalk = pd.read_csv(path).dropna(subset=["Block", "BlockGroup"])
+    crosswalk = pd.read_csv(CROSSWALK_PATH).dropna(subset=["Block", "BlockGroup"])
     return {
         int(row.Block): int(row.BlockGroup)
         for row in crosswalk[["Block", "BlockGroup"]].itertuples(index=False)

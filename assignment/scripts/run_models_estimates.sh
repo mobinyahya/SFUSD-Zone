@@ -32,7 +32,20 @@
 #   --dry-run         Print commands without executing
 
 set -euo pipefail
-trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
+
+_cleanup_jobs() {
+    local status=$?
+    local job_pids
+    trap - EXIT INT TERM
+    job_pids="$(jobs -p)"
+    if [[ -n "$job_pids" ]]; then
+        kill $job_pids 2>/dev/null || true
+    fi
+    exit "$status"
+}
+trap _cleanup_jobs EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -66,9 +79,19 @@ fi
 # shellcheck source=/dev/null
 source "$SETTINGS_FILE"
 
+: "${SIMULATION_WORKERS:=1}"
+if [[ ! "$SIMULATION_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "SIMULATION_WORKERS must be a positive integer: $SIMULATION_WORKERS" >&2
+    exit 1
+fi
+if [[ ! "$ITER_START" =~ ^[0-9]+$ || ! "$ITER_END" =~ ^[0-9]+$ ]] \
+    || (( ITER_END <= ITER_START )); then
+    echo "ITER_START and ITER_END must define a nonempty integer range: ${ITER_START}..${ITER_END}" >&2
+    exit 1
+fi
+
 # -- Helpers -----------------------------------------------------------------
-log()   { echo "[$(date '+%H:%M:%S')] $*"; }
-maybe() { $DRY_RUN && echo "  [DRY-RUN] $*" || eval "$*"; }
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # Resolve a possibly-relative path against the project root.
 _abs() {
@@ -96,23 +119,25 @@ for test_spec in "${TEST_SPECS[@]}"; do
     ENTRIES+=("status_quo_real_${test_year}::${test_year}:${year_int}:status_quo_real")
 done
 
-for model_family in "${MODEL_FAMILIES[@]}"; do
-    for k in "${K_VALUES[@]}"; do
-        base="${model_family}_${TRAIN_YEAR}_k${k}_${MODEL_SUFFIX}"
-        # For each test_year, emit one entry per list-length variant.
-        for test_spec in "${TEST_SPECS[@]}"; do
-            IFS=':' read -r test_year year_int sample_tag <<< "$test_spec"
-            label_suffix=""
-            [[ "$sample_tag" == "is" ]] && label_suffix="_${test_year}"
-            for variant in "${LIST_LENGTH_VARIANTS[@]}"; do
-                ll_suffix="${variant%%:*}"
-                ll_expr="${variant#*:}"
-                run_label="${base}${label_suffix}_${ll_suffix}"
-                ENTRIES+=("${run_label}:${base}:${test_year}:${year_int}:status_quo:${ll_expr}")
+if [[ ${#MODEL_FAMILIES[@]} -gt 0 ]]; then
+    for model_family in "${MODEL_FAMILIES[@]}"; do
+        for k in "${K_VALUES[@]}"; do
+            base="${model_family}_${TRAIN_YEAR}_k${k}_${MODEL_SUFFIX}"
+            # For each test_year, emit one entry per list-length variant.
+            for test_spec in "${TEST_SPECS[@]}"; do
+                IFS=':' read -r test_year year_int sample_tag <<< "$test_spec"
+                label_suffix=""
+                [[ "$sample_tag" == "is" ]] && label_suffix="_${test_year}"
+                for variant in "${LIST_LENGTH_VARIANTS[@]}"; do
+                    ll_suffix="${variant%%:*}"
+                    ll_expr="${variant#*:}"
+                    run_label="${base}${label_suffix}_${ll_suffix}"
+                    ENTRIES+=("${run_label}:${base}:${test_year}:${year_int}:status_quo:${ll_expr}")
+                done
             done
         done
     done
-done
+fi
 # ============================================================================
 
 _parse_entry() {
@@ -129,8 +154,17 @@ _is_done() {
     local run_label="$1"
     local subconfig="$2"
     local done_marker
+    local iteration
     done_marker="$(_run_folder "$run_label")/${subconfig}"
-    [[ -d "$done_marker" ]] && [[ -n "$(ls -A "$done_marker" 2>/dev/null)" ]]
+    [[ -d "$done_marker" ]] || return 1
+
+    for (( iteration=ITER_START; iteration<ITER_END; iteration++ )); do
+        if [[ -z "$(find "$done_marker" -type f \
+            -name "*_iteration${iteration}.csv" -print -quit 2>/dev/null)" ]]; then
+            return 1
+        fi
+    done
+    return 0
 }
 
 # -- Step 1: Generate custom configs -----------------------------------------
@@ -162,7 +196,7 @@ if $DO_GENERATE; then
 
         log "  Writing: $cfg_file"
         cat > "$cfg_file" << YAML
-grade: ${GRADE}
+grade: '${GRADE}'
 iterations:
   end: ${ITER_END}
   start: ${ITER_START}
@@ -211,9 +245,53 @@ if $DO_SIMULATE; then
 
     mkdir -p "$LOG_DIR"
 
+    # Validate every config before starting any work. Completed runs do not
+    # require their source config when --skip-existing is active.
+    if ! $DRY_RUN; then
+        MISSING_CONFIGS=()
+        for entry in "${ENTRIES[@]}"; do
+            _parse_entry "$entry"
+            if $SKIP_EXISTING && _is_done "$RUN_LABEL" "$SUBCONFIG"; then
+                continue
+            fi
+            cfg_file="${CFG_DIR}/${RUN_LABEL}.yaml"
+            if [[ ! -f "$cfg_file" ]]; then
+                MISSING_CONFIGS+=("$cfg_file")
+            fi
+        done
+        if [[ ${#MISSING_CONFIGS[@]} -gt 0 ]]; then
+            log "ERROR: ${#MISSING_CONFIGS[@]} simulation config(s) are missing:"
+            for cfg_file in "${MISSING_CONFIGS[@]}"; do
+                echo "  - $cfg_file" >&2
+            done
+            exit 1
+        fi
+    fi
+
     PIDS=()
+    PID_LABELS=()
+    PID_SUBCONFIGS=()
     FAILED_LABELS=()
 
+    _wait_for_simulation_batch() {
+        local i pid label subconfig
+        for (( i=0; i<${#PIDS[@]}; i++ )); do
+            pid="${PIDS[$i]}"
+            label="${PID_LABELS[$i]}"
+            subconfig="${PID_SUBCONFIGS[$i]}"
+            if ! wait "$pid"; then
+                FAILED_LABELS+=("$label")
+            elif ! _is_done "$label" "$subconfig"; then
+                log "  ERROR: Incomplete assignment output: $label"
+                FAILED_LABELS+=("$label")
+            fi
+        done
+        PIDS=()
+        PID_LABELS=()
+        PID_SUBCONFIGS=()
+    }
+
+    log "  Simulation concurrency limit: $SIMULATION_WORKERS"
     for entry in "${ENTRIES[@]}"; do
         _parse_entry "$entry"
         cfg_file="${CFG_DIR}/${RUN_LABEL}.yaml"
@@ -224,33 +302,28 @@ if $DO_SIMULATE; then
             continue
         fi
 
-        if [[ ! -f "$cfg_file" && "$DRY_RUN" == "false" ]]; then
-            log "  WARNING: Config not found: $cfg_file -- skipping."
-            continue
-        fi
-
         log "  Starting: $RUN_LABEL"
         if $DRY_RUN; then
             echo "  [DRY-RUN] $PYTHON_CMD run_custom_config.py --config-path $cfg_file > $log_file 2>&1 &"
         else
             $PYTHON_CMD run_custom_config.py --config-path "$cfg_file" > "$log_file" 2>&1 &
-            PIDS+=($!)
+            PIDS+=("$!")
+            PID_LABELS+=("$RUN_LABEL")
+            PID_SUBCONFIGS+=("$SUBCONFIG")
+            if [[ ${#PIDS[@]} -ge "$SIMULATION_WORKERS" ]]; then
+                _wait_for_simulation_batch
+            fi
         fi
     done
 
     if ! $DRY_RUN; then
-        log "  Waiting for all simulations to finish..."
-        i=0
-        for pid in "${PIDS[@]}"; do
-            entry="${ENTRIES[$i]:-unknown}"
-            IFS=':' read -r lbl _ _ _ _ <<< "$entry"
-            wait "$pid" || FAILED_LABELS+=("$lbl")
-            (( i++ )) || true
-        done
+        log "  Waiting for remaining simulations to finish..."
+        _wait_for_simulation_batch
         if [[ ${#FAILED_LABELS[@]} -gt 0 ]]; then
-            log "WARNING: ${#FAILED_LABELS[@]} simulation(s) failed:"
+            log "ERROR: ${#FAILED_LABELS[@]} simulation(s) failed or produced incomplete output:"
             for lbl in "${FAILED_LABELS[@]}"; do echo "  - $lbl"; done
             log "Check logs in ${LOG_DIR}/"
+            exit 1
         else
             log "  All simulations completed successfully."
         fi
@@ -267,9 +340,6 @@ if $DO_ANALYZE; then
 output_dir: ${OUTPUT_DIR}
 HEADER
 
-        if [[ -n "${ANALYSIS_SCHOOLS_DATA:-}" ]]; then
-            echo "schools_data: $(_abs "$ANALYSIS_SCHOOLS_DATA")" >> "$ANALYSIS_CFG"
-        fi
         if [[ -n "${ANALYSIS_NEW_CTIP_PATH:-}" ]]; then
             echo "new_ctip_path: $(_abs "$ANALYSIS_NEW_CTIP_PATH")" >> "$ANALYSIS_CFG"
         fi
@@ -278,15 +348,18 @@ HEADER
         echo "runs:" >> "$ANALYSIS_CFG"
 
         RUNS_TO_ANALYZE=0
+        INCOMPLETE_RUNS=()
         for entry in "${ENTRIES[@]}"; do
             _parse_entry "$entry"
             if ! _is_done "$RUN_LABEL" "$SUBCONFIG"; then
-                log "  SKIP metrics (no simulation output): $RUN_LABEL"
+                log "  ERROR: Missing expected assignment iterations: $RUN_LABEL"
+                INCOMPLETE_RUNS+=("$RUN_LABEL")
                 continue
             fi
             run_folder="$(_run_folder "$RUN_LABEL")"
             local_student="$(_abs "${STUDENT_DIR}/student_${TEST_YEAR}_filtered.csv")"
             local_program="$(_abs "${PROGRAM_DIR}/programs_without_specialprogs_${TEST_YEAR}.csv")"
+            school_data="${SCHOOL_DATA_DIR_ABS}/schools_rehauled_${TEST_YEAR}.csv"
 
             cat >> "$ANALYSIS_CFG" << YAML
   - label: "${RUN_LABEL}"
@@ -294,10 +367,16 @@ HEADER
     year: ${YEAR_INT}
     program_data: ${local_program}
     student_data: ${local_student}
+    schools_data: ${school_data}
 
 YAML
             (( RUNS_TO_ANALYZE++ )) || true
         done
+
+        if [[ ${#INCOMPLETE_RUNS[@]} -gt 0 ]]; then
+            log "ERROR: Refusing partial analysis; ${#INCOMPLETE_RUNS[@]} run(s) are incomplete."
+            exit 1
+        fi
 
         # Keeps the metric order identical across runs of this pipeline.
         cat >> "$ANALYSIS_CFG" << 'ROW_ORDER'
@@ -407,14 +486,26 @@ ROW_ORDER
 
     # -- Step 4: Run analyze_trends -------------------------------------------
     log "=== Step 4: Running analyze_trends ==="
-    if [[ "${RUNS_TO_ANALYZE:-0}" -eq 0 ]] && ! $DRY_RUN; then
-        log "  SKIP analyze_trends (no runs ready)"
+    EXCEL_PATH="${OUTPUT_DIR}/metrics_comparison.xlsx"
+    if $DRY_RUN; then
+        echo "  [DRY-RUN] $PYTHON_CMD scripts/analysis/analyze_trends.py --config $ANALYSIS_CFG"
     else
-        maybe "$PYTHON_CMD scripts/analysis/analyze_trends.py --config $ANALYSIS_CFG"
+        if [[ "${RUNS_TO_ANALYZE:-0}" -eq 0 ]]; then
+            log "ERROR: No complete runs are available for analysis."
+            exit 1
+        fi
+        rm -f "$EXCEL_PATH"
+        if ! $PYTHON_CMD scripts/analysis/analyze_trends.py --config "$ANALYSIS_CFG"; then
+            log "ERROR: analyze_trends failed."
+            exit 1
+        fi
+        if [[ ! -f "$EXCEL_PATH" ]]; then
+            log "ERROR: Analysis completed without producing $EXCEL_PATH"
+            exit 1
+        fi
     fi
 
     # -- Step 5: Add per-year sheets to the Excel -----------------------------
-    EXCEL_PATH="${OUTPUT_DIR}/metrics_comparison.xlsx"
     if $DRY_RUN; then
         echo "  [DRY-RUN] Add per-year sheets to $EXCEL_PATH"
     elif [[ -f "$EXCEL_PATH" ]]; then

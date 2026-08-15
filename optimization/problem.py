@@ -40,56 +40,6 @@ class NoCandidateZonesError(ValueError):
         super().__init__(problem.no_candidate_zones_message(node))
 
 
-@dataclass(frozen=True)
-class CutoffStudent:
-    """One individual applicant in a cutoff market."""
-
-    studentno: int
-    node: int
-    preferences: tuple[int, ...]
-    priorities: dict[int, int]
-    utilities: dict[int, float] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class CutoffMarket:
-    """School-level data needed by the CP-SAT cutoff formulation."""
-
-    students: tuple[CutoffStudent, ...]
-    school_nodes: dict[int, int]
-    school_capacities: dict[int, int]
-    zone_restricted_schools: frozenset[int]
-    lottery_scale: int
-    outside_option_utility: float = 0.0
-    metadata: dict = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class AnalyticalWelfareSegment:
-    """One observable mass point in the analytical random-utility market."""
-
-    segment_id: int
-    node: int
-    mass: float
-    eligible_schools: tuple[int, ...]
-    priorities: dict[int, float]
-    systematic_utilities: dict[int, float]
-    outside_utility: float = 0.0
-
-
-@dataclass(frozen=True)
-class AnalyticalWelfareMarket:
-    """Primitives for expected-MNL welfare in isolated DA-STB markets."""
-
-    segments: tuple[AnalyticalWelfareSegment, ...]
-    school_nodes: dict[int, int]
-    school_capacities: dict[int, int]
-    zone_restricted_schools: frozenset[int]
-    beta: float
-    lottery_scale: int
-    metadata: dict = field(default_factory=dict)
-
-
 @dataclass
 class ZoneProblem:
     """One optimization instance.
@@ -151,8 +101,6 @@ class ZoneProblem:
     candidates: Optional[dict[int, set[int]]] = None
     hint: Optional[dict[int, int]] = None
     choice_objective: Optional[ChoiceObjective] = None
-    cutoff_market: Optional[CutoffMarket] = None
-    analytical_welfare_market: Optional[AnalyticalWelfareMarket] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(
@@ -179,14 +127,6 @@ class ZoneProblem:
     @property
     def A(self) -> int:
         return self.G.number_of_nodes()
-
-    @property
-    def has_school_capacity_recourse(self) -> bool:
-        """Whether school-level market constraints replace graph capacity balance."""
-        return (
-            self.cutoff_market is not None
-            or self.analytical_welfare_market is not None
-        )
 
     def neighbors(self, node: int) -> list[int]:
         return list(self.G.neighbors(node))

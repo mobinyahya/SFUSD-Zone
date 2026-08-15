@@ -757,6 +757,12 @@ def _install_fake_market_generator(monkeypatch):
         def _set_up_save_folder(self, assignment_path):
             self.output_assignment_path = assignment_path
 
+        def reconfigure(self, config, assignment_path=None):
+            self.config = config
+            self.priority_generator = FakePriorityGenerator(self)
+            self.preference_generator = FakePreferenceGenerator(self)
+            self._set_up_save_folder(assignment_path)
+
         def create_iterations_generator(self):
             FakeMarketGenerator.seen.append(
                 {

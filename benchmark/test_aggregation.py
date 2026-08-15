@@ -185,8 +185,8 @@ def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
     }
 
 
-def test_overlapping_stages_reconstruct_stage_specific_centroids(tmp_path):
-    run_dir = tmp_path / "overlapping"
+def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
+    run_dir = tmp_path / "single-zone"
     run_dir.mkdir()
     base_problem = make_grid_problem(3, 3)
     base_problem.level = LevelSpec("Block", 0)
@@ -194,10 +194,6 @@ def test_overlapping_stages_reconstruct_stage_specific_centroids(tmp_path):
     child_problem = dataset.problem_for(
         "Block_0",
         centroid_school_ids=[100],
-    )
-    final_problem = dataset.problem_for(
-        "Block_0",
-        centroid_school_ids=[100, 200],
     )
     solutions = [
         ZoneSolution(
@@ -210,17 +206,11 @@ def test_overlapping_stages_reconstruct_stage_specific_centroids(tmp_path):
                 "centroid_school_id": 100,
             },
         ),
-        ZoneSolution(
-            problem=final_problem,
-            assignment=_assignment(),
-            status="FEASIBLE",
-            wall_time=0.2,
-            metadata={"centroid_school_ids": [100, 200]},
-        ),
     ]
     config = OptimizationConfig(
         levels=["Block_0"],
-        strategy="overlapping",
+        strategy="single",
+        solver="cp_single_zone",
         workers=1,
         graphs_dir=str(tmp_path / "graphs"),
     )
@@ -252,7 +242,6 @@ def test_overlapping_stages_reconstruct_stage_specific_centroids(tmp_path):
     loaded, _, _ = load_solutions(str(run_dir), dataset=dataset)
 
     assert loaded[0].problem.centroids == [0]
-    assert loaded[1].problem.centroids == [0, 8]
 
 
 def test_saved_config_ignores_legacy_level_to_split():
@@ -262,23 +251,6 @@ def test_saved_config_ignores_legacy_level_to_split():
 
     assert config.levels == ["BlockGroup_0"]
     assert not hasattr(config, "level_to_split")
-
-
-def test_saved_config_migrates_strategy_specific_recom_seed_runs():
-    config = optimization_config_from_dict(
-        {
-            "levels": ["BlockGroup_0"],
-            "strategy": "zoned_column_generation",
-            "solver": "cp_bool",
-            "years": [23],
-            "population_type": "All",
-            "remove_city_wide": True,
-            "zoned_cg_recom_seed_runs": 3,
-            "zoned_benders_recom_seed_runs": 7,
-        }
-    )
-
-    assert config.zoned_recom_seed_runs == 3
 
 
 def test_regenerate_metrics_rewrites_result_payload(tmp_path):

@@ -1,6 +1,5 @@
-import os
-
 SCALING_CONST = 100
+SFUSD_DATA_ROOT = "/share/data/school_choice"
 
 PROGRAM_NAMES = {
     # General Education
@@ -56,21 +55,6 @@ PROGRAM_CATEGORIES = {
         "SN",
     ],
 }
-
-
-def get_sfusd_path(is_local):
-    if is_local:
-        return os.path.expanduser("~/SFUSD")
-    else:
-        return os.path.expanduser("/share/data/school_choice")
-
-
-def get_dropbox_path(is_local):
-    if is_local:
-        return os.path.expanduser("~/Dropbox/SFUSD")
-    else:
-        return os.path.expanduser("~/sfusd-local-data/zones/SFUSD")
-
 
 ETHNICITY_DICT = {
     "Chinese": "Asian",
@@ -193,9 +177,6 @@ K8_SCHOOLS = [618, 485, 676, 449, 479, 760, 796, 493]
 SF_Montessori = 814
 
 Mission_Bay = [999, 909]
-CBEDS_SBAC_PATH = os.path.expanduser(
-    "~/SFUSD/Data/SFUSD_Demographics_SBAC_byblock.xlsx"
-)
 # I have a set of zones. These zones are stored in two formats:
 # 1- a dicrtionary zone_dict that maps each area to a zone number.
 # 2 a list of lists called zone_lists. Such that zone_lists[i] is a list of areas that are assigned to zone number i.

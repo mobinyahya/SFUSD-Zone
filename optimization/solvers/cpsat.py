@@ -29,8 +29,8 @@ from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
+    balance_constraints,
     balance_terms,
-    enforced_balance_constraints,
 )
 from optimization.solvers.base import Solver, register
 
@@ -249,17 +249,7 @@ class _CpSatSolver(Solver):
         m = cp_model.CpModel()
         x, y = self._build_assignment_vars(m, problem)
         self._add_core_constraints(m, problem, x, y)
-        cutoff_vars = None
-        if problem.cutoff_market is not None:
-            if self.name != "cp_bool":
-                raise ValueError("Cutoff objectives are implemented only for cp_bool.")
-            cutoff_vars = self._add_cutoff_objective(m, problem, x)
-            progress = self._new_solver_progress_tracker(
-                problem,
-                maximize=False,
-                objective_scale=problem.cutoff_market.lottery_scale,
-            )
-        elif problem.choice_objective is None:
+        if problem.choice_objective is None:
             self._add_boundary_objective(m, problem, x, y)
             progress = self._new_solver_progress_tracker(problem, maximize=False)
         else:
@@ -270,8 +260,7 @@ class _CpSatSolver(Solver):
                 objective_scale=problem.choice_objective.scale,
             )
         self._add_search_strategy(m, problem, x, y)
-        if problem.cutoff_market is None:
-            self._add_hints(m, problem, x, y)
+        self._add_hints(m, problem, x, y)
 
         solver = cp_model.CpSolver()
         self._configure_solver_parameters(solver)
@@ -318,9 +307,7 @@ class _CpSatSolver(Solver):
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignment = self._extract_assignment(solver, problem, x, y)
             objective = solver.ObjectiveValue()
-            if problem.cutoff_market is not None:
-                objective /= problem.cutoff_market.lottery_scale
-            elif problem.choice_objective is not None:
+            if problem.choice_objective is not None:
                 objective /= problem.choice_objective.scale
 
         metadata = {
@@ -328,49 +315,7 @@ class _CpSatSolver(Solver):
             **self._solver_log_metadata(log_path),
             **self._solver_progress_metadata(progress),
         }
-        if problem.cutoff_market is not None:
-            market = problem.cutoff_market
-            metadata.update(market.metadata)
-            metadata.update(
-                {
-                    "objective_kind": "school_cutoffs",
-                    "optimization_method": "direct_chained_conditional_demand",
-                    "lottery_scale": market.lottery_scale,
-                    "same_zone_indicator_count": len(
-                        {
-                            (student.node, school)
-                            for student in market.students
-                            for school in student.preferences
-                            if school in market.zone_restricted_schools
-                        }
-                    ),
-                }
-            )
-            if cutoff_vars is not None and status in (
-                cp_model.OPTIMAL,
-                cp_model.FEASIBLE,
-            ):
-                raw_cutoffs = {
-                    int(school): int(solver.Value(var))
-                    for school, var in cutoff_vars.items()
-                }
-                metadata["school_cutoffs"] = raw_cutoffs
-                metadata["normalized_school_cutoffs"] = {
-                    school: cutoff / market.lottery_scale
-                    for school, cutoff in raw_cutoffs.items()
-                }
-                raw_objective = int(round(solver.ObjectiveValue()))
-                raw_best_bound = int(math.ceil(solver.BestObjectiveBound() - 1e-9))
-                metadata.update(
-                    {
-                        "raw_objective": raw_objective,
-                        "raw_best_bound": raw_best_bound,
-                        "normalized_best_bound": raw_best_bound
-                        / market.lottery_scale,
-                        "global_optimum_certified": status == cp_model.OPTIMAL,
-                    }
-                )
-        elif problem.choice_objective is not None:
+        if problem.choice_objective is not None:
             metadata.update(
                 {
                     "objective_kind": "choice_utility",
@@ -479,7 +424,7 @@ class _CpSatSolver(Solver):
         problem: ZoneProblem,
         x: _AssignmentVars,
     ) -> None:
-        constraints = enforced_balance_constraints(problem)
+        constraints = balance_constraints(problem)
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             for constraint in constraints:
@@ -528,151 +473,6 @@ class _CpSatSolver(Solver):
 
     def _candidate_nodes(self, problem: ZoneProblem, zone: int) -> list[int]:
         return [n for n in problem.nodes if zone in problem.candidate_zones(n)]
-
-    # ------------------------------------------------------------------ #
-    # Cutoff objective
-    # ------------------------------------------------------------------ #
-    def _add_cutoff_objective(
-        self,
-        m: cp_model.CpModel,
-        problem: ZoneProblem,
-        x: _AssignmentVars,
-    ) -> dict[int, cp_model.IntVar]:
-        market = problem.cutoff_market
-        lottery_scale = market.lottery_scale
-        priorities = [
-            priority
-            for student in market.students
-            for priority in student.priorities.values()
-        ]
-        max_priority = max(priorities, default=0)
-        max_cutoff = (max_priority + 1) * lottery_scale
-
-        cutoffs = {
-            school: m.NewIntVar(0, max_cutoff, f"cutoff_{school}")
-            for school in market.school_capacities
-        }
-        same_zone = self._add_vertex_school_same_zone_indicators(m, problem, x, market)
-
-        shared_thresholds = {}
-        effective_thresholds = {}
-        cumulative_cutoffs = {}
-        assignment_measures = {}
-        for student_index, student in enumerate(market.students):
-            if len(set(student.preferences)) != len(student.preferences):
-                raise ValueError(
-                    f"Student {student.studentno} has duplicate schools in preferences."
-                )
-            cumulative_cutoffs[student_index, 0] = m.NewIntVar(
-                lottery_scale,
-                lottery_scale,
-                f"cumulative_cutoff_{student_index}_0",
-            )
-
-            for rank, school in enumerate(student.preferences, start=1):
-                if school not in cutoffs:
-                    raise ValueError(
-                        f"Student {student.studentno} ranks unknown school {school}."
-                    )
-                priority = student.priorities.get(school)
-                if priority is None:
-                    raise ValueError(
-                        f"Student {student.studentno} has no priority for school {school}."
-                    )
-                threshold_key = (school, priority)
-                if threshold_key not in shared_thresholds:
-                    threshold = m.NewIntVar(
-                        0,
-                        max_cutoff,
-                        f"threshold_{school}_{priority}",
-                    )
-                    m.AddMaxEquality(
-                        threshold,
-                        [cutoffs[school] - priority * lottery_scale, 0],
-                    )
-                    shared_thresholds[threshold_key] = threshold
-                threshold = shared_thresholds[threshold_key]
-
-                if school in market.zone_restricted_schools:
-                    effective_key = (student.node, school, priority)
-                    if effective_key not in effective_thresholds:
-                        effective_threshold = m.NewIntVar(
-                            0,
-                            max_cutoff,
-                            f"effective_threshold_{student.node}_{school}_{priority}",
-                        )
-                        zoned_together = same_zone[(student.node, school)]
-                        m.Add(effective_threshold == threshold).OnlyEnforceIf(
-                            zoned_together
-                        )
-                        m.Add(effective_threshold == lottery_scale).OnlyEnforceIf(
-                            zoned_together.Not()
-                        )
-                        effective_thresholds[effective_key] = effective_threshold
-                    effective_threshold = effective_thresholds[effective_key]
-                else:
-                    effective_threshold = threshold
-
-                previous_cumulative = cumulative_cutoffs[student_index, rank - 1]
-                cumulative = m.NewIntVar(
-                    0,
-                    lottery_scale,
-                    f"cumulative_cutoff_{student_index}_{rank}",
-                )
-                cumulative_cutoffs[student_index, rank] = cumulative
-                m.AddMinEquality(
-                    cumulative,
-                    [previous_cumulative, effective_threshold],
-                )
-
-                assignment_measures[student_index, school] = (
-                    previous_cumulative - cumulative
-                )
-
-        # Assignments must respect school capacities, scaled by lottery_scale.
-        for school, capacity in market.school_capacities.items():
-            demand = [
-                assignment_measures[student_index, school]
-                for student_index, student in enumerate(market.students)
-                if school in student.preferences
-            ]
-            m.Add(sum(demand) <= lottery_scale * capacity)
-
-        for var in cutoffs.values():
-            m.AddHint(var, max_cutoff)
-
-        m.Minimize(sum(cutoffs.values()))
-        return cutoffs
-
-    def _add_vertex_school_same_zone_indicators(
-        self,
-        m: cp_model.CpModel,
-        problem: ZoneProblem,
-        x: _AssignmentVars,
-        market,
-    ) -> dict[tuple[int, int], cp_model.IntVar]:
-        indicators = {}
-        pairs = {
-            (student.node, school)
-            for student in market.students
-            for school in student.preferences
-            if school in market.zone_restricted_schools
-        }
-        for vertex, school in sorted(pairs):
-            school_node = market.school_nodes[school]
-            same = m.NewBoolVar(f"same_zone_{vertex}_{school}")
-            indicators[vertex, school] = same
-            if vertex == school_node:
-                m.Add(same == 1)
-                continue
-
-            for zone in sorted(problem.candidate_zones(vertex)):
-                # Exactly one vertex assignment is true, so it selects which
-                # school assignment determines the same-zone indicator.
-                m.Add(same == x.get((zone, school_node), 0)).OnlyEnforceIf(
-                    x[(zone, vertex)]
-                )
-        return indicators
 
     # ------------------------------------------------------------------ #
     # Choice objective

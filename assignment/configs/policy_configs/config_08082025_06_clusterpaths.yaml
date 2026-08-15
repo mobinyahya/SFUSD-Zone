@@ -10,7 +10,7 @@ paths:
   estimate-path: /share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv
   program-data: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
   school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
-  sfusd: /share/data/school_choice/Data/
+  sfusd: /share/data/school_choice/
   student-data: /share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
   student-save: /share/data/school_choice/simulation-files/precomputed/ 
   zone-files:

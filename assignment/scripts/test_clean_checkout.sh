@@ -5,7 +5,7 @@
 #
 # Creates a detached git worktree (containing exactly the tracked files of
 # the given ref), provisions a fresh environment from the tracked
-# pyproject.toml + uv.lock with `uv sync`, then runs the full pytest suite
+# pyproject.toml + uv.lock with `uv sync`, then runs the assignment pytest suite
 # inside it -- including the end-to-end pipeline test on the committed fake
 # dataset. Any dependence on untracked or deleted files (code, data, or an
 # unpinned dependency) fails loudly.
@@ -47,6 +47,6 @@ unset VIRTUAL_ENV
 uv sync --frozen
 
 echo "[INFO] Running pytest in the clean worktree..."
-uv run python -m pytest tests -x -q
+uv run python -m pytest assignment/tests -x -q
 
 echo "[OK] Test suite passed using git-tracked files only."

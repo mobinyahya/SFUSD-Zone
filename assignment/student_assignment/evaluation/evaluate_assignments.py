@@ -22,6 +22,11 @@ class EvaluateAssignments:
         assignment_names: list[str],
         table_path: pathlib.Path,
     ):
+        if not assignment_names:
+            raise ValueError("assignment_names must not be empty")
+        if self.iterations <= 0:
+            raise ValueError("iterations must be positive")
+
         assignment1 = assignment_names[0]
         if assignment1 != "Assignment_real_match":
             filename = assignment_path / (assignment1 + "_iteration0.csv")
@@ -72,7 +77,9 @@ class EvaluateAssignments:
         metric_cols = [x for x in results.columns if x not in label_cols]
         metrics = results[metric_cols]
         metrics = metrics.apply(pd.to_numeric, errors="coerce")
-        metrics = metrics.groupby("sim_number").mean(numeric_only=True)
+        metrics = metrics.groupby("sim_number").agg(
+            lambda values: values.mean(skipna=False)
+        )
 
         results.loc[:, "Iterations"] = 1
         count = results[["sim_number", "Iterations"]]

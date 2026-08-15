@@ -27,7 +27,7 @@ def test_utility_matrix_save_path_is_optional(save_path, expected_calls):
     market.umodel = Mock()
     market._simulate_policy = Mock(return_value=iter(()))
 
-    next(market._run_single_iteration_of_policy(0, "status_quo"))
+    list(market._run_single_iteration_of_policy(0, "status_quo"))
 
     assert [
         call.args[0] for call in market.umodel.save_utility_matrix.call_args_list
@@ -51,3 +51,28 @@ def test_real_preferences_honor_designate_policy_setting():
     market.preference_generator.initialize_real_preferences.assert_called_once_with(
         designate=False
     )
+
+
+def test_reconfigure_replaces_zone_dependent_state():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market._guardrail_setup_cache = {"stale": object()}
+    market._active_policy_cache_context = "stale"
+    market._set_up_save_folder = Mock()
+
+    config = {
+        "assignment-algorithm": "DA",
+        "save-assignment": True,
+        "subconfigs": [],
+        "utility-model": {"enable": False},
+        "paths": {"zone-files": {"policy": "zones.csv"}},
+    }
+    market.reconfigure(config, "assignments")
+
+    assert market.config == config
+    assert market.config is not config
+    assert market.configurator.config is market.config
+    assert market.priority_generator.market is market
+    assert market.preference_generator.market is market
+    assert market._guardrail_setup_cache == {}
+    assert market._active_policy_cache_context is None
+    market._set_up_save_folder.assert_called_once_with("assignments")

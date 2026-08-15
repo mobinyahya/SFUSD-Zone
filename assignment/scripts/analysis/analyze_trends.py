@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 Task = tuple[int, str, str, str, str | None, str | None]
 
 
-def _evaluate_csv_worker(args: Task) -> pd.Series | None:
+def _evaluate_csv_worker(args: Task) -> pd.Series:
     """Worker entry point: evaluate one CSV file.
 
     Args:
@@ -49,7 +49,11 @@ def _evaluate_csv_worker(args: Task) -> pd.Series | None:
             student_data_path, schools_data_path, new_ctip_path).
 
     Returns:
-        A Series of metrics, or None on failure.
+        A Series of metrics.
+
+    Raises:
+        Exception: Any input or evaluation failure is propagated so a partial
+            analysis cannot be reported as successful.
     """
     (
         year,
@@ -59,32 +63,25 @@ def _evaluate_csv_worker(args: Task) -> pd.Series | None:
         schools_data_path,
         new_ctip_path,
     ) = args
-    try:
-        student_data = pd.read_csv(student_data_path)
-        file_assignment = pd.read_csv(assignment_path)
-        me_year = int(f"{year}{year + 1}")
-        match_eval = MatchEvaluator(
-            student_data,
-            file_assignment,
-            first_round=True,
-            dropout=False,
-            low_income=95292,
-            medium_income=95292,
-            high_income=110850,
-            grade=None,
-            year=me_year,
-            no_special_program=True,
-            program_file=program_file,
-            schools_latlon_path=schools_data_path,
-            new_ctip_path=new_ctip_path,
-        )
-        return match_eval.eval_assignment_full().fillna(0)
-    except FileNotFoundError as exc:
-        logger.error("Student data not found: %s", exc)
-        return None
-    except Exception as exc:
-        logger.error("Error evaluating %s: %s", assignment_path, exc)
-        return None
+    student_data = pd.read_csv(student_data_path)
+    file_assignment = pd.read_csv(assignment_path)
+    me_year = int(f"{year}{year + 1}")
+    match_eval = MatchEvaluator(
+        student_data,
+        file_assignment,
+        first_round=True,
+        dropout=False,
+        low_income=95292,
+        medium_income=95292,
+        high_income=110850,
+        grade=None,
+        year=me_year,
+        no_special_program=True,
+        program_file=program_file,
+        schools_latlon_path=schools_data_path,
+        new_ctip_path=new_ctip_path,
+    )
+    return match_eval.eval_assignment_full()
 
 
 # ---------------------------------------------------------------------------
@@ -119,14 +116,25 @@ def _collect_csv_files(run: dict) -> tuple[list[str], bool]:
 
     csv_files = []
     for path in sorted(Path(run["folder"]).rglob("*.csv")):
-        try:
-            columns = set(pd.read_csv(path, nrows=0).columns)
-        except (OSError, pd.errors.ParserError, UnicodeDecodeError) as exc:
-            logger.warning("Could not inspect CSV %s: %s", path, exc)
-            continue
+        columns = set(pd.read_csv(path, nrows=0).columns)
         required = {"studentno", "programno", "rank"}
         if required <= columns and "programcodes" in columns:
             csv_files.append(str(path))
+            continue
+        assignment_columns = {
+            "programno",
+            "programcodes",
+            "rank",
+            "designation",
+            "In-Zone Rank",
+        }
+        iteration_output = re.search(r"(?:^|_)iteration\d+$", path.stem)
+        if columns & assignment_columns or iteration_output:
+            missing = {"studentno", "programno", "programcodes", "rank"} - columns
+            raise ValueError(
+                f"CSV appears to be an assignment but is missing {sorted(missing)}: "
+                f"{path}"
+            )
     return csv_files, False
 
 
@@ -138,18 +146,21 @@ def _aggregate_metrics(
 
     Args:
         metrics_list: Non-empty list of metric Series.
-        is_single_file: If True, std is zeroed out.
+        is_single_file: Whether the run was configured with ``run_csv``.
 
     Returns:
         Dict with keys 'mean' and 'std', each a pd.Series.
     """
-    if is_single_file:
-        mean = metrics_list[0]
-        std = pd.Series(0.0, index=mean.index)
+    if not metrics_list:
+        raise ValueError("Cannot aggregate an empty metrics list")
+
+    df = pd.concat(metrics_list, axis=1).T
+    if len(df) == 1:
+        mean = df.iloc[0].copy()
+        std = pd.Series(0.0, index=mean.index).where(mean.notna())
     else:
-        df = pd.concat(metrics_list, axis=1).T
-        mean = df.mean()
-        std = df.std()
+        mean = df.mean(skipna=False)
+        std = df.std(skipna=False)
     return {"mean": mean, "std": std}
 
 
@@ -334,8 +345,13 @@ def main() -> None:
 
     runs: list[dict] = config.get("runs", [])
     if not runs:
-        logger.error("No runs found in config.")
-        return
+        raise ValueError("No runs found in config")
+
+    labels_in_config = [run.get("label") for run in runs]
+    if any(label is None for label in labels_in_config):
+        raise ValueError("Every run must define a label")
+    if len(set(labels_in_config)) != len(labels_in_config):
+        raise ValueError("Run labels must be unique")
 
     logger.info("Found runs: %s", [r["label"] for r in runs])
 
@@ -348,17 +364,19 @@ def main() -> None:
 
     for run in runs:
         label = run["label"]
-        if "student_data" not in run or "program_data" not in run:
-            logger.warning(
-                "Run '%s' missing student_data or program_data — skipping.",
-                label,
+        missing_inputs = {
+            "student_data",
+            "program_data",
+            "year",
+        } - set(run)
+        if missing_inputs:
+            raise ValueError(
+                f"Run '{label}' is missing required fields: {sorted(missing_inputs)}"
             )
-            continue
 
         csv_files, is_single_file = _collect_csv_files(run)
         if not csv_files:
-            logger.warning("No CSVs found for run '%s'.", label)
-            continue
+            raise ValueError(f"No assignment CSVs found for run '{label}'")
 
         run_meta[label] = (len(csv_files), is_single_file)
         for csv_path in csv_files:
@@ -372,8 +390,7 @@ def main() -> None:
             )
 
     if not task_map:
-        logger.error("No tasks to process.")
-        return
+        raise ValueError("No tasks to process")
 
     # -----------------------------------------------------------------------
     # Execute all tasks in a single pool (runs × CSVs fully parallel)
@@ -392,8 +409,7 @@ def main() -> None:
         ):
             label, csv_path = future_to_key[future]
             result = future.result()
-            if result is not None:
-                raw_results.setdefault(label, []).append(result)
+            raw_results.setdefault(label, []).append(result)
 
     # -----------------------------------------------------------------------
     # Aggregate per run (preserving config order)
@@ -401,16 +417,18 @@ def main() -> None:
     all_metrics_data: dict[str, dict[str, pd.Series]] = {}
     for run in runs:
         label = run["label"]
-        if label not in raw_results or label not in run_meta:
-            continue
-        _, is_single_file = run_meta[label]
+        expected_count, is_single_file = run_meta[label]
+        actual_count = len(raw_results.get(label, []))
+        if actual_count != expected_count:
+            raise RuntimeError(
+                f"Run '{label}' produced {actual_count} of {expected_count} results"
+            )
         all_metrics_data[label] = _aggregate_metrics(raw_results[label], is_single_file)
 
     labels = [r["label"] for r in runs if r["label"] in all_metrics_data]
 
     if not labels:
-        logger.error("No data to plot.")
-        return
+        raise ValueError("No data to plot")
 
     # -----------------------------------------------------------------------
     # Export to Excel

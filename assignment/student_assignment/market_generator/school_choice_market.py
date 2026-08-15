@@ -16,7 +16,12 @@ from .utility_model import UtilityModel
 
 
 class SchoolChoiceMarket:
-    def __init__(self, estimate_path: str = None, config: dict = None):
+    def __init__(
+        self,
+        estimate_path: str = None,
+        config: dict = None,
+        configurator=None,
+    ):
         """Initialize a school choice market.
 
         Args:
@@ -24,14 +29,22 @@ class SchoolChoiceMarket:
                 means we use the path specified in the config.
             config (dict, optional): Configerator config. Defaults to None, which means we read the
                 config from the default location.
+            configurator (optional): Config source used by policy simulations. Cannot be combined
+                with config.
         """
+        if config is not None and configurator is not None:
+            raise ValueError("Pass either config or configurator, not both.")
+
         self.yaml = None
-        if config is None:
+        if configurator is not None:
+            self.configurator = configurator
+        elif config is None:
             self.configurator = Configerator()
-            self.config = self.configurator.config
-            self.yaml = self.configurator._original_config
+            self.yaml = self.configurator.original_config
         else:
-            self.config = config
+            self.configurator = Configerator.from_config(config)
+        self.config = self.configurator.config
+        self._validate_config(self.config)
 
         np.random.seed(
             self.config["random-seed"]
@@ -41,6 +54,18 @@ class SchoolChoiceMarket:
 
         self._initialize_market_data()
         self._initialize_utility_model(estimate_path)
+
+    @staticmethod
+    def _validate_config(config: dict) -> None:
+        """Reject unsupported execution modes before loading market data."""
+        if config.get("save-assignment") is not True:
+            raise ValueError("save-assignment must be true.")
+
+        algorithm = config.get("assignment-algorithm")
+        if algorithm is not None and algorithm != "DA":
+            raise ValueError(
+                f"Assignment algorithm '{algorithm}' not recognized; only 'DA' is supported."
+            )
 
     def _initialize_market_data(self):
         """Initialize data interface objects."""
@@ -137,30 +162,16 @@ class SchoolChoiceMarket:
             estimate_path (str): Path to the estimated preferences. If None, use the path
                 specified in the config.
         """
-        if self.config["utility-model"]["enable"] or self.config[
-            "utility-model"
-        ].get("read-precomuted-umodel-prefs", False):
+        if self.config["utility-model"]["enable"]:
             input_estimate_path = (
                 estimate_path
                 if estimate_path is not None
                 else self.config["paths"]["estimate-path"]
             )
-            precomputed_prefs = self.config["utility-model"].get(
-                "read-precomuted-umodel-prefs", False
-            )
-            if precomputed_prefs:
-                codex_paths = [
-                    self.config["paths"]["student-codex"],
-                    self.config["paths"]["program-codex"],
-                ]
-            else:
-                codex_paths = None
             self.umodel = UtilityModel(
                 input_estimate_path,
                 self.programs,
                 self.students,
-                read_prefs=precomputed_prefs,
-                codex_paths=codex_paths,
             )
             self.umodel.student_data = self.students.student_data
 

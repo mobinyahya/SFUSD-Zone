@@ -738,15 +738,17 @@ class PriorityGenerator:
                 school eligibility, 0 otherwise
         """
         priority = np.zeros((self.market.n, self.market.num_programs))
-        sota = self.market.programs.index("815-GE-09")
-        priority[:, sota] = (1 - self.market.students.sota_eligible) * -500
+        sota = self.market.programs.indices.get("815-GE-09")
+        if sota is not None:
+            priority[:, sota - 1] = (1 - self.market.students.sota_eligible) * -500
 
         # lowell not selective in 2021-22 or 2022-23
         if self.market.config["year"] not in [21, 22]:
-            lowell = self.market.programs.index("697-GE-09")
-            priority[:, lowell] = (
-                1 - self.market.students.lowell_eligible
-            ) * -500
+            lowell = self.market.programs.indices.get("697-GE-09")
+            if lowell is not None:
+                priority[:, lowell - 1] = (
+                    1 - self.market.students.lowell_eligible
+                ) * -500
         return priority
 
     def _ninth_grade_priorities(self) -> np.ndarray:
@@ -779,21 +781,33 @@ class PriorityGenerator:
         return priorities
 
     def _set_tiebreaker(
-        self, tiebreaker: str, iteration: int = 0
+        self, tiebreaker: str, iteration: int | None = None
     ) -> np.ndarray:
         """Set random lottery tiebreaker.
 
         Args:
             tiebreaker (str): tiebreaker type
-            iteration (int, optional): iteration number, used for reading in preferences if
-                selected in config. Defaults to 0.
+            iteration (int, optional): iteration number used when reading saved lotteries.
 
         Returns:
             np.ndarray: (num students) by (num programs) array with random lottery tiebreaker
         """
-        if self.market.config.get(
-            "read-lotteries", False
-        ):  # Lottery values are read in instead of randomly generated
+        lottery_generators = {
+            "STB": self._stb,
+            "STB_REAL": self._stb_real,
+            "MTB": self._mtb,
+            "MTB_REAL": self._mtb_real,
+            "HTB": self._htb,
+            "STBcoordinated": self._stb_coordinated,
+        }
+        if tiebreaker not in lottery_generators:
+            raise ValueError(f"Unknown tiebreaker '{tiebreaker}'.")
+
+        if self.market.config.get("read-lotteries", False):
+            if iteration is None:
+                raise ValueError(
+                    "An iteration is required when read-lotteries is enabled."
+                )
             path = (
                 self.market.config["paths"]["lotteries-path"]
                 + tiebreaker
@@ -803,19 +817,7 @@ class PriorityGenerator:
             lottery = A[:, 1:]
             return lottery
 
-        def no_lottery(_):
-            return np.zeros([self.market.n, self.market.num_programs])
-
-        lottery = {
-            "STB": self._stb,
-            "STB_REAL": self._stb_real,
-            "MTB": self._mtb,
-            "MTB_REAL": self._mtb_real,
-            "HTB": self._htb,
-            "STBcoordinated": self._stb_coordinated,
-        }.get(tiebreaker, no_lottery)()
-
-        return lottery
+        return lottery_generators[tiebreaker]()
 
     def _stb(self) -> np.ndarray:
         """Use single tiebreaking from random numbers.
@@ -956,7 +958,10 @@ class PriorityGenerator:
         return not_designation
 
     def set_policy_specific_priorities(
-        self, policy: Policy, preferences: np.ndarray
+        self,
+        policy: Policy,
+        preferences: np.ndarray,
+        iteration: int | None = None,
     ) -> np.ndarray:
         """Set priority component from a specific policy.
 
@@ -969,7 +974,7 @@ class PriorityGenerator:
             np.ndarray: (num students) by (num programs) array with policy priority component
         """
         priorities = self.get_priorities_without_lottery(policy, preferences)
-        lottery = self._set_tiebreaker(policy.tiebreaker)
+        lottery = self._set_tiebreaker(policy.tiebreaker, iteration=iteration)
         return priorities + lottery
 
     def get_priorities_with_lottery(
@@ -988,10 +993,13 @@ class PriorityGenerator:
         round_priorities = self._set_rounds_merged(policy.rounds_merged)
         priorities = self._set_policy_priorities(policy.ctip, policy.name)
         not_designation_mask = self._set_not_designation_priority(preferences)
+        non_designation_boost = self.market.config.get(
+            "non_designation_boost", 100
+        )
         final = (
             round_priorities
             + np.multiply(priorities, not_designation_mask)
-            + not_designation_mask * 100
+            + not_designation_mask * non_designation_boost
         )
         if self.market.config["restrict-zone"]:
             zone_mask = self.market.zones.zone_eligibility_matrix
@@ -1014,10 +1022,13 @@ class PriorityGenerator:
         round_priorities = self._set_rounds_merged(policy.rounds_merged)
         priorities = self._set_policy_priorities(policy.ctip, policy.name)
         not_designation_mask = self._set_not_designation_priority(preferences)
+        non_designation_boost = self.market.config.get(
+            "non_designation_boost", 100
+        )
         final = (
             round_priorities
             + np.multiply(priorities, not_designation_mask)
-            + not_designation_mask * 100
+            + not_designation_mask * non_designation_boost
         )
         if self.market.config["restrict-zone"]:
             zone_mask = self.market.zones.zone_eligibility_matrix

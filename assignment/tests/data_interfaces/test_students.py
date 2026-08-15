@@ -9,6 +9,7 @@ Last modified: November 27th, 2023
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from assignment.student_assignment.configerator import Configerator
@@ -198,3 +199,97 @@ def test_sibling(config):
     expected_args_strs = [f"{x[0]},{x[1]}" for x in expected_args]
     actual_args_strs = [f"{x[0]},{x[1]}" for x in actual_args]
     assert set(actual_args_strs) == set(expected_args_strs)
+
+
+def _minimal_student_inputs(tmp_path, student_rows):
+    program_file = tmp_path / "programs.csv"
+    school_file = tmp_path / "schools.csv"
+    student_file = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "programno": [1],
+            "program_id": ["101-GE-06"],
+            "school_id": [101],
+            "program_type": ["GE"],
+            "capacity": [10],
+            "r1_assigned": [0],
+            "r2_capacity": [10],
+        }
+    ).to_csv(program_file, index=False)
+    pd.DataFrame(
+        {"school_id": [101], "lat": [37.75], "lon": [-122.45]}
+    ).to_csv(school_file, index=False)
+    pd.DataFrame(student_rows).to_csv(student_file, index=False)
+    config = {
+        "grade": "06",
+        "year": 21,
+        "paths": {"student-save": str(tmp_path)},
+    }
+    programs = Programs(program_file, None, config)
+    return student_file, school_file, programs, config
+
+
+def _student_row(studentno=1, schools="[101]", programs="['GE']"):
+    return {
+        "studentno": studentno,
+        "grade": 6,
+        "r1_ranked_idschool": schools,
+        "r1_programs": programs,
+        "latitude": 37.75,
+        "longitude": -122.45,
+        "HOCidx1": 0.5,
+    }
+
+
+def test_numeric_grade_and_trailing_empty_rank_token(tmp_path):
+    inputs = _minimal_student_inputs(
+        tmp_path, [_student_row(schools="[101, ]")]
+    )
+
+    students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+
+    assert students.student_data.loc[1, "r1_ranked_idschool"] == [101]
+    np.testing.assert_array_equal(
+        students.student_preferences(1, inputs[2].index_list), [[1]]
+    )
+
+
+def test_stale_distance_cache_is_recomputed_and_reindexed(tmp_path):
+    inputs = _minimal_student_inputs(tmp_path, [_student_row()])
+    cache_file = tmp_path / "student_program_distances_06_2122.csv"
+    pd.DataFrame(
+        {"studentno": [999], "101-GE-06": [1.0]}
+    ).to_csv(cache_file, index=False)
+
+    with pytest.warns(UserWarning, match="Ignoring invalid distance cache"):
+        students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+
+    assert students.distance_data.index.tolist() == [1]
+    assert students.distance_data.columns.tolist() == ["101-GE-06"]
+
+
+def test_unknown_ranked_program_is_fatal(tmp_path):
+    inputs = _minimal_student_inputs(
+        tmp_path, [_student_row(schools="[999]")]
+    )
+
+    with pytest.raises(ValueError, match="unknown program IDs.*999-GE-06"):
+        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+
+
+def test_ranked_school_program_lengths_must_match(tmp_path):
+    inputs = _minimal_student_inputs(
+        tmp_path, [_student_row(schools="[101, 102]")]
+    )
+
+    with pytest.raises(ValueError, match="2 ranked schools but 1 ranked programs"):
+        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+
+
+def test_duplicate_student_identities_are_fatal(tmp_path):
+    inputs = _minimal_student_inputs(
+        tmp_path, [_student_row(), _student_row()]
+    )
+
+    with pytest.raises(ValueError, match="duplicate studentno"):
+        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])

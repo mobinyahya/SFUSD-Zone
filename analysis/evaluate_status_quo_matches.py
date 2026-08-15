@@ -178,14 +178,11 @@ def run_policy(
     run_config["subconfigs"] = [label]
     loader = PolicyConfigLoader(run_config, label, policy)
 
-    # Market initialization does not need to save anything. Enabling saving
-    # only for simulation avoids writing an unrelated config.json at the root.
-    initialization_config = copy.deepcopy(run_config)
-    initialization_config["save-assignment"] = False
-    market = MarketGenerator(config=initialization_config)
-    market.config = run_config
-    market.configurator = loader
-    market.output_assignment_path = matches_root
+    market = MarketGenerator(
+        assignment_path=str(matches_root),
+        configurator=loader,
+        write_config=False,
+    )
 
     try:
         market.simulate()

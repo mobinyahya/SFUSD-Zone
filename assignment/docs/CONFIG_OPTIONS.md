@@ -36,7 +36,7 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 | `grade` | str | `KG`, `06`, or `09`. Drives priorities and file naming. |
 | `random-seed` | int | Seed reset before each subconfig, so subconfig order does not matter. |
 | `iterations.start` / `iterations.end` | int | Iteration range; one DA run (and one utility redraw) per iteration. |
-| `save-assignment` | bool | Save assignment CSVs to `paths.assignment-folder` (else simulate() returns a generator). |
+| `save-assignment` | `true` | Required. Assignment CSVs are saved to `paths.assignment-folder`. |
 | `r1-only` | bool | Treat round 1 as the only round when reconstructing final assignments. |
 | `remove-special-lps` | bool | Drop students who ranked special programs and drop special programs themselves. |
 | `rounds-merged-options` | list | Round-merging variants to simulate: `0` (no merge), `123`, `12`, `23`. |
@@ -53,11 +53,10 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 | `school-data` | Explicit schools CSV (`schools_rehauled_<year>.csv`; first column `school_id`, needs `category`, `lat`, `lon`). |
 | `student-save` | Cache directory: computed student-program distances and preference pickles are saved/loaded here. Delete it to force recomputation. |
 | `assignment-folder` | Output directory for assignment CSVs + a copy of the config used. |
-| `estimate-path` | Utility estimates. `.csv` = `studentno` (`<year>-<no>`) × `program_id` matrix of utilities (`-inf` allowed; missing rows/columns auto-filled with `-inf`). `.npy` = raw matrix aligned with student/program indices. |
+| `estimate-path` | Utility estimates. `.csv` = exact `studentno` (`<year>-<no>`) × `program_id` matrix of utilities (`-inf` allowed; required rows/columns must all be present). `.npy` = raw matrix aligned with student/program indices. |
 | `zone-files` | Map of policy name → zone CSV. Each zone CSV row is one zone: comma-separated geounit ids (attendance areas, block groups, or blocks depending on `zone-building-blocks`). |
 | `citywide-or-lp-zones` | Map of supplemental zone name → file; only loaded when a policy sets `citywide-or-lp`. |
 | `lotteries-path` | Tie-breaker lottery files (used with `read-lotteries: true`). |
-| `student-codex` / `program-codex` | `.npy` codex files for `read-precomuted-umodel-prefs`. |
 | `new-ctip-path` / `new-ctip-blockgroup-path` | `.npy` block lists for the `new_ctip` / `new_ctip_blockgroup` equity tie-breakers (defaults to the legacy cluster paths). |
 
 ## 4. `utility-model.*`
@@ -69,7 +68,6 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 | `gumbel-scale` | Scale of the Gumbel noise added to utilities. `0` = deterministic ranking by utility; default `1.0` (MNL draw). |
 | `designate-lp-for-all` | Include language programs in everyone's designation ordering (not only requesters). |
 | `save-path` | Where to save the drawn utility matrix (`.csv` or `.npy`). |
-| `read-precomuted-umodel-prefs` | Read precomputed preference draws (`.npy` + codex files) instead of drawing. |
 
 `list-length` options (from `PreferenceGenerator.set_number_programs_ranked`):
 
@@ -90,7 +88,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 
 | Key | Meaning |
 |-----|---------|
-| `assignment-algorithm` | `DA` (deferred acceptance) or `TTC` (top trading cycles). |
+| `assignment-algorithm` | `DA` (deferred acceptance). |
 | `policies` | List of zone policies to simulate; each must be a key of `paths.zone-files`, or `real_match` to read the historical assignment instead of running DA. |
 | `zone-building-blocks` | Geounit type of the zone files: `attendance_area`, `block_group`, `block`, or `home_based` (JSON studentno → program list). |
 | `ctip-options` | Equity tie-breaker variants: `0` (none), `1` (CTIP1), `5` (5-level CTIP types), `new_ctip`, `new_ctip_blockgroup`, `"<n>D"` (HOCidx1 quantile categories), or a map (`column`, `num_categories`/`thresholds`, `lower_disadvantaged`) for a custom tiebreaker. One simulation per option. |

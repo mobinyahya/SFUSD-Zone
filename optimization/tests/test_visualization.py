@@ -138,7 +138,7 @@ def test_render_solution_map_marks_every_graph_school(tmp_path):
 
     fig = render_solution_map(solution, geometry, "test")
 
-    school_markers = [text for text in fig.axes[0].texts if text.get_text() == "🏫"]
+    school_markers = [text for text in fig.axes[0].texts if text.get_text() == "S"]
     assert len(school_markers) == 2
     assert {text.get_position() for text in school_markers} == {
         (0.75, 0.25),

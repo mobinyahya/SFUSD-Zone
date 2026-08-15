@@ -117,7 +117,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 - `run_sweep` (benchmark/parallel.py) - Capacity-aware process executor with worker recycling
 - `MetricsCalculator` (metrics/calculator.py) - Optimization-native metrics over `ZoneSolution` stages
 
-## Config Reference (Config/config.yaml)
+## Config Reference (`optimization/config.example.yaml`)
 
 | Parameter | Example | Description |
 |---|---|---|
@@ -128,7 +128,6 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
-| `is_local` | `False` | Data path toggle (local vs HPC) |
 | `hints` | `voronoi` | Warm-start method: `voronoi` or `none` |
 | `random_seed` | `42` | Solver seed |
 

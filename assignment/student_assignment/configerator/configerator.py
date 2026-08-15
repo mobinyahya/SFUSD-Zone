@@ -10,7 +10,9 @@ This class serves as an interface for a Configerator. It,
 4. Is a Singleton class to ensure consistence across different places.
 """
 
+import copy
 import getpass
+import math
 import os
 import warnings
 
@@ -32,20 +34,42 @@ class Configerator:
     instance = None
 
     class __Singleton_Configerator:
-        def __init__(self):
+        def __init__(self, config=None):
             self._config = None
             self._original_config = None
             self._path = None
 
-            # Load main config
-            self._load_config()
-            self._validate_schema(
-                yamale.make_data(self._path),
-                f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
-            )
-            # self._validate_rules(ruleset) # KLM commented out because moved sibling access to policy config
+            if config is None:
+                # Load main config
+                self._load_config()
+                self._validate_schema(
+                    yamale.make_data(self._path),
+                    f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
+                )
+                # self._validate_rules(ruleset) # KLM commented out because moved sibling access to policy config
+            else:
+                self._config = copy.deepcopy(config)
+                self._original_config = copy.deepcopy(config)
 
-            self.subconfigs = iter(self.config["subconfigs"])
+            self._normalize_config(self._config)
+            self._normalize_config(self._original_config)
+            self.subconfigs = iter(self.config.get("subconfigs", []))
+
+        @staticmethod
+        def _normalize_config(config):
+            """Normalize scalar values consumed throughout the simulator."""
+            if "grade" not in config:
+                return
+
+            grade = str(config["grade"]).strip().upper()
+            try:
+                number = float(grade)
+            except ValueError:
+                config["grade"] = grade
+                return
+            if math.isfinite(number) and number.is_integer():
+                grade = str(int(number)).zfill(2)
+            config["grade"] = grade
 
         def _load_config(self):
             """Find config file located at ../../configs/{$USER}.config.yaml
@@ -68,9 +92,7 @@ class Configerator:
 
             if not os.path.isfile(self._path):
                 # Load base config
-                base_config = self._load_yaml(
-                    f"{CONFIGS_DIR}{BASE_CONFIG_NAME}"
-                )
+                base_config = self._load_yaml(f"{CONFIGS_DIR}{BASE_CONFIG_NAME}")
                 # Load environment specific paths
                 path_config = self._load_yaml(self._get_path_config())
                 # Update base config with path config
@@ -97,6 +119,7 @@ class Configerator:
             # Use original config (same from _load_config) to clear optional configs.
             self._config = {**self._original_config, **subconfig}
             self._config["subconfig-name"] = name
+            self._normalize_config(self._config)
 
         def _get_path_config(self):
             """Get the path to path_config depending on environment.
@@ -164,9 +187,14 @@ class Configerator:
             self._load_subconfig(subconfig_name)
 
         @property
-        def config(self, patch=True):
+        def config(self):
             """Getter method for config."""
             return self._config
+
+        @property
+        def original_config(self):
+            """Return the base configuration before policy overlays."""
+            return self._original_config
 
         def clear(self):
             Configerator.instance = None
@@ -175,6 +203,11 @@ class Configerator:
         if not Configerator.instance:
             Configerator.instance = Configerator.__Singleton_Configerator()
         return Configerator.instance
+
+    @classmethod
+    def from_config(cls, config):
+        """Create an isolated configurator backed by an in-memory config."""
+        return cls.__Singleton_Configerator(config)
 
     def __getattr__(self, name):
         return getattr(self.instance, name)

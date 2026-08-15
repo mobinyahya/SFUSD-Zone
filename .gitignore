@@ -1,6 +1,5 @@
 *.pyc
 *.egg-info/
-SFUSD
 /Zone_Generation/Data_Description/top_5_area_data.csv
 *.DS_STORE
 output/*
@@ -40,7 +39,6 @@ local_runs/*
 /metrics
 /Cleaned_new
 /configs/policy_configs/2405-SFUSD-simulations
-/sfusd-local-data
 run_commands.txt
 /share
 r1_filter_student_without_specialprogs_2324.numbers
@@ -53,6 +51,7 @@ analysis/matches/*
 _local_scripts/
 
 # Runtime output / artifacts
+/assignment_output/
 output/
 results/
 output.txt

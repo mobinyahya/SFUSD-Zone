@@ -4,13 +4,17 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 # scripts/analysis is not a package; add it to the path to import the module.
 _SCRIPTS_ANALYSIS = Path(__file__).resolve().parents[1] / "scripts" / "analysis"
 if str(_SCRIPTS_ANALYSIS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_ANALYSIS))
 
-from plot_simulation_frontier import compute_pareto_frontier  # noqa: E402
+from plot_simulation_frontier import (  # noqa: E402
+    aggregate_by_policy,
+    compute_pareto_frontier,
+)
 
 
 def _points():
@@ -60,3 +64,46 @@ def test_frontier_ignores_nan():
     points.loc[len(points)] = {"label": "F", "x": float("nan"), "y": 0.0}
     frontier = compute_pareto_frontier(points, "x", "y")
     assert "F" not in set(frontier["label"])
+
+
+def test_frontier_equal_y_drops_worse_x():
+    points = pd.DataFrame(
+        {"label": ["best", "worse"], "x": [1.0, 2.0], "y": [3.0, 3.0]}
+    )
+
+    frontier = compute_pareto_frontier(points, "x", "y")
+
+    assert frontier["label"].tolist() == ["best"]
+
+
+def test_frontier_equal_x_drops_worse_y_but_keeps_exact_ties():
+    points = pd.DataFrame(
+        {
+            "label": ["best", "worse", "duplicate"],
+            "x": [1.0, 1.0, 1.0],
+            "y": [2.0, 3.0, 2.0],
+        }
+    )
+
+    frontier = compute_pareto_frontier(points, "x", "y")
+
+    assert set(frontier["label"]) == {"best", "duplicate"}
+
+
+def test_policy_aggregation_preserves_nan():
+    results = pd.DataFrame(
+        {
+            "group_key": ["policy", "policy"],
+            "label": ["one", "two"],
+            "metric": [1.0, float("nan")],
+        }
+    )
+
+    aggregated = aggregate_by_policy(results)
+
+    assert pd.isna(aggregated.loc[0, "metric"])
+
+
+def test_policy_aggregation_rejects_no_data():
+    with pytest.raises(ValueError, match="empty simulation results"):
+        aggregate_by_policy(pd.DataFrame(columns=["group_key", "metric"]))

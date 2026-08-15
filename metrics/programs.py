@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from Config.Constants import PROGRAM_CATEGORIES, get_sfusd_path
+from Config.Constants import PROGRAM_CATEGORIES, SFUSD_DATA_ROOT
 from Config.metrics_config import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
 
@@ -85,7 +85,7 @@ def school_programs(context: MetricsContext) -> dict[int, list[str]]:
     if from_graph:
         return from_graph
 
-    path = context.config.get("programs_path") or _default_programs_path(context)
+    path = context.config.get("programs_path") or _default_programs_path()
     if not path:
         return {}
     return _load_programs_csv(os.path.expanduser(path))
@@ -135,9 +135,8 @@ def _load_programs_csv(path: str) -> dict[int, list[str]]:
     return {sid: sorted(set(programs)) for sid, programs in out.items()}
 
 
-def _default_programs_path(context: MetricsContext) -> str:
-    is_local = bool(context.config.get("is_local", False))
-    return f"{get_sfusd_path(is_local)}/Data/Cleaned/programs_withMissionBay_2324.csv"
+def _default_programs_path() -> str:
+    return f"{SFUSD_DATA_ROOT}/Data/Cleaned/programs_withMissionBay_2324.csv"
 
 
 def _zone_average(values: list[int], num_zones: int) -> float:

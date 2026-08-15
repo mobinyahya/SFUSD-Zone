@@ -65,7 +65,7 @@ SUBCONFIGS = (
     "distance_05_1_2+reserves_05frl_#4" 
 )
 DEFAULT_POLICY_DIR = PROJECT_ROOT / "assignment/configs/policy_configs"
-DEFAULT_ZONE_ROOT = Path("~/sfusd-local-data/zones/zone_backend")
+DEFAULT_ZONE_ROOT = Path("/share/data/school_choice/simulation-files/zones")
 DEFAULT_SMALL_ZONES = DEFAULT_ZONE_ROOT / "Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv"
 DEFAULT_MEDIUM_ZONES = DEFAULT_ZONE_ROOT / "Zones_6-FRL_Dev_0.10-Objective_1430_BG.csv"
 DEFAULT_MATCHES_ROOT = PROJECT_ROOT / "analysis/matches/zone_subconfigs_25"

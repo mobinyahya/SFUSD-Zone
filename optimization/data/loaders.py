@@ -35,15 +35,14 @@ from Config.Constants import (
     ETHNICITY_DICT,
     IMPORTANT_COLS,
     K8_SCHOOLS,
-    get_dropbox_path,
-    get_sfusd_path,
+    SFUSD_DATA_ROOT,
 )
 from optimization.data.geography import great_circle_miles
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "Config")
 CENTROIDS_YAML = os.path.abspath(os.path.join(CONFIG_DIR, "centroids.yaml"))
-SFUSD_PATH = get_sfusd_path(False)
-DROPBOX_PATH = get_dropbox_path(False)
+SFUSD_PATH = SFUSD_DATA_ROOT
+OPTIMIZATION_DATA_PATH = os.path.join(SFUSD_PATH, "Zones", "Optimization")
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
 STUDENT_CACHE_SCHEMA_VERSION = 2
@@ -406,9 +405,11 @@ def _aggregate_schools(schools: pd.DataFrame, unit: str) -> pd.DataFrame:
 def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     """Append census areas that had neither students nor schools."""
     valid = set(
-        pd.read_csv(f"{DROPBOX_PATH}/Optimization/block_blockgroup_tract.csv")[cfg.unit]
+        pd.read_csv(os.path.join(OPTIMIZATION_DATA_PATH, "block_blockgroup_tract.csv"))[
+            cfg.unit
+        ]
     )
-    census = set(load_census_shapefile(cfg.unit, False)[cfg.unit]) - set(AUX_BG)
+    census = set(load_census_shapefile(cfg.unit)[cfg.unit]) - set(AUX_BG)
     have = set(area[cfg.unit].astype(int))
     missing = (census & valid) - have
     if missing:
@@ -434,30 +435,19 @@ def _apply_closure_scaling(area: pd.DataFrame) -> pd.DataFrame:
 # ====================================================================== #
 # Geometry / distance / adjacency
 # ====================================================================== #
-def load_census_shapefile(level: str, is_local: bool = False) -> gpd.GeoDataFrame:
+def load_census_shapefile(level: str) -> gpd.GeoDataFrame:
     """Load census geometry enriched with Block and BlockGroup identifiers."""
-    if is_local:
-        path = os.path.join(
-            get_sfusd_path(is_local),
-            "drive-download-20200216T210200Z-001",
-            "2013 ESAAs SFUSD.shp",
-        )
-    else:
-        path = os.path.join(
-            get_sfusd_path(is_local),
-            "shapefiles",
-            "geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp",
-        )
+    path = os.path.join(
+        SFUSD_PATH,
+        "shapefiles",
+        "geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp",
+    )
 
     census = gpd.read_file(path)
     census["Block"] = census["geoid10"].fillna(0).astype("int64")
 
     crosswalk = pd.read_csv(
-        os.path.join(
-            get_dropbox_path(is_local),
-            "Optimization",
-            "block_blockgroup_tract.csv",
-        )
+        os.path.join(OPTIMIZATION_DATA_PATH, "block_blockgroup_tract.csv")
     )
     crosswalk["Block"] = crosswalk["Block"].fillna(0).astype("int64")
     census = census.merge(crosswalk, how="left", on="Block")
@@ -468,7 +458,7 @@ def load_census_shapefile(level: str, is_local: bool = False) -> gpd.GeoDataFram
 
 def load_area_latlon(cfg: IngestConfig) -> pd.DataFrame:
     """Centroid Lat/Lon per area, indexed by the unit id."""
-    census = load_census_shapefile(cfg.unit, False)
+    census = load_census_shapefile(cfg.unit)
     dissolved = census.dissolve(by=cfg.unit, as_index=False)
     centroids = _projected_centroids_latlon(dissolved)
     dissolved["Lat"] = centroids.y
@@ -501,7 +491,7 @@ def load_distance_dict(
     filename = (
         "distances_b2b_schools.csv" if cfg.unit == "Block" else "distances_bg2bg.csv"
     )
-    cache_path = os.path.join(DROPBOX_PATH, "Optimization", filename)
+    cache_path = os.path.join(OPTIMIZATION_DATA_PATH, filename)
     area_ids = list(area2idx)
 
     if os.path.exists(cache_path):
@@ -572,7 +562,7 @@ def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, lis
     fname = (
         "adjacency_matrix_b.csv" if cfg.unit == "Block" else "adjacency_matrix_bg.csv"
     )
-    path = os.path.expanduser(f"{DROPBOX_PATH}/Optimization/{fname}")
+    path = os.path.join(OPTIMIZATION_DATA_PATH, fname)
     with open(path, "r") as f:
         rows = list(csv.reader(f))
 

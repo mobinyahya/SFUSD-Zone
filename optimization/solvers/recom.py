@@ -25,8 +25,7 @@ from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
     BalanceConstraint,
-    enforced_balance_constraints,
-    rounded_balance_coefficient,
+    balance_constraints,
 )
 from optimization.solvers.base import Solver, register
 
@@ -89,7 +88,6 @@ class _BalanceRow:
     constraint: BalanceConstraint
     sense: str
     ratio: float
-    rounded: bool
 
 
 @dataclass
@@ -226,13 +224,12 @@ class _ReComContext:
             incident[v].append(edge_id)
         self.incident_edges = tuple(tuple(edge_ids) for edge_ids in incident)
 
-        self.constraints = tuple(enforced_balance_constraints(problem))
+        self.constraints = tuple(balance_constraints(problem))
         self.balance_rows = tuple(
             _BalanceRow(
                 constraint,
                 sense,
                 ratio,
-                problem.has_school_capacity_recourse,
             )
             for constraint in self.constraints
             for sense, ratio in (
@@ -245,19 +242,7 @@ class _ReComContext:
         self.seats = tuple(problem.capacity(node) for node in self.nodes)
         self.frl = tuple(problem.frl(node) for node in self.nodes)
         self.values = tuple(
-            tuple(
-                float(
-                    rounded_balance_coefficient(
-                        problem,
-                        row.constraint,
-                        node,
-                        row.ratio,
-                    )
-                )
-                if row.rounded
-                else row.constraint.value(node)
-                for row in self.balance_rows
-            )
+            tuple(row.constraint.value(node) for row in self.balance_rows)
             for node in self.nodes
         )
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
@@ -297,11 +282,7 @@ class _ReComContext:
     def zone_violations(self, stats: _ZoneStats) -> tuple[float, ...]:
         violations: list[float] = []
         for value, row in zip(stats.values, self.balance_rows, strict=True):
-            if row.rounded:
-                violations.append(
-                    max(0.0, -value) if row.sense == "lower" else max(0.0, value)
-                )
-            elif row.sense == "lower":
+            if row.sense == "lower":
                 violations.append(max(0.0, row.ratio * stats.students - value))
             else:
                 violations.append(max(0.0, value - row.ratio * stats.students))
@@ -815,9 +796,8 @@ class _ReComKernel:
         log_weight = _RELAXED_WEIGHTS["trees"] * (
             stats_a.cycle_rank + stats_b.cycle_rank
         )
-        recourse = self.context.problem.has_school_capacity_recourse
-        metrics_a = self._relaxed_metrics(stats_a, capacity_recourse=recourse)
-        metrics_b = self._relaxed_metrics(stats_b, capacity_recourse=recourse)
+        metrics_a = self._relaxed_metrics(stats_a)
+        metrics_b = self._relaxed_metrics(stats_b)
         for metric, weight in _RELAXED_WEIGHTS.items():
             if metric == "trees" or metric not in metrics_a:
                 continue
@@ -829,11 +809,7 @@ class _ReComKernel:
         return log_weight
 
     @staticmethod
-    def _relaxed_metrics(
-        stats: _ZoneStats,
-        *,
-        capacity_recourse: bool = False,
-    ) -> dict[str, float]:
+    def _relaxed_metrics(stats: _ZoneStats) -> dict[str, float]:
         shortage_percent = max(
             abs(stats.students - stats.seats) / max(stats.students, _WEIGHT_EPS),
             _WEIGHT_EPS,
@@ -842,11 +818,10 @@ class _ReComKernel:
             "nodes": float(stats.node_count),
             "frl": stats.frl,
             "students": stats.students,
+            "seats": stats.seats,
+            "shortage%": shortage_percent,
             "sch_count": stats.schools,
         }
-        if not capacity_recourse:
-            metrics["seats"] = stats.seats
-            metrics["shortage%"] = shortage_percent
         return metrics
 
     def _check_deadline(self) -> None:

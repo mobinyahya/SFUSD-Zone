@@ -26,7 +26,6 @@ _SUM_ATTRS = [
 # Version 3 moves Mission Bay ES (999) from Block 60750607001031 to 60750607001053.
 # GRAPH_CACHE_SCHEMA_VERSION changed from 4 to 5 after moving its distance-cache
 # source row from Block 60750607001031 to Block 60750607001053.
-# /home/kumarc/sfusd-local-data/zones/SFUSD/Optimization/distances_b2b_schools.before_mission_bay_row_update.csv
 GRAPH_CACHE_SCHEMA_VERSION = 7
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14

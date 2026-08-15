@@ -439,7 +439,7 @@ def render_case_plot(
 
 def load_block_geometry(G) -> gpd.GeoDataFrame:
     """Load one WGS84 polygon per graph node."""
-    base = loaders.load_census_shapefile("Block", False)
+    base = loaders.load_census_shapefile("Block")
     area_to_node = {
         int(attrs["area_id"]): int(node) for node, attrs in G.nodes(data=True)
     }

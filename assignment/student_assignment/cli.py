@@ -30,7 +30,7 @@ def cli() -> None:
 def simulate(config_path: Path, assignments_dir: Path | None) -> None:
     """Run a student-assignment simulation."""
 
-    from benchmark.matching.runner import _run_student_assignment
+    from .market_generator.school_choice_market_generator import MarketGenerator
 
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}
@@ -49,7 +49,11 @@ def simulate(config_path: Path, assignments_dir: Path | None) -> None:
     config["paths"] = paths
 
     assignments_dir.mkdir(parents=True, exist_ok=True)
-    _run_student_assignment(config, assignments_dir)
+    market = MarketGenerator(
+        config=config,
+        assignment_path=str(assignments_dir),
+    )
+    market.simulate()
 
 
 if __name__ == "__main__":

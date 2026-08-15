@@ -108,8 +108,8 @@ def run_simulation(
 def collect_csvs(directory: pathlib.Path) -> dict[str, pd.DataFrame]:
     """Recursively collect all assignment CSVs, keyed by relative path.
 
-    config.yaml / config.json are excluded because parallel workers each
-    write a single-subconfig version, so content legitimately differs.
+    Root provenance files are not CSVs and are therefore excluded; their
+    assignment-folder values legitimately differ between the two runs.
 
     Args:
         directory: Root directory to search.

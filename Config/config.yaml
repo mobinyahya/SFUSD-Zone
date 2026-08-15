@@ -12,7 +12,6 @@ centroids_type: '5-zone-AF'
 
 frl_dev: 0.3
 racial_dev: 0.3
-is_local: False
 
 # fixed levers
 #boundary_threshold: .05

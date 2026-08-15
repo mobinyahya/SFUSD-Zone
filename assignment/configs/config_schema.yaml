@@ -1,12 +1,11 @@
 utility-model:
   enable: bool()
-  read-precomuted-umodel-prefs: bool(required=False)
   list-length: str()
   designate-lp-for-all: bool(required=False)
   save-path: str(required=False)
   gumbel-scale: num(required=False)
 
-save-assignment: bool()
+save-assignment: enum(True)
 random-seed: int()
 r1-only: bool(required=False)
 evaluation-population: enum('first_round', 'all_rounds', required=False)
@@ -20,8 +19,6 @@ iterations:
 
 paths:
   sfusd: str()
-  program-codex: str(required=False)
-  student-codex: str(required=False)
   student-save: str()
   assignment-folder: str()
   student-data: str(required=False)

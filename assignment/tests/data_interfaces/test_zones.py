@@ -159,7 +159,7 @@ def generate_programs_with_area2programs(
     program_ids = list(program_ids)
     dists_df = pd.DataFrame(
         data={
-            "programno": np.arange(len(program_ids)),
+            "programno": np.arange(1, len(program_ids) + 1),
             "program_id": program_ids,
         }
     )
@@ -227,6 +227,25 @@ def test_create_zone_dictionary(aa_config):
     assert actual == expected
 
 
+@pytest.mark.parametrize(
+    "contents, message",
+    [
+        ("1,2\n2,3\n", "multiple zones"),
+        ("1,1\n", "duplicate area"),
+        ("1\n\n2\n", "row 2 is empty"),
+    ],
+)
+def test_invalid_zone_definitions_are_fatal(
+    tmp_path, aa_config, contents, message
+):
+    zone_file = tmp_path / "zones.csv"
+    zone_file.write_text(contents)
+    zones = Zones(aa_config, pd.DataFrame(), None, None)
+
+    with pytest.raises(ValueError, match=message):
+        zones._create_zone(zone_file)
+
+
 def test_create_zone_home_based(home_based_config, random_area2zone_zone_list):
     """
     Test creating home_based zone from a input zone file with a random zone
@@ -264,6 +283,21 @@ def test_get_area_id2program_id_dict(random_area2zone_zone_list, aa_config):
 
     ge_aa_dict_expected = generate_area2program(zone_list)
     check_equal_dicts(z.area_id2ge_program_id, ge_aa_dict_expected)
+
+
+def test_ge_program_ids_use_configured_non_kg_grade():
+    config = {"zone-building-blocks": "attendance_area", "grade": "06"}
+    schools = pd.DataFrame({"attendance_area": [101, 202, 303]})
+    zones = Zones(config, schools, None, None)
+    zones.area2zone = {101: 0, 202: 0, 303: 1}
+
+    zones.get_area_id2ge_program_id_dict()
+
+    assert set(zones.area_id2ge_program_id[101]) == {
+        "101-GE-06",
+        "202-GE-06",
+    }
+    assert zones.area_id2ge_program_id[303] == ["303-GE-06"]
 
 
 def test_set_zone_aa_dict(random_area2zone_zone_list, aa_config):

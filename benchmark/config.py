@@ -14,10 +14,7 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
-from optimization.config import (
-    OptimizationConfig,
-    migrate_legacy_zoned_recom_seed_runs,
-)
+from optimization.config import OptimizationConfig
 
 
 SEQUENCE_OPTIMIZATION_FIELDS = {
@@ -25,8 +22,6 @@ SEQUENCE_OPTIMIZATION_FIELDS = {
     "solve_time_limits",
     "gap_limits",
     "years",
-    "zoned_cg_seed_paths",
-    "zoned_benders_seed_paths",
 }
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
 
@@ -88,7 +83,7 @@ class MatchingConfigSpec:
     @classmethod
     def from_value(cls, value: Any, index: int = 0) -> "MatchingConfigSpec":
         if value is None:
-            return cls(name=f"default" if index == 0 else f"default_{index}")
+            return cls(name="default" if index == 0 else f"default_{index}")
         if isinstance(value, str):
             return cls(name=_matching_name_from_path(value, index), config=value)
         if not isinstance(value, Mapping):
@@ -263,7 +258,6 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     restored = _restore_special_values(dict(data))
     # Existing benchmark manifests persisted the pre-KaHIP split-depth setting.
     restored.pop("level_to_split", None)
-    migrate_legacy_zoned_recom_seed_runs(restored)
     field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:

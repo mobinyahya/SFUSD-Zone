@@ -3,16 +3,20 @@
 This script allows passing a custom configuration YAML file AND overriding specific variables.
 The CLI is: python run_custom_config.py --config-path config.yaml --sample sample001 --frac frac0.40.
 
-Parallelism: use --workers N to simulate subconfigs concurrently. Each worker
-process handles a batch of subconfigs so market data is loaded once per batch.
-Each worker gets its own Configerator singleton and numpy random state, so
-results are identical to a sequential run (each subconfig resets np.random.seed
-internally).
+Parallelism: use --workers N to simulate subconfigs concurrently. Each
+subconfig is submitted independently so a failure does not prevent another
+subconfig from running and can be attributed precisely. Each worker gets its
+own in-memory configuration and numpy random state, so results are identical
+to a sequential run (each subconfig resets np.random.seed internally).
 """
 
+import copy
+import json
 import os
+import pathlib
 import re
 import sys
+import tempfile
 import warnings
 from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -23,10 +27,14 @@ import yaml
 # Ensure we can import your project modules
 sys.path.append(os.getcwd())
 
-from student_assignment.configerator import Configerator
-from student_assignment.market_generator.school_choice_market_generator import (
-    MarketGenerator,
-)
+if __package__:
+    from .student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+else:
+    from student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
 
 
 def _run_market_generator(market: MarketGenerator) -> None:
@@ -49,9 +57,7 @@ def resolve_variables(item, root_config):
             if key in root_config:
                 return str(root_config[key])
             else:
-                warnings.warn(
-                    f"Could not resolve variable ${{{key}}}", stacklevel=2
-                )
+                warnings.warn(f"Could not resolve variable ${{{key}}}", stacklevel=2)
                 return match.group(0)
 
         return pattern.sub(replace, item)
@@ -59,46 +65,58 @@ def resolve_variables(item, root_config):
         return item
 
 
-def _chunk_subconfigs(subconfigs: list[str], workers: int) -> list[list[str]]:
-    if not subconfigs:
-        return []
-    worker_count = min(workers, len(subconfigs))
-    base_size, extra = divmod(len(subconfigs), worker_count)
-    chunks = []
-    start = 0
-    for i in range(worker_count):
-        end = start + base_size + int(i < extra)
-        chunks.append(subconfigs[start:end])
-        start = end
-    return chunks
+def _write_provenance_config(custom_config: dict) -> None:
+    """Write the complete resolved config once, before workers start."""
+    if not custom_config.get("save-assignment", True):
+        return
+
+    try:
+        assignment_folder = custom_config["paths"]["assignment-folder"]
+    except KeyError as exc:
+        raise ValueError(
+            "Config must define paths.assignment-folder when saving assignments."
+        ) from exc
+
+    output_dir = pathlib.Path(assignment_folder).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=output_dir,
+        prefix=".config.json.",
+        suffix=".tmp",
+        delete=False,
+    ) as temp_file:
+        json.dump(custom_config, temp_file, indent=4)
+        temp_path = pathlib.Path(temp_file.name)
+
+    os.replace(temp_path, output_dir / "config.json")
 
 
 def _run_subconfig_worker(
-    custom_config: dict, subconfig_names: list[str]
+    custom_config: dict,
+    subconfig_name: str,
+    write_shared_utility_output: bool,
 ) -> None:
-    """Run a batch of subconfigs in an isolated worker process.
+    """Run one subconfig in an isolated worker process.
 
     Must be a top-level function to be picklable by ProcessPoolExecutor.
-    Each worker process has its own Configerator singleton and numpy random
-    state, so results are deterministic and independent of execution order.
+    Each worker process has its own configuration and numpy random state, so
+    results are deterministic and independent of execution order.
 
     Args:
         custom_config: Fully resolved base configuration dict.
-        subconfig_names: Names of the subconfigs to run (map to files in
+        subconfig_name: Name of the subconfig to run (maps to a file in
             SUBCONFIGS_DIR).
+        write_shared_utility_output: Whether this subconfig owns the shared
+            utility-model save path. Exactly one parallel task owns it.
     """
-    # Reset the singleton so this process starts from a clean slate.
-    # Required when the parent process used fork and inherited an instance.
-    Configerator.instance = None
+    single_config = copy.deepcopy(custom_config)
+    single_config["subconfigs"] = [subconfig_name]
+    if not write_shared_utility_output:
+        single_config.get("utility-model", {}).pop("save-path", None)
 
-    single_config = {**custom_config, "subconfigs": subconfig_names}
-
-    c = Configerator()
-    c._config = single_config
-    c._original_config = single_config
-    c.subconfigs = iter(subconfig_names)
-
-    m = MarketGenerator()
+    m = MarketGenerator(config=single_config, write_config=False)
     _run_market_generator(m)
 
 
@@ -145,40 +163,44 @@ def generate(config_path, sample, frac, workers):
 
     subconfigs_list = custom_config.get("subconfigs", [])
 
-    # 4. Run simulations — sequentially or in parallel
-    if workers == 1:
-        c = Configerator()
-        c._config = custom_config
-        c._original_config = custom_config
-        c.subconfigs = iter(subconfigs_list)
+    # Workers must never race to replace the root provenance file. The parent
+    # writes the complete resolved config, while every MarketGenerator below is
+    # explicitly told not to write a per-worker variant.
+    _write_provenance_config(custom_config)
 
-        m = MarketGenerator()
+    # 4. Run simulations — sequentially or in parallel
+    if workers == 1 or not subconfigs_list:
+        m = MarketGenerator(config=custom_config, write_config=False)
         _run_market_generator(m)
     else:
-        subconfig_chunks = _chunk_subconfigs(subconfigs_list, workers)
-        if not subconfig_chunks:
-            return
-        with ProcessPoolExecutor(max_workers=len(subconfig_chunks)) as executor:
+        worker_count = min(workers, len(subconfigs_list))
+        with ProcessPoolExecutor(max_workers=worker_count) as executor:
             futures = {
                 executor.submit(
-                    _run_subconfig_worker, custom_config, subconfig_chunk
-                ): subconfig_chunk
-                for subconfig_chunk in subconfig_chunks
+                    _run_subconfig_worker,
+                    custom_config,
+                    subconfig_name,
+                    index == len(subconfigs_list) - 1,
+                ): (index, subconfig_name)
+                for index, subconfig_name in enumerate(subconfigs_list)
             }
-            failed = []
-            failure_details = []
+            failures = []
             for future in as_completed(futures):
-                subconfig_chunk = futures[future]
+                index, subconfig_name = futures[future]
                 try:
                     future.result()
                 except Exception as exc:
-                    failed.extend(subconfig_chunk)
-                    failure_details.append(f"{subconfig_chunk}: {exc}")
+                    failures.append((index, subconfig_name, exc))
 
-        if failed:
+        if failures:
+            failures.sort(key=lambda failure: failure[0])
+            failed_names = [name for _, name, _ in failures]
+            failure_details = "; ".join(
+                f"{name}: {type(exc).__name__}: {exc}" for _, name, exc in failures
+            )
             raise RuntimeError(
-                f"{len(failed)} subconfig(s) failed: {failed}. "
-                + "; ".join(failure_details)
+                f"{len(failures)} subconfig(s) failed: {failed_names}. "
+                f"{failure_details}"
             )
 
 

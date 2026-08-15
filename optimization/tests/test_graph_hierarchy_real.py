@@ -25,11 +25,7 @@ pytestmark = [
 
 
 def _real_base_graph(unit: str) -> nx.Graph:
-    roots = [
-        Path("/share/data/school_choice/Zones/Optimization/Graphs"),
-        Path.home()
-        / "sfusd-local-data/zones/SFUSD/Optimization/Zones/Graphs/optimization",
-    ]
+    roots = [Path("/share/data/school_choice/Zones/Optimization/Graphs")]
     required = set(AREA_ETHNICITIES) | {
         "area_id",
         "ge_students",

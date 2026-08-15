@@ -29,10 +29,10 @@ def assignment(
 
 def test_defaults_use_fresh_roots_and_current_policy_order():
     assert outcomes.DEFAULT_CHOICE_ROOT.name == (
-        "zone_subconfigs_rematch_20260806T213549Z_choice_model_25"
+        "zone_subconfigs_rerun_20260811T043406Z_choice_model_25"
     )
     assert outcomes.DEFAULT_REAL_ROOT.name == (
-        "zone_subconfigs_rematch_20260806T213549Z_real_preferences_25"
+        "zone_subconfigs_rerun_20260811T043406Z_real_preferences_no_special_25"
     )
     assert tuple(outcomes.SUBCONFIGS) == tuple(SUBCONFIGS)
     assert len(outcomes.SUBCONFIGS) == 19

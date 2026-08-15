@@ -372,7 +372,7 @@ def test_ninth_grade_priorities(config_ninth):
     expected[:, lp_program_inds] += lp_expected
 
     # Selective high schools eligibility for 1-indexed program.
-    expected[:, special_program_no + 1] -= 500
-    expected[priority_1s_inds, special_program_no + 1] += 500
+    expected[:, special_program_no] -= 500
+    expected[priority_1s_inds, special_program_no] += 500
 
     assert (expected == priorities).all()

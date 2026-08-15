@@ -763,16 +763,8 @@ class StudentAssignmentSession:
         if self.market is None:
             raise RuntimeError("StudentAssignmentSession has not been initialized.")
 
-        self.market.config = config
-        self.market._set_up_save_folder(str(assignments_dir))
+        self.market.reconfigure(config, str(assignments_dir))
 
-        # These generators hold zone-dependent caches, so reset them per zoning.
-        self.market.priority_generator = self.market.priority_generator.__class__(
-            self.market
-        )
-        self.market.preference_generator = self.market.preference_generator.__class__(
-            self.market
-        )
 
 def _new_student_assignment_session() -> StudentAssignmentSession:
     return StudentAssignmentSession()

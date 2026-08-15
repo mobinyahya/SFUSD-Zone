@@ -4,19 +4,34 @@ import click
 import numpy as np
 import pandas as pd
 
-from student_assignment.configerator import Configerator
-from student_assignment.data_interfaces import (
-    Programs,
-    Students,
-)
-from student_assignment.definitions import (
-    BLOCK_DATA_FILE,
-    PROGRAM_CODES_FILE,
-    PROGRAM_DATA_FILE,
-    SCHOOL_DATA_FILE,
-    STUDENT_DATA_FILE,
-    Path,
-)
+if __package__:
+    from .student_assignment.configerator import Configerator
+    from .student_assignment.data_interfaces import (
+        Programs,
+        Students,
+    )
+    from .student_assignment.definitions import (
+        BLOCK_DATA_FILE,
+        PROGRAM_CODES_FILE,
+        PROGRAM_DATA_FILE,
+        SCHOOL_DATA_FILE,
+        STUDENT_DATA_FILE,
+        Path,
+    )
+else:
+    from student_assignment.configerator import Configerator
+    from student_assignment.data_interfaces import (
+        Programs,
+        Students,
+    )
+    from student_assignment.definitions import (
+        BLOCK_DATA_FILE,
+        PROGRAM_CODES_FILE,
+        PROGRAM_DATA_FILE,
+        SCHOOL_DATA_FILE,
+        STUDENT_DATA_FILE,
+        Path,
+    )
 
 
 class ConvertEstimates:
@@ -32,7 +47,7 @@ class ConvertEstimates:
 
         self.input_path_generator = Path(self._config["paths"]["sfusd"])
 
-        self._grade = self._config["grade"]
+        self._grade = Students._normalize_grade(self._config["grade"])
         self._year = self._config["year"]
         (
             self._weights,
@@ -42,20 +57,36 @@ class ConvertEstimates:
             self._programs,
         ) = self._load_data()
 
+    def _load_weights(self, weights_df: pd.DataFrame) -> tuple[np.ndarray, list]:
+        independent_features = list(weights_df.index)
+        weights = weights_df["coefficient"].to_numpy(dtype=float, copy=True)
+
+        if self._distance_weight is not None:
+            distance_indices = [
+                index
+                for index, feature in enumerate(independent_features)
+                if str(feature).strip().lower() == "distance"
+            ]
+            if len(distance_indices) != 1:
+                raise ValueError(
+                    "Cannot override the distance coefficient: weights.csv must "
+                    "contain exactly one feature named 'distance'; found "
+                    f"{len(distance_indices)} in {independent_features}."
+                )
+            weights[distance_indices[0]] = self._distance_weight
+
+        return weights, independent_features
+
     def _load_data(self):
         weights_path = os.path.join(self._model_path, "weights.csv")
         weights_df = pd.read_csv(weights_path, index_col=0)
-        independent_features = list(weights_df.index)
-
-        weights = weights_df.loc[independent_features].coefficient.to_numpy()
+        weights, independent_features = self._load_weights(weights_df)
 
         features_df = pd.read_csv(self._features_path)
         print(weights_path)
         print(self._features_path)
         print(features_df.shape)
-        features_df["student_number"] = (
-            features_df["studentno"].str.split("-").str[1]
-        )
+        features_df["student_number"] = features_df["studentno"].str.split("-").str[1]
 
         gr = f"{self._grade}_" if self._grade != "KG" else ""
 
@@ -67,13 +98,9 @@ class ConvertEstimates:
                 self._year + 1,
             ),
         )
-        program_data_file = self.input_path_generator.absolute_path(
-            program_data_file
-        )
+        program_data_file = self.input_path_generator.absolute_path(program_data_file)
 
-        program_codes_file = self.input_path_generator.absolute_path(
-            PROGRAM_CODES_FILE
-        )
+        program_codes_file = self.input_path_generator.absolute_path(PROGRAM_CODES_FILE)
 
         programs = Programs(program_data_file, program_codes_file, self._config)
 
@@ -81,7 +108,7 @@ class ConvertEstimates:
             "student-data",
             STUDENT_DATA_FILE.format(self._year, self._year + 1),
         )
-        student_data_file = self.input_path_generator.absolute_path(
+        self._student_data_file = self.input_path_generator.absolute_path(
             student_data_file
         )
 
@@ -97,11 +124,9 @@ class ConvertEstimates:
             school_location_file
         )
 
-        block_data_file = self.input_path_generator.absolute_path(
-            BLOCK_DATA_FILE
-        )
+        block_data_file = self.input_path_generator.absolute_path(BLOCK_DATA_FILE)
         students = Students(
-            student_data_file=student_data_file,
+            student_data_file=self._student_data_file,
             programs=programs,
             school_data_file=school_location_file,
             block_data_file=block_data_file,
@@ -109,9 +134,7 @@ class ConvertEstimates:
         )
 
         features_df = features_df[
-            features_df["student_number"]
-            .astype(int)
-            .isin(students.student_data.index)
+            features_df["student_number"].astype(int).isin(students.student_data.index)
         ]
         features = features_df[independent_features].fillna(0).to_numpy()
 
@@ -126,15 +149,10 @@ class ConvertEstimates:
     def _get_program_type_eligibility_matrix(self):
         eligibility_map = self._students.get_qualified_programs_dict()
         program_type_idxs = self._programs.program_type_to_indices
-        eligible = (
-            np.ones((self._students.n, self._programs.num_programs)) * -np.inf
-        )
+        eligible = np.ones((self._students.n, self._programs.num_programs)) * -np.inf
         for student_idx, studentno in self._students.idx2studentno.items():
             for program_type in eligibility_map[studentno]:
-                if (
-                    program_type
-                    in self._programs.program_df["program_type"].unique()
-                ):
+                if program_type in self._programs.program_df["program_type"].unique():
                     eligible[
                         student_idx,
                         [x - 1 for x in program_type_idxs[program_type]],
@@ -144,11 +162,10 @@ class ConvertEstimates:
     def _build_initial_estimate(self):
         if self._distance_weight is None:
             print("Using the model coefficients")
-            estimates = self._features.dot(self._weights)
-            print(self._weights)
-        elif self._distance_weight is not None:
-            print(f"Using user-input the coefficient {self._distance_weight}")
-            estimates = self._features.dot([self._distance_weight])
+        else:
+            print(f"Using distance coefficient {self._distance_weight}")
+        estimates = self._features.dot(self._weights)
+        print(self._weights)
         estimates_df = pd.DataFrame(
             zip(
                 self._features_df.studentno,
@@ -183,9 +200,7 @@ class ConvertEstimates:
             estimates_df.shape,
             self._get_program_type_eligibility_matrix().shape,
         )
-        estimates_df = (
-            estimates_df + self._get_program_type_eligibility_matrix()
-        )
+        estimates_df = estimates_df + self._get_program_type_eligibility_matrix()
         assert estimates_df.values.shape == (
             self._students.n,
             self._programs.num_programs,
@@ -196,15 +211,9 @@ class ConvertEstimates:
             save_path = os.path.join(
                 self._model_path, f"estimates_{self._distance_weight}.npy"
             )
-        student_data_path = STUDENT_DATA_FILE.format(
-            self._year,
-            self._year + 1,
-        )
-        student_data_path = self.input_path_generator.absolute_path(
-            student_data_path
-        )
-        student_data = pd.read_csv(student_data_path)
-        student_data = student_data[student_data["grade"] == self._grade]
+        student_data = pd.read_csv(self._student_data_file)
+        normalized_grades = student_data["grade"].map(Students._normalize_grade)
+        student_data = student_data[normalized_grades == self._grade]
         estimates_df = estimates_df.reset_index()
         estimates_df["studentno"] = estimates_df["studentno"].apply(
             lambda x: int(x.split("-")[1])

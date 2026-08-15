@@ -1,8 +1,8 @@
 paths:
-  sfusd: "~/SFUSD/"
-  student-save: '~/Documents/sfusd/local_runs/Data/Precomputed/'
-  assignment-folder: "~/Documents/sfusd/local_runs/assignments"
-  estimate-path: ~/Dropbox/SFUSD/Choice_Model/Oct1estimates.npy
+  sfusd: /share/data/school_choice/
+  student-save: ./assignment_output/precomputed/
+  assignment-folder: ./assignment_output/assignments/
+  estimate-path: /share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy
   zone-files:
     Medium1: "/share/data/school_choice/simulation-files/optGE862432.csv"
     Z1: "/share/data/school_choice/simulation-files/optGE862432.csv"

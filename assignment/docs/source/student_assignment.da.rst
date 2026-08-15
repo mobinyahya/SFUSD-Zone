@@ -36,14 +36,6 @@ student\_assignment.da.guardrail\_setup module
    :undoc-members:
    :show-inheritance:
 
-student\_assignment.da.ttc module
----------------------------------
-
-.. automodule:: student_assignment.da.ttc
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Module contents
 ---------------
 

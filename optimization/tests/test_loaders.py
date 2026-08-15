@@ -98,7 +98,7 @@ def test_load_census_shapefile_enriches_geographic_ids(tmp_path, monkeypatch):
         {"Block": [1001, 1002], "BlockGroup": [100, 100], "Tract": [10, 10]}
     ).to_csv(optimization_dir / "block_blockgroup_tract.csv", index=False)
     monkeypatch.setattr(loaders.gpd, "read_file", lambda _: source.copy())
-    monkeypatch.setattr(loaders, "get_dropbox_path", lambda _: str(tmp_path))
+    monkeypatch.setattr(loaders, "OPTIMIZATION_DATA_PATH", str(optimization_dir))
 
     census = loaders.load_census_shapefile("BlockGroup")
 
@@ -115,7 +115,7 @@ def test_load_distance_dict_reads_cached_matrix(tmp_path, monkeypatch):
         columns=[100, 200],
     )
     matrix.to_csv(optimization_dir / "distances_bg2bg.csv")
-    monkeypatch.setattr(loaders, "DROPBOX_PATH", str(tmp_path))
+    monkeypatch.setattr(loaders, "OPTIMIZATION_DATA_PATH", str(optimization_dir))
 
     distances = loaders.load_distance_dict(
         IngestConfig(unit="BlockGroup"), {100: 4, 200: 9}
@@ -133,7 +133,7 @@ def test_load_distance_dict_reads_rectangular_school_matrix(tmp_path, monkeypatc
         columns=[100, 200, 300],
     )
     matrix.to_csv(optimization_dir / "distances_b2b_schools.csv")
-    monkeypatch.setattr(loaders, "DROPBOX_PATH", str(tmp_path))
+    monkeypatch.setattr(loaders, "OPTIMIZATION_DATA_PATH", str(optimization_dir))
 
     distances = loaders.load_distance_dict(
         IngestConfig(unit="Block"), {100: 4, 200: 9, 300: 12}
@@ -151,7 +151,8 @@ def test_load_distance_dict_builds_and_caches_matrix(tmp_path, monkeypatch):
         {"Lat": [0.0, 0.0], "Lon": [0.0, 90.0]},
         index=pd.Index([100, 200], name="BlockGroup"),
     )
-    monkeypatch.setattr(loaders, "DROPBOX_PATH", str(tmp_path))
+    optimization_dir = tmp_path / "Optimization"
+    monkeypatch.setattr(loaders, "OPTIMIZATION_DATA_PATH", str(optimization_dir))
     monkeypatch.setattr(loaders, "load_area_latlon", lambda _: locations)
 
     distances = loaders.load_distance_dict(
@@ -161,4 +162,4 @@ def test_load_distance_dict_builds_and_caches_matrix(tmp_path, monkeypatch):
     assert distances[4][4] == 0.0
     assert distances[4][9] == pytest.approx(distances[9][4])
     assert distances[4][9] > 0
-    assert (tmp_path / "Optimization" / "distances_bg2bg.csv").exists()
+    assert (optimization_dir / "distances_bg2bg.csv").exists()

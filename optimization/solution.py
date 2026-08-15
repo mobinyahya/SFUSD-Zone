@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -42,26 +41,6 @@ def graph_fingerprint(G) -> str:
 
 
 @dataclass
-class JsonArtifact:
-    """One separately persisted JSON payload with a compact manifest entry."""
-
-    filename: str
-    summary: dict = field(default_factory=dict)
-    payload: object | None = field(default=None, repr=False, compare=False)
-    source_path: str | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        normalized = os.path.normpath(str(self.filename))
-        if (
-            os.path.isabs(normalized)
-            or normalized == ".."
-            or normalized.startswith(f"..{os.sep}")
-        ):
-            raise ValueError("Artifact filename must stay inside the solution folder.")
-        self.filename = normalized
-
-
-@dataclass
 class ZoneSolution:
     """Result of solving a :class:`ZoneProblem`."""
 
@@ -72,11 +51,6 @@ class ZoneSolution:
     wall_time: Optional[float] = None
     metadata: dict = field(default_factory=dict)
     solver_progress: list[SolverProgressEntry] = field(default_factory=list)
-    artifacts: dict[str, JsonArtifact] = field(
-        default_factory=dict,
-        repr=False,
-        compare=False,
-    )
 
     @property
     def level(self):
@@ -133,7 +107,6 @@ class ZoneSolution:
             json.dump({str(k): int(v) for k, v in self.area_assignment().items()}, f)
 
         self._save_solver_progress(folder, level)
-        self._save_artifacts(folder)
 
         info = {
             "level": level,
@@ -145,39 +118,10 @@ class ZoneSolution:
             "centroids": list(self.problem.centroids),
             "contiguous": self.is_contiguous() if self.feasible else None,
             "metadata": self.metadata,
-            "artifacts": self.artifact_manifest(),
         }
         info_path = os.path.join(folder, f"solution_{level}.json")
         with open(info_path, "w") as f:
             json.dump(info, f, indent=2)
-
-    def artifact_manifest(self) -> dict[str, dict[str, object]]:
-        """Return filename/summary descriptors without embedding payloads."""
-        return {
-            str(name): {
-                "path": artifact.filename,
-                "summary": dict(artifact.summary),
-            }
-            for name, artifact in sorted(self.artifacts.items())
-        }
-
-    def _save_artifacts(self, folder: str) -> None:
-        for artifact in self.artifacts.values():
-            destination = os.path.join(folder, artifact.filename)
-            os.makedirs(os.path.dirname(destination) or folder, exist_ok=True)
-            if artifact.payload is not None:
-                with open(destination, "w", encoding="utf-8") as output_file:
-                    json.dump(artifact.payload, output_file, indent=2, sort_keys=True)
-                continue
-            if artifact.source_path is not None:
-                source = os.path.abspath(os.path.expanduser(artifact.source_path))
-                if source != os.path.abspath(destination):
-                    shutil.copyfile(source, destination)
-                continue
-            if not os.path.exists(destination):
-                raise ValueError(
-                    f"Artifact {artifact.filename!r} has no payload or source file."
-                )
 
     def _save_solver_progress(self, folder: str, level: str) -> None:
         if not self.solver_progress:

@@ -55,7 +55,7 @@ class CloserNeighborArtifactStore:
 
     @staticmethod
     def _load_geometry(unit: str) -> gpd.GeoDataFrame:
-        return loaders.load_census_shapefile(unit, False)
+        return loaders.load_census_shapefile(unit)
 
     def attach_to_graph(self, level, G: nx.Graph) -> CloserNeighborData:
         """Attach the cached relation to ``G`` and return it."""

@@ -162,8 +162,8 @@ def test_metric_choice():
     )
     assert me.metric_unassigned(students_df) == 0.5
     assert me.metric_designated(students_df) == 0.5
-    assert me.metric_top_choice(students_df, 3) == 0.6
-    assert me.metric_top_in_zone_choice(students_df, 3) == 0.6
+    assert me.metric_top_choice(students_df, 3) == 0.5
+    assert me.metric_top_in_zone_choice(students_df, 3) == 0.5
     correct_output = [False] * 60 + [True] * 40
     assert (
         me.metric_dist_and_rank(students_df, 0.2, 4).values.tolist() == correct_output
@@ -172,6 +172,20 @@ def test_metric_choice():
     assert (
         me.metric_dist_and_rank(students_df, 0.4, 1).values.tolist() == correct_output
     )
+
+
+def test_designated_and_missing_ranks_are_not_submitted_top_choices():
+    me = MatchEvaluatorEmpty()
+    students = pd.DataFrame(
+        {
+            "rank": [1, 1, None],
+            "In-Zone Rank": [1, 1, None],
+            "designation": [0, 1, 0],
+        }
+    )
+
+    assert me.metric_top_choice(students, 1) == 1 / 3
+    assert me.metric_top_in_zone_choice(students, 1) == 1 / 3
 
 
 # Test the BG cohension metric with manually created data.

@@ -13,7 +13,10 @@ Usage:
 @date: 02-19-2026
 """
 
+import hashlib
+import json
 import os
+import pathlib
 import re
 import sys
 import warnings
@@ -27,9 +30,6 @@ import yaml
 
 sys.path.append(os.getcwd())
 
-from student_assignment.configerator import (
-    Configerator,  # ty:ignore[unresolved-import]
-)
 from student_assignment.market_generator.list_augmentation import (
     augment_preferences,
     identify_oversubscribed_programs,
@@ -83,7 +83,7 @@ class AugmentedMarketGenerator(MarketGenerator):
 
     def _simulate_policy(
         self, policy: str, iteration: int
-    ) -> Generator[pd.DataFrame | None, None, None]:
+    ) -> Generator[pd.DataFrame, None, None]:
         """Simulate a single iteration with augmentation.
 
         Identical to ``MarketGenerator._simulate_policy``
@@ -111,7 +111,9 @@ class AugmentedMarketGenerator(MarketGenerator):
         # Applies whether prefs came from the utility model or real submissions.
         aug_config = self.config.get("list-augmentation", {})
         if aug_config.get("enable", False):
-            prefs = self._augment_real_preferences(prefs, aug_config)
+            prefs = self._augment_real_preferences(
+                prefs, aug_config, policy=policy, iteration=iteration
+            )
 
         for ctip, rounds_merged, ties in product(
             self.config["ctip-options"],
@@ -126,7 +128,7 @@ class AugmentedMarketGenerator(MarketGenerator):
             )
 
             priorities = self.priority_generator.set_policy_specific_priorities(
-                policy_data, prefs
+                policy_data, prefs, iteration=iteration
             )
 
             if self.config["guard-rails"] != -1:
@@ -155,6 +157,9 @@ class AugmentedMarketGenerator(MarketGenerator):
         self,
         prefs: np.ndarray,
         aug_config: dict,
+        *,
+        policy: str,
+        iteration: int,
     ) -> np.ndarray:
         """Augment real preferences for targeted students.
 
@@ -165,8 +170,6 @@ class AugmentedMarketGenerator(MarketGenerator):
         Returns:
             Augmented preference matrix.
         """
-        import pathlib
-
         pref_lengths = self.preference_generator.pref_length.copy()
 
         # Identify targeted students
@@ -183,6 +186,7 @@ class AugmentedMarketGenerator(MarketGenerator):
             capacity,
             self.programs.school_to_indices,
             aug_config,
+            pref_lengths=pref_lengths,
         )
 
         # Build distance matrix aligned to program indices
@@ -200,6 +204,7 @@ class AugmentedMarketGenerator(MarketGenerator):
         student_order = self.students.student_data.index
         dist_aligned = dist_aligned.reindex(student_order).fillna(9999)
         distance_matrix = dist_aligned.to_numpy()
+        eligibility_matrix = self.preference_generator._get_eligibility()
 
         # Augment preferences (returns impact_df)
         prefs, new_pref_lengths, impact_df = augment_preferences(
@@ -210,21 +215,37 @@ class AugmentedMarketGenerator(MarketGenerator):
             self.students.student_data,
             distance_matrix,
             aug_config,
+            eligibility_matrix=eligibility_matrix,
         )
 
         # Update pref_length on the preference generator
         self.preference_generator.pref_length = new_pref_lengths
 
         # Save impact stats to CSV
-        if self.config.get("save-assignment", True):
-            output_dir = pathlib.Path(
-                self.config["paths"]["assignment-folder"]
-            ).expanduser()
-            subconfig_name = self.config.get("subconfig-name", "default")
-            impact_dir = output_dir / subconfig_name
-            impact_dir.mkdir(parents=True, exist_ok=True)
-            impact_path = impact_dir / "augmentation_impact.csv"
-            impact_df.to_csv(impact_path, index=False)
+        subconfig_name = self.config.get("subconfig-name", "default")
+        impact_dir = pathlib.Path(self.output_assignment_path) / subconfig_name
+        impact_dir.mkdir(parents=True, exist_ok=True)
+        impact_state = {
+            "policy": policy,
+            "iteration": iteration,
+            "guard_rails": self.config.get("guard-rails"),
+            "reserve_settings": self.config.get("reserve-settings", {}),
+            "restrict_zone": self.config.get("restrict-zone"),
+            "citywide_or_lp": self.config.get("citywide-or-lp", []),
+        }
+        signature = hashlib.sha256(
+            json.dumps(
+                impact_state,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()[:12]
+        policy_name = re.sub(r"[^A-Za-z0-9.-]+", "-", policy).strip("-")
+        impact_path = impact_dir / (
+            f"augmentation_impact_{policy_name}_iteration{iteration}_{signature}.csv"
+        )
+        impact_df.to_csv(impact_path, index=False)
 
         return prefs
 
@@ -249,17 +270,9 @@ def run_augmented_da(config_path: str) -> None:
 
     custom_config = resolve_variables(raw_config, raw_config)
 
-    # Initialize Configerator singleton with our config
-    configurator = Configerator()
-    configurator._config = custom_config
-    configurator._original_config = custom_config
-
-    subconfigs_list = custom_config.get("subconfigs", [])
-    configurator.subconfigs = iter(subconfigs_list)
-
     # Use AugmentedMarketGenerator instead of plain
     # MarketGenerator
-    market = AugmentedMarketGenerator()
+    market = AugmentedMarketGenerator(config=custom_config)
     market.simulate()
 
 

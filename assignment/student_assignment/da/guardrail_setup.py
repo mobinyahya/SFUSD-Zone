@@ -12,6 +12,23 @@ from .da_with_guardrails import DAwithGuards
 
 
 class GuardrailSetup:
+    _CITYWIDE_SCHOOLS = {
+        449,
+        476,
+        479,
+        485,
+        493,
+        509,
+        537,
+        618,
+        676,
+        714,
+        724,
+        760,
+        796,
+        814,
+    }
+
     def __init__(self, market, prefs):
         self.schools = market.schools
         self.students = market.students
@@ -76,9 +93,7 @@ class GuardrailSetup:
                 "thresholds"
             ]  # expect lower index => more disadvantaged
 
-            if isinstance(thresholds, str) and thresholds.startswith(
-                "percentile:"
-            ):
+            if isinstance(thresholds, str) and thresholds.startswith("percentile:"):
                 try:
                     p_val = float(thresholds.split(":")[1])
                     # 2. On calcule la vraie valeur numérique dans les données
@@ -94,10 +109,10 @@ class GuardrailSetup:
             )
 
         classes = np.searchsorted(thresholds, index_col)
-        if reserve_settings["lower_disadvantaged"]:
+        if not reserve_settings["lower_disadvantaged"]:
             classes = (
                 len(thresholds) - classes
-            )  # switch to higher value => greater priority
+            )  # class zero always represents the more disadvantaged group
 
         data.loc[:, "diversity_category"] = classes
         self.classOfStudent = classes
@@ -105,9 +120,7 @@ class GuardrailSetup:
 
     @staticmethod
     def _calculate_thresholds(data, num_categories):
-        percentiles = [
-            int(100 * i / num_categories) for i in range(1, num_categories)
-        ]
+        percentiles = [int(100 * i / num_categories) for i in range(1, num_categories)]
         thresholds = np.percentile(data["category_index"].dropna(), percentiles)
         return thresholds
 
@@ -133,9 +146,7 @@ class GuardrailSetup:
             .groupby(["zone_id", "diversity_category"], as_index=False)
             .sum()
         )
-        zone_total = (
-            data[["zone_id", "count"]].groupby("zone_id", as_index=False).sum()
-        )
+        zone_total = data[["zone_id", "count"]].groupby("zone_id", as_index=False).sum()
         count_per_zone = count_per_zone.merge(
             zone_total, how="left", on="zone_id", suffixes=("", "_tot")
         )
@@ -149,51 +160,48 @@ class GuardrailSetup:
             values="count",
             fill_value=0,
         )
-        return zone_frac
+        num_classes = getattr(self, "num_classes", None)
+        if num_classes is None:
+            observed_categories = data["diversity_category"].dropna()
+            num_classes = (
+                int(observed_categories.max()) + 1
+                if not observed_categories.empty
+                else 0
+            )
+        return zone_frac.reindex(columns=range(num_classes), fill_value=0.0)
+
+    def _citywide_ge_program_ids(self):
+        program_ids = []
+        for program_id, programno in self.programs.indices.items():
+            parts = str(program_id).split("-")
+            if len(parts) < 2 or parts[1] != "GE":
+                continue
+            try:
+                school_id = int(parts[0])
+            except ValueError:
+                continue
+            if school_id in self._CITYWIDE_SCHOOLS:
+                program_ids.append(programno - 1)
+        return program_ids
 
     def _set_up_program_reserves(self, reserve_settings):
         reserve_frac = reserve_settings.get("reserve_fraction", -1)
         citywide_only = reserve_settings.get("citywide_only", False)
         if reserve_frac != -1:
-            error_msg = (
-                "Reserve fractions length does not match the number of classes"
-            )
+            error_msg = "Reserve fractions length does not match the number of classes"
             assert len(reserve_frac) == self.num_classes, error_msg
         if hasattr(self, "student2zone"):
             zone_frac = self._calculate_zone_fractions()
         else:
-            zone_frac = np.bincount(self.classOfStudent) / self.n
-        self.program_reserve_frac = np.zeros(
-            (self.num_programs, self.num_classes)
-        )
+            zone_frac = (
+                np.bincount(self.classOfStudent, minlength=self.num_classes) / self.n
+            )
+        self.program_reserve_frac = np.zeros((self.num_programs, self.num_classes))
 
         all_programs_ids = range(self.num_programs)
+        citywide_program_ids = self._citywide_ge_program_ids()
         if citywide_only:
-            # TODO: Change hand-coded citywide schools KG grade to work with different data.
-            citywide_schools = [
-                618,
-                449,
-                476,
-                509,
-                796,
-                485,
-                537,
-                724,
-                760,
-                676,
-                479,
-                714,
-                493,
-                814,
-            ]
-            citywide_GE = [f"{x}-GE-KG" for x in citywide_schools]
-            program_indices = self.programs.indices
-            # - 1 for all as program indices are 1-indexed.
-            all_programs_ids = [
-                program_indices[x] - 1
-                for x in citywide_GE
-                if x in program_indices
-            ]
+            all_programs_ids = citywide_program_ids
 
         # Check if we should use separate reserves for citywide schools (defaults to True)
         use_citywide_separate_reserves = self.market.config.get(
@@ -201,30 +209,7 @@ class GuardrailSetup:
         )
 
         if use_citywide_separate_reserves:
-            citywide_schools = [
-                618,
-                449,
-                476,
-                509,
-                796,
-                485,
-                537,
-                724,
-                760,
-                676,
-                479,
-                714,
-                493,
-                814,
-            ]
-            citywide_GE = [f"{x}-GE-KG" for x in citywide_schools]
-            program_indices = self.programs.indices
-            # - 1 for all as program indices are 1-indexed.
-            all_city_wide_programs_ids = [
-                program_indices[x] - 1
-                for x in citywide_GE
-                if x in program_indices
-            ]
+            all_city_wide_programs_ids = citywide_program_ids
 
         prog_type = self.programs.program_type
 
@@ -239,9 +224,11 @@ class GuardrailSetup:
                     self.program_reserve_frac[j, :] = reserve_frac
                 elif hasattr(self, "student2zone"):
                     if j in self.program2zone:
-                        self.program_reserve_frac[j, :] = zone_frac.iloc[
-                            self.program2zone[j]
-                        ]
+                        zone_id = self.program2zone[j]
+                        if zone_id in zone_frac.index:
+                            self.program_reserve_frac[j, :] = zone_frac.loc[
+                                zone_id
+                            ].to_numpy()
                 else:
                     self.program_reserve_frac[j, :] = zone_frac
 
@@ -251,6 +238,11 @@ class GuardrailSetup:
             citywide_ratios = self.market.config.get(
                 "citywide-reserve-ratios", [0.57, 0.43]
             )
+            if len(citywide_ratios) != self.num_classes:
+                raise ValueError(
+                    "citywide-reserve-ratios length does not match the number "
+                    "of reserve classes"
+                )
 
             for j in all_city_wide_programs_ids:
                 self.program_reserve_frac[j, :] = citywide_ratios

@@ -120,16 +120,41 @@ class Zones:
             return student2programs, []
 
         zone_lists = []
-        reader = csv.reader(open(zone_file))
-        for row in reader:
-            if concept == 0:
-                zone_lists.append(
-                    {int(x) + 1 for x in row if str(x) != "" and int(x) > 0}
-                )  # Concept 0 Attendance area codes off by 1
-            else:
-                zone_lists.append(
-                    {int(x) for x in row if str(x) != "" and int(x) > 0}
-                )
+        with open(zone_file, newline="", encoding="utf-8-sig") as zone_data:
+            for line_number, row in enumerate(csv.reader(zone_data), start=1):
+                areas = []
+                for raw_area in row:
+                    token = str(raw_area).strip()
+                    if not token:
+                        continue
+                    try:
+                        area = int(token)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"Zone row {line_number} contains invalid area ID "
+                            f"{raw_area!r}."
+                        ) from exc
+                    if area <= 0:
+                        raise ValueError(
+                            f"Zone row {line_number} contains non-positive area "
+                            f"ID {area}."
+                        )
+                    areas.append(area + 1 if concept == 0 else area)
+
+                if not areas:
+                    raise ValueError(f"Zone row {line_number} is empty.")
+                duplicates = [
+                    area for area in dict.fromkeys(areas) if areas.count(area) > 1
+                ]
+                if duplicates:
+                    raise ValueError(
+                        f"Zone row {line_number} contains duplicate area IDs: "
+                        f"{duplicates}."
+                    )
+                zone_lists.append(set(areas))
+
+        if not zone_lists:
+            raise ValueError("Zone file contains no zones.")
         area_id2zone_id = self._create_zone_dictionary(zone_lists)
         return area_id2zone_id, zone_lists
 
@@ -341,7 +366,8 @@ class Zones:
                 x for sublist in school_list_of_lists for x in sublist
             ]
             area_id2program_id[area_id] = [
-                str(school_id) + "-GE-KG" for school_id in school_list
+                f"{school_id}-GE-{self._normalize_grade(self.config['grade'])}"
+                for school_id in school_list
             ]
 
         self.zone2area_list = zone2area_list
@@ -424,10 +450,33 @@ class Zones:
         Returns:
             dict mapping area_ids to zone_ids
         """
+        if not zone_list:
+            raise ValueError("A zone plan must contain at least one zone.")
         area2zone_id = {}
         for i, zone in enumerate(zone_list):
-            area2zone_id = {**area2zone_id, **{area: i for area in zone}}
+            areas = list(zone)
+            if not areas:
+                raise ValueError(f"Zone {i} is empty.")
+            if len(areas) != len(set(areas)):
+                raise ValueError(f"Zone {i} contains duplicate area IDs.")
+            overlap = [area for area in areas if area in area2zone_id]
+            if overlap:
+                raise ValueError(
+                    f"Area IDs are assigned to multiple zones: {overlap[:10]}"
+                )
+            area2zone_id.update({area: i for area in areas})
         return area2zone_id
+
+    @staticmethod
+    def _normalize_grade(value) -> str:
+        text = str(value).strip().upper()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if np.isfinite(number) and number.is_integer():
+            return str(int(number)).zfill(2)
+        return text
 
     def get_studentno_to_zone_dict(self, student_data):
         if self.config["zone-building-blocks"] == "attendance_area":

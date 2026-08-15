@@ -93,11 +93,6 @@ Each expanded task is a concrete `OptimizationConfig` plus benchmark metadata.
 
 Capacity scheduling uses `capacity_slots` per task. By default this equals the task's `workers` value, so CP-SAT thread counts are reflected in the scheduler. You can override this globally with `execution.task_capacity`.
 
-For the `overlapping` strategy, that worker budget is used for concurrent
-one-worker school solves. Each school solve receives
-`school_solve_time_limit`; the final all-school solve receives the full worker
-budget.
-
 Important execution fields:
 
 | Field | Description |
@@ -136,15 +131,6 @@ stages/
 `result.json` stores metrics, zone data, run metadata, levels, status, and a config snapshot.
 
 Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases for the metrics-selected final solution.
-
-`zoned_cg_seed_paths` and `zoned_benders_seed_paths` are sequence-valued. A
-flat list is one task's complete seed-path list; use a list of lists to sweep
-over alternative path sets. When a zoned analytical strategy saves its
-mechanism, each stage and the final
-root alias contain `artifacts/shi_mechanism_<level>.json`. Solution, manifest,
-and result payloads contain only its relative filename and compact summary.
-Metrics-only reconstruction preserves that reference and does not duplicate or
-rewrite the sparse mechanism payload.
 
 ## Modes
 

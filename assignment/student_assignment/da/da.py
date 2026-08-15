@@ -127,7 +127,7 @@ class Student:
         return self.preferences[self.proposal_index - 1]
 
     def check_exhausted(self, school_index):
-        if school_index == -2:
+        if school_index < 0:
             self.matched, self.rejects = True, True
             self.matched_to = None
             return True
@@ -196,12 +196,13 @@ class DeferredAcceptance:
             for i in sorted(unmatched_students):
                 student = self.students[i]
                 school_index = student.propose() - 1
-                school = self.schools[int(school_index)]
-                priority = student.priorities[int(school_index)]
 
                 if student.check_exhausted(school_index):
                     unmatched_students.discard(i)
                     continue
+
+                school = self.schools[int(school_index)]
+                priority = student.priorities[int(school_index)]
 
                 if priority < 0:
                     continue

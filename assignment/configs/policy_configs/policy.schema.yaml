@@ -3,7 +3,7 @@ sibling-access: bool()
 truncate-at-AA-GE: bool(required=False)
 designate: bool()
 designation-ordering-type: enum('in_zone', 'simple', required=False)  # Controls how designation programs are ordered, defaults to 'in_zone'
-assignment-algorithm: str()
+assignment-algorithm: enum('DA')
 
 non_designation_boost: int(required=False)
 aa_boost: int(required=False)
@@ -29,4 +29,4 @@ policies: list(str())
 citywide-or-lp: list(str(), required=False)
 
 ctip-options: list(int(), str(), map())
-ties-options: list(int(), str())
+ties-options: list(enum('STB', 'STB_REAL', 'MTB', 'MTB_REAL', 'HTB', 'STBcoordinated'))

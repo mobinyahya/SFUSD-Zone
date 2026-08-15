@@ -21,6 +21,30 @@ _TARGETED_ETHNICITIES = {
     "Decline to State",
 }
 
+_ETHNICITY_ALIASES = {
+    "Hispanic/Latinx": "Hispanic/Latino",
+    "Hispanic": "Hispanic/Latino",
+    "Black/African American": "Black or African American",
+    "Black": "Black or African American",
+    "Other Pacific Islander": "Pacific Islander",
+    "Native Hawaiian/Pacific Islander": "Pacific Islander",
+    "Samoan": "Pacific Islander",
+    "Hawaiian": "Pacific Islander",
+    "Hawaiian Native": "Pacific Islander",
+    "Multi-Racial": "Two or More Races",
+    "Two or More": "Two or More Races",
+    "Two or more races": "Two or More Races",
+    "Decline To State": "Decline to State",
+    "American Indian": "American Indian/Alaska Native",
+    "American Indian or Alaska Native": "American Indian/Alaska Native",
+    "American Indian or Alaskan Native": "American Indian/Alaska Native",
+}
+
+
+def _normalize_ethnicity(value: object) -> str:
+    ethnicity = "" if pd.isna(value) else str(value).strip()
+    return _ETHNICITY_ALIASES.get(ethnicity, ethnicity)
+
 
 def identify_targeted_students(
     student_data: pd.DataFrame,
@@ -44,11 +68,11 @@ def identify_targeted_students(
 
     if method == "ctip_x_ethnicity":
         ctip_vals = student_data["ctip1"].fillna(0).astype(int).to_numpy()
-        ethnicity_vals = (
-            student_data["resolved_ethnicity"].fillna("").to_numpy()
+        ethnicity_vals = student_data["resolved_ethnicity"].map(
+            _normalize_ethnicity
         )
         is_ctip = ctip_vals == 1
-        is_targeted_ethn = np.isin(ethnicity_vals, list(_TARGETED_ETHNICITIES))
+        is_targeted_ethn = ethnicity_vals.isin(_TARGETED_ETHNICITIES).to_numpy()
         targeted = is_ctip & is_targeted_ethn
 
     elif method == "short_list_threshold":
@@ -66,6 +90,8 @@ def identify_oversubscribed_programs(
     capacity: np.ndarray,
     school_to_indices: dict[int, list[int]],
     config: dict,
+    *,
+    pref_lengths: np.ndarray,
 ) -> np.ndarray:
     """Identify oversubscribed program indices.
 
@@ -78,6 +104,8 @@ def identify_oversubscribed_programs(
         school_to_indices: Dict mapping school_id to list
             of 1-indexed program indices.
         config: The ``list-augmentation`` sub-config dict.
+        pref_lengths: Number of submitted choices per student. Entries after this
+            boundary are designation options and are not applications.
 
     Returns:
         1-D array of 1-indexed program indices that are
@@ -93,20 +121,26 @@ def identify_oversubscribed_programs(
         program_indices = []
         for sid in school_ids:
             program_indices.extend(school_to_indices.get(int(sid), []))
-        return np.array(program_indices, dtype=int)
+        return np.array(list(dict.fromkeys(program_indices)), dtype=int)
+
+    pref_lengths = np.asarray(pref_lengths, dtype=int)
+    if pref_lengths.shape != (prefs.shape[0],):
+        raise ValueError("pref_lengths must contain one value per student")
+    pref_lengths = np.clip(pref_lengths, 0, prefs.shape[1])
+    submitted_mask = np.arange(prefs.shape[1]) < pref_lengths[:, np.newaxis]
 
     # Count applications per program (1-indexed in prefs)
     if method == "first_choice_per_seat":
-        first_choices = prefs[:, 0].astype(int)
-        valid = first_choices > 0
+        first_choices = np.where(pref_lengths > 0, prefs[:, 0], 0).astype(int)
+        valid = (first_choices > 0) & (first_choices <= num_programs)
         app_counts = np.bincount(
             first_choices[valid],
             minlength=num_programs + 1,
         )[1:]
 
     elif method == "apps_per_seat":
-        flat = prefs.ravel().astype(int)
-        valid = flat > 0
+        flat = prefs[submitted_mask].astype(int)
+        valid = (flat > 0) & (flat <= num_programs)
         app_counts = np.bincount(flat[valid], minlength=num_programs + 1)[1:]
 
     else:
@@ -131,6 +165,8 @@ def augment_preferences(
     student_data: pd.DataFrame,
     distance_matrix: np.ndarray,
     config: dict,
+    *,
+    eligibility_matrix: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Augment short preference lists of targeted students.
 
@@ -154,17 +190,22 @@ def augment_preferences(
             with pairwise distances in miles. Columns are
             0-indexed (program index - 1).
         config: The ``list-augmentation`` sub-config dict.
+        eligibility_matrix: Boolean (n_students, n_programs) matrix combining
+            program-type and zone eligibility.
 
     Returns:
         Tuple of (augmented_prefs, augmented_lengths,
         impact_df) where impact_df is a DataFrame with
         per-subgroup impact statistics.
     """
-    max_add = config.get("max-augmented-programs", 1)
+    max_add = max(0, int(config.get("max-augmented-programs", 1)))
 
     augmented_prefs = prefs.copy()
     augmented_lengths = pref_lengths.copy()
     num_programs = prefs.shape[1]
+    eligibility_matrix = np.asarray(eligibility_matrix, dtype=bool)
+    if eligibility_matrix.shape != prefs.shape:
+        raise ValueError("eligibility_matrix must have the same shape as prefs")
 
     # All targeted students are eligible
     eligible = targeted_mask
@@ -174,47 +215,75 @@ def augment_preferences(
     n_students = len(pref_lengths)
     programs_added = np.zeros(n_students, dtype=int)
 
-    # 0-indexed versions for distance lookup
-    oversub_0idx = oversubscribed_programs - 1
+    oversubscribed_programs = np.array(
+        list(
+            dict.fromkeys(
+                int(program)
+                for program in oversubscribed_programs
+                if 1 <= int(program) <= num_programs
+            )
+        ),
+        dtype=int,
+    )
 
-    if len(eligible_indices) > 0 and len(oversubscribed_programs) > 0:
+    if max_add and len(eligible_indices) > 0 and len(oversubscribed_programs) > 0:
         for student_idx in eligible_indices:
             current_len = int(augmented_lengths[student_idx])
-            existing = set(
-                augmented_prefs[student_idx, :current_len].astype(int).tolist()
+            submitted = list(
+                dict.fromkeys(
+                    int(program)
+                    for program in augmented_prefs[student_idx, :current_len]
+                    if program != 0
+                )
+            )
+            submitted_set = set(submitted)
+            designation_tail = list(
+                dict.fromkeys(
+                    int(program)
+                    for program in augmented_prefs[student_idx, current_len:]
+                    if program != 0 and int(program) not in submitted_set
+                )
             )
 
-            # Filter to candidates not already listed
-            candidate_mask = np.array(
-                [prog not in existing for prog in oversubscribed_programs]
+            candidates = np.array(
+                [
+                    program
+                    for program in oversubscribed_programs
+                    if program not in submitted_set
+                    and eligibility_matrix[student_idx, program - 1]
+                ],
+                dtype=int,
             )
-            if not candidate_mask.any():
+            if not len(candidates):
                 continue
 
-            # Distances from this student to candidates
-            cand_0idx = oversub_0idx[candidate_mask]
-            cand_1idx = oversubscribed_programs[candidate_mask]
-            dists = distance_matrix[student_idx, cand_0idx]
+            dists = distance_matrix[student_idx, candidates - 1]
+            candidates = candidates[np.argsort(dists, kind="stable")]
+            tail_set = set(designation_tail)
+            free_slots = num_programs - len(submitted) - len(designation_tail)
+            to_add = []
+            for candidate in candidates:
+                if candidate not in tail_set and free_slots <= 0:
+                    continue
+                to_add.append(int(candidate))
+                if candidate not in tail_set:
+                    free_slots -= 1
+                if len(to_add) == max_add:
+                    break
 
-            # Pick the closest max_add programs
-            sort_order = np.argsort(dists)
-            to_add = cand_1idx[sort_order][:max_add]
-
-            n_add = min(
-                len(to_add),
-                num_programs - current_len,
-            )
-            if n_add <= 0:
+            if not to_add:
                 continue
 
-            # Insert at top: shift existing prefs right
-            new_end = min(current_len + n_add, num_programs)
-            augmented_prefs[student_idx, n_add:new_end] = augmented_prefs[
-                student_idx, : new_end - n_add
+            promoted = set(to_add)
+            new_submitted = to_add + submitted
+            new_tail = [
+                program for program in designation_tail if program not in promoted
             ]
-            augmented_prefs[student_idx, :n_add] = to_add[:n_add]
-            augmented_lengths[student_idx] = new_end
-            programs_added[student_idx] = n_add
+            combined = new_submitted + new_tail
+            augmented_prefs[student_idx] = 0
+            augmented_prefs[student_idx, : len(combined)] = combined
+            augmented_lengths[student_idx] = len(new_submitted)
+            programs_added[student_idx] = len(to_add)
 
     # Build per-subgroup impact DataFrame
     impact_df = _compute_subgroup_impact(
@@ -253,7 +322,12 @@ def _compute_subgroup_impact(
         DataFrame with one row per subgroup and columns
         for counts and statistics.
     """
-    ethnicity = student_data["resolved_ethnicity"].fillna("Unknown").to_numpy()
+    ethnicity = (
+        student_data["resolved_ethnicity"]
+        .map(_normalize_ethnicity)
+        .replace("", "Unknown")
+        .to_numpy()
+    )
     ctip = student_data["ctip1"].fillna(0).astype(int).to_numpy()
     augmented_mask = programs_added > 0
 

@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from Config.Constants import zone_colors  # noqa: E402
 from optimization.data.loaders import load_census_shapefile  # noqa: E402
 
-DEFAULT_ZONE_ROOT = Path("~/sfusd-local-data/zones/zone_backend")
+DEFAULT_ZONE_ROOT = Path("/share/data/school_choice/simulation-files/zones")
 DEFAULT_SMALL_ZONES = (
     DEFAULT_ZONE_ROOT / "Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv"
 )
@@ -71,7 +71,7 @@ def load_zone_assignment(path: Path) -> dict[int, int]:
 
 
 def load_block_group_geometry() -> gpd.GeoDataFrame:
-    census = load_census_shapefile("BlockGroup", False)
+    census = load_census_shapefile("BlockGroup")
     geometry = census[["BlockGroup", "geometry"]].dissolve(
         by="BlockGroup", as_index=False
     )

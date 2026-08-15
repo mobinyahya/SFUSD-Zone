@@ -5,38 +5,67 @@
 Class containing utility model for market simulator
 """
 
-import os
+import csv
 import pathlib
-import warnings
+import re
 
 import numpy as np
 import pandas as pd
 
 
 class UtilityModel:
-    def __init__(
-        self,
-        estimate_path,
-        programs,
-        students,
-        read_prefs=False,
-        codex_paths=None,
-    ):
+    def __init__(self, estimate_path, programs, students):
         self.programs = programs
         self.students = students
         self.estimate_path = estimate_path
-        self.read_prefs = read_prefs
         self._base_utility_cache_key = None
         self._base_utility_matrix = None
-        if codex_paths is not None:
-            self.student_codex_path = codex_paths[0]
-            self.program_codex_path = codex_paths[1]
 
     @staticmethod
     def _index_cache_key(values):
         if values is None:
             return None
         return tuple(np.asarray(values).tolist())
+
+    @staticmethod
+    def _identity_text(value) -> str:
+        if pd.isna(value):
+            raise ValueError("Utility identities cannot be null.")
+        if isinstance(value, (int, np.integer)):
+            return str(int(value))
+        if isinstance(value, (float, np.floating)) and float(value).is_integer():
+            return str(int(value))
+        identity = str(value).strip()
+        if not identity:
+            raise ValueError("Utility identities cannot be empty.")
+        return identity
+
+    @classmethod
+    def _normalize_labeled_identity(cls, value, required_identities: set[str]) -> str:
+        identity = cls._identity_text(value)
+        if identity in required_identities:
+            return identity
+        year_prefixed = re.fullmatch(r"(?:\d{2}|\d{4})-(.+)", identity)
+        if year_prefixed:
+            return year_prefixed.group(1)
+        return identity
+
+    @staticmethod
+    def _validate_csv_header(path: pathlib.Path) -> None:
+        with open(path, newline="", encoding="utf-8-sig") as utility_file:
+            try:
+                header = next(csv.reader(utility_file))
+            except StopIteration as exc:
+                raise ValueError("Utility CSV is empty.") from exc
+        duplicate_columns = list(
+            dict.fromkeys(column for column in header if header.count(column) > 1)
+        )
+        if duplicate_columns:
+            raise ValueError(
+                f"Utility CSV has duplicate columns: {duplicate_columns[:10]}"
+            )
+        if header.count("studentno") != 1:
+            raise ValueError("Utility CSV must contain exactly one studentno column.")
 
     def _load_utility_from_csv(self):
         """Load the utility matrix from a csv dataframe. The csv dataframe should have
@@ -45,55 +74,113 @@ class UtilityModel:
         Returns:
             np.ndarray: the loaded utility matrix ordered by student and program indexing.
         """
-        estimates_df = pd.read_csv(self.estimate_path)
-        # Remove students and programs that are not used, and order the dataframe
-        # by student and program index. The studentno in the input csv dataframe
-        # is in the format <year>-<studentno>.
-        estimates_df.studentno = estimates_df.studentno.apply(
-            lambda x: int(x.split("-")[1])
-        )
-        estimates_df = estimates_df.set_index("studentno")
-        required_students = self.students.student_data.index.to_numpy()
+        path = pathlib.Path(self.estimate_path).expanduser()
+        self._validate_csv_header(path)
+        estimates_df = pd.read_csv(path, dtype={"studentno": "string"})
+
+        required_student_values = self.students.student_data.index.tolist()
+        required_students = [
+            self._identity_text(studentno) for studentno in required_student_values
+        ]
+        if len(required_students) != len(set(required_students)):
+            raise ValueError("Required student identities are not unique.")
+        required_student_set = set(required_students)
+
+        student_labels = [
+            self._normalize_labeled_identity(studentno, required_student_set)
+            for studentno in estimates_df.pop("studentno")
+        ]
+        duplicate_students = pd.Index(student_labels)[
+            pd.Index(student_labels).duplicated(keep=False)
+        ].unique()
+        if len(duplicate_students):
+            raise ValueError(
+                "Utility CSV has duplicate student rows: "
+                f"{duplicate_students.tolist()[:10]}"
+            )
+        estimates_df.index = pd.Index(student_labels, name="studentno")
+
+        required_programs = [
+            self._identity_text(program_id)
+            for program_id in self.programs.program_df["program_id"]
+        ]
+        if len(required_programs) != len(set(required_programs)):
+            raise ValueError("Required program identities are not unique.")
+        required_program_set = set(required_programs)
+        program_labels = [
+            self._normalize_labeled_identity(program_id, required_program_set)
+            for program_id in estimates_df.columns
+        ]
+        duplicate_programs = pd.Index(program_labels)[
+            pd.Index(program_labels).duplicated(keep=False)
+        ].unique()
+        if len(duplicate_programs):
+            raise ValueError(
+                "Utility CSV has duplicate program columns: "
+                f"{duplicate_programs.tolist()[:10]}"
+            )
+        estimates_df.columns = program_labels
+
         available_students = set(estimates_df.index)
-        missing_students = [
-            s for s in required_students if s not in available_students
-        ]
+        missing_students = sorted(required_student_set - available_students)
         if missing_students:
-            warnings.warn(
-                f"{len(missing_students)} students are missing from estimates; "
-                "filling their utilities with -inf.",
-                stacklevel=2,
+            raise ValueError(
+                f"Utility CSV is missing required student rows: {missing_students[:10]}"
             )
-            missing_rows = pd.DataFrame(
-                -np.inf,
-                index=missing_students,
-                columns=estimates_df.columns,
-            )
-            missing_rows.index.name = "studentno"
-            estimates_df = pd.concat([estimates_df, missing_rows])
-        estimates_df = estimates_df.loc[required_students]
-        estimates_df = estimates_df.iloc[
-            estimates_df.index.map(self.students.studentno2idx).argsort()
-        ]
-        required_programs = self.programs.program_df.program_id.to_numpy()
         available_programs = set(estimates_df.columns)
-        missing_programs = [
-            p for p in required_programs if p not in available_programs
-        ]
+        missing_programs = sorted(required_program_set - available_programs)
         if missing_programs:
-            warnings.warn(
-                f"{len(missing_programs)} programs are missing from estimates; "
-                "filling their utilities with -inf: "
-                f"{missing_programs[:10]}{'...' if len(missing_programs) > 10 else ''}",
-                stacklevel=2,
+            raise ValueError(
+                "Utility CSV is missing required program columns: "
+                f"{missing_programs[:10]}"
             )
-            for prog in missing_programs:
-                estimates_df[prog] = -np.inf
-        estimates_df = estimates_df[required_programs]
-        estimates_df.rename(columns=self.programs.indices, inplace=True)
-        sorted_columns = sorted(estimates_df.columns, key=int)
-        estimates_df = estimates_df[sorted_columns]
-        return estimates_df.to_numpy()
+
+        aligned = estimates_df.loc[required_students, required_programs]
+        numeric = aligned.apply(pd.to_numeric, errors="coerce")
+        numeric_values = numeric.to_numpy(dtype=float)
+        invalid = np.isnan(numeric_values) | np.isposinf(numeric_values)
+        if invalid.any():
+            row, column = np.argwhere(invalid)[0]
+            raise ValueError(
+                "Utility CSV contains a non-numeric or NaN utility, or positive "
+                "infinity, at "
+                f"student {required_students[row]}, program "
+                f"{required_programs[column]}."
+            )
+        return numeric_values
+
+    def _load_utility_from_npy(self, rows_to_keep=None, cols_to_keep=None):
+        path = pathlib.Path(self.estimate_path).expanduser()
+        mus = np.load(path, allow_pickle=False)
+        if mus.ndim != 2:
+            raise ValueError(
+                f"Utility NPY must be two-dimensional; found shape {mus.shape}."
+            )
+        try:
+            # Saved matrices are already reduced to the active students and
+            # programs. Apply source-data selectors only to unreduced matrices.
+            if rows_to_keep is not None and mus.shape[0] != self.students.n:
+                mus = mus[np.asarray(rows_to_keep)]
+            if cols_to_keep is not None and mus.shape[1] != self.programs.num_programs:
+                mus = mus[:, np.asarray(cols_to_keep)]
+        except (IndexError, TypeError) as exc:
+            raise ValueError("Utility NPY subset indices are invalid.") from exc
+
+        expected_shape = (self.students.n, self.programs.num_programs)
+        if mus.shape != expected_shape:
+            raise ValueError(
+                f"Utility NPY shape {mus.shape} does not match required shape "
+                f"{expected_shape}."
+            )
+        if np.iscomplexobj(mus):
+            raise ValueError("Utility NPY must contain real numeric utilities.")
+        try:
+            mus = np.asarray(mus, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Utility NPY contains non-numeric utilities.") from exc
+        if np.isnan(mus).any() or np.isposinf(mus).any():
+            raise ValueError("Utility NPY contains NaN or positive-infinite utilities.")
+        return mus
 
     def _load_base_utility_matrix(self, rows_to_keep=None, cols_to_keep=None):
         cache_key = (
@@ -104,17 +191,17 @@ class UtilityModel:
         if cache_key == self._base_utility_cache_key:
             return self._base_utility_matrix
 
-        if ".csv" in str(self.estimate_path):
+        if pathlib.Path(self.estimate_path).suffix.lower() == ".csv":
             mus = self._load_utility_from_csv()
         else:
-            mus = np.load(pathlib.Path(self.estimate_path).expanduser())
-            # Keep only the rows or columns if specified. This would be used for when
-            # we only kept a subset of students and/or programs corresponding to a
-            # subset of all the rows and/or columns in the utility matrix.
-            if rows_to_keep is not None:
-                mus = mus[rows_to_keep]
-            if cols_to_keep is not None:
-                mus = mus[:, cols_to_keep]
+            mus = self._load_utility_from_npy(rows_to_keep, cols_to_keep)
+
+        expected_shape = (self.students.n, self.programs.num_programs)
+        if mus.shape != expected_shape:
+            raise ValueError(
+                f"Utility matrix shape {mus.shape} does not match required "
+                f"shape {expected_shape}."
+            )
 
         self._base_utility_cache_key = cache_key
         self._base_utility_matrix = mus
@@ -127,75 +214,23 @@ class UtilityModel:
         cols_to_keep=None,
         gumbel_scale=1.0,
     ):
-        if self.read_prefs:
-            if ".csv" in str(self.estimate_path):
-                mus = self._load_utility_from_csv()
-            else:
-                mus = np.load(pathlib.Path(self.estimate_path).expanduser())
-                if rows_to_keep is not None:
-                    mus = mus[rows_to_keep]
-                if cols_to_keep is not None:
-                    mus = mus[:, cols_to_keep]
-        else:
-            mus = self._load_base_utility_matrix(rows_to_keep, cols_to_keep)
+        mus = self._load_base_utility_matrix(rows_to_keep, cols_to_keep)
 
+        if not np.isfinite(gumbel_scale) or gumbel_scale < 0:
+            raise ValueError("gumbel_scale must be a finite non-negative number.")
         n, p = mus.shape
-        # Verify that the utility matrix has the same size as student and programs.
-        error_msg = "the utility matrix length does not match the number of {}."
-        assert p == self.programs.num_programs, error_msg.format("programs")
-        assert n == self.students.n, error_msg.format("students")
-
-        if not self.read_prefs:
-            # The contribution of the random part of the preference model.
-            # gumbel_scale=0 → deterministic argmax (no noise); >0 → MNL draw.
-            if gumbel_scale == 0:
-                utilities = mus.copy()
-            else:
-                utilities = np.array(
-                    mus + np.random.gumbel(0, gumbel_scale, (n, p))
-                )
-            # num_eligible = np.where(utilities > -100, 1, 0).sum(axis=1)
-
-            self.original_utilities = utilities
-            self.original_preferences = np.argsort(
-                -utilities, axis=1
-            ) + np.ones(utilities.shape)
-            # for i, num in enumerate(num_eligible):
-            #     self.original_preferences[i, num:] = 0
-            # print(self.original_preferences)
-
+        if gumbel_scale == 0:
+            utilities = mus.copy()
         else:
-            student_codex = np.load(os.path.expanduser(self.student_codex_path))
-            program_codex = np.load(os.path.expanduser(self.program_codex_path))
-            student_nos = list(self.student_data.index)
+            utilities = np.array(mus + np.random.gumbel(0, gumbel_scale, (n, p)))
 
-            choice = np.load(self.estimate_path)
-            choice = choice[iteration, :, :]
-            n2, p2 = choice.shape
-            self.original_preferences = np.zeros([n, p])
-            for i in range(n2):
-                student_no = student_codex[i]
-                if student_no in student_nos:
-                    student_idx = student_nos.index(student_no)
-                    for j in range(p2):
-                        program_code = program_codex[int(choice[i, j])]
-                        program_idx = int(
-                            self.programs.indices[program_code]
-                        )  # Ranges from 1 to 159
-                        self.original_preferences[student_idx, j] = program_idx
-            utilities = np.zeros([n, p])
-            for i in range(n):
-                for j in range(p):
-                    program_idx = int(self.original_preferences[i, j] - 1)
-                    if program_idx >= 0:
-                        if utilities[i, program_idx] == 0:
-                            utilities[i, program_idx] = 1000 - j
-
-            self.original_utilities = utilities
+        self.original_utilities = utilities
+        self.original_preferences = np.argsort(-utilities, axis=1) + 1
 
     def save_utility_matrix(self, save_path):
         """Save the computed utility matrix to a file."""
-        if save_path.endswith(".csv"):
+        save_path = pathlib.Path(save_path).expanduser()
+        if save_path.suffix.lower() == ".csv":
             # Get student numbers (names/IDs)
             student_names = [
                 self.students.idx2studentno[i] for i in range(self.students.n)

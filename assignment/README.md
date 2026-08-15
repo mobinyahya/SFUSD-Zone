@@ -122,7 +122,7 @@ scripts/
 
 configs/
   base_config.yaml          Simulation defaults
-  local_path_config.yaml    Off-cluster paths    cluster_path_config.yaml  Cluster paths
+  local_path_config.yaml    Default shared paths    cluster_path_config.yaml  Cluster paths
   config_schema.yaml        yamale schema for the user config
   custom_configs/           Representative run configs (status quo, augmented, …)
   policy_configs/           Policy definitions (zones, distance bands, reserves)
@@ -147,9 +147,9 @@ documented in **[docs/CONFIG_OPTIONS.md](docs/CONFIG_OPTIONS.md)**.
 ## Data setup
 
 Paths resolve automatically by environment: on the cluster (hostname contains
-`soal`) from `configs/cluster_path_config.yaml` (data already at
-`/share/data/school_choice/`); elsewhere from `configs/local_path_config.yaml`,
-which you point at your own copy of the confidential SFUSD data.
+`soal`) from `configs/cluster_path_config.yaml`; elsewhere from
+`configs/local_path_config.yaml`. Both read source data from
+`/share/data/school_choice/` and keep default local outputs under the repository.
 
 Paths in the example configs are **explicit** — either a shared cluster path
 (`/share/data/school_choice/...`, used as-is) or a placeholder token you replace
@@ -159,7 +159,6 @@ with your own **absolute** path:
 |-------|------------------------------|
 | `<STUDENT_ASSIGNMENT_PATH>` | your `student-assignment` checkout (inputs and run outputs under `local-data/`) |
 | `<SFUSD_CHOICE_PATH>` | your `SFUSD-Choice` checkout (MNL `estimates_*.csv`) |
-| `<SFUSD_DATA_PATH>` | your local copy of the confidential SFUSD data tree |
 | `<RA_SFUSD_PATH>` | your `RA_SFUSD` checkout (permuted-students experiment configs) |
 
 Apply them quickly, e.g. `sed -i "s#<STUDENT_ASSIGNMENT_PATH>#$PWD#g" configs/<your-config>.yaml`.

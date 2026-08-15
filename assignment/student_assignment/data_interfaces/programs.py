@@ -13,25 +13,101 @@ from ..definitions import (
 
 
 class Programs:
-    def __init__(
-        self, program_data_file: str, program_codes_file: str, config: dict
-    ):
+    def __init__(self, program_data_file: str, program_codes_file: str, config: dict):
         self._config = config
         self.program_df = pd.read_csv(program_data_file)
+        self.only_keep_cols = None
+        self._set_up_programno(program_codes_file)
         if self._config.get("remove-special-lps", False):
             self._remove_special_lps()
-        else:
-            # Record the line to keep for programs to remove columns in utility files.
-            # if some columns are removed. Record as None to indicate no columns are removed.
-            self.only_keep_cols = None
-        self._set_up_programno(program_codes_file)
         self.num_programs = len(self.program_df)
         self._program_type2indices = None
         self._school2indices = None
-        if config["grade"] == "06":
+        grade = self._normalize_grade(config["grade"])
+        if grade == "06":
             self.fix_k8_capacities()
-        elif config["grade"] == "09":
+        elif grade == "09":
             self._selective_hs_capacities()
+
+    @staticmethod
+    def _normalize_grade(value) -> str:
+        """Normalize numeric grades to their two-character program suffix."""
+        text = str(value).strip().upper()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if np.isfinite(number) and number.is_integer():
+            return str(int(number)).zfill(2)
+        return text
+
+    @staticmethod
+    def _validate_identity_column(df: pd.DataFrame, column: str, source: str) -> None:
+        if column not in df.columns:
+            raise ValueError(f"{source} is missing required column '{column}'.")
+
+        values = df[column]
+        missing = values.isna() | values.astype("string").str.strip().eq("")
+        if missing.fillna(True).any():
+            raise ValueError(f"{source} contains a missing {column} identity.")
+
+        duplicates = values[values.duplicated(keep=False)]
+        if not duplicates.empty:
+            duplicate_values = duplicates.astype(str).unique().tolist()
+            raise ValueError(
+                f"{source} contains duplicate {column} identities: "
+                f"{duplicate_values[:10]}"
+            )
+
+    @staticmethod
+    def _validate_programnos(
+        df: pd.DataFrame, source: str, *, require_contiguous: bool
+    ) -> None:
+        Programs._validate_identity_column(df, "programno", source)
+        numeric = pd.to_numeric(df["programno"], errors="coerce")
+        if (
+            numeric.isna().any()
+            or not np.isfinite(numeric.to_numpy()).all()
+            or not np.equal(numeric, np.floor(numeric)).all()
+            or (numeric <= 0).any()
+        ):
+            raise ValueError(
+                f"{source} contains a non-positive or non-integer programno identity."
+            )
+        if numeric.duplicated().any():
+            duplicate_values = numeric[numeric.duplicated(keep=False)].unique().tolist()
+            raise ValueError(
+                f"{source} contains duplicate programno identities: "
+                f"{duplicate_values[:10]}"
+            )
+        df["programno"] = numeric.astype(int)
+
+        if require_contiguous:
+            expected = list(range(1, len(df) + 1))
+            actual = sorted(df["programno"].tolist())
+            if actual != expected:
+                raise ValueError(
+                    f"{source} programno identities must be exactly 1 through "
+                    f"{len(df)}; found {actual[:10]}."
+                )
+
+    @staticmethod
+    def normalized_programnos(df: pd.DataFrame, source: str) -> pd.Series:
+        """Return contiguous IDs ordered by validated source program numbers."""
+        validated = df.copy()
+        Programs._validate_programnos(validated, source, require_contiguous=False)
+        order = np.argsort(validated["programno"].to_numpy(), kind="stable")
+        normalized = np.empty(len(validated), dtype=int)
+        normalized[order] = np.arange(1, len(validated) + 1)
+        return pd.Series(normalized, index=df.index, dtype=int)
+
+    def _set_program_mappings(self) -> None:
+        self.indices = dict(
+            zip(self.program_df["program_id"], self.program_df["programno"])
+        )
+        self.codes = dict(
+            zip(self.program_df["programno"], self.program_df["program_id"])
+        )
 
     def _set_up_programno(self, program_codes_file: str):
         """Set up program indices and codes as a column in the dataframe.
@@ -39,55 +115,67 @@ class Programs:
         Args:
             program_codes_file (str): path to file mapping program codes to indices
         """
-        if "programno" in self.program_df.columns:
-            numeric_programno = pd.to_numeric(
-                self.program_df["programno"], errors="coerce"
-            )
-            self.program_df["programno"] = numeric_programno
-            self.program_df = self.program_df.dropna(
-                subset=["programno"]
-            ).copy()
-            self.program_df["programno"] = self.program_df["programno"].astype(
-                int
-            )
+        if self.program_df.empty:
+            raise ValueError("Program data contains no programs.")
+        self._validate_identity_column(self.program_df, "program_id", "Program data")
+        self.program_df["program_id"] = self.program_df["program_id"].astype(str)
 
-            unique_programnos = sorted(
-                self.program_df["programno"].unique().tolist()
-            )
-            contiguous_programnos = list(range(1, len(self.program_df) + 1))
-            if unique_programnos != contiguous_programnos:
-                self.program_df = self.program_df.reset_index(drop=True)
-                self.program_df["programno"] = self.program_df.index + 1
-
-            self.indices = dict(
-                zip(self.program_df["program_id"], self.program_df["programno"])
-            )
-            self.codes = dict(
-                zip(self.program_df["programno"], self.program_df["program_id"])
-            )
-        else:
+        if "programno" not in self.program_df.columns:
+            if not program_codes_file:
+                raise ValueError(
+                    "Program data has no programno column and no program codes "
+                    "file was provided."
+                )
             program_codes = pd.read_csv(program_codes_file)
-            self.indices = dict(
-                zip(program_codes["code"], program_codes["index"])
+            self._validate_identity_column(program_codes, "code", "Program codes")
+            self._validate_identity_column(program_codes, "index", "Program codes")
+            program_codes = program_codes.rename(columns={"index": "programno"})
+            self._validate_programnos(
+                program_codes, "Program codes", require_contiguous=True
             )
-            self.codes = dict(
-                zip(program_codes["index"], program_codes["code"])
+            program_codes["code"] = program_codes["code"].astype(str)
+            code_to_index = dict(zip(program_codes["code"], program_codes["programno"]))
+            self.program_df["programno"] = self.program_df["program_id"].map(
+                code_to_index
             )
-            self.program_df["programno"] = self.program_df.program_id.replace(
-                self.indices
-            )
+            missing = self.program_df.loc[
+                self.program_df["programno"].isna(), "program_id"
+            ].tolist()
+            if missing:
+                raise ValueError(
+                    "Program codes are missing program IDs required by program "
+                    f"data: {missing[:10]}"
+                )
+
+        self._validate_programnos(
+            self.program_df, "Program data", require_contiguous=False
+        )
+        self.program_df = self.program_df.sort_values("programno").reset_index(
+            drop=True
+        )
+        source_columns = self.program_df["programno"].to_numpy(dtype=int) - 1
+        expected_columns = np.arange(len(self.program_df))
+        if not np.array_equal(source_columns, expected_columns):
+            self.only_keep_cols = source_columns
+        self.program_df["programno"] = expected_columns + 1
+        self._set_program_mappings()
 
     def _remove_special_lps(self):
         """Remove special programs."""
         program_data = self.program_df
-        self.only_keep_cols = program_data.index[
-            ~program_data["program_type"].isin(SPECIAL_PROGRAMS)
-        ].to_numpy()
-        self.program_df = program_data[
-            ~program_data["program_type"].isin(SPECIAL_PROGRAMS)
-        ].reset_index(drop=True)
+        keep = ~program_data["program_type"].isin(SPECIAL_PROGRAMS)
+        keep_positions = np.flatnonzero(keep.to_numpy())
+        if not keep.all():
+            if self.only_keep_cols is None:
+                self.only_keep_cols = keep_positions
+            else:
+                self.only_keep_cols = np.asarray(self.only_keep_cols)[keep_positions]
+        self.program_df = program_data[keep].reset_index(drop=True)
+        if self.program_df.empty:
+            raise ValueError("Removing special programs left no programs.")
         # Reset programno as needed
         self.program_df["programno"] = self.program_df.index + 1
+        self._set_program_mappings()
 
     def index(self, program: str, quiet: bool = False) -> int:
         """Get program index for a given program code.
@@ -117,11 +205,10 @@ class Programs:
         Returns:
             list: list of program indices
         """
-        try:
-            idxs = [self.indices[x] for x in programs]
-        except KeyError:
-            return [self.indices[x] for x in programs if x in self.indices]
-        return idxs
+        unknown = list(dict.fromkeys(x for x in programs if x not in self.indices))
+        if unknown:
+            raise ValueError(f"Unknown program IDs: {unknown[:10]}")
+        return [self.indices[x] for x in programs]
 
     def fix_k8_capacities(self):
         """Fix K8 capacities to be equal to round 1 assignments.
@@ -133,17 +220,17 @@ class Programs:
                 self.program_df.school_id.isin(K8S), "r1_assigned"
             ].fillna(0)
         )
-        self.program_df.loc[
-            self.program_df.school_id.isin(K8S), "r2_capacity"
-        ] = self.program_df.loc[
-            self.program_df.school_id.isin(K8S), "r1_assigned"
-        ].fillna(0)
+        self.program_df.loc[self.program_df.school_id.isin(K8S), "r2_capacity"] = (
+            self.program_df.loc[
+                self.program_df.school_id.isin(K8S), "r1_assigned"
+            ].fillna(0)
+        )
 
     def _selective_hs_capacities(self):
         """Adjust capacities at selective HS, who accept all eligible students who propose."""
-        self.program_df.loc[
-            self.program_df.program_id == "815-GE-09", "capacity"
-        ] = 10000  # SOTA
+        self.program_df.loc[self.program_df.program_id == "815-GE-09", "capacity"] = (
+            10000  # SOTA
+        )
         # lowell not selective in 2021-22 or 2022-23
         if self._config["year"] not in [21, 22]:
             self.program_df.loc[
@@ -218,9 +305,7 @@ class Programs:
         Returns:
             list: list of program indices
         """
-        lps = LANGUAGE_PATHWAYS.intersection(
-            set(self.program_type_to_indices.keys())
-        )
+        lps = LANGUAGE_PATHWAYS.intersection(set(self.program_type_to_indices.keys()))
         return [x for y in lps for x in self.program_type_to_indices[y]]
 
     def citywide_program_indices(self, citywide_schools: list) -> list:

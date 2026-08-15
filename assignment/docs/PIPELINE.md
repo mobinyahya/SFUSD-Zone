@@ -5,7 +5,7 @@ running simulation. Each step links to the detailed guide where relevant.
 
 > **TL;DR.** A bare clone is **not** runnable on its own: the confidential data
 > is not in the repo, and the filtered inputs under `local-data/` are
-> git-ignored. The order is: **env → data → substitute placeholders →
+> git-ignored. The order is: **env → shared data → substitute placeholders →
 > generate filtered inputs → (zones, only for zone-restricted policies) → run.**
 > Generating zones is *not* the first step, and most baselines don't need zones
 > at all.
@@ -21,15 +21,9 @@ uv sync            # install pinned deps into .venv (see README for uv setup)
 
 ## Step 1 — Get the confidential SFUSD data
 
-The data is **not** redistributable and is **not** in the repo.
-
-- **On the Stanford cluster** (hostname contains `soal`): nothing to do — the
-  data already lives at `/share/data/school_choice/`, and
-  `configs/cluster_path_config.yaml` points there.
-- **Off the cluster**: copy the data tree (and the shared zone files under
-  `simulation-files/zones/`) from the cluster, then point
-  `configs/local_path_config.yaml` (or your generated
-  `configs/<username>.config.yaml`) at your local copy.
+The data is **not** redistributable and is **not** in the repo. Every
+environment must provide `/share/data/school_choice/`; both committed path
+configs read from that shared root. There is no home-directory data fallback.
 
 See **[DATA_SETUP.md](DATA_SETUP.md)** for the per-file path reference.
 
@@ -43,7 +37,6 @@ directory. Replace them with your **absolute** paths (cluster paths
 |-------|--------------|
 | `<STUDENT_ASSIGNMENT_PATH>` | your `student-assignment` checkout |
 | `<SFUSD_CHOICE_PATH>` | your `SFUSD-Choice` checkout (MNL estimates) |
-| `<SFUSD_DATA_PATH>` | your local copy of the SFUSD data tree (off-cluster `policy_configs` variant only) |
 | `<RA_SFUSD_PATH>` | your `RA_SFUSD` checkout (permuted-students configs only) |
 
 ```bash

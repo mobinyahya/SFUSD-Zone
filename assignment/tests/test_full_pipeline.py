@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_models_estimates.sh"
@@ -112,6 +113,19 @@ def test_dry_run(tmp_path):
     result = _run_pipeline(_pipeline_env(tmp_path), "--dry-run")
     assert result.returncode == 0, result.stderr or result.stdout
     assert "[DRY-RUN]" in result.stdout
+
+
+def test_generated_non_kg_grade_remains_a_string(tmp_path):
+    env = _pipeline_env(tmp_path)
+    env["GRADE"] = "06"
+
+    result = _run_pipeline(env, "--no-simulate", "--no-analyze")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    config_path = tmp_path / "configs" / f"{EXPECTED_RUN_LABELS[0]}.yaml"
+    with config_path.open() as config_file:
+        config = yaml.safe_load(config_file)
+    assert config["grade"] == "06"
 
 
 def test_full_pipeline_tiny(tmp_path):

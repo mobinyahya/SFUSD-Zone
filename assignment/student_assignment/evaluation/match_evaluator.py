@@ -18,6 +18,7 @@ from math import asin, cos, isnan, radians, sin, sqrt
 import numpy as np
 import pandas as pd
 
+from ..data_interfaces.programs import Programs
 from ..definitions.constants import (
     SPECIAL_PROGRAMS,
     ZONE_COLORS,
@@ -102,6 +103,7 @@ class MatchEvaluator:
 
         self._mode = "full"
         self.student_data = student_data.copy()
+        self._validate_student_ids(self.student_data)
         self.low_income = low_income
         self.medium_income = medium_income
         self.high_income = high_income
@@ -127,34 +129,52 @@ class MatchEvaluator:
                 "programs_without_specialprogs_<year>.csv)"
             )
         self.programs = pd.read_csv(program_file)
-        if "program_id" in self.programs.columns:
-            self.programs["program_id"] = self.programs["program_id"].astype(str)
 
         if first_round:
-            self.student_data = self.student_data[
-                self.student_data["r1_ranked_idschool"].notna()
-            ].copy()
+            self._parse_student_list_column("r1_ranked_idschool")
+            self._parse_student_list_column("r1_programs")
+            participating = self.student_data["r1_ranked_idschool"].map(bool)
+            self.student_data = self.student_data[participating].copy()
+            if self.student_data.empty:
+                raise ValueError(
+                    "first_round=True requires at least one student with a "
+                    "nonempty r1_ranked_idschool list"
+                )
+        elif no_special_program:
+            self._parse_student_list_column("r1_programs")
 
+        if no_special_program:
+            if "program_type" not in self.programs:
+                raise ValueError(
+                    "Program table is missing required column: program_type"
+                )
+            self.programs = self.programs[
+                ~self.programs["program_type"].isin(SPECIAL_PROGRAMS)
+            ].copy()
+            self.student_data = self.student_data[
+                ~self.student_data["r1_programs"].apply(self._has_special_program)
+            ].copy()
+            if first_round and self.student_data.empty:
+                raise ValueError(
+                    "No first-round students remain after removing special programs"
+                )
+
+        self._prepare_reference_data()
         self.assignments = assignments.copy()
         if "designation" not in self.assignments:
             self.assignments["designation"] = 0
         if "In-Zone Rank" not in self.assignments:
+            if "rank" not in self.assignments:
+                raise ValueError("Assignments are missing required column: rank")
             self.assignments["In-Zone Rank"] = self.assignments["rank"]
-        self.student_data = self.student_data.merge(self.assignments, on="studentno")
-        if "programcodes" not in self.student_data:
-            self.student_data["programcodes"] = ""
-        self.student_data["programcodes"] = (
-            self.student_data["programcodes"].fillna("").astype(str)
+        self._validate_full_assignments()
+        self.student_data = self.student_data.merge(
+            self.assignments,
+            on="studentno",
+            how="left",
+            validate="one_to_one",
+            sort=False,
         )
-
-        if no_special_program:
-            if "program_type" in self.programs:
-                self.programs = self.programs[
-                    ~self.programs["program_type"].isin(SPECIAL_PROGRAMS)
-                ].copy()
-            self.student_data = self.student_data[
-                ~self.student_data["r1_programs"].apply(self._has_special_program)
-            ].copy()
 
         equity_blocks = set(new_ctip_list.tolist())
         self.student_data["et2"] = (
@@ -163,9 +183,11 @@ class MatchEvaluator:
         self.student_data["assignment"] = self.student_data["programcodes"].mask(
             self.student_data["programcodes"].str.strip() == "", "000-ZZ"
         )
-        school_codes = self.student_data["assignment"].str.split("-", n=1).str[0]
         self.student_data["assigned_school"] = (
-            pd.to_numeric(school_codes, errors="coerce").fillna(0).astype(int)
+            self.student_data["programcodes"]
+            .map(self._program_school_by_id)
+            .fillna(0)
+            .astype(int)
         )
         self.student_data["programtype"] = self.student_data["assignment"].str[4:6]
         self.student_data["frl"] = pd.to_numeric(
@@ -200,13 +222,275 @@ class MatchEvaluator:
         )
 
     @staticmethod
-    def _has_special_program(value):
-        if pd.isna(value):
-            return False
+    def _validate_student_ids(student_data):
+        if "studentno" not in student_data:
+            raise ValueError("Student data is missing required column: studentno")
+        if student_data["studentno"].isna().any():
+            raise ValueError("Student data contains a missing studentno")
+        duplicates = student_data.loc[
+            student_data["studentno"].duplicated(keep=False), "studentno"
+        ].unique()
+        if len(duplicates):
+            raise ValueError(
+                "Student data contains duplicate studentno values: "
+                f"{duplicates.tolist()}"
+            )
+
+    @staticmethod
+    def _parse_serialized_list(value, column):
+        if isinstance(value, list):
+            return value.copy()
+        if isinstance(value, (tuple, np.ndarray)):
+            return list(value)
+        if pd.isna(value) or (isinstance(value, str) and not value.strip()):
+            return []
+        if not isinstance(value, str):
+            raise ValueError(f"{column} must contain lists, got {value!r}")
         try:
-            programs = ast.literal_eval(str(value))
-        except (SyntaxError, ValueError):
-            return False
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError(
+                f"{column} contains an invalid serialized list: {value!r}"
+            ) from exc
+        if not isinstance(parsed, (list, tuple)):
+            raise ValueError(f"{column} must contain lists, got {value!r}")
+        return list(parsed)
+
+    def _parse_student_list_column(self, column):
+        if column not in self.student_data:
+            raise ValueError(f"Student data is missing required column: {column}")
+
+        parsed = []
+        for studentno, value in zip(
+            self.student_data["studentno"], self.student_data[column]
+        ):
+            try:
+                parsed.append(self._parse_serialized_list(value, column))
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid {column} for student {studentno}: {exc}"
+                ) from exc
+        self.student_data[column] = parsed
+
+    def _prepare_reference_data(self):
+        required_program_columns = {"program_id", "programno", "school_id"}
+        missing_program_columns = required_program_columns - set(self.programs.columns)
+        if missing_program_columns:
+            raise ValueError(
+                "Program table is missing required columns: "
+                f"{sorted(missing_program_columns)}"
+            )
+
+        program_ids = self.programs["program_id"].astype("string").str.strip()
+        if (program_ids.isna() | program_ids.eq("").fillna(False)).any():
+            raise ValueError("Program table contains a missing program_id")
+        if program_ids.duplicated().any():
+            duplicates = program_ids[program_ids.duplicated(keep=False)].unique()
+            raise ValueError(
+                f"Program table contains duplicate program_id values: {duplicates.tolist()}"
+            )
+
+        program_numbers = Programs.normalized_programnos(self.programs, "Program table")
+
+        program_schools = pd.to_numeric(self.programs["school_id"], errors="coerce")
+        invalid_program_schools = (
+            program_schools.isna()
+            | ~np.isfinite(program_schools)
+            | (program_schools <= 0)
+            | (program_schools % 1 != 0)
+        )
+        if invalid_program_schools.any():
+            raise ValueError("Program table contains invalid school_id values")
+
+        required_school_columns = {"school_id", "lat", "lon"}
+        missing_school_columns = required_school_columns - set(
+            self.schools_latlon.columns
+        )
+        if missing_school_columns:
+            raise ValueError(
+                "School table is missing required columns: "
+                f"{sorted(missing_school_columns)}"
+            )
+        school_ids = pd.to_numeric(self.schools_latlon["school_id"], errors="coerce")
+        invalid_school_ids = (
+            school_ids.isna()
+            | ~np.isfinite(school_ids)
+            | (school_ids <= 0)
+            | (school_ids % 1 != 0)
+        )
+        if invalid_school_ids.any():
+            raise ValueError("School table contains invalid school_id values")
+
+        self.programs["program_id"] = program_ids.astype(str)
+        self.programs["programno"] = program_numbers.astype(int)
+        self.programs["school_id"] = program_schools.astype(int)
+        self.schools_latlon["school_id"] = school_ids.astype(int)
+        self.schools_latlon["lat"] = pd.to_numeric(
+            self.schools_latlon["lat"], errors="coerce"
+        )
+        self.schools_latlon["lon"] = pd.to_numeric(
+            self.schools_latlon["lon"], errors="coerce"
+        )
+
+        self._program_number_by_id = self.programs.set_index("program_id")[
+            "programno"
+        ].to_dict()
+        self._program_school_by_id = self.programs.set_index("program_id")[
+            "school_id"
+        ].to_dict()
+        valid_locations = (
+            self.schools_latlon[["lat", "lon"]].notna().all(axis=1)
+            & np.isfinite(self.schools_latlon["lat"])
+            & np.isfinite(self.schools_latlon["lon"])
+        )
+        self._schools_with_locations = set(
+            self.schools_latlon.loc[valid_locations, "school_id"].tolist()
+        )
+
+    def _validate_full_assignments(self):
+        required_columns = {"studentno", "programno", "programcodes", "rank"}
+        missing_columns = required_columns - set(self.assignments.columns)
+        if missing_columns:
+            raise ValueError(
+                f"Assignments are missing required columns: {sorted(missing_columns)}"
+            )
+        if self.assignments["studentno"].isna().any():
+            raise ValueError("Assignments contain a missing studentno")
+        duplicate_students = self.assignments.loc[
+            self.assignments["studentno"].duplicated(keep=False), "studentno"
+        ].unique()
+        if len(duplicate_students):
+            raise ValueError(
+                "Assignments contain duplicate studentno values: "
+                f"{duplicate_students.tolist()}"
+            )
+
+        expected_ids = pd.Index(self.student_data["studentno"])
+        assignment_ids = pd.Index(self.assignments["studentno"])
+        missing_ids = expected_ids[~expected_ids.isin(assignment_ids)].tolist()
+        extra_ids = assignment_ids[~assignment_ids.isin(expected_ids)].tolist()
+        if missing_ids or extra_ids:
+            raise ValueError(
+                "Assignments must contain exactly one row per retained student; "
+                f"missing studentno values: {missing_ids}; "
+                f"extra studentno values: {extra_ids}"
+            )
+
+        program_numbers = pd.to_numeric(self.assignments["programno"], errors="coerce")
+        invalid_program_numbers = (
+            program_numbers.isna()
+            | ~np.isfinite(program_numbers)
+            | (program_numbers < 0)
+            | (program_numbers % 1 != 0)
+        )
+        if invalid_program_numbers.any():
+            students = self.assignments.loc[
+                invalid_program_numbers, "studentno"
+            ].tolist()
+            raise ValueError(
+                f"Assignments contain invalid programno values for students: {students}"
+            )
+        self.assignments["programno"] = program_numbers.astype(int)
+
+        program_codes = self.assignments["programcodes"].astype("string").str.strip()
+        positive = self.assignments["programno"] > 0
+        blank_codes = program_codes.isna() | program_codes.eq("").fillna(False)
+        if (positive & blank_codes).any():
+            students = self.assignments.loc[
+                positive & blank_codes, "studentno"
+            ].tolist()
+            raise ValueError(
+                "Positive programno assignments require programcodes for students: "
+                f"{students}"
+            )
+        if ((~positive) & ~blank_codes).any():
+            students = self.assignments.loc[
+                (~positive) & ~blank_codes, "studentno"
+            ].tolist()
+            raise ValueError(
+                f"Unassigned students must have blank programcodes: {students}"
+            )
+
+        assigned_codes = program_codes[positive]
+        known_programs = assigned_codes.isin(self._program_number_by_id)
+        if not known_programs.all():
+            unknown = assigned_codes[~known_programs].unique().tolist()
+            raise ValueError(f"Assignments reference unknown program IDs: {unknown}")
+
+        expected_program_numbers = assigned_codes.map(self._program_number_by_id)
+        mismatched_numbers = expected_program_numbers.ne(
+            self.assignments.loc[positive, "programno"]
+        )
+        if mismatched_numbers.any():
+            students = self.assignments.loc[
+                expected_program_numbers.index[mismatched_numbers], "studentno"
+            ].tolist()
+            raise ValueError(
+                f"programno does not match programcodes for students: {students}"
+            )
+
+        expected_schools = assigned_codes.map(self._program_school_by_id)
+        code_schools = pd.to_numeric(
+            assigned_codes.str.split("-", n=1).str[0], errors="coerce"
+        )
+        school_mismatch = code_schools.isna() | code_schools.ne(expected_schools)
+        if school_mismatch.any():
+            bad_codes = assigned_codes[school_mismatch].unique().tolist()
+            raise ValueError(
+                "Assigned program IDs do not match their program-table school_id: "
+                f"{bad_codes}"
+            )
+        missing_locations = sorted(
+            set(expected_schools.astype(int)) - self._schools_with_locations
+        )
+        if missing_locations:
+            raise ValueError(
+                "Assigned programs reference schools without known locations: "
+                f"{missing_locations}"
+            )
+
+        for column in ("rank", "In-Zone Rank"):
+            raw_values = self.assignments[column]
+            numeric_values = pd.to_numeric(raw_values, errors="coerce")
+            supplied = raw_values.notna() & raw_values.astype("string").str.strip().ne(
+                ""
+            )
+            invalid_values = supplied & (
+                numeric_values.isna()
+                | ~np.isfinite(numeric_values)
+                | (numeric_values <= 0)
+                | (numeric_values % 1 != 0)
+            )
+            if invalid_values.any():
+                students = self.assignments.loc[invalid_values, "studentno"].tolist()
+                raise ValueError(
+                    f"Assignments contain invalid {column} values for students: "
+                    f"{students}"
+                )
+            self.assignments[column] = numeric_values
+
+        raw_designation = self.assignments["designation"]
+        designation = pd.to_numeric(raw_designation, errors="coerce")
+        supplied_designation = raw_designation.notna() & raw_designation.astype(
+            "string"
+        ).str.strip().ne("")
+        invalid_designation = supplied_designation & (
+            designation.isna() | ~np.isfinite(designation) | ~designation.isin([0, 1])
+        )
+        if invalid_designation.any():
+            students = self.assignments.loc[invalid_designation, "studentno"].tolist()
+            raise ValueError(
+                f"Assignments contain invalid designation values for students: {students}"
+            )
+        self.assignments["designation"] = designation.fillna(0).astype(int)
+        self.assignments["programcodes"] = program_codes.fillna("").astype(str)
+
+    @staticmethod
+    def _has_special_program(value):
+        if not isinstance(value, (list, tuple, np.ndarray)):
+            programs = MatchEvaluator._parse_serialized_list(value, "r1_programs")
+        else:
+            programs = value
         return bool(set(programs).intersection(SPECIAL_PROGRAMS))
 
     def _init_basic(self, students, assignments, distances):
@@ -340,8 +624,8 @@ class MatchEvaluator:
             assigned_students["resolved_ethnicity"] == "Black or African American"
         ]
         metrics["Programs with 1-4 AA"] = self.metric_isolation(black_students, 5)
-        metrics["# Racial majority schools"] = (
-            self.metric_racial_majority_schools(assigned_students)
+        metrics["# Racial majority schools"] = self.metric_racial_majority_schools(
+            assigned_students
         )
 
         metrics.update(self._basic_choice_metrics(student_data, assigned_students))
@@ -443,9 +727,7 @@ class MatchEvaluator:
             return 0
 
         race_column = (
-            "ethnicity"
-            if "ethnicity" in assigned_students
-            else "resolved_ethnicity"
+            "ethnicity" if "ethnicity" in assigned_students else "resolved_ethnicity"
         )
         race = assigned_students[race_column]
         valid_race = race.notna() & race.astype("string").str.strip().ne("")
@@ -515,12 +797,27 @@ class MatchEvaluator:
         return pd.to_numeric(assigned_students["designation"], errors="coerce").mean()
 
     @staticmethod
-    def metric_top_choice(assigned_students, threshold):
-        return (assigned_students["rank"] <= threshold).mean()
+    def _submitted_top_choice_mask(students, rank_column, threshold):
+        ranks = pd.to_numeric(students[rank_column], errors="coerce")
+        if "designation" in students:
+            designated = (
+                pd.to_numeric(students["designation"], errors="coerce").fillna(0).ne(0)
+            )
+        else:
+            designated = pd.Series(False, index=students.index)
+        return ranks.le(threshold) & ~designated
 
-    @staticmethod
-    def metric_top_in_zone_choice(assigned_students, threshold):
-        return (assigned_students["In-Zone Rank"] <= threshold).mean()
+    @classmethod
+    def metric_top_choice(cls, assigned_students, threshold):
+        return cls._submitted_top_choice_mask(
+            assigned_students, "rank", threshold
+        ).mean()
+
+    @classmethod
+    def metric_top_in_zone_choice(cls, assigned_students, threshold):
+        return cls._submitted_top_choice_mask(
+            assigned_students, "In-Zone Rank", threshold
+        ).mean()
 
     @staticmethod
     def metric_dist_and_rank(assigned_students, distance, rank):
@@ -1268,8 +1565,12 @@ class MatchEvaluator:
                     ].to_numpy()
                 )
         # School choice.
-        metrics["Assigned to 1st choice"] = (cur_assigned_students["rank"] <= 1).mean()
-        metrics["Assigned top-3 choice"] = (cur_assigned_students["rank"] <= 3).mean()
+        metrics["Assigned to 1st choice"] = self.metric_top_choice(
+            cur_assigned_students, 1
+        )
+        metrics["Assigned top-3 choice"] = self.metric_top_choice(
+            cur_assigned_students, 3
+        )
         # Distances
         metrics["Avg. Distance"] = cur_assigned_students["assignment_dist"].mean()
         metrics["Median Distance"] = cur_assigned_students["assignment_dist"].median()
@@ -1491,8 +1792,8 @@ class MatchEvaluator:
 
         school_groups = assigned_students.groupby("assigned school")
         enrollment = school_groups.count()["studentno"]
-        metrics["# Racial majority schools"] = (
-            self.metric_racial_majority_schools(assigned_students)
+        metrics["# Racial majority schools"] = self.metric_racial_majority_schools(
+            assigned_students
         )
 
         non_designated_students = student_data[
@@ -1702,26 +2003,26 @@ class MatchEvaluator:
         }
 
         for student_type, data_student in dico_student_type.items():
-            metrics[f"Prop Top 1 choice ({student_type})"] = (
-                data_student["rank"] <= 1
-            ).mean()
-            metrics[f"Prop Top 2 choice ({student_type})"] = (
-                data_student["rank"] <= 2
-            ).mean()
-            metrics[f"Prop Top 3 choice ({student_type})"] = (
-                data_student["rank"] <= 3
-            ).mean()
+            metrics[f"Prop Top 1 choice ({student_type})"] = self.metric_top_choice(
+                data_student, 1
+            )
+            metrics[f"Prop Top 2 choice ({student_type})"] = self.metric_top_choice(
+                data_student, 2
+            )
+            metrics[f"Prop Top 3 choice ({student_type})"] = self.metric_top_choice(
+                data_student, 3
+            )
             metrics[f"Mean Choice ({student_type})"] = data_student["rank"].mean()
             metrics[f"Median Choice ({student_type})"] = data_student["rank"].median()
             metrics[f"Top 1 in-zone choice ({student_type})"] = (
-                data_student["In-Zone Rank"] == 1
-            ).mean()
+                self.metric_top_in_zone_choice(data_student, 1)
+            )
             metrics[f"Top 2 in-zone choice ({student_type})"] = (
-                data_student["In-Zone Rank"] <= 2
-            ).mean()
+                self.metric_top_in_zone_choice(data_student, 2)
+            )
             metrics[f"Top 3 in-zone choice ({student_type})"] = (
-                data_student["In-Zone Rank"] <= 3
-            ).mean()
+                self.metric_top_in_zone_choice(data_student, 3)
+            )
 
             metrics[f"Distance Av ({student_type})"] = data_student[
                 "assignment_dist"
@@ -1909,9 +2210,15 @@ class MatchEvaluator:
 
             # --- Added Choice Metrics for Subgroups ---
             if len(students) > 0:
-                metrics[f"Prop Top 1 choice ({group})"] = (students["rank"] <= 1).mean()
-                metrics[f"Prop Top 2 choice ({group})"] = (students["rank"] <= 2).mean()
-                metrics[f"Prop Top 3 choice ({group})"] = (students["rank"] <= 3).mean()
+                metrics[f"Prop Top 1 choice ({group})"] = self.metric_top_choice(
+                    students, 1
+                )
+                metrics[f"Prop Top 2 choice ({group})"] = self.metric_top_choice(
+                    students, 2
+                )
+                metrics[f"Prop Top 3 choice ({group})"] = self.metric_top_choice(
+                    students, 3
+                )
                 metrics[f"Distance Av ({group})"] = students["assignment_dist"].mean()
                 metrics[f"Distance Median ({group})"] = students[
                     "assignment_dist"
@@ -1941,40 +2248,38 @@ class MatchEvaluator:
                 )
             )
 
-            # when students are designated, assign rank 999
-            students.loc[students["designation"] == 1, "rank"] = 999
-
             if group != "All Assigned":
                 metrics[f"Number of designated students ({group})"] = len(
                     students[students["designation"] == 1]
                 )
+                non_designated_group = students[students["designation"] == 0]
                 metrics[f"Prop Top 1 choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["rank"] <= 1
-                ).mean()
+                    self.metric_top_choice(non_designated_group, 1)
+                )
 
                 metrics[f"Prop Top 2 choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["rank"] <= 2
-                ).mean()
+                    self.metric_top_choice(non_designated_group, 2)
+                )
 
                 for i in range(1, 11):
                     metrics[f"Proportion of students in top {i} ({group})"] = (
-                        students["rank"] <= i
-                    ).mean()
+                        self.metric_top_choice(students, i)
+                    )
                     metrics[f"Proportion of students in top {i} (All Students)"] = (
-                        student_data["rank"] <= i
-                    ).mean()
+                        self.metric_top_choice(student_data, i)
+                    )
                 metrics[f"Prop Top 3 choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["rank"] <= 3
-                ).mean()
+                    self.metric_top_choice(non_designated_group, 3)
+                )
                 metrics[f"Top 1 in-zone choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["In-Zone Rank"] == 1
-                ).mean()
+                    self.metric_top_in_zone_choice(non_designated_group, 1)
+                )
                 metrics[f"Top 2 in-zone choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["In-Zone Rank"] <= 2
-                ).mean()
+                    self.metric_top_in_zone_choice(non_designated_group, 2)
+                )
                 metrics[f"Top 3 in-zone choice Non-Designated ({group})"] = (
-                    students[students["designation"] == 0]["In-Zone Rank"] <= 3
-                ).mean()
+                    self.metric_top_in_zone_choice(non_designated_group, 3)
+                )
                 metrics[f"Mean Choice Non-Designated ({group})"] = students[
                     students["designation"] == 0
                 ]["rank"].mean()
@@ -2002,7 +2307,9 @@ class MatchEvaluator:
                 distance_over_3 & designated
             ).mean()
             metrics[f"Prop Distance > 3 and Top 3 choice, non-designated ({group})"] = (
-                distance_over_3 & (students["rank"] <= 3) & non_designated
+                distance_over_3
+                & self._submitted_top_choice_mask(students, "rank", 3)
+                & non_designated
             ).mean()
             metrics[f"Prop Distance > 3 and non-designated ({group})"] = (
                 distance_over_3 & non_designated

@@ -14,7 +14,6 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry.base import BaseGeometry
 
-from Config.Constants import get_dropbox_path
 from optimization.data.conversion import LevelConverter
 from optimization.data.loaders import load_census_shapefile
 from optimization.levels import LevelSpec
@@ -137,17 +136,6 @@ def _block0_graph_path(config: Mapping[str, Any]) -> Path | None:
     candidates.extend(
         [
             DEFAULT_COMPUTED_GRAPH_DIR / "Block_0.pickle",
-            Path(get_dropbox_path(False)).expanduser()
-            / "Optimization"
-            / "Zones"
-            / "Graphs"
-            / "Block_0.pickle",
-            Path(get_dropbox_path(False)).expanduser()
-            / "Optimization"
-            / "Zones"
-            / "Graphs"
-            / "optimization"
-            / "Block_0.pickle",
         ]
     )
     for path in candidates:
@@ -314,7 +302,7 @@ def _geometry_from_graph_attrs(G) -> gpd.GeoDataFrame | None:
 
 
 def _build_node_area_metrics(G, level: LevelSpec) -> gpd.GeoDataFrame:
-    base = load_census_shapefile(level.unit, False)
+    base = load_census_shapefile(level.unit)
     if level.unit not in base.columns:
         raise ValueError(
             f"Base geometry for {level.unit!r} must include a {level.unit!r} column."

@@ -21,7 +21,7 @@ sweep:
   seed: [42, 14, 33]
 
 tasks:
-  - solver: 'cp_bool'
+  - solver: 'cp_single_zone'
 
 execution:
   output_dir: '/share/data/school_choice/local_runs/test_single_solver_2/'

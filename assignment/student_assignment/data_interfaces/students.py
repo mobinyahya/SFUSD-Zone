@@ -1,8 +1,10 @@
 """Data interface for students."""
 
+import ast
+import csv
 import os
 import pathlib
-import pickle
+import re
 import warnings
 
 import numpy as np
@@ -35,6 +37,7 @@ class Students:
         ).expanduser()
 
         self.year = self.config["year"]
+        self.grade = self._normalize_grade(self.config["grade"])
         self.num_programs = programs.num_programs
         self._create_output_path()
         self.qualified_program_dict = None
@@ -46,6 +49,11 @@ class Students:
             # Record the line to keep for students to remove rows in utility files.
             # if some rows are removed. Record as None to indicate no rows are removed.
             self.only_keep_rows = None
+        if self.student_data.empty:
+            raise ValueError(
+                f"Student data contains no students for grade {self.grade}."
+            )
+        self._validate_ranked_programs()
         self.n = len(self.student_data.index)  # number of student
         self._round_participation = self._calc_round_participation()
         self.distance_data = self.get_distances()
@@ -71,6 +79,36 @@ class Students:
     def _create_output_path(self):
         self.output_path.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _normalize_grade(value) -> str:
+        """Normalize numeric grades so values such as 6 and '06' compare."""
+        if pd.isna(value):
+            return ""
+        text = str(value).strip().upper()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if np.isfinite(number) and number.is_integer():
+            return str(int(number)).zfill(2)
+        return text
+
+    @staticmethod
+    def _validate_student_identities(df: pd.DataFrame) -> None:
+        if "studentno" not in df.columns:
+            raise ValueError("Student data is missing required column 'studentno'.")
+        values = df["studentno"]
+        missing = values.isna() | values.astype("string").str.strip().eq("")
+        if missing.fillna(True).any():
+            raise ValueError("Student data contains a missing studentno identity.")
+        duplicates = values[values.duplicated(keep=False)]
+        if not duplicates.empty:
+            duplicate_values = duplicates.astype(str).unique().tolist()
+            raise ValueError(
+                "Student data contains duplicate studentno identities: "
+                f"{duplicate_values[:10]}"
+            )
+
     def _build_student_data(
         self,
     ):
@@ -78,18 +116,86 @@ class Students:
         st_df = pd.read_csv(
             self.student_data_file, low_memory=False
         )  # , index_col=0)
-        st_df = st_df.loc[st_df.grade == self.config["grade"]]
+        if "grade" not in st_df.columns:
+            raise ValueError("Student data is missing required column 'grade'.")
+        normalized_grades = st_df["grade"].map(self._normalize_grade)
+        st_df = st_df.loc[normalized_grades == self.grade].copy()
         st_df.reset_index(inplace=True, drop=True)
-        self.rounds = max(
-            [int(x[1]) for x in st_df.columns if "_ranked_idschool" in x]
-        )
+        self._validate_student_identities(st_df)
+
+        school_rounds = {
+            int(match.group(1))
+            for column in st_df.columns
+            if (match := re.fullmatch(r"r(\d+)_ranked_idschool", column))
+        }
+        program_rounds = {
+            int(match.group(1))
+            for column in st_df.columns
+            if (match := re.fullmatch(r"r(\d+)_programs", column))
+        }
+        if school_rounds != program_rounds:
+            raise ValueError(
+                "Ranked school/program columns must occur in pairs; "
+                f"missing school rounds={sorted(program_rounds - school_rounds)}, "
+                f"missing program rounds={sorted(school_rounds - program_rounds)}."
+            )
+        self.rounds = max(school_rounds, default=0)
 
         st_df = self._make_cols_lists(st_df)
         return st_df
 
-    def _str_to_list(self, x):
-        items = x[1:-1].split(",")
-        return [y.strip() for y in items]
+    def _str_to_list(self, value):
+        """Parse a submitted ranked-school list, ignoring only empty tokens."""
+        if isinstance(value, (list, tuple, np.ndarray)):
+            items = list(value)
+        elif pd.isna(value) or not str(value).strip():
+            return []
+        else:
+            text = str(value).strip()
+            if not (text.startswith("[") and text.endswith("]")):
+                raise ValueError(f"Expected a bracketed list, got {value!r}.")
+            items = text[1:-1].split(",")
+
+        schools = []
+        for item in items:
+            if isinstance(item, str):
+                item = item.strip().strip("'\"")
+            if pd.isna(item) or item == "":
+                continue
+            try:
+                number = float(item)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid ranked school ID {item!r}.") from exc
+            if not np.isfinite(number) or not number.is_integer():
+                raise ValueError(f"Invalid ranked school ID {item!r}.")
+            schools.append(int(number))
+        return schools
+
+    @staticmethod
+    def _programs_to_list(value):
+        """Safely parse a submitted ranked-program list."""
+        if isinstance(value, (list, tuple, np.ndarray)):
+            items = list(value)
+        elif pd.isna(value) or not str(value).strip():
+            return []
+        else:
+            try:
+                items = ast.literal_eval(str(value))
+            except (SyntaxError, ValueError) as exc:
+                raise ValueError(
+                    f"Expected a bracketed program list, got {value!r}."
+                ) from exc
+            if not isinstance(items, (list, tuple)):
+                raise ValueError(f"Expected a bracketed program list, got {value!r}.")
+
+        programs = []
+        for item in items:
+            if pd.isna(item):
+                raise ValueError("Ranked program lists cannot contain null values.")
+            program = str(item).strip()
+            if program:
+                programs.append(program)
+        return programs
 
     def _make_cols_lists(self, df):
         """Helper function used to format the ranking lists as read in from the
@@ -99,21 +205,54 @@ class Students:
             # format column name
             col1 = f"r{round}_ranked_idschool"
             col2 = f"r{round}_programs"
-            if col1 in df.columns:
-                df[col1] = df[col1].fillna("[]")
-                df[col1] = df[col1].apply(self._str_to_list)
-
-                df[col1] = df[col1].apply(
-                    lambda x: [int(val) for val in x if "" not in x]
-                )
-            if col2 in df.columns:
-                df[col2] = df[col2].fillna("[]")
-
-                # print the row where this is failing: NameError: name 'nan' is not defined
-                # print("Failing for" + str(df[df[col2].apply(lambda x: "nan" in x)].index.tolist()))
-                df[col2] = df[col2].apply(lambda x: eval(x))
+            if col1 not in df.columns:
+                continue
+            parsed_schools = []
+            parsed_programs = []
+            for idx in df.index:
+                studentno = df.at[idx, "studentno"]
+                try:
+                    schools = self._str_to_list(df.at[idx, col1])
+                    programs = self._programs_to_list(df.at[idx, col2])
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid round {round} preferences for student "
+                        f"{studentno}: {exc}"
+                    ) from exc
+                if len(schools) != len(programs):
+                    raise ValueError(
+                        f"Student {studentno} round {round} has "
+                        f"{len(schools)} ranked schools but {len(programs)} "
+                        "ranked programs."
+                    )
+                parsed_schools.append(schools)
+                parsed_programs.append(programs)
+            df[col1] = pd.Series(parsed_schools, index=df.index, dtype=object)
+            df[col2] = pd.Series(parsed_programs, index=df.index, dtype=object)
 
         return df
+
+    def _validate_ranked_programs(self) -> None:
+        known_programs = set(self.programs.indices)
+        for round in range(1, self.rounds + 1):
+            school_column = f"r{round}_ranked_idschool"
+            program_column = f"r{round}_programs"
+            if school_column not in self.student_data.columns:
+                continue
+            for _, row in self.student_data.iterrows():
+                ranked = [
+                    f"{school}-{program}-{self.grade}"
+                    for school, program in zip(row[school_column], row[program_column])
+                ]
+                unknown = [
+                    program for program in ranked if program not in known_programs
+                ]
+                if unknown:
+                    raise ValueError(
+                        f"Student {row['studentno']} round {round} ranked "
+                        f"unknown program IDs: "
+                        f"{list(dict.fromkeys(unknown))[:10]}"
+                    )
 
     def _remove_students_with_special_lps(self):
         """Remove students who rank special programs in round 1."""
@@ -136,61 +275,36 @@ class Students:
         self.student_data = student_data
 
     def _make_student_preferences(self, round, code2idx):
-        """Compute and save student preferences for a specified round in
-        matrix format.
-        """
+        """Compute student preferences for a specified round in matrix form."""
         st_df = self.student_data
         prefs = np.zeros((self.n, self.num_programs), dtype=int)
         col1 = f"r{round}_ranked_idschool"
         col2 = f"r{round}_programs"
-        indexcounter = 0
-        for idx, row in st_df.iterrows():
-            codes = []
-            for j, sch in enumerate(row[col1]):
-                codes.append(
-                    f"{str(sch)}-{row[col2][j]}-{self.config['grade']}"
-                )
-            prog_idxs = code2idx(codes)
-            prefs[indexcounter, 0 : len(prog_idxs)] = prog_idxs
-            indexcounter += 1
-
-        # don't save over computed preferences if subset of students
-        gr = f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
-        if self.student_data_file.split("/")[-1][:-9] == "drop_optout":
-            filename = (
-                self.output_path
-                / f"student_preferences_drop_optout_r{round}_{gr}{self.year}{self.year + 1}.csv"
+        if col1 not in st_df.columns or col2 not in st_df.columns:
+            raise ValueError(
+                f"Student data has no preference columns for round {round}."
             )
-            # filename = self.output_path / 'student_preferences_r{}_{}{}.csv'.format(round, self.year, self.year+1)
-            with open(filename, "wb") as f:
-                pickle.dump(prefs, f)
+        for indexcounter, (_, row) in enumerate(st_df.iterrows()):
+            codes = [
+                f"{school}-{program}-{self.grade}"
+                for school, program in zip(row[col1], row[col2])
+            ]
+            prog_idxs = code2idx(codes)
+            if len(prog_idxs) != len(codes):
+                raise ValueError(
+                    f"Student {row.name} round {round} contains an unknown program ID."
+                )
+            prefs[indexcounter, 0 : len(prog_idxs)] = prog_idxs
         return prefs
 
     def student_preferences(self, round, code2idx):
         """Get student preference list of lists for a given round. To get the
         student with index i's 2nd choice, use prefs[i][1] (zero indexed)
-        Checks to see if it's been loaded already, then checks to see if it's
-        been saved to file, then computes it from scratch if both fail.
+        Preferences are cached only in memory because an unlabeled matrix cannot
+        be safely matched to a different student or program ordering.
         """
         if round in self._prefs.keys():
             return self._prefs[round]
-        gr = f"{self.config['grade']}_" if self.config["grade"] != "KG" else ""
-        if str(self.student_data_file).split("/")[-1][:-9] == "drop_optout":
-            filename = (
-                self.output_path
-                / f"student_preferences_drop_optout_r{round}_{gr}{self.year}{self.year + 1}.csv"
-            )
-        else:
-            filename = (
-                self.output_path
-                / f"student_preferences_r{round}_{gr}{self.year}{self.year + 1}.csv"
-            )
-
-        if filename.is_file():
-            with open(filename, "rb") as f:
-                pr = pickle.load(f)
-            self._prefs[round] = pr
-            return pr
         pr = self._make_student_preferences(round, code2idx)
         self._prefs[round] = pr
         return pr
@@ -251,60 +365,117 @@ class Students:
         table.to_csv(filename)
         return table
 
+    @staticmethod
+    def _identity_key(value) -> str:
+        if pd.isna(value):
+            raise ValueError("Identity values cannot be null.")
+        if isinstance(value, (int, np.integer)):
+            return str(int(value))
+        if isinstance(value, (float, np.floating)) and float(value).is_integer():
+            return str(int(value))
+        key = str(value).strip()
+        if not key:
+            raise ValueError("Identity values cannot be empty.")
+        return key
+
+    @staticmethod
+    def _read_distance_cache(filename: pathlib.Path) -> pd.DataFrame:
+        with open(filename, newline="", encoding="utf-8-sig") as cache_file:
+            try:
+                header = next(csv.reader(cache_file))
+            except StopIteration as exc:
+                raise ValueError("Distance cache is empty.") from exc
+        duplicate_columns = list(
+            dict.fromkeys(column for column in header if header.count(column) > 1)
+        )
+        if duplicate_columns:
+            raise ValueError(
+                f"Distance cache has duplicate columns: {duplicate_columns[:10]}"
+            )
+        if header.count("studentno") != 1:
+            raise ValueError(
+                "Distance cache must contain exactly one studentno column."
+            )
+        return pd.read_csv(filename, index_col="studentno")
+
+    def _align_distances(self, dist: pd.DataFrame) -> pd.DataFrame:
+        required_students = self.student_data["studentno"].tolist()
+        required_student_keys = [
+            self._identity_key(studentno) for studentno in required_students
+        ]
+        actual_student_keys = [
+            self._identity_key(studentno) for studentno in dist.index
+        ]
+        if len(actual_student_keys) != len(set(actual_student_keys)):
+            raise ValueError("Distance cache has duplicate studentno rows.")
+
+        required_programs = self.program_df["program_id"].astype(str).tolist()
+        actual_programs = [str(program) for program in dist.columns]
+        if len(actual_programs) != len(set(actual_programs)):
+            raise ValueError("Distance cache has duplicate program columns.")
+
+        missing_students = sorted(set(required_student_keys) - set(actual_student_keys))
+        missing_programs = sorted(set(required_programs) - set(actual_programs))
+        if missing_students or missing_programs:
+            raise ValueError(
+                "Distance cache is missing required identities; "
+                f"students={missing_students[:10]}, programs={missing_programs[:10]}."
+            )
+
+        aligned = dist.copy()
+        aligned.index = actual_student_keys
+        aligned.columns = actual_programs
+        aligned = aligned.loc[required_student_keys, required_programs]
+        aligned = aligned.apply(pd.to_numeric, errors="coerce")
+        values = aligned.to_numpy(dtype=float)
+        if not np.isfinite(values).all():
+            raise ValueError(
+                "Distance cache contains non-numeric or non-finite values."
+            )
+        aligned.index = pd.Index(required_students, name="studentno")
+        return aligned
+
     def get_distances(self):
         """Load student distances to each program if already calculated,
         otherwise compute them. Description of array in _make_distance_ranking
         docstring.
         """
-        if str(self.student_data_file).split("/")[-1][:-9] == "drop_optout":
+        if pathlib.Path(self.student_data_file).name[:-9] == "drop_optout":
             filename = (
                 self.output_path
                 / "student_program_distances_dropoptout_{}_{}{}.csv".format(
-                    self.config["grade"], self.year, self.year + 1
+                    self.grade, self.year, self.year + 1
                 )
             )
         else:
             filename = (
                 self.output_path
                 / "student_program_distances_{}_{}{}.csv".format(
-                    self.config["grade"], self.year, self.year + 1
+                    self.grade, self.year, self.year + 1
                 )
             )
 
-        if os.path.isfile(filename):
-            dist = pd.read_csv(filename, index_col="studentno")
-        else:
-            dist = self._make_distance_ranking(filename)
-        # remove the columns that are not in the program list. Some programs are not in the dist columns as well
-        columns_to_keep = [col for col in self.program_df["program_id"].values]
-        ## FIXME: here we simply add the missing columns based on the school (first 3 digits of program_id)
-        missing_columns = set(self.program_df["program_id"].values) - set(
-            dist.columns
-        )
-        missing_without_fallback = []
-        for col in missing_columns:
-            school_id = int(col.split("-")[0])
-            # find another program in the same school that is in dist
-            similar_programs = self.program_df[
-                self.program_df["school_id"] == school_id
-            ]["program_id"].values
-            found = False
-            for sim_prog in similar_programs:
-                if sim_prog in dist.columns:
-                    dist[col] = dist[sim_prog]
-                    found = True
-                    break
-            if not found:
-                missing_without_fallback.append(col)
-                dist[col] = 9999  # assign a large distance
-        if missing_without_fallback:
-            warnings.warn(
-                "Could not infer distances for program columns: "
-                + ", ".join(sorted(missing_without_fallback)),
-                stacklevel=2,
-            )
-        dist = dist[columns_to_keep]
-        return dist
+        if filename.is_file():
+            try:
+                return self._align_distances(self._read_distance_cache(filename))
+            except (
+                OSError,
+                UnicodeDecodeError,
+                csv.Error,
+                pd.errors.ParserError,
+                ValueError,
+            ) as exc:
+                warnings.warn(
+                    f"Ignoring invalid distance cache {filename}: {exc}. "
+                    "Recomputing it.",
+                    stacklevel=2,
+                )
+
+        dist = self._make_distance_ranking(filename)
+        try:
+            return self._align_distances(dist)
+        except ValueError as exc:
+            raise ValueError(f"Recomputed distance data is invalid: {exc}") from exc
 
     def _calc_round_participation(self):
         """Array of size 3 for each student indicating in which rounds the

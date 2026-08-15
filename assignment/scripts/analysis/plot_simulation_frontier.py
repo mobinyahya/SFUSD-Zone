@@ -117,10 +117,8 @@ def compute_pareto_frontier(
     """Extract the non-dominated (Pareto) points from a scatter.
 
     A point dominates another when it is at least as good on both axes and
-    strictly better on one. The computation is fully vectorized (no row
-    iteration): points are sorted by the x objective, and a point is kept
-    when its y objective beats the best y seen among all strictly-better-x
-    points.
+    strictly better on one. Pairwise objective comparisons keep exact ties
+    while correctly removing points with equal x or y and a worse other axis.
 
     Args:
         points: DataFrame of candidate points (one row per simulation).
@@ -145,15 +143,15 @@ def compute_pareto_frontier(
     if not y_minimize:
         y_obj = -y_obj
 
-    # Sort by x then y; the running min of y over earlier points (smaller x)
-    # tells us whether the current point is dominated.
-    order = np.lexsort((y_obj, x_obj))
-    y_sorted = y_obj[order]
-    best_before = np.concatenate(([np.inf], np.minimum.accumulate(y_sorted)[:-1]))
-    keep = y_sorted <= best_before + tol
+    # dominates[candidate, point] is true only when the candidate is no worse
+    # on either objective and materially better on at least one.
+    x_candidate = x_obj[:, np.newaxis]
+    y_candidate = y_obj[:, np.newaxis]
+    no_worse = (x_candidate <= x_obj + tol) & (y_candidate <= y_obj + tol)
+    strictly_better = (x_candidate < x_obj - tol) | (y_candidate < y_obj - tol)
+    dominated = (no_worse & strictly_better).any(axis=0)
 
-    frontier_positions = order[keep]
-    frontier = working.iloc[frontier_positions].copy()
+    frontier = working.iloc[np.flatnonzero(~dominated)].copy()
     return frontier.sort_values(x_col, ascending=x_minimize)
 
 
@@ -243,9 +241,6 @@ def evaluate_simulations(config: dict) -> pd.DataFrame:
                 new_ctip_path,
             )
         )
-        if metrics is None:
-            logger.warning("Skipping (evaluation failed): %s", csv_path)
-            continue
         record: dict[str, object] = {
             "label": _point_label(csv_path, label_parts),
             "group_key": _group_key(csv_path, data_folder),
@@ -270,8 +265,15 @@ def aggregate_by_policy(results: pd.DataFrame) -> pd.DataFrame:
         One row per ``group_key`` with the mean of every numeric metric and
         ``label`` set to the group key.
     """
+    if results.empty:
+        raise ValueError("Cannot aggregate empty simulation results")
+
     numeric_cols = results.select_dtypes("number").columns.tolist()
-    aggregated = results.groupby("group_key", as_index=False)[numeric_cols].mean()
+    aggregated = (
+        results.groupby("group_key")[numeric_cols]
+        .agg(lambda values: values.mean(skipna=False))
+        .reset_index()
+    )
     aggregated["label"] = aggregated["group_key"]
     return aggregated
 
@@ -465,6 +467,9 @@ def run(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         results.to_csv(results_path, index=False)
         logger.info("Wrote per-simulation metrics to %s", results_path)
 
+    if results.empty:
+        raise ValueError("No simulation results available")
+
     for metric_name in (x_col, y_col):
         if metric_name not in results.columns:
             raise KeyError(
@@ -491,6 +496,10 @@ def run(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         x_minimize=bool(config.get("x_minimize", True)),
         y_minimize=bool(config.get("y_minimize", True)),
     )
+    if frontier.empty:
+        raise ValueError(
+            f"No simulations have finite values for both '{x_col}' and '{y_col}'"
+        )
     frontier_path = output_dir / "frontier.csv"
     frontier.to_csv(frontier_path, index=False)
     logger.info(

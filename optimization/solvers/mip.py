@@ -19,9 +19,8 @@ from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
+    balance_constraints,
     balance_terms,
-    enforced_balance_constraints,
-    rounded_balance_coefficient,
 )
 from optimization.solvers.base import Solver, register
 
@@ -265,46 +264,10 @@ class MipSolver(Solver):
     def _add_balance_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
-        constraints = enforced_balance_constraints(problem)
+        constraints = balance_constraints(problem)
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             for constraint in constraints:
-                if problem.has_school_capacity_recourse:
-                    if constraint.lower_ratio is not None:
-                        terms = [
-                            (
-                                float(
-                                    rounded_balance_coefficient(
-                                        problem,
-                                        constraint,
-                                        node,
-                                        constraint.lower_ratio,
-                                    )
-                                ),
-                                z,
-                                node,
-                            )
-                            for node in nodes
-                        ]
-                        self._add_linear_constraint(m, x, terms, ">=", 0.0)
-                    if constraint.upper_ratio is not None:
-                        terms = [
-                            (
-                                float(
-                                    rounded_balance_coefficient(
-                                        problem,
-                                        constraint,
-                                        node,
-                                        constraint.upper_ratio,
-                                    )
-                                ),
-                                z,
-                                node,
-                            )
-                            for node in nodes
-                        ]
-                        self._add_linear_constraint(m, x, terms, "<=", 0.0)
-                    continue
                 lower, upper = balance_terms(problem, constraint, z, nodes)
                 if lower:
                     self._add_linear_constraint(m, x, lower, ">=", 0.0)

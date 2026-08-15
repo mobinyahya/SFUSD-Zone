@@ -6,23 +6,23 @@ iterations:
 paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/choice_08082025_06/
   citywide-or-lp-zones:
-    18zone_1_2-BG-0point3miles: <SFUSD_DATA_PATH>/zones/18-zone_1_2-additiona-0point3miles.txt
-  estimate-path: <SFUSD_DATA_PATH>/simulation-files/choice-model/estimates_2324.csv
-  program-data: <SFUSD_DATA_PATH>/cleaned/programs_without_specialprogs_2324.csv
-  school-data: <SFUSD_DATA_PATH>/cleaned/schools_rehauled_withMissionBay_2324.csv
-  sfusd: <SFUSD_DATA_PATH>/
-  student-data: <SFUSD_DATA_PATH>/cleaned/r1_filter_student_without_specialprogs_2324.csv
+    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+  estimate-path: /share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv
+  program-data: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
+  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+  sfusd: /share/data/school_choice/
+  student-data: /share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
   student-save: <STUDENT_ASSIGNMENT_PATH>/local-data/Precomputed/
   zone-files:
-    10zone: <SFUSD_DATA_PATH>/zones/10-zone-11_BG.csv
-    13zone: <SFUSD_DATA_PATH>/zones/13-zone-7_BG.csv
-    18zone_1: <SFUSD_DATA_PATH>/zones/18-zone-1_1_BG.csv
-    18zone_2: <SFUSD_DATA_PATH>/zones/18-zone-1_2_BG.csv
-    59zone: <SFUSD_DATA_PATH>/zones/59-zone-1_B.csv
-    6zone-1: <SFUSD_DATA_PATH>/zones/6-zone-1_BG.csv
-    6zone-9_1: <SFUSD_DATA_PATH>/zones/6-zone-9_1_BG.csv
-    6zone-9_2: <SFUSD_DATA_PATH>/zones/6-zone-9_2_BG.csv
-    Con1: <SFUSD_DATA_PATH>/zones/concept1zones.csv
+    10zone: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+    13zone: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
 r1-only: true
 random-seed: 2023
 remove-special-lps: true

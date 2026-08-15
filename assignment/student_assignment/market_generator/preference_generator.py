@@ -493,30 +493,18 @@ class PreferenceGenerator:
                 0.5 * np.array(student_data["num_ranked"])
             )
         elif length == "real_length_+3":
-            num_ranked_array = np.array(
-                student_data["num_ranked"]
-            ) + 3 * np.ones([student_data])
+            num_ranked_array = student_data["num_ranked"].to_numpy() + 3
         # If option is a number, all students list option number of programs
         elif length.isnumeric():
             num_ranked_array = int(length) * np.ones(num_students)
         elif length == "length_by_ethn":
-            num_ranked_array = np.zeros(num_students)
-            numerator_dict = {}
-            denominator_dict = {}
-            for i in range(num_students):
-                ethn = student_data.resolved_ethnicity.iloc[i]
-                num_ranked = student_data["num_ranked"].iloc[i]
-                if ethn in numerator_dict:
-                    numerator_dict[ethn] += num_ranked
-                    denominator_dict[ethn] += 1
-                else:
-                    numerator_dict[ethn] = 0
-                    denominator_dict[ethn] = 1
-            for i in range(num_students):
-                ethn = student_data.resolved_ethnicity.iloc[i]
-                num_ranked_array[i] = (
-                    numerator_dict[ethn] / denominator_dict[ethn]
-                )
+            ethnicity = student_data["resolved_ethnicity"].fillna("")
+            num_ranked_array = (
+                student_data["num_ranked"]
+                .groupby(ethnicity)
+                .transform("mean")
+                .to_numpy()
+            )
         elif length == "length_by_ctip":
             num_ranked_array = np.zeros(num_students)
             student_data["ctip1"] = student_data["ctip1"].fillna(0)

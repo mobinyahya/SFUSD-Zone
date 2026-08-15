@@ -81,7 +81,11 @@ def test_load_block_to_blockgroup(tmp_path, monkeypatch):
     pd.DataFrame({"Block": [1001, 1002], "BlockGroup": [100, 100]}).to_csv(
         optimization_dir / "block_blockgroup_tract.csv", index=False
     )
-    monkeypatch.setattr(conversion, "get_dropbox_path", lambda _: str(tmp_path))
+    monkeypatch.setattr(
+        conversion,
+        "CROSSWALK_PATH",
+        str(optimization_dir / "block_blockgroup_tract.csv"),
+    )
 
     crosswalk = conversion._load_block_to_blockgroup()
 

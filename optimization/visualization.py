@@ -33,7 +33,7 @@ DEFAULT_ARTIFACT_DIR = Path(
 
 
 def _load_geometry(unit: str) -> gpd.GeoDataFrame:
-    return load_census_shapefile(unit, False)
+    return load_census_shapefile(unit)
 
 
 @dataclass

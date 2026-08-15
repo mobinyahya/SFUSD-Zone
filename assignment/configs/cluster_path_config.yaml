@@ -1,7 +1,7 @@
 paths:
   sfusd: /share/data/school_choice/
   student-save: /share/data/school_choice/simulation-files/precomputed/
-  assignment-folder: ~/sfusd-local-data/assignments/
+  assignment-folder: ./assignment_output/assignments/
   estimate-path: /share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy
   zone-files:
     Medium1: /share/data/school_choice/simulation-files/zones/optGE862432.csv

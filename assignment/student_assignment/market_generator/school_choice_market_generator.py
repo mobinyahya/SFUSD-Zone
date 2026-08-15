@@ -1,5 +1,7 @@
+import hashlib
 import json
 import pathlib
+import re
 import warnings
 from collections.abc import Generator
 from itertools import product
@@ -8,9 +10,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from ..configerator import Configerator
 from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
-from ..da.ttc import TTC
 from ..data_interfaces import Zones
 from .policy import Policy
 from .preference_generator import PreferenceGenerator
@@ -24,6 +26,8 @@ class MarketGenerator(SchoolChoiceMarket):
         estimate_path: str = None,
         assignment_path: str = None,
         config: dict | None = None,
+        configurator=None,
+        write_config: bool = True,
     ):
         """Initialize market generator.
 
@@ -33,32 +37,40 @@ class MarketGenerator(SchoolChoiceMarket):
             assignment_path (str, optional): path to folder to save assignments. Defaults to None.
             config (dict, optional): in-memory configuration. Defaults to loading the
                 configuration through Configerator.
+            configurator (optional): Config source used by policy simulations.
+            write_config (bool, optional): Whether to write the initial config to the
+                assignment directory. Defaults to True.
         """
-        super().__init__(estimate_path, config=config)
-        self._set_up_save_folder(assignment_path)
+        super().__init__(
+            estimate_path,
+            config=config,
+            configurator=configurator,
+        )
+        self._set_up_save_folder(assignment_path, write_config=write_config)
         self.priority_generator = PriorityGenerator(self)
         self.preference_generator = PreferenceGenerator(self)
         self._guardrail_setup_cache = {}
+        self._active_policy_cache_context = None
 
-    def _set_up_save_folder(self, assignment_path: str):
+    def _set_up_save_folder(
+        self, assignment_path: str, *, write_config: bool = True
+    ):
         """Create folder for saving assignments.
 
         Args:
             assignment_path (str): path to folder to save assignments
         """
-        if self.config["save-assignment"]:
-            output_assignment_path = (
-                self.config["paths"]["assignment-folder"]
-                if assignment_path is None
-                else assignment_path
-            )
-            self.output_assignment_path = pathlib.Path(
-                output_assignment_path
-            ).expanduser()
-            pathlib.Path(self.output_assignment_path).mkdir(
-                parents=True, exist_ok=True
-            )
+        output_assignment_path = (
+            self.config["paths"]["assignment-folder"]
+            if assignment_path is None
+            else assignment_path
+        )
+        self.output_assignment_path = pathlib.Path(
+            output_assignment_path
+        ).expanduser()
+        self.output_assignment_path.mkdir(parents=True, exist_ok=True)
 
+        if write_config:
             if self.yaml is None:
                 config_save_path = self.output_assignment_path / "config.json"
                 with open(config_save_path, "w") as config_file:
@@ -69,6 +81,19 @@ class MarketGenerator(SchoolChoiceMarket):
                     yaml.dump(
                         self.config, config_file, default_flow_style=False
                     )
+
+    def reconfigure(self, config: dict, assignment_path: str = None) -> None:
+        """Update zoning inputs while retaining the initialized static market data."""
+        configurator = Configerator.from_config(config)
+        self._validate_config(configurator.config)
+        self.configurator = configurator
+        self.config = self.configurator.config
+        self.yaml = None
+        self._set_up_save_folder(assignment_path)
+        self.priority_generator = PriorityGenerator(self)
+        self.preference_generator = PreferenceGenerator(self)
+        self._guardrail_setup_cache.clear()
+        self._active_policy_cache_context = None
 
     def _reset_zones(self):
         aa_schools = self.schools.school_df.loc[
@@ -81,52 +106,44 @@ class MarketGenerator(SchoolChoiceMarket):
             students=self.students,
         )
 
-    def simulate(self) -> Generator | None:
-        """Simulate every policy specified in the config.
+    def simulate(self) -> None:
+        """Load and execute every configured policy subconfig."""
+        subconfigs = list(self.config.get("subconfigs", []))
+        if not subconfigs:
+            self._validate_config(self.config)
+            self.execute_generator(self.create_iterations_generator())
+            return
 
-        Returns:
-            Optional[Generator]: generator for iterating over each policy (only not None if
-                save_assignment is False)
-        """
-        for _ in range(len(self.config["subconfigs"])):
+        for subconfig in subconfigs:
+            if not self.configurator.load_next_subconfig():
+                raise RuntimeError(f"Failed to load policy subconfig '{subconfig}'.")
+            self.config = self.configurator.config
+            self._validate_config(self.config)
             np.random.seed(
                 self.config["random-seed"]
-            )  # set again here to ensure order of subconfigs doesn't matter
-            self.configurator.load_next_subconfig()
-            self.config = self.configurator.config
+            )  # ensure subconfig order does not affect lottery draws
             self._reset_zones()
-            iterations_generator = self.create_iterations_generator()
-            if self.config["save-assignment"]:
-                self.execute_generator(iterations_generator)
-            else:
-                return iterations_generator
+            self.execute_generator(self.create_iterations_generator())
 
     @staticmethod
     def execute_generator(iterations_generator: Generator):
-        """Execute generator to create assignments.
+        """Exhaust an assignment generator so its outputs are written."""
+        for _ in iterations_generator:
+            pass
 
-        Generator structure is used for dynamic assignment options (e.g., running zone
-        optimization variants based on assignment outcomes), and this function is used
-        in the settings where we don't need the generator and instead want to save assignments.
-        """
-        # for iterations_generator in policy_generator:
-        for policy_suboptions_generator in iterations_generator:
-            for priority_suboptions_generator in policy_suboptions_generator:
-                for assignment in priority_suboptions_generator:
-                    pass
-
-    def create_iterations_generator(self) -> Generator[Generator, None, None]:
+    def create_iterations_generator(
+        self,
+    ) -> Generator[pd.DataFrame, None, None]:
         """Create generator for iterating over each iteration of a given policy.
 
         Returns:
             Generator: generator for iterating over each iteration of a given policy
         """
-        if self.config["policies"] == ["real_match"]:
-            # assignment = self._run_single_iteration_of_policy(0)
-            # return assignment
-            return self._read_real_match()
-
         for policy in self.config["policies"]:
+            if policy == "real_match":
+                yield self._read_real_match()
+                continue
+
             # Loop for reserve and restrict settings.
             reserve_options = self._get_reserve_options()
             restrict_options = self._get_restrict_options()
@@ -150,10 +167,9 @@ class MarketGenerator(SchoolChoiceMarket):
                     self.config["iterations"]["start"],
                     self.config["iterations"]["end"],
                 ):
-                    policy_suboptions_generator = (
-                        self._run_single_iteration_of_policy(iteration, policy)
+                    yield from self._run_single_iteration_of_policy(
+                        iteration, policy
                     )
-                    yield policy_suboptions_generator
 
     def _get_reserve_options(self):
         """Get a list of guard rails and reserve setting options from policy configs.
@@ -205,7 +221,7 @@ class MarketGenerator(SchoolChoiceMarket):
 
     def _run_single_iteration_of_policy(
         self, iteration: int, policy: str
-    ) -> Generator[Generator, None, None]:
+    ) -> Generator[pd.DataFrame, None, None]:
         """Run a single iteration of a given policy with all possible sets of .
 
         Args:
@@ -213,11 +229,9 @@ class MarketGenerator(SchoolChoiceMarket):
             policy (str): policy name
 
         Returns:
-            Generator[Generator]: generator for iterating over each policy subsettings
+            Generator[pd.DataFrame]: saved assignments for each priority subsetting
         """
-        if self.config["utility-model"]["enable"] or self.config[
-            "utility-model"
-        ].get("read-precomuted-umodel-prefs", False):
+        if self.config["utility-model"]["enable"]:
             self.umodel.draw_utility_model_randomness(
                 iteration,
                 rows_to_keep=self.students.only_keep_rows,
@@ -231,19 +245,16 @@ class MarketGenerator(SchoolChoiceMarket):
             if iteration == self.config["iterations"]["start"] and save_path:
                 self.umodel.save_utility_matrix(save_path)
 
-        policy_suboptions_generator = self._simulate_policy(policy, iteration)
-        yield policy_suboptions_generator
+        yield from self._simulate_policy(policy, iteration)
 
-    def _read_real_match(self) -> pd.DataFrame | None:
+    def _read_real_match(self) -> pd.DataFrame:
         """Read the historical assignment from the student data file (DA is not run).
 
         Returns:
-            Optional[pd.DataFrame]: dataframe with student assignments (only not None if
-                save_assignment is False)
+            pd.DataFrame: saved historical student assignments
         """
-        if self.config["utility-model"]["enable"] or self.config[
-            "utility-model"
-        ].get("read-precomuted-umodel-prefs", False):
+        self._active_policy_cache_context = None
+        if self.config["utility-model"]["enable"]:
             self.umodel.draw_utility_model_randomness(
                 iteration=None,
                 rows_to_keep=self.students.only_keep_rows,
@@ -272,7 +283,7 @@ class MarketGenerator(SchoolChoiceMarket):
 
     def _simulate_policy(
         self, policy: str, iteration: int
-    ) -> Generator[pd.DataFrame | None, None, None]:
+    ) -> Generator[pd.DataFrame, None, None]:
         """Simulate a single iteration of a single policy for each priority subsetting.
 
         Args:
@@ -280,8 +291,7 @@ class MarketGenerator(SchoolChoiceMarket):
             iteration (int): iteration number
 
         Returns:
-            Generator[Optional[pd.DataFrame]]: dataframe with student assignments (only not None if
-                save_assignment is False)
+            Generator[pd.DataFrame]: saved assignment dataframes
         """
         self.priority_generator.generate_base_priorities(policy)
 
@@ -306,7 +316,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
 
             priorities = self.priority_generator.set_policy_specific_priorities(
-                policy_data, prefs
+                policy_data, prefs, iteration=iteration
             )
 
             if self.config["guard-rails"] != -1:
@@ -515,11 +525,8 @@ class MarketGenerator(SchoolChoiceMarket):
             set(range(self.n)) - set(unassigned_idxs) - set(designated_idxs)
         )
         using_umodel = (
-            self.config["utility-model"]["enable"]
-            or self.config["utility-model"].get(
-                "read-precomuted-umodel-prefs", False
-            )
-        ) and policy != "real_match"
+            self.config["utility-model"]["enable"] and policy != "real_match"
+        )
         full_prefs = self.umodel.original_preferences if using_umodel else prefs
         missing_matches = 0
         for idx in assigned_not_designated_idxs:
@@ -549,32 +556,24 @@ class MarketGenerator(SchoolChoiceMarket):
                 program array, and cutoffs (the lowest priority students assigned, if program
                 is at capacity)
         """
-        if self.config["assignment-algorithm"] == "DA":
-            da = DeferredAcceptance(
-                self.programs.capacity,
-                priorities,
-                prefs,
-                self.students.idx2studentno,
-                self.students.studentno2idx,
-                self.programs.indices,
-            )
-            (
-                match,
-                cutoffs,
-                rank,
-            ) = da.run()
-        elif self.config["assignment-algorithm"] == "TTC":
-            (
-                match,
-                rank,
-            ) = TTC(
-                self.programs.capacity.copy(), priorities.copy(), prefs.copy()
-            )
-            cutoffs = np.zeros([len(match)])
-        else:
+        if self.config["assignment-algorithm"] != "DA":
             raise ValueError(
-                f"Assignment algorithm '{self.config['assignment-algorithm']}' not recognized."
+                f"Assignment algorithm '{self.config['assignment-algorithm']}' "
+                "not recognized; only 'DA' is supported."
             )
+        da = DeferredAcceptance(
+            self.programs.capacity,
+            priorities,
+            prefs,
+            self.students.idx2studentno,
+            self.students.studentno2idx,
+            self.programs.indices,
+        )
+        (
+            match,
+            cutoffs,
+            rank,
+        ) = da.run()
         rank = np.clip(
             rank, a_min=None, a_max=self.preference_generator.pref_length + 1
         )
@@ -624,12 +623,12 @@ class MarketGenerator(SchoolChoiceMarket):
         self,
         prefs: np.ndarray,
         policy_data: Policy,
-        iteration: int,
+        iteration: int | None,
         match: np.ndarray,
         in_zone_rank: np.ndarray,
         cutoffs: np.ndarray,
-    ) -> pd.DataFrame | None:
-        """Create dataframe with student assignments and return it or save to csv.
+    ) -> pd.DataFrame:
+        """Create and save a dataframe with student assignments.
 
         Args:
             prefs (np.ndarray): student preferences
@@ -640,7 +639,7 @@ class MarketGenerator(SchoolChoiceMarket):
             cutoffs (np.ndarray): program cutoffs from DA
 
         Returns:
-            Optional[pd.DataFrame]: dataframe with student assignments
+            pd.DataFrame: saved student assignments
         """
         assignment_df = pd.DataFrame()
         assignment_df["studentno"] = self.students.student_data.index
@@ -666,23 +665,18 @@ class MarketGenerator(SchoolChoiceMarket):
         assignment_df["In-Zone Rank"] = in_zone_rank
         # TODO: add cutoffs to assignment_df?
 
-        if self.config["save-assignment"]:
-            save_name = self._get_assignment_save_name(policy_data, iteration)
-            save_path = (
-                self.output_assignment_path
-                / self.config["subconfig-name"]
-                / save_name
-            )
-
-            # Check if the parent directory exists; if not, create it
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-
-            assignment_df.to_csv(save_path, index=False)
-        else:
-            return assignment_df
+        save_name = self._get_assignment_save_name(policy_data, iteration)
+        save_path = (
+            self.output_assignment_path
+            / self.config.get("subconfig-name", "default")
+            / save_name
+        )
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        assignment_df.to_csv(save_path, index=False)
+        return assignment_df
 
     def _get_assignment_save_name(
-        self, policy_data: Policy, iteration: int
+        self, policy_data: Policy, iteration: int | None
     ) -> str:
         """Create unique folder and name for assignment file.
         Example folder: 18zone_fuzzyRestrict_yesReserve_ctip1_yesSibling.
@@ -701,13 +695,19 @@ class MarketGenerator(SchoolChoiceMarket):
                 else f"{self.config['grade']}_"
             )
             return f"Assignment_{gr}real_match.csv"
+
         restrict = self.config["restrict-zone"]
-        if restrict and len(self.config.get("citywide-or-lp", [])) > 0:
-            restrict = "fuzzy"
+        if restrict and self.config.get("citywide-or-lp", []):
+            restrict_label = "fuzzy"
+        elif restrict:
+            restrict_label = "yes"
         else:
-            restrict = "" if restrict else "no"
-        reserve = self.config["guard-rails"] == 0
-        reserve = "yes" if reserve else "no"
+            restrict_label = "no"
+
+        guard_rails = self.config["guard-rails"]
+        reserve_label = {-1: "no", 0: "soft", 1: "strict"}.get(
+            guard_rails, f"guard{guard_rails}"
+        )
         zone_policy = policy_data.name if policy_data.name != "Con1" else "aa"
         ctip = policy_data.ctip
         ctip = (
@@ -719,13 +719,42 @@ class MarketGenerator(SchoolChoiceMarket):
         sibling = "sibling" in self.config["priority-weights"]
         sibling = "yes" if sibling else "no"
 
-        code_folder = f"{zone_policy}_{restrict}Restrict_{reserve}Reserve_{ctip}_{sibling}Sibling/"
-        # code_folder = f"{zone_policy}_{sibling}Sibling_{reserve}Reserve_{ctip}/"
+        option_state = {
+            "policy": policy_data.name,
+            "zone_file": self.config.get("paths", {})
+            .get("zone-files", {})
+            .get(policy_data.name),
+            "ctip": policy_data.ctip,
+            "rounds_merged": policy_data.rounds_merged,
+            "tiebreaker": policy_data.tiebreaker,
+            "guard_rails": guard_rails,
+            "reserve_settings": self.config.get("reserve-settings", {}),
+            "soft_reserve_boost": self.config.get("soft_reserve_boost"),
+            "citywide_separate_reserves": self.config.get(
+                "citywide-separate-reserves", True
+            ),
+            "citywide_reserve_ratios": self.config.get(
+                "citywide-reserve-ratios", [0.57, 0.43]
+            ),
+            "restrict_zone": restrict,
+            "citywide_or_lp": self.config.get("citywide-or-lp", []),
+        }
+        signature = hashlib.sha256(
+            json.dumps(
+                option_state,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()[:12]
 
-        pathlib.Path(
-            self.output_assignment_path
-            / self.config["subconfig-name"]
-            / code_folder
-        ).mkdir(parents=True, exist_ok=True)
+        def safe_token(value) -> str:
+            return re.sub(r"[^A-Za-z0-9.-]+", "-", str(value)).strip("-") or "none"
 
-        return f"{code_folder}/{code_folder[:-1]}_iteration{iteration}.csv"
+        code_folder = (
+            f"{safe_token(zone_policy)}_{restrict_label}Restrict_"
+            f"{reserve_label}Reserve_{safe_token(ctip)}_{sibling}Sibling_"
+            f"rounds{safe_token(policy_data.rounds_merged)}_"
+            f"ties{safe_token(policy_data.tiebreaker)}_{signature}"
+        )
+        return f"{code_folder}/{code_folder}_iteration{iteration}.csv"

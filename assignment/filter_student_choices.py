@@ -58,6 +58,44 @@ def load_config(config_path: Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _parse_choice_list(value: Any, row_index: Any, column: str) -> list:
+    """Parse one choice-list cell and report malformed values precisely."""
+    if isinstance(value, list):
+        return value
+    if value is None or (
+        isinstance(value, (float, np.floating)) and np.isnan(value)
+    ):
+        return []
+    if isinstance(value, str):
+        if not value.strip():
+            return []
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError(
+                f"Row {row_index}, column {column} is not a valid list: {value!r}"
+            ) from exc
+        if isinstance(parsed, list):
+            return parsed
+    raise ValueError(
+        f"Row {row_index}, column {column} must contain a list, got {value!r}"
+    )
+
+
+def _school_id_key(value: Any) -> Any:
+    """Normalize numeric school IDs for matching without changing output lists."""
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return value.strip()
+    return value
+
+
 def filter_student_choices(
     df_students: pd.DataFrame,
     df_schools: pd.DataFrame,
@@ -77,6 +115,7 @@ def filter_student_choices(
     student_lats = df_students["latitude"].astype(float)
     student_lons = df_students["longitude"].astype(float)
     school_ids = df_schools["school_id"].values
+    school_keys = [_school_id_key(school_id) for school_id in school_ids]
     school_lats = df_schools["lat"].values
     school_lons = df_schools["lon"].values
     n_students = len(df_students)
@@ -89,86 +128,113 @@ def filter_student_choices(
         np.tile(school_lons, (n_students, 1)),
     )
 
-    # For each student, get mapping: school_id -> distance
-    school_id_to_idx = {sid: i for i, sid in enumerate(school_ids)}
+    # For each student, get mapping: normalized school_id -> distance
     student_school_dist = [
-        {sid: dists[i, j] for j, sid in enumerate(school_ids)}
+        {school_key: dists[i, j] for j, school_key in enumerate(school_keys)}
         for i in range(n_students)
     ]
 
     # List of all r*_ columns with string-encoded lists to filter in sync
-    round_cols = [
-        ("ranked_idschool", True),
-        ("listed_ranks", True),
-        ("programs", True),
-        ("randomnumber", True),
-        ("cohortstring", True),
+    round_suffixes = [
+        "ranked_idschool",
+        "listed_ranks",
+        "programs",
+        "randomnumber",
+        "cohortstring",
     ]
+    distance_limit = (
+        config.get("distance")
+        if isinstance(config, dict)
+        else getattr(config, "distance", None)
+    )
+    number_limit = (
+        config.get("number")
+        if isinstance(config, dict)
+        else getattr(config, "number", None)
+    )
+
     # For each round, filter all relevant columns in sync
     for r in [1, 2, 3]:
         # Build list of columns to filter for this round
-        col_names = [f"r{r}_{suffix}" for suffix, _ in round_cols]
+        col_names = [f"r{r}_{suffix}" for suffix in round_suffixes]
         present_cols = [col for col in col_names if col in df_students.columns]
         if not present_cols:
             continue
 
-        def filter_row(row, student_idx):
-            # Parse all columns as lists (if missing, fill with empty list)
-            lists = []
-            for col in col_names:
-                val = row[col] if col in row else "[]"
-                try:
-                    parsed = ast.literal_eval(val)
-                except Exception:
-                    parsed = []
-                lists.append(parsed)
+        school_col = f"r{r}_ranked_idschool"
+        program_col = f"r{r}_programs"
+        if school_col not in present_cols or program_col not in present_cols:
+            raise ValueError(
+                f"Round {r} must include both {school_col} and {program_col}."
+            )
 
-            # Identify which list corresponds to schools (index 0) and programs (index 2)
-            # These indices match the order in col_names which follows round_cols
-            # round_cols order: ranked_idschool, listed_ranks, programs, randomnumber, cohortstring
-            school_list = lists[0]
-            program_list = lists[2]
+        def filter_row(row: pd.Series, student_pos: int) -> dict[str, str]:
+            lists = {
+                col: _parse_choice_list(row[col], row.name, col)
+                for col in present_cols
+            }
+            school_list = lists[school_col]
+            program_list = lists[program_col]
+            choice_count = len(school_list)
 
-            n = len(school_list)
-            lists = [
-                lst if isinstance(lst, list) and len(lst) == n else [None] * n
-                for lst in lists
-            ]
+            if len(program_list) != choice_count:
+                raise ValueError(
+                    f"Row {row.name}, round {r} has {choice_count} schools but "
+                    f"{len(program_list)} programs."
+                )
+            for col, values in lists.items():
+                if col in {school_col, program_col} or not values:
+                    continue
+                if len(values) != choice_count:
+                    raise ValueError(
+                        f"Row {row.name}, column {col} has {len(values)} values; "
+                        f"expected {choice_count} to match {school_col}."
+                    )
 
-            if config.distance:
-                max_dist = float(config.distance)
+            distances = student_school_dist[student_pos]
+            if distance_limit is not None:
+                max_dist = float(distance_limit)
                 keep = [
                     i
                     for i, sid in enumerate(school_list)
-                    if sid in school_id_to_idx
-                    and student_school_dist[student_idx][sid] <= max_dist
+                    if program_list[i] != "GE"
+                    or (
+                        _school_id_key(sid) in distances
+                        and distances[_school_id_key(sid)] <= max_dist
+                    )
+                ]
+
+            elif number_limit is not None:
+                top_n = int(number_limit)
+                sorted_schools = sorted(distances.items(), key=lambda item: item[1])
+                top_school_ids = {sid for sid, _ in sorted_schools[:top_n]}
+                keep = [
+                    i
+                    for i, sid in enumerate(school_list)
+                    if _school_id_key(sid) in top_school_ids
                     or program_list[i] != "GE"
                 ]
 
-            elif config.number:
-                top_n = int(config.number)
-                sorted_schools = sorted(
-                    student_school_dist[student_idx].items(), key=lambda x: x[1]
-                )
-                top_school_ids = set([sid for sid, _ in sorted_schools[:top_n]])
-                keep = [
-                    i
-                    for i, sid in enumerate(school_list)
-                    if sid in top_school_ids or program_list[i] != "GE"
-                ]
-
             else:
-                keep = list(range(n))
-            filtered = [[lst[i] for i in keep] for lst in lists]
+                keep = list(range(choice_count))
 
-            return {col: str(filtered[j]) for j, col in enumerate(col_names)}
+            # Empty ancillary lists mean the source has no metadata for that
+            # round. Keep them empty; populated lists remain index-aligned.
+            return {
+                col: str([values[i] for i in keep] if values else [])
+                for col, values in lists.items()
+            }
 
-        filtered_df = df_students.apply(
-            lambda row: filter_row(row, row.name), axis=1, result_type="expand"
+        filtered_df = pd.DataFrame(
+            [
+                filter_row(row, student_pos)
+                for student_pos, (_, row) in enumerate(df_students.iterrows())
+            ],
+            index=df_students.index,
+            columns=present_cols,
         )
-        for col in filtered_df.columns:
+        for col in present_cols:
             df_students[col] = filtered_df[col]
-        # Print how many students have non-empty lists after filtering
 
     return df_students
 
@@ -216,7 +282,9 @@ def load_estimates(
 
     # school numbers are the first part of the column names (e.g., "801-GE-KG")
     df["r1_ranked_idschool"] = df["selected_programs"].apply(
-        lambda x: str([i.split("-")[0] for i in x])
+        lambda programs: str(
+            [int(str(program).split("-", 1)[0]) for program in programs]
+        )
     )
     df["r1_programs"] = df["selected_programs"].apply(
         lambda x: str([i.split("-")[1] for i in x])
@@ -253,17 +321,19 @@ def merge_students_with_estimates(
     ) - {"studentno"}
     df_students = df_students.drop(columns=common_columns, errors="ignore")
 
-    # Also drop r1_listed_ranks if present, as estimates don't provide it typically
-    if "r1_listed_ranks" in df_students.columns:
-        df_students = df_students.drop(columns=["r1_listed_ranks"])
+    # Estimate rankings have no corresponding historical rank, lottery, or
+    # cohort metadata. Retaining those old per-choice lists would associate
+    # values with the wrong schools, so preserve the columns as explicitly
+    # empty where downstream readers expect them.
+    for col in ["r1_listed_ranks", "r1_randomnumber", "r1_cohortstring"]:
+        if col in df_students.columns:
+            df_students[col] = "[]"
 
     # merge on studentno
     df_merged = pd.merge(df_students, df_estimates, on="studentno", how="left")
 
     # Fill NaN for students who didn't have estimates? Or perhaps we should keep inner join?
     # The original loader used left join. Let's stick to that.
-
-    print(df_merged.head())
 
     return df_merged
 

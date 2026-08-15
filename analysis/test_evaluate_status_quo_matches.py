@@ -62,6 +62,41 @@ def test_build_simulation_config_sets_requested_run(tmp_path):
     assert base["paths"]["assignment-folder"] == "old"
 
 
+def test_run_policy_injects_configurator_at_construction(tmp_path, monkeypatch):
+    captured = {}
+    label = "status_quo"
+
+    class FakeMarketGenerator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def simulate(self):
+            loader = captured["configurator"]
+            assert loader.load_next_subconfig() is True
+            for iteration in range(status_quo.ITERATION_COUNT):
+                _write_assignment(
+                    tmp_path
+                    / label
+                    / "run"
+                    / f"assignment_iteration{iteration}.csv"
+                )
+
+    monkeypatch.setattr(status_quo, "MarketGenerator", FakeMarketGenerator)
+
+    assignments = status_quo.run_policy(
+        {"subconfigs": ["unused"], "save-assignment": True},
+        label,
+        {"policies": [label]},
+        tmp_path,
+    )
+
+    assert len(assignments) == status_quo.ITERATION_COUNT
+    assert captured["assignment_path"] == str(tmp_path)
+    assert captured["write_config"] is False
+    assert "config" not in captured
+    assert not (tmp_path / "config.json").exists()
+
+
 def test_write_metrics_csv_matches_reference_layout(tmp_path):
     output = status_quo.write_metrics_csv(
         {

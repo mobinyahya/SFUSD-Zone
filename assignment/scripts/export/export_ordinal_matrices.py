@@ -34,15 +34,13 @@ def load_config(config_path: Path, subconfig_name: str | None) -> dict:
             )
         subconfig_name = subconfigs[0]
 
-    subconfig_path = (
-        config_path.parent / "policy_configs" / f"{subconfig_name}.yaml"
-    )
+    subconfig_path = config_path.parent / "policy_configs" / f"{subconfig_name}.yaml"
     with subconfig_path.open() as subconfig_file:
         subconfig = yaml.safe_load(subconfig_file)
 
     merged = {**config, **subconfig}
     merged["subconfig-name"] = subconfig_name
-    merged["save-assignment"] = False
+    merged["save-assignment"] = True
     return merged
 
 
@@ -77,9 +75,7 @@ def dense_rank(
     frame = pd.DataFrame(values, index=student_ids, columns=school_ids)
     frame.index.name = "studentno"
     frame.columns.name = "school_id"
-    return frame.rank(axis=axis, ascending=False, method="dense").astype(
-        "int16"
-    )
+    return frame.rank(axis=axis, ascending=False, method="dense").astype("int16")
 
 
 def build_school_capacities(market: MarketGenerator) -> pd.DataFrame:
@@ -110,9 +106,7 @@ def export_matrices(
     policies = config["policies"]
     ctip_options = config["ctip-options"]
     if len(policies) != 1 or len(ctip_options) != 1:
-        raise ValueError(
-            "The export requires exactly one policy and one CTIP option."
-        )
+        raise ValueError("The export requires exactly one policy and one CTIP option.")
 
     market = MarketGenerator(config=config)
     policy = policies[0]
@@ -127,9 +121,7 @@ def export_matrices(
 
     # Eligibility setup is part of the simulator's normal policy construction.
     eligibility = market.preference_generator._get_eligibility().astype(bool)
-    program_priorities = market.priority_generator._set_policy_priorities(
-        ctip, policy
-    )
+    program_priorities = market.priority_generator._set_policy_priorities(ctip, policy)
     program_utilities = market.umodel.original_utilities
 
     school_priorities, school_ids = aggregate_best_eligible_by_school(
@@ -146,15 +138,10 @@ def export_matrices(
         raise RuntimeError("Priority and utility school columns do not align.")
 
     student_ids = [
-        int(market.students.idx2studentno[index])
-        for index in range(market.n)
+        int(market.students.idx2studentno[index]) for index in range(market.n)
     ]
-    priority_tiers = dense_rank(
-        school_priorities, student_ids, school_ids, axis=0
-    )
-    preference_ranks = dense_rank(
-        school_utilities, student_ids, school_ids, axis=1
-    )
+    priority_tiers = dense_rank(school_priorities, student_ids, school_ids, axis=0)
+    preference_ranks = dense_rank(school_utilities, student_ids, school_ids, axis=1)
     school_eligibility = np.column_stack(
         [
             eligibility[
@@ -200,15 +187,11 @@ def export_matrices(
             "school; no Gumbel noise; dense-ranked within student with 1 as "
             "highest preference."
         ),
-        "policy_ineligible_student_school_pairs": int(
-            (~school_eligibility).sum()
-        ),
+        "policy_ineligible_student_school_pairs": int((~school_eligibility).sum()),
         "eligible_pairs_without_finite_estimated_utility": int(
             (school_eligibility & np.isneginf(school_utilities)).sum()
         ),
-        "unrankable_student_school_pairs": int(
-            np.isneginf(school_utilities).sum()
-        ),
+        "unrankable_student_school_pairs": int(np.isneginf(school_utilities).sum()),
         "priority_columns_with_ties": int(
             sum(priority_tiers[column].nunique() < market.n for column in school_ids)
         ),
