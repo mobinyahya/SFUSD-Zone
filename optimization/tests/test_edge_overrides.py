@@ -1,8 +1,9 @@
 import networkx as nx
 import pytest
 
+from loaders import edge_overrides
 from optimization.config import OptimizationConfig
-from optimization.data import edge_overrides, graph_builder
+from optimization.data import graph_builder
 from optimization.data.dataset import Dataset
 from optimization.solution import graph_fingerprint
 from optimization.tests.synthetic import make_grid_graph
@@ -69,44 +70,27 @@ def test_manual_edges_propagate_through_aggregation():
     assert coarse.graph["manual_block_edges"] == [(1000, 1002)]
 
 
-def test_block_cache_namespace_changes_only_for_nonempty_overrides(
-    tmp_path, monkeypatch
-):
-    config = OptimizationConfig(levels=["Block_0"], graphs_dir=str(tmp_path))
-    monkeypatch.setattr(edge_overrides, "load_block_edge_overrides", lambda: [])
-    baseline = Dataset(config).graph_cache_dir
-
-    monkeypatch.setattr(
-        edge_overrides,
-        "load_block_edge_overrides",
-        lambda: [(1000, 1001)],
-    )
-    monkeypatch.setattr(
-        edge_overrides,
-        "block_edge_override_fingerprint",
-        lambda: "reviewed1234",
-    )
-    changed = Dataset(config).graph_cache_dir
-
-    assert changed != baseline
-
-
 def test_explicit_edge_additions_change_block_cache_namespace(
-    tmp_path, monkeypatch
+    tmp_path, data_config_factory
 ):
     reviewed = tmp_path / "reviewed.yaml"
     additions = tmp_path / "additions.yaml"
     reviewed.write_text("edges: []\n", encoding="utf-8")
     additions.write_text("edges: []\n", encoding="utf-8")
-    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_OVERRIDES", reviewed)
-    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_ADDITIONS", additions)
-    config = OptimizationConfig(levels=["Block_0"], graphs_dir=str(tmp_path))
-    baseline = Dataset(config).graph_cache_dir
+    data = data_config_factory(
+        sources={
+            "optimization.manual_edges": {
+                "reviewed": {"path": str(reviewed)},
+                "additions": {"path": str(additions)},
+            }
+        }
+    )
+    baseline = Dataset(OptimizationConfig(levels=["Block_0"], data=data))
 
     additions.write_text("edges:\n  - [1000, 1001]\n", encoding="utf-8")
-    changed = Dataset(config).graph_cache_dir
+    changed = Dataset(OptimizationConfig(levels=["Block_0"], data=data))
 
-    assert changed != baseline
+    assert changed._graph_cache_namespace() != baseline._graph_cache_namespace()
 
 
 def test_graph_fingerprint_changes_when_topology_changes():

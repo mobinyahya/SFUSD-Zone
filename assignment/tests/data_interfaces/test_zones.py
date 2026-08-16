@@ -18,7 +18,7 @@ import pytest
 from assignment.student_assignment.data_interfaces import Programs, Zones
 from assignment.student_assignment.definitions import CW2AA
 
-from ..utils_for_tests import *
+from ..utils_for_tests import check_equal_dicts
 
 # The temp files to store zone data into and delete after each test.
 TEMP_FILE_NAMES = ["test_zones_temp_file.csv", "test_zones_temp_file2.csv"]
@@ -335,6 +335,22 @@ def test_set_zone_aa_dict(random_area2zone_zone_list, aa_config):
         [area2programs, area_random_programs]
     )
     check_equal_dicts(z.area_id2prog_list, expected_area2programs)
+
+
+def test_supplemental_zone_expression_is_not_executed(tmp_path, aa_config):
+    marker = tmp_path / "executed"
+    zone_file = tmp_path / "supplemental.txt"
+    zone_file.write_text(
+        f"__import__('pathlib').Path({str(marker)!r}).write_text('owned')",
+        encoding="utf-8",
+    )
+    zones = Zones(aa_config, pd.DataFrame(), None, None)
+    zones.get_area_id2ge_program_id_dict = lambda: None
+
+    with pytest.raises(ValueError, match="safely parse"):
+        zones.set_area_id2prog_list_dict(lp_zone_path_list=[zone_file])
+
+    assert not marker.exists()
 
 
 def test_set_zone_aa_dict_2zones(random_area2zone_zone_list, aa_config):

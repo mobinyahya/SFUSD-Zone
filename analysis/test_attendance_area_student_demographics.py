@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from analysis.attendance_area_student_demographics import (  # noqa: E402
     add_frl_datasets,
     build_summary,
+    configured_students,
     fallback_block_report,
 )
 
@@ -84,3 +85,50 @@ def test_build_summary_counts_race_and_expected_frl_for_every_attendance_area():
 
     race_columns = [column for column in result if column.startswith("race_")]
     assert result[race_columns].sum(axis=1).equals(result["total_students"])
+
+
+def test_configured_students_uses_normalized_assignment_selection(tmp_path):
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2, 3],
+            "grade": ["KG", "KG", "01"],
+            "idschoolattendance": [100, 100, 100],
+            "resolved_ethnicity": ["Chinese", "White", "White"],
+            "latitude": [0.5, 0.5, 0.5],
+            "longitude": [0.5, 0.5, 0.5],
+            "freelunch_prob": [0.1, 0.2, 0.3],
+            "reducedlunch_prob": [0.0, 0.0, 0.0],
+            "r1_ranked_idschool": ["[]", "[100]", "[100]"],
+            "r1_programs": ["[]", "['SA']", "['GE']"],
+            "r2_ranked_idschool": ["[100]", "[100]", "[100]"],
+            "r2_programs": ["['GE']", "['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+    config = {
+        "data": {
+            "scenario": "mission-bay-2324",
+            "overrides": {
+                "sources": {"assignment.students": {"path": str(student_path)}},
+                "filters": {
+                    "assignment": {
+                        "year": "2324",
+                        "grades": ["KG"],
+                        "student_population": "applicant",
+                        "rounds": [1, 2],
+                        "special_programs": "exclude_any_special",
+                        "capacity_profile": "status_quo",
+                        "include_mission_bay": True,
+                    }
+                },
+            },
+        }
+    }
+
+    students = configured_students(
+        config, pd.Series({"100": 0.8}), block_geometry()
+    )
+
+    assert students["studentno"].tolist() == [1]
+    assert students["first_participating_round"].tolist() == [2]
+    assert students["selected_programs"].tolist() == [["GE"]]

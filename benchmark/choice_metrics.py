@@ -12,9 +12,10 @@ from typing import Any, Mapping
 
 import pandas as pd
 import yaml
+from assignment.student_assignment.data_interfaces.students import Students
 
 from benchmark.config import ChoiceMetricsRunConfig, json_ready
-from choice.assignment_metrics import (
+from choice.assignment_metrics import (  # noqa: F401
     CHOICE_AVG_STUDENT_DISTANCE,
     CHOICE_METRIC_COLUMNS,
     CHOICE_PERCENT_DESIGNATED,
@@ -32,6 +33,7 @@ from choice.assignment_metrics import (
     mean,
     prepare_assignment_df,
 )
+from loaders import CacheStore, load_scenario, load_student_records
 
 
 MATCHING_DIRNAME = "matching"
@@ -141,7 +143,7 @@ def compute_choice_metrics_from_assignments(
     config_path = matching_dir / GENERATED_CONFIG
     matching_config = _load_yaml(config_path)
     student_data = _load_student_data(matching_config)
-    distance_data = _load_distance_data(matching_config, matching_dir)
+    distance_data = _load_distance_data(matching_config)
 
     rows: list[dict[str, Any]] = []
     for assignment_file in assignment_files:
@@ -455,75 +457,80 @@ def _safe_name(value: str) -> str:
 
 
 def _load_student_data(config: Mapping[str, Any]) -> pd.DataFrame:
-    path = _student_data_path(config)
-    if path is None or not path.exists():
+    data = config.get("data")
+    if not isinstance(data, Mapping):
         return pd.DataFrame()
-    students = pd.read_csv(path, low_memory=False)
-    grade = config.get("grade")
-    if grade is not None and "grade" in students.columns:
-        students = students.loc[students["grade"].astype(str) == str(grade)].copy()
-    return students
-
-
-def _load_distance_data(
-    config: Mapping[str, Any], matching_dir: Path
-) -> pd.DataFrame | None:
-    for path in _distance_candidates(config, matching_dir):
-        if not path.exists():
-            continue
-        distance = pd.read_csv(path)
-        if "studentno" in distance.columns:
-            distance.set_index("studentno", inplace=True)
-        else:
-            first_col = distance.columns[0]
-            distance.set_index(first_col, inplace=True)
-            distance.index.name = "studentno"
-        numeric_index = pd.to_numeric(distance.index, errors="coerce")
-        if not pd.isna(numeric_index).any():
-            distance.index = numeric_index
-        return distance
-    return None
-
-
-def _distance_candidates(config: Mapping[str, Any], matching_dir: Path) -> list[Path]:
-    paths = dict(config.get("paths") or {})
-    candidates: list[Path] = []
-    precomputed = paths.get("student-save")
-    if precomputed:
-        precomputed_dir = Path(os.path.expanduser(str(precomputed)))
-        grade = str(config.get("grade", "KG"))
-        year = config.get("year")
-        if year is not None:
-            year = int(year)
-            prefix = "student_program_distances"
-            student_path = str(paths.get("student-data", ""))
-            if Path(student_path).name.startswith("drop_optout"):
-                prefix = "student_program_distances_dropoptout"
-            candidates.append(
-                precomputed_dir / f"{prefix}_{grade}_{year}{year + 1}.csv"
-            )
-        candidates.extend(
-            sorted(precomputed_dir.glob("student_program_distances*.csv"))
+    scenario = load_scenario(data)
+    try:
+        return load_student_records(
+            scenario,
+            "assignment.students",
+            filter_group="assignment",
+            low_memory=False,
         )
-
-    candidates.extend(
-        sorted((matching_dir / "precomputed").glob("student_program_distances*.csv"))
-    )
-    return _dedupe_paths(candidates)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 
-def _student_data_path(config: Mapping[str, Any]) -> Path | None:
-    paths = dict(config.get("paths") or {})
-    value = paths.get("student-data")
-    if not value:
+def _load_distance_data(config: Mapping[str, Any]) -> pd.DataFrame | None:
+    reference = config.get("distance-cache")
+    if reference is None:
         return None
-    path = Path(os.path.expanduser(str(value)))
-    if path.is_absolute():
-        return path
-    root = paths.get("sfusd")
-    if root:
-        return Path(os.path.expanduser(str(root))) / path
-    return path
+    if not isinstance(reference, Mapping):
+        raise ValueError("distance-cache must be a cache reference map.")
+
+    expected = {
+        "artifact": Students.DISTANCE_CACHE_ARTIFACT,
+        "schema_version": Students.DISTANCE_CACHE_SCHEMA_VERSION,
+        "classification": Students.DISTANCE_CACHE_CLASSIFICATION,
+        "payload": Students.DISTANCE_CACHE_PAYLOAD,
+    }
+    for key, value in expected.items():
+        if reference.get(key) != value:
+            raise ValueError(f"Invalid distance-cache {key}.")
+    allowed = {*expected, "key", "parameters", "roles"}
+    unknown = set(reference) - allowed
+    if unknown:
+        raise ValueError(f"Unknown distance-cache reference keys: {sorted(unknown)}.")
+    parameters = reference.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise ValueError("distance-cache parameters must be a map.")
+    roles = reference.get("roles")
+    role_set = (
+        set(roles)
+        if isinstance(roles, list)
+        and all(isinstance(role, str) for role in roles)
+        else set()
+    )
+    required_roles = set(Students.DISTANCE_CACHE_ROLES)
+    optional_roles = set(Students.DISTANCE_CACHE_OPTIONAL_ROLES)
+    if (
+        not isinstance(roles, list)
+        or len(role_set) != len(roles)
+        or not required_roles <= role_set
+        or not role_set <= required_roles | optional_roles
+    ):
+        raise ValueError("distance-cache roles do not match assignment distances.")
+
+    data = config.get("data")
+    if not isinstance(data, Mapping):
+        raise ValueError("distance-cache reconstruction requires strict data config.")
+    scenario = load_scenario(data)
+    namespace = CacheStore(scenario).namespace(
+        Students.DISTANCE_CACHE_ARTIFACT,
+        parameters,
+        schema_version=Students.DISTANCE_CACHE_SCHEMA_VERSION,
+        roles=roles,
+        classification=Students.DISTANCE_CACHE_CLASSIFICATION,
+    )
+    if namespace.key != reference.get("key"):
+        raise ValueError("distance-cache key does not match current scenario sources.")
+    distance = namespace.load_pickle(Students.DISTANCE_CACHE_PAYLOAD)
+    if distance is None:
+        return None
+    if not isinstance(distance, pd.DataFrame):
+        raise ValueError("Validated distance-cache payload is not a DataFrame.")
+    return distance
 
 
 def _assignment_files(assignments_dir: Path) -> list[Path]:
@@ -566,18 +573,6 @@ def _mark_choice_metrics_error(run_dir: str, error_message: str, trace: str) -> 
         "traceback": trace,
     }
     write_json(result_path, payload)
-
-
-def _dedupe_paths(paths: list[Path]) -> list[Path]:
-    seen = set()
-    out = []
-    for path in paths:
-        key = str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(path)
-    return out
 
 
 def _relpath(path: str | Path, root: str | Path) -> str:

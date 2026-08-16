@@ -11,8 +11,14 @@ from .programs import Programs
 
 
 class Schools:
-    def __init__(self, school_data_file: str, programs: Programs):
-        init_df = pd.read_csv(school_data_file, index_col=0)
+    def __init__(self, school_data_file: str | pd.DataFrame, programs: Programs):
+        if isinstance(school_data_file, pd.DataFrame):
+            init_df = school_data_file.copy()
+        else:
+            init_df = pd.read_csv(school_data_file, index_col=0)
+        init_df = init_df.loc[
+            :, ~init_df.columns.astype(str).str.startswith("Unnamed:")
+        ]
         self.school_df = self._calc_attendance_area(init_df)
 
     def _calc_attendance_area(
@@ -29,7 +35,10 @@ class Schools:
             pd.DataFrame: dataframe with school data and attendance area column
         """
         df = school_data.copy()
-        df.reset_index(level=0, inplace=True)
+        if "school_id" not in df.columns:
+            df.reset_index(level=0, inplace=True)
+        elif df.index.name == "school_id":
+            df.reset_index(drop=True, inplace=True)
         df["attendance_area"] = df.school_id.copy()
         df.loc[df.category == "Citywide", "attendance_area"] = 0
         df = df.set_index("school_id")

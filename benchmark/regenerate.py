@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import json
 import os
 
-from benchmark.config import BenchmarkTask, stable_hash
+from benchmark.config import BenchmarkTask, optimization_config_hash
 from benchmark.choice_metrics import preserve_choice_metrics_payload
 from benchmark.matching import preserve_matching_payload
 from benchmark.results import discover_run_dirs
@@ -62,7 +62,8 @@ def regenerate_metrics(
             task = BenchmarkTask(
                 task_id=str(manifest["task_id"]),
                 config_hash=str(
-                    manifest.get("config_hash") or stable_hash(manifest["config"])
+                    manifest.get("config_hash")
+                    or optimization_config_hash(manifest["config"])
                 ),
                 config={k: v for k, v in manifest["config"].items() if k != "unit"},
                 output_dir=run_dir,

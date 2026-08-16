@@ -1,69 +1,75 @@
-
-grade: KG
-
+data:
+  scenario: legacy
+  overrides:
+    sources:
+      assignment.students:
+        path: <STUDENT_ASSIGNMENT_PATH>/local-data/distance_filter/students_distance_${distance}_number_${number}_new.csv
+        classification: restricted
+      assignment.programs:
+        path: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
+        classification: internal
+      assignment.schools:
+        path: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+        classification: internal
+      assignment.estimate:
+        path: <RA_SFUSD_PATH>/data/estimates_batch2/students_perm_${sample}_${frac}/students_perm_${sample}_${frac}_estimates.csv
+        classification: restricted
+      assignment.school_coordinates:
+        path: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+        classification: internal
+      assignment.zones:
+        10zone:
+          path: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+          classification: public
+        13zone:
+          path: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+          classification: public
+        18zone_1:
+          path: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+          classification: public
+        18zone_2:
+          path: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+          classification: public
+        59zone:
+          path: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+          classification: public
+        6zone-1:
+          path: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+          classification: public
+        6zone-9_1:
+          path: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+          classification: public
+        6zone-9_2:
+          path: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+          classification: public
+        Con1:
+          path: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+          classification: public
+      assignment.citywide_zones:
+        18zone_1_2-BG-0point3miles:
+          path: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+          classification: public
+    filters:
+      assignment:
+        year: "2324"
+        grades: [KG]
+        student_population: applicant
+        rounds:
+        - 1
+        special_programs: exclude_any_special
+        capacity_profile: status_quo
+        include_mission_bay: true
 iterations:
-
   end: 10
-
   start: 0
-
 distance: 2
-number: False
-
+number: false
 paths:
-
-  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance/${distance}_${number}_new/ # define your own assignment-folder path
-
-  citywide-or-lp-zones:
-
-    18zone_1_2-BG-0point3miles: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
-
-  estimate-path: <RA_SFUSD_PATH>/data/estimates_batch2/students_perm_${sample}_${frac}/students_perm_${sample}_${frac}_estimates.csv
-
- # define your own path to save utility matrix
-
-  program-data: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv 
-
-  school-data: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
-
-  sfusd: /share/data/school_choice/Data/
-
-  student-data: <STUDENT_ASSIGNMENT_PATH>/local-data/distance_filter/students_distance_${distance}_number_${number}_new.csv
-  # student-data: <RA_SFUSD_PATH>/data/permuted_students/students_perm_001.csv
-
-  # student-save: /share/data/school_choice/simulation-files/precomputed/ 
-  student-save: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance/precomputed/
-
-  zone-files:
-
-    10zone: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
-
-    13zone: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
-
-    18zone_1: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
-
-    18zone_2: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
-
-    59zone: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
-
-    6zone-1: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
-
-    6zone-9_1: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv 
-
-    6zone-9_2: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv 
-
-    Con1: /share/data/school_choice/simulation-files/zones/concept1zones.csv
-
+  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance/${distance}_${number}_new/
 r1-only: true
-
 random-seed: 2023
-
-remove-special-lps: true
-
 rounds-merged-options:
-
 - 0
-
 save-assignment: true
 subconfigs:
 - small_zones+no_reserves
@@ -86,6 +92,4 @@ utility-model:
   designate-lp-for-all: false
   enable: false
   list-length: 0.8*round(real_length)
-  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/distance/utility_matrix.csv 
-year: 23
-
+  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/distance/utility_matrix.csv

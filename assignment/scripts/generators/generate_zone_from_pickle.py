@@ -130,10 +130,13 @@ def generate_policy_config_snippet(
     """
     return f"""
 # Add this to your policy config YAML (e.g., configs/policy_configs/custom_zones.yaml)
-# Or add the zone-file path to your path config (e.g., configs/local_path_config.yaml)
-
-# In local_path_config.yaml, add under paths.zone-files:
-#   {zone_name}: {zone_csv_path}
+# Add this direct source to the executable run config:
+# data:
+#   scenario: legacy
+#   overrides:
+#     sources:
+#       assignment.zones:
+#         {zone_name}: {{path: {zone_csv_path}, classification: public}}
 
 # Then create a policy config like:
 # ---

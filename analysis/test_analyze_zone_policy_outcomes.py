@@ -40,18 +40,43 @@ def test_defaults_use_fresh_roots_and_current_policy_order():
 
 def test_generated_config_validation_warns_for_unfiltered_fake_top(tmp_path, caplog):
     base_config = {
-        "grade": "KG",
-        "year": 23,
+        "data": {
+            "scenario": "legacy",
+            "overrides": {
+                "sources": {
+                    "assignment.students": {
+                        "path": str(tmp_path / "students.csv"),
+                        "classification": "restricted",
+                    },
+                    "assignment.programs": {
+                        "path": str(tmp_path / "programs.csv"),
+                        "classification": "internal",
+                    },
+                    "assignment.schools": {
+                        "path": str(tmp_path / "schools.csv"),
+                        "classification": "internal",
+                    },
+                    "assignment.estimate": {
+                        "path": str(tmp_path / "estimates.csv"),
+                        "classification": "restricted",
+                    },
+                },
+                "filters": {
+                    "assignment": {
+                        "year": "2324",
+                        "grades": ["KG"],
+                        "student_population": "applicant",
+                        "rounds": [1],
+                        "special_programs": "exclude_any_special",
+                        "capacity_profile": "status_quo",
+                        "include_mission_bay": True,
+                    }
+                },
+            },
+        },
         "iterations": {"start": 0, "end": 25},
         "random-seed": 2023,
-        "remove-special-lps": True,
         "r1-only": True,
-        "paths": {
-            "student-data": "students.csv",
-            "program-data": "programs.csv",
-            "school-data": "schools.csv",
-            "estimate-path": "estimates.csv",
-        },
         "utility-model": {"enable": True, "list-length": 10},
         "ties-options": ["MTB"],
     }
@@ -87,13 +112,11 @@ def test_inverse_preference_ranks_uses_full_exact_program_order():
         outcomes.inverse_preference_ranks(np.array([[1, 1, 2]]), 3)
 
 
-def test_real_raw_ranks_use_first_active_round_and_exact_school_program():
+def test_real_raw_ranks_use_selected_exact_school_program():
     students = pd.DataFrame(
         {
-            "r1_ranked_idschool": [[10], [20, 10]],
-            "r1_programs": [["GE"], ["SE", "GE"]],
-            "r2_ranked_idschool": [[20, 10], []],
-            "r2_programs": [["GE", "GE"], []],
+            "selected_ranked_idschool": [[20, 10], [20, 10]],
+            "selected_programs": [["GE", "GE"], ["SE", "GE"]],
         },
         index=pd.Index([101, 102], name="studentno"),
     )
@@ -105,7 +128,6 @@ def test_real_raw_ranks_use_first_active_round_and_exact_school_program():
 
     result = outcomes.build_real_raw_preference_ranks(
         students,
-        np.array([1, 0]),
         program_indices,
         "KG",
     )
@@ -117,15 +139,14 @@ def test_real_raw_ranks_use_first_active_round_and_exact_school_program():
 def test_real_raw_order_retains_removed_program_position_and_top_school():
     students = pd.DataFrame(
         {
-            "r1_ranked_idschool": [[30, 10]],
-            "r1_programs": [["SA", "GE"]],
+            "selected_ranked_idschool": [[30, 10]],
+            "selected_programs": [["SA", "GE"]],
         },
         index=pd.Index([101], name="studentno"),
     )
 
     result = outcomes.build_real_raw_preference_data(
         students,
-        np.array([0]),
         {"10-GE-KG": 1},
         "KG",
         valid_school_ids={10, 30},

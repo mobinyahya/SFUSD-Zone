@@ -5,6 +5,7 @@ Created 7/25/20
 Class creating zones
 """
 
+import ast
 import copy
 import csv
 import json
@@ -55,7 +56,7 @@ class Zones:
         Returns:
             area2school_id (dict): dictionary from an area to a list of schools inside that area
             school_id2area (dict): dictionary from a school_id to the area it's inside
-                (attendance area, block, or block group)
+                (attendance area, block, block group, or tract)
         """
         if self.config["zone-building-blocks"] == "attendance_area":
             # TODO: figure out how to handle citywide schools in zones
@@ -68,26 +69,20 @@ class Zones:
                     **CW2AA,
                 },  # adding citywide schools (is this needed? Possibly for zone files that include citywide schools)
             )
-        elif self.config["zone-building-blocks"] == "block_group":
+        elif self.config["zone-building-blocks"] in {"block_group", "block", "tract"}:
+            building_block = {
+                "block_group": "BlockGroup",
+                "block": "Block",
+                "tract": "Tract",
+            }[self.config["zone-building-blocks"]]
             area2school_id = defaultdict(
                 list,
-                self.aa_schools.groupby("BlockGroup")["school_id"]
+                self.aa_schools.groupby(building_block)["school_id"]
                 .apply(list)
                 .to_dict(),
             )  # does not include citywide schools right now
             school_id2area = dict(
-                zip(self.aa_schools.school_id, self.aa_schools.BlockGroup)
-            )
-            return area2school_id, school_id2area
-        elif self.config["zone-building-blocks"] == "block":
-            area2school_id = defaultdict(
-                list,
-                self.aa_schools.groupby("Block")["school_id"]
-                .apply(list)
-                .to_dict(),
-            )  # does not include citywide schools right now
-            school_id2area = dict(
-                zip(self.aa_schools.school_id, self.aa_schools.Block)
+                zip(self.aa_schools.school_id, self.aa_schools[building_block])
             )
             return area2school_id, school_id2area
         elif self.config["zone-building-blocks"] == "home_based":
@@ -95,7 +90,7 @@ class Zones:
         else:
             raise ValueError(
                 f"Unrecognized zone building block '{self.config['zone-building-blocks']}'. Please use 'attendance_area', "
-                f"'block_group', 'block', or 'home_based. "
+                f"'block_group', 'block', 'tract', or 'home_based'. "
             )
 
     def _create_zone(
@@ -186,7 +181,16 @@ class Zones:
             for zone_path in lp_zone_path_list:
                 with open(os.path.expanduser(zone_path)) as f:
                     s = f.read().rstrip("\n")
-                aaDict_new = eval(s)
+                try:
+                    aaDict_new = ast.literal_eval(s)
+                except (SyntaxError, ValueError) as exc:
+                    raise ValueError(
+                        f"Could not safely parse supplemental zone file {zone_path}."
+                    ) from exc
+                if not isinstance(aaDict_new, dict):
+                    raise ValueError(
+                        f"Supplemental zone file {zone_path} must contain a map."
+                    )
                 for k, v in aaDict_new.items():
                     lp_area_id2prog_list[k] = (
                         lp_area_id2prog_list.get(k, []) + v
@@ -238,8 +242,7 @@ class Zones:
 
     def transform_aa_keys_to_building_blocks(self, dict_to_update: int):
         """Convert the key in the input dictionary from attendance area to the type
-        of zone-building-blocks. Currently only support changing to blocks and
-        block groups.
+        of zone-building-blocks. Supports blocks, block groups, and tracts.
         Inputs:
         - dict_to_update: the dictionary to update keys.
         """
@@ -247,7 +250,11 @@ class Zones:
             dict_to_update
         ):
             return dict_to_update
-        if self.config["zone-building-blocks"] not in ["block_group", "block"]:
+        if self.config["zone-building-blocks"] not in [
+            "block_group",
+            "block",
+            "tract",
+        ]:
             warnings.warn(
                 "Using AA keys for LP or citywide schools with "
                 + self.config["zone-building-blocks"]
@@ -306,7 +313,12 @@ class Zones:
         self.area2progs_vec = area2progs_vec
 
     def programs_for_area_id(
-        self, attendance_area: int, block_group: int, block: int, studentno: int
+        self,
+        attendance_area: int,
+        block_group: int,
+        block: int,
+        studentno: int,
+        tract: int | None = None,
     ):
         """Get a num_programs length indicator vector for an area indicating program eligibility.
 
@@ -334,16 +346,16 @@ class Zones:
         if self.config["zone-building-blocks"] == "home_based":
             return self.area2progs_vec[str(studentno)]
 
-        area = (
-            block_group
-            if self.config["zone-building-blocks"] == "block_group"
-            else block
-        )
+        area = {
+            "block_group": block_group,
+            "block": block,
+            "tract": tract,
+        }[self.config["zone-building-blocks"]]
         try:
             return self.area2progs_vec[int(area)]
         except KeyError:
             return np.zeros(len(self.programs.program_df.index), dtype=int)
-        except ValueError:
+        except (TypeError, ValueError):
             # print(f"Missing {area_name} for student.")
             return np.zeros(len(self.programs.program_df.index), dtype=int)
 
@@ -426,6 +438,7 @@ class Zones:
             "attendance_area",
             "block_group",
             "block",
+            "tract",
         ]:
             self.zones_set = True
 
@@ -483,19 +496,25 @@ class Zones:
             return {
                 studentno: self.area2zone[x["idschoolattendance"]]
                 for studentno, x in student_data.iterrows()
-                if not np.isnan(x["idschoolattendance"])
+                if pd.notna(x["idschoolattendance"])
             }
         elif self.config["zone-building-blocks"] == "block_group":
             return {
                 studentno: self.area2zone[x["census_blockgroup"]]
                 for studentno, x in student_data.iterrows()
-                if not np.isnan(x["census_blockgroup"])
+                if pd.notna(x["census_blockgroup"])
             }
         elif self.config["zone-building-blocks"] == "block":
             return {
                 studentno: self.area2zone[x["census_block"]]
                 for studentno, x in student_data.iterrows()
-                if not np.isnan(x["census_block"])
+                if pd.notna(x["census_block"])
+            }
+        elif self.config["zone-building-blocks"] == "tract":
+            return {
+                studentno: self.area2zone[x["census_tract"]]
+                for studentno, x in student_data.iterrows()
+                if pd.notna(x["census_tract"])
             }
 
     def get_program_idx_to_zone_dict(self) -> dict:
@@ -530,6 +549,11 @@ class Zones:
         )
 
         for studentno, row in self.students.student_data.iterrows():
+            tract = (
+                row.get("census_tract")
+                if self.config["zone-building-blocks"] == "tract"
+                else None
+            )
             self._zone_priority_matrix[
                 self.students.studentno2idx[studentno], :
             ] = self.programs_for_area_id(
@@ -537,6 +561,7 @@ class Zones:
                 row.census_blockgroup,
                 row.census_block,
                 studentno,
+                **({"tract": tract} if tract is not None else {}),
             )
         return self._zone_priority_matrix
 

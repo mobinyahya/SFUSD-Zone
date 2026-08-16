@@ -8,7 +8,12 @@ optimization_defaults:
   carry_over_compute: true
   max_distance: 6
   hints: voronoi
-  capacity_scenario: 'A'
+  data:
+    scenario: legacy
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: A
   boundary_radius: 1
   gap_limits: [0, 0, 0]
   workers: 8

@@ -8,7 +8,6 @@ utility-model:
 save-assignment: enum(True)
 random-seed: int()
 r1-only: bool(required=False)
-evaluation-population: enum('first_round', 'all_rounds', required=False)
 
 rounds-merged-options: list(int(), str())
 read-lotteries: bool(required=False)
@@ -18,21 +17,9 @@ iterations:
   end: int()
 
 paths:
-  sfusd: str()
-  student-save: str()
   assignment-folder: str()
-  student-data: str(required=False)
-  program-data: str(required=False)
-  school-data: str(required=False)
-  zone-files: map(str())
-  estimate-path: str()
-  lotteries-path: str(required=False)
-  citywide-or-lp-zones: map(required=False)
-  new-ctip-path: str(required=False)
-  new-ctip-blockgroup-path: str(required=False)
 
-
-year: int()
-grade: str()
+data:
+  scenario: str()
+  overrides: map()
 subconfigs: list(str())
-remove-special-lps: bool(required=False)

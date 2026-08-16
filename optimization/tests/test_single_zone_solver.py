@@ -195,7 +195,7 @@ def test_single_zone_solution_saves_only_selected_nodes(tmp_path):
 def test_single_zone_metrics_count_selected_boundary():
     solution = _solve()
 
-    result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
+    result = MetricsCalculator(solution, config=_metrics_config()).compute()
 
     assert result.metrics["num_zones"] == 1
     assert result.metrics["cut_edges"] == solution.objective
@@ -210,7 +210,15 @@ def test_single_zone_metrics_use_district_frl_and_outside_schools():
     for node in solution.assignment:
         problem.G.graph["distance_dict"][node][0] = 0.25
 
-    result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
+    result = MetricsCalculator(solution, config=_metrics_config()).compute()
 
     assert result.metrics[MetricColumns.FRL_MAD] == pytest.approx(0.25)
     assert result.metrics[MetricColumns.AVG_OUT_OF_ZONE_GE_SCHOOLS] >= 1.0
+
+
+def _metrics_config():
+    return {
+        "strategy": "single",
+        "choice_model": "distance",
+        "data": {"scenario": "legacy", "overrides": {}},
+    }

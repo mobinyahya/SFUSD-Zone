@@ -991,7 +991,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.0" },
     { name = "omegaconf", specifier = ">=2.3.1" },
     { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "ortools", specifier = "==9.15.6755" },
+    { name = "ortools", specifier = ">=9.15.6755" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas-stubs", specifier = "~=2.3.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },

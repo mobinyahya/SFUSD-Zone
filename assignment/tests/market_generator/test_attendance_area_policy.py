@@ -26,7 +26,7 @@ def _preference_market(config, initial_preferences):
         first_round=np.zeros(3, dtype=int),
         attendance_area=pd.Series({10: 101, 11: 102, 12: 999}),
         idx2studentno={0: 10, 1: 11, 2: 12},
-        student_preferences=Mock(return_value=initial_preferences),
+        selected_preferences=Mock(return_value=initial_preferences),
     )
     programs = SimpleNamespace(
         indices=program_indices,

@@ -1,0 +1,70 @@
+id: historical-2324
+
+sources:
+  optimization.schools: optimization.schools.current
+  optimization.programs: assignment.programs.2324
+  optimization.capacity: capacity.stanford.scenarios_abcd
+  optimization.census: census.blocks.2010
+  optimization.crosswalk: census.block_crosswalk
+  optimization.adjacency:
+    block: census.adjacency.block
+    blockgroup: census.adjacency.blockgroup
+  optimization.centroids: bundled.centroids
+  optimization.manual_edges:
+    reviewed: bundled.manual_edges.reviewed
+    additions: bundled.manual_edges.additions
+  assignment.program_codes: assignment.program_codes
+  assignment.capacity: capacity.stanford.scenarios_abcd
+  assignment.estimate: utility.2324.exp8
+  assignment.block_data: ctip.workbook.2013
+  assignment.new_ctip: ctip.array.block.2024
+  assignment.new_ctip_blockgroup: ctip.array.blockgroup.2024
+  assignment.zones:
+    Medium1: zones.common.medium1
+    Z1: zones.common.z1
+    optGE780873: zones.common.opt_ge_780873
+    Large1: zones.common.large1
+    Con0: zones.common.con0
+    Con1: zones.common.con1
+    Con2: zones.common.con2
+    Con3: zones.common.con3
+    59-zone-1_B: zones.common.59
+    6-zone-1_BG: zones.common.6
+    10-zone-11_BG: zones.common.10
+    13-zone-7_BG: zones.common.13
+    18-zone-1_1_BG: zones.common.18.1
+    18-zone-1_2_BG: zones.common.18.2
+  assignment.citywide_zones:
+    Medium1-citywide: zones.citywide.medium1
+    18zone-BG-0point3miles: zones.citywide.18_bg_0point3miles
+  assignment.ctip:
+    workbook: ctip.workbook.2013
+    block: ctip.array.block.2024
+    blockgroup: ctip.array.blockgroup.2024
+  choice.estimate: utility.2324.exp8
+
+filters:
+  optimization:
+    years: ["1415", "1516", "1617", "1718", "1819", "2122", "2223"]
+    grades: [KG]
+    student_population: enrolled
+    rounds: all
+    special_programs: include
+    program_population: GE
+    capacity_scenario: programs
+    include_k8: false
+    include_citywide: false
+    include_mission_bay: true
+    geography_vintage: "2010"
+    outside_district_students: ignore
+  assignment:
+    year: "2324"
+    grades: [KG]
+    student_population: applicant
+    rounds: [1]
+    special_programs: exclude_any_special
+    capacity_profile: default
+    capacity_scenario: programs
+    include_mission_bay: false
+    geography_vintage: "2010"
+    outside_district_students: ignore

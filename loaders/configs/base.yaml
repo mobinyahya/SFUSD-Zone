@@ -1,0 +1,1019 @@
+schema_version: 2
+
+roots:
+  data: /share/data/school_choice
+  cache: /share/data/school_choice/Data/caches
+  student_assignment:
+
+files:
+  optimization.students.enrolled.1415:
+    path: Data/Cleaned/enrolled_1415.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.1516:
+    path: Data/Cleaned/enrolled_1516.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.1617:
+    path: Data/Cleaned/enrolled_1617.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.1718:
+    path: Data/Cleaned/enrolled_1718.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.1819:
+    path: Data/Cleaned/enrolled_1819.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.1920:
+    path: Data/Cleaned/enrolled_1920.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2021:
+    path: Data/Cleaned/enrolled_2021.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2122:
+    path: Data/Cleaned/enrolled_2122.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2223:
+    path: Data/Cleaned/enrolled_2223.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2324:
+    path: Data/Cleaned/enrolled_2324.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1415:
+    path: Data/Cleaned/student_1415.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1516:
+    path: Data/Cleaned/student_1516.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1617:
+    path: Data/Cleaned/student_1617.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1718:
+    path: Data/Cleaned/student_1718.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1819:
+    path: Data/Cleaned/student_1819.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.1920:
+    path: Data/Cleaned/student_1920.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2021:
+    path: Data/Cleaned/student_2021.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2122:
+    path: Data/Cleaned/student_2122.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2223:
+    path: Data/Cleaned/student_2223.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2324:
+    path: Data/Cleaned/student_2324.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+
+  assignment.students.1415:
+    path: Data/Cleaned/student_1415.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.1516:
+    path: Data/Cleaned/student_1516.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.1617:
+    path: Data/Cleaned/student_1617.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.1718:
+    path: Data/Cleaned/student_1718.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.1819:
+    path: Data/Cleaned/student_1819.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.1920:
+    path: Data/Cleaned/student_1920.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2021:
+    path: Data/Cleaned/student_2021.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2122:
+    path: Data/Cleaned/student_2122.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2223:
+    path: Data/Cleaned/student_2223.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2324:
+    path: Data/Cleaned/student_2324.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+
+  assignment.programs.1516:
+    path: Data/Cleaned/programs_1516.csv
+    root: data
+    classification: internal
+  assignment.programs.1617:
+    path: Data/Cleaned/programs_1617.csv
+    root: data
+    classification: internal
+  assignment.programs.1718:
+    path: Data/Cleaned/programs_1718.csv
+    root: data
+    classification: internal
+  assignment.programs.1819:
+    path: Data/Cleaned/programs_1819.csv
+    root: data
+    classification: internal
+  assignment.programs.1920:
+    path: Data/Cleaned/programs_1920.csv
+    root: data
+    classification: internal
+  assignment.programs.2021:
+    path: Data/Cleaned/programs_2021.csv
+    root: data
+    classification: internal
+  assignment.programs.2122:
+    path: Data/Cleaned/programs_2122.csv
+    root: data
+    classification: internal
+  assignment.programs.2223:
+    path: Data/Cleaned/programs_2223.csv
+    root: data
+    classification: internal
+  assignment.programs.2324:
+    path: Data/Cleaned/programs_2324.csv
+    root: data
+    classification: internal
+  assignment.programs.2122.no_special:
+    path: Data/Cleaned/programs_without_specialprogs_2122.csv
+    root: data
+    classification: internal
+  assignment.programs.2223.no_special:
+    path: Data/Cleaned/programs_without_specialprogs_2223.csv
+    root: data
+    classification: internal
+  assignment.programs.2324.no_special:
+    path: Data/Cleaned/programs_without_specialprogs_2324.csv
+    root: data
+    classification: internal
+
+  assignment.schools.1516:
+    path: Data/Cleaned/schools_rehauled_1516.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.1617:
+    path: Data/Cleaned/schools_rehauled_1617.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.1718:
+    path: Data/Cleaned/schools_rehauled_1718.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.1819:
+    path: Data/Cleaned/schools_rehauled_1819.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.1920:
+    path: Data/Cleaned/schools_rehauled_1920.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.2021:
+    path: Data/Cleaned/schools_rehauled_2021.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.2122:
+    path: Data/Cleaned/schools_rehauled_2122.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.2223:
+    path: Data/Cleaned/schools_rehauled_2223.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.2324:
+    path: Data/Cleaned/schools_rehauled_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+
+  assignment.programs.06.1516:
+    path: Data/Cleaned/programs_06_1516.csv
+    root: data
+    classification: internal
+  assignment.programs.06.1617:
+    path: Data/Cleaned/programs_06_1617.csv
+    root: data
+    classification: internal
+  assignment.programs.06.1718:
+    path: Data/Cleaned/programs_06_1718.csv
+    root: data
+    classification: internal
+  assignment.programs.06.1819:
+    path: Data/Cleaned/programs_06_1819.csv
+    root: data
+    classification: internal
+  assignment.programs.06.1920:
+    path: Data/Cleaned/programs_06_1920.csv
+    root: data
+    classification: internal
+  assignment.programs.06.2021:
+    path: Data/Cleaned/programs_06_2021.csv
+    root: data
+    classification: internal
+  assignment.programs.06.2122:
+    path: Data/Cleaned/programs_06_2122.csv
+    root: data
+    classification: internal
+  assignment.programs.06.2223:
+    path: Data/Cleaned/programs_06_2223.csv
+    root: data
+    classification: internal
+  assignment.programs.09.1516:
+    path: Data/Cleaned/programs_09_1516.csv
+    root: data
+    classification: internal
+  assignment.programs.09.1617:
+    path: Data/Cleaned/programs_09_1617.csv
+    root: data
+    classification: internal
+  assignment.programs.09.1718:
+    path: Data/Cleaned/programs_09_1718.csv
+    root: data
+    classification: internal
+  assignment.programs.09.1819:
+    path: Data/Cleaned/programs_09_1819.csv
+    root: data
+    classification: internal
+  assignment.programs.09.1920:
+    path: Data/Cleaned/programs_09_1920.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2021:
+    path: Data/Cleaned/programs_09_2021.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2122:
+    path: Data/Cleaned/programs_09_2122.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2223:
+    path: Data/Cleaned/programs_09_2223.csv
+    root: data
+    classification: internal
+
+  assignment.schools.06.1516:
+    path: Data/Cleaned/schools_rehauled_06_1516.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.1617:
+    path: Data/Cleaned/schools_rehauled_06_1617.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.1718:
+    path: Data/Cleaned/schools_rehauled_06_1718.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.1819:
+    path: Data/Cleaned/schools_rehauled_06_1819.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.1920:
+    path: Data/Cleaned/schools_rehauled_06_1920.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.2021:
+    path: Data/Cleaned/schools_rehauled_06_2021.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.2122:
+    path: Data/Cleaned/schools_rehauled_06_2122.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.2223:
+    path: Data/Cleaned/schools_rehauled_06_2223.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.06.2324:
+    path: Data/Cleaned/schools_rehauled_06_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.1516:
+    path: Data/Cleaned/schools_rehauled_09_1516.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.1617:
+    path: Data/Cleaned/schools_rehauled_09_1617.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.1718:
+    path: Data/Cleaned/schools_rehauled_09_1718.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.1819:
+    path: Data/Cleaned/schools_rehauled_09_1819.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.1920:
+    path: Data/Cleaned/schools_rehauled_09_1920.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.2021:
+    path: Data/Cleaned/schools_rehauled_09_2021.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.2122:
+    path: Data/Cleaned/schools_rehauled_09_2122.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.2223:
+    path: Data/Cleaned/schools_rehauled_09_2223.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.09.2324:
+    path: Data/Cleaned/schools_rehauled_09_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+
+  choice.students.2324.r1:
+    path: Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
+    root: data
+    classification: restricted
+  choice.programs.2324.r1:
+    path: Data/Cleaned/programs_without_specialprogs_2324.csv
+    root: data
+    classification: internal
+  choice.programs.2324.r1.mission_bay:
+    path: Data/Cleaned/programs_without_specialprogs_withMissionBay_2324.csv
+    root: data
+    classification: internal
+  choice.schools.2324.r1.mission_bay:
+    path: Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  choice.inputs.2324.students:
+    path: Data/Cleaned/choice_inputs_2324/student_2324_kg_r1.csv
+    root: data
+    classification: restricted
+  choice.inputs.2324.programs:
+    path: Data/Cleaned/choice_inputs_2324/programs_2324_kg_r1.csv
+    root: data
+    classification: internal
+  choice.inputs.2324.students.no_special:
+    path: Data/Cleaned/choice_inputs_2324/student_2324_kg_r1_no_special.csv
+    root: data
+    classification: restricted
+  choice.inputs.2324.programs.no_special:
+    path: Data/Cleaned/choice_inputs_2324/programs_2324_kg_r1_no_special.csv
+    root: data
+    classification: internal
+  assignment.programs.2324.status_quo:
+    path: Data/Cleaned/programs_statusQuo_2324.csv
+    root: data
+    classification: internal
+  assignment.programs.2324.mission_bay:
+    path: Data/Cleaned/programs_withMissionBay_2324.csv
+    root: data
+    classification: internal
+  assignment.programs.2324.no_special_mission_bay:
+    path: Data/Cleaned/programs_without_specialprogs_withMissionBay_2324.csv
+    root: data
+    classification: internal
+  assignment.schools.current:
+    path: Data/Cleaned/schools_rehauled_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.current_mission_bay:
+    path: Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.2223.mission_bay:
+    path: Data/Cleaned/schools_rehauled_withMissionBay_2223.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  assignment.schools.zone_development_current:
+    path: Data/Cleaned/schools_table_for_zone_development_updated.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+
+  optimization.schools.current:
+    path: Data/Cleaned/schools_table_for_zone_development_updated.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  optimization.schools.legacy:
+    path: Data/Cleaned/schools_rehauled_1819.csv
+    root: data
+    classification: internal
+    geography_vintage: "2010"
+  capacity.stanford.scenarios_abcd:
+    path: Data/Cleaned/stanford_capacities_12.23.21.csv
+    root: data
+    classification: internal
+  capacity.closure.1:
+    path: Data/Cleaned/programs_closure1.csv
+    root: data
+    classification: internal
+  capacity.closure.2:
+    path: Data/Cleaned/programs_closure2.csv
+    root: data
+    classification: internal
+  capacity.current.real:
+    path: Data/capacity_management/real_caps.csv
+    root: data
+    classification: internal
+  capacity.current.grade06:
+    path: Data/capacity_management/2023-03-03_06_target_capacities.npy
+    root: data
+    classification: internal
+
+  census.blocks.2010:
+    path: shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp
+    root: data
+    companions:
+      - shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.dbf
+      - shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shx
+      - shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.prj
+    classification: public
+    geography_vintage: "2010"
+  census.block_crosswalk:
+    path: Zones/Optimization/block_blockgroup_tract.csv
+    root: data
+    classification: public
+  census.adjacency.block:
+    path: Zones/Optimization/adjacency_matrix_b.csv
+    root: data
+    classification: public
+  census.adjacency.blockgroup:
+    path: Zones/Optimization/adjacency_matrix_bg.csv
+    root: data
+    classification: public
+  census.adjacency.tract:
+    path: Zones/Optimization/adjacency_matrix_tract.csv
+    root: data
+    classification: public
+
+  census.blocks.2020:
+    path: Census/2020/blocks/tl_2020_06075_tabblock20.shp
+    root: data
+    companions:
+      - Census/2020/blocks/tl_2020_06075_tabblock20.dbf
+      - Census/2020/blocks/tl_2020_06075_tabblock20.shx
+      - Census/2020/blocks/tl_2020_06075_tabblock20.prj
+      - Census/2020/blocks/tl_2020_06075_tabblock20.cpg
+      - Census/2020/blocks/tl_2020_06075_tabblock20.shp.iso.xml
+      - Census/2020/blocks/tl_2020_06075_tabblock20.shp.ea.iso.xml
+      - Census/2020/archives/tl_2020_06075_tabblock20.zip
+    classification: public
+    geography_vintage: "2020"
+  census.blockgroups.2020:
+    path: Census/2020/blockgroups/tl_2020_06075_bg20.shp
+    root: data
+    companions:
+      - Census/2020/blockgroups/tl_2020_06075_bg20.dbf
+      - Census/2020/blockgroups/tl_2020_06075_bg20.shx
+      - Census/2020/blockgroups/tl_2020_06075_bg20.prj
+      - Census/2020/blockgroups/tl_2020_06075_bg20.cpg
+      - Census/2020/blockgroups/tl_2020_06075_bg20.shp.iso.xml
+      - Census/2020/blockgroups/tl_2020_06075_bg20.shp.ea.iso.xml
+      - Census/2020/archives/tl_2020_06075_bg20.zip
+    classification: public
+    geography_vintage: "2020"
+  census.tracts.2020:
+    path: Census/2020/tracts/tl_2020_06075_tract20.shp
+    root: data
+    companions:
+      - Census/2020/tracts/tl_2020_06075_tract20.dbf
+      - Census/2020/tracts/tl_2020_06075_tract20.shx
+      - Census/2020/tracts/tl_2020_06075_tract20.prj
+      - Census/2020/tracts/tl_2020_06075_tract20.cpg
+      - Census/2020/tracts/tl_2020_06075_tract20.shp.iso.xml
+      - Census/2020/tracts/tl_2020_06075_tract20.shp.ea.iso.xml
+      - Census/2020/archives/tl_2020_06075_tract20.zip
+    classification: public
+    geography_vintage: "2020"
+  census.block_crosswalk.2020:
+    path: Census/2020/block_blockgroup_tract.csv
+    root: data
+    classification: public
+    geography_vintage: "2020"
+  census.adjacency.block.2020:
+    path: Census/2020/adjacency_matrix_block.csv
+    root: data
+    classification: public
+    geography_vintage: "2020"
+  census.adjacency.blockgroup.2020:
+    path: Census/2020/adjacency_matrix_blockgroup.csv
+    root: data
+    classification: public
+    geography_vintage: "2020"
+  census.adjacency.tract.2020:
+    path: Census/2020/adjacency_matrix_tract.csv
+    root: data
+    classification: public
+    geography_vintage: "2020"
+
+  assignment.program_codes:
+    path: Data/program_codes.csv
+    root: data
+    classification: internal
+  ctip.workbook.2013:
+    path: Data/SF 2010 blks 022119 with field descriptions (1).xlsx
+    root: data
+    classification: internal
+  ctip.array.block.2024:
+    path: Data/Tie-breakers/ETB_2024.npy
+    root: data
+    classification: internal
+  ctip.array.blockgroup.2024:
+    path: Data/Tie-breakers/ETB_2024_BlockGroup.npy
+    root: data
+    classification: internal
+
+  utility.2324.exp8:
+    path: simulation-files/choice-model/estimates_2324_exp8_0514.csv
+    root: data
+    classification: restricted
+  utility.2324.exp8.closure:
+    path: simulation-files/choice-model/estimates_2324_exp8_0604_closure.csv
+    root: data
+    classification: restricted
+  utility.grade06.2223:
+    path: simulation-files/choice-model/estimates_06_student_2223.npy
+    root: data
+    classification: restricted
+  utility.t14.2122:
+    path: simulation-files/choice-model/t14_2223_k1_prog_gesplit/estimates_2122.csv
+    root: data
+    classification: restricted
+  utility.t14.2223:
+    path: simulation-files/choice-model/t14_2223_k1_prog_gesplit/estimates_2223.csv
+    root: data
+    classification: restricted
+  utility.t14.2324:
+    path: simulation-files/choice-model/t14_2223_k1_prog_gesplit/estimates_2324.csv
+    root: data
+    classification: restricted
+  utility.oct1.npy:
+    path: simulation-files/choice-model/Oct1estimates.npy
+    root: data
+    classification: restricted
+  utility.oct1.csv:
+    path: simulation-files/choice-model/oct1estimates.csv
+    root: data
+    classification: restricted
+
+  zones.selected.13:
+    path: simulation-files/zones/Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv
+    root: data
+    classification: public
+  zones.selected.6:
+    path: simulation-files/zones/Zones_6-FRL_Dev_0.10-Objective_1430_BG.csv
+    root: data
+    classification: public
+  zones.selected.10:
+    path: simulation-files/zones/Zones_10-FRL_Dev_0.15-Objective_2250_BG.csv
+    root: data
+    classification: public
+  zones.common.10:
+    path: simulation-files/zones/10-zone-11_BG.csv
+    root: data
+    classification: public
+  zones.common.13:
+    path: simulation-files/zones/13-zone-7_BG.csv
+    root: data
+    classification: public
+  zones.common.18.1:
+    path: simulation-files/zones/18-zone-1_1_BG.csv
+    root: data
+    classification: public
+  zones.common.18.2:
+    path: simulation-files/zones/18-zone-1_2_BG.csv
+    root: data
+    classification: public
+  zones.common.59:
+    path: simulation-files/zones/59-zone-1_B.csv
+    root: data
+    classification: public
+  zones.common.6:
+    path: simulation-files/zones/6-zone-1_BG.csv
+    root: data
+    classification: public
+  zones.common.6.9.1:
+    path: simulation-files/zones/6-zone-9_1_BG.csv
+    root: data
+    classification: public
+  zones.common.6.9.2:
+    path: simulation-files/zones/6-zone-9_2_BG.csv
+    root: data
+    classification: public
+  zones.common.medium1:
+    path: simulation-files/zones/optGE862432.csv
+    root: data
+    classification: public
+  zones.common.z1:
+    path: simulation-files/zones/optGE862432.csv
+    root: data
+    classification: public
+  zones.common.opt_ge_780873:
+    path: simulation-files/zones/optGE780873.csv
+    root: data
+    classification: public
+  zones.common.large1:
+    path: simulation-files/zones/optGE35532.csv
+    root: data
+    classification: public
+  zones.common.con0:
+    path: simulation-files/zones/concept0zones.csv
+    root: data
+    classification: public
+  zones.common.con1:
+    path: simulation-files/zones/concept1zones.csv
+    root: data
+    classification: public
+  zones.common.con2:
+    path: simulation-files/zones/concept2zones.csv
+    root: data
+    classification: public
+  zones.common.con3:
+    path: simulation-files/zones/concept3zones.csv
+    root: data
+    classification: public
+  zones.citywide.medium1:
+    path: simulation-files/zones/citywideGE_optGE862432.txt
+    root: data
+    classification: public
+  zones.citywide.18_bg_0point3miles:
+    path: simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+    root: data
+    classification: public
+
+  bundled.centroids:
+    path: Config/centroids.yaml
+    root: repository
+    classification: public
+  bundled.manual_edges.reviewed:
+    path: manual_block_edges.yaml
+    root: package
+    classification: public
+  bundled.manual_edges.additions:
+    path: manual_block_edge_additions.yaml
+    root: package
+    classification: public
+  bundled.manual_edges.2020:
+    path: manual_block_edges_2020.yaml
+    root: package
+    classification: public
+
+geographies:
+  "2010":
+    blocks: census.blocks.2010
+    crosswalk: census.block_crosswalk
+    adjacency:
+      block: census.adjacency.block
+      blockgroup: census.adjacency.blockgroup
+      tract: census.adjacency.tract
+    manual_edges:
+      reviewed: bundled.manual_edges.reviewed
+      additions: bundled.manual_edges.additions
+  "2020":
+    blocks: census.blocks.2020
+    blockgroups: census.blockgroups.2020
+    tracts: census.tracts.2020
+    crosswalk: census.block_crosswalk.2020
+    adjacency:
+      block: census.adjacency.block.2020
+      blockgroup: census.adjacency.blockgroup.2020
+      tract: census.adjacency.tract.2020
+    manual_edges: bundled.manual_edges.2020
+
+school_years:
+  "1415":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1415
+        enrolled: optimization.students.enrolled.1415
+  "1516":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1516
+        enrolled: optimization.students.enrolled.1516
+    assignment:
+      students:
+        applicant: assignment.students.1516
+        enrolled: optimization.students.enrolled.1516
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.1516
+                schools: assignment.schools.1516
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.1516
+                schools: assignment.schools.06.1516
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.1516
+                schools: assignment.schools.09.1516
+  "1617":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1617
+        enrolled: optimization.students.enrolled.1617
+    assignment:
+      students:
+        applicant: assignment.students.1617
+        enrolled: optimization.students.enrolled.1617
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.1617
+                schools: assignment.schools.1617
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.1617
+                schools: assignment.schools.06.1617
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.1617
+                schools: assignment.schools.09.1617
+  "1718":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1718
+        enrolled: optimization.students.enrolled.1718
+    assignment:
+      students:
+        applicant: assignment.students.1718
+        enrolled: optimization.students.enrolled.1718
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.1718
+                schools: assignment.schools.1718
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.1718
+                schools: assignment.schools.06.1718
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.1718
+                schools: assignment.schools.09.1718
+  "1819":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1819
+        enrolled: optimization.students.enrolled.1819
+    assignment:
+      students:
+        applicant: assignment.students.1819
+        enrolled: optimization.students.enrolled.1819
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.1819
+                schools: assignment.schools.1819
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.1819
+                schools: assignment.schools.06.1819
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.1819
+                schools: assignment.schools.09.1819
+  "1920":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.1920
+        enrolled: optimization.students.enrolled.1920
+    assignment:
+      students:
+        applicant: assignment.students.1920
+        enrolled: optimization.students.enrolled.1920
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.1920
+                schools: assignment.schools.1920
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.1920
+                schools: assignment.schools.06.1920
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.1920
+                schools: assignment.schools.09.1920
+  "2021":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2021
+        enrolled: optimization.students.enrolled.2021
+    assignment:
+      students:
+        applicant: assignment.students.2021
+        enrolled: optimization.students.enrolled.2021
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2021
+                schools: assignment.schools.2021
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2021
+                schools: assignment.schools.06.2021
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2021
+                schools: assignment.schools.09.2021
+  "2122":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2122
+        enrolled: optimization.students.enrolled.2122
+    assignment:
+      students:
+        applicant: assignment.students.2122
+        enrolled: optimization.students.enrolled.2122
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2122
+                schools: assignment.schools.2122
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2122
+                schools: assignment.schools.06.2122
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2122
+                schools: assignment.schools.09.2122
+  "2223":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2223
+        enrolled: optimization.students.enrolled.2223
+    assignment:
+      students:
+        applicant: assignment.students.2223
+        enrolled: optimization.students.enrolled.2223
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2223
+                schools: assignment.schools.2223
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2223
+                schools: assignment.schools.06.2223
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2223
+                schools: assignment.schools.09.2223
+  "2324":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2324
+        enrolled: optimization.students.enrolled.2324
+    assignment:
+      students:
+        applicant: assignment.students.2324
+        enrolled: optimization.students.enrolled.2324
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2324
+                schools: assignment.schools.2324
+            status_quo:
+              mission_bay:
+                programs: assignment.programs.2324.status_quo
+                programs_catalog: assignment.programs.2324.mission_bay
+                schools: assignment.schools.current_mission_bay

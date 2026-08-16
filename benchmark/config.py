@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -14,6 +15,7 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
+from loaders import anchor_data_config
 from optimization.config import OptimizationConfig
 
 
@@ -21,9 +23,29 @@ SEQUENCE_OPTIMIZATION_FIELDS = {
     "levels",
     "solve_time_limits",
     "gap_limits",
-    "years",
 }
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
+OPTIMIZATION_SOURCE_ROLES = (
+    "optimization.students",
+    "optimization.schools",
+    "optimization.programs",
+    "optimization.census",
+    "optimization.crosswalk",
+    "optimization.adjacency",
+    "optimization.centroids",
+    "optimization.manual_edges",
+)
+MNL_ASSIGNMENT_FILTERS = (
+    "year",
+    "grades",
+    "student_population",
+    "rounds",
+    "special_programs",
+    "capacity_scenario",
+    "include_mission_bay",
+    "geography_vintage",
+    "outside_district_students",
+)
 
 
 @dataclass(frozen=True)
@@ -175,7 +197,8 @@ class SimulationSweep:
 
     @classmethod
     def from_yaml(cls, path: str) -> "SimulationSweep":
-        with open(path, "r", encoding="utf-8") as f:
+        config_path = Path(path).expanduser().resolve()
+        with config_path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         if not isinstance(raw, Mapping):
             raise ValueError("Simulation sweep YAML must be a mapping.")
@@ -194,7 +217,7 @@ class SimulationSweep:
         if unknown_top_level:
             raise ValueError(f"Unknown sweep YAML keys: {sorted(unknown_top_level)}")
 
-        name = str(raw.get("name") or Path(path).stem)
+        name = str(raw.get("name") or config_path.stem)
         mode = str(raw.get("mode", "run"))
         if mode not in {"run", "metrics", "matching", "choice_metrics"}:
             raise ValueError(
@@ -203,13 +226,20 @@ class SimulationSweep:
 
         optimization_defaults = dict(raw.get("optimization_defaults") or {})
         sweep = dict(raw.get("sweep") or {})
-        tasks = list(raw.get("tasks") or [])
+        raw_tasks = list(raw.get("tasks") or [])
         _validate_optimization_keys(optimization_defaults, "optimization_defaults")
         _validate_optimization_keys(sweep, "sweep")
-        for idx, task in enumerate(tasks):
+        _anchor_section_data(optimization_defaults, config_path.parent)
+        _anchor_section_data(sweep, config_path.parent, sweep_values=True)
+
+        tasks = []
+        for idx, task in enumerate(raw_tasks):
             if not isinstance(task, Mapping):
                 raise ValueError(f"tasks[{idx}] must be a mapping.")
             _validate_optimization_keys(task, f"tasks[{idx}]")
+            task = dict(task)
+            _anchor_section_data(task, config_path.parent)
+            tasks.append(task)
 
         return cls(
             name=name,
@@ -233,7 +263,7 @@ class SimulationSweep:
             config_data.update(task_values)
             config = optimization_config_from_dict(config_data)
             config_dict = optimization_config_to_dict(config)
-            config_hash = stable_hash(config_dict)
+            config_hash = optimization_config_hash(config)
             output_dir = os.path.join(
                 os.path.expanduser(self.execution.output_dir),
                 format_output_path(
@@ -256,8 +286,6 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     """Construct a :class:`OptimizationConfig` from a saved config snapshot."""
 
     restored = _restore_special_values(dict(data))
-    # Existing benchmark manifests persisted the pre-KaHIP split-depth setting.
-    restored.pop("level_to_split", None)
     field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:
@@ -288,6 +316,73 @@ def config_snapshot(config: OptimizationConfig | Mapping[str, Any]) -> dict[str,
 def stable_hash(value: Any) -> str:
     payload = json.dumps(json_ready(value), sort_keys=True, separators=(",", ":"))
     return hashlib.blake2b(payload.encode("utf-8"), digest_size=16).hexdigest()
+
+
+def optimization_config_hash(
+    config: OptimizationConfig | Mapping[str, Any],
+) -> str:
+    """Hash optimization semantics and resolved source contents deterministically."""
+    resolved = (
+        config
+        if isinstance(config, OptimizationConfig)
+        else optimization_config_from_dict(config)
+    )
+    semantic = copy.deepcopy(optimization_config_to_dict(resolved))
+    semantic.pop("data", None)
+    source_manifest = _benchmark_source_manifest(resolved)
+    return stable_hash(
+        {
+            "optimization": semantic,
+            "source_manifest": source_manifest,
+        }
+    )
+
+
+def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
+    scenario = config.data_scenario
+    roles = [
+        role
+        for role in OPTIMIZATION_SOURCE_ROLES
+        if _scenario_has_role(scenario, role)
+    ]
+    if config.capacity_scenario != "programs" and _scenario_has_role(
+        scenario, "optimization.capacity"
+    ):
+        roles.append("optimization.capacity")
+    filter_groups = ["optimization"]
+    if config.choice_model == "mnl":
+        roles.extend(
+            role
+            for role in (
+                "assignment.students",
+                "assignment.geography.blocks",
+                "assignment.geography.crosswalk",
+                "choice.estimate",
+            )
+            if _scenario_has_role(scenario, role)
+        )
+        if scenario.filter("assignment", "capacity_scenario") != "programs" and (
+            _scenario_has_role(scenario, "assignment.capacity")
+        ):
+            roles.append("assignment.capacity")
+        filter_groups.append("assignment")
+
+    manifest = scenario.source_manifest(roles)
+    manifest["filters"] = {"optimization": json_ready(scenario.filters["optimization"])}
+    if "assignment" in filter_groups:
+        manifest["filters"]["assignment"] = {
+            key: json_ready(scenario.filters["assignment"][key])
+            for key in MNL_ASSIGNMENT_FILTERS
+        }
+    return manifest
+
+
+def _scenario_has_role(scenario: Any, role: str) -> bool:
+    try:
+        scenario.resolved(role)
+    except KeyError:
+        return False
+    return True
 
 
 def json_ready(value: Any) -> Any:
@@ -385,6 +480,21 @@ def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:
     unknown = set(data) - _optimization_field_names()
     if unknown:
         raise ValueError(f"Unknown keys in {section}: {sorted(unknown)}")
+
+
+def _anchor_section_data(
+    section: dict[str, Any],
+    base_dir: Path,
+    *,
+    sweep_values: bool = False,
+) -> None:
+    if "data" not in section:
+        return
+    value = section["data"]
+    if sweep_values and isinstance(value, list):
+        section["data"] = [anchor_data_config(item, base_dir) for item in value]
+        return
+    section["data"] = anchor_data_config(value, base_dir)
 
 
 def _optimization_field_names() -> set[str]:

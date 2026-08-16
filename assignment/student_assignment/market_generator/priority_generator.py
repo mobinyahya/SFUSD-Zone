@@ -83,26 +83,41 @@ class PriorityGenerator:
         # Reset stb and mtb random lottery.
         self.reset_stb_mtb_lottery()
 
-    def _set_rounds_merged(self, rounds_merged: int) -> np.ndarray:
+    def _set_rounds_merged(self, rounds_merged: int | str) -> np.ndarray:
         """Use priorities to determine if rounds of applicants are considered together or separately.
 
         Students receive higher priority for joining in an earlier round if rounds are not merged. This way, students
         who apply in earlier rounds are considered first. If rounds are merged, students are assigned in a single go.
 
         Args:
-            rounds_merged : int taking one of the values [0, 123, 23, 12]
+            rounds_merged: `0` or `all`, with legacy codes `123`, `23`, and `12`
+                available for at most three selected rounds.
         """
         cache_key = (rounds_merged, id(self.market.students))
         if cache_key in self._round_priorities_cache:
             return self._round_priorities_cache[cache_key]
 
         first_round_of_participation = self.market.students.first_round
-        round_priorities = {
+        if rounds_merged in {12, 23, 123} and self.market.students.rounds > 3:
+            raise ValueError(
+                f"Legacy rounds-merged code {rounds_merged} supports at most "
+                "three selected rounds; use 0 or 'all' for additional rounds."
+            )
+        generators = {
             123: self._merge_all_rounds,
+            "all": self._merge_all_rounds,
             0: self._merge_no_rounds,
             23: self._merge_rounds_2_and_3,
             12: self._merge_rounds_1_and_2,
-        }[rounds_merged](first_round_of_participation)
+        }
+        try:
+            generator = generators[rounds_merged]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown rounds-merged option {rounds_merged!r}; expected "
+                "0, 12, 23, 123, or 'all'."
+            ) from exc
+        round_priorities = generator(first_round_of_participation)
         result = np.reshape(round_priorities, (self.market.n, 1)) * np.ones(
             [1, self.market.num_programs]
         )
@@ -197,10 +212,13 @@ class PriorityGenerator:
             elif k == "zone":
                 priorities += v * self.market.zones.zone_priority_matrix
             elif k == "peng":
-                path = (
-                    pathlib.Path(self.market.config["student-save"])
-                    / f"peng_boost_matrix_{policy}.npy"
-                )
+                try:
+                    path = self.market.config["paths"]["peng-boosts"][policy]
+                except KeyError as exc:
+                    raise ValueError(
+                        "PENG priority requires "
+                        "data.overrides.sources.assignment.peng_boosts."
+                    ) from exc
                 boost_matrix = np.load(str(path))
                 priorities += boost_matrix
             elif k == "distance":
@@ -892,52 +910,107 @@ class PriorityGenerator:
         raise NotImplementedError("HTB code broken, please see source")
 
     def _mtb_real(self) -> np.ndarray:
-        """Use multiple tiebreaking from historical preferences (currently only round 1?).
+        """Use multiple tiebreaking from selected historical preferences.
         Use random number for student-program pairs where we do not have historical preferences.
 
         Returns:
             np.ndarray: (num students) by (num programs) array with multiple tiebreaking
                 lottery number
         """
-        warnings.warn(
-            "Only using round 1 random numbers - please check implementation"
-        )
         mtb = np.zeros((self.market.students.n, self.market.num_programs))
-        # Replace the random number with historical preferences if exist.
-        round_preferences = self.market.students.student_preferences(
-            1, self.market.programs.index_list
+        selected_preferences = self.market.students.selected_preferences(
+            self.market.programs.index_list
         )
+        student_data = self.market.students.student_data
+        required = {"selected_randomnumber", "selected_designation_randomnumber"}
+        missing = sorted(required - set(student_data.columns))
+        if missing:
+            raise ValueError(
+                f"Historical MTB lottery requires selected columns: {missing}."
+            )
         for row_id, (program_ids, random_numbers, d_val) in enumerate(
             zip(
-                round_preferences,
-                self.market.students.student_data.r1_randomnumber.to_numpy(),
-                self.market.students.student_data.r1_designation_randomnumber,
+                selected_preferences,
+                student_data.selected_randomnumber.to_numpy(),
+                student_data.selected_designation_randomnumber,
             )
         ):
             program_ids = np.array([x for x in program_ids if x != 0])
             if len(program_ids):
-                assert (program_ids - 1 > 0).all
-                mtb[row_id, :] = d_val
-                mtb[row_id, program_ids - 1] = eval(random_numbers)
+                if np.any((program_ids < 1) | (program_ids > self.market.num_programs)):
+                    raise ValueError("Historical preferences contain invalid program IDs.")
+                try:
+                    designation_number = float(d_val)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Historical designation lottery numbers must be numeric."
+                    ) from exc
+                if not np.isfinite(designation_number):
+                    raise ValueError(
+                        "Historical designation lottery numbers must be finite."
+                    )
+                mtb[row_id, :] = designation_number
+                if not isinstance(random_numbers, (list, tuple, np.ndarray)):
+                    raise ValueError(
+                        "Historical lottery numbers must be loader-normalized lists."
+                    )
+                try:
+                    parsed_numbers = np.asarray(random_numbers, dtype=float)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Historical lottery numbers must be numeric."
+                    ) from exc
+                if parsed_numbers.shape != (len(program_ids),) or not np.isfinite(
+                    parsed_numbers
+                ).all():
+                    raise ValueError(
+                        "Historical lottery numbers must align with ranked programs."
+                    )
+                mtb[row_id, program_ids - 1] = parsed_numbers
 
         return mtb
 
     def _stb_real(self) -> np.ndarray:
-        """Use single tiebreaking from historical preferences (currently using designation order?).
+        """Use each student's first selected historical lottery number.
 
         Returns:
             np.ndarray: (num students) by (num programs) array with single tiebreaking lottery numbers
         """
         warnings.warn(
-            "STB_REAL uses random number from real designation ordering - true policy is "
-            "multiple tiebreaking"
+            "STB_REAL uses the first lottery number from each student's selected "
+            "choice; true policy is multiple tiebreaking",
+            stacklevel=2,
         )
-        return np.expand_dims(
-            np.array(
-                self.market.students.student_data.r1_randomnumber.to_list()
-            ),
-            axis=1,
-        ) * np.ones([1, self.market.num_programs])
+        student_data = self.market.students.student_data
+        if "selected_randomnumber" not in student_data:
+            raise ValueError(
+                "Historical STB lottery requires selected_randomnumber."
+            )
+        numbers = []
+        for value in student_data.selected_randomnumber:
+            if not isinstance(value, (list, tuple, np.ndarray)):
+                raise ValueError(
+                    "Historical selected lottery numbers must be loader-normalized "
+                    "lists."
+                )
+            if len(value) == 0:
+                raise ValueError(
+                    "Historical selected lottery numbers must not be empty."
+                )
+            try:
+                number = float(value[0])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Historical selected lottery numbers must be numeric."
+                ) from exc
+            if not np.isfinite(number):
+                raise ValueError(
+                    "Historical selected lottery numbers must be finite."
+                )
+            numbers.append(number)
+        return np.asarray(numbers)[:, np.newaxis] * np.ones(
+            [1, self.market.num_programs]
+        )
 
     def _set_not_designation_priority(self, preferences):
         not_designation = np.zeros([self.market.n, self.market.num_programs])

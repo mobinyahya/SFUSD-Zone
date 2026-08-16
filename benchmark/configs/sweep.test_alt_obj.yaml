@@ -10,7 +10,12 @@ optimization_defaults:
   solve_time_limits: [500]
   max_distance: 4
   hints: voronoi
-  capacity_scenario: 'A'
+  data:
+    scenario: legacy
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: A
   levels: [Block_1]
   racial_dev: -1
   workers: 8

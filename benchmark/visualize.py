@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> None:
         "--artifact-dir",
         type=Path,
         default=None,
-        help="Optional directory for cached geometry artifacts.",
+        help="Optional cache-root override for content-addressed geometry artifacts.",
     )
     parser.add_argument(
         "--fail-fast",
@@ -80,7 +80,7 @@ def visualize_sweep(
     for task in tasks:
         run_dir = Path(task.output_dir).expanduser()
         try:
-            solutions, _, _ = load_solutions(str(run_dir))
+            solutions, optimization_config, _ = load_solutions(str(run_dir))
             if not solutions:
                 summary.skipped_runs += 1
                 print(f"SKIP {run_dir}: no saved stages")
@@ -90,6 +90,7 @@ def visualize_sweep(
                 solutions,
                 output_dir=run_dir,
                 stages=stages,
+                config=optimization_config,
                 artifact_dir=artifact_dir,
             )
             figure_count = sum(len(result.figure_paths) for result in results)

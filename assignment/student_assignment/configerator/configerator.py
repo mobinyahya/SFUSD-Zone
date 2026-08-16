@@ -12,16 +12,16 @@ This class serves as an interface for a Configerator. It,
 
 import copy
 import getpass
-import math
 import os
 import warnings
+from pathlib import Path
 
 import yamale
 import yaml
+from loaders import anchor_data_config, load_scenario
 
 from ..definitions import (
     BASE_CONFIG_NAME,
-    CLUSTER_PATH_CONFIG_NAME,
     CONFIG_SCHEMA_NAME,
     CONFIGS_DIR,
     LOCAL_PATH_CONFIG_NAME,
@@ -29,12 +29,27 @@ from ..definitions import (
     USER_CONFIG_SUFFIX,
 )
 
+_LEGACY_TOP_LEVEL_DATA_KEYS = {"grade", "remove-special-lps", "year"}
+_LEGACY_INPUT_PATH_KEYS = {
+    "citywide-or-lp-zones",
+    "estimate-path",
+    "lotteries-path",
+    "new-ctip-blockgroup-path",
+    "new-ctip-path",
+    "program-data",
+    "school-data",
+    "sfusd",
+    "student-data",
+    "student-save",
+    "zone-files",
+}
+
 
 class Configerator:
     instance = None
 
     class __Singleton_Configerator:
-        def __init__(self, config=None):
+        def __init__(self, config=None, *, declaring_path=None):
             self._config = None
             self._original_config = None
             self._path = None
@@ -42,34 +57,79 @@ class Configerator:
             if config is None:
                 # Load main config
                 self._load_config()
-                self._validate_schema(
-                    yamale.make_data(self._path),
-                    f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
-                )
                 # self._validate_rules(ruleset) # KLM commented out because moved sibling access to policy config
             else:
-                self._config = copy.deepcopy(config)
-                self._original_config = copy.deepcopy(config)
+                self._config = self._anchor_config(config, declaring_path)
+                self._original_config = copy.deepcopy(self._config)
 
-            self._normalize_config(self._config)
-            self._normalize_config(self._original_config)
+            self._validate_execution_config(self._config)
             self.subconfigs = iter(self.config.get("subconfigs", []))
 
         @staticmethod
-        def _normalize_config(config):
-            """Normalize scalar values consumed throughout the simulator."""
-            if "grade" not in config:
-                return
+        def _anchor_config(config, declaring_path=None):
+            """Anchor strict data paths without changing other public inputs.
 
-            grade = str(config["grade"]).strip().upper()
-            try:
-                number = float(grade)
-            except ValueError:
-                config["grade"] = grade
-                return
-            if math.isfinite(number) and number.is_integer():
-                grade = str(int(number)).zfill(2)
-            config["grade"] = grade
+            File-backed configurations resolve relative data paths from the
+            declaring YAML directory. In-memory mappings have no such context,
+            so their relative data paths intentionally resolve from cwd.
+            """
+            if not isinstance(config, dict):
+                return copy.deepcopy(config)
+            anchored = copy.deepcopy(config)
+            if isinstance(anchored.get("data"), dict):
+                base_dir = (
+                    Path.cwd()
+                    if declaring_path is None
+                    else Path(declaring_path).expanduser().resolve().parent
+                )
+                anchored["data"] = anchor_data_config(anchored["data"], base_dir)
+            return anchored
+
+        def _validate_execution_config(self, config):
+            """Apply the same strict external validation to every config source."""
+            if not isinstance(config, dict):
+                raise ValueError("Assignment configuration must be a map.")
+
+            legacy_keys = sorted(_LEGACY_TOP_LEVEL_DATA_KEYS.intersection(config))
+            if legacy_keys:
+                raise ValueError(
+                    "Assignment data filters must be configured under "
+                    "data.overrides.filters.assignment; forbidden top-level keys: "
+                    f"{legacy_keys}."
+                )
+
+            paths = config.get("paths", {})
+            if not isinstance(paths, dict):
+                raise ValueError("paths must be a map.")
+            legacy_paths = sorted(_LEGACY_INPUT_PATH_KEYS.intersection(paths))
+            if legacy_paths:
+                raise ValueError(
+                    "Assignment input sources must be configured under "
+                    "data.overrides.sources; forbidden paths keys: "
+                    f"{legacy_paths}."
+                )
+
+            data = config.get("data")
+            if not isinstance(data, dict):
+                raise ValueError("Assignment configuration must define a valid data map.")
+
+            self._validate_schema(
+                yamale.make_data(content=yaml.safe_dump(config)),
+                f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
+                strict=False,
+            )
+            scenario = load_scenario(data)
+            year = scenario.filter("assignment", "year")
+            if not isinstance(year, str) or len(year) != 4 or not year.isdigit():
+                raise ValueError(
+                    "data assignment year must be a canonical four-digit string."
+                )
+            grades = scenario.filter("assignment", "grades")
+            if len(grades) != 1:
+                raise ValueError(
+                    "Assignment execution requires exactly one grade; "
+                    f"selected grades are {list(grades)}."
+                )
 
         def _load_config(self):
             """Find config file located at ../../configs/{$USER}.config.yaml
@@ -93,9 +153,10 @@ class Configerator:
             if not os.path.isfile(self._path):
                 # Load base config
                 base_config = self._load_yaml(f"{CONFIGS_DIR}{BASE_CONFIG_NAME}")
-                # Load environment specific paths
-                path_config = self._load_yaml(self._get_path_config())
-                # Update base config with path config
+                # Local and cluster path files now contain output paths only.
+                path_config = self._load_yaml(
+                    f"{CONFIGS_DIR}{LOCAL_PATH_CONFIG_NAME}"
+                )
                 base_config.update(path_config)
                 # Write atomically: parallel simulations (e.g. the pipeline
                 # script launches every run at once) all auto-create the same
@@ -108,8 +169,10 @@ class Configerator:
                     yaml.safe_dump(base_config, file, default_flow_style=False)
                 os.replace(tmp_path, self._path)
 
-            self._config = self._load_yaml(self._path)
-            self._original_config = self._load_yaml(self._path)
+            self._config = self._anchor_config(
+                self._load_yaml(self._path), self._path
+            )
+            self._original_config = copy.deepcopy(self._config)
 
         def _load_subconfig(self, name):
             path = f"{SUBCONFIGS_DIR}{name}.yaml"
@@ -118,37 +181,20 @@ class Configerator:
             subconfig = self._load_yaml(path)
             # Use original config (same from _load_config) to clear optional configs.
             self._config = {**self._original_config, **subconfig}
+            self._config["data"] = copy.deepcopy(self._original_config["data"])
             self._config["subconfig-name"] = name
-            self._normalize_config(self._config)
-
-        def _get_path_config(self):
-            """Get the path to path_config depending on environment.
-
-            Returns:
-                str: The path to path_config file.
-            """
-            if self._is_on_cluster():
-                return f"{CONFIGS_DIR}{CLUSTER_PATH_CONFIG_NAME}"
-            return f"{CONFIGS_DIR}{LOCAL_PATH_CONFIG_NAME}"
+            self._validate_execution_config(self._config)
 
         def _load_yaml(self, path):
             """Given a path, create the config object and load into self.config in
             dict form.
             """
             with open(path) as yf:
-                return yaml.full_load(yf)
+                return yaml.safe_load(yf)
 
-        def _is_on_cluster(self):
-            """Check if the code is currently running on cluster.
-
-            Returns:
-                boolean: true if the code is running on cluster, false otherwise.
-            """
-            return "soal" in os.popen("hostname").read()
-
-        def _validate_schema(self, data, schema_path):
+        def _validate_schema(self, data, schema_path, *, strict=True):
             schema = yamale.make_schema(schema_path)
-            yamale.validate(schema, data)
+            yamale.validate(schema, data, strict=strict)
 
         def _validate_rules(self, rules):
             rule_outcomes = map(lambda f: f(self.config), rules)
@@ -167,7 +213,9 @@ class Configerator:
                 update the current config.
             """
             derived_values = func(self._config)
-            self._config = {**self._config, **derived_values}
+            candidate = {**self._config, **derived_values}
+            self._validate_execution_config(candidate)
+            self._config = candidate
 
         def load_all_subconfigs(self):
             """Load all the subconfigs."""
@@ -205,9 +253,23 @@ class Configerator:
         return Configerator.instance
 
     @classmethod
-    def from_config(cls, config):
-        """Create an isolated configurator backed by an in-memory config."""
-        return cls.__Singleton_Configerator(config)
+    def from_config(cls, config, *, declaring_path=None):
+        """Create an isolated configurator from a strict public mapping.
+
+        ``declaring_path`` should be the YAML file that declared the mapping.
+        If omitted, relative data paths use the current working directory.
+        """
+        return cls.__Singleton_Configerator(
+            config, declaring_path=declaring_path
+        )
+
+    @classmethod
+    def from_path(cls, path):
+        """Load a strict public config and retain its declaring directory."""
+        config_path = Path(path).expanduser().resolve()
+        with config_path.open(encoding="utf-8") as stream:
+            config = yaml.safe_load(stream)
+        return cls.from_config(config, declaring_path=config_path)
 
     def __getattr__(self, name):
         return getattr(self.instance, name)

@@ -4,11 +4,10 @@ End-to-end runbook: everything needed to go from a fresh `git clone` to a
 running simulation. Each step links to the detailed guide where relevant.
 
 > **TL;DR.** A bare clone is **not** runnable on its own: the confidential data
-> is not in the repo, and the filtered inputs under `local-data/` are
-> git-ignored. The order is: **env → shared data → substitute placeholders →
-> generate filtered inputs → (zones, only for zone-restricted policies) → run.**
-> Generating zones is *not* the first step, and most baselines don't need zones
-> at all.
+> is not in the repo. The normal order is: **env → shared data → choose registry
+> selectors → provide zones only for zone-restricted policies → run.** Prepared
+> student/program files are optional experimental inputs, not a standard setup
+> step.
 
 ---
 
@@ -22,20 +21,21 @@ uv sync            # install pinned deps into .venv (see README for uv setup)
 ## Step 1 — Get the confidential SFUSD data
 
 The data is **not** redistributable and is **not** in the repo. Every
-environment must provide `/share/data/school_choice/`; both committed path
-configs read from that shared root. There is no home-directory data fallback.
+environment must provide the central catalog's data root, which defaults to
+`/share/data/school_choice/`. Local and cluster path configs contain outputs
+only. There is no home-directory data fallback.
 
 See **[DATA_SETUP.md](DATA_SETUP.md)** for the per-file path reference.
 
 ## Step 2 — Substitute the placeholder tokens
 
-Committed configs use explicit placeholder tokens instead of anyone's home
-directory. Replace them with your **absolute** paths (cluster paths
-`/share/...` are already concrete and need no change):
+Some exceptional experiment and generated-zone configs use placeholder tokens
+instead of developer home directories. Replace those tokens with **absolute**
+paths; ordinary registry-backed inputs need no substitution.
 
 | Token | Replace with |
 |-------|--------------|
-| `<STUDENT_ASSIGNMENT_PATH>` | your `student-assignment` checkout |
+| `<STUDENT_ASSIGNMENT_PATH>` | checkout containing generated zones or experiment outputs |
 | `<SFUSD_CHOICE_PATH>` | your `SFUSD-Choice` checkout (MNL estimates) |
 | `<RA_SFUSD_PATH>` | your `RA_SFUSD` checkout (permuted-students configs only) |
 
@@ -45,18 +45,25 @@ grep -rl '<STUDENT_ASSIGNMENT_PATH>' configs/ \
   | xargs sed -i "s#<STUDENT_ASSIGNMENT_PATH>#$PWD#g"
 ```
 
-Details and the full key→file table: **[DATA_SETUP.md](DATA_SETUP.md)**.
+Details and the source-role contract: **[DATA_SETUP.md](DATA_SETUP.md)**.
 
-## Step 3 — Generate the filtered inputs (`local-data/`)
+## Step 3 — Select Registry Data
 
-`local-data/` is git-ignored, so a fresh clone has none of it. The
-`custom_configs` simulators read two filtered inputs that you must produce
-(or copy):
+A standard run selects a canonical year, one execution grade, student
+population, rounds, special-program mode, capacity profile, and Mission Bay
+policy under `data.overrides.filters.assignment`. The central `school_years`
+registry resolves the annual student/program/school bundle. Unsupported
+combinations fail rather than falling back; see **[DATA_SETUP.md](DATA_SETUP.md)**
+for the exact block.
 
-### 3a. Program filter → `local-data/program_filter/`
+### Optional Experimental Preprocessing
 
-Removes special programs from each year's cleaned program file. No arguments;
-run from the repo root:
+Prepared round-one, no-special, and distance-filtered files are retained only
+for historical reproduction or experiments that explicitly override registry
+sources. Runtime selectors perform standard round and special-program filtering
+without materializing these files.
+
+The historical program export can be reproduced with:
 
 ```bash
 python scripts/preprocessing/filter_programs.py
@@ -64,10 +71,8 @@ python scripts/preprocessing/filter_programs.py
 # writes local-data/program_filter/programs_without_specialprogs_{YY}.csv
 ```
 
-### 3b. Student filter → `local-data/student_filter/`
-
-For each student, drops the GE choices that are too far away (or outside the N
-closest schools). Driven by Hydra config
+The optional student experiment drops GE choices that are too far away (or
+outside the N closest schools). It is driven by Hydra config
 [`configs/custom_configs/distance_filter.yaml`](../configs/custom_configs/distance_filter.yaml)
 — edit its paths / filter mode, then:
 
@@ -76,12 +81,12 @@ python filter_student_choices.py
 # or override keys on the CLI:
 python filter_student_choices.py distance=2.0 \
   output_csv=$PWD/local-data/student_filter/student_2324_filtered.csv
-# writes the file the simulators read back as `student-data`.
+# writes a file an experiment can select with an explicit source override.
 ```
 
-> Tip: the simulator config's `student-data` / `program-data` keys must point at
-> the files produced here. If you'd rather skip filtering, repoint those keys at
-> the cluster's cleaned files instead.
+Only experiments that require materialized filtered files should point
+`data.overrides.sources.assignment.students` or `assignment.programs` at these
+outputs. Source overrides take precedence over registry roles.
 
 ## Step 4 — Zones (only for zone-restricted policies)
 
@@ -110,8 +115,9 @@ Full zone workflow (register, policy config, building blocks):
 
 | Goal | Command | Needs |
 |------|---------|-------|
-| A custom config | `uv run python run_custom_config.py --config-path configs/custom_configs/status_quo_real_2324.yaml` | Steps 0–3 (Step 4 only if the policy is zoned). |
-| Augmented DA | `uv run python run_augmented_da.py --config-path configs/custom_configs/augmented_da_2324.yaml` | Steps 0–4 (this config uses local zones). |
+| A registry-backed config | `uv run python run_custom_config.py --config-path <config.yaml>` | Steps 0, 1, and 3; Step 4 only for a zoned policy. |
+| Historical custom config | `uv run python run_custom_config.py --config-path configs/custom_configs/status_quo_real_2324.yaml` | Its explicit experimental sources and any referenced zones. |
+| Augmented DA | `uv run python run_augmented_da.py --config-path configs/custom_configs/augmented_da_2324.yaml` | Its explicit experimental sources and local zones. |
 | Full pipeline (generate → simulate → analyze) | `bash scripts/run_models_estimates.sh --settings scripts/settings/models_cluster.env` | Steps 0–4 + MNL estimates. |
 
 `--config_path` is also accepted. Use `--help` for the argparse scripts.
@@ -120,12 +126,11 @@ Full zone workflow (register, policy config, building blocks):
 
 ## Dependency cheat-sheet
 
-| Config family | Cleaned data | Filtered inputs (Step 3) | Zones (Step 4) | MNL estimates |
+| Config family | Registry sources | Experimental overrides | Zones | MNL estimates |
 |---------------|:---:|:---:|:---:|:---:|
-| `status_quo_real_*` | ✅ | ✅ | — | — (`utility-model.enable: false`) |
-| `augmented_da_2324` | ✅ | ✅ | ✅ (local) | — |
-| `all_zones*`, `selected*` (zoned) | ✅ | ✅ | ✅ (local) | depends |
-| utility-model configs (`enable: true`) | ✅ | ✅ | depends | ✅ `<SFUSD_CHOICE_PATH>` |
+| Standard assignment run | Required | No | Policy-dependent | Model-dependent |
+| Historical custom configs | Required | As declared | Policy-dependent | As declared |
+| Generated-zone sweeps | Required | Generated-zone root | Required | Model-dependent |
 
 ## See also
 

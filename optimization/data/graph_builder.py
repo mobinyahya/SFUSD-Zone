@@ -8,7 +8,8 @@ from importlib.metadata import version
 import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES
-from optimization.data import edge_overrides, loaders
+from loaders.edge_overrides import apply_block_edge_overrides
+from optimization.data import loaders
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS
@@ -23,10 +24,7 @@ _SUM_ATTRS = [
     "FRL",
 ]
 
-# Version 3 moves Mission Bay ES (999) from Block 60750607001031 to 60750607001053.
-# GRAPH_CACHE_SCHEMA_VERSION changed from 4 to 5 after moving its distance-cache
-# source row from Block 60750607001031 to Block 60750607001053.
-GRAPH_CACHE_SCHEMA_VERSION = 7
+GRAPH_CACHE_SCHEMA_VERSION = 11
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
@@ -46,7 +44,7 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
     distance_dict = loaders.load_distance_dict(cfg, area2idx)
     neighbors = loaders.load_neighbors(cfg, area2idx)
 
-    population_attr = population_attribute(cfg.population_type)
+    population_attr = population_attribute(cfg.program_population)
     total_students = 0.0
     total_frl = 0.0
     total_eth = {eth: 0.0 for eth in AREA_ETHNICITIES}
@@ -76,11 +74,11 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
             G.add_edge(idx, nb)
 
     if cfg.unit == "Block":
-        edge_overrides.apply_block_edge_overrides(G)
+        apply_block_edge_overrides(G, loaders.load_manual_block_edges(cfg))
 
     G.graph["distance_dict"] = distance_dict
     G.graph["school_data"] = _school_data(cfg)
-    G.graph["population_type"] = cfg.population_type
+    G.graph["program_population"] = cfg.program_population
     G.graph["F"] = (total_frl / total_students) if total_students else 0.0
     G.graph["R"] = {
         eth: (total_eth[eth] / total_students if total_students else 0.0)
@@ -168,7 +166,7 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
     new_G.graph["F"] = parent_G.graph["F"]
     new_G.graph["R"] = parent_G.graph["R"]
     new_G.graph["school_data"] = parent_G.graph["school_data"]
-    new_G.graph["population_type"] = parent_G.graph.get("population_type", "GE")
+    new_G.graph["program_population"] = parent_G.graph["program_population"]
     new_G.graph["partition"] = dict(partition)
     if "manual_block_edges" in parent_G.graph:
         new_G.graph["manual_block_edges"] = parent_G.graph["manual_block_edges"]
@@ -199,9 +197,9 @@ def partition_cache_policy(unit: str) -> dict:
     }
 
 
-def population_attribute(population_type: str) -> str:
+def population_attribute(program_population: str) -> str:
     """Node attribute representing the population selected during ingestion."""
-    return "ge_students" if population_type == "GE" else "all_prog_students"
+    return "ge_students" if program_population == "GE" else "all_prog_students"
 
 
 def _is_school_node(attrs: dict) -> bool:
@@ -385,7 +383,7 @@ def _partition_non_school_nodes(
 def aggregate_level(
     parent_G: nx.Graph,
     target_node_count: int,
-    population_type: str,
+    program_population: str,
 ) -> nx.Graph:
     """Build one coarse graph from its immediate finer parent graph."""
     school_nodes = sorted(
@@ -405,7 +403,7 @@ def aggregate_level(
             "nodes and aggregate the remaining nodes."
         )
 
-    population_attr = population_attribute(population_type)
+    population_attr = population_attribute(program_population)
     partition, imbalances = _partition_non_school_nodes(
         parent_G.subgraph(non_school_nodes).copy(),
         non_school_target,
@@ -437,5 +435,7 @@ def build_hierarchy(cfg: IngestConfig) -> dict[int, nx.Graph]:
     """Build every predefined level sequentially from its immediate parent."""
     graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg)}
     for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
-        graphs[depth] = aggregate_level(graphs[depth - 1], target, cfg.population_type)
+        graphs[depth] = aggregate_level(
+            graphs[depth - 1], target, cfg.program_population
+        )
     return graphs

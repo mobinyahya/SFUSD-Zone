@@ -28,22 +28,6 @@ student\_assignment.definitions.paths module
    :undoc-members:
    :show-inheritance:
 
-student\_assignment.definitions.sfusd\_files module
----------------------------------------------------
-
-.. automodule:: student_assignment.definitions.sfusd_files
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-student\_assignment.definitions.utils module
---------------------------------------------
-
-.. automodule:: student_assignment.definitions.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Module contents
 ---------------
 

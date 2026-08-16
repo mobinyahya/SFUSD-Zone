@@ -42,14 +42,9 @@ class PreferenceGenerator:
             return prefs
 
         prefs = np.zeros((self.market.n, self.market.num_programs))
-        main_round = self.market.students.first_round
-
-        for round in np.unique(main_round):
-            round_preferences = self.market.students.student_preferences(
-                round + 1, self.market.programs.index_list
-            )
-            round_idxs = np.where(main_round == round)[0]
-            prefs[round_idxs, :] = round_preferences[round_idxs, :]
+        prefs[:, :] = self.market.students.selected_preferences(
+            self.market.programs.index_list
+        )
 
         self.pref_length = np.count_nonzero(prefs, axis=1)
 

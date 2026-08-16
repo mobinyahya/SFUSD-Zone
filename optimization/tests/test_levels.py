@@ -8,6 +8,7 @@ from optimization.levels import LevelSpec
     [
         ("BlockGroup_0", "BlockGroup", 0),
         ("Block_2", "Block", 2),
+        ("Tract_0", "Tract", 0),
         ("attendance_area_1", "attendance_area", 1),
     ],
 )

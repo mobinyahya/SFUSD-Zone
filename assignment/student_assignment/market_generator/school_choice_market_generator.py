@@ -74,21 +74,31 @@ class MarketGenerator(SchoolChoiceMarket):
             if self.yaml is None:
                 config_save_path = self.output_assignment_path / "config.json"
                 with open(config_save_path, "w") as config_file:
-                    json.dump(self.config, config_file, indent=4)
+                    json.dump(self.resolved_config, config_file, indent=4)
             else:
                 config_save_path = self.output_assignment_path / "config.yaml"
                 with open(config_save_path, "w") as config_file:
-                    yaml.dump(
-                        self.config, config_file, default_flow_style=False
+                    yaml.safe_dump(
+                        self.resolved_config,
+                        config_file,
+                        default_flow_style=False,
                     )
 
     def reconfigure(self, config: dict, assignment_path: str = None) -> None:
-        """Update zoning inputs while retaining the initialized static market data."""
+        """Replace a run config, reusing immutable data for the same sources."""
+        previous_source_identity = getattr(self, "source_identity", None)
         configurator = Configerator.from_config(config)
-        self._validate_config(configurator.config)
         self.configurator = configurator
-        self.config = self.configurator.config
+        self._materialize_config(self.configurator.config)
+        self._validate_config(self.config)
         self.yaml = None
+        np.random.seed(self.config["random-seed"])
+        if previous_source_identity != self.source_identity:
+            self._initialize_market_data()
+            self._initialize_utility_model()
+        else:
+            self._reuse_market_data()
+            self._reuse_utility_model()
         self._set_up_save_folder(assignment_path)
         self.priority_generator = PriorityGenerator(self)
         self.preference_generator = PreferenceGenerator(self)
@@ -117,12 +127,21 @@ class MarketGenerator(SchoolChoiceMarket):
         for subconfig in subconfigs:
             if not self.configurator.load_next_subconfig():
                 raise RuntimeError(f"Failed to load policy subconfig '{subconfig}'.")
-            self.config = self.configurator.config
+            previous_source_identity = getattr(self, "source_identity", None)
+            self._materialize_config(self.configurator.config)
             self._validate_config(self.config)
             np.random.seed(
                 self.config["random-seed"]
             )  # ensure subconfig order does not affect lottery draws
-            self._reset_zones()
+            current_source_identity = getattr(self, "source_identity", None)
+            if previous_source_identity is None or current_source_identity is None:
+                self._reset_zones()
+            elif previous_source_identity != current_source_identity:
+                self._initialize_market_data()
+                self._initialize_utility_model()
+            else:
+                self._reuse_market_data()
+                self._reuse_utility_model()
             self.execute_generator(self.create_iterations_generator())
 
     @staticmethod

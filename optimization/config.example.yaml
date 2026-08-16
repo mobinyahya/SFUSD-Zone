@@ -48,10 +48,20 @@ choice_utility_scale: 100     # CP-SAT integer scaling for choice objective vari
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 
 # --- data ingestion ---
-years: [21, 22, 23]
-population_type: 'GE'
-capacity_scenario: 'A'
-new_schools: true
-include_k8: false
-remove_city_wide: false        # with population_type All, exclude citywide schools
-# graphs_dir: leave unset to use /share/data/school_choice/Zones/Optimization/Graphs.
+data:
+  scenario: legacy
+  overrides:
+    filters:
+      optimization:
+        years: ['2122', '2223', '2324']
+        grades: [KG]
+        student_population: enrolled  # applicant | enrolled; selects annual registry sources
+        rounds: all                    # or an explicit list supported by every year
+        special_programs: include     # include | exclude_only_special | exclude_any_special
+        program_population: GE        # GE | All | another selected program code
+        capacity_scenario: programs    # programs | A | B | C | D
+        include_k8: false
+        include_citywide: false
+        include_mission_bay: true
+        geography_vintage: '2020'     # 2010 | 2020
+        outside_district_students: ignore  # ignore | include

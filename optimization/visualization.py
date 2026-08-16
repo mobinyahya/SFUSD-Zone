@@ -2,17 +2,17 @@
 
 This module deliberately does not reuse ``Graphic_Visualization``. The old
 visualizers re-read and re-dissolved shapefiles for every plot and mixed legacy
-output formats. Here the expensive geometry work is cached in a shared artifact
-folder and rendered PNGs are written to the optimization output directory.
+output formats. Here the expensive geometry work is cached in a validated shared
+namespace and rendered PNGs are written to the optimization output directory.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
+from typing import Any
 
 import geopandas as gpd
 import matplotlib.colors as mcolors
@@ -21,19 +21,20 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from Config.Constants import zone_colors
-from optimization.data.loaders import load_census_shapefile
+from loaders import CacheStore, DataScenario, load_scenario
+from optimization.config import OptimizationConfig
+from optimization.data.closer_neighbors import graph_geometry_fingerprint
+from optimization.data.loaders import (
+    OUTPUT_LATLON_CRS,
+    census_geometry_roles,
+    load_census_shapefile,
+)
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 
 GeometryLoader = Callable[[str], gpd.GeoDataFrame]
-
-DEFAULT_ARTIFACT_DIR = Path(
-    "/share/data/school_choice/Data/Computed/visualization_artifacts"
-)
-
-
-def _load_geometry(unit: str) -> gpd.GeoDataFrame:
-    return load_census_shapefile(unit)
+VISUALIZATION_GEOMETRY_CACHE_SCHEMA_VERSION = 4
+GEOMETRY_PAYLOAD = "geometry.pkl"
 
 
 @dataclass
@@ -65,50 +66,50 @@ def stage_name(index: int, solution: ZoneSolution) -> str:
 
 
 class VisualizationArtifactStore:
-    """Build and reuse expensive visualization artifacts under one artifact dir."""
+    """Build and reuse source-aware geometry in the configured shared cache."""
 
     def __init__(
         self,
+        data: DataScenario,
         artifact_dir: str | Path | None = None,
         geometry_loader: GeometryLoader | None = None,
     ):
-        self.artifact_dir = Path(artifact_dir or DEFAULT_ARTIFACT_DIR)
-        self.geometry_loader = geometry_loader or _load_geometry
-        self._memory_cache: dict[Path, gpd.GeoDataFrame] = {}
-        self.artifact_dir.mkdir(parents=True, exist_ok=True)
+        if not isinstance(data, DataScenario):
+            raise TypeError("VisualizationArtifactStore data must be a DataScenario.")
+        self.data = _with_cache_root(data, artifact_dir) if artifact_dir else data
+        self.geometry_loader = geometry_loader or (
+            lambda unit: load_census_shapefile(unit, self.data)
+        )
 
     def geometry_for(self, level: LevelSpec, G) -> tuple[gpd.GeoDataFrame, Path]:
         """Return cached node geometry for ``G`` at ``level``.
 
-        The cache key includes a graph/partition fingerprint so changing graph
-        aggregation or switching base units naturally creates a new artifact.
+        The namespace binds graph membership and scenario filters to validated
+        census/crosswalk source manifests, including current source checksums.
         """
 
         level = LevelSpec.parse(level)
-        fingerprint = graph_geometry_fingerprint(G)
-        path = self.artifact_dir / f"geometry_{level.name}_{fingerprint}.pkl"
-        meta_path = self.artifact_dir / f"geometry_{level.name}_{fingerprint}.json"
+        namespace = CacheStore(self.data).namespace(
+            "visualization_geometry",
+            {
+                "level": level.name,
+                "unit": level.unit,
+                "graph_geometry_fingerprint": graph_geometry_fingerprint(G),
+                "node_count": G.number_of_nodes(),
+                "optimization_filters": self.data.filters.get("optimization", {}),
+                "output_crs": OUTPUT_LATLON_CRS,
+                "operation": "dissolve_base_areas_by_graph_node",
+            },
+            schema_version=VISUALIZATION_GEOMETRY_CACHE_SCHEMA_VERSION,
+            roles=census_geometry_roles(self.data, level.unit),
+        )
+        path = namespace.payload_path(GEOMETRY_PAYLOAD)
 
-        if path in self._memory_cache:
-            return self._memory_cache[path].copy(), path
-        if path.exists():
-            geometry = pd.read_pickle(path)
-        else:
+        geometry = namespace.load_pickle(GEOMETRY_PAYLOAD)
+        if not _valid_cached_geometry(geometry):
             geometry = self._build_geometry(level, G)
-            geometry.to_pickle(path)
-            with meta_path.open("w") as f:
-                json.dump(
-                    {
-                        "level": level.name,
-                        "unit": level.unit,
-                        "nodes": int(G.number_of_nodes()),
-                        "fingerprint": fingerprint,
-                    },
-                    f,
-                    indent=2,
-                )
+            path = namespace.save_pickle(GEOMETRY_PAYLOAD, geometry)
 
-        self._memory_cache[path] = geometry
         return geometry.copy(), path
 
     def _build_geometry(self, level: LevelSpec, G) -> gpd.GeoDataFrame:
@@ -139,30 +140,53 @@ class VisualizationArtifactStore:
                 f"No {level.unit} geometries matched graph nodes for {level.name}."
             )
 
+        if geo.crs is None:
+            geo = geo.set_crs(OUTPUT_LATLON_CRS, allow_override=True)
         dissolved = geo.dissolve(by="node", as_index=False)[["node", "geometry"]]
-        if dissolved.crs is not None:
-            dissolved = dissolved.to_crs(epsg=4326)
+        dissolved = dissolved.to_crs(OUTPUT_LATLON_CRS)
         return dissolved
 
 
-def graph_geometry_fingerprint(G) -> str:
-    """Small stable hash of node labels and base ids used by cached geometry."""
+def _valid_cached_geometry(value: Any) -> bool:
+    return (
+        isinstance(value, gpd.GeoDataFrame)
+        and {"node", "geometry"} <= set(value.columns)
+        and not value.empty
+        and not value["node"].isna().any()
+        and not value["node"].duplicated().any()
+    )
 
-    h = hashlib.sha1()
-    for node in sorted(G.nodes()):
-        h.update(str(int(node)).encode("utf-8"))
-        h.update(b":")
-        for area_id in sorted(_node_area_ids(G, node)):
-            h.update(str(int(area_id)).encode("utf-8"))
-            h.update(b",")
-        h.update(b";")
-    return h.hexdigest()[:12]
+
+def _with_cache_root(data: DataScenario, cache_root: str | Path) -> DataScenario:
+    roots = dict(data.roots)
+    roots["cache"] = Path(cache_root).expanduser().resolve()
+    return replace(data, roots=MappingProxyType(roots))
+
+
+def _scenario_for_solution(
+    solution: ZoneSolution,
+    config: OptimizationConfig | DataScenario | Mapping[str, Any] | None,
+) -> DataScenario:
+    if isinstance(config, DataScenario):
+        return config
+    if isinstance(config, OptimizationConfig):
+        return config.data_scenario
+    if isinstance(config, Mapping) and isinstance(config.get("data"), Mapping):
+        return load_scenario(config["data"])
+
+    solution_config = solution.problem.optimization_config
+    if solution_config is not None:
+        return solution_config.data_scenario
+    raise ValueError(
+        "Visualization requires the solution's strict OptimizationConfig/data scenario."
+    )
 
 
 def visualize_solutions(
     solutions: Sequence[ZoneSolution],
     output_dir: str | Path,
     stages: str = "final",
+    config: OptimizationConfig | DataScenario | Mapping[str, Any] | None = None,
     geometry_loader: GeometryLoader | None = None,
     artifact_dir: str | Path | None = None,
 ) -> list[RenderResult]:
@@ -170,12 +194,8 @@ def visualize_solutions(
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    store = VisualizationArtifactStore(
-        artifact_dir=artifact_dir,
-        geometry_loader=geometry_loader,
-    )
-
     results: list[RenderResult] = []
+    stores: dict[tuple[str, str], VisualizationArtifactStore] = {}
     for index in selected_stage_indices(len(solutions), stages):
         solution = solutions[index]
         stage = stage_name(index, solution)
@@ -186,6 +206,16 @@ def visualize_solutions(
             results.append(result)
             continue
 
+        scenario = _scenario_for_solution(solution, config)
+        store_key = (str(scenario.cache_root), scenario.semantic_fingerprint)
+        store = stores.get(store_key)
+        if store is None:
+            store = VisualizationArtifactStore(
+                scenario,
+                artifact_dir=artifact_dir,
+                geometry_loader=geometry_loader,
+            )
+            stores[store_key] = store
         geometry, geometry_path = store.geometry_for(solution.level, solution.problem.G)
         result.geometry_artifact = geometry_path
         fig = render_solution_map(solution, geometry, stage)

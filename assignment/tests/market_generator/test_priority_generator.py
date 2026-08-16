@@ -19,24 +19,24 @@ from assignment.student_assignment.market_generator.school_choice_market import 
     SchoolChoiceMarket,
 )
 
-from ..utils_for_tests import *
+from ..utils_for_tests import (
+    configure_synthetic_assignment_data,
+    delete_temp_files,
+    generate_random_program_school_files,
+    generate_random_student_file,
+)
 
 
 @pytest.fixture(scope="module")
-def config():
+def config(tmp_path_factory):
     configerator = Configerator()
     configerator.config["subconfigs"] = ["choice_model_real_match_grade6"]
     configerator.load_subconfig_by_name("choice_model_real_match_grade6")
-    # Set after load_subconfig_by_name: loading a subconfig rebuilds the
-    # config from the original file and would discard these overrides.
     config = configerator.config
-    config["grade"] = "06"
     config["use-new-capacities"] = False
-    config["year"] = YEAR
-
-    # Use the temp file path for generated data.
-    config["paths"]["sfusd"] = TEMP_CLEANED_PAR_FOLDER
-    config["paths"]["student-save"] = TEMP_STUDENT_SAVE_FOLDER
+    configure_synthetic_assignment_data(
+        config, "06", tmp_path_factory.mktemp("priority-distance-cache-06")
+    )
     return config
 
 
@@ -290,18 +290,15 @@ def test_sixth_grade_priorities(config):
 
 
 @pytest.fixture(scope="module")
-def config_ninth():
+def config_ninth(tmp_path_factory):
     configerator = Configerator()
     configerator.config["subconfigs"] = ["choice_model_real_match_grade9"]
     configerator.load_subconfig_by_name("choice_model_real_match_grade9")
-    # Set after load_subconfig_by_name: loading a subconfig rebuilds the
-    # config from the original file and would discard these overrides.
     config = configerator.config
-    config["grade"] = "09"
     config["use-new-capacities"] = False
-    config["year"] = YEAR
-    config["paths"]["sfusd"] = TEMP_CLEANED_PAR_FOLDER
-    config["paths"]["student-save"] = TEMP_STUDENT_SAVE_FOLDER
+    configure_synthetic_assignment_data(
+        config, "09", tmp_path_factory.mktemp("priority-distance-cache-09")
+    )
     return config
 
 

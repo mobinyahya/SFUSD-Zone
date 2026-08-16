@@ -11,29 +11,36 @@ Last modified: November 27th, 2023
 import numpy as np
 import pandas as pd
 import pytest
+from loaders import (
+    load_program_records,
+    load_scenario,
+    load_school_records,
+    load_student_records,
+    parse_ranked_programs,
+    parse_ranked_schools,
+)
 
-from assignment.student_assignment.configerator import Configerator
 from assignment.student_assignment.data_interfaces import Programs
 from assignment.student_assignment.data_interfaces.students import Students
 
-from ..utils_for_tests import *
+from ..utils_for_tests import (
+    LP_TYPE,
+    NUM_SCHOOLS,
+    NUM_STUDENT,
+    YEAR,
+    configure_synthetic_assignment_data,
+    delete_temp_files,
+    generate_random_program_school_files,
+    generate_random_student_file,
+)
 
 
 @pytest.fixture(scope="module")
-def config():
-    configerator = Configerator()
-    configerator.config["subconfigs"] = ["choice_model_real_match_grade6"]
-    configerator.load_subconfig_by_name("choice_model_real_match_grade6")
-    # Set after load_subconfig_by_name: loading a subconfig rebuilds the
-    # config from the original file and would discard these overrides.
-    config = configerator.config
-    config["grade"] = "06"
-    config["use-new-capacities"] = False
-    config["year"] = YEAR
-
-    # Use the temp file path for generated data.
-    config["paths"]["sfusd"] = TEMP_CLEANED_PAR_FOLDER
-    config["paths"]["student-save"] = TEMP_STUDENT_SAVE_FOLDER
+def config(tmp_path_factory):
+    config = {"grade": "06", "year": YEAR, "use-new-capacities": False}
+    configure_synthetic_assignment_data(
+        config, "06", tmp_path_factory.mktemp("student-distance-cache")
+    )
     return config
 
 
@@ -43,20 +50,42 @@ def cleanup(request):
 
 
 def get_students(config):
+    scenario = load_scenario(config["data"], environ={})
+    runtime_config = {
+        **config,
+        "grade": scenario.filter("assignment", "grades")[0],
+        "year": int(scenario.filter("assignment", "year")[:2]),
+        "special_programs": scenario.filter("assignment", "special_programs"),
+    }
     students = Students(
-        TEMP_STUDENT_FILE,
-        get_programs(config),
-        TEMP_SCHOOL_FILE,
+        load_student_records(
+            scenario, "assignment.students", filter_group="assignment"
+        ),
+        get_programs(runtime_config),
+        load_school_records(
+            scenario,
+            "assignment.school_coordinates",
+            filter_group="assignment",
+        ),
         None,
-        config,
+        runtime_config,
+        data_scenario=scenario,
     )
 
     return students
 
 
 def get_programs(config):
-    program_data_file = TEMP_PROGRAMS_FILE.format(config["grade"])
-    programs = Programs(program_data_file, None, config)
+    scenario = load_scenario(config["data"], environ={})
+    grade = scenario.filter("assignment", "grades")[0]
+    runtime_config = {**config, "grade": grade, "year": YEAR}
+    programs = Programs(
+        load_program_records(
+            scenario, "assignment.programs", filter_group="assignment"
+        ),
+        None,
+        runtime_config,
+    )
     return programs
 
 
@@ -204,7 +233,6 @@ def test_sibling(config):
 def _minimal_student_inputs(tmp_path, student_rows):
     program_file = tmp_path / "programs.csv"
     school_file = tmp_path / "schools.csv"
-    student_file = tmp_path / "students.csv"
     pd.DataFrame(
         {
             "programno": [1],
@@ -219,14 +247,25 @@ def _minimal_student_inputs(tmp_path, student_rows):
     pd.DataFrame(
         {"school_id": [101], "lat": [37.75], "lon": [-122.45]}
     ).to_csv(school_file, index=False)
-    pd.DataFrame(student_rows).to_csv(student_file, index=False)
-    config = {
-        "grade": "06",
-        "year": 21,
-        "paths": {"student-save": str(tmp_path)},
-    }
+    student_frame = pd.DataFrame(student_rows)
+    student_frame["grade"] = "06"
+    student_frame["r1_ranked_idschool"] = student_frame[
+        "r1_ranked_idschool"
+    ].map(parse_ranked_schools)
+    student_frame["r1_programs"] = student_frame["r1_programs"].map(
+        parse_ranked_programs
+    )
+    student_frame["first_participating_round"] = 1
+    student_frame["first_participating_round_ordinal"] = 0
+    student_frame["selected_ranked_idschool"] = student_frame[
+        "r1_ranked_idschool"
+    ].map(list)
+    student_frame["selected_programs"] = student_frame["r1_programs"].map(list)
+    student_frame.attrs["source_rows"] = list(range(len(student_frame)))
+    student_frame.attrs["source_row_count"] = len(student_frame)
+    config = {"grade": "06", "year": 21}
     programs = Programs(program_file, None, config)
-    return student_file, school_file, programs, config
+    return student_frame, school_file, programs, config
 
 
 def _student_row(studentno=1, schools="[101]", programs="['GE']"):
@@ -241,28 +280,27 @@ def _student_row(studentno=1, schools="[101]", programs="['GE']"):
     }
 
 
-def test_numeric_grade_and_trailing_empty_rank_token(tmp_path):
+def test_normalized_preferences_are_used_without_reparsing(tmp_path):
     inputs = _minimal_student_inputs(
         tmp_path, [_student_row(schools="[101, ]")]
     )
 
     students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
-    assert students.student_data.loc[1, "r1_ranked_idschool"] == [101]
+    assert students.student_data.loc[1, "selected_ranked_idschool"] == [101]
     np.testing.assert_array_equal(
         students.student_preferences(1, inputs[2].index_list), [[1]]
     )
 
 
-def test_stale_distance_cache_is_recomputed_and_reindexed(tmp_path):
+def test_old_distance_cache_files_are_ignored(tmp_path):
     inputs = _minimal_student_inputs(tmp_path, [_student_row()])
     cache_file = tmp_path / "student_program_distances_06_2122.csv"
     pd.DataFrame(
         {"studentno": [999], "101-GE-06": [1.0]}
     ).to_csv(cache_file, index=False)
 
-    with pytest.warns(UserWarning, match="Ignoring invalid distance cache"):
-        students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+    students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
     assert students.distance_data.index.tolist() == [1]
     assert students.distance_data.columns.tolist() == ["101-GE-06"]

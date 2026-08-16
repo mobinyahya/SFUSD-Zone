@@ -13,8 +13,14 @@ import networkx as nx
 from shapely.geometry import box
 
 from Config.Constants import AREA_ETHNICITIES
+from loaders import load_scenario
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
+
+
+_SYNTHETIC_DATA = load_scenario(
+    {"scenario": "legacy", "overrides": {}}, environ={}
+)
 
 
 def _attach_closer_neighbors(G: nx.Graph) -> None:
@@ -93,6 +99,7 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
     G.graph["F"] = 0.5
     G.graph["R"] = {e: 0.2 for e in AREA_ETHNICITIES}
     G.graph["school_data"] = {100: {}, 200: {}}
+    G.graph["program_population"] = "GE"
     _attach_closer_neighbors(G)
     return G
 
@@ -247,6 +254,7 @@ class FakeDataset:
 
     def __init__(self, problem: ZoneProblem):
         self._problem = problem
+        self.data = _SYNTHETIC_DATA
 
     def graph_for(self, level):
         return self._problem.G
@@ -282,7 +290,7 @@ class FakeDataset:
             level=LevelSpec.parse(level),
             centroids=self.centroids_for(level, centroid_school_ids),
             centroid_school_ids=[int(school_id) for school_id in centroid_school_ids],
-            population_type=self._problem.population_type,
+            program_population=self._problem.program_population,
             frl_dev=self._problem.frl_dev * constraint_multiplier,
             racial_dev=self._problem.racial_dev * constraint_multiplier,
             overage=self._problem.overage * constraint_multiplier,

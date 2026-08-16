@@ -5,6 +5,7 @@ from typing import Any
 
 import click
 import yaml
+from loaders import anchor_data_config
 
 
 @click.group()
@@ -36,6 +37,8 @@ def simulate(config_path: Path, assignments_dir: Path | None) -> None:
         config = yaml.safe_load(f) or {}
     if not isinstance(config, dict):
         raise click.ClickException(f"Config {config_path} must be a YAML mapping.")
+    if isinstance(config.get("data"), dict):
+        config["data"] = anchor_data_config(config["data"], config_path.parent)
 
     paths: dict[str, Any] = dict(config.get("paths") or {})
     if assignments_dir is None:

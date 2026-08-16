@@ -34,6 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from loaders import load_scenario  # noqa: E402
 from analysis.evaluate_soft_reserve_matches import (  # noqa: E402
     EvaluationTask,
     evaluate_assignment,
@@ -200,23 +201,6 @@ def run_policy(
     return assignments
 
 
-def resolve_config_path(config: Mapping[str, Any], key: str) -> Path:
-    paths = config.get("paths")
-    if not isinstance(paths, Mapping):
-        raise ValueError("simulation config has no paths mapping")
-    value = paths.get(key)
-    if not value:
-        raise ValueError(f"simulation config has no {key!r} path")
-
-    path = Path(str(value)).expanduser()
-    if path.is_absolute():
-        return path.resolve()
-    root = paths.get("sfusd")
-    if not root:
-        raise ValueError(f"relative {key!r} path has no 'sfusd' root")
-    return (Path(str(root)).expanduser() / path).resolve()
-
-
 def evaluation_tasks(
     assignments: list[Path],
     config: Mapping[str, Any],
@@ -224,25 +208,24 @@ def evaluation_tasks(
     *,
     first_round: bool = True,
 ) -> list[EvaluationTask]:
-    student_path = resolve_config_path(config, "student-data")
-    program_path = resolve_config_path(config, "program-data")
-    school_path = resolve_config_path(config, "school-data")
+    data = copy.deepcopy(dict(config["data"]))
+    assignment_filters = data.setdefault("overrides", {}).setdefault(
+        "filters", {}
+    ).setdefault("assignment", {})
+    assignment_filters["rounds"] = [1] if first_round else "all"
+    scenario = load_scenario(data)
+    student_path = scenario.source("assignment.students").path
+    program_path = scenario.source("assignment.programs").path
+    school_path = scenario.source("assignment.school_coordinates").path
     for path in (student_path, program_path, school_path):
         if not path.is_file():
             raise FileNotFoundError(path)
 
-    year = int(config.get("year", 23))
-    evaluator_year = int(f"{year:02d}{(year + 1) % 100:02d}")
     return [
         EvaluationTask(
             assignment_path=str(path),
-            student_path=str(student_path),
-            program_path=str(program_path),
-            school_path=str(school_path),
+            data=copy.deepcopy(data),
             new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
-            year=evaluator_year,
-            no_special_program=bool(config.get("remove-special-lps", True)),
-            first_round=first_round,
         )
         for path in assignments
     ]

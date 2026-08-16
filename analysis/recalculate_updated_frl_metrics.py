@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import csv
 import json
 import logging
@@ -61,11 +62,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from assignment.student_assignment.definitions.constants import (  # noqa: E402
-    SPECIAL_PROGRAMS,
-)
 from assignment.student_assignment.evaluation.match_evaluator import (  # noqa: E402
     MatchEvaluator,
+)
+from loaders import (  # noqa: E402
+    DataScenario,
+    ResolvedSource,
+    load_program_records,
+    load_scenario,
+    load_school_records,
+    load_student_records,
+    normalize_student_records,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -91,7 +98,9 @@ DEFAULT_ZONE_MATCHES_ROOT = (
     / "analysis/matches/zone_subconfigs_choice_model_25_soft_reserves_updated"
 )
 DEFAULT_UPDATED_FRL = PROJECT_ROOT / "analysis/updated_frl_block.csv"
-DEFAULT_2020_BLOCKS = PROJECT_ROOT / "analysis/tl_2020_06075_tabblock20.zip"
+DEFAULT_2020_BLOCKS = Path(
+    "/share/data/school_choice/Census/2020/blocks/tl_2020_06075_tabblock20.shp"
+)
 DEFAULT_FALLBACK_BLOCKS = (
     PROJECT_ROOT / "analysis/recalculate_updated_frl_fallback_blocks.csv"
 )
@@ -450,42 +459,31 @@ def fallback_block_report(
     return report
 
 
-def resolve_config_value(config: Mapping[str, Any], value: object) -> Path:
-    path = Path(str(value)).expanduser()
-    if path.is_absolute():
-        return path.resolve()
-    paths = config.get("paths")
-    if not isinstance(paths, Mapping) or not paths.get("sfusd"):
-        raise ValueError(f"relative config path has no paths.sfusd root: {value}")
-    return (Path(str(paths["sfusd"])).expanduser() / path).resolve()
+def config_data_scenario(config: Mapping[str, Any]) -> DataScenario:
+    data = config.get("data")
+    if not isinstance(data, Mapping):
+        raise ValueError("configuration has no data scenario")
+    return load_scenario(data)
 
 
-def resolve_data_path(config: Mapping[str, Any], key: str) -> Path:
-    paths = config.get("paths")
-    if not isinstance(paths, Mapping) or not paths.get(key):
-        raise ValueError(f"configuration has no paths.{key}")
-    return resolve_config_value(config, paths[key])
+def resolve_data_path(config: Mapping[str, Any], role: str) -> Path:
+    return config_data_scenario(config).source(role).path
 
 
 def resolve_zone_definition(config: Mapping[str, Any]) -> ZoneDefinition | None:
     unit = str(config.get("zone-building-blocks") or "").strip().lower()
-    if unit not in {"block", "block_group"}:
+    if unit not in {"block", "block_group", "tract"}:
         return None
 
     policies = config.get("policies")
-    paths = config.get("paths")
     if not isinstance(policies, list) or len(policies) != 1:
         raise ValueError("zone configuration must name exactly one policy")
-    if not isinstance(paths, Mapping) or not isinstance(
-        paths.get("zone-files"), Mapping
-    ):
-        raise ValueError("zone configuration has no paths.zone-files mapping")
-    zone_files = paths["zone-files"]
+    zone_files = config_data_scenario(config).source_map("assignment.zones")
     policy = str(policies[0])
-    if not zone_files.get(policy):
+    zone_source = zone_files.get(policy)
+    if not isinstance(zone_source, ResolvedSource):
         raise ValueError(f"zone configuration has no file for policy {policy!r}")
-    zone_path = resolve_config_value(config, zone_files[policy])
-    return load_zone_definition(zone_path, unit)
+    return load_zone_definition(zone_source.path, unit)
 
 
 def load_zone_definition(path: Path, unit: str) -> ZoneDefinition:
@@ -514,6 +512,8 @@ def zone_column(unit: str, *, school: bool = False) -> str:
         return "Block" if school else "census_block"
     if unit == "block_group":
         return "BlockGroup" if school else "census_blockgroup"
+    if unit == "tract":
+        return "Tract" if school else "census_tract"
     raise ValueError(f"unsupported zone unit: {unit}")
 
 
@@ -560,30 +560,28 @@ def ordered_zone_totals(
 
 def zone_population_metrics(
     all_students: pd.DataFrame,
-    grade: object,
     zone: ZoneDefinition,
 ) -> dict[str, float | list[float] | list[int]]:
     """Calculate static applicant metrics in ascending zone-number order."""
     required = {
-        "grade",
         "freelunch_prob",
-        "r1_programs",
-        "r1_ranked_idschool",
+        "selected_programs",
+        "selected_ranked_idschool",
         zone_column(zone.unit),
     }
     missing = required - set(all_students.columns)
     if missing:
         raise ValueError(f"all-student data is missing columns {sorted(missing)}")
 
-    grade_students = all_students.loc[
-        all_students["grade"].astype("string") == str(grade)
-    ].copy()
+    grade_students = all_students.copy()
     zones = map_areas_to_zones(grade_students[zone_column(zone.unit)], zone)
     mapped = zones.notna()
     district_frl = float(grade_students.loc[mapped, "freelunch_prob"].mean())
 
-    program_lists = grade_students["r1_programs"].map(parse_ranked_list)
-    ranked_school_lists = grade_students["r1_ranked_idschool"].map(parse_ranked_list)
+    program_lists = grade_students["selected_programs"].map(parse_ranked_list)
+    ranked_school_lists = grade_students["selected_ranked_idschool"].map(
+        parse_ranked_list
+    )
     mismatched_lists = [
         index
         for index, (programs, schools) in enumerate(
@@ -629,10 +627,9 @@ def zone_population_metrics(
 
 def zone_frl_proportions(
     all_students: pd.DataFrame,
-    grade: object,
     zone: ZoneDefinition,
 ) -> list[float]:
-    metrics = zone_population_metrics(all_students, grade, zone)
+    metrics = zone_population_metrics(all_students, zone)
     return list(metrics["frl_by_zone"])  # type: ignore[arg-type]
 
 
@@ -821,32 +818,34 @@ def zone_json_list(
 def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
     config_path = Path(task.config_path)
     config = load_yaml(config_path)
-    student_path = resolve_data_path(config, "student-data")
-    program_path = resolve_data_path(config, "program-data")
-    school_path = resolve_data_path(config, "school-data")
-    for path in (student_path, program_path, school_path):
-        if not path.is_file():
-            raise FileNotFoundError(path)
+    data = copy.deepcopy(dict(config["data"]))
+    data.setdefault("overrides", {}).setdefault("filters", {}).setdefault(
+        "assignment", {}
+    )["rounds"] = [1] if task.first_round else "all"
+    scenario = load_scenario(data)
 
     lookup = load_frl_lookup(Path(task.updated_frl_path))
     block_geometry = load_2020_block_geometry(Path(task.block_geometry_path))
     students = enrich_student_frl(
-        pd.read_csv(student_path, low_memory=False),
+        load_student_records(
+            scenario,
+            "assignment.students",
+            filter_group="assignment",
+            low_memory=False,
+        ),
         lookup,
         block_geometry,
     )
-    no_special_program = bool(config.get("remove-special-lps", True))
-    programs = pd.read_csv(program_path)
-    if no_special_program and "program_type" in programs:
-        programs = programs.loc[
-            ~programs["program_type"].isin(SPECIAL_PROGRAMS)
-        ].copy()
-    schools = pd.read_csv(school_path)
+    programs = load_program_records(
+        scenario, "assignment.programs", filter_group="assignment"
+    )
+    schools = load_school_records(
+        scenario, "assignment.schools", filter_group="assignment"
+    )
     zone = resolve_zone_definition(config)
 
-    evaluator_year = int(
-        f"{int(config.get('year', 23)):02d}{(int(config.get('year', 23)) + 1) % 100:02d}"
-    )
+    evaluator_year = int(scenario.filter("assignment", "year")[:2])
+    evaluator_grade = scenario.filter("assignment", "grades")[0]
     base_metrics: list[pd.Series] = []
     empty_school_iterations: list[list[float]] = []
     unassigned_iterations: list[list[float]] = []
@@ -862,11 +861,11 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
             low_income=95292,
             medium_income=95292,
             high_income=110850,
-            grade=None,
+            grade=evaluator_grade,
             year=evaluator_year,
-            no_special_program=no_special_program,
-            program_file=str(program_path),
-            schools_latlon_path=str(school_path),
+            no_special_program=False,
+            program_data=programs,
+            schools_data=schools,
             new_ctip_path=task.new_ctip_path,
         )
         base_metrics.append(evaluator.eval_assignment_full())
@@ -895,16 +894,15 @@ def evaluate_configuration(task: ConfigurationTask) -> tuple[str, pd.Series]:
         metrics[FRL_MAX_DEV_METRIC] = float("nan")
         return task.label, metrics
 
+    all_students = normalize_student_records(
+        pd.read_csv(task.all_students_path, low_memory=False), scenario, "assignment"
+    )
     all_students = enrich_student_frl(
-        pd.read_csv(task.all_students_path, low_memory=False),
+        all_students,
         lookup,
         block_geometry,
     )
-    population = zone_population_metrics(
-        all_students,
-        config.get("grade", "KG"),
-        zone,
-    )
+    population = zone_population_metrics(all_students, zone)
     ge_seats = ge_seats_by_zone(programs, schools, zone)
     ge_students = list(population["ge_students"])  # type: ignore[arg-type]
     ge_disparity = ge_seat_disparity_by_zone(ge_students, ge_seats, zone)

@@ -33,15 +33,17 @@ python scripts/generators/generate_zone_from_pickle.py \
 
 ### Step 2: Register the Zone File
 
-Add your zone file to `configs/local_path_config.yaml` (or your personal `configs/<your-username>.config.yaml`):
+Add the zone to the executable run config's scenario overrides:
 
 ```yaml
-paths:
-  # ... existing paths ...
-  zone-files:
-    # ... existing zones ...
-    # Add your custom zone:
-    custom-6zone: data/zones/6zone-frl20-1.csv
+data:
+  scenario: legacy
+  overrides:
+    sources:
+      assignment.zones:
+        custom-6zone:
+          path: /absolute/path/data/zones/6zone-frl20-1.csv
+          classification: public
 ```
 
 ### Step 3: Create/Update Policy Config
@@ -65,7 +67,7 @@ reserve-settings:
   reserve_fraction: [0.57, 0.43]
 
 policies:
-- custom-6zone  # Must match the key in zone-files
+- custom-6zone  # Must match the key in assignment.zones
 
 zone-building-blocks: block_group  # Must match how zones were generated
 designate: true
@@ -116,8 +118,8 @@ The `zone-building-blocks` setting must match how your zones were generated:
 ## Troubleshooting
 
 ### "Zone file not found"
-- Ensure the path in `zone-files` is correct (relative to working directory or absolute)
-- Check that the zone key in `policies` matches the key in `zone-files`
+- Ensure the direct source path under `assignment.zones` is correct.
+- Check that the zone key in `policies` matches the scenario map key.
 
 ### "Geounit not found in zone"
 - Ensure `zone-building-blocks` matches how the pickle was generated

@@ -9,6 +9,7 @@ from assignment import run_custom_config
 
 def _config(output_dir, subconfigs):
     return {
+        "data": {"scenario": "legacy", "overrides": {}},
         "save-assignment": True,
         "paths": {"assignment-folder": str(output_dir)},
         "subconfigs": subconfigs,

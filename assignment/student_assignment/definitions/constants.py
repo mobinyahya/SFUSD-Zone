@@ -74,8 +74,6 @@ CW2AA = {
     814: 823,
 }
 
-SPECIAL_PROGRAMS = {"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"}
-
 ZONE_COLORS = {
     0: "red",
     664: "red",

@@ -2,6 +2,9 @@ name: iterative-choice
 mode: run
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   levels: ['Block_1']     # use ['BlockGroup_0'] for full fine-grained test
   strategy: 'iterative_choice'
   linearization_level: 2

@@ -184,9 +184,13 @@ if $DO_GENERATE; then
         if [[ -n "$SFUSD_MODEL" ]]; then
             estimate_path="${SFUSD_MODELS_DIR_ABS}/${SFUSD_MODEL}/estimates_${TEST_YEAR}.csv"
             enable_utility="true"
+            estimate_override="      assignment.estimate:
+        path: ${estimate_path}
+        classification: restricted"
         else
             estimate_path=""
             enable_utility="false"
+            estimate_override=""
         fi
 
         if $DRY_RUN; then
@@ -196,33 +200,54 @@ if $DO_GENERATE; then
 
         log "  Writing: $cfg_file"
         cat > "$cfg_file" << YAML
-grade: '${GRADE}'
+data:
+  scenario: legacy
+  overrides:
+    sources:
+      assignment.students:
+        path: ${local_student}
+        classification: restricted
+      assignment.programs:
+        path: ${local_program}
+        classification: internal
+      assignment.schools:
+        path: ${school_data}
+        classification: internal
+      assignment.school_coordinates:
+        path: ${school_data}
+        classification: internal
+${estimate_override}
+      assignment.zones:
+        10zone: {path: ${ZONES_DIR_ABS}/10-zone-11_BG.csv, classification: public}
+        13zone: {path: ${ZONES_DIR_ABS}/13-zone-7_BG.csv, classification: public}
+        18zone_1: {path: ${ZONES_DIR_ABS}/18-zone-1_1_BG.csv, classification: public}
+        18zone_2: {path: ${ZONES_DIR_ABS}/18-zone-1_2_BG.csv, classification: public}
+        59zone: {path: ${ZONES_DIR_ABS}/59-zone-1_B.csv, classification: public}
+        6zone-1: {path: ${ZONES_DIR_ABS}/6-zone-1_BG.csv, classification: public}
+        6zone-9_1: {path: ${ZONES_DIR_ABS}/6-zone-9_1_BG.csv, classification: public}
+        6zone-9_2: {path: ${ZONES_DIR_ABS}/6-zone-9_2_BG.csv, classification: public}
+        Con1: {path: ${ZONES_DIR_ABS}/concept1zones.csv, classification: public}
+      assignment.citywide_zones:
+        18zone_1_2-BG-0point3miles:
+          path: ${ZONES_DIR_ABS}/18-zone_1_2-additiona-0point3miles.txt
+          classification: public
+    filters:
+      assignment:
+        year: '${TEST_YEAR}'
+        grades: ['${GRADE}']
+        student_population: applicant
+        rounds: [1]
+        special_programs: exclude_any_special
+        capacity_profile: default
+        capacity_scenario: programs
+        include_mission_bay: false
 iterations:
   end: ${ITER_END}
   start: ${ITER_START}
 paths:
   assignment-folder: ${run_folder}/
-  citywide-or-lp-zones:
-    18zone_1_2-BG-0point3miles: ${ZONES_DIR_ABS}/18-zone_1_2-additiona-0point3miles.txt
-  estimate-path: ${estimate_path}
-  program-data: ${local_program}
-  school-data: ${school_data}
-  sfusd: ${SFUSD_DATA_DIR}
-  student-data: ${local_student}
-  student-save: ${run_folder}/precomputed/
-  zone-files:
-    10zone: ${ZONES_DIR_ABS}/10-zone-11_BG.csv
-    13zone: ${ZONES_DIR_ABS}/13-zone-7_BG.csv
-    18zone_1: ${ZONES_DIR_ABS}/18-zone-1_1_BG.csv
-    18zone_2: ${ZONES_DIR_ABS}/18-zone-1_2_BG.csv
-    59zone: ${ZONES_DIR_ABS}/59-zone-1_B.csv
-    6zone-1: ${ZONES_DIR_ABS}/6-zone-1_BG.csv
-    6zone-9_1: ${ZONES_DIR_ABS}/6-zone-9_1_BG.csv
-    6zone-9_2: ${ZONES_DIR_ABS}/6-zone-9_2_BG.csv
-    Con1: ${ZONES_DIR_ABS}/concept1zones.csv
 r1-only: true
 random-seed: ${RANDOM_SEED}
-remove-special-lps: true
 rounds-merged-options:
 - 0
 save-assignment: true
@@ -233,7 +258,6 @@ utility-model:
   enable: ${enable_utility}
   list-length: "${LIST_LENGTH}"
   save-path: ${run_folder}/utility_matrix.csv
-year: ${YEAR_INT}
 YAML
     done
     log "  Generated ${#ENTRIES[@]} config candidate(s) in ${CFG_DIR}/"

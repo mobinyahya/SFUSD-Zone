@@ -328,9 +328,17 @@ def test_config_passes_choice_utility_hints_to_iterative_strategy():
     assert strategy.options["boundary_prop"] == 0.25
 
 
-def test_config_rejects_non_boolean_remove_city_wide():
-    with pytest.raises(ValueError, match="remove_city_wide"):
-        OptimizationConfig(levels=["BlockGroup_0"], remove_city_wide=1)
+def test_config_rejects_non_boolean_citywide_scenario_filter():
+    with pytest.raises(ValueError, match="include_citywide"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            data={
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"include_citywide": 1}}
+                },
+            },
+        )
 
 
 @pytest.mark.parametrize("value", [1.01, float("nan"), True, "invalid"])
@@ -354,7 +362,7 @@ def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
     monkeypatch.setattr(
         iterative_choice_module,
         "get_configured_choice_model",
-        lambda options: model,
+        lambda options, data: model,
     )
     strat = get_strategy(
         "iterative_choice",
@@ -379,7 +387,7 @@ def test_iterative_choice_stops_on_absolute_model_objective_change(monkeypatch):
     monkeypatch.setattr(
         iterative_choice_module,
         "get_configured_choice_model",
-        lambda options: model,
+        lambda options, data: model,
     )
     strat = get_strategy(
         "iterative_choice",

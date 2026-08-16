@@ -44,7 +44,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 markers = [
-    "real_data: requires prebuilt SFUSD graph caches",
+    "real_data: requires shared SFUSD source data or prebuilt graph caches",
 ]
 
 [tool.setuptools.packages.find]
@@ -56,11 +56,14 @@ include = [
     "optimization*",
     "metrics*",
     "benchmark*",
+    "loaders*",
     "redistricting*",
 ]
 
 [tool.setuptools.package-data]
+assignment = ["configs/*.yaml", "configs/**/*.yaml"]
 Config = ["*.yaml"]
 optimization = ["*.yaml"]
 benchmark = ["*.yaml", "configs/*.yaml"]
 "benchmark.matching" = ["*.yaml"]
+loaders = ["configs/*.yaml", "configs/**/*.yaml"]

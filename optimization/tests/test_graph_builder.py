@@ -137,13 +137,15 @@ def test_kahip_partition_accepts_fewer_nonempty_parts(monkeypatch):
     assert imbalance == 0.8
 
 
-def test_partition_population_attribute_follows_population_type():
+def test_partition_population_attribute_follows_program_population():
     assert graph_builder.population_attribute("GE") == "ge_students"
     assert graph_builder.population_attribute("All") == "all_prog_students"
     assert graph_builder.population_attribute("SB") == "all_prog_students"
 
 
-def test_base_graph_district_frl_uses_selected_population(monkeypatch):
+def test_base_graph_district_frl_uses_selected_population(
+    monkeypatch, scenario_factory
+):
     rows = []
     for index, (ge_students, all_students, frl) in enumerate(
         [(1.0, 1.0, 1.0), (0.0, 1.0, 0.0)]
@@ -178,7 +180,12 @@ def test_base_graph_district_frl_uses_selected_population(monkeypatch):
     monkeypatch.setattr(graph_builder, "_school_data", lambda cfg: {})
 
     graph = graph_builder.build_base_graph(
-        IngestConfig(unit="BlockGroup", population_type="All")
+        IngestConfig(
+            unit="BlockGroup",
+            data=scenario_factory(
+                filters={"optimization": {"program_population": "All"}}
+            ),
+        )
     )
 
     assert graph.graph["F"] == pytest.approx(0.5)

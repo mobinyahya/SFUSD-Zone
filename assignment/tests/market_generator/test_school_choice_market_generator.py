@@ -2,7 +2,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
+from assignment.student_assignment.definitions import CONFIGS_DIR
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
@@ -58,19 +60,41 @@ def test_reconfigure_replaces_zone_dependent_state():
     market._guardrail_setup_cache = {"stale": object()}
     market._active_policy_cache_context = "stale"
     market._set_up_save_folder = Mock()
+    market._initialize_market_data = Mock()
+    market._initialize_utility_model = Mock()
 
-    config = {
-        "assignment-algorithm": "DA",
-        "save-assignment": True,
-        "subconfigs": [],
-        "utility-model": {"enable": False},
-        "paths": {"zone-files": {"policy": "zones.csv"}},
+    with open(f"{CONFIGS_DIR}base_config.yaml") as config_file:
+        config = yaml.safe_load(config_file)
+    with open(f"{CONFIGS_DIR}local_path_config.yaml") as path_file:
+        config.update(yaml.safe_load(path_file))
+    config.update(
+        {
+            "assignment-algorithm": "DA",
+            "subconfigs": [],
+            "utility-model": {"enable": False, "list-length": "7"},
+        }
+    )
+    config["data"]["overrides"] = {
+        "sources": {
+            "assignment.zones": {
+                "policy": {"path": "zones.csv", "classification": "public"}
+            }
+        }
     }
     market.reconfigure(config, "assignments")
 
-    assert market.config == config
+    assert market.external_config != config
+    assert config["data"]["overrides"]["sources"]["assignment.zones"][
+        "policy"
+    ]["path"] == "zones.csv"
+    assert market.external_config["data"]["overrides"]["sources"][
+        "assignment.zones"
+    ]["policy"]["path"].endswith("zones.csv")
     assert market.config is not config
-    assert market.configurator.config is market.config
+    assert market.config["paths"]["zone-files"]["policy"].endswith("zones.csv")
+    assert market.configurator.config is not market.config
+    market._initialize_market_data.assert_called_once_with()
+    market._initialize_utility_model.assert_called_once_with()
     assert market.priority_generator.market is market
     assert market.preference_generator.market is market
     assert market._guardrail_setup_cache == {}

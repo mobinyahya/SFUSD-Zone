@@ -5,6 +5,7 @@ from pathlib import Path
 import networkx as nx
 
 import pytest
+import yaml
 
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
@@ -13,9 +14,9 @@ from optimization.tests.synthetic import FakeDataset, make_grid_problem
 from benchmark.config import (
     BenchmarkTask,
     SimulationSweep,
+    optimization_config_hash,
     optimization_config_from_dict,
     optimization_config_to_dict,
-    stable_hash,
 )
 from benchmark.regenerate import regenerate_metrics
 from benchmark.results import aggregate_results
@@ -48,7 +49,11 @@ optimization_defaults:
   save_solver_logs: true
   save_solver_progress: true
   workers: 4
-  graphs_dir: '{tmp_path / "graphs"}'
+  data:
+    scenario: legacy
+    overrides:
+      roots:
+        cache: '{tmp_path / "graphs"}'
 sweep:
   frl_dev: [0.1, 0.2]
   seed: [1, 2]
@@ -104,7 +109,11 @@ name: unit-test
 mode: run
 optimization_defaults:
   levels: ['BlockGroup_0']
-  graphs_dir: '{tmp_path / "graphs"}'
+  data:
+    scenario: legacy
+    overrides:
+      roots:
+        cache: '{tmp_path / "graphs"}'
 tasks:
   - solver: 'cp_bool'
     secondary_objective: true
@@ -135,6 +144,81 @@ optimization_defaults:
 
     with pytest.raises(ValueError, match="run, metrics"):
         SimulationSweep.from_yaml(str(config_path))
+
+
+@pytest.mark.parametrize(
+    "old_key",
+    [
+        "years",
+        "population_type",
+        "capacity_scenario",
+        "new_schools",
+        "include_k8",
+        "remove_city_wide",
+        "graphs_dir",
+    ],
+)
+def test_sweep_rejects_removed_optimization_data_keys(tmp_path, old_key):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "optimization_defaults": {
+                    "levels": ["BlockGroup_0"],
+                    old_key: [] if old_key == "years" else True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unknown keys in optimization_defaults"):
+        SimulationSweep.from_yaml(str(config_path))
+
+
+def test_bundled_sweeps_use_only_strict_data_maps():
+    removed = {
+        "years",
+        "population_type",
+        "capacity_scenario",
+        "new_schools",
+        "include_k8",
+        "remove_city_wide",
+        "graphs_dir",
+    }
+    benchmark_root = Path(__file__).parent
+    paths = [benchmark_root / "sweep.example.yaml", benchmark_root / "sweep.test.yaml"]
+    paths.extend(sorted((benchmark_root / "configs").glob("*.yaml")))
+
+    for path in paths:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        defaults = raw["optimization_defaults"]
+        assert not removed.intersection(defaults), path
+        assert set(defaults["data"]) == {"scenario", "overrides"}, path
+        assert isinstance(defaults["data"]["scenario"], str), path
+        assert isinstance(defaults["data"]["overrides"], dict), path
+        SimulationSweep.from_yaml(str(path))
+
+
+def test_optimization_hash_ignores_cache_root_but_snapshot_retains_it(tmp_path):
+    first = OptimizationConfig(
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "cache-a")}},
+        }
+    )
+    second = OptimizationConfig(
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "cache-b")}},
+        }
+    )
+
+    first_snapshot = optimization_config_to_dict(first)
+    second_snapshot = optimization_config_to_dict(second)
+    assert first_snapshot["data"] != second_snapshot["data"]
+    assert first.data_scenario.cache_root != second.data_scenario.cache_root
+    assert optimization_config_hash(first) == optimization_config_hash(second)
 
 
 def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
@@ -212,10 +296,13 @@ def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
         strategy="single",
         solver="cp_single_zone",
         workers=1,
-        graphs_dir=str(tmp_path / "graphs"),
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+        },
     )
     config_dict = optimization_config_to_dict(config)
-    config_hash = stable_hash(config_dict)
+    config_hash = optimization_config_hash(config_dict)
     task = BenchmarkTask(
         task_id=config_hash[:12],
         config_hash=config_hash,
@@ -244,13 +331,11 @@ def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
     assert loaded[0].problem.centroids == [0]
 
 
-def test_saved_config_ignores_legacy_level_to_split():
-    config = optimization_config_from_dict(
-        {"levels": ["BlockGroup_0"], "level_to_split": {"1": 2, "2": 1}}
-    )
-
-    assert config.levels == ["BlockGroup_0"]
-    assert not hasattr(config, "level_to_split")
+def test_saved_config_rejects_legacy_level_to_split():
+    with pytest.raises(ValueError, match="level_to_split"):
+        optimization_config_from_dict(
+            {"levels": ["BlockGroup_0"], "level_to_split": {"1": 2, "2": 1}}
+        )
 
 
 def test_regenerate_metrics_rewrites_result_payload(tmp_path):
@@ -300,10 +385,13 @@ def _write_synthetic_run(tmp_path):
         overage=5.0,
         shortage=0.0,
         workers=1,
-        graphs_dir=str(tmp_path / "graphs"),
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+        },
     )
     config_dict = optimization_config_to_dict(config)
-    config_hash = stable_hash(config_dict)
+    config_hash = optimization_config_hash(config_dict)
     task = BenchmarkTask(
         task_id=config_hash[:12],
         config_hash=config_hash,

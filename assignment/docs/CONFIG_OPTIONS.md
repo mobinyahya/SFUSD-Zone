@@ -8,11 +8,10 @@ This document describes every configuration layer used by the simulator
 
 Configuration is resolved in this order (later layers override earlier ones):
 
-1. **`configs/base_config.yaml`** — simulation defaults (grade, iterations,
+1. **`configs/base_config.yaml`** — simulation defaults (data scenario, iterations,
    utility-model defaults, subconfig list).
-2. **Path config** — `configs/local_path_config.yaml` locally, or
-   `configs/cluster_path_config.yaml` when the hostname contains `soal`
-   (cluster). Machine-specific paths live here, never in code.
+2. **Output path config** — `configs/local_path_config.yaml` is used when a
+   personal config is created. Local/cluster path files contain outputs only.
 3. **`configs/<user>.config.yaml`** — auto-created on first run by merging
    the two layers above (`<user>` = your login). Edit it for personal
    defaults. Validated against `configs/config_schema.yaml` (yamale).
@@ -32,38 +31,135 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 
 | Key | Type | Meaning |
 |-----|------|---------|
-| `year` | int | 2-digit school year (e.g. `22` = 2022-23). Selects data files and year-specific logic. |
-| `grade` | str | `KG`, `06`, or `09`. Drives priorities and file naming. |
+| `data` | map | Strict scenario selection described below. Required in every executable run config. |
 | `random-seed` | int | Seed reset before each subconfig, so subconfig order does not matter. |
 | `iterations.start` / `iterations.end` | int | Iteration range; one DA run (and one utility redraw) per iteration. |
 | `save-assignment` | `true` | Required. Assignment CSVs are saved to `paths.assignment-folder`. |
 | `r1-only` | bool | Treat round 1 as the only round when reconstructing final assignments. |
-| `remove-special-lps` | bool | Drop students who ranked special programs and drop special programs themselves. |
-| `rounds-merged-options` | list | Round-merging variants to simulate: `0` (no merge), `123`, `12`, `23`. |
-| `read-lotteries` | bool | Read tie-breaker lotteries from `paths.lotteries-path` instead of drawing them. |
+| `rounds-merged-options` | list | Round-merging variants over chronological ordinals: `0` (no merge), `all`, or legacy three-round codes `123`, `12`, `23`. Legacy codes are rejected when more than three rounds are selected. |
+| `read-lotteries` | bool | Read tie-breaker lotteries from the `assignment.lotteries` scenario role instead of drawing them. |
 | `subconfigs` | list(str) | Policy subconfig names to run (files in `configs/policy_configs/`). |
 
-## 3. `paths.*`
+## 3. `data`
+
+Executable configs select a bundled scenario name (for example, `legacy` or
+`mission-bay-2324`) or a custom scenario YAML, plus an `overrides` map.
+`loaders/configs/base.yaml` schema 2 is the single file catalog and central
+`school_years` registry. Scenarios define invariant source roles and complete
+selector defaults. A normal run changes selectors under
+`data.overrides.filters`:
+
+```yaml
+data:
+  scenario: historical-2324
+  overrides:
+    filters:
+      assignment:
+        year: "2324"
+        grades: [KG]
+        student_population: applicant  # applicant | enrolled
+        rounds: [1]                    # or all
+        special_programs: include     # include | exclude_only_special | exclude_any_special
+        capacity_profile: default
+        capacity_scenario: programs   # programs | A | B | C | D
+        include_mission_bay: false
+        geography_vintage: "2020"
+        outside_district_students: ignore  # ignore | include
+```
+
+Assignment execution requires exactly one canonical year and one grade per
+market, even though `grades` is a list and optimization supports multiple years
+and grades where available. The registry must contain the requested student
+population and the year/grade/capacity-profile/Mission Bay program-school
+bundle. Unsupported combinations fail and never fall back.
+
+`capacity_profile` selects the program table registered for the assignment
+market. `capacity_scenario: programs` uses its capacities directly and is the
+default. An explicit scenario overlays matching school/program/grade values from
+the central capacity-scenario table; programs absent from that table retain
+their selected-table capacities.
+
+Student coordinates outside the selected district Census geometry have blank
+Block, BlockGroup, and Tract values. The default `ignore` policy removes those
+students; `include` keeps them in the assignment market without geographic-zone
+priority.
+
+Direct source objects are reserved for exceptional experimental inputs. They
+override registry-derived roles:
+
+```yaml
+data:
+  scenario: historical-2324
+  overrides:
+    sources:
+      assignment.students:
+        path: /absolute/path/experimental_students.csv
+        classification: restricted
+```
+
+Assignment roles include `students`, `programs`, `schools`,
+`school_coordinates`, `program_codes`, `estimate`, `block_data`, `new_ctip`,
+`new_ctip_blockgroup`, `zones`, `citywide_zones`, and optional `lotteries`.
+Named zone maps can be extended with
+`data.overrides.sources.assignment.zones`.
+
+Relative custom scenario paths, root overrides, and rootless direct source
+paths are resolved from the YAML file that declares them. APIs receiving only
+an in-memory mapping have no declaring file, so they resolve those paths from
+the current working directory. Saved run configs contain the anchored `data`
+map and can therefore be reloaded from another working directory.
+
+Assignment filters own the canonical school year, grades list,
+applicant/enrolled population, selected round labels, special-program mode,
+capacity profile, and Mission Bay inclusion. `include_mission_bay` centrally
+derives the `909 -> 999` alias across tables; users do not configure an alias
+map.
+
+Participation is always any selected round. The loader sorts selected rounds,
+applies Mission Bay and special-program filtering, removes students with no
+remaining selected-round choice, and returns one row per unique student.
+`first_participating_round` is the earliest remaining round label and its
+ordinal is zero-based within the selected rounds. Choices, historical lottery
+values, cohort metadata, and choice-derived eligibility all come only from that
+round's aligned `selected_*` fields.
+
+The special-program modes are exact:
+
+- `include` keeps all students and alternatives.
+- `exclude_only_special` removes special alternatives and keeps students with
+  any eligible selected-round choice.
+- `exclude_any_special` removes a student if any selected-round choice is
+  special.
+
+As a non-contractual smoke check, the real 2023-24 KG applicant data with all
+rounds and `include` produced 4,304 unique students: 3,955 first participated in
+round 1, 212 in round 2, and 137 in round 4. Counts depend on the selected data
+and filters and are not universal.
+
+Student-program distances use CacheStore artifact
+`student_program_distances/v4` under
+`/share/data/school_choice/Data/caches` by default. Cache identity includes
+source contents, filters, an opaque ordered student-identity fingerprint and
+count, and the algorithm version. The restricted-derived cache manifest and
+reference never contain raw student IDs.
+
+Saved `config.json`/`config.yaml` files contain the anchored strict external
+configuration and can be replayed from another working directory. Runtime-only
+resolved input keys and `data-provenance` are excluded. Runtime provenance and
+market reuse fingerprints include assignment filters and checksummed immutable
+table/estimate sources; zone files are excluded so policy-only changes can
+reuse loaded tables. Moving only the cache root does not change that identity.
+
+## 4. `paths.*`
+
+`paths` is output-only. `assignment-folder` is the directory for assignment
+CSVs and the replayable config snapshot. Legacy input entries are rejected.
+
+## 5. `utility-model.*`
 
 | Key | Meaning |
 |-----|---------|
-| `sfusd` | SFUSD shared-data root. Relative data paths resolve against it (`Data/Cleaned/...`). |
-| `student-data` | Explicit student CSV (overrides the `Cleaned/student_<year>.csv` default). |
-| `program-data` | Explicit program CSV (e.g. `programs_without_specialprogs_<year>.csv`). |
-| `school-data` | Explicit schools CSV (`schools_rehauled_<year>.csv`; first column `school_id`, needs `category`, `lat`, `lon`). |
-| `student-save` | Cache directory: computed student-program distances and preference pickles are saved/loaded here. Delete it to force recomputation. |
-| `assignment-folder` | Output directory for assignment CSVs + a copy of the config used. |
-| `estimate-path` | Utility estimates. `.csv` = exact `studentno` (`<year>-<no>`) × `program_id` matrix of utilities (`-inf` allowed; required rows/columns must all be present). `.npy` = raw matrix aligned with student/program indices. |
-| `zone-files` | Map of policy name → zone CSV. Each zone CSV row is one zone: comma-separated geounit ids (attendance areas, block groups, or blocks depending on `zone-building-blocks`). |
-| `citywide-or-lp-zones` | Map of supplemental zone name → file; only loaded when a policy sets `citywide-or-lp`. |
-| `lotteries-path` | Tie-breaker lottery files (used with `read-lotteries: true`). |
-| `new-ctip-path` / `new-ctip-blockgroup-path` | `.npy` block lists for the `new_ctip` / `new_ctip_blockgroup` equity tie-breakers (defaults to the legacy cluster paths). |
-
-## 4. `utility-model.*`
-
-| Key | Meaning |
-|-----|---------|
-| `enable` | Use the utility model to generate preferences (else historical round-1 lists are used). |
+| `enable` | Use the utility model to generate preferences (else each student's first-participating selected list is used). |
 | `list-length` | How many programs each student ranks (see below). |
 | `gumbel-scale` | Scale of the Gumbel noise added to utilities. `0` = deterministic ranking by utility; default `1.0` (MNL draw). |
 | `designate-lp-for-all` | Include language programs in everyone's designation ordering (not only requesters). |
@@ -82,19 +178,19 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
   (95292 threshold).
 - `all_eligible` — rank every eligible program.
 
-## 5. Policy subconfigs (`configs/policy_configs/*.yaml`)
+## 6. Policy subconfigs (`configs/policy_configs/*.yaml`)
 
 Validated against `configs/policy_configs/policy.schema.yaml`.
 
 | Key | Meaning |
 |-----|---------|
 | `assignment-algorithm` | `DA` (deferred acceptance). |
-| `policies` | List of zone policies to simulate; each must be a key of `paths.zone-files`, or `real_match` to read the historical assignment instead of running DA. |
-| `zone-building-blocks` | Geounit type of the zone files: `attendance_area`, `block_group`, `block`, or `home_based` (JSON studentno → program list). |
+| `policies` | List of zone policies to simulate; each must be a key of `assignment.zones`, or `real_match` to read the historical assignment instead of running DA. |
+| `zone-building-blocks` | Geounit type of the zone files: `attendance_area`, `block_group`, `block`, `tract`, or `home_based` (JSON studentno → program list). |
 | `ctip-options` | Equity tie-breaker variants: `0` (none), `1` (CTIP1), `5` (5-level CTIP types), `new_ctip`, `new_ctip_blockgroup`, `"<n>D"` (HOCidx1 quantile categories), or a map (`column`, `num_categories`/`thresholds`, `lower_disadvantaged`) for a custom tiebreaker. One simulation per option. |
-| `ties-options` | Lottery variants: `STB` (single), `MTB` (multiple), `STB_REAL` / `MTB_REAL` (historical round-1 random numbers), `STBcoordinated` (shared per block group). One simulation per option. |
+| `ties-options` | Lottery variants: `STB` (single), `MTB` (multiple), `STB_REAL` / `MTB_REAL` (historical selected first-participating random numbers), `STBcoordinated` (shared per block group). One simulation per option. |
 | `restrict-zone` | `false` = zones grant priority only; `true` = students can only access in-zone programs; `CTIP_access` = CTIP students keep citywide access. `restrict-zone-options` lists several variants. |
-| `citywide-or-lp` | Supplemental zone names (keys of `paths.citywide-or-lp-zones`) granting extra program access. |
+| `citywide-or-lp` | Supplemental zone names (keys of `assignment.citywide_zones`) granting extra program access. |
 | `sibling-access` | Siblings grant zone eligibility at the sibling's school. |
 | `priority-weights` | Map of priority component → weight: `ctip`, `sibling`, `zone`, `prek`, `distance`, `peng`, plus a `language-programs` sub-map (`lp-sibling`, `lp`, `sibling`, `ctip`) applied at citywide language programs. For grade 06/09, categories like `brown-ms`, `bayview-students`, `remaining`, `brown-ms-to-hs`, `msf` apply. |
 | `distance-priority` | How the `distance` weight is computed: `step-size: <miles>`, `thresholds: [...]` (+ optional `weights: [...]`), or `continuous: x` / `1_over_x_sqaure`. |
@@ -112,7 +208,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 | `overscribe_aa` | Assign otherwise-unassigned students to their attendance-area GE program even when it is at capacity (default `false`). |
 | `truncate-at-AA-GE` | Truncate utility-model lists at the student's attendance-area GE program. |
 
-## 6. `list-augmentation` (alternative programs, `run_augmented_da.py`)
+## 7. `list-augmentation` (alternative programs, `run_augmented_da.py`)
 
 | Key | Meaning |
 |-----|---------|
@@ -126,7 +222,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 
 Example config: `configs/custom_configs/augmented_da_2324.yaml`.
 
-## 7. analyze_trends config (`scripts/analysis/analyze_trends.py --config <yaml>`)
+## 8. analyze_trends config (`scripts/analysis/analyze_trends.py --config <yaml>`)
 
 ```yaml
 output_dir: metrics/my_experiment
@@ -136,10 +232,10 @@ runs:
   - label: "my_run"               # column name in the Excel
     folder: path/to/run/subconfig # evaluated recursively (all CSVs), or:
     # run_csv: path/to/single.csv
-    year: 22                      # 2-digit year
-    program_data: path/to/programs_without_specialprogs_2223.csv
-    student_data: path/to/student_2223_filtered.csv
-    # schools_data / new_ctip_path may also be set per run
+    data:                         # preferred: shared normalized tables
+      scenario: mission-bay-2324
+      overrides: {}
+    # Historical analysis configs may instead provide explicit standalone tables.
 row_order: ["Distance Av (All Assigned)", ...]   # metric row ordering
 single_metrics: [...]    # optional: per-metric error-bar plots
 group_metrics: [...]     # optional: "Metric ({group})" grouped plots
@@ -152,7 +248,7 @@ script) and diagnostic plots under `<output_dir>/diagnostics/`.
 Metric definitions and the distinction between `eval_assignment_basic()` and
 `eval_assignment_full()` are documented in `ASSIGNMENT_METRICS.md`.
 
-## 8. Pipeline settings files (`scripts/settings/*.env`)
+## 9. Pipeline settings files (`scripts/settings/*.env`)
 
 `scripts/run_models_estimates.sh --settings <file>` sources a bash
 settings file. Scalars use `: "${VAR:=default}"`, so environment variables

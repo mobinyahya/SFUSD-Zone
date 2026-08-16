@@ -8,24 +8,15 @@ Usage:
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
 
-# Add project root to path to import constants
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-)
+# Support direct execution from assignment/scripts/preprocessing/.
+sys.path.append(str(Path(__file__).resolve().parents[3]))
 
-try:
-    from student_assignment.definitions.constants import SPECIAL_PROGRAMS
-except ImportError:
-    SPECIAL_PROGRAMS = {"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"}
-    print(
-        "Warning: Could not import SPECIAL_PROGRAMS from constants. Using fallback set."
-    )
+from loaders import SPECIAL_PROGRAMS  # noqa: E402
 
 # Years to process (13-23)
 # File format: programs_{YY}{YY+1}.csv (e.g. programs_1516.csv)

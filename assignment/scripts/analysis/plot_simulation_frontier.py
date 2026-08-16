@@ -60,6 +60,9 @@ if str(_SCRIPT_DIR) not in sys.path:
 _PROJECT_ROOT = _SCRIPT_DIR.parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+_REPOSITORY_ROOT = _SCRIPT_DIR.parents[2]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
 
 import matplotlib.pyplot as plt  # noqa: E402
 from adjustText import adjust_text  # noqa: E402

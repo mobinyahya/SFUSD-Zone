@@ -12,17 +12,21 @@ config-and-saved-CSV workflow because not every assignment policy uses zones.
 import ast
 import csv
 import logging
-import os
 from math import asin, cos, isnan, radians, sin, sqrt
 
 import numpy as np
 import pandas as pd
+from loaders import (
+    DataScenario,
+    SPECIAL_PROGRAMS,
+    load_program_records,
+    load_scenario,
+    load_school_records,
+    load_student_records,
+)
 
 from ..data_interfaces.programs import Programs
-from ..definitions.constants import (
-    SPECIAL_PROGRAMS,
-    ZONE_COLORS,
-)
+from ..definitions.constants import ZONE_COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +61,6 @@ DIAGNOSTIC_PROGRAM_TYPES = [
     "SN",
 ]
 
-# Legacy cluster paths, used only when the caller does not provide the
-# corresponding constructor argument. Prefer setting ``schools_data`` /
-# ``new_ctip_path`` in the analyze_trends config (see
-# scripts/settings/models_cluster.env).
-LEGACY_SCHOOLS_LATLON_PATH = (
-    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/"
-    "schools_rehauled_withMissionBay_2324.csv"
-)
-LEGACY_NEW_CTIP_PATH = (
-    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
-)
-
-
 class MatchEvaluator:
     def __init__(
         self,
@@ -88,6 +79,8 @@ class MatchEvaluator:
         program_file=None,
         schools_latlon_path=None,
         new_ctip_path=None,
+        program_data=None,
+        schools_data=None,
     ):
         """Build an evaluator from benchmark objects or standalone data frames.
 
@@ -110,25 +103,25 @@ class MatchEvaluator:
         self.grade = grade
         self.year = year
 
-        if schools_latlon_path is None:
-            schools_latlon_path = LEGACY_SCHOOLS_LATLON_PATH
-            logger.warning(
-                "No schools_latlon_path provided; falling back to legacy "
-                "cluster path %s. Set `schools_data` in the analysis config.",
-                schools_latlon_path,
+        if schools_data is not None:
+            self.schools_latlon = schools_data.copy()
+        elif schools_latlon_path is not None:
+            self.schools_latlon = pd.read_csv(schools_latlon_path)
+        else:
+            raise ValueError(
+                "schools_data or schools_latlon_path is required for full evaluation"
             )
-        self.schools_latlon = pd.read_csv(schools_latlon_path)
 
-        if new_ctip_path is None and os.path.exists(LEGACY_NEW_CTIP_PATH):
-            new_ctip_path = LEGACY_NEW_CTIP_PATH
         new_ctip_list = np.load(new_ctip_path) if new_ctip_path else np.array([])
 
-        if program_file is None:
+        if program_data is not None:
+            self.programs = program_data.copy()
+        elif program_file is not None:
+            self.programs = pd.read_csv(program_file)
+        else:
             raise ValueError(
-                "program_file is required (path to the programs CSV, e.g. "
-                "programs_without_specialprogs_<year>.csv)"
+                "program_data or program_file is required for full evaluation"
             )
-        self.programs = pd.read_csv(program_file)
 
         if first_round:
             self._parse_student_list_column("r1_ranked_idschool")
@@ -199,6 +192,62 @@ class MatchEvaluator:
         self.student_data["assigned school"] = self.student_data["assignment"].str[:3]
         self.map_ethnicity()
         self.eval_distance()
+
+    @classmethod
+    def from_scenario(
+        cls,
+        data: DataScenario | dict,
+        assignments: pd.DataFrame,
+        **kwargs,
+    ):
+        """Build a full evaluator from scenario-normalized shared tables."""
+        scenario = data if isinstance(data, DataScenario) else load_scenario(data)
+        conflicting_options = [
+            option
+            for option in ("first_round", "no_special_program")
+            if kwargs.pop(option, False)
+        ]
+        if conflicting_options:
+            raise ValueError(
+                "Scenario evaluation population is controlled by assignment "
+                "filters, not evaluator options: "
+                f"{conflicting_options}."
+            )
+        students = load_student_records(
+            scenario,
+            "assignment.students",
+            filter_group="assignment",
+            low_memory=False,
+        )
+        programs = load_program_records(
+            scenario,
+            "assignment.programs",
+            filter_group="assignment",
+        )
+        schools = load_school_records(
+            scenario,
+            "assignment.school_coordinates",
+            filter_group="assignment",
+        )
+        year = scenario.filter("assignment", "year")
+        grade = scenario.filter("assignment", "grades")[0]
+        kwargs.setdefault("year", int(year[:2]))
+        kwargs.setdefault("grade", grade)
+        if kwargs.get("new_ctip_path") is None:
+            try:
+                new_ctip_path = scenario.source("assignment.new_ctip").path
+            except KeyError:
+                pass
+            else:
+                if new_ctip_path.is_file():
+                    kwargs["new_ctip_path"] = new_ctip_path
+        return cls(
+            students,
+            assignments,
+            program_data=programs,
+            schools_data=schools,
+            **kwargs,
+        )
 
     def _set_program_groups(self):
         self.immersion_programs = [
@@ -1245,7 +1294,8 @@ class MatchEvaluator:
 
         Input:
             program_data: program df used for in capacity and empty seats
-            building_block: one of "idschoolattendance", "Block" or "BlockGroup"
+            building_block: one of "idschoolattendance", "Block", "BlockGroup", or
+                "Tract"
             zone_file: zone file as used in configs. Can only be none if using "aa" as
                 zone building_block.
             school_order: a list of ordered schools to order the columns in the outputs
@@ -1264,7 +1314,7 @@ class MatchEvaluator:
             school_to_zone_dict = {
                 x: x for x in self.schools_latlon["school_id"].to_numpy()
             }
-        elif building_block in ["Block", "BlockGroup"]:
+        elif building_block in ["Block", "BlockGroup", "Tract"]:
             zone_dict = self.load_zone_file_dict(zone_file)
             building_block_col = "census_" + building_block.lower()
             student_data["map_area"] = student_data[building_block_col].apply(
@@ -1285,7 +1335,7 @@ class MatchEvaluator:
         else:
             logger.warning(
                 "Expected building_block to be one of idschoolattendance, "
-                "Block, or BlockGroup; returning None."
+                "Block, BlockGroup, or Tract; returning None."
             )
             return None
 
@@ -1301,6 +1351,8 @@ class MatchEvaluator:
         elif building_block == "Block":
             # Adding missing zones
             area_list = [x for x in range(59)]
+        elif building_block == "Tract":
+            area_list = sorted(set(zone_dict.values()))
         elif building_block == "idschoolattendance":
             area_list = [
                 x for x in self.schools_latlon["school_id"].to_numpy() if x != 909
@@ -1338,7 +1390,8 @@ class MatchEvaluator:
 
         Input:
             program_data: program df used for in capacity and empty seats
-            building_block: one of "idschoolattendance", "Block" or "BlockGroup"
+            building_block: one of "idschoolattendance", "Block", "BlockGroup", or
+                "Tract"
             zone_file: zone file as used in configs. Can only be none if using "aa" as
                 zone building_block.
             school_order: a list of ordered schools to order the columns in the outputs
@@ -1356,7 +1409,7 @@ class MatchEvaluator:
             school_to_zone_dict = {
                 x: x for x in self.schools_latlon["school_id"].to_numpy()
             }
-        elif building_block in ["Block", "BlockGroup"]:
+        elif building_block in ["Block", "BlockGroup", "Tract"]:
             zone_dict = self.load_zone_file_dict(zone_file)
             # Count attendance school to zone, and citywide school as itself.
             school_to_zone_dict = self.schools_latlon[
@@ -1372,7 +1425,7 @@ class MatchEvaluator:
         else:
             logger.warning(
                 "Expected building_block to be one of idschoolattendance, "
-                "Block, or BlockGroup; returning None."
+                "Block, BlockGroup, or Tract; returning None."
             )
             return None
         # Count unassigned student to their located zone based on attandance area.
@@ -1411,6 +1464,11 @@ class MatchEvaluator:
             # Adding missing zones
             area_list += [x for x in range(59) if x not in area_list]
             area_list += citywide_schools
+        elif building_block == "Tract":
+            area_list += [
+                zone for zone in sorted(set(zone_dict.values())) if zone not in area_list
+            ]
+            area_list += citywide_schools
         elif building_block == "idschoolattendance":
             area_list += all_schools
 
@@ -1430,7 +1488,7 @@ class MatchEvaluator:
         # TODO: currently code is messy and redundant. We should clean this up
         # and/or optimize when we have time. Ideally, we should not seperate
         # Attendance area school from the citywide schools.
-        if building_block in ["Block", "BlockGroup"]:
+        if building_block in ["Block", "BlockGroup", "Tract"]:
             aa_schools = self.schools_latlon[
                 self.schools_latlon["category"] == "Attendance"
             ]["school_id"].to_numpy()

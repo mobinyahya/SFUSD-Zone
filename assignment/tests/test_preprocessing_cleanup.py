@@ -146,7 +146,7 @@ def test_build_estimates_uses_configured_student_order_and_normalized_grade(tmp_
     )
 
     converter = ConvertEstimates.__new__(ConvertEstimates)
-    converter._student_data_file = str(student_path)
+    converter._student_records = pd.read_csv(student_path)[["studentno"]]
     converter._model_path = str(tmp_path)
     converter._distance_weight = None
     converter._grade = "06"

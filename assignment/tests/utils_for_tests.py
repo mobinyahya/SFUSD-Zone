@@ -30,6 +30,61 @@ TEMP_SCHOOL_FILE = (
 )
 
 
+def configure_synthetic_assignment_data(config, grade, cache_root):
+    """Point a strict assignment config at the generated test tables."""
+    config.pop("grade", None)
+    config.pop("year", None)
+    config.pop("remove-special-lps", None)
+    paths = config.setdefault("paths", {})
+    for key in [
+        "sfusd",
+        "student-save",
+        "student-data",
+        "program-data",
+        "school-data",
+        "estimate-path",
+        "zone-files",
+        "citywide-or-lp-zones",
+    ]:
+        paths.pop(key, None)
+    config["data"] = {
+        "scenario": "legacy",
+        "overrides": {
+            "roots": {"cache": str(cache_root)},
+            "sources": {
+                "assignment.students": {
+                    "path": TEMP_STUDENT_FILE,
+                    "classification": "restricted",
+                },
+                "assignment.programs": {
+                    "path": TEMP_PROGRAMS_FILE.format(grade),
+                    "classification": "internal",
+                },
+                "assignment.schools": {
+                    "path": TEMP_SCHOOL_FILE.format(grade),
+                    "classification": "internal",
+                },
+                "assignment.school_coordinates": {
+                    "path": TEMP_SCHOOL_FILE.format(grade),
+                    "classification": "internal",
+                },
+            },
+            "filters": {
+                "assignment": {
+                    "year": YEAR_PREFIX,
+                    "grades": [grade],
+                    "student_population": "applicant",
+                    "rounds": "all",
+                    "special_programs": "include",
+                    "capacity_profile": "default",
+                    "include_mission_bay": False,
+                }
+            },
+        },
+    }
+    return config
+
+
 def check_equal_dicts(dict1, dict2):
     """
     Check whether two dictionaries are the same. Dictionary 2 can also be a list
@@ -75,13 +130,14 @@ def generate_random_schools(num_schools=100, special_school_id=None):
     - school_ids ([Int]): List of generated school ids.
     """
     school_ids = set()
+    excluded_school_ids = {909, 999}
     if special_school_id:
         school_ids.add(special_school_id)
         num_schools -= 1
 
     for _ in range(num_schools):
         cur_rand = np.random.randint(100, 1000)
-        while cur_rand in school_ids:
+        while cur_rand in school_ids or cur_rand in excluded_school_ids:
             cur_rand = np.random.randint(100, 1000)
         school_ids.add(cur_rand)
     return np.array(list(school_ids))
@@ -158,8 +214,7 @@ def generate_random_student_file(
     priority_1_0[priority_1s] = 1
     # Modern Students schema (post-2024): round-1 ranked lists and a location
     # are now mandatory. Each student ranks a few random schools as GE
-    # programs; r1_ranked_idschool is parsed by Students._str_to_list and
-    # r1_programs by eval(), so the strings must match those formats.
+    # programs. Keep serialized-list CSV cells for the shared loader parser.
     n_rows = num_students + 1
     ranked_lists = [
         list(
@@ -290,11 +345,11 @@ def generate_random_program_school_files(
         data={
             "school_id": school_ids,
             "category": ["attendance_area" for _ in range(num_schools)],
+            "lat": np.random.uniform(37.71, 37.81, num_schools),
+            "lon": np.random.uniform(-122.51, -122.38, num_schools),
         }
     )
     school_df.to_csv(school_file.format(grade), index=False)
-
-    generate_random_student_dist_files(program_ids, grade=grade)
 
     out = (
         special_program_no,
@@ -316,29 +371,3 @@ def generate_random_program_school_files(
         out += (all_indices, lp_school2idx)
 
     return out
-
-
-def generate_random_student_dist_files(
-    program_ids,
-    out_path=TEMP_STUDENT_SAVE_FOLDER,
-    grade="06",
-    num_students=NUM_STUDENT,
-):
-    """
-    Generate random student to program distance data to avoid errors when
-    initialization of the students objects.
-
-    Params:
-    - out_path (str): Path to the output folder to store the distance data.
-    - program_ids ([str]): List of program ids.
-    - grade (str): Grades of the students. Defaults to "06".
-    - num_students (Int): number of students to generate distances, default to
-        NUM_STUDENT, and will generate NUM_STUDENT to match actual number of
-        students generated.
-    """
-    file_path = f"{out_path}student_program_distances_{grade}_{YEAR_PREFIX}.csv"
-    rand_dist = np.random.random(size=num_students + 1) * 20
-    data = {x: rand_dist for x in program_ids}
-    data["studentno"] = np.arange(NUM_STUDENT + 1)
-    school_df = pd.DataFrame(data=data)
-    school_df.to_csv(file_path, index=False)

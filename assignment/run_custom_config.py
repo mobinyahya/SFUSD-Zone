@@ -24,8 +24,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import click
 import yaml
 
-# Ensure we can import your project modules
-sys.path.append(os.getcwd())
+# Support direct execution from assignment/ while importing top-level loaders/.
+sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
+
+from loaders import anchor_data_config
 
 if __package__:
     from .student_assignment.market_generator.school_choice_market_generator import (
@@ -160,6 +162,10 @@ def generate(config_path, sample, frac, workers):
 
     # 3. Resolve variables using the updated raw_config
     custom_config = resolve_variables(raw_config, raw_config)
+    if isinstance(custom_config.get("data"), dict):
+        custom_config["data"] = anchor_data_config(
+            custom_config["data"], pathlib.Path(config_path).resolve().parent
+        )
 
     subconfigs_list = custom_config.get("subconfigs", [])
 

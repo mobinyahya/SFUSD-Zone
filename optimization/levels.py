@@ -3,8 +3,8 @@
 A *level* identifies a geographic granularity in the hierarchy. It is the pair
 ``(unit, depth)``:
 
-* ``unit``  -- the base geographic unit: ``"Block"``, ``"BlockGroup"`` or
-  ``"attendance_area"``.
+* ``unit``  -- the base geographic unit: ``"Block"``, ``"BlockGroup"``,
+  ``"Tract"``, or ``"attendance_area"``.
 * ``depth`` -- the aggregation depth, where ``0`` is the finest (one node per
   unit) and larger numbers are coarser aggregated graphs.
 
@@ -20,14 +20,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Recognized base units. ``attendance_area`` is supported for parsing parity
-# with the legacy data, though the active optimization targets Block/BlockGroup.
-KNOWN_UNITS = ("BlockGroup", "Block", "attendance_area")
+# with the legacy data. Census Block, BlockGroup, and Tract are active units.
+KNOWN_UNITS = ("BlockGroup", "Block", "Tract", "attendance_area")
 
 # Requested graph sizes include school nodes, which remain singleton vertices.
 # KaHIP may return fewer nonempty partitions, so these are upper targets.
 LEVEL_NODE_TARGETS = {
     "Block": {1: 1200, 2: 579, 3: 250, 4: 125},
     "BlockGroup": {1: 250, 2: 125},
+    "Tract": {},
 }
 
 

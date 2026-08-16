@@ -12,13 +12,16 @@ by hand outside the data layer.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES, AALPI_ETHNICITIES
 from choice.objective import ChoiceObjective
 from optimization.levels import LevelSpec
+
+if TYPE_CHECKING:
+    from optimization.config import OptimizationConfig
 
 
 class DuplicateCentroidError(ValueError):
@@ -82,13 +85,15 @@ class ZoneProblem:
         Optional ``{node: zone}`` warm-start passed to the solver.
     choice_objective:
         Optional choice-utility objective with accumulated linearization cuts.
+    optimization_config:
+        Strict originating config retained for scenario-backed downstream work.
     """
 
     G: nx.Graph
     level: LevelSpec
     centroids: list[int]
     centroid_school_ids: list[int]
-    population_type: str = "GE"
+    program_population: str = "GE"
 
     frl_dev: float = 0.3
     racial_dev: float = 0.3
@@ -101,6 +106,9 @@ class ZoneProblem:
     candidates: Optional[dict[int, set[int]]] = None
     hint: Optional[dict[int, int]] = None
     choice_objective: Optional[ChoiceObjective] = None
+    optimization_config: Optional["OptimizationConfig"] = field(
+        default=None, repr=False, compare=False
+    )
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(
@@ -142,11 +150,19 @@ class ZoneProblem:
 
     @property
     def student_attribute(self) -> str:
-        return "ge_students" if self.population_type == "GE" else "all_prog_students"
+        return (
+            "ge_students"
+            if self.program_population == "GE"
+            else "all_prog_students"
+        )
 
     @property
     def capacity_attribute(self) -> str:
-        return "ge_capacity" if self.population_type == "GE" else "all_prog_capacity"
+        return (
+            "ge_capacity"
+            if self.program_population == "GE"
+            else "all_prog_capacity"
+        )
 
     def frl(self, node: int) -> float:
         return float(self.G.nodes[node]["FRL"])

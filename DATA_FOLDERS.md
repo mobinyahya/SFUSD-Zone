@@ -1,404 +1,352 @@
-# Data Folders
+# Data, Scenarios, and Artifacts
 
-This document inventories the application data locations used by SFUSD-Zone.
-It covers checked-in configuration data, external source data, generated caches,
-optimization and benchmark results, matching artifacts, and retained legacy
-paths. Python environments, package build products, editor state, `.git`, and
-ordinary Python/test/linter caches are not application data and are outside this
-inventory.
+This document describes the active data contract for SFUSD-Zone. Source files
+are selected through the shared `loaders` package, derived data is stored in
+versioned content-addressed caches, and run outputs remain separate from both.
 
 No raw student, school, or census dataset is checked into this repository.
-End-to-end runs require the external files described below.
+End-to-end runs require access to the configured external sources.
+
+## Configuration Source of Truth
+
+The checked-in loader configuration has three layers:
+
+| Layer | Location | Purpose |
+|---|---|---|
+| Base | `loaders/configs/base.yaml` | Schema 2 source catalog, root defaults, and central `school_years` registry |
+| Scenario | `loaders/configs/scenarios/*.yaml` | Invariant source roles and complete default selectors for one coherent dataset |
+| Run | Optimization, benchmark, or assignment YAML | Selects a scenario and overrides selectors or exceptional sources |
+
+Every executable configuration uses this strict shape:
+
+```yaml
+data:
+  scenario: legacy
+  overrides:
+    roots: {}
+    sources: {}
+    filters: {}
+```
+
+Unknown keys, roots, catalog IDs, and filters are rejected, as are malformed
+source roles. Years are canonical four-character strings such as `"2324"`.
+A scenario is either a bundled name or an explicit YAML path. Bundled scenarios
+are standalone definitions; they do not inherit from each other.
+
+Catalog IDs such as `optimization.students.enrolled.2223` and
+`zones.selected.6` resolve through `loaders/configs/base.yaml`. A scenario or
+run may instead use a direct source object:
+
+```yaml
+assignment.estimate:
+  path: simulation-files/choice-model/estimates.csv
+  root: data
+  classification: restricted
+  geography_vintage: "2010"  # location-bearing tables only
+```
+
+Rootless direct paths in checked-in YAML are anchored to the YAML file that
+declares them. `anchor_data_config()` preserves this behavior when a parent
+configuration is loaded from another working directory. There is no
+hostname-based or home-directory input fallback.
+
+The merged selectors choose annual student, program, and school sources from
+`school_years`. An unsupported year, population, grade, capacity profile, or
+Mission Bay variant fails with the registered alternatives; it never falls
+back to another year or file. Explicit entries in `data.overrides.sources` are
+for exceptional experimental inputs and take precedence over registry-derived
+roles.
 
 ## Path Roots
 
-The code uses the following roots. In the rest of this document, symbolic names
-make the directory layouts easier to read.
+The loader resolves these declared and built-in roots:
 
-| Symbol | Current path | Defined by | Purpose |
-|---|---|---|---|
-| `REPO` | Repository root | Process checkout | Code, checked-in configuration, and default local outputs |
-| `SFUSD_SHARED` | `/share/data/school_choice` | `SFUSD_DATA_ROOT` in `Config/Constants.py` | Shared source data, graph/artifact caches, and HPC results |
-
-Application data is limited to these two roots. Source datasets and shared
-caches live under `SFUSD_SHARED`; checked-in configuration and default local
-outputs live under `REPO`. The loaders do not provide a home-directory or local
-mode fallback.
-
-The important path overrides are:
-
-| Setting or argument | Default | Effect |
+| Root | Default | Notes |
 |---|---|---|
-| Optimization `graphs_dir` | `SFUSD_SHARED/Zones/Optimization/Graphs` | Moves the graph and closer-neighbor caches |
-| Optimization CLI `--output` | `./optimization_output` | Moves a single run's result files |
-| Benchmark `execution.output_dir` | `./benchmark_output` | Sets a sweep's result root |
-| Benchmark `execution.output_template` | Generated hierarchy | Replaces the per-task directory hierarchy |
-| Metrics context `programs_path` | `SFUSD_SHARED/Data/Cleaned/programs_withMissionBay_2324.csv` | API-only override for fallback program data |
-| Metrics context `block0_graph_path` or `graphs_dir` | Legacy flat-graph search | API-only override for the Block-level graph used by spatial metrics |
-| Metrics context `shape_metric_artifact_dir` | `SFUSD_SHARED/Data/Computed/shape_metric_artifacts` | API-only override for compactness geometry artifacts |
-| Visualization `artifact_dir` or `--artifact-dir` | `SFUSD_SHARED/Data/Computed/visualization_artifacts` | Function argument or benchmark-visualization CLI option for map geometry artifacts |
-| Matching source `paths.*` | Defaults described below | Overrides matching input roots and files; benchmark output paths are enforced by the runner |
-| Assignment `paths.student-save` | `./assignment_output/precomputed` | Stores reusable standalone matching inputs under the repository when run from `REPO` |
-| Assignment `paths.assignment-folder` | `./assignment_output/assignments` | Stores standalone raw assignments under the repository when run from `REPO` |
+| `data` | `/share/data/school_choice` | External source datasets |
+| `cache` | `/share/data/school_choice/Data/caches` | Shared derived artifacts |
+| `student_assignment` | Required, no default | External checkout containing the large generated-zone collection |
+| `package` | `loaders/configs/` | Built-in special root; cannot be overridden |
+| `repository` | Repository root | Built-in special root; cannot be overridden |
 
-The metrics-context entries above are not `OptimizationConfig` fields. Adding
-them to an optimization or sweep YAML causes an unknown-key error.
+`SFUSD_DATA_ROOT` and `SFUSD_CACHE_ROOT` override the two shared defaults.
+Run YAML can override any declared non-special root with
+`data.overrides.roots`. Run overrides take precedence over environment
+variables. Relative root overrides are anchored to the run YAML.
 
-Relative optimization and benchmark output paths are resolved from the current
-working directory. Relative matching template paths are also resolved from the
-current working directory, not from the sweep YAML's directory. Benchmark task
-output, metrics API input/artifact paths, and most matching paths expand `~`.
-Custom `graphs_dir`, standalone `optimization.run --output`, a visualization
-function's `artifact_dir`, and benchmark `metrics.summary_csv` and
-`metrics.stages_csv` are used without `expanduser`; avoid `~` in those values
-and use an absolute path instead.
+For example, the generated-zone assignment configs provide the required root
+without embedding a developer-specific checkout path in the scenario:
 
-## External Source Data
-
-### `SFUSD_SHARED/Data/Cleaned/`
-
-This is the main CSV input directory. It is read by optimization ingestion,
-choice utility evaluation, metrics, and matching.
-
-| File pattern or name | Consumer | Description |
-|---|---|---|
-| `enrolled_<YY><YY+1>.csv` | `optimization/data/loaders.py` | Kindergarten enrollment rows used when `drop_optout: true` |
-| `student_<YY><YY+1>.csv` | `optimization/data/loaders.py` | Kindergarten student rows used when `drop_optout: false` |
-| `schools_rehauled_1819.csv` | Optimization loaders | Legacy school table used when `new_schools: false` |
-| `schools_table_for_zone_development_updated.csv` | Optimization loaders | School IDs, census locations, coordinates, categories, and school metrics; used when `new_schools: true` |
-| `stanford_capacities_12.23.21.csv` | Optimization loaders | Program capacities by scenario and school |
-| `programs_withMissionBay_2324.csv` | Program metrics | Fallback school/program mapping when graph data does not contain programs |
-| `r1_filter_student_without_specialprogs_2324.csv` | MNL choice model and matching | Student demographics, locations, and ranked choices |
-| `programs_without_specialprogs_2324.csv` | Matching | Programs available to the assignment simulation |
-| `schools_rehauled_withMissionBay_2324.csv` | Matching | Schools used by the assignment simulation |
-
-The school table is also the canonical source of school point coordinates used
-for map markers and closer-neighbor calculations. Census polygon geometry still
-comes from the shapefile.
-
-The directory also receives generated student caches:
-
-```text
-Cleaned_Students_<years>_pop<population_type>_drop<0-or-1>.csv
+```yaml
+data:
+  scenario: assignment-generated-zones-2324
+  overrides:
+    roots:
+      student_assignment: <STUDENT_ASSIGNMENT_PATH>
 ```
 
-These caches combine and filter the configured source years. The key includes
-`years`, `population_type`, and `drop_optout`, but not source-file timestamps.
-Delete the matching cache file to force re-ingestion after source CSVs change.
-Because the cache is written beside source data, an uncached run needs write
-permission to this directory.
+The scenario then resolves its direct zone sources below
+`<STUDENT_ASSIGNMENT_PATH>/data/zones/`.
 
-### `SFUSD_SHARED/shapefiles/`
+To relocate all shared caches for a run, override the cache root:
 
-The active census geometry is:
-
-```text
-geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp
+```yaml
+data:
+  scenario: legacy
+  overrides:
+    roots:
+      cache: /absolute/path/to/caches
 ```
 
-GeoPandas reads this file to build Block and BlockGroup geometry, area
-centroids, visualizations, and shape metrics. Keep the normal ESRI Shapefile
-sidecars, such as `.dbf`, `.shx`, and `.prj`, in the same directory.
+There is no active `graphs_dir` optimization setting. Visualization's optional
+`artifact_dir` argument acts as an alternate cache root for visualization
+geometry only.
 
-### `SFUSD_SHARED/Zones/Optimization/`
+## Bundled Scenarios
 
-This directory contains geographic crosswalks and precomputed graph inputs.
-
-| File | Access | Description |
-|---|---|---|
-| `block_blockgroup_tract.csv` | Read | Valid census areas and the Block-to-BlockGroup crosswalk |
-| `adjacency_matrix_b.csv` | Read | Block adjacency rows |
-| `adjacency_matrix_bg.csv` | Read | BlockGroup adjacency rows |
-| `distances_b2b_schools.csv` | Read/write | Block distance matrix; historically rectangular around school blocks |
-| `distances_bg2bg.csv` | Read/write | BlockGroup distance matrix |
-
-If a distance file is absent, ingestion computes a complete matrix from census
-centroids and writes it atomically into this directory. The adjacency and
-crosswalk files are not generated by current code.
-
-### `SFUSD_SHARED/simulation-files/choice-model/`
-
-`estimates_2324_exp8_0514.csv` contains student-by-program utility estimates.
-It is read directly by `choice/mnl.py` and is the default matching
-`estimate-path`.
-
-### `SFUSD_SHARED/simulation-files/zones/`
-
-This directory contains zone definitions used by matching and analysis. The
-selected plans used by `analysis/visualize_selected_zones.py` and
-`analysis/evaluate_zone_subconfig_matches.py` are:
-
-```text
-Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv
-Zones_6-FRL_Dev_0.10-Objective_1430_BG.csv
-Zones_10-FRL_Dev_0.15-Objective_2250_BG.csv
-```
-
-### Matching Path Resolution
-
-The default generated matching configuration has `paths.sfusd` set to
-`SFUSD_SHARED`. Its relative defaults resolve beneath that root:
-
-```text
-Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
-Data/Cleaned/programs_without_specialprogs_2324.csv
-Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
-simulation-files/choice-model/estimates_2324_exp8_0514.csv
-```
-
-Matching templates may override `paths.sfusd`, `student-data`, `program-data`,
-`school-data`, `estimate-path`, and `citywide-or-lp-zones`. Direct paths may be
-absolute; matching-library handling of relative paths depends on the individual
-path key. For benchmark matching, the runner overwrites `zone-files`,
-`assignment-folder`, `student-save`, and `utility-model.save-path` after merging
-the template, so templates cannot relocate benchmark-generated zones, raw
-assignments, precomputed data, or utility arrays.
-
-## Shared Generated Caches
-
-### `SFUSD_SHARED/Zones/Optimization/Graphs/`
-
-This is the active graph cache and the default `graphs_dir`. A `Dataset` lazily
-loads or creates graphs in a parameter-specific namespace:
-
-```text
-Graphs/
-  Block_<12-character-hash>/
-    Block_0.pickle
-    Block_1.pickle
-    ...
-  BlockGroup_<12-character-hash>/
-    BlockGroup_0.pickle
-    BlockGroup_1.pickle
-    ...
-  closer_neighbors_<level>.pickle
-  closer_neighbors_<level>.pickle.lock       # persistent coordination lock file
-```
-
-The graph namespace includes the cache schema, census unit, student years,
-population type, opt-out policy, capacity scenario, school/K-8 policy,
-partition policy, and, for Block graphs, the manual-edge fingerprint. It is safe
-to remove a namespace when the source data or graph-building policy changes;
-the next request rebuilds it. Coarser levels are generated from their immediate
-finer parent.
-
-The `closer_neighbors_<level>.pickle` files are shared across graph namespaces.
-Each store can hold multiple graph-fingerprint variants. The corresponding
-`.lock` file is created for coordinated access and normally remains afterward.
-
-### `SFUSD_SHARED/Data/Computed/visualization_artifacts/`
-
-Visualization lazily writes reusable dissolved geometry:
-
-```text
-geometry_<level>_<graph-fingerprint>.pkl
-geometry_<level>_<graph-fingerprint>.json
-```
-
-The pickle contains node geometry; the JSON records level, unit, node count,
-and fingerprint. Rendered PNGs belong in the run output directory, not here.
-
-### `SFUSD_SHARED/Data/Computed/shape_metric_artifacts/`
-
-Spatial metrics lazily write projected geometry used for Reock and
-Polsby-Popper calculations:
-
-```text
-area_perimeter_<level>_<graph-fingerprint>.pkl
-area_perimeter_<level>_<graph-fingerprint>.json
-```
-
-These files can be deleted and regenerated from the census shapefile and graph.
-
-### `SFUSD_SHARED/Data/Computed/Graphs/`
-
-This is a legacy flat graph location, not the active namespaced graph cache.
-Spatial metrics still look for `Block_0.pickle` here when a solution is not
-already at `Block_0` and no graph is injected or explicitly configured. This
-includes aggregated levels such as `Block_1`, not only BlockGroup solutions.
-
-The metrics-context `graphs_dir` fallback checks only
-`<graphs_dir>/Block_0.pickle` and `<graphs_dir-parent>/Block_0.pickle`; it does
-not discover the active `<graphs_dir>/Block_<hash>/Block_0.pickle` layout. Pass
-an exact `block0_graph_path` or inject `block0_graph` when using a namespaced
-cache through the metrics API.
-
-## Repository Data Directories
-
-### `REPO/Config/`
-
-This directory mixes Python constants with checked-in YAML data.
-
-| Entry | Status | Purpose |
-|---|---|---|
-| `centroids.yaml` | Active | Maps `centroids_type` names to school IDs |
-| `manual_block_edges.yaml` | Active | Reviewed closer-neighbor edge overrides for `Block_0` |
-| `manual_block_edge_additions.yaml` | Active | Explicit missing Block adjacency overrides |
-| `automatic_centroids.yaml` | Retained, no current reader | Historical centroid definitions |
-| `school_closure_centroids.yaml` | Retained, no current reader | Historical closure centroid definitions |
-| `config.yaml` | Legacy | Pre-rewrite optimization configuration |
-| `recursive_config.yaml` | Legacy | Pre-rewrite recursive configuration |
-| `config_zone_grid_search_default.yaml` | Legacy | Pre-rewrite grid-search configuration |
-| `Constants.py`, `metrics_config.py` | Active code/config metadata | Constants, path helpers, and metric descriptions |
-
-Use `optimization/config.example.yaml` as the current single-run configuration
-shape. The active parser rejects unknown legacy keys.
-
-### `REPO/benchmark/configs/`
-
-This contains checked-in benchmark sweep YAML files. `SimulationSweep` reads
-them to generate concrete optimization tasks and determine each sweep's output
-root. Current configurations write under `SFUSD_SHARED/local_runs/` using these
-subdirectories:
-
-```text
-59_recur_5/
-feasible_mcmc_5/
-full_recursive_sweep/
-iterative_choice_test_mnl/
-iterative_choice_updated_8/
-sfusd_zone_test_3/
-solver_comparison_5/
-test_5/
-test_cp_params_2/
-test_objectives_4/
-test_single_solver_2/
-```
-
-`benchmark/sweep.example.yaml` and `benchmark/sweep.test.yaml` at the package
-root are additional example/test sweep data; they use `./optimization_output`.
-The enabled matching section in `benchmark/sweep.test.yaml` currently refers to
-`benchmark/matching/medium_zones_no_reserves_no_sib.yaml`, which is absent.
-Change it to an existing template or restore that file before running matching
-from this sweep.
-
-### `REPO/benchmark/matching/`
-
-The YAML files in this mixed code/config directory are matching policy
-templates. The current templates are `sd.yaml`,
-`zones+hard_reserves_06frl.yaml`, `zones+no_reserves.yaml`, and
-`zones+soft_reserves_06frl.yaml`. The hard-reserves template is the default.
-At runtime the benchmark runner merges a template with matching defaults and
-replaces zone, assignment, precomputed-data, and utility-matrix output paths.
-
-### `REPO/analysis/misc/`
-
-This directory stores the manual Block-edge review workflow's inputs and
-generated review tables:
-
-| Entry | Role |
+| Scenario | Intended use |
 |---|---|
-| `manual_case_selections.yaml` | Human selections from numbered review plots |
-| `manual_block_edge_additions.yaml` | Human-authored explicit edge additions |
-| `manual_case_manifest.json` | Generated mapping from review cases to census IDs |
-| `manual_case_summary.csv` | Generated review summary |
+| `legacy` | Default optimization inputs and the legacy assignment source selection |
+| `historical-2324` | 2023-24 assignment runs excluding Mission Bay |
+| `mission-bay-2324` | 2023-24 optimization/assignment integration including Mission Bay |
+| `assignment-generated-zones-2324` | Large 2023-24 assignment policy sweeps over generated zone CSVs |
 
-The `compile` command writes `Config/manual_block_edges.yaml`; the separate
-`compile-additions` command writes `Config/manual_block_edge_additions.yaml`.
-Generated case images are written to `REPO/analysis/plots/manual_cases/`.
+Scenarios own invariant sources and complete selector defaults. Run filter
+overrides select canonical years/grades, applicant or enrolled students,
+preference rounds, special-program behavior, capacity variants, and school
+inclusion policy. Optimization additionally selects program population and K-8
+and citywide inclusion. Assignment executes exactly one registered year and one
+grade per market; optimization accepts multiple years and grades where the
+underlying data path supports them.
 
-### `REPO/optimization/data/`
+Both groups default `capacity_scenario` to `programs`. Assignment uses the
+capacity column from its registry-selected program table, while optimization
+uses the current 2023-24 program table. Selecting an explicit scenario overlays
+matching school/program/grade capacities from the shared scenario source;
+unmatched programs retain their selected-table capacities.
 
-Despite its name, this directory contains Python ingestion and graph-building
-code only. It is not a raw-data directory.
+Both filter groups select `geography_vintage`, currently `"2010"` or `"2020"`.
+Location-bearing catalog sources declare their own Census vintage. If it matches
+the selected vintage, existing Block, BlockGroup, and Tract columns are retained.
+Otherwise students and schools are mapped from WGS84 latitude/longitude to the
+selected Block geometry, with parent IDs obtained from the selected crosswalk.
+Programs inherit the normalized geography of their school. A point outside all
+district polygons has blank Block, BlockGroup, and Tract values. The
+`outside_district_students` selector is `ignore` by default and filters students
+with blank selected-vintage Blocks; `include` retains them for assignment and
+other non-graph workflows. Optimization graph construction fails if retained
+students lack the graph's selected geography.
 
-## Run Output Directories
+`include_mission_bay` centrally controls Mission Bay handling. When enabled,
+the shared table loader derives the `909 -> 999` school alias across student,
+program, and school data. Runs do not supply an alias map.
 
-### `REPO/optimization_output/`
+The six large generated-zone run configs share
+`assignment-generated-zones-2324`. The scenario exposes 256 zone aliases and
+one citywide-zone alias. `assignment/configs/all_zones_selected.yaml` has a
+different zone collection and remains explicitly configured.
 
-This is the default output for `python -m optimization.run` when invoked from
-the repository root. It is ignored by Git. A run may contain:
+## External Source Layout
 
-```text
-optimization_output/
-  result.json
-  solution_<level>.json
-  zone_dict_<level>.json
-  zone_dict_area_<level>.json
-  visualization_<stage>.png
-  stages/
-    stage_<index>_<level>/
-      solution_<level>.json
-      zone_dict_<level>.json
-      zone_dict_area_<level>.json
-  solver_logs/
-    solver_<index>_<level>_<solver>.log
-  solver_progress/
-    <solver-id>/
-      progress.jsonl
-      zone_dict_<level>_<index>.json
-      zone_dict_area_<level>_<index>.json
+The catalog in `loaders/configs/base.yaml` is the authoritative per-file list.
+The default `data` root currently contains these source families:
+
+| Directory | Contents |
+|---|---|
+| `Data/Cleaned/` | Student, enrollment, program, school, and prepared choice-model CSVs |
+| `Data/capacity_management/` | Current capacity files |
+| `Data/Tie-breakers/` | CTIP/tie-breaker arrays |
+| `shapefiles/` | Census Block geometry and required Shapefile companions |
+| `Census/2020/` | Official 2020 TIGER/Line Block, Block Group, and Tract layers, source ZIPs/metadata, crosswalk, and adjacency CSVs |
+| `Zones/Optimization/` | 2010 Block crosswalk and Block/BlockGroup/Tract adjacency source CSVs |
+| `simulation-files/choice-model/` | Utility estimate CSV/NumPy inputs |
+| `simulation-files/zones/` | Shared named assignment zone plans |
+
+The census Shapefile catalog entry includes `.dbf`, `.shx`, and `.prj`
+companions. All companion checksums participate in source identity.
+
+Prepared KG round-one and no-special files remain catalogued for historical
+reproduction and exceptional experiments. Standard runtime student selection
+uses the annual registry source plus selectors, not those prepared files.
+
+The files under `Zones/Optimization/` are source geography, not generated graph
+caches. Area distances are now derived from projected census centroids and
+stored in `area_distances/v3`; old flat distance CSVs are not active inputs.
+
+The 2020 files are the Census Bureau's county-level 2020 P.L. 94-171 TIGER/Line
+releases for San Francisco County (`06075`). The catalog retains each original
+ZIP and included ISO metadata as source companions. The selected source bundle
+is resolved centrally from `geographies` in `loaders/configs/base.yaml`.
+
+| Layer | Official archive | SHA-256 |
+|---|---|---|
+| Block | `https://www2.census.gov/geo/tiger/TIGER2020PL/STATE/06_CALIFORNIA/06075/tl_2020_06075_tabblock20.zip` | `0f858e6c7748070b3f1a564ec39a55c2ef6913afb41dc6adb935621c771516b9` |
+| Block Group | `https://www2.census.gov/geo/tiger/TIGER2020PL/STATE/06_CALIFORNIA/06075/tl_2020_06075_bg20.zip` | `cb71d9f9c6fb48d3318f8c91e20a4cf3d07f3c2f177a7e73834f0883ebaa8ecd` |
+| Tract | `https://www2.census.gov/geo/tiger/TIGER2020PL/STATE/06_CALIFORNIA/06075/tl_2020_06075_tract20.zip` | `58a7c130fdcd1f0efc9e69577a9b1870365c56972ccd33fea69fad581e23cb71` |
+
+The 2020 crosswalk derives BlockGroup and Tract parents from the official Block
+`GEOID20`. Adjacency rows were generated with the Shapely `touches` predicate;
+the files contain every official area exactly once and symmetric endpoints.
+
+## Checked-In Data
+
+The repository contains only configuration and small public support data:
+
+| Location | Purpose |
+|---|---|
+| `Config/centroids.yaml` | Named centroid school sets |
+| `loaders/configs/base.yaml` | Roots and source catalog |
+| `loaders/configs/scenarios/` | Bundled source/filter selections |
+| `loaders/configs/manual_block_edges.yaml` | Reviewed closer-neighbor Block edges |
+| `loaders/configs/manual_block_edge_additions.yaml` | Explicit missing Block adjacencies |
+| `loaders/configs/manual_block_edges_2020.yaml` | Empty placeholder until 2020 Block edges receive manual review |
+| `optimization/config.example.yaml` | Current single-run example |
+| `benchmark/configs/` and `benchmark/sweep*.yaml` | Benchmark sweep definitions |
+| `benchmark/matching/*.yaml` | Matching policy templates |
+| `assignment/configs/` | Assignment run and policy configuration |
+
+`Config/` no longer owns manual Block-edge YAML. The canonical runtime files
+are under `loaders/configs/` so they are packaged with the loader scenarios.
+
+### Manual Block-Edge Review
+
+`analysis/misc/` contains the human review inputs and compilation tooling. It
+is not a runtime data root. The workflow is documented in
+`analysis/misc/README.md`.
+
+```bash
+uv run python analysis/misc/manual_block_edge_cases.py generate
+uv run python analysis/misc/manual_block_edge_cases.py compile
+uv run python analysis/misc/manual_block_edge_cases.py compile-additions
 ```
 
-`result.json` contains metrics, run metadata, level names, status, and a config
-snapshot. The standalone runner saves each recursive or iterative solution
-directly into the output root. Recursive stages with different levels leave one
-file trio per level; repeated iterative-choice stages at the same level
-overwrite the preceding trio.
+`compile` writes `loaders/configs/manual_block_edges.yaml`, and
+`compile-additions` writes
+`loaders/configs/manual_block_edge_additions.yaml`. Their content checksums are
+part of Block graph cache identity.
 
-The metrics-selected iterative solution can differ from the literal last
-iteration. In a standalone run, `result.json` reports the selected metrics, but
-the same-level root assignment files retain whichever iteration was saved last.
-Benchmark output avoids this ambiguity by saving every stage separately and
-explicitly saving its metrics-selected final solution at the task root.
+## Content-Addressed Caches
 
-The output path is arbitrary when `--output` is supplied, so
-`optimization_output/` describes a default layout rather than a required
-location.
-
-### Benchmark Result Roots
-
-The default sweep root is `./benchmark_output/`, which is
-`REPO/benchmark_output/` only when the command runs from the repository root.
-Most checked-in HPC sweeps instead use a named child of
-`SFUSD_SHARED/local_runs/`, listed above.
-
-By default, each task is nested as follows:
+Most derived artifacts use `CacheStore` and this layout below the resolved
+`cache` root:
 
 ```text
-<benchmark-root>/
-  <centroids-type>/
-    seed<seed>/
-      frl<frl>_racial<racial>/
-        overage<overage>_shortage<shortage>/
-          <strategy>_<solver>_<levels>_tl_<limits>_<hash>/
+<cache-root>/
+  <artifact>/
+    v<schema-version>/
+      .<sha256-key>.lock
+      <sha256-key>/
+        manifest.json
+        <payloads...>
 ```
 
-`execution.output_template` can replace that hierarchy. Every task directory
-uses the optimization output contract plus:
+The full SHA-256 key covers:
+
+- artifact name and caller-owned schema version;
+- normalized derivation parameters;
+- selected source roles, resolved paths, classifications, presence state, and
+  current SHA-256 content checksums;
+- scenario ID and loader schema version; and
+- output classification.
+
+Each manifest records the same identity plus every payload's format, size, and
+checksum. Reads validate both manifest identity and payload checksum. Invalid,
+missing, or corrupt entries are treated as cache misses. Writes use file locks,
+temporary files, `fsync`, and atomic replacement.
+
+The schema version in the directory name is the derived artifact's version. It
+is independent of the data-catalog schema version in source manifests.
+
+### Active Namespaces
+
+| Namespace | Payload | Producer/consumer |
+|---|---|---|
+| `students/v6/<key>/` | `students.csv` | Filtered multi-year optimization students |
+| `area_distances/v3/<key>/` | `distances.csv` | Source-aware area centroid distances |
+| `graphs/v11/<key>/` | `Block_*.pickle`, `BlockGroup_*.pickle`, or `Tract_0.pickle` | Optimization graph hierarchy |
+| `closer_neighbors/v3/` | `closer_neighbors_<level>.pickle` | Geometry distances and strictly closer adjacent nodes |
+| `student_program_distances/v4/<key>/` | `distances.pkl` | Assignment student-to-program distances |
+| `visualization_geometry/v4/<key>/` | `geometry.pkl` | Dissolved graph-node geometry for maps and spatial metrics |
+
+With the defaults, a graph payload therefore lives at a path like:
 
 ```text
-benchmark_manifest.json
+/share/data/school_choice/Data/caches/graphs/v11/<sha256>/Block_0.pickle
+```
+
+`closer_neighbors/v3` predates the generic namespace layout. It keeps one
+locked file per level and stores validated graph/source fingerprint variants
+inside that file. It is still source-aware and schema-versioned.
+
+The `students` and `student_program_distances` namespaces are classified
+`restricted-derived`. Their directories are created with group-only access
+(`0770`) and files/locks with `0660`. Cache references embedded in matching
+configuration are path-free; they identify artifact, schema, key, parameters,
+roles, classification, and payload.
+
+### Invalidation
+
+Source content changes automatically produce new content-addressed keys. So do
+relevant filter, algorithm, graph-policy, and schema-version changes. Manual
+deletion is not required for correctness.
+
+To force regeneration, remove only the affected `<key>/` directory (or the
+affected closer-neighbor level file). Do not edit a manifest or payload in
+place; checksum validation will reject it. Old keys are orphaned rather than
+overwritten and may be removed by an explicit storage-retention policy.
+
+## Run Outputs
+
+Run outputs are not caches and are not placed below the cache root.
+
+### Optimization
+
+`optimization.run` defaults to `./optimization_output`; `--output` selects
+another directory. A run can contain:
+
+```text
+result.json
+solution_<level>.json
+zone_dict_<level>.json
+zone_dict_area_<level>.json
+visualization_<stage>.png
 stages/<stage-name>/...
+solver_logs/...
+solver_progress/...
 ```
 
-The benchmark root receives `summary.csv` and `stages.csv` after aggregation.
-Those filenames are configurable; absolute paths place the CSVs outside the
-benchmark root. These two settings do not expand `~`; use an actual absolute
-path rather than a tilde path to write outside the root.
+The output config snapshot retains the strict `data` block. Spatial metrics
+reconstruct `Block_0` through that scenario and the `graphs/v11` cache; they do
+not search legacy flat graph paths. Compactness metrics reuse
+`visualization_geometry/v4` and project the geometry in memory.
 
-The optional `metrics.solution_code.build_solution_code_index()` helper can
-also write `solution_codes.json` directly under any result root. Normal
-optimization and benchmark CLI runs do not create this index.
+### Benchmark
 
-### `REPO/assignment_output/`
-
-The committed assignment path configs use this ignored directory for standalone
-generated data when commands run from the repository root:
+A sweep writes below `execution.output_dir`, which defaults to
+`./benchmark_output`. The default per-task hierarchy is:
 
 ```text
-assignment_output/
-  precomputed/
-  assignments/
+<centroids-type>/seed<seed>/frl<frl>_racial<racial>/
+  overage<overage>_shortage<shortage>/<strategy-and-config-hash>/
 ```
 
-Benchmark-integrated matching overrides these paths and writes into its task or
-stage result directory instead.
+`execution.output_template` can replace this hierarchy. Each task stores
+`benchmark_manifest.json`, `result.json`, root-level final-solution aliases,
+and every recursive/iterative result under `stages/`. Aggregation writes
+`summary.csv` and `stages.csv` at the sweep root by default.
 
-### Matching Output Within a Run
+The benchmark config hash includes optimization semantics, scenario semantics,
+and current source manifests. It deliberately excludes only the cache-root
+location, so relocating equivalent caches does not change task identity.
 
-When enabled, matching creates a `matching/` subtree under the benchmark task
-or stage directory:
+### Assignment and Matching
+
+Standalone assignment output locations come from explicit `paths` settings in
+the run config. The saved `config.json`/`config.yaml` is a replayable snapshot
+of the strict external configuration. Runtime-only resolved input keys and
+`data-provenance` are not written back into that snapshot.
+
+Benchmark matching writes this subtree in a task or stage directory:
 
 ```text
 matching/
@@ -411,87 +359,50 @@ matching/
   summary.json
   choice_metrics_by_assignment.csv
   choice_metrics_summary.json
-  precomputed/
-    utility_matrix.npy
-    student_program_distances*.csv
+  precomputed/...
 ```
 
-With multiple matching policies, policy-specific outputs are stored under
-`matching/<policy>/`, while `matching/precomputed/<policy>/` stores the
-corresponding arrays and distance tables. Stage matching repeats the same
-structure under `stages/<stage-name>/matching/` and normally shares the final
-run's precomputed root during one invocation.
+Multiple matching templates use `matching/<policy>/` and
+`matching/precomputed/<policy>/`. The generated config records the path-free
+`student_program_distances/v4` reference used by assignment metrics.
 
-A final matching run deletes and recreates its whole `matching/` directory,
-including `precomputed/`, before writing. These artifacts are shared within an
-invocation but are not preserved across final matching regeneration. The
-standalone `sfusd-match simulate` command can write raw assignment CSVs to any
-directory supplied through `--assignments-dir`, `--assignment-folder`, or
-`paths.assignment-folder`.
+Within a matching invocation, `StudentAssignmentSession` can retain separate
+markets for distinct immutable assignment source identities and reconfigure a
+matching market when only zones or policy settings change. Source identity
+includes assignment filters and checksummed immutable table/estimate sources;
+zone files are intentionally excluded so stage and policy runs can reuse those
+loaded tables safely.
 
-### `REPO/analysis/plots/`
+## Retired Locations
 
-Analysis scripts write generated CSV summaries and PNG figures here by default.
-The directory is ignored by Git. The scripts read benchmark `summary.csv`,
-`result.json`, and `solver_progress/**/progress.jsonl` from configured or
-command-line result roots. `analysis/plots/manual_cases/` is reserved for the
-manual Block-edge review images.
+Current code does not read or write these pre-centralization locations:
 
-## Legacy Paths
-
-These repository paths remain for historical compatibility but are not the
-normal source for a current optimization run.
-
-| Path | Current use |
+| Retired location | Replacement |
 |---|---|
-| `REPO/output/` | Old ignored output convention; no current writer |
+| `Data/Cleaned/Cleaned_Students_*.csv` | `Data/caches/students/v6/<key>/students.csv` |
+| `Zones/Optimization/distances_b2b_schools.csv` and `distances_bg2bg.csv` | `Data/caches/area_distances/v3/<key>/distances.csv` |
+| `Zones/Optimization/Graphs/` | `Data/caches/graphs/v11/<key>/` |
+| `Data/Computed/visualization_artifacts/` | `Data/caches/visualization_geometry/v4/<key>/` |
+| `Data/Computed/shape_metric_artifacts/` | Shared visualization geometry plus in-memory projection |
+| `Data/Computed/Graphs/` | Scenario-backed `graphs/v11` reconstruction |
+| `Config/manual_block_edges.yaml` | `loaders/configs/manual_block_edges.yaml` |
+| `Config/manual_block_edge_additions.yaml` | `loaders/configs/manual_block_edge_additions.yaml` |
 
-Some analysis scripts also retain historical hard-coded result roots, such as
-`SFUSD_SHARED/local_runs/solver_comparison`, while current sweep YAML files use
-versioned names such as `solver_comparison_5`. Prefer the sweep's
-`execution.output_dir` or an explicit analysis CLI argument.
+Historical result directories may still contain snapshots that mention old
+paths. Keep those artifacts for provenance, but do not use them as templates
+for new runs.
 
-Existing generated analysis CSVs additionally record historical
-`SFUSD_SHARED/local_runs/solver_comparison_3/` and
-`SFUSD_SHARED/local_runs/feasible_mcmc_3/` inputs. The checked-in
-`feasible_mcmc_penalties_objective_over_time_*` CSV/PNG artifacts have no
-current producer script and should be treated as historical outputs rather than
-as reproducible current analysis products.
+## Implementation References
 
-## Cache Invalidation
+The code defining this contract is:
 
-Most cache identities describe configuration or graph structure, not the
-contents or modification times of their source files. Source-data updates
-therefore require manual invalidation:
-
-| Changed source | Remove before rerunning |
-|---|---|
-| Enrollment or student CSVs | Matching `Cleaned_Students_*.csv` files, then affected graph namespaces |
-| School, capacity, adjacency, crosswalk, or distance CSVs | Affected graph namespaces |
-| Area geometry or census identifiers | Affected distance CSVs, graph namespaces, closer-neighbor stores, visualization artifacts, and shape-metric artifacts |
-| School coordinates | Affected `closer_neighbors_<level>.pickle` stores |
-
-Distance matrices are reused based on file existence alone. Graph namespaces
-hash ingestion settings and partition policy but not source-file contents.
-Closer-neighbor stores fingerprint graph data but not shapefile or school-point
-source contents. Visualization and shape artifacts fingerprint graph membership,
-not the underlying polygon geometry. Remove all dependent caches after a source
-update rather than relying on automatic detection.
-
-## Ownership and Regeneration Summary
-
-| Directory class | Back up? | Safe to delete? | Write access needed? |
-|---|---|---|---|
-| External source CSVs and shapefiles | Yes | No | Usually no |
-| `SFUSD_SHARED/Zones/Optimization` adjacency/crosswalk files | Yes | No | Only distance files are regenerated |
-| Cleaned student cache files | No | Yes | Yes when a keyed cache is absent |
-| Active graph cache | No | Yes | Yes when a graph or relation is absent |
-| Visualization and shape artifacts | No | Yes | Yes when an artifact is absent |
-| Optimization and benchmark outputs | As required | Yes, if results are disposable | Yes |
-| Checked-in `Config`, sweep, matching, and manual-review YAML | Yes, through Git | No | Only when intentionally editing configuration/review data |
-
-The source files that establish this contract are `Config/Constants.py`,
-`optimization/data/loaders.py`, `optimization/data/dataset.py`,
-`optimization/config.py`, `optimization/visualization.py`, `metrics/spatial.py`,
-`choice/mnl.py`, `benchmark/config.py`, `benchmark/runner.py`,
-`benchmark/matching/runner.py`, and `benchmark/results.py`.
+- `loaders/config.py`: strict scenario resolution and source manifests;
+- `loaders/cache.py`: cache identity, validation, locking, and permissions;
+- `loaders/configs/base.yaml`: schema 2 roots, source catalog, and year registry;
+- `optimization/data/loaders.py`: student and area-distance artifacts;
+- `optimization/data/dataset.py`: graph namespaces;
+- `optimization/data/closer_neighbors.py`: closer-neighbor variant store;
+- `optimization/visualization.py`: shared geometry artifacts;
+- `assignment/student_assignment/data_interfaces/students.py`: assignment
+  distance artifacts; and
+- `benchmark/matching/runner.py`: matching snapshots and market reuse.

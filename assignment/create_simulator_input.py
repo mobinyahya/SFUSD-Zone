@@ -1,36 +1,22 @@
 import os
+import sys
+from pathlib import Path
 
 import click
 import numpy as np
 import pandas as pd
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 if __package__:
     from .student_assignment.configerator import Configerator
-    from .student_assignment.data_interfaces import (
-        Programs,
-        Students,
-    )
-    from .student_assignment.definitions import (
-        BLOCK_DATA_FILE,
-        PROGRAM_CODES_FILE,
-        PROGRAM_DATA_FILE,
-        SCHOOL_DATA_FILE,
-        STUDENT_DATA_FILE,
-        Path,
+    from .student_assignment.market_generator.school_choice_market import (
+        SchoolChoiceMarket,
     )
 else:
     from student_assignment.configerator import Configerator
-    from student_assignment.data_interfaces import (
-        Programs,
-        Students,
-    )
-    from student_assignment.definitions import (
-        BLOCK_DATA_FILE,
-        PROGRAM_CODES_FILE,
-        PROGRAM_DATA_FILE,
-        SCHOOL_DATA_FILE,
-        STUDENT_DATA_FILE,
-        Path,
+    from student_assignment.market_generator.school_choice_market import (
+        SchoolChoiceMarket,
     )
 
 
@@ -43,11 +29,10 @@ class ConvertEstimates:
         self._distance_weight = distance_weight
 
         self._configurator = Configerator()
-        self._config = self._configurator.config
+        self._market = SchoolChoiceMarket(configurator=self._configurator)
+        self._config = self._market.config
 
-        self.input_path_generator = Path(self._config["paths"]["sfusd"])
-
-        self._grade = Students._normalize_grade(self._config["grade"])
+        self._grade = self._config["grade"]
         self._year = self._config["year"]
         (
             self._weights,
@@ -88,50 +73,9 @@ class ConvertEstimates:
         print(features_df.shape)
         features_df["student_number"] = features_df["studentno"].str.split("-").str[1]
 
-        gr = f"{self._grade}_" if self._grade != "KG" else ""
-
-        program_data_file = self._config["paths"].get(
-            "program-data",
-            PROGRAM_DATA_FILE.format(
-                gr,
-                self._year,
-                self._year + 1,
-            ),
-        )
-        program_data_file = self.input_path_generator.absolute_path(program_data_file)
-
-        program_codes_file = self.input_path_generator.absolute_path(PROGRAM_CODES_FILE)
-
-        programs = Programs(program_data_file, program_codes_file, self._config)
-
-        student_data_file = self._config["paths"].get(
-            "student-data",
-            STUDENT_DATA_FILE.format(self._year, self._year + 1),
-        )
-        self._student_data_file = self.input_path_generator.absolute_path(
-            student_data_file
-        )
-
-        school_location_file = self._config["paths"].get(
-            "school-data",
-            SCHOOL_DATA_FILE.format(
-                f"{self._grade}_" if self._grade != "KG" else "",
-                self._year,
-                self._year + 1,
-            ),
-        )
-        school_location_file = self.input_path_generator.absolute_path(
-            school_location_file
-        )
-
-        block_data_file = self.input_path_generator.absolute_path(BLOCK_DATA_FILE)
-        students = Students(
-            student_data_file=self._student_data_file,
-            programs=programs,
-            school_data_file=school_location_file,
-            block_data_file=block_data_file,
-            config=self._config,
-        )
+        programs = self._market.programs
+        students = self._market.students
+        self._student_records = students.student_data.reset_index()[["studentno"]]
 
         features_df = features_df[
             features_df["student_number"].astype(int).isin(students.student_data.index)
@@ -211,9 +155,7 @@ class ConvertEstimates:
             save_path = os.path.join(
                 self._model_path, f"estimates_{self._distance_weight}.npy"
             )
-        student_data = pd.read_csv(self._student_data_file)
-        normalized_grades = student_data["grade"].map(Students._normalize_grade)
-        student_data = student_data[normalized_grades == self._grade]
+        student_data = self._student_records
         estimates_df = estimates_df.reset_index()
         estimates_df["studentno"] = estimates_df["studentno"].apply(
             lambda x: int(x.split("-")[1])
@@ -242,6 +184,4 @@ def create_simulator_input(model_path, features_path, distance_weight):
 
 
 if __name__ == "__main__":
-    print(PROGRAM_DATA_FILE)
-    print(STUDENT_DATA_FILE)
     create_simulator_input()

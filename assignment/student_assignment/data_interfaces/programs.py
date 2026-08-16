@@ -8,18 +8,24 @@ import pandas as pd
 from ..definitions import (
     K8S,
     LANGUAGE_PATHWAYS,
-    SPECIAL_PROGRAMS,
 )
 
 
 class Programs:
-    def __init__(self, program_data_file: str, program_codes_file: str, config: dict):
+    def __init__(
+        self,
+        program_data_file: str | pd.DataFrame,
+        program_codes_file: str | pd.DataFrame | None,
+        config: dict,
+    ):
         self._config = config
-        self.program_df = pd.read_csv(program_data_file)
+        self.program_df = (
+            program_data_file.copy()
+            if isinstance(program_data_file, pd.DataFrame)
+            else pd.read_csv(program_data_file)
+        )
         self.only_keep_cols = None
         self._set_up_programno(program_codes_file)
-        if self._config.get("remove-special-lps", False):
-            self._remove_special_lps()
         self.num_programs = len(self.program_df)
         self._program_type2indices = None
         self._school2indices = None
@@ -126,7 +132,11 @@ class Programs:
                     "Program data has no programno column and no program codes "
                     "file was provided."
                 )
-            program_codes = pd.read_csv(program_codes_file)
+            program_codes = (
+                program_codes_file.copy()
+                if isinstance(program_codes_file, pd.DataFrame)
+                else pd.read_csv(program_codes_file)
+            )
             self._validate_identity_column(program_codes, "code", "Program codes")
             self._validate_identity_column(program_codes, "index", "Program codes")
             program_codes = program_codes.rename(columns={"index": "programno"})
@@ -158,23 +168,6 @@ class Programs:
         if not np.array_equal(source_columns, expected_columns):
             self.only_keep_cols = source_columns
         self.program_df["programno"] = expected_columns + 1
-        self._set_program_mappings()
-
-    def _remove_special_lps(self):
-        """Remove special programs."""
-        program_data = self.program_df
-        keep = ~program_data["program_type"].isin(SPECIAL_PROGRAMS)
-        keep_positions = np.flatnonzero(keep.to_numpy())
-        if not keep.all():
-            if self.only_keep_cols is None:
-                self.only_keep_cols = keep_positions
-            else:
-                self.only_keep_cols = np.asarray(self.only_keep_cols)[keep_positions]
-        self.program_df = program_data[keep].reset_index(drop=True)
-        if self.program_df.empty:
-            raise ValueError("Removing special programs left no programs.")
-        # Reset programno as needed
-        self.program_df["programno"] = self.program_df.index + 1
         self._set_program_mappings()
 
     def index(self, program: str, quiet: bool = False) -> int:

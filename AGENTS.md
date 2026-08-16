@@ -18,9 +18,41 @@ uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 ## Directory Structure
 
 - `Config/` - centroids.yaml, Constants.py, metrics_config.py
+- `loaders/` - shared source catalog, scenarios, normalized table readers, and content-addressed caches
 - `optimization/` - config.py, problem.py, solution.py, solvers/, strategies/, data/
+- `assignment/` - student-assignment simulation, policy configs, and assignment analysis
 - `benchmark/` - config.py, runner.py, results.py, parallel.py
-- `metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py
+- `metrics/` - calculator.py, diversity.py, distance.py, programs.py, quality.py, choice.py, spatial.py
+
+## Data Registry and Selectors
+
+`loaders/configs/base.yaml` schema 2 is the single source catalog and central
+`school_years` registry. Scenarios under `loaders/configs/scenarios/` provide
+invariant sources and complete selector defaults; `data.overrides.filters`
+selects a run, while explicit source overrides are reserved for exceptional
+experimental inputs and take precedence over registry-derived sources.
+
+Optimization selectors are canonical `years`, `grades`, `student_population`,
+`rounds`, `special_programs`, `program_population`, `capacity_scenario`, and the
+`include_k8`, `include_citywide`, and `include_mission_bay` flags. Assignment
+uses canonical `year`, a `grades` list, `student_population`, `rounds`,
+`special_programs`, `capacity_profile`, `capacity_scenario`, and
+`include_mission_bay`; execution
+requires exactly one year and grade per market. Unsupported registry
+combinations fail rather than falling back.
+
+`capacity_scenario` defaults to `programs` for both groups. Assignment uses the
+capacity values in its year/profile-selected program table; optimization uses
+the current 2023-24 program table. Explicit scenarios such as `A` through `D`
+overlay matching school/program/grade capacities from the shared scenario table.
+
+Both groups select `geography_vintage` (`2010` or `2020`). Same-vintage Census
+columns are retained; other location-bearing sources are spatially mapped from
+lat/lon. Points outside the district geometry retain blank Census geography.
+`outside_district_students` defaults to `ignore`, which filters these students;
+`include` retains them for non-graph workflows, but optimization graph
+construction rejects included students without its selected geography. Programs
+inherit geography from their school.
 
 ## Graph Object Structure
 
@@ -33,12 +65,13 @@ The optimization uses NetworkX undirected graphs. Nodes are geographic areas and
 - **BlockGroup_0** - Direct Census BlockGroup units
 - **BlockGroup_1** - Up to 250 nodes, built from BlockGroup_0
 - **BlockGroup_2** - Up to 125 nodes, built from BlockGroup_1
+- **Tract_0** - Direct Census Tract units
 
 ### Node Attributes
 
 ```python
 {
-    'area_id': int,              # Census BlockGroup GEOID
+    'area_id': int,              # Census GEOID for the selected unit
     'ge_students': float,        # General education students (count)
     'ge_capacity': float,        # GE school seats
     'all_prog_students': float,  # All program students
@@ -54,7 +87,7 @@ The optimization uses NetworkX undirected graphs. Nodes are geographic areas and
     'Ethnicity_White': float,
     'Ethnicity_Asian': float,
     'Ethnicity_Pacific_Islander': float,
-    'block_ids': list,           # Only on aggregated graphs: original BlockGroup IDs
+    'block_ids': list,           # Only on aggregated graphs: original base-unit GEOIDs
 }
 ```
 
@@ -79,11 +112,12 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 `optimization/data/graph_builder.py` builds multi-level graphs:
 1. `build_base_graph()` creates depth 0 directly from the selected census units.
 2. Each coarser level uses its immediate finer parent rather than repartitioning level 0.
-3. School nodes are removed and retained as singleton vertices. KaHIP strong mode partitions the remaining nodes using the population selected by `population_type`; imbalance starts at 0.8 and doubles until validation passes.
+3. School nodes are removed and retained as singleton vertices. KaHIP strong mode partitions the remaining nodes using the population selected by `program_population`; imbalance starts at 0.8 and doubles until validation passes.
 4. `aggregate()` sums node attributes, flattens base area IDs, recomputes distances, and derives every child edge from crossing parent edges. This also reconnects school nodes to every aggregate containing one of their former neighbors.
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
-Graphs are cached by data and partition-policy parameters under `/share/data/school_choice/Zones/Optimization/Graphs`.
+Graphs are cached by exact source contents, data filters, and partition-policy
+parameters under `/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
 
 ## Benchmarking
 
@@ -124,11 +158,12 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `centroids_type` | `'5-zone-AF'` | Zone count and centroid configuration |
 | `frl_dev` | `0.3` | Max FRL deviation from district average |
 | `racial_dev` | `0.3` | Max racial/ethnic deviation |
-| `optimizer` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
+| `solver` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
 | `levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
+| `capacity_scenario` | `programs` | Program-table capacities, or an explicit scenario overlay |
 | `hints` | `voronoi` | Warm-start method: `voronoi` or `none` |
-| `random_seed` | `42` | Solver seed |
+| `seed` | `42` | Solver seed |
 
-Graph cache path: `/share/data/school_choice/Zones/Optimization/Graphs`.
+Graph cache path: `/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.

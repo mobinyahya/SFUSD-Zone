@@ -19,7 +19,7 @@ runner.
 
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
-| **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies | extend `data/loaders.py` / `graph_builder.py` |
+| **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
 
@@ -47,12 +47,12 @@ independently.
 - **Nested graph hierarchy.** Level 0 contains the source census units. Every
   coarser level is built from its immediate finer parent with KaHIP strong mode.
   School nodes remain singleton vertices; only non-school nodes are partitioned,
-  balancing the population selected by `population_type` with progressively
+  balancing the population selected by `program_population` with progressively
   relaxed imbalance. Requested sizes are upper targets because KaHIP may return
   fewer nonempty partitions.
 - **Shared graph cache.** Parameter-specific graph namespaces are stored below
-  `/share/data/school_choice/Zones/Optimization/Graphs` by default. The cache
-  key includes ingestion parameters and the graph-partition policy.
+  `/share/data/school_choice/Data/caches/graphs/v11` by default. The cache key
+  includes scenario filters, exact source contents, and the partition policy.
 
 ## Running
 
@@ -74,8 +74,8 @@ uv run python -m optimization.run optimization/config.example.yaml -o ./out --vi
 
 Rendered maps are written to the optimization output directory as
 `visualization_<stage>.png`. Cached geometry artifacts are written under
-`/share/data/school_choice/Data/Computed/visualization_artifacts/` as
-`geometry_<level>_<fingerprint>.pkl` and `.json`. This does not use benchmark,
+`/share/data/school_choice/Data/caches/visualization_geometry/v4/<sha256>/` as
+`geometry.pkl` with a validated `manifest.json`. This does not use benchmark,
 choice, or heatmap code.
 
 Switch granularity, solver, or strategy purely in the config:
@@ -84,7 +84,49 @@ Switch granularity, solver, or strategy purely in the config:
 levels: ['Block_2', 'Block_1', 'Block_0']
 solver: 'cp_bool'
 strategy: 'recursive'
+data:
+  scenario: legacy
+  overrides:
+    filters:
+      optimization:
+        years: ["2122", "2223", "2324"]
+        grades: [KG]
+        student_population: enrolled  # applicant | enrolled
+        rounds: [1]                    # or all
+        special_programs: include     # include | exclude_only_special | exclude_any_special
+        program_population: GE
+        capacity_scenario: programs    # programs | A | B | C | D
+        include_k8: false
+        include_citywide: false
+        include_mission_bay: true
+        geography_vintage: "2020"
+        outside_district_students: ignore  # ignore | include
 ```
+
+`loaders/configs/base.yaml` schema 2 is the central source catalog and
+`school_years` registry. A scenario supplies invariant geography/capacity roles
+and complete selector defaults; run filter overrides select annual registry
+sources. Years must be canonical strings and grades canonical labels. Multiple
+years and grades are accepted where the optimization ingestion supports them.
+Missing registry combinations fail and never use a neighboring year or legacy
+fallback.
+
+`capacity_scenario: programs` is the default and aggregates `capacity` from the
+current 2023-24 program table into GE and all-program school capacity. Explicit
+scenarios such as `A` through `D` overlay matching school/program/grade rows
+from the central scenario table before aggregation.
+
+Spatial conversion assigns Census geography only when a student point intersects
+the selected district geometry. `outside_district_students: ignore` filters rows
+with blank Blocks and is the default. `include` keeps them available to non-graph
+consumers, but optimization graph construction fails if an included student has
+no geography for the graph unit.
+
+Explicit `data.overrides.sources` take precedence over registry-derived roles,
+but are intended only for exceptional experimental inputs. The shared student
+normalizer sorts selected rounds and retains one row per unique student whose
+filtered choices are nonempty in any selected round. Its authoritative choices
+come from that student's earliest remaining selected round.
 
 ## Tests
 

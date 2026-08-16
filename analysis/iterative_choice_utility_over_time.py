@@ -436,21 +436,6 @@ def stage_choice_metric_dicts(stage: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(metrics, dict):
         metric_dicts.append(metrics)
 
-    # Combined multi-matching outputs also retain each matching run with the
-    # legacy unprefixed metric name inside choice_metrics.run.runs.
-    runs = (choice_payload.get("run") or {}).get("runs") or {}
-    if isinstance(runs, dict):
-        for name, run_payload in runs.items():
-            run_metrics = (run_payload or {}).get("metrics") or {}
-            # if LEGACY_POST_CHOICE_COLUMN in run_metrics:
-            #     metric_dicts.append(
-            #         {
-            #             f"choice_{name}_total_mnl_utility": run_metrics[
-            #                 LEGACY_POST_CHOICE_COLUMN
-            #             ]
-            #         }
-            #     )
-
     return metric_dicts
 
 

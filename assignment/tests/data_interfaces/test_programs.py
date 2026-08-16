@@ -11,28 +11,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from assignment.student_assignment.configerator import Configerator
 from assignment.student_assignment.data_interfaces.programs import Programs
 
-from ..utils_for_tests import *
+from ..utils_for_tests import (
+    LP_TYPE,
+    NUM_SCHOOLS,
+    TEMP_PROGRAMS_FILE,
+    YEAR,
+    check_equal_dicts,
+    delete_temp_files,
+    generate_random_program_school_files,
+)
 
 
 @pytest.fixture(scope="module")
 def config():
-    configerator = Configerator()
-    configerator.config["subconfigs"] = ["choice_model_real_match_grade6"]
-    configerator.load_subconfig_by_name("choice_model_real_match_grade6")
-    # Set after load_subconfig_by_name: loading a subconfig rebuilds the
-    # config from the original file and would discard these overrides.
-    config = configerator.config
-    config["grade"] = "06"
-    config["use-new-capacities"] = False
-    config["year"] = YEAR
-
-    # Use the temp file path for generated data.
-    config["paths"]["sfusd"] = TEMP_CLEANED_PAR_FOLDER
-    config["paths"]["student-save"] = TEMP_STUDENT_SAVE_FOLDER
-    return config
+    return {"grade": "06", "year": YEAR, "use-new-capacities": False}
 
 
 def get_programs(config):

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from loaders import load_scenario
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -113,19 +114,47 @@ def test_write_metrics_csv_matches_reference_layout(tmp_path):
 
 def test_evaluation_tasks_can_include_all_rounds(tmp_path):
     assignments = [tmp_path / "assignment.csv"]
-    paths = {
-        key: tmp_path / f"{key}.csv"
-        for key in ("student-data", "program-data", "school-data")
+    sources = {
+        role: tmp_path / f"{role.rsplit('.', 1)[-1]}.csv"
+        for role in (
+            "assignment.students",
+            "assignment.programs",
+            "assignment.school_coordinates",
+        )
     }
-    for path in paths.values():
+    for path in sources.values():
         path.touch()
 
     tasks = status_quo.evaluation_tasks(
         assignments,
-        {"paths": {key: str(path) for key, path in paths.items()}},
+        {
+            "data": {
+                "scenario": "legacy",
+                "overrides": {
+                    "sources": {
+                        role: {
+                            "path": str(path),
+                            "classification": "internal",
+                        }
+                        for role, path in sources.items()
+                    },
+                    "filters": {
+                        "assignment": {
+                            "year": "2324",
+                            "grades": ["KG"],
+                            "student_population": "applicant",
+                            "rounds": [1],
+                            "special_programs": "exclude_any_special",
+                            "capacity_profile": "status_quo",
+                            "include_mission_bay": True,
+                        }
+                    },
+                },
+            }
+        },
         None,
         first_round=False,
     )
 
     assert len(tasks) == 1
-    assert tasks[0].first_round is False
+    assert load_scenario(tasks[0].data).filter("assignment", "rounds") == "all"

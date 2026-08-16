@@ -12,6 +12,7 @@ from optimization.tests.synthetic import make_path_graphs
 BG0 = LevelSpec("BlockGroup", 0)
 BG1 = LevelSpec("BlockGroup", 1)
 BLOCK0 = LevelSpec("Block", 0)
+TRACT0 = LevelSpec("Tract", 0)
 
 
 def test_base_area_assignment_expands_blocks():
@@ -75,18 +76,34 @@ def test_block_to_blockgroup_uses_majority_zone():
     assert result == {0: 7}
 
 
-def test_load_block_to_blockgroup(tmp_path, monkeypatch):
-    optimization_dir = tmp_path / "Optimization"
-    optimization_dir.mkdir()
-    pd.DataFrame({"Block": [1001, 1002], "BlockGroup": [100, 100]}).to_csv(
-        optimization_dir / "block_blockgroup_tract.csv", index=False
+def test_tract_and_block_conversion_uses_injected_crosswalk():
+    tract = nx.Graph()
+    tract.add_nodes_from([(0, {"area_id": 10}), (1, {"area_id": 20})])
+    blocks = nx.Graph()
+    blocks.add_nodes_from(
+        [(0, {"area_id": 1001}), (1, {"area_id": 1002}), (2, {"area_id": 2001})]
     )
-    monkeypatch.setattr(
-        conversion,
-        "CROSSWALK_PATH",
-        str(optimization_dir / "block_blockgroup_tract.csv"),
+    conv = LevelConverter(
+        {1001: 100, 1002: 100, 2001: 200},
+        block_to_tract={1001: 10, 1002: 10, 2001: 20},
     )
 
-    crosswalk = conversion._load_block_to_blockgroup()
+    expanded = conv.between(tract, {0: 3, 1: 7}, TRACT0, blocks, BLOCK0)
+    collapsed = conv.between(blocks, expanded, BLOCK0, tract, TRACT0)
+
+    assert expanded == {0: 3, 1: 3, 2: 7}
+    assert collapsed == {0: 3, 1: 7}
+
+
+def test_load_block_to_blockgroup_uses_scenario_role(tmp_path, scenario_factory):
+    crosswalk_path = tmp_path / "crosswalk.csv"
+    pd.DataFrame({"Block": [1001, 1002], "BlockGroup": [100, 100]}).to_csv(
+        crosswalk_path, index=False
+    )
+    scenario = scenario_factory(
+        sources={"optimization.crosswalk": {"path": str(crosswalk_path)}}
+    )
+
+    crosswalk = conversion._load_block_to_blockgroup(scenario)
 
     assert crosswalk == {1001: 100, 1002: 100}

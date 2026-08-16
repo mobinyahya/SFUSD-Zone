@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 import yaml
+from loaders import anchor_data_config, load_scenario
 
 from benchmark.config import (
     ChoiceMetricsRunConfig,
@@ -27,7 +28,9 @@ from metrics.base import MetricsContext
 from optimization.solution import ZoneSolution
 
 
-DEFAULT_MATCHING_TEMPLATE = Path("benchmark/matching/zones+hard_reserves_06frl.yaml")
+DEFAULT_MATCHING_TEMPLATE = Path(__file__).with_name(
+    "zones+hard_reserves_06frl.yaml"
+).resolve()
 GENERATED_POLICY_NAME = "generated_zones"
 MATCHING_DIRNAME = "matching"
 ZONE_CSV = "zones.csv"
@@ -259,21 +262,23 @@ def _execute_prepared_matching_run(
 
     matching_dir.mkdir(parents=True, exist_ok=True)
     assignments_dir.mkdir(parents=True, exist_ok=True)
-    with open(generated_config, "w", encoding="utf-8") as f:
-        yaml.safe_dump(json_ready(prepared_run.simulation_config), f, sort_keys=True)
+    _write_yaml(generated_config, prepared_run.simulation_config)
 
     if student_assignment_session is None:
-        _run_student_assignment(
+        distance_cache_reference = _run_student_assignment(
             prepared_run.simulation_config,
             assignments_dir,
             workers=prepared_run.workers,
         )
     else:
-        student_assignment_session.run(
+        distance_cache_reference = student_assignment_session.run(
             prepared_run.simulation_config,
             assignments_dir,
             workers=prepared_run.workers,
         )
+    if distance_cache_reference is not None:
+        prepared_run.simulation_config["distance-cache"] = distance_cache_reference
+    _write_yaml(generated_config, prepared_run.simulation_config)
     result = summarize_assignment_outputs(
         assignments_dir=assignments_dir,
         matching_dir=matching_dir,
@@ -579,11 +584,20 @@ def build_simulation_config(
     _deep_update(config, dict(template))
 
     paths = dict(config.get("paths") or {})
-    paths["zone-files"] = {GENERATED_POLICY_NAME: str(zone_csv.resolve())}
     paths["assignment-folder"] = str(assignments_dir.resolve())
-    paths["student-save"] = str(precomputed_dir.resolve())
-    _absolutize_direct_matching_paths(paths)
     config["paths"] = paths
+
+    data = anchor_data_config(
+        copy.deepcopy(dict(config.get("data") or {})), template_path.parent
+    )
+    overrides = data.setdefault("overrides", {})
+    sources = overrides.setdefault("sources", {})
+    zone_sources = sources.setdefault("assignment.zones", {})
+    zone_sources[GENERATED_POLICY_NAME] = str(zone_csv.resolve())
+    scenario = load_scenario(data)
+    filters = overrides.setdefault("filters", {})
+    filters["assignment"] = json_ready(scenario.filters["assignment"])
+    config["data"] = data
 
     precomputed_dir.mkdir(parents=True, exist_ok=True)
     utility_model = dict(config.get("utility-model") or {})
@@ -592,7 +606,7 @@ def build_simulation_config(
 
     config["policies"] = [GENERATED_POLICY_NAME]
     config["subconfig-name"] = template_path.stem
-    config["subconfigs"] = [template_path.stem]
+    config["subconfigs"] = []
     config["save-assignment"] = True
     config["zone-building-blocks"] = _zone_building_blocks(solution.level.unit)
     return config
@@ -714,7 +728,7 @@ def preserve_matching_payload(
 
 def _run_student_assignment(
     config: dict[str, Any], assignments_dir: Path, *, workers: int = 1
-) -> None:
+) -> dict[str, Any] | None:
     MarketGenerator = _market_generator_class()
 
     config["workers"] = max(1, int(workers or 1))
@@ -723,6 +737,7 @@ def _run_student_assignment(
         config=config,
     )
     MarketGenerator.execute_generator(market.create_iterations_generator())
+    return _market_distance_cache_reference(market)
 
 
 class StudentAssignmentSession:
@@ -731,20 +746,25 @@ class StudentAssignmentSession:
     def __init__(self) -> None:
         self.market = None
         self._static_signature: str | None = None
+        self._markets: dict[str, Any] = {}
 
     def run(
         self, config: dict[str, Any], assignments_dir: Path, *, workers: int = 1
-    ) -> None:
+    ) -> dict[str, Any] | None:
         run_config = copy.deepcopy(config)
         run_config["workers"] = max(1, int(workers or 1))
         static_signature = _student_assignment_static_signature(run_config)
-        if self.market is None or static_signature != self._static_signature:
+        cached_market = self._markets.get(static_signature)
+        if cached_market is None:
             self._initialize_market(run_config, assignments_dir, static_signature)
         else:
+            self.market = cached_market
+            self._static_signature = static_signature
             self._update_market(run_config, assignments_dir)
 
         MarketGenerator = self.market.__class__
         MarketGenerator.execute_generator(self.market.create_iterations_generator())
+        return _market_distance_cache_reference(self.market)
 
     def _initialize_market(
         self,
@@ -758,6 +778,7 @@ class StudentAssignmentSession:
             config=config,
         )
         self._static_signature = static_signature
+        self._markets[static_signature] = self.market
 
     def _update_market(self, config: dict[str, Any], assignments_dir: Path) -> None:
         if self.market is None:
@@ -778,36 +799,29 @@ def _market_generator_class():
     return MarketGenerator
 
 
+def _market_distance_cache_reference(market) -> dict[str, Any] | None:
+    students = getattr(market, "students", None)
+    reference = getattr(students, "distance_cache_reference", None)
+    return copy.deepcopy(reference) if isinstance(reference, Mapping) else None
+
+
 def _student_assignment_static_signature(config: Mapping[str, Any]) -> str:
-    signature_config = copy.deepcopy(dict(config))
-    paths = dict(signature_config.get("paths") or {})
-    paths.pop("assignment-folder", None)
-    paths.pop("zone-files", None)
-    signature_config["paths"] = paths
-    return json.dumps(
-        json_ready(signature_config),
-        sort_keys=True,
-        separators=(",", ":"),
+    from assignment.student_assignment.market_generator.school_choice_market import (
+        assignment_source_identity,
     )
+
+    scenario = load_scenario(config["data"])
+    return assignment_source_identity(scenario)
 
 
 def _default_matching_config() -> dict[str, Any]:
     return {
+        "data": {"scenario": "mission-bay-2324", "overrides": {}},
         "desig_after_mainround": False,
-        "grade": "KG",
         "iterations": {"start": 0, "end": 1},
-        "paths": {
-            "sfusd": "/share/data/school_choice",
-            "student-data": "Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv",
-            "program-data": "Data/Cleaned/programs_without_specialprogs_2324.csv",
-            "school-data": "Data/Cleaned/schools_rehauled_withMissionBay_2324.csv",
-            "estimate-path": "simulation-files/choice-model/estimates_2324_exp8_0514.csv",
-            "zone-files": {},
-            "citywide-or-lp-zones": {},
-        },
+        "paths": {"assignment-folder": "./assignment_output/assignments"},
         "r1-only": True,
         "random-seed": 2023,
-        "remove-special-lps": True,
         "rounds-merged-options": [0],
         "save-assignment": True,
         "subconfigs": [],
@@ -816,28 +830,6 @@ def _default_matching_config() -> dict[str, Any]:
             "enable": True,
             "list-length": "0.8*round(real_length)",
         },
-        "year": 23,
-    }
-
-
-def _absolutize_direct_matching_paths(paths: dict[str, Any]) -> None:
-    sfusd_root = paths.get("sfusd")
-    if not sfusd_root:
-        return
-    sfusd_root = os.path.expanduser(str(sfusd_root))
-    for key in ["estimate-path"]:
-        value = paths.get(key)
-        if value and not os.path.isabs(os.path.expanduser(str(value))):
-            paths[key] = os.path.abspath(os.path.join(sfusd_root, str(value)))
-
-    citywide = paths.get("citywide-or-lp-zones") or {}
-    paths["citywide-or-lp-zones"] = {
-        name: (
-            os.path.abspath(os.path.join(sfusd_root, str(path)))
-            if path and not os.path.isabs(os.path.expanduser(str(path)))
-            else path
-        )
-        for name, path in citywide.items()
     }
 
 
@@ -969,6 +961,8 @@ def _zone_building_blocks(unit: str) -> str:
         return "block_group"
     if unit == "Block":
         return "block"
+    if unit == "Tract":
+        return "tract"
     if unit == "attendance_area":
         return "attendance_area"
     raise ValueError(f"Unsupported matching unit: {unit}")
@@ -1028,6 +1022,11 @@ def _load_json(path: str | Path) -> dict[str, Any]:
 def _write_json(path: str | Path, data: Any) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(json_ready(data), f, indent=2, sort_keys=True)
+
+
+def _write_yaml(path: str | Path, data: Any) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(json_ready(data), f, sort_keys=True)
 
 
 def _relpath(path: str | Path, root: str | Path) -> str:

@@ -9,16 +9,23 @@ methods build the concrete :class:`Dataset`, :class:`Solver` and
 from __future__ import annotations
 
 import math
-import os
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field, fields
+from pathlib import Path
+from typing import Any
 
 import yaml
 
-from Config.Constants import SFUSD_DATA_ROOT
+from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
 _STRATEGIES = {"single", "recursive", "iterative_choice"}
+
+
+def _legacy_data_config() -> dict[str, Any]:
+    return {"scenario": "legacy", "overrides": {}}
 
 
 @dataclass
@@ -64,16 +71,14 @@ class OptimizationConfig:
     tolerance: float = 1e-6
 
     # --- data ingestion ----------------------------------------------- #
-    years: list[int] = field(default_factory=lambda: [14, 15, 16, 17, 18, 21, 22])
-    population_type: str = "GE"
-    drop_optout: bool = True
-    capacity_scenario: str = "A"
-    new_schools: bool = True
-    include_k8: bool = False
-    remove_city_wide: bool = False
-    graphs_dir: str = ""
+    data: dict[str, Any] = field(default_factory=_legacy_data_config)
 
     def __post_init__(self):
+        if not isinstance(self.data, Mapping):
+            raise ValueError("data must be a {scenario, overrides} map.")
+        self.data = deepcopy(dict(self.data))
+        self._data_scenario = load_scenario(self.data)
+
         # All levels in a run share one unit (the base graph is built per unit).
         specs = [LevelSpec.parse(level) for level in self.levels]
         units = {level.unit for level in specs}
@@ -89,13 +94,6 @@ class OptimizationConfig:
         if unsupported:
             raise ValueError(
                 f"No predefined graph size for levels: {', '.join(unsupported)}."
-            )
-        if not self.graphs_dir:
-            self.graphs_dir = os.path.join(
-                SFUSD_DATA_ROOT,
-                "Zones",
-                "Optimization",
-                "Graphs",
             )
         if self.strategy not in _STRATEGIES:
             raise ValueError(
@@ -115,8 +113,18 @@ class OptimizationConfig:
             ) from exc
         if math.isnan(self.boundary_prop) or self.boundary_prop > 1:
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
-        if not isinstance(self.remove_city_wide, bool):
-            raise ValueError("remove_city_wide must be a boolean.")
+        # Resolve the strict scenario-backed selectors eagerly.
+        self.years
+        self.grades
+        self.student_population
+        self.rounds
+        self.special_programs
+        self.program_population
+        self.capacity_scenario
+        self.include_k8
+        self.include_citywide
+        self.include_mission_bay
+        self.outside_district_students
         if (
             isinstance(self.centroid_neighbor_radius, bool)
             or not isinstance(self.centroid_neighbor_radius, int)
@@ -137,18 +145,76 @@ class OptimizationConfig:
             )
 
     # ------------------------------------------------------------------ #
+    # scenario-backed data settings
+    # ------------------------------------------------------------------ #
+    @property
+    def data_scenario(self) -> DataScenario:
+        """The immutable scenario loaded from the serializable ``data`` field."""
+        return self._data_scenario
+
+    @property
+    def years(self) -> tuple[str, ...]:
+        return tuple(self._data_scenario.filter("optimization", "years"))
+
+    @property
+    def grades(self) -> tuple[str, ...]:
+        return tuple(self._data_scenario.filter("optimization", "grades"))
+
+    @property
+    def student_population(self) -> str:
+        return self._data_scenario.filter("optimization", "student_population")
+
+    @property
+    def rounds(self) -> str | tuple[int, ...]:
+        value = self._data_scenario.filter("optimization", "rounds")
+        return value if value == "all" else tuple(value)
+
+    @property
+    def special_programs(self) -> str:
+        return self._data_scenario.filter("optimization", "special_programs")
+
+    @property
+    def program_population(self) -> str:
+        return self._data_scenario.filter("optimization", "program_population")
+
+    @property
+    def capacity_scenario(self) -> str:
+        return self._data_scenario.filter("optimization", "capacity_scenario")
+
+    @property
+    def include_k8(self) -> bool:
+        return self._data_scenario.filter("optimization", "include_k8")
+
+    @property
+    def include_citywide(self) -> bool:
+        return self._data_scenario.filter("optimization", "include_citywide")
+
+    @property
+    def include_mission_bay(self) -> bool:
+        return self._data_scenario.filter("optimization", "include_mission_bay")
+
+    @property
+    def outside_district_students(self) -> str:
+        return self._data_scenario.filter(
+            "optimization", "outside_district_students"
+        )
+
+    # ------------------------------------------------------------------ #
     # loading
     # ------------------------------------------------------------------ #
     @classmethod
     def from_yaml(cls, path: str) -> "OptimizationConfig":
-        with open(path, "r") as f:
+        config_path = Path(path).expanduser().resolve()
+        with config_path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
-        # Persisted pre-KaHIP configs included this obsolete partition setting.
-        raw.pop("level_to_split", None)
+        if not isinstance(raw, dict):
+            raise ValueError("Optimization config YAML must contain a map.")
         known = {f.name for f in fields(cls)}
         unknown = set(raw) - known
         if unknown:
             raise ValueError(f"Unknown config keys: {sorted(unknown)}.")
+        if "data" in raw:
+            raw["data"] = anchor_data_config(raw["data"], config_path.parent)
         return cls(**raw)
 
     # ------------------------------------------------------------------ #

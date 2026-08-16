@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import math
 import os
 import pickle
@@ -16,10 +17,11 @@ import geopandas as gpd
 import networkx as nx
 import pandas as pd
 
+from loaders import DataScenario
 from optimization.data import loaders
 from optimization.levels import LevelSpec
 
-CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 1
+CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 3
 CLOSER_NEIGHBORS_GRAPH_KEY = "closer_neighbors"
 SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY = "school_geometry_distances_miles"
 METERS_PER_MILE = 1609.344
@@ -40,22 +42,30 @@ class CloserNeighborData:
 
 
 class CloserNeighborArtifactStore:
-    """Build and load shared closer-neighbor artifacts by unit and level."""
+    """Build and load source-aware closer-neighbor artifacts by level."""
 
     def __init__(
         self,
-        graphs_dir: str | Path,
+        data: DataScenario,
         geometry_loader: GeometryLoader | None = None,
         school_loader: SchoolLoader | None = None,
     ) -> None:
-        self.graphs_dir = Path(graphs_dir)
+        if not isinstance(data, DataScenario):
+            raise TypeError("CloserNeighborArtifactStore data must be a DataScenario.")
+        self.data = data
+        self.cache_dir = (
+            data.cache_root
+            / "closer_neighbors"
+            / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
+        )
         self.geometry_loader = geometry_loader or self._load_geometry
-        self.school_loader = school_loader or loaders.load_school_coordinates
+        self.school_loader = school_loader or (
+            lambda: loaders.load_school_coordinates(self.data)
+        )
         self._memory_cache: dict[tuple[Path, str], CloserNeighborData] = {}
 
-    @staticmethod
-    def _load_geometry(unit: str) -> gpd.GeoDataFrame:
-        return loaders.load_census_shapefile(unit)
+    def _load_geometry(self, unit: str) -> gpd.GeoDataFrame:
+        return loaders.load_census_shapefile(unit, self.data)
 
     def attach_to_graph(self, level, G: nx.Graph) -> CloserNeighborData:
         """Attach the cached relation to ``G`` and return it."""
@@ -68,25 +78,67 @@ class CloserNeighborArtifactStore:
         """Return the exact geometry relation for one graph variant."""
         level = LevelSpec.parse(level)
         path = self.cache_path(level)
-        fingerprint = graph_geometry_fingerprint(G)
+        graph_fingerprint = graph_geometry_fingerprint(G)
+        source_fingerprint = self._source_fingerprint()
+        fingerprint = hashlib.sha256(
+            f"{graph_fingerprint}:{source_fingerprint}".encode("ascii")
+        ).hexdigest()[:20]
         memory_key = (path, fingerprint)
         if memory_key in self._memory_cache:
             return self._memory_cache[memory_key]
 
         payload = self._read_payload(path, level)
         variant = payload["variants"].get(fingerprint)
-        data = self._validated_data(variant, G) if variant is not None else None
+        data = (
+            self._validated_data(
+                variant,
+                G,
+                graph_fingerprint=graph_fingerprint,
+                source_fingerprint=source_fingerprint,
+            )
+            if variant is not None
+            else None
+        )
         if data is None:
             data = self._build(level, G)
-            data = self._save_variant(path, level, fingerprint, G, data)
+            data = self._save_variant(
+                path,
+                level,
+                fingerprint,
+                graph_fingerprint,
+                source_fingerprint,
+                G,
+                data,
+            )
 
         self._memory_cache[memory_key] = data
         return data
 
     def cache_path(self, level) -> Path:
-        """Config-independent cache path for a unit/level."""
+        """Return the shared v3 cache path for a unit/level."""
         level = LevelSpec.parse(level)
-        return self.graphs_dir / f"closer_neighbors_{level.name}.pickle"
+        return self.cache_dir / f"closer_neighbors_{level.name}.pickle"
+
+    def _source_fingerprint(self) -> str:
+        roles = [loaders.SCHOOL_ROLE]
+        for role in (
+            loaders.CENSUS_ROLE,
+            loaders.CROSSWALK_ROLE,
+            "optimization.geography.blockgroups",
+            "optimization.geography.tracts",
+        ):
+            try:
+                self.data.resolved(role)
+            except KeyError:
+                continue
+            roles.append(role)
+        payload = {
+            "source_manifest": self.data.source_manifest(roles),
+        }
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()[:20]
 
     def _build(self, level: LevelSpec, G: nx.Graph) -> CloserNeighborData:
         node_geometry = self._node_geometry(level, G)
@@ -177,6 +229,8 @@ class CloserNeighborArtifactStore:
         path: Path,
         level: LevelSpec,
         fingerprint: str,
+        graph_fingerprint: str,
+        source_fingerprint: str,
         G: nx.Graph,
         data: CloserNeighborData,
     ) -> CloserNeighborData:
@@ -184,11 +238,21 @@ class CloserNeighborArtifactStore:
         with _exclusive_lock(path.with_suffix(path.suffix + ".lock")):
             payload = self._read_payload(path, level)
             existing = payload["variants"].get(fingerprint)
-            validated = self._validated_data(existing, G) if existing else None
+            validated = (
+                self._validated_data(
+                    existing,
+                    G,
+                    graph_fingerprint=graph_fingerprint,
+                    source_fingerprint=source_fingerprint,
+                )
+                if existing
+                else None
+            )
             if validated is not None:
                 return validated
             payload["variants"][fingerprint] = {
-                "graph_fingerprint": fingerprint,
+                "graph_fingerprint": graph_fingerprint,
+                "source_fingerprint": source_fingerprint,
                 "node_count": G.number_of_nodes(),
                 "edge_count": G.number_of_edges(),
                 "school_ids": data.school_ids,
@@ -225,8 +289,18 @@ class CloserNeighborArtifactStore:
         return payload
 
     @staticmethod
-    def _validated_data(variant, G: nx.Graph) -> CloserNeighborData | None:
+    def _validated_data(
+        variant,
+        G: nx.Graph,
+        *,
+        graph_fingerprint: str,
+        source_fingerprint: str,
+    ) -> CloserNeighborData | None:
         if not isinstance(variant, dict):
+            return None
+        if variant.get("graph_fingerprint") != graph_fingerprint or variant.get(
+            "source_fingerprint"
+        ) != source_fingerprint:
             return None
         try:
             school_ids = tuple(int(school_id) for school_id in variant["school_ids"])

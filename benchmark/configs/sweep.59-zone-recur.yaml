@@ -4,6 +4,9 @@ name: full-benchmark
 mode: run  # run | metrics
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   save_solver_logs: true
   max_distance: 3.5
   hints: voronoi
@@ -45,4 +48,3 @@ metrics:
   compute_stage_metrics: false
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
-

@@ -1,9 +1,8 @@
 """Prepare paired KG round-one student and program inputs.
 
 The full outputs retain special-program students and alternatives so the
-simulator's ``remove-special-lps`` option can turn them on or off. Explicit
-no-special outputs are also written for consumers that do not apply that
-runtime option, such as standalone choice-utility evaluation.
+scenario's ``assignment.special_programs`` mode can select them. Explicit
+no-special outputs are also written for standalone consumers.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import pandas as pd
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from assignment.student_assignment.definitions.constants import SPECIAL_PROGRAMS  # noqa: E402
+from loaders import SPECIAL_PROGRAMS  # noqa: E402
 
 
 DEFAULT_CLEANED_DIR = Path("/share/data/school_choice/Data/Cleaned")

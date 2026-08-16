@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
+from loaders import anchor_data_config
 
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
@@ -39,6 +40,8 @@ def load_config(config_path: Path, subconfig_name: str | None) -> dict:
         subconfig = yaml.safe_load(subconfig_file)
 
     merged = {**config, **subconfig}
+    if isinstance(merged.get("data"), dict):
+        merged["data"] = anchor_data_config(merged["data"], config_path.parent)
     merged["subconfig-name"] = subconfig_name
     merged["save-assignment"] = True
     return merged

@@ -1,8 +1,9 @@
 """Generate and compile manual reviews of missing Census Block adjacency.
 
-The review treats every Block_0 node as a candidate for every eligible school.
-Each case is a ``(focal node, centroid school)`` pair for which none of the
-focal node's current neighbors is strictly closer to the school centroid.
+The review treats every Block_0 node as a candidate for every school with
+coordinates. Each case is a ``(focal node, centroid school)`` pair for which
+none of the focal node's current neighbors is strictly closer to the school
+centroid.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import argparse
 import csv
 import json
 import math
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,30 +24,32 @@ import matplotlib.patches as mpatches
 import numpy as np
 import yaml
 
-from optimization.config import OptimizationConfig
-from optimization.data import loaders
-from optimization.data.closer_neighbors import (
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from optimization.config import OptimizationConfig  # noqa: E402
+from optimization.data import loaders  # noqa: E402
+from optimization.data.closer_neighbors import (  # noqa: E402
     CLOSER_NEIGHBORS_GRAPH_KEY,
     SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY,
 )
-from optimization.data.dataset import Dataset
-from optimization.solution import graph_fingerprint
+from optimization.data.dataset import Dataset  # noqa: E402
+from optimization.solution import graph_fingerprint  # noqa: E402
 
-
-ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT / "analysis" / "plots" / "manual_cases"
 DEFAULT_MANIFEST = Path(__file__).with_name("manual_case_manifest.json")
 DEFAULT_SUMMARY = Path(__file__).with_name("manual_case_summary.csv")
 DEFAULT_SELECTIONS = Path(__file__).with_name("manual_case_selections.yaml")
-DEFAULT_OVERRIDES = ROOT / "Config" / "manual_block_edges.yaml"
+DEFAULT_OVERRIDES = ROOT / "loaders" / "configs" / "manual_block_edges.yaml"
 DEFAULT_EDGE_ADDITIONS = Path(__file__).with_name("manual_block_edge_additions.yaml")
 DEFAULT_COMPILED_EDGE_ADDITIONS = (
-    ROOT / "Config" / "manual_block_edge_additions.yaml"
+    ROOT / "loaders" / "configs" / "manual_block_edge_additions.yaml"
 )
 BASE_RADIUS_MILES = 0.25
 EARTH_RADIUS_MILES = 3958.7613
 DISTANCE_TOLERANCE = 1e-9
-MANIFEST_SCHEMA_VERSION = 3
+MANIFEST_SCHEMA_VERSION = 4
 
 ROLE_COLORS = {
     "nearby": "#3b82f6",
@@ -56,10 +60,17 @@ ROLE_COLORS = {
 
 
 def school_centroids(dataset: Dataset) -> dict[int, int]:
-    """Resolve every eligible school to its Block_0 node."""
+    """Resolve every coordinate-bearing school to its Block_0 node."""
+    G = dataset.graph_for("Block_0")
+    first_node = next(iter(G.nodes()), None)
+    school_ids = (
+        sorted(G.graph[SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY][first_node])
+        if first_node is not None
+        else []
+    )
     return {
         school_id: dataset.centroids_for("Block_0", [school_id])[0]
-        for school_id in dataset.school_ids_for("Block_0")
+        for school_id in school_ids
     }
 
 
@@ -110,12 +121,8 @@ def build_manifest(
         raise ValueError("base_radius_miles must be finite and non-negative.")
     nodes = list(G.nodes())
     node_indices = {node: index for index, node in enumerate(nodes)}
-    latitudes = np.radians(
-        np.asarray([float(G.nodes[node]["lat"]) for node in nodes])
-    )
-    longitudes = np.radians(
-        np.asarray([float(G.nodes[node]["lon"]) for node in nodes])
-    )
+    latitudes = np.radians(np.asarray([float(G.nodes[node]["lat"]) for node in nodes]))
+    longitudes = np.radians(np.asarray([float(G.nodes[node]["lon"]) for node in nodes]))
     focal_distances: dict[int, np.ndarray] = {}
     cases = enumerate_cases(G, centroids_by_school)
 
@@ -155,9 +162,7 @@ def build_manifest(
             )
             radius = base_radius_miles
             if missing_closer.any():
-                nearest_closer_distance = float(
-                    local_distances[missing_closer].min()
-                )
+                nearest_closer_distance = float(local_distances[missing_closer].min())
                 radius = max(radius, nearest_closer_distance)
             within_radius = {
                 node
@@ -195,9 +200,7 @@ def build_manifest(
                 roles.append("existing_neighbor")
             if node in within_radius:
                 roles.append("within_radius")
-            is_closer = (
-                school_distances[node_indices[node]] < focal_school_distance
-            )
+            is_closer = school_distances[node_indices[node]] < focal_school_distance
             if is_closer:
                 roles.append("strictly_closer")
             if (
@@ -212,9 +215,7 @@ def build_manifest(
             labels[str(label)] = {
                 "node": int(node),
                 "area_id": int(G.nodes[node]["area_id"]),
-                "distance_to_focal_miles": float(
-                    local_distances[node_indices[node]]
-                ),
+                "distance_to_focal_miles": float(local_distances[node_indices[node]]),
                 "distance_to_centroid_miles": float(
                     school_distances[node_indices[node]]
                 ),
@@ -249,7 +250,7 @@ def build_manifest(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "level": "Block_0",
         "case_definition": (
-            "Every Block_0 node against every eligible school centroid; "
+            "Every Block_0 node against every coordinate-bearing school centroid; "
             "max_distance and candidate restrictions are ignored."
         ),
         "base_radius_miles": base_radius_miles,
@@ -313,9 +314,7 @@ def compile_selections(manifest: dict, selections: dict) -> tuple[list, dict]:
                     "strictly closer non-neighbor."
                 )
             target = case["labels"][str(label)]
-            edge = tuple(
-                sorted((int(case["focal_area_id"]), int(target["area_id"])))
-            )
+            edge = tuple(sorted((int(case["focal_area_id"]), int(target["area_id"]))))
             edges_to_cases[edge].add(case_number)
 
     edges = [list(edge) for edge in sorted(edges_to_cases)]
@@ -417,9 +416,7 @@ def render_case_plot(
     ]
     if case["include_nearby_non_neighbors"]:
         legend.append(
-            mpatches.Patch(
-                color=ROLE_COLORS["nearby"], label="Nearby non-neighbor"
-            )
+            mpatches.Patch(color=ROLE_COLORS["nearby"], label="Nearby non-neighbor")
         )
     if case["centroid_label"] is not None:
         legend.append(
@@ -437,9 +434,9 @@ def render_case_plot(
     plt.close(fig)
 
 
-def load_block_geometry(G) -> gpd.GeoDataFrame:
+def load_block_geometry(G, data=None) -> gpd.GeoDataFrame:
     """Load one WGS84 polygon per graph node."""
-    base = loaders.load_census_shapefile("Block")
+    base = loaders.load_census_shapefile("Block", data)
     area_to_node = {
         int(attrs["area_id"]): int(node) for node, attrs in G.nodes(data=True)
     }
@@ -497,7 +494,7 @@ def generate(
 
     if plots:
         output_dir.mkdir(parents=True, exist_ok=True)
-        geometry = load_block_geometry(G)
+        geometry = load_block_geometry(G, dataset.data)
         for index, case in enumerate(manifest["cases"], start=1):
             path = output_dir / case["plot"]
             if overwrite or not path.exists():
@@ -548,9 +545,7 @@ def compile_edge_additions(additions: dict) -> list[list[int]]:
 
         neighbors = [] if raw_neighbors is None else raw_neighbors
         if not isinstance(neighbors, list):
-            raise ValueError(
-                f"Manual edge additions for Block {focal} must be a list."
-            )
+            raise ValueError(f"Manual edge additions for Block {focal} must be a list.")
         for raw_neighbor in neighbors:
             if isinstance(raw_neighbor, bool):
                 raise ValueError(
@@ -587,13 +582,9 @@ def _distances_from(
     dlat = latitudes - latitudes[source_index]
     dlon = longitudes - longitudes[source_index]
     haversine = np.sin(dlat / 2) ** 2 + (
-        np.cos(latitudes[source_index])
-        * np.cos(latitudes)
-        * np.sin(dlon / 2) ** 2
+        np.cos(latitudes[source_index]) * np.cos(latitudes) * np.sin(dlon / 2) ** 2
     )
-    return EARTH_RADIUS_MILES * 2 * np.arcsin(
-        np.sqrt(np.clip(haversine, 0.0, 1.0))
-    )
+    return EARTH_RADIUS_MILES * 2 * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0)))
 
 
 def _primary_role(roles: list[str]) -> str:
@@ -619,7 +610,10 @@ def _number_label(ax, x: float, y: float, label: int) -> None:
         zorder=4,
     )
     text.set_path_effects(
-        [path_effects.Stroke(linewidth=1.7, foreground="#111827"), path_effects.Normal()]
+        [
+            path_effects.Stroke(linewidth=1.7, foreground="#111827"),
+            path_effects.Normal(),
+        ]
     )
 
 

@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from choice import mnl
 from Config.metrics_config import MetricColumns
 from optimization.data.contiguity import boundary_edges
 from optimization.levels import LevelSpec
@@ -13,6 +12,7 @@ from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import make_grid_problem
 from metrics import MetricsCalculator
+from metrics import choice as choice_metrics
 from metrics.spatial import compute_spatial_metrics
 
 
@@ -232,7 +232,7 @@ def test_iterative_metrics_select_best_choice_utility():
     assert result.run["stages"][2]["choice_utility"] == 2.0
 
 
-def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):
+def test_choice_metric_uses_configured_mnl_method(tmp_path):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(
@@ -246,13 +246,13 @@ def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):
     ).to_csv(utility_path, index=False)
     pd.DataFrame(
         {
-            "studentno": [1, 2],
-            "census_blockgroup": [1001, 1002],
+            "studentno": [1, 2, 3],
+            "census_blockgroup": [1001, 1002, 1001],
+            "grade": ["KG", "KG", "01"],
+            "r1_ranked_idschool": ["[100]", "[200]", "[100]"],
+            "r1_programs": ["['GE']", "['GE']", "['GE']"],
         }
     ).to_csv(student_path, index=False)
-
-    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
-    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
 
     solution = ZoneSolution(
         problem=make_grid_problem(2, 2),
@@ -260,14 +260,50 @@ def test_choice_metric_uses_configured_mnl_method(tmp_path, monkeypatch):
         status="FEASIBLE",
     )
     column = MetricColumns.CHOICE_TOTAL_PREASSIGNMENT_UTILITY
+    data = {
+        "scenario": "legacy",
+        "overrides": {
+            "sources": {
+                "choice.estimate": {
+                    "path": str(utility_path),
+                    "classification": "restricted",
+                },
+                "assignment.students": {
+                    "path": str(student_path),
+                    "classification": "restricted",
+                },
+            },
+            "filters": {
+                "assignment": {
+                    "year": "2324",
+                    "grades": ["KG"],
+                    "student_population": "applicant",
+                    "rounds": [1],
+                    "special_programs": "include",
+                    "capacity_profile": "status_quo",
+                    "include_mission_bay": True,
+                }
+            },
+        },
+    }
 
     max_result = MetricsCalculator(
         solution,
-        config={"choice_model": "mnl", "choice_model_method": "max"},
+        config={
+            "choice_model": "mnl",
+            "choice_model_method": "max",
+            "data": data,
+        },
+        modules=[choice_metrics.compute],
     ).compute()
     logsum_result = MetricsCalculator(
         solution,
-        config={"choice_model": "mnl", "choice_model_method": "logsum"},
+        config={
+            "choice_model": "mnl",
+            "choice_model_method": "logsum",
+            "data": data,
+        },
+        modules=[choice_metrics.compute],
     ).compute()
 
     expected_logsum = (

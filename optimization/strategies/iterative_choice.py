@@ -31,7 +31,7 @@ class IterativeChoiceStrategy(Strategy):
         )
         scale = float(self.options.get("choice_utility_scale", 100.0))
         use_choice_utility_hints = bool(self.options.get("choice_utility_hints", False))
-        model = get_configured_choice_model(self.options)
+        model = get_configured_choice_model(self.options, dataset.data)
 
         base_problem = dataset.problem_for(target)
         lower_bound, upper_bound = model.utility_bounds(base_problem)

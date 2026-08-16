@@ -8,10 +8,38 @@ import pytest
 
 from choice import mnl
 from choice.models import MNLChoiceModel, get_configured_choice_model
+from loaders import load_scenario
 from optimization.tests.synthetic import make_grid_problem
 
 
-def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
+ASSIGNMENT_FILTERS = {
+    "year": "2324",
+    "grades": ["KG"],
+    "student_population": "applicant",
+    "rounds": [1],
+    "special_programs": "include",
+    "capacity_profile": "status_quo",
+    "include_mission_bay": True,
+}
+
+
+def _scenario(utility_path, student_path):
+    return load_scenario(
+        {
+            "scenario": "legacy",
+            "overrides": {
+                "sources": {
+                    "choice.estimate": {"path": str(utility_path)},
+                    "assignment.students": {"path": str(student_path)},
+                },
+                "filters": {"assignment": ASSIGNMENT_FILTERS},
+            },
+        },
+        environ={},
+    )
+
+
+def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(
@@ -25,14 +53,15 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
         {
             "studentno": [1, 2],
             "census_blockgroup": [1001, 1002],
+            "grade": ["KG", "KG"],
+            "r1_ranked_idschool": ["[100]", "[200]"],
+            "r1_programs": ["['GE']", "['GE']"],
         }
     ).to_csv(student_path, index=False)
 
     problem = make_grid_problem(2, 2)
     assignment = {0: 0, 1: 0, 2: 1, 3: 1}
-    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
-    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
-    model = MNLChoiceModel(method="max")
+    model = MNLChoiceModel(_scenario(utility_path, student_path), method="max")
 
     evaluated = model.evaluate_with_cuts(problem, assignment)
 
@@ -44,9 +73,7 @@ def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path, monkeypatch):
     assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
 
 
-def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(
-    tmp_path, monkeypatch
-):
+def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(tmp_path):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(
@@ -61,6 +88,9 @@ def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(
         {
             "studentno": [1],
             "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
         }
     ).to_csv(student_path, index=False)
 
@@ -68,9 +98,9 @@ def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(
     problem.G.nodes[1]["school_ids"] = [300]
     problem.G.nodes[1]["num_schools"] = 1
     problem.G.graph["school_data"][300] = {}
-    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
-    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
-    evaluator = mnl.MNLZoningUtility(method="max")
+    evaluator = mnl.MNLZoningUtility(
+        _scenario(utility_path, student_path), method="max"
+    )
 
     cuts = evaluator.choice_utility_hint_cuts(problem)
 
@@ -83,7 +113,7 @@ def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(
 
 @pytest.mark.parametrize("method", ["max", "logsum"])
 def test_mnl_block_impacts_match_direct_add_remove_deltas(
-    tmp_path, monkeypatch, method
+    tmp_path, method
 ):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
@@ -99,6 +129,9 @@ def test_mnl_block_impacts_match_direct_add_remove_deltas(
         {
             "studentno": [1],
             "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
         }
     ).to_csv(student_path, index=False)
 
@@ -107,9 +140,9 @@ def test_mnl_block_impacts_match_direct_add_remove_deltas(
     problem.G.nodes[1]["num_schools"] = 1
     problem.G.graph["school_data"][300] = {}
     assignment = {0: 0, 1: 0, 2: 1, 3: 1}
-    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
-    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
-    evaluator = mnl.MNLZoningUtility(method=method)
+    evaluator = mnl.MNLZoningUtility(
+        _scenario(utility_path, student_path), method=method
+    )
 
     prepared = evaluator._prepare(problem, assignment)
     impacts = evaluator._block_impacts(
@@ -140,7 +173,7 @@ def test_mnl_block_impacts_match_direct_add_remove_deltas(
 
 
 @pytest.mark.parametrize("method", ["max", "logsum"])
-def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, monkeypatch, method):
+def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, method):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(
@@ -154,15 +187,18 @@ def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, monkeypatch, me
         {
             "studentno": [1],
             "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
         }
     ).to_csv(student_path, index=False)
 
     problem = make_grid_problem(2, 2)
     incumbent = {0: 0, 1: 0, 2: 1, 3: 1}
     alternative = {0: 0, 1: 1, 2: 1, 3: 1}
-    monkeypatch.setattr(mnl, "DEFAULT_UTILITY_PATH", str(utility_path))
-    monkeypatch.setattr(mnl, "DEFAULT_STUDENT_PATH", str(student_path))
-    evaluator = mnl.MNLZoningUtility(method=method)
+    evaluator = mnl.MNLZoningUtility(
+        _scenario(utility_path, student_path), method=method
+    )
 
     evaluated = evaluator.evaluate_with_cuts(problem, incumbent)
     cut = next(cut for cut in evaluated.cuts if cut.node == 1 and cut.zone == 1)
@@ -177,8 +213,46 @@ def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, monkeypatch, me
     assert rhs == pytest.approx(true_utility)
 
 
-def test_configured_choice_model_defaults_to_mnl():
-    assert isinstance(get_configured_choice_model({}), MNLChoiceModel)
+def test_configured_choice_model_defaults_to_mnl(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    utility_path.write_text("studentno\n", encoding="utf-8")
+    student_path.write_text("studentno\n", encoding="utf-8")
+
+    assert isinstance(
+        get_configured_choice_model({}, _scenario(utility_path, student_path)),
+        MNLChoiceModel,
+    )
+
+
+def test_mnl_uses_central_assignment_student_selection(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "100-GE-KG": [3.0, 100.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1001],
+            "grade": ["KG", "01"],
+            "r1_ranked_idschool": ["[100]", "[100]"],
+            "r1_programs": ["['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+    problem = make_grid_problem(2, 2)
+
+    evaluator = mnl.MNLZoningUtility(
+        _scenario(utility_path, student_path), method="max"
+    )
+
+    assert evaluator.preassignment_utility(
+        problem, {0: 0, 1: 0, 2: 1, 3: 1}
+    ) == pytest.approx(3.0)
+    assert evaluator.student_df["studentno"].tolist() == [1]
 
 
 def test_log_helpers_handle_extreme_values_without_runtime_warnings():

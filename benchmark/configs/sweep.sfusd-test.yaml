@@ -4,6 +4,9 @@ name: sfusd_zone_test
 mode: run  # run | metrics
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   carry_over_compute: true
   save_solver_logs: true
   save_solver_progress: true

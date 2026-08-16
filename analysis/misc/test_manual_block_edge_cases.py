@@ -8,6 +8,9 @@ from shapely.geometry import box
 
 from analysis.misc.manual_block_edge_cases import (
     BASE_RADIUS_MILES,
+    DEFAULT_COMPILED_EDGE_ADDITIONS,
+    DEFAULT_EDGE_ADDITIONS,
+    DEFAULT_OVERRIDES,
     build_manifest,
     compile_edge_additions,
     compile_edge_additions_file,
@@ -15,6 +18,7 @@ from analysis.misc.manual_block_edge_cases import (
     compile_selections,
     enumerate_cases,
     render_case_plot,
+    school_centroids,
     _set_local_bounds,
 )
 
@@ -45,15 +49,44 @@ def _graph():
     return G
 
 
+def test_compile_defaults_use_canonical_loader_configs_and_analysis_source():
+    assert DEFAULT_OVERRIDES.as_posix().endswith(
+        "loaders/configs/manual_block_edges.yaml"
+    )
+    assert DEFAULT_COMPILED_EDGE_ADDITIONS.as_posix().endswith(
+        "loaders/configs/manual_block_edge_additions.yaml"
+    )
+    assert DEFAULT_EDGE_ADDITIONS.as_posix().endswith(
+        "analysis/misc/manual_block_edge_additions.yaml"
+    )
+
+
 def test_enumerate_cases_treats_each_node_school_pair_separately():
     G = _graph()
 
     cases = enumerate_cases(G, {100: 0, 200: 0})
 
-    assert [(case["case_number"], case["focal_node"], case["school_id"]) for case in cases] == [
+    assert [
+        (case["case_number"], case["focal_node"], case["school_id"]) for case in cases
+    ] == [
         (1, 2, 100),
         (2, 2, 200),
     ]
+
+
+def test_school_centroids_uses_every_school_in_geometry_artifact():
+    G = _graph()
+
+    class DatasetStub:
+        def graph_for(self, level):
+            assert level == "Block_0"
+            return G
+
+        def centroids_for(self, level, school_ids):
+            assert level == "Block_0"
+            return [{100: 0, 200: 2}[school_ids[0]]]
+
+    assert school_centroids(DatasetStub()) == {100: 0, 200: 2}
 
 
 def test_manifest_defaults_to_existing_graph_neighbors_only():
@@ -75,9 +108,7 @@ def test_optional_radius_labels_closer_missing_nodes_and_compiles_stable_ids():
     )
     case = manifest["cases"][0]
     target_label = next(
-        label
-        for label, info in case["labels"].items()
-        if info["node"] == 0
+        label for label, info in case["labels"].items() if info["node"] == 0
     )
 
     assert case["case_number"] == 1
@@ -173,15 +204,11 @@ def test_compile_edge_additions_file_writes_separate_override(tmp_path):
     count = compile_edge_additions_file(additions_path, output_path)
 
     assert count == 1
-    assert output_path.read_text(encoding="utf-8") == (
-        "edges:\n- - 1000\n  - 1002\n"
-    )
+    assert output_path.read_text(encoding="utf-8") == ("edges:\n- - 1000\n  - 1002\n")
 
 
 @pytest.mark.parametrize("include_nearby_non_neighbors", [False, True])
-def test_render_case_plot_writes_numbered_png(
-    tmp_path, include_nearby_non_neighbors
-):
+def test_render_case_plot_writes_numbered_png(tmp_path, include_nearby_non_neighbors):
     G = _graph()
     manifest = build_manifest(
         G,

@@ -15,7 +15,6 @@ Usage:
 
 import hashlib
 import json
-import os
 import pathlib
 import re
 import sys
@@ -28,8 +27,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
-sys.path.append(os.getcwd())
+sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
 
+from loaders import anchor_data_config
 from student_assignment.market_generator.list_augmentation import (
     augment_preferences,
     identify_oversubscribed_programs,
@@ -269,6 +269,10 @@ def run_augmented_da(config_path: str) -> None:
         raw_config = yaml.safe_load(config_file)
 
     custom_config = resolve_variables(raw_config, raw_config)
+    if isinstance(custom_config.get("data"), dict):
+        custom_config["data"] = anchor_data_config(
+            custom_config["data"], pathlib.Path(config_path).resolve().parent
+        )
 
     # Use AugmentedMarketGenerator instead of plain
     # MarketGenerator

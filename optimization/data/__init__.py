@@ -1,12 +1,15 @@
 """Data layer: ingestion, graph generation, level conversion, contiguity.
 
-This layer owns everything between the raw source files and a ready-to-solve
+This layer turns shared, scenario-resolved source tables into a ready-to-solve
 :class:`~optimization.problem.ZoneProblem`:
 
-* ``loaders``      -- read the raw census/student/school/distance/adjacency data
+* ``loaders``      -- optimization-specific transforms over top-level loaders
 * ``graph_builder``-- build base graphs and aggregate them into a hierarchy
-* ``dataset``      -- lazily expose graphs + centroids and emit ZoneProblems
+* ``dataset``      -- expose content-addressed graphs, centroids and problems
 * ``conversion``   -- map assignments between any two levels
 * ``contiguity``   -- strict-contiguity primitives shared by solvers/strategies
 * ``geography``    -- low-level geographic distance calculations
+
+Raw paths and generated-cache roots are never selected here; they come from a
+top-level :class:`loaders.config.DataScenario`.
 """

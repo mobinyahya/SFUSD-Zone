@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from choice.mnl import MNLZoningUtility
 from choice.objective import ChoiceCut, ChoiceEvaluation
+from loaders import DataScenario
 from optimization.problem import ZoneProblem
 
 
@@ -39,8 +40,8 @@ class DistanceChoiceModel(ChoiceModel):
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> float:
         return sum(
-            self._zone_utility(problem, node, assignment[node])
-            for node in problem.nodes
+            self._zone_utility(problem, node, zone)
+            for node, zone in assignment.items()
         )
 
     def evaluate_with_cuts(
@@ -80,6 +81,7 @@ class MNLChoiceModel(ChoiceModel):
 
     def __init__(
         self,
+        data: DataScenario,
         method: str = "logsum",
         area_column: str | None = None,
         lower_bound: float = -1_000_000_000.0,
@@ -89,6 +91,7 @@ class MNLChoiceModel(ChoiceModel):
         self.lower_bound = float(lower_bound)
         self.upper_bound = float(upper_bound)
         self.evaluator = MNLZoningUtility(
+            data,
             method=method,
             area_column=area_column,
             empty_utility=empty_utility,
@@ -125,13 +128,16 @@ def get_choice_model(name: str, **options) -> ChoiceModel:
     return _MODELS[name](**options)
 
 
-def get_configured_choice_model(options: Mapping[str, Any]) -> ChoiceModel:
+def get_configured_choice_model(
+    options: Mapping[str, Any], data: DataScenario
+) -> ChoiceModel:
     """Build the choice model described by optimization config options."""
 
     name = str(options.get("choice_model", "mnl"))
     if name == "mnl":
         return get_choice_model(
             name,
+            data=data,
             method=str(options.get("choice_model_method", "logsum")),
         )
     return get_choice_model(name)

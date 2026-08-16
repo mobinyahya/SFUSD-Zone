@@ -160,17 +160,29 @@ def build_simulation_config(
         )
     config = build_policy_simulation_config(base_config, list(subconfigs), matches_root)
     config["evaluation-population"] = evaluation_population
-    paths = copy.deepcopy(config.get("paths") or {})
-    zone_files = copy.deepcopy(paths.get("zone-files") or {})
-    zone_files["18zone_2"] = str(small_zones)
-    zone_files["6zone-1"] = str(medium_zones)
-    paths["student-save"] = str(matches_root / "precomputed")
+    data = copy.deepcopy(config["data"])
+    overrides = data.setdefault("overrides", {})
+    sources = overrides.setdefault("sources", {})
+    zone_files = sources.setdefault("assignment.zones", {})
+    zone_files["18zone_2"] = {
+        "path": str(small_zones),
+        "classification": "public",
+    }
+    zone_files["6zone-1"] = {
+        "path": str(medium_zones),
+        "classification": "public",
+    }
     if real_student_data is not None:
-        paths["student-data"] = str(real_student_data)
+        sources["assignment.students"] = {
+            "path": str(real_student_data),
+            "classification": "restricted",
+        }
     if program_data is not None:
-        paths["program-data"] = str(program_data)
-    paths["zone-files"] = zone_files
-    config["paths"] = paths
+        sources["assignment.programs"] = {
+            "path": str(program_data),
+            "classification": "internal",
+        }
+    config["data"] = data
     if real_student_data is not None:
         config["utility-model"] = {
             "designate-lp-for-all": False,
@@ -179,8 +191,14 @@ def build_simulation_config(
         }
         config["random-seed"] = 2023
         config["r1-only"] = True
-        config["remove-special-lps"] = not include_special_programs
         config["rounds-merged-options"] = [0]
+        assignment_filters = overrides.setdefault("filters", {}).setdefault(
+            "assignment", {}
+        )
+        assignment_filters["special_programs"] = (
+            "include" if include_special_programs else "exclude_any_special"
+        )
+        assignment_filters["rounds"] = [1]
     return config
 
 

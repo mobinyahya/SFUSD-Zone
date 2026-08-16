@@ -68,6 +68,9 @@ def test_simulate_executes_every_configured_subconfig():
     market = MarketGenerator.__new__(MarketGenerator)
     market.configurator = FakeConfigurator()
     market.config = market.configurator.config
+    market._materialize_config = Mock(
+        side_effect=lambda config: setattr(market, "config", config)
+    )
     market._reset_zones = Mock()
     market.create_iterations_generator = Mock(
         side_effect=[iter(["first"]), iter(["second"])]
@@ -76,6 +79,7 @@ def test_simulate_executes_every_configured_subconfig():
     market.simulate()
 
     assert market.configurator.index == 2
+    assert market._materialize_config.call_count == 2
     assert market.create_iterations_generator.call_count == 2
     assert market._reset_zones.call_count == 2
 
@@ -185,6 +189,24 @@ def test_non_designation_boost_comes_from_config():
     np.testing.assert_array_equal(priorities, [[37, 0]])
 
 
+def test_round_merging_uses_ordinals_and_restricts_legacy_codes():
+    students = SimpleNamespace(
+        first_round=np.array([0, 1, 3]),
+        rounds=4,
+    )
+    market = SimpleNamespace(n=3, num_programs=1, students=students)
+    generator = PriorityGenerator(market)
+
+    np.testing.assert_array_equal(
+        generator._set_rounds_merged(0).ravel(), [3000, 2000, 0]
+    )
+    np.testing.assert_array_equal(
+        generator._set_rounds_merged("all").ravel(), [0, 0, 0]
+    )
+    with pytest.raises(ValueError, match="supports at most three selected rounds"):
+        generator._set_rounds_merged(123)
+
+
 def test_unknown_tiebreakers_and_missing_lottery_iteration_are_fatal():
     market = SimpleNamespace(
         n=1,
@@ -227,6 +249,7 @@ def test_installed_cli_runs_subconfig_aware_simulation(tmp_path, monkeypatch):
     config_path.write_text(
         yaml.safe_dump(
             {
+                "data": {"scenario": "legacy", "overrides": {}},
                 "paths": {"assignment-folder": str(assignment_path)},
                 "subconfigs": ["first", "second"],
             }

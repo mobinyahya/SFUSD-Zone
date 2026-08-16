@@ -28,16 +28,14 @@ if str(PROJECT_ROOT) not in sys.path:
 from analysis.recalculate_updated_frl_metrics import (  # noqa: E402
     DEFAULT_2020_BLOCKS,
     DEFAULT_UPDATED_FRL,
+    config_data_scenario,
     load_frl_lookup,
     load_2020_block_geometry,
     load_yaml,
-    parse_ranked_list,
     resolve_data_path,
     student_frl_data,
 )
-from assignment.student_assignment.definitions.constants import (  # noqa: E402
-    SPECIAL_PROGRAMS,
-)
+from loaders import load_student_records  # noqa: E402
 
 DEFAULT_CONFIG = PROJECT_ROOT / "assignment/configs/kumar.config.yaml"
 DEFAULT_OUTPUT = PROJECT_ROOT / "analysis/attendance_area_student_demographics.csv"
@@ -105,20 +103,13 @@ def configured_students(
     lookup: pd.Series,
     block_geometry: gpd.GeoDataFrame,
 ) -> pd.DataFrame:
-    students = pd.read_csv(resolve_data_path(config, "student-data"), low_memory=False)
-    grade = str(config.get("grade", "KG"))
-    students = students.loc[students["grade"].astype("string") == grade].copy()
-
-    if config.get("remove-special-lps", False):
-        if "r1_programs" not in students:
-            raise ValueError("student data has no r1_programs column")
-        special_programs = set(SPECIAL_PROGRAMS)
-        has_special_program = (
-            students["r1_programs"]
-            .map(parse_ranked_list)
-            .map(lambda programs: bool(set(programs) & special_programs))
-        )
-        students = students.loc[~has_special_program].copy()
+    scenario = config_data_scenario(config)
+    students = load_student_records(
+        scenario,
+        "assignment.students",
+        filter_group="assignment",
+        low_memory=False,
+    )
 
     required = {
         "studentno",
@@ -198,7 +189,7 @@ def fallback_block_report(students: pd.DataFrame) -> pd.DataFrame:
 
 
 def attendance_schools(config: dict[str, Any]) -> pd.DataFrame:
-    schools = pd.read_csv(resolve_data_path(config, "school-data"))
+    schools = pd.read_csv(resolve_data_path(config, "assignment.schools"))
     required = {"school_id", "school_name", "category"}
     missing = required - set(schools.columns)
     if missing:

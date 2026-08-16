@@ -7,8 +7,11 @@ utility-model:
 
 save-assignment: true
 random-seed: 2023
-year: 18
-grade: KG
+data:
+  scenario: legacy
+  overrides: {}
+paths:
+  assignment-folder: ./assignment_output/assignments/
 iterations:
   start: 0
   end: 15

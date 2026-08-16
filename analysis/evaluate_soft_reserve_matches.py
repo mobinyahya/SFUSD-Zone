@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import logging
@@ -25,7 +26,6 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -42,6 +42,7 @@ from assignment.student_assignment.evaluation.match_evaluator import (  # noqa: 
 from benchmark.config import MatchingRunConfig  # noqa: E402
 from benchmark.matching import run_matching_for_solution  # noqa: E402
 from benchmark.results import discover_run_dirs  # noqa: E402
+from loaders import load_scenario  # noqa: E402
 from optimization.levels import LevelSpec  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
@@ -78,13 +79,8 @@ class SavedAreaSolution:
 @dataclass(frozen=True)
 class EvaluationTask:
     assignment_path: str
-    student_path: str
-    program_path: str
-    school_path: str
+    data: dict[str, Any]
     new_ctip_path: str | None
-    year: int
-    no_special_program: bool = True
-    first_round: bool = True
 
 
 @dataclass(frozen=True)
@@ -362,53 +358,39 @@ def evaluation_tasks(
     new_ctip_path: Path | None,
 ) -> list[EvaluationTask]:
     config = _load_yaml(output_root / "matching/config.generated.yaml")
-    paths = config.get("paths")
-    if not isinstance(paths, Mapping):
-        raise ValueError("generated matching config has no paths mapping")
-
-    student_path = _resolve_config_path(paths, "student-data")
-    program_path = _resolve_config_path(paths, "program-data")
-    school_path = _resolve_config_path(paths, "school-data")
-    for path in (student_path, program_path, school_path):
+    data = config.get("data")
+    if not isinstance(data, Mapping):
+        raise ValueError("generated matching config has no data scenario")
+    scenario = load_scenario(data)
+    for role in (
+        "assignment.students",
+        "assignment.programs",
+        "assignment.school_coordinates",
+    ):
+        path = scenario.source(role).path
         if not path.is_file():
             raise FileNotFoundError(path)
 
-    year = int(config.get("year", 23))
-    evaluator_year = int(f"{year:02d}{(year + 1) % 100:02d}")
     assignments = validate_matching_output(output_root)
     return [
         EvaluationTask(
             assignment_path=str(assignment),
-            student_path=str(student_path),
-            program_path=str(program_path),
-            school_path=str(school_path),
+            data=copy.deepcopy(dict(data)),
             new_ctip_path=str(new_ctip_path) if new_ctip_path else None,
-            year=evaluator_year,
         )
         for assignment in assignments
     ]
 
 
-@lru_cache(maxsize=4)
-def _load_students(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
-
-
 def evaluate_assignment(task: EvaluationTask) -> pd.Series:
     assignment = pd.read_csv(task.assignment_path)
-    evaluator = MatchEvaluator(
-        _load_students(task.student_path),
+    evaluator = MatchEvaluator.from_scenario(
+        task.data,
         assignment,
-        first_round=task.first_round,
         dropout=False,
         low_income=95292,
         medium_income=95292,
         high_income=110850,
-        grade=None,
-        year=task.year,
-        no_special_program=task.no_special_program,
-        program_file=task.program_path,
-        schools_latlon_path=task.school_path,
         new_ctip_path=task.new_ctip_path,
     )
     return evaluator.eval_assignment_full()

@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from loaders import DataScenario, load_student_records, read_csv_source
 
 from choice.objective import ChoiceCut, ChoiceEvaluation, ChoiceTerm
 from optimization.problem import ZoneProblem
-
-
-DEFAULT_UTILITY_PATH = "/share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv"
-DEFAULT_STUDENT_PATH = "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
 
 @dataclass(frozen=True)
@@ -42,6 +38,7 @@ class MNLZoningUtility:
 
     def __init__(
         self,
+        data: DataScenario,
         *,
         method: str = "logsum",
         area_column: str | None = None,
@@ -49,6 +46,9 @@ class MNLZoningUtility:
     ):
         if method not in {"max", "logsum"}:
             raise ValueError("MNL utility method must be 'max' or 'logsum'.")
+        if not isinstance(data, DataScenario):
+            raise TypeError("MNL zoning utility data must be a DataScenario.")
+        self.data = data
         self.method = method
         self.area_column = area_column
         self.empty_utility = float(empty_utility)
@@ -209,16 +209,13 @@ class MNLZoningUtility:
         if self.utility_df is not None and self.student_df is not None:
             return
 
-        utility_path = Path(DEFAULT_UTILITY_PATH).expanduser()
-        student_path = Path(DEFAULT_STUDENT_PATH).expanduser()
-        if not utility_path.exists():
-            raise FileNotFoundError(f"MNL utility file not found: {utility_path}")
-        if not student_path.exists():
-            raise FileNotFoundError(f"MNL student file not found: {student_path}")
-
-        utility_df = pd.read_csv(utility_path)
+        utility_source = self.data.source("choice.estimate")
+        student_sources = self.data.sources("assignment.students")
+        utility_df = read_csv_source(utility_source)
         if "studentno" not in utility_df.columns:
-            raise ValueError(f"MNL utility file {utility_path} lacks studentno column.")
+            raise ValueError(
+                f"MNL utility file {utility_source.path} lacks studentno column."
+            )
         utility_df["studentno"] = _normalize_studentno(utility_df["studentno"])
 
         school_to_cols: dict[str, list[str]] = {}
@@ -228,9 +225,15 @@ class MNLZoningUtility:
             school_id = str(col).split("-", 1)[0]
             school_to_cols.setdefault(school_id, []).append(str(col))
 
-        student_df = pd.read_csv(student_path, low_memory=False)
+        student_df = load_student_records(
+            self.data,
+            "assignment.students",
+            filter_group="assignment",
+            low_memory=False,
+        )
         if "studentno" not in student_df.columns:
-            raise ValueError(f"MNL student file {student_path} lacks studentno column.")
+            paths = [str(source.path) for source in student_sources]
+            raise ValueError(f"MNL student files {paths} lack studentno column.")
         student_df["studentno"] = _normalize_studentno(student_df["studentno"])
 
         self.utility_df = utility_df.dropna(subset=["studentno"])

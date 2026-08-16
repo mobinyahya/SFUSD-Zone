@@ -4,6 +4,9 @@ name: solver_comparison
 mode: run  # run | metrics
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   save_solver_logs: true
   save_solver_progress: true
   strategy: single

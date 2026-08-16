@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> None:
             solutions,
             output_dir=args.output,
             stages=args.viz_stages,
+            config=config,
         )
         for result in viz_results:
             if result.skipped:

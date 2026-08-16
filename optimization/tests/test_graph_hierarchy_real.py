@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 import os
-import pickle
-from pathlib import Path
 
 import networkx as nx
 import pytest
 
 from Config.Constants import AREA_ETHNICITIES
+from optimization.config import OptimizationConfig
 from optimization.data import graph_builder
+from optimization.data.dataset import Dataset
 from optimization.levels import LEVEL_NODE_TARGETS
 
 
@@ -25,20 +25,18 @@ pytestmark = [
 
 
 def _real_base_graph(unit: str) -> nx.Graph:
-    roots = [Path("/share/data/school_choice/Zones/Optimization/Graphs")]
     required = set(AREA_ETHNICITIES) | {
         "area_id",
         "ge_students",
         "all_prog_students",
         "school_ids",
     }
-    for root in roots:
-        for path in sorted(root.glob(f"{unit}_*/{unit}_0.pickle")):
-            with path.open("rb") as file:
-                graph = pickle.load(file)
-            _, attrs = next(iter(graph.nodes(data=True)))
-            if required <= set(attrs):
-                return graph
+    dataset = Dataset(OptimizationConfig(levels=[f"{unit}_0"]))
+    graph = dataset._graph_namespace.load_pickle(f"{unit}_0.pickle")
+    if isinstance(graph, nx.Graph) and graph:
+        _, attrs = next(iter(graph.nodes(data=True)))
+        if required <= set(attrs):
+            return graph
     pytest.skip(f"current real-data {unit}_0 graph is unavailable")
 
 

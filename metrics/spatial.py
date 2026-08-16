@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
-import pickle
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Mapping
 
 import geopandas as gpd
-import pandas as pd
 from shapely.geometry.base import BaseGeometry
 
+from optimization.config import OptimizationConfig
 from optimization.data.conversion import LevelConverter
-from optimization.data.loaders import load_census_shapefile
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
+from optimization.visualization import VisualizationArtifactStore
 
 try:  # Shapely 2.x
     from shapely import minimum_bounding_circle
@@ -25,10 +21,6 @@ except ImportError:  # pragma: no cover - older shapely fallback
     minimum_bounding_circle = None
 
 
-DEFAULT_ARTIFACT_DIR = Path(
-    "/share/data/school_choice/Data/Computed/shape_metric_artifacts"
-)
-DEFAULT_COMPUTED_GRAPH_DIR = Path("/share/data/school_choice/Data/Computed/Graphs")
 PROJECTED_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 
 
@@ -41,13 +33,9 @@ class SpatialMetrics:
     avg_polsby_popper_score: float
 
 
-_BLOCK0_GRAPH_CACHE: dict[Path, Any] = {}
-_GEOMETRY_CACHE: dict[Path, gpd.GeoDataFrame] = {}
-
-
 def compute_spatial_metrics(
     solution: ZoneSolution,
-    config: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | OptimizationConfig | None = None,
 ) -> SpatialMetrics:
     """Compute cut-edge and compactness metrics for one solution stage.
 
@@ -55,7 +43,7 @@ def compute_spatial_metrics(
     solution to ``Block_0``.
     """
 
-    config = config or {}
+    config = config if config is not None else {}
     if not solution.assignment:
         return SpatialMetrics(
             cut_edges=0,
@@ -66,7 +54,7 @@ def compute_spatial_metrics(
         )
 
     block_G = _block0_graph(solution, config)
-    block_assignment = _assignment_on_block0(solution, block_G)
+    block_assignment = _assignment_on_block0(solution, block_G, config)
     cut_edges = _cut_edges(
         block_G,
         block_assignment,
@@ -95,63 +83,37 @@ def compute_spatial_metrics(
     )
 
 
-def _block0_graph(solution: ZoneSolution, config: Mapping[str, Any]):
-    injected = config.get("block0_graph")
+def _block0_graph(
+    solution: ZoneSolution,
+    config: Mapping[str, Any] | OptimizationConfig,
+):
+    injected = config.get("block0_graph") if isinstance(config, Mapping) else None
     if injected is not None:
         return injected
 
     if solution.level.unit == "Block" and solution.level.depth == 0:
         return solution.problem.G
 
-    path = _block0_graph_path(config)
-    if path is None:
-        raise FileNotFoundError(
-            "Block_0.pickle is required for normalized cut_edges metrics. "
-            "Set config['block0_graph_path'] or ensure the graph exists under "
-            "/share/data/school_choice/Data/Computed/Graphs."
-        )
-    if path not in _BLOCK0_GRAPH_CACHE:
-        with path.open("rb") as f:
-            _BLOCK0_GRAPH_CACHE[path] = pickle.load(f)
-    return _BLOCK0_GRAPH_CACHE[path]
+    source_config = _optimization_config_for_solution(solution, config)
+    block_config = OptimizationConfig(levels=["Block_0"], data=source_config.data)
+    return block_config.make_dataset().graph_for(LevelSpec("Block", 0))
 
 
-def _block0_graph_path(config: Mapping[str, Any]) -> Path | None:
-    explicit = config.get("block0_graph_path")
-    if explicit:
-        path = Path(str(explicit)).expanduser()
-        return path if path.exists() else None
-
-    candidates: list[Path] = []
-    graphs_dir = config.get("graphs_dir")
-    if graphs_dir:
-        graphs = Path(str(graphs_dir)).expanduser()
-        candidates.extend(
-            [
-                graphs / "Block_0.pickle",
-                graphs.parent / "Block_0.pickle",
-            ]
-        )
-
-    candidates.extend(
-        [
-            DEFAULT_COMPUTED_GRAPH_DIR / "Block_0.pickle",
-        ]
-    )
-    for path in candidates:
-        if path.exists():
-            return path
-    return None
-
-
-def _assignment_on_block0(solution: ZoneSolution, block_G) -> dict[int, int]:
+def _assignment_on_block0(
+    solution: ZoneSolution,
+    block_G,
+    config: Mapping[str, Any] | OptimizationConfig,
+) -> dict[int, int]:
     if (
         solution.problem.G is block_G
         and solution.level.unit == "Block"
         and solution.level.depth == 0
     ):
         return dict(solution.assignment)
-    return LevelConverter().between(
+    data = None
+    if solution.level.unit != "Block":
+        data = _optimization_config_for_solution(solution, config).data_scenario
+    return LevelConverter(data=data).between(
         solution.problem.G,
         solution.assignment,
         solution.level,
@@ -182,7 +144,7 @@ def _cut_edges(
 
 def _average_zone_shape_scores(
     solution: ZoneSolution,
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | OptimizationConfig,
     *,
     graph=None,
     assignment: Mapping[int, int] | None = None,
@@ -221,7 +183,7 @@ def _average_zone_shape_scores(
 
 def _node_area_metrics(
     solution: ZoneSolution,
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | OptimizationConfig,
     *,
     graph=None,
     level: LevelSpec | None = None,
@@ -229,7 +191,9 @@ def _node_area_metrics(
     G = solution.problem.G if graph is None else graph
     level = solution.level if level is None else level
 
-    injected = config.get("geometry_metrics_gdf")
+    injected = (
+        config.get("geometry_metrics_gdf") if isinstance(config, Mapping) else None
+    )
     if injected is not None:
         return _prepare_injected_geometry(injected)
 
@@ -237,36 +201,27 @@ def _node_area_metrics(
     if graph_geometry is not None:
         return graph_geometry
 
-    artifact_dir = Path(
-        str(config.get("shape_metric_artifact_dir") or DEFAULT_ARTIFACT_DIR)
-    ).expanduser()
-    artifact_dir.mkdir(parents=True, exist_ok=True)
+    source_config = _optimization_config_for_solution(solution, config)
+    geometry, _ = VisualizationArtifactStore(
+        source_config.data_scenario
+    ).geometry_for(level, G)
+    return _prepare_injected_geometry(geometry)
 
-    fingerprint = _graph_geometry_fingerprint(G)
-    path = artifact_dir / f"area_perimeter_{level.name}_{fingerprint}.pkl"
-    meta_path = artifact_dir / f"area_perimeter_{level.name}_{fingerprint}.json"
-    if path in _GEOMETRY_CACHE:
-        return _GEOMETRY_CACHE[path].copy()
-    if path.exists():
-        gdf = pd.read_pickle(path)
-    else:
-        gdf = _build_node_area_metrics(G, level)
-        gdf.to_pickle(path)
-        with meta_path.open("w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "level": level.name,
-                    "unit": level.unit,
-                    "nodes": int(G.number_of_nodes()),
-                    "fingerprint": fingerprint,
-                    "projected_crs": PROJECTED_CRS,
-                },
-                f,
-                indent=2,
-                sort_keys=True,
-            )
-    _GEOMETRY_CACHE[path] = gdf
-    return gdf.copy()
+
+def _optimization_config_for_solution(
+    solution: ZoneSolution,
+    config: Mapping[str, Any] | OptimizationConfig,
+) -> OptimizationConfig:
+    if isinstance(config, OptimizationConfig):
+        return config
+    if solution.problem.optimization_config is not None:
+        return solution.problem.optimization_config
+    data = config.get("data") if isinstance(config, Mapping) else None
+    if isinstance(data, Mapping):
+        return OptimizationConfig(levels=[solution.level.name], data=dict(data))
+    raise ValueError(
+        "Spatial metrics require the solution's strict OptimizationConfig/data scenario."
+    )
 
 
 def _prepare_injected_geometry(value: Any) -> gpd.GeoDataFrame:
@@ -299,59 +254,6 @@ def _geometry_from_graph_attrs(G) -> gpd.GeoDataFrame | None:
     gdf["area"] = gdf.geometry.area
     gdf["perimeter"] = gdf.geometry.length
     return gdf
-
-
-def _build_node_area_metrics(G, level: LevelSpec) -> gpd.GeoDataFrame:
-    base = load_census_shapefile(level.unit)
-    if level.unit not in base.columns:
-        raise ValueError(
-            f"Base geometry for {level.unit!r} must include a {level.unit!r} column."
-        )
-    if "geometry" not in base.columns:
-        raise ValueError("Base geometry must include a geometry column.")
-
-    area_to_node: dict[int, int] = {}
-    for node in G.nodes():
-        for area_id in _node_area_ids(G, node):
-            area_to_node[int(area_id)] = int(node)
-
-    geo = base[[level.unit, "geometry"]].dropna(subset=[level.unit, "geometry"]).copy()
-    geo[level.unit] = geo[level.unit].astype("int64")
-    geo["node"] = geo[level.unit].map(area_to_node)
-    geo = geo.dropna(subset=["node"]).copy()
-    if geo.empty:
-        raise ValueError(
-            f"No {level.unit} geometries matched {level.name} graph nodes."
-        )
-    geo["node"] = geo["node"].astype(int)
-
-    if geo.crs is None:
-        geo = geo.set_crs(epsg=4326, allow_override=True)
-    dissolved = geo.dissolve(by="node", as_index=False)[["node", "geometry"]]
-    projected = dissolved.to_crs(PROJECTED_CRS)
-    projected["geometry"] = projected["geometry"].apply(_clean_geometry)
-    projected["area"] = projected.geometry.area
-    projected["perimeter"] = projected.geometry.length
-    return projected
-
-
-def _node_area_ids(G, node: int) -> list[int]:
-    attrs = G.nodes[node]
-    if "area_id" in attrs:
-        return [int(attrs["area_id"])]
-    return [int(area_id) for area_id in attrs.get("block_ids", [])]
-
-
-def _graph_geometry_fingerprint(G) -> str:
-    h = hashlib.sha1()
-    for node in sorted(G.nodes()):
-        h.update(str(int(node)).encode("utf-8"))
-        h.update(b":")
-        for area_id in sorted(_node_area_ids(G, node)):
-            h.update(str(int(area_id)).encode("utf-8"))
-            h.update(b",")
-        h.update(b";")
-    return h.hexdigest()[:12]
 
 
 def _clean_geometry(geometry: BaseGeometry | None) -> BaseGeometry | None:

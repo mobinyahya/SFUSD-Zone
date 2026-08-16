@@ -1,22 +1,19 @@
 """The :class:`Dataset` -- the data layer's public face.
 
-A ``Dataset`` lazily provides the graph for any requested level (loading a
-cached pickle or generating and caching it), resolves centroids to node
+A ``Dataset`` lazily provides the graph for any requested level through one
+validated, content-addressed cache namespace, resolves centroids to node
 indices, and mints solver-agnostic :class:`ZoneProblem` instances. Strategies
 operate purely against a ``Dataset``; they never read raw files.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import pickle
 from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
-from optimization.data import closer_neighbors, edge_overrides, graph_builder, loaders
+from loaders import CacheStore
+from optimization.data import closer_neighbors, graph_builder, loaders
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
@@ -30,25 +27,38 @@ class Dataset:
 
     def __init__(self, config: "OptimizationConfig"):
         self.config = config
-        self.ingest = IngestConfig(
-            unit=config.unit,
-            years=list(config.years),
-            population_type=config.population_type,
-            drop_optout=config.drop_optout,
-            capacity_scenario=config.capacity_scenario,
-            new_schools=config.new_schools,
-            include_k8=config.include_k8,
-            remove_city_wide=config.remove_city_wide,
+        self.data = config.data_scenario
+        self.ingest = IngestConfig(unit=config.unit, data=self.data)
+        graph_roles = [
+            loaders.STUDENT_ROLE,
+            loaders.SCHOOL_ROLE,
+            *loaders.capacity_source_roles(self.ingest),
+            *loaders.census_geometry_roles(self.data, self.ingest.unit),
+            loaders.ADJACENCY_ROLE,
+            loaders.MANUAL_EDGE_ROLE,
+        ]
+        self._graph_namespace = CacheStore(self.data).namespace(
+            "graphs",
+            {
+                "unit": self.ingest.unit,
+                "optimization_filters": self.ingest.filters,
+                "partition_policy": graph_builder.partition_cache_policy(
+                    self.ingest.unit
+                ),
+            },
+            schema_version=graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
+            roles=graph_roles,
         )
-        self.graphs_dir = config.graphs_dir
-        self.graph_cache_dir = os.path.join(
-            self.graphs_dir,
-            self._graph_cache_namespace(),
-        )
+        self.graphs_dir = str(self._graph_namespace.version_dir)
+        self.graph_cache_dir = str(self._graph_namespace.path)
         self._graphs: dict[str, nx.Graph] = {}
         self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
         self._closer_neighbor_store = closer_neighbors.CloserNeighborArtifactStore(
-            self.graphs_dir
+            self.data,
+            geometry_loader=lambda unit: loaders.load_census_shapefile(
+                unit, self.data
+            ),
+            school_loader=lambda: loaders.load_school_coordinates(self.data),
         )
 
     # ------------------------------------------------------------------ #
@@ -60,11 +70,8 @@ class Dataset:
         if key in self._graphs:
             return self._graphs[key]
 
-        path = self._graph_path(level)
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                G = pickle.load(f)
-        else:
+        G = self._graph_namespace.load_pickle(level.filename)
+        if not isinstance(G, nx.Graph):
             G = self._generate(level)
             self._save(level, G)
 
@@ -81,42 +88,18 @@ class Dataset:
         return graph_builder.aggregate_level(
             parent,
             targets[level.depth],
-            self.ingest.population_type,
+            self.ingest.program_population,
         )
 
     def _save(self, level: LevelSpec, G: nx.Graph) -> None:
-        os.makedirs(self.graph_cache_dir, exist_ok=True)
-        path = self._graph_path(level)
-        tmp_path = f"{path}.{os.getpid()}.tmp"
-        with open(tmp_path, "wb") as f:
-            pickle.dump(G, f)
-        os.replace(tmp_path, path)
+        self._graph_namespace.save_pickle(level.filename, G)
 
     def _graph_path(self, level: LevelSpec) -> str:
-        return os.path.join(self.graph_cache_dir, level.filename)
+        return str(self._graph_namespace.payload_path(level.filename))
 
     def _graph_cache_namespace(self) -> str:
-        payload = {
-            "schema_version": graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
-            "unit": self.ingest.unit,
-            "years": list(self.ingest.years),
-            "population_type": self.ingest.population_type,
-            "drop_optout": bool(self.ingest.drop_optout),
-            "capacity_scenario": self.ingest.capacity_scenario,
-            "new_schools": bool(self.ingest.new_schools),
-            "include_k8": bool(self.ingest.include_k8),
-            "remove_city_wide": bool(self.ingest.remove_city_wide),
-            "partition_policy": graph_builder.partition_cache_policy(self.ingest.unit),
-        }
-        if self.ingest.unit == "Block":
-            manual_edges = edge_overrides.load_block_edge_overrides()
-            if manual_edges:
-                payload["manual_block_edge_fingerprint"] = (
-                    edge_overrides.block_edge_override_fingerprint()
-                )
-        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-        return f"{self.ingest.unit}_{digest}"
+        """Return the content-addressed graph key for introspection."""
+        return self._graph_namespace.key
 
     def closer_neighbors_for(self, level) -> dict[int, dict[int, frozenset[int]]]:
         """Load and attach the shared geometry relation for ``level``."""
@@ -146,7 +129,9 @@ class Dataset:
     def centroids_for(self, level, school_ids=None) -> list[int]:
         level = LevelSpec.parse(level)
         if school_ids is None:
-            school_ids = loaders.load_centroid_schools(self.config.centroids_type)
+            school_ids = loaders.load_centroid_schools(
+                self.config.centroids_type, self.data
+            )
         school_ids = tuple(int(sid) for sid in school_ids)
         key = (level.name, school_ids)
         if key in self._centroids:
@@ -210,7 +195,7 @@ class Dataset:
         constraint_multiplier = float(constraint_multiplier)
         if centroid_school_ids is None:
             centroid_school_ids = loaders.load_centroid_schools(
-                self.config.centroids_type
+                self.config.centroids_type, self.data
             )
         centroid_school_ids = [int(school_id) for school_id in centroid_school_ids]
         G = self.graph_for(level)
@@ -220,7 +205,7 @@ class Dataset:
             level=level,
             centroids=self.centroids_for(level, centroid_school_ids),
             centroid_school_ids=centroid_school_ids,
-            population_type=self.config.population_type,
+            program_population=self.config.program_population,
             frl_dev=self.config.frl_dev * constraint_multiplier,
             racial_dev=self.config.racial_dev * constraint_multiplier,
             overage=self.config.overage * constraint_multiplier,
@@ -230,4 +215,5 @@ class Dataset:
             candidates=candidates,
             hint=hint,
             choice_objective=choice_objective,
+            optimization_config=self.config,
         )

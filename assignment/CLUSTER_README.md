@@ -70,7 +70,10 @@ location in `DATA_FOLDERS.md`.
 
 ### Setting up your Config
   
-The first time you run any entry point (e.g. `uv run python run_custom_config.py --config-path ...`), the `Configerator` automatically populates your personal `configs/<sunet-id>.config.yaml` by merging `base_config.yaml` with the environment-specific path config. Both path configs use shared source data and repository-relative output directories, so no username-specific path edits are required.
+The first time you run an entry point, `Configerator` populates your personal
+`configs/<sunet-id>.config.yaml` from `base_config.yaml` plus the local output
+path config. Input data always comes from the strict top-level `data` scenario;
+there is no hostname-based input-path selection.
   
 # Life after the setup
   

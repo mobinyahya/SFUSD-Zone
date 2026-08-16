@@ -1,6 +1,6 @@
 """Recursive strategy: solve coarse, then refine at each finer level.
 
-For each level in ``levels`` (coarse->fine, any mix of Block/BlockGroup depths)
+For each level in ``levels`` (coarse->fine, within one configured Census unit)
 the previous solution is projected onto the current graph via
 :class:`LevelConverter`, used as a warm-start hint, and used to narrow each
 node's candidate zones to those seen near zone boundaries -- so the finer solve
@@ -38,7 +38,7 @@ class RecursiveStrategy(Strategy):
         if looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         radius = self.options.get("boundary_radius", 1)
-        converter = LevelConverter()
+        converter = LevelConverter(data=dataset.data)
         default_time_limit = solver.options.get("solve_time_limit")
         carry_over_time = 0.0
 

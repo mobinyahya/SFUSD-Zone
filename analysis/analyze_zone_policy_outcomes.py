@@ -47,6 +47,10 @@ from analysis.recalculate_updated_frl_metrics import (  # noqa: E402
 from assignment.student_assignment.market_generator.school_choice_market_generator import (  # noqa: E402
     MarketGenerator,
 )
+from assignment.student_assignment.market_generator.school_choice_market import (  # noqa: E402
+    assignment_source_identity,
+)
+from loaders import load_scenario  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
 
@@ -295,41 +299,32 @@ def _list_value(value: object) -> list[object]:
 
 def build_real_raw_preference_ranks(
     student_data: pd.DataFrame,
-    first_round: np.ndarray,
     program_indices: Mapping[str, int],
     grade: str,
 ) -> np.ndarray:
-    """Build raw exact-program ranks from each student's first active round."""
-    return build_real_raw_preference_data(
-        student_data, first_round, program_indices, grade
-    ).ranks
+    """Build exact-program ranks from centrally selected preferences."""
+    return build_real_raw_preference_data(student_data, program_indices, grade).ranks
 
 
 def build_real_raw_preference_data(
     student_data: pd.DataFrame,
-    first_round: np.ndarray,
     program_indices: Mapping[str, int],
     grade: str,
     valid_school_ids: set[int] | None = None,
 ) -> RawPreferenceData:
     """Retain raw order even when policy filtering removed a listed program."""
-    if len(student_data) != len(first_round):
-        raise ValueError("first-round array does not match student population")
+    required = {"selected_ranked_idschool", "selected_programs"}
+    missing = sorted(required - set(student_data))
+    if missing:
+        raise ValueError(f"student data is not loader-normalized; missing {missing}")
     num_programs = len(program_indices)
     ranks = np.zeros((len(student_data), num_programs), dtype=np.int16)
     applicant_mask = np.zeros(len(student_data), dtype=bool)
     top_school_ids = np.full(len(student_data), np.nan, dtype=float)
     unloaded_program_entries = 0
     for position, (_, student) in enumerate(student_data.iterrows()):
-        round_number = int(first_round[position]) + 1
-        schools_column = f"r{round_number}_ranked_idschool"
-        programs_column = f"r{round_number}_programs"
-        if schools_column not in student_data or programs_column not in student_data:
-            raise ValueError(
-                f"first active round {round_number} has no raw preference columns"
-            )
-        schools = _list_value(student[schools_column])
-        program_types = _list_value(student[programs_column])
+        schools = _list_value(student["selected_ranked_idschool"])
+        program_types = _list_value(student["selected_programs"])
         if len(schools) != len(program_types):
             raise ValueError(
                 "raw ranked-school and program lists differ in length for row "
@@ -491,23 +486,18 @@ def read_validated_assignment(
 
 
 def _config_signature(config: Mapping[str, Any]) -> dict[str, Any]:
-    paths = config.get("paths")
-    if not isinstance(paths, Mapping):
-        raise ValueError("generated config has no paths mapping")
+    scenario = load_scenario(config["data"])
     utility = config.get("utility-model")
     if not isinstance(utility, Mapping):
         raise ValueError("generated config has no utility-model mapping")
     return {
-        "grade": config.get("grade"),
-        "year": config.get("year"),
+        "grades": list(scenario.filter("assignment", "grades")),
+        "year": scenario.filter("assignment", "year"),
         "iterations": config.get("iterations"),
         "random-seed": config.get("random-seed"),
-        "remove-special-lps": config.get("remove-special-lps"),
+        "special-programs": scenario.filter("assignment", "special_programs"),
         "r1-only": config.get("r1-only"),
-        "student-data": str(paths.get("student-data")),
-        "program-data": str(paths.get("program-data")),
-        "school-data": str(paths.get("school-data")),
-        "estimate-path": str(paths.get("estimate-path")),
+        "assignment-source-identity": assignment_source_identity(scenario),
         "utility-enable": utility.get("enable"),
         "utility-list-length": utility.get("list-length"),
         "gumbel-scale": utility.get("gumbel-scale", 1.0),
@@ -589,7 +579,7 @@ def _canonical_programs(market: MarketGenerator) -> pd.DataFrame:
 def _canonical_schools(
     config: Mapping[str, Any], programs: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    schools = pd.read_csv(resolve_data_path(config, "school-data"))
+    schools = pd.read_csv(resolve_data_path(config, "assignment.schools"))
     required = {"school_id", "school_name", "category", "lat", "lon"}
     missing = required - set(schools)
     if missing:
@@ -722,9 +712,7 @@ def load_mode_data(
 ) -> ModeData:
     """Instantiate a non-saving market and validate every saved assignment."""
     config_path, config = validate_generated_configs(root, mode)
-    initialization_config = copy.deepcopy(config)
-    initialization_config["save-assignment"] = False
-    market = MarketGenerator(config=initialization_config)
+    market = MarketGenerator(config=copy.deepcopy(config), write_config=False)
 
     students = market.students.student_data.copy()
     if students.index.name != "studentno":
@@ -759,9 +747,8 @@ def load_mode_data(
     else:
         real_raw_data = build_real_raw_preference_data(
             students,
-            market.students.first_round,
             market.programs.indices,
-            str(config["grade"]),
+            str(market.data_scenario.filter("assignment", "grades")[0]),
             set(schools["school_id"].astype(int)),
         )
         raw_ranks = tuple(real_raw_data.ranks for _ in range(ITERATION_COUNT))
@@ -1643,9 +1630,15 @@ def methodology_metadata(
         modes[data.mode] = {
             "matches_root": str(data.root),
             "generated_config": str(data.config_path),
-            "student_data": str(resolve_data_path(data.config, "student-data")),
-            "program_data": str(resolve_data_path(data.config, "program-data")),
-            "school_data": str(resolve_data_path(data.config, "school-data")),
+            "student_data": str(
+                resolve_data_path(data.config, "assignment.students")
+            ),
+            "program_data": str(
+                resolve_data_path(data.config, "assignment.programs")
+            ),
+            "school_data": str(
+                resolve_data_path(data.config, "assignment.schools")
+            ),
             "matching_population": len(data.students),
             "raw_applicants": int(data.applicant_masks[0].sum()),
             "assignments_per_policy": ITERATION_COUNT,

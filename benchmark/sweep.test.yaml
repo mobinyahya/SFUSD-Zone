@@ -19,11 +19,23 @@ optimization_defaults:
   hints: voronoi
   seed: 42
   workers: 8
-  years: [14, 15, 16, 17, 18, 21, 22]
-  population_type: 'GE'
-  capacity_scenario: 'A'
-  new_schools: true
-  include_k8: false
+  data:
+    scenario: legacy
+    overrides:
+      sources:
+        optimization.schools: optimization.schools.current
+      filters:
+        optimization:
+          years: ["1415", "1516", "1617", "1718", "1819", "2122", "2223"]
+          grades: [KG]
+          student_population: enrolled
+          rounds: all
+          special_programs: include
+          program_population: GE
+          capacity_scenario: A
+          include_k8: false
+          include_citywide: false
+          include_mission_bay: true
 
 sweep:
   seed: [42, 12]

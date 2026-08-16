@@ -4,6 +4,9 @@ name: one-zone
 mode: run  # run | metrics
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   save_solver_logs: true
   strategy: single
   solve_time_limits: [300]

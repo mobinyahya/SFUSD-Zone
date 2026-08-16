@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from choice.models import get_configured_choice_model
 from Config.metrics_config import MetricColumns
+from loaders import load_scenario
 from metrics.base import MetricOutput, MetricsContext
 
 
@@ -11,7 +12,17 @@ def compute(context: MetricsContext) -> MetricOutput:
     if not context.assignment:
         return MetricOutput()
 
-    model = get_configured_choice_model(context.config)
+    data_config = context.config.get("data")
+    if data_config is None:
+        if "choice_model" in context.config:
+            raise ValueError(
+                "Choice metrics require a strict data scenario configuration."
+            )
+        return MetricOutput()
+
+    model = get_configured_choice_model(
+        context.config, load_scenario(data_config)
+    )
     utility = model.preassignment_utility(context.problem, context.assignment)
     run = {
         "choice_preassignment_utility": {

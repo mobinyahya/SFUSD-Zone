@@ -62,6 +62,19 @@ def test_load_frl_lookup_preserves_blank_rates_for_fallback(tmp_path):
     assert pd.isna(lookup.loc["60750000000002"])
 
 
+def test_2020_block_mapping_leaves_outside_points_blank():
+    geometry = gpd.GeoDataFrame(
+        {"census_block_2020": ["100"]},
+        geometry=[box(-122.50, 37.70, -122.49, 37.71)],
+        crs="EPSG:4326",
+    )
+    nearby = pd.DataFrame({"latitude": [37.705], "longitude": [-122.501]})
+    far = pd.DataFrame({"latitude": [37.705], "longitude": [-122.60]})
+
+    assert pd.isna(recalculate.student_2020_block_ids(nearby, geometry).iloc[0])
+    assert pd.isna(recalculate.student_2020_block_ids(far, geometry).iloc[0])
+
+
 def test_fallback_block_report_lists_absent_blank_and_missing_blocks():
     students = pd.DataFrame(
         {
@@ -97,20 +110,19 @@ def test_zone_population_metrics_use_strict_ascending_zone_order():
     )
     students = pd.DataFrame(
         {
-            "grade": ["KG", "KG", "KG", "01", "KG"],
-            "census_blockgroup": [100, "100.0", 200, 200, None],
-            "freelunch_prob": [0.8, 0.4, 0.2, 1.0, 0.9],
-            "r1_programs": ["['GE', 'SE']", "[]", "['GE']", "['GE']", "['GE']"],
-            "r1_ranked_idschool": ["[10, 11]", "[]", "[20]", "[20]", "[30]"],
+            "census_blockgroup": [100, 200, None],
+            "freelunch_prob": [0.8, 0.2, 0.9],
+            "selected_programs": [["GE", "SE"], ["GE"], ["GE"]],
+            "selected_ranked_idschool": [[10, 11], [20], [30]],
         }
     )
 
-    result = recalculate.zone_population_metrics(students, "KG", zone)
+    result = recalculate.zone_population_metrics(students, zone)
 
-    assert result["district_frl"] == pytest.approx(1.4 / 3)
-    assert result["frl_by_zone"] == pytest.approx([0.2, 0.6])
-    assert result["frl_devs"] == pytest.approx([0.2 - 1.4 / 3, 0.6 - 1.4 / 3])
-    assert result["frl_max_dev"] == pytest.approx(abs(0.2 - 1.4 / 3))
+    assert result["district_frl"] == pytest.approx(0.5)
+    assert result["frl_by_zone"] == pytest.approx([0.2, 0.8])
+    assert result["frl_devs"] == pytest.approx([-0.3, 0.3])
+    assert result["frl_max_dev"] == pytest.approx(0.3)
     assert result["ge_students"] == pytest.approx([1.0, 0.5])
     assert result["applicants"] == [1, 1]
 
@@ -196,16 +208,40 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
     pd.DataFrame({"studentno": [1]}).to_csv(assignment, index=False)
     lookup.write_text("BlockID,FRL Rate\n100,0.8\n", encoding="utf-8")
     config.write_text(
-        "\n".join(
-            [
-                "grade: KG",
-                "year: 23",
-                "zone-building-blocks: attendance_area",
-                "paths:",
-                f"  student-data: {students}",
-                f"  program-data: {programs}",
-                f"  school-data: {schools}",
-            ]
+        json.dumps(
+            {
+                "data": {
+                    "scenario": "legacy",
+                    "overrides": {
+                        "sources": {
+                            "assignment.students": {
+                                "path": str(students),
+                                "classification": "restricted",
+                            },
+                            "assignment.programs": {
+                                "path": str(programs),
+                                "classification": "internal",
+                            },
+                            "assignment.schools": {
+                                "path": str(schools),
+                                "classification": "internal",
+                            },
+                        },
+                        "filters": {
+                            "assignment": {
+                                "year": "2324",
+                                "grades": ["KG"],
+                                "student_population": "applicant",
+                                "rounds": [1],
+                                "special_programs": "exclude_any_special",
+                                "capacity_profile": "status_quo",
+                                "include_mission_bay": True,
+                            }
+                        },
+                    },
+                },
+                "zone-building-blocks": "attendance_area",
+            }
         ),
         encoding="utf-8",
     )
@@ -220,6 +256,29 @@ def test_non_zone_configuration_emits_empty_list_placeholders(monkeypatch, tmp_p
             return pd.Series({"base metric": 1.0})
 
     monkeypatch.setattr(recalculate, "MatchEvaluator", FakeEvaluator)
+    monkeypatch.setattr(
+        recalculate,
+        "load_student_records",
+        lambda *args, **kwargs: pd.DataFrame(
+            {
+                "studentno": [1],
+                "latitude": [0.5],
+                "longitude": [0.5],
+                "freelunch_prob": [0.1],
+                "reducedlunch_prob": [0.0],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        recalculate,
+        "load_program_records",
+        lambda *args, **kwargs: pd.DataFrame({"program_id": []}),
+    )
+    monkeypatch.setattr(
+        recalculate,
+        "load_school_records",
+        lambda *args, **kwargs: pd.DataFrame({"school_id": []}),
+    )
     monkeypatch.setattr(
         recalculate,
         "load_2020_block_geometry",

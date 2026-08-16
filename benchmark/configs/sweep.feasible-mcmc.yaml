@@ -4,6 +4,9 @@ name: feasible_mcmc
 mode: run  # run | metrics
 
 optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
   hints: voronoi
   workers: 1
   racial_dev: -1

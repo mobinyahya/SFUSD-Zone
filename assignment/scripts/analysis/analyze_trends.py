@@ -19,12 +19,14 @@ from pathlib import Path
 
 import numpy as np
 
-# Add project root to path (must be before student_assignment imports)
+# Direct execution needs both assignment/ and the repository-level loaders/.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
+sys.path.append(str(Path(__file__).resolve().parents[3]))
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
+from loaders import anchor_data_config
 from tqdm import tqdm
 
 from student_assignment.evaluation.match_evaluator import MatchEvaluator
@@ -38,7 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Task args: (year, program_file, assignment_path, student_data_path,
 #             schools_data_path, new_ctip_path)
-Task = tuple[int, str, str, str, str | None, str | None]
+Task = (
+    tuple[int, str, str, str, str | None, str | None]
+    | tuple[int | None, None, str, None, None, str | None, dict]
+)
 
 
 def _evaluate_csv_worker(args: Task) -> pd.Series:
@@ -55,6 +60,32 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
         Exception: Any input or evaluation failure is propagated so a partial
             analysis cannot be reported as successful.
     """
+    if len(args) == 7:
+        (
+            year,
+            _program_file,
+            assignment_path,
+            _student_data_path,
+            _schools_data_path,
+            new_ctip_path,
+            data_config,
+        ) = args
+        file_assignment = pd.read_csv(assignment_path)
+        evaluator_kwargs = {
+            "dropout": False,
+            "low_income": 95292,
+            "medium_income": 95292,
+            "high_income": 110850,
+        }
+        if new_ctip_path is not None:
+            evaluator_kwargs["new_ctip_path"] = new_ctip_path
+        match_eval = MatchEvaluator.from_scenario(
+            data_config,
+            file_assignment,
+            **evaluator_kwargs,
+        )
+        return match_eval.eval_assignment_full()
+
     (
         year,
         program_file,
@@ -335,10 +366,12 @@ def main() -> None:
     args = parser.parse_args()
 
     config = get_config(args.config)
+    config_dir = Path(args.config).expanduser().resolve().parent
 
     # Evaluator inputs — global defaults, overridable per run entry.
     default_schools_data = config.get("schools_data")
     default_new_ctip_path = config.get("new_ctip_path")
+    default_data = config.get("data")
 
     output_dir = config["output_dir"]
     os.makedirs(output_dir, exist_ok=True)
@@ -364,11 +397,12 @@ def main() -> None:
 
     for run in runs:
         label = run["label"]
-        missing_inputs = {
-            "student_data",
-            "program_data",
-            "year",
-        } - set(run)
+        run_data = run.get("data", default_data)
+        missing_inputs = (
+            set()
+            if run_data is not None
+            else {"student_data", "program_data", "year"} - set(run)
+        )
         if missing_inputs:
             raise ValueError(
                 f"Run '{label}' is missing required fields: {sorted(missing_inputs)}"
@@ -379,15 +413,31 @@ def main() -> None:
             raise ValueError(f"No assignment CSVs found for run '{label}'")
 
         run_meta[label] = (len(csv_files), is_single_file)
+        anchored_data = (
+            anchor_data_config(run_data, config_dir)
+            if run_data is not None
+            else None
+        )
         for csv_path in csv_files:
-            task_map[(label, csv_path)] = (
-                run["year"],
-                run["program_data"],
-                csv_path,
-                run["student_data"],
-                run.get("schools_data", default_schools_data),
-                run.get("new_ctip_path", default_new_ctip_path),
-            )
+            if anchored_data is not None:
+                task_map[(label, csv_path)] = (
+                    run.get("year"),
+                    None,
+                    csv_path,
+                    None,
+                    None,
+                    run.get("new_ctip_path", default_new_ctip_path),
+                    anchored_data,
+                )
+            else:
+                task_map[(label, csv_path)] = (
+                    run["year"],
+                    run["program_data"],
+                    csv_path,
+                    run["student_data"],
+                    run.get("schools_data", default_schools_data),
+                    run.get("new_ctip_path", default_new_ctip_path),
+                )
 
     if not task_map:
         raise ValueError("No tasks to process")

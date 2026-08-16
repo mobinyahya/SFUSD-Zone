@@ -17,9 +17,7 @@ OUTPUT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 # Data Base Paths (relative to project root or absolute)
 STUDENT_DATA_BASE = Path("local-data/student_filter")
 PROGRAM_DATA_BASE = Path("local-data/program_filter")
-SCHOOL_DATA_BASE = Path(
-    "Cleaned"
-)  # Within share/data/... relative to sfusd path in config
+SCHOOL_DATA_BASE = Path("/share/data/school_choice/Data/Cleaned")
 
 
 def main():
@@ -38,21 +36,41 @@ def main():
         # For nested dicts, be careful.
         config = yaml.safe_load(yaml.dump(base_config))  # Deep copy/clean slate
 
-        # Update fields
-        config["year"] = y1
+        assignment_filters = config["data"]["overrides"].setdefault(
+            "filters", {}
+        ).setdefault("assignment", {})
+        assignment_filters.update(
+            {
+                "year": year_str,
+                "grades": ["KG"],
+                "student_population": "applicant",
+                "rounds": [1],
+                "special_programs": "exclude_any_special",
+                "capacity_profile": "default",
+                "capacity_scenario": "programs",
+                "include_mission_bay": False,
+            }
+        )
+        sources = config["data"]["overrides"].setdefault("sources", {})
 
         # Helper to get absolute path
         cwd = Path.cwd()
 
         # Student Data: local-data/student_filter/student_{YY}{YY+1}_filtered.csv
         student_file = STUDENT_DATA_BASE / f"student_{year_str}_filtered.csv"
-        config["paths"]["student-data"] = str(cwd / student_file)
+        sources["assignment.students"] = {
+            "path": str(cwd / student_file),
+            "classification": "restricted",
+        }
 
         # Program Data: local-data/program_filter/programs_without_specialprogs_{YY}{YY+1}.csv
         program_file = (
             PROGRAM_DATA_BASE / f"programs_without_specialprogs_{year_str}.csv"
         )
-        config["paths"]["program-data"] = str(cwd / program_file)
+        sources["assignment.programs"] = {
+            "path": str(cwd / program_file),
+            "classification": "internal",
+        }
 
         # School Data: Cleaned/schools_rehauled_{YY}{YY+1}.csv
         # Fallback for 13, 14 -> 1516
@@ -61,17 +79,13 @@ def main():
         else:
             school_year_str = year_str
 
-        # School data is likely in the sfusd path, so we keep it relative or check if we need absolute
-        # (Since Base Config uses Cleaned/... relative to sfusd, we can keep using that if we point to sfusd correctly)
-        # But we want to be safe. If Cleaned is INSIDE sfusd path, we can output "Cleaned/..."
-        # The script fallback said "Cleaned/schools..."
-
-        school_file_rel = f"Cleaned/schools_rehauled_{school_year_str}.csv"
-        # We assume this is relative to sfusd path set in config.
-        # But wait, config["paths"]["sfusd"] is /share/data/school_choice/Data/
-        # And we want /share/data/school_choice/Data/Cleaned/schools_rehauled...
-        # So "Cleaned/..." is correct IF we don't mess with it.
-        config["paths"]["school-data"] = school_file_rel
+        school_file = SCHOOL_DATA_BASE / f"schools_rehauled_{school_year_str}.csv"
+        school_source = {
+            "path": str(school_file),
+            "classification": "internal",
+        }
+        sources["assignment.schools"] = school_source
+        sources["assignment.school_coordinates"] = dict(school_source)
 
         # Output Folder
         output_folder = (
