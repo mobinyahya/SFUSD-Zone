@@ -1947,6 +1947,16 @@ class MatchEvaluator:
             metrics["GE above +15% district FRL"],
         ) = self.ge_frl_range(ge_students, ge_groups, 0.15)
         (
+            metrics["#GE Schools above +15% district FRL (Non-Designated)"],
+            _,
+            _,
+        ) = self.school_frl_range(
+            0.15,
+            student_data=ge_students,
+            all_student_data=ge_students,
+            non_desig_only=True,
+        )
+        (
             metrics["#GE below -10% district FRL"],
             metrics["GE below -10% district FRL"],
         ) = self.ge_frl_range(ge_students, ge_groups, -0.1)

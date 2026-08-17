@@ -143,6 +143,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     expected = {
         "Distance Av (All Assigned)",
         "#Schools above 10% district FRL",
+        "#GE Schools above +15% district FRL (Non-Designated)",
         "Dissimilarity (High FRL)",
         "Black exposure to FRL prob",
         "Prop Top 3 choice Non-Designated (Black)",
@@ -167,6 +168,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         == 1
     )
     assert metrics["#Students in schools above +15% district FRL (ET (2024))"] == 0
+    assert metrics["#GE Schools above +15% district FRL (Non-Designated)"] == 1
     assert metrics["Prop Top 1 choice (All Assigned)"] == 2 / 5
     assert metrics["Prop Top 3 choice (All Assigned)"] == 3 / 5
     assert metrics["Top 3 in-zone choice (All Assigned)"] == 3 / 5
