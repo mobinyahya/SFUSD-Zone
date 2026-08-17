@@ -114,9 +114,7 @@ def test_consolidated_run_source_maps_match_shared_data_semantics(
         "assignment.schools.current_mission_bay"
     )
     assert scenario.filter("assignment", "include_mission_bay") is True
-    assert scenario.filter("assignment", "special_programs") == (
-        "exclude_any_special"
-    )
+    assert scenario.filter("assignment", "special_programs") == "include"
 
 
 def _write_sources(tmp_path, *, school_id=101, student_ids=(1, 2, 3)):
@@ -789,12 +787,22 @@ def test_evaluator_uses_mission_bay_normalized_student_tables(
             "In-Zone Rank": [1],
         }
     )
+    scenario = load_scenario(config["data"])
+    runtime_programs = load_program_records(
+        scenario,
+        "assignment.programs",
+        filter_group="assignment",
+    )
+    runtime_programs["capacity"] = 123
 
     evaluator = MatchEvaluator.from_scenario(
-        config["data"], assignments
+        scenario,
+        assignments,
+        program_data=runtime_programs,
     )
     row = evaluator.student_data.iloc[0]
 
+    assert evaluator.programs["capacity"].eq(123).all()
     assert row["r1_ranked_idschool"] == expected_schools
     assert row["sibling"] == expected_schools
     assert row["aaprek"] + row["prek"] == expected_schools

@@ -35,6 +35,8 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 | `random-seed` | int | Seed reset before each subconfig, so subconfig order does not matter. |
 | `iterations.start` / `iterations.end` | int | Iteration range; one DA run (and one utility redraw) per iteration. |
 | `save-assignment` | `true` | Required. Assignment CSVs are saved to `paths.assignment-folder`. |
+| `export-aggregate-metrics` | bool | Write four run-level CSVs combining citywide, school, ZIP-code, and attendance-area metrics, averaged across iterations by full policy variant. Defaults to `false`. Requires student Census block, coordinates, lunch probabilities, ethnicity, income, CTIP, ZIP code, and attendance area, plus school names/categories. |
+| `reuse_assignments` | bool | Reuse valid assignment CSVs already present under `paths.assignment-folder` instead of rerunning DA. Reused assignments still contribute to combined metric exports. Defaults to `true`. |
 | `r1-only` | bool | Treat round 1 as the only round when reconstructing final assignments. |
 | `rounds-merged-options` | list | Round-merging variants over chronological ordinals: `0` (no merge), `all`, or legacy three-round codes `123`, `12`, `23`. Legacy codes are rejected when more than three rounds are selected. |
 | `read-lotteries` | bool | Read tie-breaker lotteries from the `assignment.lotteries` scenario role instead of drawing them. |
@@ -153,7 +155,17 @@ reuse loaded tables. Moving only the cache root does not change that identity.
 ## 4. `paths.*`
 
 `paths` is output-only. `assignment-folder` is the directory for assignment
-CSVs and the replayable config snapshot. Legacy input entries are rejected.
+CSVs and the replayable config snapshot. When `export-aggregate-metrics` is
+enabled, the four combined reports are written directly under
+`assignment-folder/aggregate_metrics/`. Legacy input entries are rejected.
+
+With the default `reuse_assignments: true`, a complete existing policy run is
+loaded from the same assignment paths and DA is skipped. Completeness requires
+every configured iteration and policy variant. Partial runs are regenerated in
+full to preserve deterministic random-number sequencing. Existing files are
+validated for required columns, exact student coverage, program-number/code
+agreement, positive integer ranks, and valid designation state; invalid
+complete runs fail instead of being silently reused.
 
 ## 5. `utility-model.*`
 

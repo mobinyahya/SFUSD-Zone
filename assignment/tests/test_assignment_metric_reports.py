@@ -57,7 +57,9 @@ def test_basic_report_preserves_benchmark_contract():
     assert len(metrics) == 48
 
 
-def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
+def test_full_report_covers_metric_families_without_mutating_inputs(
+    tmp_path, monkeypatch
+):
     students = pd.DataFrame(
         {
             "studentno": range(1, 7),
@@ -107,6 +109,13 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         }
     )
     original_assignments = assignments.copy(deep=True)
+    distance_cache = pd.DataFrame(
+        {
+            "101-GE-KG": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "202-GE-KG": [7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+        },
+        index=pd.Index(range(1, 7), name="studentno"),
+    )
     programs = pd.DataFrame(
         {
             "program_id": ["101-GE-KG", "202-GE-KG", "202-SA-KG"],
@@ -137,7 +146,16 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         no_special_program=True,
         program_file=program_path,
         schools_latlon_path=school_path,
+        distance_cache=distance_cache,
     )
+    assert evaluator.student_data["assignment_dist"].iloc[:4].tolist() == [
+        1.0,
+        2.0,
+        9.0,
+        10.0,
+    ]
+    assert pd.isna(evaluator.student_data["assignment_dist"].iloc[4])
+    assert evaluator.student_data["assignment_dist"].iloc[5] == 12.0
     evaluator.student_data["assignment_dist"] = evaluator.student_data["studentno"].map(
         {1: 4.0, 2: 4.0, 3: 4.0, 4: 4.0, 5: np.nan, 6: 2.0}
     )
@@ -185,14 +203,29 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     assert metrics["Prop Distance > 3 and non-designated (All Assigned)"] == 3 / 5
     pd.testing.assert_frame_equal(assignments, original_assignments)
 
-    report_paths = evaluator.export_aggregate_metrics(tmp_path / "aggregate_metrics")
-    assert set(report_paths) == {
-        "metrics_by_school.csv",
-        "metrics_by_zip_code.csv",
-        "metrics_by_attendance_area.csv",
-    }
+    prepare_calls = []
+    prepare_aggregates = evaluator._prepare_full_report_aggregates
 
-    school_metrics = pd.read_csv(report_paths["metrics_by_school.csv"])
+    def track_prepare(student_data, **kwargs):
+        prepare_calls.append((len(student_data), kwargs))
+        return prepare_aggregates(student_data, **kwargs)
+
+    monkeypatch.setattr(evaluator, "_prepare_full_report_aggregates", track_prepare)
+    reports = evaluator.eval_aggregate_metric_reports("config-a")
+    assert set(reports) == {"school", "zip_code", "attendance_area", "citywide"}
+    expected_contexts = (
+        1
+        + pd.to_numeric(students["zipcode"]).nunique()
+        + students["idschoolattendance"].nunique()
+    )
+    assert len(prepare_calls) == expected_contexts
+    assert sum(
+        call_kwargs.get("include_school_report_stats", False)
+        for _, call_kwargs in prepare_calls
+    ) == 1
+
+    school_metrics = reports["school"]
+    assert school_metrics["config_name"].eq("config-a").all()
     alpha = school_metrics.set_index("school_id").loc[101]
     assert alpha["school_name"] == "Alpha"
     assert alpha["school_category"] == "Attendance"
@@ -205,8 +238,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     assert alpha["percent_designated"] == 0.5
     assert alpha["school_utilization"] == 0.2
 
-    zip_metrics = pd.read_csv(report_paths["metrics_by_zip_code.csv"])
-    assert set(zip_metrics.columns) == {"zip_code", *metrics.index}
+    zip_metrics = reports["zip_code"]
+    assert set(zip_metrics.columns) == {"config_name", "zip_code", *metrics.index}
     zip_94110 = zip_metrics.set_index("zip_code").loc[94110]
     assert zip_94110["Tot Nb Students (Round 1)"] == 2
     assert zip_94110["Tot Nb Assigned (Round 1)"] == 2
@@ -214,11 +247,18 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     assert zip_94113["Tot Nb Assigned (Round 1)"] == 0
     assert zip_94113["Unassigned"] == 1
 
-    attendance_metrics = pd.read_csv(report_paths["metrics_by_attendance_area.csv"])
-    assert set(attendance_metrics.columns) == {"attendance_area", *metrics.index}
+    attendance_metrics = reports["attendance_area"]
+    assert set(attendance_metrics.columns) == {
+        "config_name",
+        "attendance_area",
+        *metrics.index,
+    }
     attendance_101 = attendance_metrics.set_index("attendance_area").loc[101]
     assert attendance_101["Tot Nb Students (Round 1)"] == 3
     assert attendance_101["#Unassigned"] == 1
+    citywide = reports["citywide"]
+    assert citywide.loc[0, "config_name"] == "config-a"
+    assert set(citywide.columns) == {"config_name", *metrics.index}
 
     legacy_evaluator = MatchEvaluator(
         students,
@@ -234,6 +274,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
         legacy_evaluator.student_data["rank"],
         check_names=False,
     )
+    with pytest.raises(ValueError, match="cached student-program distance matrix"):
+        legacy_evaluator.eval_aggregate_metric_reports("legacy")
 
 
 def test_folder_discovery_only_returns_assignment_csvs(tmp_path):
@@ -316,6 +358,32 @@ def _make_full_evaluator(students, assignments, program_path, school_path):
         first_round=True,
         program_file=program_path,
         schools_latlon_path=school_path,
+    )
+
+
+def test_full_evaluator_can_replace_assignments_without_reloading_sources(tmp_path):
+    students, assignments, program_path, school_path = _minimal_full_inputs(tmp_path)
+    evaluator = _make_full_evaluator(
+        students, assignments, program_path, school_path
+    )
+    updated_assignments = assignments.copy()
+    updated_assignments.loc[0, ["programno", "programcodes", "rank"]] = [
+        2,
+        "202-GE-KG",
+        2,
+    ]
+
+    evaluator.update_assignments(updated_assignments)
+    fresh_evaluator = _make_full_evaluator(
+        students,
+        updated_assignments,
+        program_path,
+        school_path,
+    )
+
+    pd.testing.assert_frame_equal(
+        evaluator.student_data,
+        fresh_evaluator.student_data,
     )
 
 

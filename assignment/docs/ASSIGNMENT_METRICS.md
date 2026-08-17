@@ -6,8 +6,8 @@ assignment evaluator. It has two reports:
 - `eval_assignment_basic()` preserves the compact metric contract consumed by
   `choice/assignment_metrics.py` and the benchmark suite.
 - `eval_assignment_full()` produces the standalone report used by
-  `scripts/analysis/analyze_trends.py`. This report is intentionally evaluated
-  from saved assignment CSVs and does not require a zoning solution.
+  `scripts/analysis/analyze_trends.py` and the runner's optional aggregate
+  exports. It does not require a zoning solution.
 
 The trend-analysis YAML continues to accept either `run_csv` or `folder` for
 each run. Folder discovery is recursive and only reads CSVs containing the
@@ -105,7 +105,8 @@ that program type. `utilization_rate_avg` preserves the migrated unweighted
 mean of individual program utilization rates; it is not district-wide filled
 seats divided by district-wide capacity.
 
-`export_aggregate_metrics(output_dir)` writes three per-assignment reports:
+When `export-aggregate-metrics: true`, an assignment run writes four combined
+reports under `paths.assignment-folder/aggregate_metrics/`:
 
 - `metrics_by_school.csv` has one row per school. Enrolled means all simulated
   placements (`programno > 0`), assigned means a non-designated placement, and
@@ -114,10 +115,16 @@ seats divided by district-wide capacity.
 - `metrics_by_zip_code.csv` has one row per non-missing student `zipcode`.
 - `metrics_by_attendance_area.csv` has one row per non-missing student
   `idschoolattendance`.
+- `metrics_citywide.csv` has one row per config and the complete citywide metric
+  set as columns.
 
 The two residential-geography reports contain the complete full metric set,
 recomputed from the students residing in each geography. Program inventory and
 capacity diagnostics retain the evaluator's selected district program table.
+Every report has `config_name`, which identifies the subconfig and full policy
+variant but excludes the iteration suffix. Numeric metrics are averaged across
+iterations for each config and school, ZIP code, attendance area, or citywide
+row. No per-assignment metric CSVs are written. The option defaults to `false`.
 
 The basic metric `Programs with 1-4 AA` is a legacy benchmark field whose
 historical calculation counts schools with one to four Black students. The

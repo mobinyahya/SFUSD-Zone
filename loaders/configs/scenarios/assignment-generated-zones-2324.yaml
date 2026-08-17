@@ -277,7 +277,7 @@ filters:
     grades: [KG]
     student_population: applicant
     rounds: [1]
-    special_programs: exclude_any_special
+    special_programs: include
     capacity_profile: status_quo
     capacity_scenario: programs
     include_mission_bay: true

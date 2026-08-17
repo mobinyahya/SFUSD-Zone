@@ -99,4 +99,6 @@ def test_reconfigure_replaces_zone_dependent_state():
     assert market.preference_generator.market is market
     assert market._guardrail_setup_cache == {}
     assert market._active_policy_cache_context is None
-    market._set_up_save_folder.assert_called_once_with("assignments")
+    market._set_up_save_folder.assert_called_once_with(
+        "assignments", write_config=True
+    )

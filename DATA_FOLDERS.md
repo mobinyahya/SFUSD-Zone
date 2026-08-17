@@ -9,6 +9,10 @@ End-to-end runs require access to the configured external sources.
 
 ## Configuration Source of Truth
 
+See [`loaders/README.md`](loaders/README.md) for the exhaustive field reference
+for run, base-catalog, scenario, source-reference, selector, registry, and
+manual-edge configuration.
+
 The checked-in loader configuration has three layers:
 
 | Layer | Location | Purpose |

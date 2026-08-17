@@ -6,6 +6,8 @@ utility-model:
   gumbel-scale: num(required=False)
 
 save-assignment: enum(True)
+export-aggregate-metrics: bool(required=False)
+reuse_assignments: bool(required=False)
 random-seed: int()
 r1-only: bool(required=False)
 

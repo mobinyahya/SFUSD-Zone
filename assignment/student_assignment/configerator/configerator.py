@@ -113,11 +113,31 @@ class Configerator:
             if not isinstance(data, dict):
                 raise ValueError("Assignment configuration must define a valid data map.")
 
+            subconfigs = config.get("subconfigs", [])
+            if isinstance(subconfigs, list):
+                duplicate_subconfigs = sorted(
+                    {
+                        name
+                        for name in subconfigs
+                        if subconfigs.count(name) > 1
+                    }
+                )
+                if duplicate_subconfigs:
+                    raise ValueError(
+                        "Assignment configuration contains duplicate subconfigs: "
+                        f"{duplicate_subconfigs}."
+                    )
+
             self._validate_schema(
                 yamale.make_data(content=yaml.safe_dump(config)),
                 f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
                 strict=False,
             )
+            iterations = config["iterations"]
+            if iterations["start"] < 0 or iterations["end"] <= iterations["start"]:
+                raise ValueError(
+                    "Assignment iterations must satisfy 0 <= start < end."
+                )
             scenario = load_scenario(data)
             year = scenario.filter("assignment", "year")
             if not isinstance(year, str) or len(year) != 4 or not year.isdigit():

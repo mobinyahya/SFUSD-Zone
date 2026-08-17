@@ -2,6 +2,8 @@ import hashlib
 import json
 import pathlib
 import re
+import shutil
+import tempfile
 import warnings
 from collections.abc import Generator
 from itertools import product
@@ -21,6 +23,24 @@ from .school_choice_market import SchoolChoiceMarket
 
 
 class MarketGenerator(SchoolChoiceMarket):
+    AGGREGATE_METRIC_FILES = {
+        "school": "metrics_by_school.csv",
+        "zip_code": "metrics_by_zip_code.csv",
+        "attendance_area": "metrics_by_attendance_area.csv",
+        "citywide": "metrics_citywide.csv",
+    }
+    AGGREGATE_METRIC_GROUPS = {
+        "school": [
+            "config_name",
+            "school_id",
+            "school_name",
+            "school_category",
+        ],
+        "zip_code": ["config_name", "zip_code"],
+        "attendance_area": ["config_name", "attendance_area"],
+        "citywide": ["config_name"],
+    }
+
     def __init__(
         self,
         estimate_path: str = None,
@@ -28,6 +48,7 @@ class MarketGenerator(SchoolChoiceMarket):
         config: dict | None = None,
         configurator=None,
         write_config: bool = True,
+        write_aggregate_metrics: bool = True,
     ):
         """Initialize market generator.
 
@@ -40,6 +61,8 @@ class MarketGenerator(SchoolChoiceMarket):
             configurator (optional): Config source used by policy simulations.
             write_config (bool, optional): Whether to write the initial config to the
                 assignment directory. Defaults to True.
+            write_aggregate_metrics (bool, optional): Whether this process owns the
+                run-level combined metric files. Parallel workers set this to False.
         """
         super().__init__(
             estimate_path,
@@ -51,6 +74,9 @@ class MarketGenerator(SchoolChoiceMarket):
         self.preference_generator = PreferenceGenerator(self)
         self._guardrail_setup_cache = {}
         self._active_policy_cache_context = None
+        self._write_aggregate_metrics = write_aggregate_metrics
+        self._aggregate_metric_evaluator = None
+        self._reset_aggregate_metric_reports()
 
     def _set_up_save_folder(
         self, assignment_path: str, *, write_config: bool = True
@@ -84,7 +110,13 @@ class MarketGenerator(SchoolChoiceMarket):
                         default_flow_style=False,
                     )
 
-    def reconfigure(self, config: dict, assignment_path: str = None) -> None:
+    def reconfigure(
+        self,
+        config: dict,
+        assignment_path: str = None,
+        *,
+        write_config: bool = True,
+    ) -> None:
         """Replace a run config, reusing immutable data for the same sources."""
         previous_source_identity = getattr(self, "source_identity", None)
         configurator = Configerator.from_config(config)
@@ -99,11 +131,13 @@ class MarketGenerator(SchoolChoiceMarket):
         else:
             self._reuse_market_data()
             self._reuse_utility_model()
-        self._set_up_save_folder(assignment_path)
+        self._set_up_save_folder(assignment_path, write_config=write_config)
         self.priority_generator = PriorityGenerator(self)
         self.preference_generator = PreferenceGenerator(self)
         self._guardrail_setup_cache.clear()
         self._active_policy_cache_context = None
+        if previous_source_identity != self.source_identity:
+            self._aggregate_metric_evaluator = None
 
     def _reset_zones(self):
         aa_schools = self.schools.school_df.loc[
@@ -116,13 +150,18 @@ class MarketGenerator(SchoolChoiceMarket):
             students=self.students,
         )
 
-    def simulate(self) -> None:
+    def simulate(self) -> dict[str, pd.DataFrame] | None:
         """Load and execute every configured policy subconfig."""
+        if getattr(self, "_write_aggregate_metrics", True) and hasattr(
+            self, "output_assignment_path"
+        ):
+            self.clear_aggregate_metric_reports(self.output_assignment_path)
+        self._reset_aggregate_metric_reports()
         subconfigs = list(self.config.get("subconfigs", []))
         if not subconfigs:
             self._validate_config(self.config)
             self.execute_generator(self.create_iterations_generator())
-            return
+            return self._complete_aggregate_metric_reports()
 
         for subconfig in subconfigs:
             if not self.configurator.load_next_subconfig():
@@ -139,10 +178,122 @@ class MarketGenerator(SchoolChoiceMarket):
             elif previous_source_identity != current_source_identity:
                 self._initialize_market_data()
                 self._initialize_utility_model()
+                self._aggregate_metric_evaluator = None
             else:
                 self._reuse_market_data()
                 self._reuse_utility_model()
             self.execute_generator(self.create_iterations_generator())
+            self._finalize_aggregate_metric_batch()
+        return self._complete_aggregate_metric_reports()
+
+    def _reset_aggregate_metric_reports(self):
+        self._aggregate_metric_batches = {
+            report: [] for report in self.AGGREGATE_METRIC_FILES
+        }
+        self._aggregate_metric_results = {
+            report: [] for report in self.AGGREGATE_METRIC_FILES
+        }
+
+    @classmethod
+    def _average_aggregate_metric_frames(cls, report_name, frames):
+        if not frames:
+            return pd.DataFrame(columns=cls.AGGREGATE_METRIC_GROUPS[report_name])
+        combined = pd.concat(frames, ignore_index=True, sort=False)
+        group_columns = cls.AGGREGATE_METRIC_GROUPS[report_name]
+        if combined.empty:
+            return combined.reset_index(drop=True)
+        numeric_columns = [
+            column
+            for column in combined.columns
+            if column not in group_columns
+            and pd.api.types.is_numeric_dtype(combined[column])
+        ]
+        return (
+            combined.groupby(group_columns, as_index=False, dropna=False, sort=True)[
+                numeric_columns
+            ]
+            .mean()
+            .reset_index(drop=True)
+        )
+
+    def _finalize_aggregate_metric_batch(self):
+        if not self.config.get("export-aggregate-metrics", False):
+            return
+        for report_name, frames in self._aggregate_metric_batches.items():
+            if frames:
+                self._aggregate_metric_results[report_name].append(
+                    self._average_aggregate_metric_frames(report_name, frames)
+                )
+            frames.clear()
+
+    def _record_aggregate_metric_reports(self, reports):
+        for report_name, report in reports.items():
+            self._aggregate_metric_batches[report_name].append(report)
+
+    def _complete_aggregate_metric_reports(self):
+        if not self.config.get("export-aggregate-metrics", False):
+            return None
+        self._finalize_aggregate_metric_batch()
+        reports = self.combine_aggregate_metric_reports(
+            [
+                {
+                    name: pd.concat(frames, ignore_index=True, sort=False)
+                    if frames
+                    else pd.DataFrame(columns=self.AGGREGATE_METRIC_GROUPS[name])
+                    for name, frames in self._aggregate_metric_results.items()
+                }
+            ]
+        )
+        if self._write_aggregate_metrics:
+            self.write_aggregate_metric_reports(self.output_assignment_path, reports)
+        return reports
+
+    @classmethod
+    def combine_aggregate_metric_reports(cls, report_sets):
+        combined = {}
+        for report_name in cls.AGGREGATE_METRIC_FILES:
+            frames = [
+                reports[report_name]
+                for reports in report_sets
+                if reports is not None
+            ]
+            if frames:
+                frame = pd.concat(frames, ignore_index=True, sort=False)
+                if not frame.empty:
+                    frame = frame.sort_values(
+                        cls.AGGREGATE_METRIC_GROUPS[report_name],
+                        kind="stable",
+                    )
+                frame = frame.reset_index(drop=True)
+            else:
+                frame = pd.DataFrame(
+                    columns=cls.AGGREGATE_METRIC_GROUPS[report_name]
+                )
+            combined[report_name] = frame
+        return combined
+
+    @classmethod
+    def write_aggregate_metric_reports(cls, assignment_path, reports):
+        assignment_path = pathlib.Path(assignment_path).expanduser()
+        assignment_path.mkdir(parents=True, exist_ok=True)
+        output_dir = assignment_path / "aggregate_metrics"
+        staging_dir = pathlib.Path(
+            tempfile.mkdtemp(prefix="aggregate_metrics.tmp.", dir=assignment_path)
+        )
+        try:
+            for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
+                reports[report_name].to_csv(staging_dir / filename, index=False)
+            cls.clear_aggregate_metric_reports(assignment_path)
+            staging_dir.replace(output_dir)
+        finally:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+
+    @staticmethod
+    def clear_aggregate_metric_reports(assignment_path):
+        output_dir = pathlib.Path(assignment_path).expanduser() / "aggregate_metrics"
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
 
     @staticmethod
     def execute_generator(iterations_generator: Generator):
@@ -182,6 +333,10 @@ class MarketGenerator(SchoolChoiceMarket):
                 # Reset zone and seed so that the order of policy does not matter.
                 np.random.seed(self.config["random-seed"])
                 self._reset_zones()
+                reusable_assignments = self._load_reusable_policy_run(policy)
+                if reusable_assignments is not None:
+                    yield from reusable_assignments
+                    continue
                 for iteration in range(
                     self.config["iterations"]["start"],
                     self.config["iterations"]["end"],
@@ -272,6 +427,15 @@ class MarketGenerator(SchoolChoiceMarket):
         Returns:
             pd.DataFrame: saved historical student assignments
         """
+        policy_data = Policy(
+            name="real_match", ctip=None, rounds_merged=None, tiebreaker=None
+        )
+        reusable = self._load_reusable_assignment(policy_data, None)
+        if reusable is not None:
+            return reusable
+        if not self.config.get("reuse_assignments", True):
+            self._assignment_save_path(policy_data, None).unlink(missing_ok=True)
+
         self._active_policy_cache_context = None
         if self.config["utility-model"]["enable"]:
             self.umodel.draw_utility_model_randomness(
@@ -288,9 +452,6 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         match, in_zone_rank = self._get_real_match(prefs)
         cutoffs = np.zeros([self.num_programs])
-        policy_data = Policy(
-            name="real_match", ctip=None, rounds_merged=None, tiebreaker=None
-        )
         return self._save_assignment(
             prefs,
             policy_data,
@@ -322,18 +483,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 designate=self.config["designate"]
             )
 
-        for ctip, rounds_merged, ties in product(
-            self.config["ctip-options"],
-            self.config["rounds-merged-options"],
-            self.config["ties-options"],
-        ):
-            policy_data = Policy(
-                name=policy,
-                ctip=ctip,
-                rounds_merged=rounds_merged,
-                tiebreaker=ties,
-            )
-
+        for policy_data in self._policy_data_options(policy):
             priorities = self.priority_generator.set_policy_specific_priorities(
                 policy_data, prefs, iteration=iteration
             )
@@ -352,6 +502,45 @@ class MarketGenerator(SchoolChoiceMarket):
             yield self._save_assignment(
                 prefs, policy_data, iteration, match, in_zone_rank, cutoffs
             )
+
+    def _policy_data_options(self, policy):
+        return [
+            Policy(
+                name=policy,
+                ctip=ctip,
+                rounds_merged=rounds_merged,
+                tiebreaker=ties,
+            )
+            for ctip, rounds_merged, ties in product(
+                self.config["ctip-options"],
+                self.config["rounds-merged-options"],
+                self.config["ties-options"],
+            )
+        ]
+
+    def _load_reusable_policy_run(self, policy):
+        expected = [
+            (policy_data, iteration)
+            for iteration in range(
+                self.config["iterations"]["start"],
+                self.config["iterations"]["end"],
+            )
+            for policy_data in self._policy_data_options(policy)
+        ]
+        assignment_paths = [
+            self._assignment_save_path(policy_data, iteration)
+            for policy_data, iteration in expected
+        ]
+        if not self.config.get("reuse_assignments", True) or not all(
+            path.is_file() for path in assignment_paths
+        ):
+            for path in assignment_paths:
+                path.unlink(missing_ok=True)
+            return None
+        return [
+            self._load_reusable_assignment(policy_data, iteration)
+            for policy_data, iteration in expected
+        ]
 
     def _overscribe_attendance_area(
         self,
@@ -638,6 +827,148 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         return match, rank, cutoffs
 
+    def _assignment_save_path(self, policy_data, iteration):
+        save_name = self._get_assignment_save_name(policy_data, iteration)
+        return (
+            self.output_assignment_path
+            / self.config.get("subconfig-name", "default")
+            / save_name
+        )
+
+    def _validate_reusable_assignment(self, assignment_df, assignment_path):
+        required_columns = {
+            "studentno",
+            "programno",
+            "programcodes",
+            "rank",
+            "designation",
+            "In-Zone Rank",
+        }
+        missing_columns = required_columns - set(assignment_df.columns)
+        if missing_columns:
+            raise ValueError(
+                f"Reusable assignment {assignment_path} is missing columns: "
+                f"{sorted(missing_columns)}"
+            )
+        if assignment_df["studentno"].isna().any() or assignment_df[
+            "studentno"
+        ].duplicated().any():
+            raise ValueError(
+                f"Reusable assignment {assignment_path} has missing or duplicate "
+                "studentno values"
+            )
+
+        expected_ids = pd.Index(self.students.student_data.index)
+        assignment_ids = pd.Index(assignment_df["studentno"])
+        missing_ids = expected_ids[~expected_ids.isin(assignment_ids)].tolist()
+        extra_ids = assignment_ids[~assignment_ids.isin(expected_ids)].tolist()
+        if missing_ids or extra_ids:
+            raise ValueError(
+                f"Reusable assignment {assignment_path} does not match the current "
+                f"students; missing: {missing_ids}; extra: {extra_ids}"
+            )
+
+        program_numbers = pd.to_numeric(
+            assignment_df["programno"], errors="coerce"
+        )
+        valid_program_numbers = {0, *self.programs.codes.keys()}
+        invalid_programs = (
+            program_numbers.isna()
+            | ~np.isfinite(program_numbers)
+            | (program_numbers % 1 != 0)
+            | ~program_numbers.isin(valid_program_numbers)
+        )
+        if invalid_programs.any():
+            raise ValueError(
+                f"Reusable assignment {assignment_path} has invalid programno values"
+            )
+        assignment_df["programno"] = program_numbers.astype(int)
+
+        program_codes = assignment_df["programcodes"].astype("string").str.strip()
+        assigned = assignment_df["programno"] > 0
+        expected_codes = assignment_df.loc[assigned, "programno"].map(
+            self.programs.codes
+        )
+        actual_codes = program_codes[assigned]
+        invalid_codes = actual_codes.isna() | actual_codes.ne(expected_codes)
+        unassigned_with_code = (~assigned) & program_codes.notna() & program_codes.ne("")
+        if invalid_codes.any() or unassigned_with_code.any():
+            raise ValueError(
+                f"Reusable assignment {assignment_path} has programcodes that do "
+                "not match programno"
+            )
+        assignment_df["programcodes"] = program_codes.fillna("").astype(str)
+
+        for column in ("rank", "In-Zone Rank"):
+            values = pd.to_numeric(assignment_df[column], errors="coerce")
+            invalid = (
+                values.isna()
+                | ~np.isfinite(values)
+                | (values <= 0)
+                | (values % 1 != 0)
+            )
+            if invalid.any():
+                raise ValueError(
+                    f"Reusable assignment {assignment_path} has invalid {column} values"
+                )
+            assignment_df[column] = values.astype(int)
+
+        designation = pd.to_numeric(
+            assignment_df["designation"], errors="coerce"
+        )
+        if (
+            designation.isna()
+            | ~np.isfinite(designation)
+            | ~designation.isin([0, 1])
+        ).any() or ((~assigned) & designation.eq(1)).any():
+            raise ValueError(
+                f"Reusable assignment {assignment_path} has invalid designation values"
+            )
+        assignment_df["designation"] = designation.astype(int)
+        return assignment_df
+
+    def _record_assignment_metric_reports(self, assignment_df, save_name, iteration):
+        if not self.config.get("export-aggregate-metrics", False):
+            return
+        from ..evaluation.match_evaluator import MatchEvaluator
+
+        evaluator = getattr(self, "_aggregate_metric_evaluator", None)
+        if evaluator is None:
+            evaluator = MatchEvaluator.from_scenario(
+                self.data_scenario,
+                assignment_df,
+                program_data=self.programs.program_df,
+                distance_cache=self.students.distance_data,
+            )
+            self._aggregate_metric_evaluator = evaluator
+        else:
+            evaluator.update_assignments(assignment_df)
+        variant_name = pathlib.Path(save_name).stem
+        iteration_suffix = f"_iteration{iteration}" if iteration is not None else None
+        if iteration_suffix and variant_name.endswith(iteration_suffix):
+            variant_name = variant_name[: -len(iteration_suffix)]
+        config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
+        self._record_aggregate_metric_reports(
+            evaluator.eval_aggregate_metric_reports(config_name)
+        )
+
+    def _load_reusable_assignment(self, policy_data, iteration):
+        if not self.config.get("reuse_assignments", True):
+            return None
+        assignment_path = self._assignment_save_path(policy_data, iteration)
+        if not assignment_path.is_file():
+            return None
+        assignment_df = self._validate_reusable_assignment(
+            pd.read_csv(assignment_path),
+            assignment_path,
+        )
+        self._record_assignment_metric_reports(
+            assignment_df,
+            self._get_assignment_save_name(policy_data, iteration),
+            iteration,
+        )
+        return assignment_df
+
     def _save_assignment(
         self,
         prefs: np.ndarray,
@@ -685,13 +1016,30 @@ class MarketGenerator(SchoolChoiceMarket):
         # TODO: add cutoffs to assignment_df?
 
         save_name = self._get_assignment_save_name(policy_data, iteration)
-        save_path = (
-            self.output_assignment_path
-            / self.config.get("subconfig-name", "default")
-            / save_name
-        )
+        save_path = self._assignment_save_path(policy_data, iteration)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        assignment_df.to_csv(save_path, index=False)
+        if self.config.get("export-aggregate-metrics", False):
+            save_path.unlink(missing_ok=True)
+            self._record_assignment_metric_reports(
+                assignment_df,
+                save_name,
+                iteration,
+            )
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=save_path.parent,
+                prefix=f".{save_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = pathlib.Path(temporary_file.name)
+                assignment_df.to_csv(temporary_file, index=False)
+            temporary_path.replace(save_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
         return assignment_df
 
     def _get_assignment_save_name(

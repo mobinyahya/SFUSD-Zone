@@ -9,6 +9,7 @@ import yaml
 from click.testing import CliRunner
 
 from assignment.student_assignment.cli import cli
+from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
 from assignment.student_assignment.market_generator.policy import Policy
 from assignment.student_assignment.market_generator.preference_generator import (
     PreferenceGenerator,
@@ -131,6 +132,335 @@ def test_assignment_names_cover_all_policy_option_dimensions():
 
     assert baseline.endswith("_iteration3.csv")
     assert len({baseline, *variants}) == 1 + len(variants)
+
+
+def _assignment_saving_market(tmp_path, export_aggregate_metrics=None):
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {
+        "restrict-zone": False,
+        "utility-model": {"enable": False},
+        "subconfig-name": "status_quo",
+    }
+    if export_aggregate_metrics is not None:
+        market.config["export-aggregate-metrics"] = export_aggregate_metrics
+    market.output_assignment_path = tmp_path / "assignments"
+    market.students = SimpleNamespace(
+        student_data=pd.DataFrame(index=pd.Index([1, 2], name="studentno")),
+        distance_data=pd.DataFrame(
+            {"101-GE-KG": [1.0, 2.0]},
+            index=pd.Index([1, 2], name="studentno"),
+        ),
+    )
+    market.programs = SimpleNamespace(
+        codes={0: np.nan, 1: "101-GE-KG"},
+        program_df=pd.DataFrame({"capacity": [10]}),
+    )
+    market.preference_generator = SimpleNamespace(pref_length=1)
+    market.data_scenario = object()
+    market._write_aggregate_metrics = False
+    market._reset_aggregate_metric_reports()
+    market._get_assignment_save_name = Mock(
+        side_effect=lambda _policy, iteration: f"policy/policy_iteration{iteration}.csv"
+    )
+    return market
+
+
+def _aggregate_reports(config_name, value):
+    return {
+        "school": pd.DataFrame(
+            {
+                "config_name": [config_name],
+                "school_id": [101],
+                "school_name": ["Alpha"],
+                "school_category": ["Attendance"],
+                "metric": [value],
+            }
+        ),
+        "zip_code": pd.DataFrame(
+            {"config_name": [config_name], "zip_code": [94110], "metric": [value]}
+        ),
+        "attendance_area": pd.DataFrame(
+            {
+                "config_name": [config_name],
+                "attendance_area": [101],
+                "metric": [value],
+            }
+        ),
+        "citywide": pd.DataFrame(
+            {"config_name": [config_name], "metric": [value]}
+        ),
+    }
+
+
+def _configure_reuse_market(market):
+    market.config.update(
+        {
+            "policies": ["zones"],
+            "ctip-options": [0],
+            "rounds-merged-options": [0],
+            "ties-options": ["STB"],
+            "guard-rails": -1,
+            "reserve-settings": {},
+            "restrict-zone": False,
+            "citywide-or-lp": [],
+            "iterations": {"start": 0, "end": 2},
+            "random-seed": 7,
+            "reuse_assignments": True,
+        }
+    )
+    market._reset_zones = Mock()
+
+
+def _write_reusable_assignment(market, iteration):
+    return market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        iteration,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+
+
+def test_complete_assignment_run_is_reused_and_exported(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    for iteration in [0, 1]:
+        _write_reusable_assignment(market, iteration)
+    market.config["export-aggregate-metrics"] = True
+    market._record_assignment_metric_reports = Mock()
+    market._run_single_iteration_of_policy = Mock()
+
+    assignments = list(market.create_iterations_generator())
+
+    assert len(assignments) == 2
+    market._run_single_iteration_of_policy.assert_not_called()
+    assert market._record_assignment_metric_reports.call_count == 2
+
+
+def test_incomplete_assignment_run_is_regenerated(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    _write_reusable_assignment(market, 0)
+    market._run_single_iteration_of_policy = Mock(
+        side_effect=lambda iteration, _policy: iter(
+            [pd.DataFrame({"iteration": [iteration]})]
+        )
+    )
+
+    assignments = list(market.create_iterations_generator())
+
+    assert len(assignments) == 2
+    assert market._run_single_iteration_of_policy.call_count == 2
+    assert not market._assignment_save_path(
+        Policy("zones", 0, 0, "STB"), 0
+    ).exists()
+
+
+def test_invalid_complete_assignment_run_is_rejected(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    for iteration in [0, 1]:
+        _write_reusable_assignment(market, iteration)
+    invalid_path = market._assignment_save_path(Policy("zones", 0, 0, "STB"), 1)
+    pd.read_csv(invalid_path).iloc[[0]].to_csv(invalid_path, index=False)
+    market._run_single_iteration_of_policy = Mock()
+
+    with pytest.raises(ValueError, match="does not match the current students"):
+        list(market.create_iterations_generator())
+
+    market._run_single_iteration_of_policy.assert_not_called()
+
+
+def test_assignment_reuse_can_be_disabled(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    for iteration in [0, 1]:
+        _write_reusable_assignment(market, iteration)
+    market.config["reuse_assignments"] = False
+    market._run_single_iteration_of_policy = Mock(
+        side_effect=lambda iteration, _policy: iter(
+            [pd.DataFrame({"iteration": [iteration]})]
+        )
+    )
+
+    list(market.create_iterations_generator())
+
+    assert market._run_single_iteration_of_policy.call_count == 2
+    assert not market._assignment_save_path(
+        Policy("zones", 0, 0, "STB"), 0
+    ).exists()
+
+
+def test_real_match_assignment_is_reused_before_reconstruction(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    market.config["reuse_assignments"] = True
+    policy = Policy("real_match", None, None, None)
+    market._save_assignment(
+        np.array([[1], [0]]),
+        policy,
+        None,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+    market.preference_generator.initialize_real_preferences = Mock()
+
+    reused = market._read_real_match()
+
+    assert len(reused) == 2
+    market.preference_generator.initialize_real_preferences.assert_not_called()
+
+
+def test_assignment_metrics_export_is_disabled_when_omitted(tmp_path, monkeypatch):
+    market = _assignment_saving_market(tmp_path)
+    from_scenario = Mock()
+    monkeypatch.setattr(MatchEvaluator, "from_scenario", from_scenario)
+
+    market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+
+    assert (tmp_path / "assignments/status_quo/policy/policy_iteration0.csv").is_file()
+    from_scenario.assert_not_called()
+    assert not (tmp_path / "assignments/aggregate_metrics").exists()
+
+
+def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkeypatch):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
+    evaluator = Mock()
+    values = iter([1.0, 3.0])
+    evaluator.eval_aggregate_metric_reports.side_effect = (
+        lambda config_name: _aggregate_reports(config_name, next(values))
+    )
+    from_scenario = Mock(return_value=evaluator)
+    monkeypatch.setattr(MatchEvaluator, "from_scenario", from_scenario)
+
+    for iteration in [0, 1]:
+        market._save_assignment(
+            np.array([[1], [0]]),
+            Policy("zones", 0, 0, "STB"),
+            iteration,
+            np.array([1, 0]),
+            np.array([1, 2]),
+            np.zeros(2),
+        )
+
+    reports = market._complete_aggregate_metric_reports()
+
+    from_scenario.assert_called_once()
+    assert all(
+        call.args[0] is market.data_scenario for call in from_scenario.call_args_list
+    )
+    assert all(
+        call.kwargs["program_data"] is market.programs.program_df
+        for call in from_scenario.call_args_list
+    )
+    assert (
+        from_scenario.call_args.kwargs["distance_cache"]
+        is market.students.distance_data
+    )
+    evaluator.update_assignments.assert_called_once()
+    assert evaluator.eval_aggregate_metric_reports.call_args_list == [
+        (("status_quo/policy",),),
+        (("status_quo/policy",),),
+    ]
+    assert reports["school"].loc[0, "metric"] == 2
+    assert reports["zip_code"].loc[0, "metric"] == 2
+    assert reports["attendance_area"].loc[0, "metric"] == 2
+    assert reports["citywide"].loc[0, "metric"] == 2
+    assert (tmp_path / "assignments/status_quo/policy/policy_iteration0.csv").is_file()
+    assert (tmp_path / "assignments/status_quo/policy/policy_iteration1.csv").is_file()
+    assert not (tmp_path / "assignments/aggregate_metrics").exists()
+
+
+def test_failed_metrics_export_removes_existing_assignment_marker(
+    tmp_path, monkeypatch
+):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
+    save_path = tmp_path / "assignments/status_quo/policy/policy_iteration0.csv"
+    save_path.parent.mkdir(parents=True)
+    save_path.write_text("stale assignment")
+    evaluator = Mock()
+    evaluator.eval_aggregate_metric_reports.side_effect = ValueError("report failed")
+    monkeypatch.setattr(
+        MatchEvaluator,
+        "from_scenario",
+        Mock(return_value=evaluator),
+    )
+
+    with pytest.raises(ValueError, match="report failed"):
+        market._save_assignment(
+            np.array([[1], [0]]),
+            Policy("zones", 0, 0, "STB"),
+            0,
+            np.array([1, 0]),
+            np.array([1, 2]),
+            np.zeros(2),
+        )
+
+    assert not save_path.exists()
+
+
+def test_combined_metric_writer_creates_only_four_run_level_csvs(tmp_path):
+    reports = _aggregate_reports("status_quo/policy", 2.0)
+    legacy_dir = tmp_path / "aggregate_metrics/old-config/iteration0"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "metrics_by_school.csv").write_text("stale")
+
+    MarketGenerator.write_aggregate_metric_reports(tmp_path, reports)
+
+    output_dir = tmp_path / "aggregate_metrics"
+    assert {path.name for path in output_dir.iterdir()} == {
+        "metrics_by_school.csv",
+        "metrics_by_zip_code.csv",
+        "metrics_by_attendance_area.csv",
+        "metrics_citywide.csv",
+    }
+    citywide = pd.read_csv(output_dir / "metrics_citywide.csv")
+    assert citywide.loc[0, "config_name"] == "status_quo/policy"
+    assert citywide.loc[0, "metric"] == 2
+
+
+def test_combined_metric_writer_expands_home_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    MarketGenerator.write_aggregate_metric_reports(
+        "~/assignment-runs",
+        _aggregate_reports("status_quo/policy", 2.0),
+    )
+
+    assert (
+        tmp_path / "assignment-runs/aggregate_metrics/metrics_citywide.csv"
+    ).is_file()
+
+
+def test_empty_geography_report_keeps_metric_headers():
+    empty_zip = pd.DataFrame(columns=["config_name", "zip_code", "metric"])
+    averaged = MarketGenerator._average_aggregate_metric_frames(
+        "zip_code", [empty_zip]
+    )
+    combined = MarketGenerator.combine_aggregate_metric_reports(
+        [
+            {
+                "school": pd.DataFrame(),
+                "zip_code": averaged,
+                "attendance_area": pd.DataFrame(),
+                "citywide": pd.DataFrame(),
+            }
+        ]
+    )
+
+    assert combined["zip_code"].columns.tolist() == [
+        "config_name",
+        "zip_code",
+        "metric",
+    ]
 
 
 def test_preference_length_real_plus_three_and_ethnicity_means():

@@ -6,6 +6,8 @@ utility-model:
   list-length: "7"
 
 save-assignment: true
+export-aggregate-metrics: false
+reuse_assignments: true
 random-seed: 2023
 data:
   scenario: legacy

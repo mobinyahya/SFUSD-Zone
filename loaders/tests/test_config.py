@@ -454,9 +454,7 @@ def test_generated_zones_scenario_uses_supported_registry_bundle():
     )
 
     assert scenario.filter("assignment", "capacity_profile") == "status_quo"
-    assert scenario.filter("assignment", "special_programs") == (
-        "exclude_any_special"
-    )
+    assert scenario.filter("assignment", "special_programs") == "include"
     assert scenario.source("assignment.students").catalog_id == (
         "assignment.students.2324"
     )

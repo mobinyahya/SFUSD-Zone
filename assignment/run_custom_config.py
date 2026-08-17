@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 import warnings
@@ -38,11 +39,15 @@ else:
         MarketGenerator,
     )
 
+_WORKER_MARKET_GENERATOR = None
 
-def _run_market_generator(market: MarketGenerator) -> None:
+
+def _run_market_generator(market: MarketGenerator):
     result = market.simulate()
     if isinstance(result, Generator):
         market.execute_generator(result)
+        return None
+    return result
 
 
 def resolve_variables(item, root_config):
@@ -81,6 +86,9 @@ def _write_provenance_config(custom_config: dict) -> None:
 
     output_dir = pathlib.Path(assignment_folder).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
+    aggregate_dir = output_dir / "aggregate_metrics"
+    if aggregate_dir.exists():
+        shutil.rmtree(aggregate_dir)
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -99,7 +107,7 @@ def _run_subconfig_worker(
     custom_config: dict,
     subconfig_name: str,
     write_shared_utility_output: bool,
-) -> None:
+):
     """Run one subconfig in an isolated worker process.
 
     Must be a top-level function to be picklable by ProcessPoolExecutor.
@@ -118,8 +126,19 @@ def _run_subconfig_worker(
     if not write_shared_utility_output:
         single_config.get("utility-model", {}).pop("save-path", None)
 
-    m = MarketGenerator(config=single_config, write_config=False)
-    _run_market_generator(m)
+    global _WORKER_MARKET_GENERATOR
+    if _WORKER_MARKET_GENERATOR is None:
+        _WORKER_MARKET_GENERATOR = MarketGenerator(
+            config=single_config,
+            write_config=False,
+            write_aggregate_metrics=False,
+        )
+    else:
+        _WORKER_MARKET_GENERATOR.reconfigure(
+            single_config,
+            write_config=False,
+        )
+    return _run_market_generator(_WORKER_MARKET_GENERATOR)
 
 
 @click.command()
@@ -168,6 +187,17 @@ def generate(config_path, sample, frac, workers):
         )
 
     subconfigs_list = custom_config.get("subconfigs", [])
+    duplicate_subconfigs = sorted(
+        {
+            name
+            for name in subconfigs_list
+            if subconfigs_list.count(name) > 1
+        }
+    )
+    if duplicate_subconfigs:
+        raise ValueError(
+            f"Config contains duplicate subconfigs: {duplicate_subconfigs}."
+        )
 
     # Workers must never race to replace the root provenance file. The parent
     # writes the complete resolved config, while every MarketGenerator below is
@@ -191,10 +221,11 @@ def generate(config_path, sample, frac, workers):
                 for index, subconfig_name in enumerate(subconfigs_list)
             }
             failures = []
+            aggregate_reports = {}
             for future in as_completed(futures):
                 index, subconfig_name = futures[future]
                 try:
-                    future.result()
+                    aggregate_reports[index] = future.result()
                 except Exception as exc:
                     failures.append((index, subconfig_name, exc))
 
@@ -207,6 +238,14 @@ def generate(config_path, sample, frac, workers):
             raise RuntimeError(
                 f"{len(failures)} subconfig(s) failed: {failed_names}. "
                 f"{failure_details}"
+            )
+        if custom_config.get("export-aggregate-metrics", False):
+            reports = MarketGenerator.combine_aggregate_metric_reports(
+                [aggregate_reports[index] for index in sorted(aggregate_reports)]
+            )
+            MarketGenerator.write_aggregate_metric_reports(
+                custom_config["paths"]["assignment-folder"],
+                reports,
             )
 
 

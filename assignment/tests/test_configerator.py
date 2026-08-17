@@ -15,6 +15,54 @@ def _valid_config():
     return config
 
 
+def test_aggregate_metrics_export_is_disabled_by_default():
+    assert _valid_config()["export-aggregate-metrics"] is False
+
+
+def test_assignment_reuse_is_enabled_by_default():
+    assert _valid_config()["reuse_assignments"] is True
+
+
+def test_aggregate_metrics_export_must_be_boolean():
+    config = _valid_config()
+    config["export-aggregate-metrics"] = "true"
+
+    with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+def test_assignment_reuse_must_be_boolean():
+    config = _valid_config()
+    config["reuse_assignments"] = "true"
+
+    with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+def test_duplicate_subconfigs_are_rejected():
+    config = _valid_config()
+    config["subconfigs"] = ["status_quo", "status_quo"]
+
+    with pytest.raises(ValueError, match="duplicate subconfigs"):
+        Configerator.from_config(config)
+
+
+@pytest.mark.parametrize(
+    "iterations",
+    [
+        {"start": -1, "end": 1},
+        {"start": 1, "end": 1},
+        {"start": 2, "end": 1},
+    ],
+)
+def test_invalid_iteration_ranges_are_rejected(iterations):
+    config = _valid_config()
+    config["iterations"] = iterations
+
+    with pytest.raises(ValueError, match="0 <= start < end"):
+        Configerator.from_config(config)
+
+
 def test_from_config_creates_an_isolated_policy_loader(monkeypatch):
     config = _valid_config()
     config.update(
