@@ -13,6 +13,7 @@ import ast
 import csv
 import logging
 from math import asin, cos, isnan, radians, sin, sqrt
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,7 @@ DIAGNOSTIC_PROGRAM_TYPES = [
     "SE",
     "SN",
 ]
+
 
 class MatchEvaluator:
     def __init__(
@@ -373,6 +375,14 @@ class MatchEvaluator:
         self.programs["program_id"] = program_ids.astype(str)
         self.programs["programno"] = program_numbers.astype(int)
         self.programs["school_id"] = program_schools.astype(int)
+        if "capacity" in self.programs:
+            capacities = pd.to_numeric(self.programs["capacity"], errors="coerce")
+            invalid_capacities = (
+                capacities.isna() | ~np.isfinite(capacities) | (capacities < 0)
+            )
+            if invalid_capacities.any():
+                raise ValueError("Program table contains invalid capacity values")
+            self.programs["capacity"] = capacities
         self.schools_latlon["school_id"] = school_ids.astype(int)
         self.schools_latlon["lat"] = pd.to_numeric(
             self.schools_latlon["lat"], errors="coerce"
@@ -531,7 +541,12 @@ class MatchEvaluator:
             raise ValueError(
                 f"Assignments contain invalid designation values for students: {students}"
             )
-        self.assignments["designation"] = designation.fillna(0).astype(int)
+        designation = designation.fillna(0).astype(int)
+        unassigned_designated = self.assignments["programno"].eq(0) & designation.eq(1)
+        if unassigned_designated.any():
+            students = self.assignments.loc[unassigned_designated, "studentno"].tolist()
+            raise ValueError(f"Unassigned students cannot be designated: {students}")
+        self.assignments["designation"] = designation
         self.assignments["programcodes"] = program_codes.fillna("").astype(str)
 
     @staticmethod
@@ -1466,7 +1481,9 @@ class MatchEvaluator:
             area_list += citywide_schools
         elif building_block == "Tract":
             area_list += [
-                zone for zone in sorted(set(zone_dict.values())) if zone not in area_list
+                zone
+                for zone in sorted(set(zone_dict.values()))
+                if zone not in area_list
             ]
             area_list += citywide_schools
         elif building_block == "idschoolattendance":
@@ -1665,6 +1682,167 @@ class MatchEvaluator:
             )
         return metrics
 
+    def eval_assignment_metrics_by_school(self):
+        """Return simulated enrollment outcomes with one row per school."""
+        if self._mode != "full":
+            raise ValueError(
+                "School-level metrics require a full MatchEvaluator instance"
+            )
+
+        required_school_columns = {"school_id", "school_name", "category"}
+        missing_school_columns = required_school_columns - set(
+            self.schools_latlon.columns
+        )
+        if missing_school_columns:
+            raise ValueError(
+                "School-level metrics require school columns: "
+                f"{sorted(missing_school_columns)}"
+            )
+        if "capacity" not in self.programs:
+            raise ValueError("School-level metrics require program column: capacity")
+
+        capacities = pd.to_numeric(self.programs["capacity"], errors="coerce")
+        if (
+            capacities.isna().any()
+            or (~np.isfinite(capacities)).any()
+            or (capacities < 0).any()
+        ):
+            raise ValueError("School-level metrics require nonnegative capacities")
+        capacity_by_school = capacities.groupby(self.programs["school_id"]).sum()
+
+        schools = (
+            self.schools_latlon[["school_id", "school_name", "category"]]
+            .drop_duplicates("school_id")
+            .sort_values("school_id")
+            .rename(columns={"category": "school_category"})
+            .reset_index(drop=True)
+        )
+        enrolled = self.student_data[self._assigned_mask(self.student_data)].copy()
+        non_designated = enrolled[enrolled["designation"] == 0]
+        designated = enrolled[enrolled["designation"] != 0]
+
+        enrollment_count = enrolled.groupby("assigned_school").size()
+        assigned_count = non_designated.groupby("assigned_school").size()
+        designated_count = designated.groupby("assigned_school").size()
+        school_ids = schools["school_id"]
+        denominators = school_ids.map(enrollment_count).fillna(0)
+
+        schools["school_frl_enrolled"] = school_ids.map(
+            enrolled.groupby("assigned_school")["frl"].mean()
+        )
+        schools["mean_travel_dist_assigned"] = school_ids.map(
+            non_designated.groupby("assigned_school")["assignment_dist"].mean()
+        )
+        schools["mean_travel_dist_designated"] = school_ids.map(
+            designated.groupby("assigned_school")["assignment_dist"].mean()
+        )
+        schools["mean_travel_dist_enrolled"] = school_ids.map(
+            enrolled.groupby("assigned_school")["assignment_dist"].mean()
+        )
+        schools["mean_student_choice_assigned"] = school_ids.map(
+            non_designated.groupby("assigned_school")["rank"].mean()
+        )
+        schools["percent_assigned"] = [
+            self._safe_ratio(assigned_count.get(school_id, 0), denominator)
+            for school_id, denominator in zip(school_ids, denominators, strict=True)
+        ]
+        schools["percent_designated"] = [
+            self._safe_ratio(designated_count.get(school_id, 0), denominator)
+            for school_id, denominator in zip(school_ids, denominators, strict=True)
+        ]
+        schools["school_utilization"] = [
+            self._safe_ratio(
+                enrollment_count.get(school_id, 0),
+                capacity_by_school.get(school_id, 0),
+            )
+            for school_id in school_ids
+        ]
+        return schools[
+            [
+                "school_id",
+                "school_name",
+                "school_category",
+                "school_frl_enrolled",
+                "mean_travel_dist_assigned",
+                "mean_travel_dist_designated",
+                "mean_travel_dist_enrolled",
+                "mean_student_choice_assigned",
+                "percent_assigned",
+                "percent_designated",
+                "school_utilization",
+            ]
+        ]
+
+    def _eval_assignment_full_by_group(self, source_column, output_column):
+        """Evaluate the complete full report for each residential group."""
+        if self._mode != "full":
+            raise ValueError(
+                "Geography-level metrics require a full MatchEvaluator instance"
+            )
+        if source_column not in self.student_data:
+            raise ValueError(
+                f"Geography-level metrics require student column: {source_column}"
+            )
+
+        geography = pd.to_numeric(self.student_data[source_column], errors="coerce")
+        supplied = self.student_data[source_column].notna()
+        invalid = supplied & (
+            geography.isna() | ~np.isfinite(geography) | (geography % 1 != 0)
+        )
+        if invalid.any():
+            values = self.student_data.loc[invalid, source_column].unique().tolist()
+            raise ValueError(
+                f"Student column {source_column} contains invalid values: {values}"
+            )
+
+        rows = []
+        students_with_geography = self.student_data[supplied].assign(
+            _aggregate_geography=geography[supplied].astype("int64")
+        )
+        for area, students in students_with_geography.groupby(
+            "_aggregate_geography", sort=True
+        ):
+            students = students.drop(columns="_aggregate_geography")
+            rows.append(
+                {
+                    output_column: area,
+                    **self.eval_assignment_full(student_data=students).to_dict(),
+                }
+            )
+        if rows:
+            return pd.DataFrame(rows)
+        return pd.DataFrame(
+            columns=[output_column, *self.eval_assignment_full().index.tolist()]
+        )
+
+    def eval_assignment_metrics_by_zip_code(self):
+        """Return the complete full report for each student ZIP code."""
+        return self._eval_assignment_full_by_group("zipcode", "zip_code")
+
+    def eval_assignment_metrics_by_attendance_area(self):
+        """Return the complete full report for each student's attendance area."""
+        return self._eval_assignment_full_by_group(
+            "idschoolattendance", "attendance_area"
+        )
+
+    def export_aggregate_metrics(self, output_dir):
+        """Write school, ZIP-code, and attendance-area assignment reports."""
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        reports = {
+            "metrics_by_school.csv": self.eval_assignment_metrics_by_school(),
+            "metrics_by_zip_code.csv": self.eval_assignment_metrics_by_zip_code(),
+            "metrics_by_attendance_area.csv": (
+                self.eval_assignment_metrics_by_attendance_area()
+            ),
+        }
+        paths = {}
+        for filename, report in reports.items():
+            path = output_dir / filename
+            report.to_csv(path, index=False)
+            paths[filename] = path
+        return paths
+
     def school_frl_range(
         self,
         pct,
@@ -1825,8 +2003,8 @@ class MatchEvaluator:
 
         return theil_sum / (district_entropy * total_students)
 
-    def eval_assignment_full(self):
-        """Return the extended standalone assignment metric report."""
+    def eval_assignment_full(self, student_data=None):
+        """Return the extended report, optionally scoped to selected students."""
         if self._mode != "full":
             raise ValueError(
                 "eval_assignment_full requires raw student/assignment data and "
@@ -1835,7 +2013,8 @@ class MatchEvaluator:
         low_income = self.low_income
         medium_income = self.medium_income
         metrics = {}
-        student_data = self.student_data
+        if student_data is None:
+            student_data = self.student_data
         assigned_students = student_data[student_data["programno"] > 0].copy()
 
         designated_students = assigned_students[assigned_students["designation"] != 0]
@@ -1880,6 +2059,7 @@ class MatchEvaluator:
             lower_threshold=0.0001,
             smaller_strict=True,
             percentage=True,
+            student_data=student_data,
         )
         metrics[
             "#GE programs that have exactly 0 African American or Pacific Islander students"
@@ -1888,6 +2068,7 @@ class MatchEvaluator:
             lower_threshold=0,
             smaller_strict=True,
             percentage=False,
+            student_data=student_data,
         )
         metrics[
             "#GE programs that have 1-4 African American or Pacific Islander students"
@@ -1896,6 +2077,7 @@ class MatchEvaluator:
             lower_threshold=1,
             smaller_strict=False,
             percentage=False,
+            student_data=student_data,
         )
 
         for x in [10, 15, -10, -15]:
@@ -1905,7 +2087,8 @@ class MatchEvaluator:
                 f"#Students in schools {'above' if x >= 0 else 'below'} {x}% district FRL",
             )
             (metrics[col1], metrics[col2], metrics[col3]) = self.school_frl_range(
-                x / 100.0
+                x / 100.0,
+                all_student_data=assigned_students,
             )
             (col1, col2, col3) = (
                 f"#Schools {'above' if x >= 0 else 'below'} {x}% district FRL (Non-Designated)",
@@ -1913,12 +2096,12 @@ class MatchEvaluator:
                 f"#Students in schools {'above' if x >= 0 else 'below'} {x}% district FRL  (Non-Designated)",
             )
             (metrics[col1], metrics[col2], metrics[col3]) = self.school_frl_range(
-                x / 100.0, non_desig_only=True
+                x / 100.0,
+                all_student_data=assigned_students,
+                non_desig_only=True,
             )
 
-        aalpi_students = assigned_students[
-            assigned_students["ethnicity"].apply(lambda x: x in AALPI)
-        ]
+        aalpi_students = assigned_students[assigned_students["ethnicity"].isin(AALPI)]
         metrics["AALPI in school with +10% FRL"] = self.poverty_concentration(
             assigned_students, aalpi_students, 0.1
         )
@@ -1933,9 +2116,7 @@ class MatchEvaluator:
         )
 
         ge_students = assigned_students[assigned_students["programtype"] == "GE"]
-        ge_aalpi_students = ge_students[
-            ge_students["ethnicity"].apply(lambda x: x in AALPI)
-        ]
+        ge_aalpi_students = ge_students[ge_students["ethnicity"].isin(AALPI)]
         ge_groups = ge_students.groupby("assignment")
 
         (
@@ -1980,7 +2161,7 @@ class MatchEvaluator:
         )
 
         designated_aalpi_students = designated_students[
-            designated_students["ethnicity"].apply(lambda x: x in AALPI)
+            designated_students["ethnicity"].isin(AALPI)
         ]
         if len(designated_students) == 0:
             metrics["AALPI in designated"] = np.nan
@@ -2056,9 +2237,9 @@ class MatchEvaluator:
         # CHOICE METRICS
 
         metrics["#Unassigned"] = student_data[student_data["programno"] == 0].shape[0]
-        metrics["Unassigned"] = (
-            student_data[student_data["programno"] == 0].shape[0]
-            / student_data.shape[0]
+        metrics["Unassigned"] = self._safe_ratio(
+            student_data[student_data["programno"] == 0].shape[0],
+            student_data.shape[0],
         )
         all_designated = assigned_students["designation"].mean()
         metrics["#Designated"] = assigned_students["designation"].sum()
@@ -2215,7 +2396,7 @@ class MatchEvaluator:
 
         for group in groups + list(dico_income.keys()):
             if group == "All Assigned":
-                students = self.student_data[self.student_data["programno"] > 0]
+                students = assigned_students
             elif group == "High FRL":
                 students = high_frl_assigned
             elif group == "Low FRL":
@@ -2308,7 +2489,11 @@ class MatchEvaluator:
                 _,
                 _,
                 metrics[f"#Students in schools above +15% district FRL ({group})"],
-            ) = self.school_frl_range(0.15, student_data=students)
+            ) = self.school_frl_range(
+                0.15,
+                student_data=students,
+                all_student_data=assigned_students,
+            )
             metrics[f"Prop students in schools above +15% district FRL ({group})"] = (
                 self._safe_ratio(
                     metrics[f"#Students in schools above +15% district FRL ({group})"],
@@ -2443,10 +2628,10 @@ class MatchEvaluator:
                 metrics[f"Variance of distance ({group})"] = np.nan
 
         # --- Theil's H segregation index ---
-        metrics["Theil H"] = self.metric_theil()
+        metrics["Theil H"] = self.metric_theil(student_data)
 
         # Add diagnostic metrics
-        diagnostic_metrics = self.eval_diagnostic_metrics()
+        diagnostic_metrics = self.eval_diagnostic_metrics(student_data)
         metrics.update(diagnostic_metrics)
 
         return pd.Series(metrics)
@@ -2457,7 +2642,7 @@ class MatchEvaluator:
             return self.eval_assignment_basic()
         return self.eval_assignment_full()
 
-    def eval_diagnostic_metrics(self):
+    def eval_diagnostic_metrics(self, student_data=None):
         """Compute diagnostic metrics for trend analysis.
 
         Returns:
@@ -2469,7 +2654,8 @@ class MatchEvaluator:
                 - utilization_{program_type}: Capacity utilization per type
         """
         metrics = {}
-        student_data = self.student_data
+        if student_data is None:
+            student_data = self.student_data
         programs = self.programs
 
         # ===== Demographic Metrics =====

@@ -95,7 +95,7 @@ file is ever opened). Two kinds of zone files appear in the configs:
 
 - **Shared cluster zones** — `/share/data/school_choice/simulation-files/zones/*.csv`.
   Already exist; nothing to generate.
-- **Locally-generated zones** — `<STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_*.csv`
+- **Generated zones** — `/share/data/school_choice/Data/assignment/zones/Zones_*.csv`
   (e.g. `Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3.csv`). These come from
   `.pkl` files produced by an **external upstream zone-optimization pipeline**
   (`Zone_Generation`), which is **provided separately and is not part of this
@@ -104,7 +104,7 @@ file is ever opened). Two kinds of zone files appear in the configs:
   ```bash
   python scripts/generators/generate_zone_from_pickle.py \
       --input-dir /path/to/Generated_Zones/Zones_10/FRL_Dev_0.15/ \
-      --output-dir data/zones/ \
+      --output-dir /share/data/school_choice/Data/assignment/zones/ \
       --building-blocks block_group
   ```
 

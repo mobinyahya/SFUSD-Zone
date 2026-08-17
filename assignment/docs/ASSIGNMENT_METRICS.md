@@ -105,6 +105,20 @@ that program type. `utilization_rate_avg` preserves the migrated unweighted
 mean of individual program utilization rates; it is not district-wide filled
 seats divided by district-wide capacity.
 
+`export_aggregate_metrics(output_dir)` writes three per-assignment reports:
+
+- `metrics_by_school.csv` has one row per school. Enrolled means all simulated
+  placements (`programno > 0`), assigned means a non-designated placement, and
+  designated means `designation == 1`. School utilization is simulated
+  enrollment divided by the sum of the school's selected program capacities.
+- `metrics_by_zip_code.csv` has one row per non-missing student `zipcode`.
+- `metrics_by_attendance_area.csv` has one row per non-missing student
+  `idschoolattendance`.
+
+The two residential-geography reports contain the complete full metric set,
+recomputed from the students residing in each geography. Program inventory and
+capacity diagnostics retain the evaluator's selected district program table.
+
 The basic metric `Programs with 1-4 AA` is a legacy benchmark field whose
 historical calculation counts schools with one to four Black students. The
 full report's explicitly named GE-program metric is the correctly scoped count

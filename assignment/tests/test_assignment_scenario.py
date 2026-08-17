@@ -57,15 +57,15 @@ _CONSOLIDATED_RUN_ESTIMATES = {
         "estimates_2324.csv"
     ),
 }
-_PRE_CONSOLIDATION_SOURCE_MAP_SHA256 = (
-    "3876cc3ebf24379c8686d976bf8dbcdb7a3beffaffc777b263d56690d243fa9f"
+_SHARED_SOURCE_MAP_SHA256 = (
+    "37b8b3c8b43991c0f93345f567ffd6d50b55e1e65e5accad31f5af6519fc5f49"
 )
 
 
 @pytest.mark.parametrize(
     ("config_name", "expected_estimate"), _CONSOLIDATED_RUN_ESTIMATES.items()
 )
-def test_consolidated_run_source_maps_match_pre_consolidation_semantics(
+def test_consolidated_run_source_maps_match_shared_data_semantics(
     config_name, expected_estimate
 ):
     config_path = Path(__file__).parents[1] / "configs" / config_name
@@ -78,9 +78,7 @@ def test_consolidated_run_source_maps_match_pre_consolidation_semantics(
     data = config["data"]
 
     assert data["scenario"] == "assignment-generated-zones-2324"
-    assert data["overrides"]["roots"] == {
-        "student_assignment": "/tmp/student-assignment"
-    }
+    assert data["overrides"].get("roots", {}) == {}
     assert set(data["overrides"].get("sources", {})) <= {
         "assignment.estimate"
     }
@@ -103,7 +101,7 @@ def test_consolidated_run_source_maps_match_pre_consolidation_semantics(
     assert len(semantic_maps["assignment.zones"]) == 256
     assert len(semantic_maps["assignment.citywide_zones"]) == 1
     assert hashlib.sha256(encoded).hexdigest() == (
-        _PRE_CONSOLIDATION_SOURCE_MAP_SHA256
+        _SHARED_SOURCE_MAP_SHA256
     )
     assert scenario.source("assignment.estimate").path == Path(expected_estimate)
     assert scenario.source("assignment.students").catalog_id == (

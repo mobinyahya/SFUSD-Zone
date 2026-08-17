@@ -65,7 +65,6 @@ The loader resolves these declared and built-in roots:
 |---|---|---|
 | `data` | `/share/data/school_choice` | External source datasets |
 | `cache` | `/share/data/school_choice/Data/caches` | Shared derived artifacts |
-| `student_assignment` | Required, no default | External checkout containing the large generated-zone collection |
 | `package` | `loaders/configs/` | Built-in special root; cannot be overridden |
 | `repository` | Repository root | Built-in special root; cannot be overridden |
 
@@ -74,19 +73,18 @@ Run YAML can override any declared non-special root with
 `data.overrides.roots`. Run overrides take precedence over environment
 variables. Relative root overrides are anchored to the run YAML.
 
-For example, the generated-zone assignment configs provide the required root
-without embedding a developer-specific checkout path in the scenario:
+For example, generated-zone assignment configs use the shared data root without
+embedding a developer-specific checkout path:
 
 ```yaml
 data:
   scenario: assignment-generated-zones-2324
-  overrides:
-    roots:
-      student_assignment: <STUDENT_ASSIGNMENT_PATH>
+  overrides: {}
 ```
 
-The scenario then resolves its direct zone sources below
-`<STUDENT_ASSIGNMENT_PATH>/data/zones/`.
+The scenario resolves its direct zone sources below
+`/share/data/school_choice/Data/assignment/zones/`. Override `data` through
+`SFUSD_DATA_ROOT` or `data.overrides.roots.data` when using another shared root.
 
 To relocate all shared caches for a run, override the cache root:
 
@@ -154,6 +152,7 @@ The default `data` root currently contains these source families:
 | Directory | Contents |
 |---|---|
 | `Data/Cleaned/` | Student, enrollment, program, school, and prepared choice-model CSVs |
+| `Data/assignment/zones/` | Generated assignment zone plans |
 | `Data/capacity_management/` | Current capacity files |
 | `Data/Tie-breakers/` | CTIP/tie-breaker arrays |
 | `shapefiles/` | Census Block geometry and required Shapefile companions |

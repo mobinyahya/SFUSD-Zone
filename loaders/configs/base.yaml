@@ -3,7 +3,6 @@ schema_version: 2
 roots:
   data: /share/data/school_choice
   cache: /share/data/school_choice/Data/caches
-  student_assignment:
 
 files:
   optimization.students.enrolled.1415:

@@ -46,31 +46,31 @@ data:
           path: /share/data/school_choice/simulation-files/zones/concept1zones.csv
           classification: public
         Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
           classification: public
         Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
           classification: public
         Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
           classification: public
         Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
           classification: public
         Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
           classification: public
         Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone:
-          path: <STUDENT_ASSIGNMENT_PATH>/data/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
+          path: /share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
           classification: public
       assignment.citywide_zones:
         18zone_1_2-BG-0point3miles:

@@ -109,13 +109,7 @@ def test_environment_roots_override_base_when_no_explicit_override(tmp_path):
     assert scenario.cache_root == cache_root.resolve()
 
 
-def test_required_named_root_has_no_default_or_typo_fallback(tmp_path):
-    with pytest.raises(ValueError, match="Unknown source root 'student_assignment'"):
-        load_scenario(
-            {"scenario": "assignment-generated-zones-2324", "overrides": {}},
-            environ={},
-        )
-
+def test_unknown_root_override_has_no_typo_fallback(tmp_path):
     with pytest.raises(ValueError, match="Unknown root override.*student_assignmnt"):
         load_scenario(
             {
@@ -450,11 +444,11 @@ def test_2324_scenarios_are_coherent_and_preserve_optimization_inputs():
     assert mission_bay.filter("assignment", "special_programs") == "include"
 
 
-def test_generated_zones_scenario_uses_supported_registry_bundle(tmp_path):
+def test_generated_zones_scenario_uses_supported_registry_bundle():
     scenario = load_scenario(
         {
             "scenario": "assignment-generated-zones-2324",
-            "overrides": {"roots": {"student_assignment": str(tmp_path)}},
+            "overrides": {},
         },
         environ={},
     )
@@ -474,6 +468,14 @@ def test_generated_zones_scenario_uses_supported_registry_bundle(tmp_path):
     )
     assert scenario.source("assignment.schools").catalog_id == (
         "assignment.schools.current_mission_bay"
+    )
+    assert scenario.source_map("assignment.zones")[
+        "Zones_4_FRL_Dev_0.10_Objective_1060"
+    ].path == (
+        Path(
+            "/share/data/school_choice/Data/assignment/zones/"
+            "Zones_4_FRL_Dev_0.10_Objective_1060.csv"
+        )
     )
 
 

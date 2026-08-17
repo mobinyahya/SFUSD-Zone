@@ -11,7 +11,7 @@ Usage:
 Example:
     python generate_zone_from_pickle.py \
         --input ~/Generated_Zones/Zones_6/FRL_Dev_0.20/cost_123.456.pkl \
-        --output ~/student-assignment/data/zones/6zone-custom.csv
+        --output /share/data/school_choice/Data/assignment/zones/6zone-custom.csv
 """
 
 import argparse

@@ -1,8 +1,8 @@
 # Example policy config using custom-generated zones from pickle files.
 # 
 # Before using:
-# 1. Run: python scripts/generate_zone_from_pickle.py --input path/to/zone.pkl --output data/zones/custom-zone.csv
-# 2. Add the zone path to local_path_config.yaml under paths.zone-files
+# 1. Run: python scripts/generate_zone_from_pickle.py --input path/to/zone.pkl --output /share/data/school_choice/Data/assignment/zones/custom-zone.csv
+# 2. Add the zone path to the run config under data.overrides.sources.assignment.zones
 # 3. Update the policy name below to match your zone-file key
 
 assignment-algorithm: DA
@@ -23,7 +23,7 @@ reserve-settings:
 non_designation_boost: 128
 soft_reserve_boost: 64
 
-# UPDATE THIS to match your zone-file key in local_path_config.yaml
+# UPDATE THIS to match your assignment.zones key in the run config
 policies:
 - custom-6zone
 

@@ -1,8 +1,6 @@
 data:
   scenario: assignment-generated-zones-2324
-  overrides:
-    roots:
-      student_assignment: <STUDENT_ASSIGNMENT_PATH>
+  overrides: {}
 iterations:
   end: 25
   start: 5

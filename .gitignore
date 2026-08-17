@@ -14,9 +14,6 @@ sweep_comparison.log
 .DS_Store
 assignment/tests/test_files/*
 *.csv
-# Zone definitions are versioned data (census block-group groupings, no PII).
-!data/zones/
-!data/zones/*.csv
 
 __pycache__/
 *.py[cod]

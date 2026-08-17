@@ -85,6 +85,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
             ],
             "median_hh_income": [50_000, 70_000, 120_000, 140_000, 80_000, 110_000],
             "ctip1": [1, 0, 1, 0, 1, 0],
+            "zipcode": [94110, "94110", 94111, 94111, 94113, 94112],
+            "idschoolattendance": [101, 101, 202, 202, 101, 202],
         }
     )
     assignments = pd.DataFrame(
@@ -117,6 +119,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     schools = pd.DataFrame(
         {
             "school_id": [101, 202],
+            "school_name": ["Alpha", "Beta"],
+            "category": ["Attendance", "Citywide"],
             "lat": [37.70, 37.75],
             "lon": [-122.40, -122.45],
         }
@@ -180,6 +184,41 @@ def test_full_report_covers_metric_families_without_mutating_inputs(tmp_path):
     )
     assert metrics["Prop Distance > 3 and non-designated (All Assigned)"] == 3 / 5
     pd.testing.assert_frame_equal(assignments, original_assignments)
+
+    report_paths = evaluator.export_aggregate_metrics(tmp_path / "aggregate_metrics")
+    assert set(report_paths) == {
+        "metrics_by_school.csv",
+        "metrics_by_zip_code.csv",
+        "metrics_by_attendance_area.csv",
+    }
+
+    school_metrics = pd.read_csv(report_paths["metrics_by_school.csv"])
+    alpha = school_metrics.set_index("school_id").loc[101]
+    assert alpha["school_name"] == "Alpha"
+    assert alpha["school_category"] == "Attendance"
+    assert alpha["school_frl_enrolled"] == pytest.approx(0.85)
+    assert alpha["mean_travel_dist_assigned"] == 4
+    assert alpha["mean_travel_dist_designated"] == 4
+    assert alpha["mean_travel_dist_enrolled"] == 4
+    assert alpha["mean_student_choice_assigned"] == 1
+    assert alpha["percent_assigned"] == 0.5
+    assert alpha["percent_designated"] == 0.5
+    assert alpha["school_utilization"] == 0.2
+
+    zip_metrics = pd.read_csv(report_paths["metrics_by_zip_code.csv"])
+    assert set(zip_metrics.columns) == {"zip_code", *metrics.index}
+    zip_94110 = zip_metrics.set_index("zip_code").loc[94110]
+    assert zip_94110["Tot Nb Students (Round 1)"] == 2
+    assert zip_94110["Tot Nb Assigned (Round 1)"] == 2
+    zip_94113 = zip_metrics.set_index("zip_code").loc[94113]
+    assert zip_94113["Tot Nb Assigned (Round 1)"] == 0
+    assert zip_94113["Unassigned"] == 1
+
+    attendance_metrics = pd.read_csv(report_paths["metrics_by_attendance_area.csv"])
+    assert set(attendance_metrics.columns) == {"attendance_area", *metrics.index}
+    attendance_101 = attendance_metrics.set_index("attendance_area").loc[101]
+    assert attendance_101["Tot Nb Students (Round 1)"] == 3
+    assert attendance_101["#Unassigned"] == 1
 
     legacy_evaluator = MatchEvaluator(
         students,
@@ -331,6 +370,14 @@ def test_full_evaluator_rejects_invalid_metric_values(tmp_path, column, value):
     assignments.loc[0, column] = value
 
     with pytest.raises(ValueError, match=f"invalid {column}"):
+        _make_full_evaluator(students, assignments, program_path, school_path)
+
+
+def test_full_evaluator_rejects_designated_unassigned_student(tmp_path):
+    students, assignments, program_path, school_path = _minimal_full_inputs(tmp_path)
+    assignments.loc[0, ["programno", "programcodes", "designation"]] = [0, "", 1]
+
+    with pytest.raises(ValueError, match="Unassigned students cannot be designated"):
         _make_full_evaluator(students, assignments, program_path, school_path)
 
 

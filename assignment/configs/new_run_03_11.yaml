@@ -1,8 +1,6 @@
 data:
   scenario: assignment-generated-zones-2324
   overrides:
-    roots:
-      student_assignment: <STUDENT_ASSIGNMENT_PATH>
     sources:
       assignment.estimate:
         path: <SFUSD_CHOICE_PATH>/local_outputs/models/t7_2223_k1_base/estimates_2324.csv

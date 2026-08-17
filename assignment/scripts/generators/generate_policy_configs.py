@@ -6,12 +6,13 @@ allowing batch simulation runs across all zone configurations.
 
 Usage:
     python scripts/generate_policy_configs.py
-    python scripts/generate_policy_configs.py --zones-dir ./data/zones
+    python scripts/generate_policy_configs.py \
+        --zones-dir /share/data/school_choice/Data/assignment/zones
     python scripts/generate_policy_configs.py --template small_zones+no_reserves
 
 Example:
     python scripts/generate_policy_configs.py \
-        --zones-dir ./data/zones \
+        --zones-dir /share/data/school_choice/Data/assignment/zones \
         --output-dir ./configs/policy_configs/generated \
         --template small_zones+no_reserves
 """
@@ -270,8 +271,8 @@ def main():
     parser.add_argument(
         "--zones-dir",
         type=Path,
-        default=Path("./data/zones"),
-        help="Directory containing zone CSV files (default: ./data/zones).",
+        default=Path("/share/data/school_choice/Data/assignment/zones"),
+        help="Directory containing zone CSV files.",
     )
     parser.add_argument(
         "--output-dir",
