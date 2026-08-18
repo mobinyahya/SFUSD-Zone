@@ -133,6 +133,12 @@ class Configerator:
                 f"{CONFIGS_DIR}{CONFIG_SCHEMA_NAME}",
                 strict=False,
             )
+            if config.get("export-local-metrics", False) and not config.get(
+                "export-aggregate-metrics", False
+            ):
+                raise ValueError(
+                    "export-local-metrics requires export-aggregate-metrics to be true."
+                )
             iterations = config["iterations"]
             if iterations["start"] < 0 or iterations["end"] <= iterations["start"]:
                 raise ValueError(

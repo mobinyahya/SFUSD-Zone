@@ -7,6 +7,7 @@ utility-model:
 
 save-assignment: true
 export-aggregate-metrics: false
+export-local-metrics: false
 reuse_assignments: true
 random-seed: 2023
 data:

@@ -134,7 +134,9 @@ def test_assignment_names_cover_all_policy_option_dimensions():
     assert len({baseline, *variants}) == 1 + len(variants)
 
 
-def _assignment_saving_market(tmp_path, export_aggregate_metrics=None):
+def _assignment_saving_market(
+    tmp_path, export_aggregate_metrics=None, export_local_metrics=None
+):
     market = MarketGenerator.__new__(MarketGenerator)
     market.config = {
         "restrict-zone": False,
@@ -143,6 +145,8 @@ def _assignment_saving_market(tmp_path, export_aggregate_metrics=None):
     }
     if export_aggregate_metrics is not None:
         market.config["export-aggregate-metrics"] = export_aggregate_metrics
+    if export_local_metrics is not None:
+        market.config["export-local-metrics"] = export_local_metrics
     market.output_assignment_path = tmp_path / "assignments"
     market.students = SimpleNamespace(
         student_data=pd.DataFrame(index=pd.Index([1, 2], name="studentno")),
@@ -332,11 +336,15 @@ def test_assignment_metrics_export_is_disabled_when_omitted(tmp_path, monkeypatc
 
 
 def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkeypatch):
-    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
+    market = _assignment_saving_market(
+        tmp_path,
+        export_aggregate_metrics=True,
+        export_local_metrics=True,
+    )
     evaluator = Mock()
     values = iter([1.0, 3.0])
     evaluator.eval_aggregate_metric_reports.side_effect = (
-        lambda config_name: _aggregate_reports(config_name, next(values))
+        lambda config_name, **_kwargs: _aggregate_reports(config_name, next(values))
     )
     from_scenario = Mock(return_value=evaluator)
     monkeypatch.setattr(MatchEvaluator, "from_scenario", from_scenario)
@@ -367,8 +375,8 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     )
     evaluator.update_assignments.assert_called_once()
     assert evaluator.eval_aggregate_metric_reports.call_args_list == [
-        (("status_quo/policy",),),
-        (("status_quo/policy",),),
+        (("status_quo/policy",), {"include_local_metrics": True}),
+        (("status_quo/policy",), {"include_local_metrics": True}),
     ]
     assert reports["school"].loc[0, "metric"] == 2
     assert reports["zip_code"].loc[0, "metric"] == 2
@@ -377,6 +385,40 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     assert (tmp_path / "assignments/status_quo/policy/policy_iteration0.csv").is_file()
     assert (tmp_path / "assignments/status_quo/policy/policy_iteration1.csv").is_file()
     assert not (tmp_path / "assignments/aggregate_metrics").exists()
+
+
+def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
+    market = _assignment_saving_market(
+        tmp_path,
+        export_aggregate_metrics=True,
+        export_local_metrics=False,
+    )
+    evaluator = Mock()
+    evaluator.eval_aggregate_metric_reports.return_value = {
+        "citywide": pd.DataFrame(
+            {"config_name": ["status_quo/policy"], "metric": [2.0]}
+        )
+    }
+    monkeypatch.setattr(
+        MatchEvaluator,
+        "from_scenario",
+        Mock(return_value=evaluator),
+    )
+
+    market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+    reports = market._complete_aggregate_metric_reports()
+
+    assert set(reports) == {"citywide"}
+    evaluator.eval_aggregate_metric_reports.assert_called_once_with(
+        "status_quo/policy", include_local_metrics=False
+    )
 
 
 def test_failed_metrics_export_removes_existing_assignment_marker(
@@ -425,6 +467,19 @@ def test_combined_metric_writer_creates_only_four_run_level_csvs(tmp_path):
     citywide = pd.read_csv(output_dir / "metrics_citywide.csv")
     assert citywide.loc[0, "config_name"] == "status_quo/policy"
     assert citywide.loc[0, "metric"] == 2
+
+
+def test_combined_metric_writer_can_create_only_citywide_csv(tmp_path):
+    reports = _aggregate_reports("status_quo/policy", 2.0)
+
+    MarketGenerator.write_aggregate_metric_reports(
+        tmp_path, {"citywide": reports["citywide"]}
+    )
+
+    output_dir = tmp_path / "aggregate_metrics"
+    assert {path.name for path in output_dir.iterdir()} == {
+        "metrics_citywide.csv"
+    }
 
 
 def test_combined_metric_writer_expands_home_directory(tmp_path, monkeypatch):

@@ -234,13 +234,22 @@ class MarketGenerator(SchoolChoiceMarket):
         if not self.config.get("export-aggregate-metrics", False):
             return None
         self._finalize_aggregate_metric_batch()
+        report_names = (
+            tuple(self.AGGREGATE_METRIC_FILES)
+            if self.config.get("export-local-metrics", False)
+            else ("citywide",)
+        )
         reports = self.combine_aggregate_metric_reports(
             [
                 {
-                    name: pd.concat(frames, ignore_index=True, sort=False)
-                    if frames
+                    name: pd.concat(
+                        self._aggregate_metric_results[name],
+                        ignore_index=True,
+                        sort=False,
+                    )
+                    if self._aggregate_metric_results[name]
                     else pd.DataFrame(columns=self.AGGREGATE_METRIC_GROUPS[name])
-                    for name, frames in self._aggregate_metric_results.items()
+                    for name in report_names
                 }
             ]
         )
@@ -250,12 +259,21 @@ class MarketGenerator(SchoolChoiceMarket):
 
     @classmethod
     def combine_aggregate_metric_reports(cls, report_sets):
+        report_sets = list(report_sets)
         combined = {}
-        for report_name in cls.AGGREGATE_METRIC_FILES:
+        report_names = [
+            report_name
+            for report_name in cls.AGGREGATE_METRIC_FILES
+            if any(
+                reports is not None and report_name in reports
+                for reports in report_sets
+            )
+        ]
+        for report_name in report_names:
             frames = [
                 reports[report_name]
                 for reports in report_sets
-                if reports is not None
+                if reports is not None and report_name in reports
             ]
             if frames:
                 frame = pd.concat(frames, ignore_index=True, sort=False)
@@ -282,7 +300,8 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         try:
             for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
-                reports[report_name].to_csv(staging_dir / filename, index=False)
+                if report_name in reports:
+                    reports[report_name].to_csv(staging_dir / filename, index=False)
             cls.clear_aggregate_metric_reports(assignment_path)
             staging_dir.replace(output_dir)
         finally:
@@ -949,7 +968,12 @@ class MarketGenerator(SchoolChoiceMarket):
             variant_name = variant_name[: -len(iteration_suffix)]
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
         self._record_aggregate_metric_reports(
-            evaluator.eval_aggregate_metric_reports(config_name)
+            evaluator.eval_aggregate_metric_reports(
+                config_name,
+                include_local_metrics=self.config.get(
+                    "export-local-metrics", False
+                ),
+            )
         )
 
     def _load_reusable_assignment(self, policy_data, iteration):

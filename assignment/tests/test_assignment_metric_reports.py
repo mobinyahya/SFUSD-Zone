@@ -224,6 +224,14 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         for _, call_kwargs in prepare_calls
     ) == 1
 
+    prepare_calls.clear()
+    citywide_only = evaluator.eval_aggregate_metric_reports(
+        "config-a", include_local_metrics=False
+    )
+    assert set(citywide_only) == {"citywide"}
+    assert len(prepare_calls) == 1
+    assert not prepare_calls[0][1].get("include_school_report_stats", False)
+
     school_metrics = reports["school"]
     assert school_metrics["config_name"].eq("config-a").all()
     alpha = school_metrics.set_index("school_id").loc[101]

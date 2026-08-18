@@ -2067,8 +2067,10 @@ class MatchEvaluator:
             "idschoolattendance", "attendance_area"
         )
 
-    def eval_aggregate_metric_reports(self, config_name):
-        """Return school, residential, and citywide reports for one assignment."""
+    def eval_aggregate_metric_reports(
+        self, config_name, *, include_local_metrics=True
+    ):
+        """Return citywide and, when requested, local reports for one assignment."""
         if self._distance_cache is None:
             raise ValueError(
                 "Aggregate assignment metrics require the cached "
@@ -2076,10 +2078,10 @@ class MatchEvaluator:
             )
         required_student_columns = {
             "ctip1",
-            "idschoolattendance",
             "median_hh_income",
-            "zipcode",
         }
+        if include_local_metrics:
+            required_student_columns.update({"idschoolattendance", "zipcode"})
         missing_student_columns = required_student_columns - set(
             self.student_data.columns
         )
@@ -2089,22 +2091,28 @@ class MatchEvaluator:
                 f"{sorted(missing_student_columns)}"
             )
         district_aggregates = self._prepare_full_report_aggregates(
-            self.student_data, include_school_report_stats=True
+            self.student_data,
+            include_school_report_stats=include_local_metrics,
         )
         citywide_metrics = self._eval_assignment_full_from_aggregates(
             district_aggregates
         )
-        metric_columns = citywide_metrics.index.tolist()
-        reports = {
-            "school": self.eval_assignment_metrics_by_school(district_aggregates),
-            "zip_code": self._eval_assignment_full_by_group(
-                "zipcode", "zip_code", metric_columns
-            ),
-            "attendance_area": self._eval_assignment_full_by_group(
-                "idschoolattendance", "attendance_area", metric_columns
-            ),
-            "citywide": pd.DataFrame([citywide_metrics.to_dict()]),
-        }
+        reports = {"citywide": pd.DataFrame([citywide_metrics.to_dict()])}
+        if include_local_metrics:
+            metric_columns = citywide_metrics.index.tolist()
+            reports.update(
+                {
+                    "school": self.eval_assignment_metrics_by_school(
+                        district_aggregates
+                    ),
+                    "zip_code": self._eval_assignment_full_by_group(
+                        "zipcode", "zip_code", metric_columns
+                    ),
+                    "attendance_area": self._eval_assignment_full_by_group(
+                        "idschoolattendance", "attendance_area", metric_columns
+                    ),
+                }
+            )
         for report in reports.values():
             report.insert(0, "config_name", config_name)
         return reports

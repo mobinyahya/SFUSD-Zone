@@ -19,6 +19,10 @@ def test_aggregate_metrics_export_is_disabled_by_default():
     assert _valid_config()["export-aggregate-metrics"] is False
 
 
+def test_local_metrics_export_is_disabled_by_default():
+    assert _valid_config()["export-local-metrics"] is False
+
+
 def test_assignment_reuse_is_enabled_by_default():
     assert _valid_config()["reuse_assignments"] is True
 
@@ -28,6 +32,25 @@ def test_aggregate_metrics_export_must_be_boolean():
     config["export-aggregate-metrics"] = "true"
 
     with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+def test_local_metrics_export_must_be_boolean():
+    config = _valid_config()
+    config["export-local-metrics"] = "true"
+
+    with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+def test_local_metrics_require_aggregate_metrics():
+    config = _valid_config()
+    config["export-local-metrics"] = True
+
+    with pytest.raises(
+        ValueError,
+        match="export-local-metrics requires export-aggregate-metrics",
+    ):
         Configerator.from_config(config)
 
 
