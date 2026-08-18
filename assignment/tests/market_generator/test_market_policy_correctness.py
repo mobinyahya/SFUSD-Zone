@@ -50,6 +50,30 @@ def test_runtime_config_rejects_removed_execution_modes(override, message):
         SchoolChoiceMarket._validate_config(config)
 
 
+def test_zone_policy_reports_missing_file_path(tmp_path):
+    zone_file = tmp_path / "missing-zones.csv"
+    market = SimpleNamespace(
+        config={"paths": {"zone-files": {"18zone_2": str(zone_file)}}}
+    )
+
+    with pytest.raises(FileNotFoundError) as error:
+        PriorityGenerator(market).generate_base_priorities("18zone_2")
+
+    assert "18zone_2" in str(error.value)
+    assert str(zone_file.resolve()) in str(error.value)
+
+
+def test_zone_policy_reports_available_aliases():
+    market = SimpleNamespace(
+        config={"paths": {"zone-files": {"18zone_2": "zones.csv"}}}
+    )
+
+    with pytest.raises(KeyError, match="not configured") as error:
+        PriorityGenerator(market).generate_base_priorities("unknown")
+
+    assert "18zone_2" in str(error.value)
+
+
 def test_simulate_executes_every_configured_subconfig():
     loaded_configs = [
         _runtime_config(**{"subconfig-name": "first"}),

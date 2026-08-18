@@ -56,11 +56,18 @@ class PriorityGenerator:
         Args:
             policy (str): The policy name for the current simulation and zones.
         """
-        zone_file = (
-            pathlib.Path(self.market.config["paths"]["zone-files"][policy])
-            .expanduser()
-            .resolve()
-        )
+        zone_files = self.market.config["paths"]["zone-files"]
+        if policy not in zone_files:
+            available = ", ".join(sorted(zone_files))
+            raise KeyError(
+                f"Zone policy {policy!r} is not configured. Available zone "
+                f"policies: {available or '(none)'}"
+            )
+        zone_file = pathlib.Path(zone_files[policy]).expanduser().resolve()
+        if not zone_file.is_file():
+            raise FileNotFoundError(
+                f"Zone file for policy {policy!r} does not exist: {zone_file}"
+            )
         self.zone_file = zone_file
         zone_context_key = self._make_zone_context_key(policy, zone_file)
         self._zone_context_key = zone_context_key

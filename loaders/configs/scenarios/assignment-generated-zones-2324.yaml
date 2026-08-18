@@ -8,14 +8,14 @@ sources:
   assignment.new_ctip: ctip.array.block.2024
   assignment.new_ctip_blockgroup: ctip.array.blockgroup.2024
   assignment.zones:
-    10zone_2020: {path: Data/assignment/zones_2020/10-zone-11_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    13zone_2020: {path: Data/assignment/zones_2020/13-zone-7_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    18zone_1_2020: {path: Data/assignment/zones_2020/18-zone-1_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    18zone_2_2020: {path: Data/assignment/zones_2020/18-zone-1_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    59zone_2020: {path: Data/assignment/zones_2020/59-zone-1_B_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    6zone-1_2020: {path: Data/assignment/zones_2020/6-zone-1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    6zone-9_1_2020: {path: Data/assignment/zones_2020/6-zone-9_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
-    6zone-9_2_2020: {path: Data/assignment/zones_2020/6-zone-9_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    10zone: {path: Data/assignment/zones_2020/10-zone-11_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    13zone: {path: Data/assignment/zones_2020/13-zone-7_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    18zone_1: {path: Data/assignment/zones_2020/18-zone-1_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    18zone_2: {path: Data/assignment/zones_2020/18-zone-1_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    59zone: {path: Data/assignment/zones_2020/59-zone-1_B_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-1: {path: Data/assignment/zones_2020/6-zone-1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-9_1: {path: Data/assignment/zones_2020/6-zone-9_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-9_2: {path: Data/assignment/zones_2020/6-zone-9_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
     Con1: zones.common.con1
     Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
     Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}

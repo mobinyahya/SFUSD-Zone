@@ -479,6 +479,10 @@ def test_generated_zones_scenario_uses_supported_registry_bundle():
         for alias, source in zones.items()
         if alias != "Con1"
     )
+    assert zones["18zone_2"].path == Path(
+        "/soalnas/share/data/school_choice/Data/assignment/zones_2020/"
+        "18-zone-1_2_BG_2020.csv"
+    )
     assert zones[
         "Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020"
     ].path == (
