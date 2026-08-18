@@ -7,7 +7,7 @@ files are separate schemas:
 | Layer | Location | Purpose |
 |---|---|---|
 | Run | The `data` block in an optimization, benchmark, or assignment YAML | Select a scenario and provide partial overrides |
-| Base | `loaders/configs/base.yaml` | Declare roots, catalog files, geography bundles, and school-year source bundles |
+| Base | `loaders/configs/base.yaml` | Declare roots, catalog files, geography bundles, FRL estimates, and school-year source bundles |
 | Scenario | `loaders/configs/scenarios/*.yaml` | Declare invariant source roles and complete selector defaults |
 
 `loaders/config.py` is the authoritative validator. Unknown fields are rejected
@@ -128,10 +128,11 @@ schema_version: 2
 roots: {}
 files: {}
 geographies: {}
+student_frl_estimates: {}
 school_years: {}
 ```
 
-All five fields are required.
+All six fields are required.
 
 | Field | Type | Description |
 |---|---|---|
@@ -139,6 +140,7 @@ All five fields are required.
 | `roots` | Map | Named path roots available to direct source objects. |
 | `files` | Map | Catalog ID to complete direct source object. |
 | `geographies` | Non-empty map | Census-vintage geography source bundles. |
+| `student_frl_estimates` | Non-empty map | Selectable student FRL count sources. |
 | `school_years` | Non-empty map | Annual optimization and assignment source registry. |
 
 ### Roots
@@ -207,6 +209,40 @@ geographies:
 All scalar source leaves except `manual_edges` reference catalog IDs from
 `files`. `adjacency` must contain exactly `block`, `blockgroup`, and `tract`.
 The checked-in catalog currently provides `"2010"` and `"2020"` bundles.
+
+### Student FRL Estimates
+
+`student_frl_estimates` maps selector names to catalog IDs:
+
+```yaml
+student_frl_estimates:
+  updated_2526: student_frl.updated_2526
+```
+
+Each source must contain `BlockID`, `Not FRL`, `FRLunch`, and `Students`.
+Counts must be non-negative integers and `Students` must equal `Not FRL +
+FRLunch`. The loader derives the exact student probability as `FRLunch /
+Students`; zero-student blocks and blocks absent from the estimate retain the
+student file's FRL value. A selected source's `geography_vintage` metadata must
+match the filter's `geography_vintage`. The registered `updated_2526` source
+therefore requires `geography_vintage: "2020"`.
+
+For an exceptional input, retain the registered selector name and replace the
+consumer-specific role through the normal source override mechanism:
+
+```yaml
+overrides:
+  sources:
+    optimization.frl_estimate:
+      path: /absolute/path/to/frl-counts.csv
+      geography_vintage: "2020"
+  filters:
+    optimization:
+      geography_vintage: "2020"
+      frl_estimate: updated_2526
+```
+
+Assignment uses the equivalent `assignment.frl_estimate` role.
 
 ### School-Year Registry
 
@@ -300,7 +336,7 @@ enumerate role names; consumers define which roles they need. Rootless direct
 paths in this map are resolved from the scenario YAML.
 
 If a scenario includes a filter group, every field for that group is required
-except the three fields with loader defaults listed below. A run override may
+except the four fields with loader defaults listed below. A run override may
 specify only the fields it changes when the scenario already defines that
 group. An override that introduces a new group must provide every non-defaulted
 field because the final merged group is validated as complete.
@@ -313,6 +349,7 @@ The only defaults injected by the loader are:
 |---|---|
 | `capacity_scenario` | `programs` |
 | `geography_vintage` | `"2010"` |
+| `frl_estimate` | `null` |
 | `outside_district_students` | `ignore` |
 
 These defaults are applied within a configured group. They do not create an
@@ -329,6 +366,7 @@ Fields shared by both groups follow these rules:
 | `capacity_scenario` | Non-empty string. `programs` retains capacities in the selected program table; another value selects an external capacity overlay. |
 | `include_mission_bay` | Boolean. False removes school IDs 909 and 999 from school-keyed records and preferences. True normalizes the legacy ID `909` to `999`. |
 | `geography_vintage` | Four-digit string registered in base `geographies`; currently `"2010"` or `"2020"`. |
+| `frl_estimate` | Name registered in base `student_frl_estimates`, or `null` to retain FRL fields from the selected student table. |
 | `outside_district_students` | `ignore` or `include`. When normalized student data has a `census_block` column, `ignore` removes rows with no selected-geography Block and `include` retains them. If that column is absent, this filter leaves the table unchanged. Optimization graph construction still rejects retained students lacking its selected geography. |
 
 Student data must provide matching ranked-school and ranked-program columns for
@@ -358,6 +396,7 @@ filters:
     include_citywide: false
     include_mission_bay: true
     geography_vintage: "2020"
+    frl_estimate: updated_2526
     outside_district_students: ignore
 ```
 
@@ -374,6 +413,7 @@ filters:
 | `include_citywide` | Boolean | Yes | Retains Citywide schools only when true and `program_population` is `All`. |
 | `include_mission_bay` | Boolean | Yes | Shared Mission Bay policy described above. |
 | `geography_vintage` | Four-digit registered vintage | No | Target Census geography. Defaults to `"2010"`. |
+| `frl_estimate` | Registered estimate name or `null` | No | Block-count FRL source. Defaults to `null`, which retains optimization's source `FRL Score`. |
 | `outside_district_students` | `ignore` or `include` | No | Outside-district policy. Defaults to `ignore`. |
 
 `program_population` and `capacity_scenario` accept any non-empty string at
@@ -393,7 +433,8 @@ filters:
     capacity_profile: status_quo
     capacity_scenario: programs
     include_mission_bay: true
-    geography_vintage: "2010"
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
     outside_district_students: ignore
 ```
 
@@ -408,6 +449,7 @@ filters:
 | `capacity_scenario` | Non-empty string | No | Capacity behavior described above. Defaults to `programs`. |
 | `include_mission_bay` | Boolean | Yes | Selects the registry's `mission_bay` variant when true or `standard` when false, then applies the shared school-ID policy. |
 | `geography_vintage` | Four-digit registered vintage | No | Target Census geography. Defaults to `"2010"`. |
+| `frl_estimate` | Registered estimate name or `null` | No | Block-count FRL source. Defaults to `null`, which retains free- and reduced-lunch values from the student table. |
 | `outside_district_students` | `ignore` or `include` | No | Outside-district policy. Defaults to `ignore`. |
 
 ### Capacity Overlays

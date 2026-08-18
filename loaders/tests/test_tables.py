@@ -95,6 +95,112 @@ def test_read_csv_source_reads_one_resolved_source(tmp_path):
     assert loaded.to_dict("records") == [{"value": 1}]
 
 
+def test_assignment_uses_exact_frl_counts_with_student_file_fallback(
+    tmp_path, scenario_factory
+):
+    student_path = tmp_path / "students.csv"
+    estimate_path = tmp_path / "frl-counts.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2, 3],
+            "grade": ["KG", "KG", "KG"],
+            "census_block": [1001, 1002, 1003],
+            "census_blockgroup": [100, 100, 100],
+            "census_tract": [10, 10, 10],
+            "freelunch_prob": [0.1, 0.2, 0.3],
+            "reducedlunch_prob": [0.1, 0.2, 0.3],
+            "FRL Score": [0.9, 0.9, 0.9],
+            "r1_ranked_idschool": ["[10]", "[10]", "[10]"],
+            "r1_programs": ["['GE']", "['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+    pd.DataFrame(
+        {
+            "BlockID": [1001, 1002],
+            "Not FRL": [1, 0],
+            "FRLunch": [3, 0],
+            "Students": [4, 0],
+            "FRL Rate": [0.8, None],
+        }
+    ).to_csv(estimate_path, index=False)
+    scenario = scenario_factory(
+        {
+            "assignment.students": {
+                "path": str(student_path),
+                "geography_vintage": "2020",
+            },
+            "assignment.frl_estimate": {
+                "path": str(estimate_path),
+                "geography_vintage": "2020",
+            },
+        },
+        {
+            "assignment": {
+                "grades": ["KG"],
+                "rounds": [1],
+                "geography_vintage": "2020",
+                "frl_estimate": "updated_2526",
+            }
+        },
+    )
+
+    loaded = load_student_records(scenario, "assignment.students")
+
+    assert loaded["freelunch_prob"].tolist() == pytest.approx([0.75, 0.4, 0.6])
+    assert loaded["reducedlunch_prob"].tolist() == [0.0, 0.0, 0.0]
+    assert loaded["FRL Score"].tolist() == pytest.approx([0.75, 0.9, 0.9])
+
+
+def test_frl_estimate_rejects_inconsistent_counts(tmp_path, scenario_factory):
+    students = pd.DataFrame(
+        {
+            "studentno": [1],
+            "grade": ["KG"],
+            "census_block": [1001],
+            "census_blockgroup": [100],
+            "census_tract": [10],
+            "FRL Score": [0.2],
+            "r1_ranked_idschool": ["[10]"],
+            "r1_programs": ["['GE']"],
+        }
+    )
+    student_path = tmp_path / "enrolled_2122.csv"
+    estimate_path = tmp_path / "bad-frl-counts.csv"
+    students.to_csv(student_path, index=False)
+    pd.DataFrame(
+        {
+            "BlockID": [1001],
+            "Not FRL": [1],
+            "FRLunch": [2],
+            "Students": [4],
+        }
+    ).to_csv(estimate_path, index=False)
+    scenario = scenario_factory(
+        {
+            "optimization.students": {
+                "path": str(student_path),
+                "geography_vintage": "2020",
+            },
+            "optimization.frl_estimate": {
+                "path": str(estimate_path),
+                "geography_vintage": "2020",
+            },
+        },
+        {
+            "optimization": {
+                "years": ["2122"],
+                "grades": ["KG"],
+                "rounds": [1],
+                "geography_vintage": "2020",
+                "frl_estimate": "updated_2526",
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"must equal Not FRL \+ FRLunch"):
+        load_student_records(scenario, "optimization.students")
+
+
 def test_round_selection_is_chronological_and_derives_first_participation(
     tmp_path, scenario_factory
 ):

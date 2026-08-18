@@ -34,6 +34,7 @@ from loaders import (
     CacheStore,
     DataScenario,
     GEOGRAPHY_UNITS,
+    apply_student_frl_estimate,
     filter_outside_district_students,
     load_census_geometry,
     load_scenario,
@@ -52,10 +53,11 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-STUDENT_CACHE_SCHEMA_VERSION = 6
+STUDENT_CACHE_SCHEMA_VERSION = 7
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 STUDENT_ROLE = "optimization.students"
+FRL_ESTIMATE_ROLE = "optimization.frl_estimate"
 SCHOOL_ROLE = "optimization.schools"
 PROGRAM_ROLE = "optimization.programs"
 CAPACITY_ROLE = "optimization.capacity"
@@ -171,6 +173,10 @@ class IngestConfig:
     def outside_district_students(self) -> str:
         return self.data.filter("optimization", "outside_district_students")
 
+    @property
+    def frl_estimate(self) -> str | None:
+        return self.data.filter("optimization", "frl_estimate")
+
 
 def _legacy_scenario() -> DataScenario:
     return load_scenario({"scenario": "legacy", "overrides": {}})
@@ -201,14 +207,22 @@ def _student_cache_namespace(cfg: IngestConfig) -> CacheNamespace:
             "optimization_filters": cfg.filters,
         },
         schema_version=STUDENT_CACHE_SCHEMA_VERSION,
-        roles=STUDENT_ROLE,
+        roles=student_source_roles(cfg),
         classification="restricted-derived",
     )
 
 
 def _student_cache_path(cfg: IngestConfig) -> str:
-    """Return the v6 student CSV path for cache introspection."""
+    """Return the v7 student CSV path for cache introspection."""
     return str(_student_cache_namespace(cfg).payload_path("students.csv"))
+
+
+def student_source_roles(cfg: IngestConfig) -> list[str]:
+    """Return student inputs that affect normalized optimization rows."""
+    roles = [STUDENT_ROLE]
+    if cfg.frl_estimate is not None:
+        roles.append(FRL_ESTIMATE_ROLE)
+    return roles
 
 
 def _student_sources_by_year(cfg: IngestConfig):
@@ -269,6 +283,7 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
         source_vintage=source.geography_vintage,
         style="student",
     )
+    frame = apply_student_frl_estimate(frame, cfg.data, "optimization")
     frame = filter_outside_district_students(frame, cfg.data, "optimization")
     frame.rename(
         columns={
@@ -827,6 +842,7 @@ __all__ = [
     "CENSUS_ROLE",
     "CENTROID_ROLE",
     "CROSSWALK_ROLE",
+    "FRL_ESTIMATE_ROLE",
     "IngestConfig",
     "MANUAL_EDGE_ROLE",
     "OUTPUT_LATLON_CRS",
@@ -846,4 +862,5 @@ __all__ = [
     "load_school_locations",
     "load_schools",
     "load_students",
+    "student_source_roles",
 ]

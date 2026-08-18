@@ -81,6 +81,7 @@ def test_scenario_backed_properties_are_read_only():
     assert config.include_k8 is False
     assert config.include_citywide is False
     assert config.include_mission_bay is True
+    assert config.frl_estimate is None
     assert config.outside_district_students == "ignore"
 
     with pytest.raises(AttributeError):
@@ -115,6 +116,7 @@ def test_example_uses_central_2021_through_2024_selectors():
         "include_citywide": False,
         "include_mission_bay": True,
         "geography_vintage": "2020",
+        "frl_estimate": "updated_2526",
         "outside_district_students": "ignore",
     }
 

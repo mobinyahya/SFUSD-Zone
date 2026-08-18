@@ -30,6 +30,7 @@ _ROUND_PREFERENCE_COLUMN = re.compile(
 )
 _MISSION_BAY_SCHOOL_IDS = {909, 999}
 SPECIAL_PROGRAMS = frozenset({"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"})
+_FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
 
 
 def _missing(value: Any) -> bool:
@@ -276,7 +277,96 @@ def load_student_records(
         source_vintage=_role_geography_vintage(scenario, role),
         style="student",
     )
+    frame = apply_student_frl_estimate(frame, scenario, group)
     return filter_outside_district_students(frame, scenario, group)
+
+
+def _frl_count_rates(source: ResolvedSource) -> pd.Series:
+    frame = read_csv_source(source, dtype={"BlockID": "string"})
+    required = {"BlockID", *_FRL_COUNT_COLUMNS}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"Student FRL estimate is missing columns {sorted(missing)}: {source.path}."
+        )
+
+    block_ids = frame["BlockID"].astype("string").str.strip()
+    block_ids = block_ids.str.replace(r"\.0$", "", regex=True)
+    invalid_ids = block_ids.isna() | ~block_ids.str.fullmatch(r"\d+").fillna(False)
+    if invalid_ids.any():
+        examples = frame.loc[invalid_ids, "BlockID"].head(5).tolist()
+        raise ValueError(f"Student FRL estimate contains invalid BlockIDs: {examples}.")
+    numeric_ids = pd.to_numeric(block_ids, errors="raise").astype("int64")
+    if numeric_ids.duplicated().any():
+        duplicates = numeric_ids[numeric_ids.duplicated(False)].unique()[:5].tolist()
+        raise ValueError(
+            f"Student FRL estimate contains duplicate BlockIDs: {duplicates}."
+        )
+
+    counts = frame.loc[:, list(_FRL_COUNT_COLUMNS)].apply(
+        pd.to_numeric, errors="coerce"
+    )
+    invalid_counts = counts.isna() | ~np.isfinite(counts) | counts.lt(0)
+    fractional_counts = counts.mod(1).ne(0)
+    if invalid_counts.any().any() or fractional_counts.any().any():
+        invalid_rows = (invalid_counts | fractional_counts).any(axis=1)
+        examples = frame.loc[invalid_rows, ["BlockID", *_FRL_COUNT_COLUMNS]].head(5)
+        raise ValueError(
+            "Student FRL estimate counts must be non-negative integers; invalid "
+            f"rows include {examples.to_dict('records')}."
+        )
+    inconsistent = counts["Not FRL"] + counts["FRLunch"] != counts["Students"]
+    if inconsistent.any():
+        examples = frame.loc[inconsistent, ["BlockID", *_FRL_COUNT_COLUMNS]].head(5)
+        raise ValueError(
+            "Student FRL estimate Students must equal Not FRL + FRLunch; rows "
+            f"include {examples.to_dict('records')}."
+        )
+
+    rates = counts["FRLunch"].div(counts["Students"].replace(0, np.nan))
+    return pd.Series(rates.to_numpy(), index=numeric_ids.to_numpy(), dtype=float)
+
+
+def apply_student_frl_estimate(
+    frame: pd.DataFrame, scenario: DataScenario, group: str
+) -> pd.DataFrame:
+    """Apply the selected block-count FRL estimate with source-data fallback."""
+    estimate = scenario.filter(group, "frl_estimate")
+    if estimate is None:
+        return frame
+    if "census_block" not in frame.columns:
+        raise ValueError("Student data is missing required column 'census_block'.")
+
+    role = f"{group}.frl_estimate"
+    rates = _frl_count_rates(scenario.source(role))
+    block_ids = pd.to_numeric(frame["census_block"], errors="coerce").astype("Int64")
+    estimated = block_ids.map(rates)
+
+    result = frame.copy()
+    if group == "optimization":
+        if "FRL Score" not in result.columns:
+            raise ValueError("Student data is missing required column 'FRL Score'.")
+        legacy = pd.to_numeric(result["FRL Score"], errors="coerce")
+        result["FRL Score"] = estimated.fillna(legacy)
+    elif group == "assignment":
+        required = {"freelunch_prob", "reducedlunch_prob"}
+        missing = required - set(result.columns)
+        if missing:
+            raise ValueError(f"Student data is missing columns {sorted(missing)}.")
+        legacy = pd.to_numeric(result["freelunch_prob"], errors="coerce").fillna(
+            0
+        ) + pd.to_numeric(result["reducedlunch_prob"], errors="coerce").fillna(0)
+        effective = estimated.fillna(legacy)
+        result["freelunch_prob"] = effective
+        result["reducedlunch_prob"] = 0.0
+        if "FRL Score" in result.columns:
+            legacy_score = pd.to_numeric(result["FRL Score"], errors="coerce")
+            result["FRL Score"] = estimated.fillna(legacy_score)
+        else:
+            result["FRL Score"] = effective
+    else:  # pragma: no cover - validated by DataScenario.filter
+        raise ValueError(f"Unknown filter group {group!r}.")
+    return result
 
 
 def normalize_student_records(

@@ -64,4 +64,5 @@ data:
         include_citywide: false
         include_mission_bay: true
         geography_vintage: '2020'     # 2010 | 2020
+        frl_estimate: updated_2526     # updated_2526 | null (student-file FRL)
         outside_district_students: ignore  # ignore | include

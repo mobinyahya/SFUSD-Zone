@@ -8,262 +8,298 @@ sources:
   assignment.new_ctip: ctip.array.block.2024
   assignment.new_ctip_blockgroup: ctip.array.blockgroup.2024
   assignment.zones:
-    10zone: zones.common.10
-    13zone: zones.common.13
-    18zone_1: zones.common.18.1
-    18zone_2: zones.common.18.2
-    59zone: zones.common.59
-    6zone-1: zones.common.6
-    6zone-9_1: zones.common.6.9.1
-    6zone-9_2: zones.common.6.9.2
+    10zone_2020: {path: Data/assignment/zones_2020/10-zone-11_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    13zone_2020: {path: Data/assignment/zones_2020/13-zone-7_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    18zone_1_2020: {path: Data/assignment/zones_2020/18-zone-1_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    18zone_2_2020: {path: Data/assignment/zones_2020/18-zone-1_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    59zone_2020: {path: Data/assignment/zones_2020/59-zone-1_B_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-1_2020: {path: Data/assignment/zones_2020/6-zone-1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-9_1_2020: {path: Data/assignment/zones_2020/6-zone-9_1_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    6zone-9_2_2020: {path: Data/assignment/zones_2020/6-zone-9_2_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
     Con1: zones.common.con1
-    Zones_4_FRL_Dev_0.10_Objective_1060: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.10_Objective_1060.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.10_Objective_1080: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.10_Objective_1080.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.10_Objective_1140: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.10_Objective_1140.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.10_Objective_1150: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.10_Objective_1150.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.10_Objective_1160: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.10_Objective_1160.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_930: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_930.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_940: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_940.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_960: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_960.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_970: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_970.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_980: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_980.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_1000: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_1000.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_1060: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_1060.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_1080: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_1080.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.15_Objective_1120: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.15_Objective_1120.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_930: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_930.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_940: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_940.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_960: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_960.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_980: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_980.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_990: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_990.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_1050: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_1050.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.20_Objective_1070: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.20_Objective_1070.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_920: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_920.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_930: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_930.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_960: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_960.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_980: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_980.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_990: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_990.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_1030: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_1030.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_1070: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_1070.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.25_Objective_1080: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.25_Objective_1080.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_860: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_860.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_920: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_920.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_950: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_950.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_960: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_960.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_970: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_970.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_980: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_980.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_990: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_990.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_1030: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_1030.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.30_Objective_1080: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.30_Objective_1080.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_860: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_860.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_920: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_920.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_940: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_940.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_960: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_960.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_990: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_990.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_1050: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_1050.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_1060: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_1060.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_1080: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_1080.csv, root: data, classification: public}
-    Zones_4_FRL_Dev_0.35_Objective_1120: {path: Data/assignment/zones/Zones_4_FRL_Dev_0.35_Objective_1120.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.10_Objective_1310: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.10_Objective_1310.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.10_Objective_1380: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.10_Objective_1380.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.15_Objective_1170: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.15_Objective_1170.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.15_Objective_1180: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.15_Objective_1180.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.15_Objective_1250: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.15_Objective_1250.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.15_Objective_1450: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.15_Objective_1450.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.20_Objective_1110: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.20_Objective_1110.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.20_Objective_1120: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.20_Objective_1120.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.20_Objective_1190: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.20_Objective_1190.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.20_Objective_1350: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.20_Objective_1350.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.25_Objective_1010: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.25_Objective_1010.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.25_Objective_1059: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.25_Objective_1059.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.25_Objective_1350: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.25_Objective_1350.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.25_Objective_1360: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.25_Objective_1360.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.30_Objective_1010: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.30_Objective_1010.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.30_Objective_1040: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.30_Objective_1040.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.30_Objective_1150: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.30_Objective_1150.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.30_Objective_1360: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.30_Objective_1360.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.35_Objective_1010: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.35_Objective_1010.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.35_Objective_1050: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.35_Objective_1050.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.35_Objective_1150: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.35_Objective_1150.csv, root: data, classification: public}
-    Zones_5_FRL_Dev_0.35_Objective_1360: {path: Data/assignment/zones/Zones_5_FRL_Dev_0.35_Objective_1360.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1430: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1430.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1470: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1470.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1500: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1500.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1530: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1530.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1540: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1540.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1570: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1570.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.10_Objective_1730: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1730.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1380: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1380.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1390: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1390.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1440: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1440.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1450: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1450.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1460: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1460.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1470: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1470.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1480: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1480.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1490: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1490.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1510: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1510.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1530: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1530.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1550: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1550.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1590: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1590.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.15_Objective_1600: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.15_Objective_1600.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1340: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1340.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1380: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1380.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1390: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1390.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1400: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1400.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1410: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1410.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1420: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1420.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1460: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1460.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.20_Objective_1500: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.20_Objective_1500.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1190: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1190.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1340: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1340.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1350: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1350.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1370: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1370.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1380: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1380.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1460: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1460.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1470: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1470.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.25_Objective_1500: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.25_Objective_1500.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1250: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1250.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1290: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1290.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1360: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1360.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1380: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1380.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1400: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1400.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1410: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1410.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1460: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1460.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.30_Objective_1500: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.30_Objective_1500.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1220: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1220.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1250: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1250.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1320: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1320.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1359: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1359.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1380: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1380.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1460: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1460.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1470: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1470.csv, root: data, classification: public}
-    Zones_6_FRL_Dev_0.35_Objective_1500: {path: Data/assignment/zones/Zones_6_FRL_Dev_0.35_Objective_1500.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1790: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1790.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1820: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1820.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1860: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1860.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1920: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1920.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1930: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1930.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_1980: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_1980.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_2090: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_2090.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_2100: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_2100.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_2220: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_2220.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.10_Objective_2360: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.10_Objective_2360.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1730: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1730.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1740: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1740.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1810: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1810.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1840: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1840.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1850: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1850.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1870: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1870.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1880: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1880.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1890: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1890.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.15_Objective_1910: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.15_Objective_1910.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1660: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1660.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1720: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1720.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1730: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1730.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1740: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1740.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1780: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1780.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1840: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1840.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1870: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1870.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1900: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1900.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_1950: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_1950.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_2070: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_2070.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.20_Objective_2170: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.20_Objective_2170.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1640: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1640.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1680: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1680.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1720: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1720.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1790: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1790.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1800: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1800.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1830: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1830.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1840: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1840.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_1880: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_1880.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.25_Objective_2080: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.25_Objective_2080.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1560: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1560.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1640: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1640.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1680: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1680.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1710: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1710.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1780: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1780.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1790: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1790.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1820: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1820.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.30_Objective_1850: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.30_Objective_1850.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1640: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1640.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1680: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1680.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1720: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1720.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1740: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1740.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1750: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1750.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1780: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1780.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1800: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1800.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1820: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1820.csv, root: data, classification: public}
-    Zones_8_FRL_Dev_0.35_Objective_1940: {path: Data/assignment/zones/Zones_8_FRL_Dev_0.35_Objective_1940.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.15_Objective_2150: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2150.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.15_Objective_2250: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2250.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.15_Objective_2270: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2270.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.15_Objective_2300: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2300.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.15_Objective_2450: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2450.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_1960: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_1960.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2110: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2110.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2129: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2129.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2130: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2130.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2150: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2150.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2159: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2159.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2220: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2220.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2240: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2240.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2260: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2260.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.20_Objective_2290: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_2290.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_1950: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_1950.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_1970: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_1970.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2040: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2040.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2070: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2070.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2080: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2080.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2110: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2110.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2120: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2120.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.25_Objective_2140: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.25_Objective_2140.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_1950: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_1950.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_1970: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_1970.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2030: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2030.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2060: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2060.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2090: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2090.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2100: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2100.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2110: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2110.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2120: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2120.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.30_Objective_2160: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.30_Objective_2160.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_1970: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_1970.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_1980: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_1980.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2030: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2030.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2050: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2050.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2060: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2060.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2080: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2080.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2090: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2090.csv, root: data, classification: public}
-    Zones_10_FRL_Dev_0.35_Objective_2160: {path: Data/assignment/zones/Zones_10_FRL_Dev_0.35_Objective_2160.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.20_Objective_2630: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.20_Objective_2630.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.20_Objective_2700: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.20_Objective_2700.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.20_Objective_2710: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.20_Objective_2710.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2260: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2260.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2280: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2280.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2320: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2320.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2360: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2360.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2450: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2450.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2500: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2500.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.25_Objective_2520: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2520.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2270: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2270.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2300: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2300.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2380: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2380.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2400: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2400.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2450: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2450.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.30_Objective_2490: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.30_Objective_2490.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2300: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2300.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2340: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2340.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2380: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2380.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2410: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2410.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2480: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2480.csv, root: data, classification: public}
-    Zones_13_FRL_Dev_0.35_Objective_2520: {path: Data/assignment/zones/Zones_13_FRL_Dev_0.35_Objective_2520.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.30_Objective_2810: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2810.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.30_Objective_2820: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2820.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.30_Objective_2830: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2830.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.30_Objective_2930: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2930.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.35_Objective_2810: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.35_Objective_2810.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.35_Objective_2850: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.35_Objective_2850.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.35_Objective_2860: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.35_Objective_2860.csv, root: data, classification: public}
-    Zones_18_FRL_Dev_0.35_Objective_2900: {path: Data/assignment/zones/Zones_18_FRL_Dev_0.35_Objective_2900.csv, root: data, classification: public}
+    Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1080.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1140.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1150.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.10_Objective_1160.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_1000.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_1060.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_1080.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_1120.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_930.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_940.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_960.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_970.0_4-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.15_Objective_980.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_1050.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_1070.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_930.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_940.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_960.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_980.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.20_Objective_990.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_1030.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_1070.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_1080.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_920.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_930.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_960.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_980.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.25_Objective_990.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_1030.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_1080.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_860.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_920.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_950.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_960.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_970.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_980.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.30_Objective_990.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_1050.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_1060.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_1080.0_4-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_1120.0_4-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_860.0_4-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_920.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_940.0_4-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_960.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3_2020: {path: Data/assignment/zones_2020/Zones_4_FRL_Dev_0.35_Objective_990.0_4-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.10_Objective_1310.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.10_Objective_1380.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.15_Objective_1170.0_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.15_Objective_1180.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.15_Objective_1250.0_5-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.15_Objective_1450.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.20_Objective_1110.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.20_Objective_1120.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.20_Objective_1190.0_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.20_Objective_1350.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.25_Objective_1010.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.25_Objective_1059.9999999999998_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.25_Objective_1350.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.25_Objective_1360.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.30_Objective_1010.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.30_Objective_1040.0_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.30_Objective_1150.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.30_Objective_1360.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.35_Objective_1010.0_5-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.35_Objective_1050.0_5-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.35_Objective_1150.0_5-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5_2020: {path: Data/assignment/zones_2020/Zones_5_FRL_Dev_0.35_Objective_1360.0_5-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1470.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1530.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1540.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1570.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.10_Objective_1730.0_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1380.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1390.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1440.0_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1450.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1460.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1470.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1480.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1490.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1510.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1530.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1550.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1590.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.15_Objective_1600.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1340.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1380.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1390.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1400.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1410.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1420.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1460.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.20_Objective_1500.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1190.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1340.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1350.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1370.0_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1380.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1460.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1470.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.25_Objective_1500.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1250.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1290.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1360.0_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1380.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1400.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1410.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1460.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.30_Objective_1500.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1220.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1250.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1320.0_6-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1359.999996620428_6-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1380.0_6-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1460.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1470.0_6-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5_2020: {path: Data/assignment/zones_2020/Zones_6_FRL_Dev_0.35_Objective_1500.0_6-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1790.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1820.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1860.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1920.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1930.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_1980.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_2090.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_2100.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_2220.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.10_Objective_2360.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1730.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1740.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1810.0_8-zone-31_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1840.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1850.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1870.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1880.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1890.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.15_Objective_1910.0_8-zone-32_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1660.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1720.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1730.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1740.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1780.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1840.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1870.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1900.0_8-zone-32_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_1950.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_2070.0_8-zone-31_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.20_Objective_2170.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone-32_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1640.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1680.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1720.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1790.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1800.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1830.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1840.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_1880.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.25_Objective_2080.0_8-zone-31_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1560.0_8-zone-31_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1640.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1680.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1710.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1780.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1790.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1820.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.30_Objective_1850.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone-32_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1640.0_8-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1680.0_8-zone-26_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1720.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1740.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1750.0_8-zone-24_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1780.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1800.0_8-zone-31_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1820.0_8-zone-27_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25_2020: {path: Data/assignment/zones_2020/Zones_8_FRL_Dev_0.35_Objective_1940.0_8-zone-25_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2300.0_10-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.15_Objective_2450.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2110.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2129.9999928583206_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2130.0_10-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2150.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2159.9999999999973_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2220.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2240.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2260.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.20_Objective_2290.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_1950.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_1970.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2040.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2070.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2080.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2110.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2120.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.25_Objective_2140.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_1950.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_1970.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2030.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2060.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2090.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2100.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2110.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2120.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.30_Objective_2160.0_10-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_1970.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_1980.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2030.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-4_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2050.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2060.0_10-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-3_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2080.0_10-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2090.0_10-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5_2020: {path: Data/assignment/zones_2020/Zones_10_FRL_Dev_0.35_Objective_2160.0_10-zone-5_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.20_Objective_2630.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.20_Objective_2700.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.20_Objective_2710.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2260.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2280.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2320.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2360.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2450.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.25_Objective_2520.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2270.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2300.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2380.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2400.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2450.0_13-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.30_Objective_2490.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2300.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2340.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2380.0_13-zone-7_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2410.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2480.0_13-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10_2020: {path: Data/assignment/zones_2020/Zones_13_FRL_Dev_0.35_Objective_2520.0_13-zone-10_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.30_Objective_2810.0_18-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.30_Objective_2930.0_18-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.35_Objective_2810.0_18-zone_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.35_Objective_2850.0_18-zone-1_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.35_Objective_2860.0_18-zone-2_2020.csv, root: data, classification: public, geography_vintage: "2020"}
+    Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6_2020: {path: Data/assignment/zones_2020/Zones_18_FRL_Dev_0.35_Objective_2900.0_18-zone-6_2020.csv, root: data, classification: public, geography_vintage: "2020"}
   assignment.citywide_zones:
     18zone_1_2-BG-0point3miles: zones.citywide.18_bg_0point3miles
   assignment.ctip:
@@ -281,5 +317,6 @@ filters:
     capacity_profile: status_quo
     capacity_scenario: programs
     include_mission_bay: true
-    geography_vintage: "2010"
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
     outside_district_students: ignore

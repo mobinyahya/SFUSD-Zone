@@ -34,7 +34,8 @@ experimental inputs and take precedence over registry-derived sources.
 
 Optimization selectors are canonical `years`, `grades`, `student_population`,
 `rounds`, `special_programs`, `program_population`, `capacity_scenario`, and the
-`include_k8`, `include_citywide`, and `include_mission_bay` flags. Assignment
+`include_k8`, `include_citywide`, and `include_mission_bay` flags. Both groups
+also select an optional `frl_estimate`. Assignment
 uses canonical `year`, a `grades` list, `student_population`, `rounds`,
 `special_programs`, `capacity_profile`, `capacity_scenario`, and
 `include_mission_bay`; execution
@@ -45,6 +46,12 @@ combinations fail rather than falling back.
 capacity values in its year/profile-selected program table; optimization uses
 the current 2023-24 program table. Explicit scenarios such as `A` through `D`
 overlay matching school/program/grade capacities from the shared scenario table.
+
+`frl_estimate` defaults to `null`, which retains the student table's FRL fields.
+Named estimates come from the central `student_frl_estimates` registry. The
+`updated_2526` estimate derives exact block rates from FRL/student counts and
+requires `geography_vintage: "2020"`; missing and zero-student blocks fall back
+to the student table.
 
 Both groups select `geography_vintage` (`2010` or `2020`). Same-vintage Census
 columns are retained; other location-bearing sources are spatially mapped from

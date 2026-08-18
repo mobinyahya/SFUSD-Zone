@@ -27,6 +27,7 @@ SEQUENCE_OPTIMIZATION_FIELDS = {
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
 OPTIMIZATION_SOURCE_ROLES = (
     "optimization.students",
+    "optimization.frl_estimate",
     "optimization.schools",
     "optimization.programs",
     "optimization.census",
@@ -44,6 +45,7 @@ MNL_ASSIGNMENT_FILTERS = (
     "capacity_scenario",
     "include_mission_bay",
     "geography_vintage",
+    "frl_estimate",
     "outside_district_students",
 )
 
@@ -355,6 +357,7 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
             role
             for role in (
                 "assignment.students",
+                "assignment.frl_estimate",
                 "assignment.geography.blocks",
                 "assignment.geography.crosswalk",
                 "choice.estimate",

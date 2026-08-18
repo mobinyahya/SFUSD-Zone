@@ -124,6 +124,7 @@ class OptimizationConfig:
         self.include_k8
         self.include_citywide
         self.include_mission_bay
+        self.frl_estimate
         self.outside_district_students
         if (
             isinstance(self.centroid_neighbor_radius, bool)
@@ -198,6 +199,10 @@ class OptimizationConfig:
         return self._data_scenario.filter(
             "optimization", "outside_district_students"
         )
+
+    @property
+    def frl_estimate(self) -> str | None:
+        return self._data_scenario.filter("optimization", "frl_estimate")
 
     # ------------------------------------------------------------------ #
     # loading

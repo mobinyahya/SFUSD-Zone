@@ -45,6 +45,7 @@ optimization_defaults:
           include_citywide: false
           include_mission_bay: true
           geography_vintage: "2010"
+          frl_estimate: null
           outside_district_students: ignore
 
 sweep:

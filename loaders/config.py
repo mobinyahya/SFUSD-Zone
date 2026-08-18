@@ -22,7 +22,14 @@ BASE_CONFIG_PATH = PACKAGE_CONFIG_ROOT / "base.yaml"
 
 _RUN_KEYS = {"scenario", "overrides"}
 _OVERRIDE_KEYS = {"roots", "sources", "filters"}
-_BASE_KEYS = {"schema_version", "roots", "files", "geographies", "school_years"}
+_BASE_KEYS = {
+    "schema_version",
+    "roots",
+    "files",
+    "geographies",
+    "student_frl_estimates",
+    "school_years",
+}
 _SCENARIO_KEYS = {"id", "sources", "filters"}
 _SOURCE_KEYS = {
     "path",
@@ -45,6 +52,7 @@ _FILTER_KEYS = {
         "include_citywide",
         "include_mission_bay",
         "geography_vintage",
+        "frl_estimate",
         "outside_district_students",
     },
     "assignment": {
@@ -57,6 +65,7 @@ _FILTER_KEYS = {
         "capacity_scenario",
         "include_mission_bay",
         "geography_vintage",
+        "frl_estimate",
         "outside_district_students",
     },
 }
@@ -67,6 +76,7 @@ _SPECIAL_PROGRAM_MODES = {"include", "exclude_only_special", "exclude_any_specia
 _FILTER_DEFAULTS = {
     "capacity_scenario": "programs",
     "geography_vintage": "2010",
+    "frl_estimate": None,
     "outside_district_students": "ignore",
 }
 _ANNUAL_ASSIGNMENT_ROLES = {
@@ -618,6 +628,10 @@ def _validate_filters(
             values["geography_vintage"] = _geography_vintage(
                 values["geography_vintage"], f"{label}.{group}.geography_vintage"
             )
+        if "frl_estimate" in values and values["frl_estimate"] is not None:
+            values["frl_estimate"] = _nonempty_string(
+                values["frl_estimate"], f"{label}.{group}.frl_estimate"
+            )
         if "outside_district_students" in values and values[
             "outside_district_students"
         ] not in {"ignore", "include"}:
@@ -815,6 +829,15 @@ def _validate_geographies(value: Any, files: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_student_frl_estimates(value: Any, files: Mapping[str, Any]) -> None:
+    estimates = _require_map(value, "Base student_frl_estimates")
+    if not estimates:
+        raise ValueError("Base student_frl_estimates must not be empty.")
+    for name, source in estimates.items():
+        _nonempty_string(name, "Base student_frl_estimates key")
+        _validate_catalog_reference(source, f"Base student_frl_estimates.{name}", files)
+
+
 def _validate_base(payload: dict[str, Any], path: Path) -> None:
     _unknown_keys(payload, _BASE_KEYS, "base")
     missing = sorted(_BASE_KEYS - set(payload))
@@ -848,6 +871,7 @@ def _validate_base(payload: dict[str, Any], path: Path) -> None:
             )
         _validate_source_ref(source, f"files.{file_id}")
     _validate_geographies(payload["geographies"], files)
+    _validate_student_frl_estimates(payload["student_frl_estimates"], files)
     _validate_school_years(payload["school_years"], files)
 
 
@@ -1129,17 +1153,59 @@ def _geography_sources(
     return generated
 
 
+def _student_frl_sources(
+    filters: Mapping[str, Mapping[str, Any]], estimates: Mapping[str, Any]
+) -> dict[str, Any]:
+    generated: dict[str, Any] = {}
+    for group, group_filters in filters.items():
+        estimate = group_filters["frl_estimate"]
+        if estimate is None:
+            continue
+        source = estimates.get(estimate)
+        if source is None:
+            raise ValueError(
+                f"Student FRL estimate {estimate!r} is unavailable; available "
+                f"estimates are {list(estimates)}."
+            )
+        generated[f"{group}.frl_estimate"] = source
+    return generated
+
+
 def _registry_sources(
     filters: Mapping[str, Mapping[str, Any]],
     school_years: Mapping[str, Any],
     geographies: Mapping[str, Any],
+    student_frl_estimates: Mapping[str, Any],
 ) -> dict[str, Any]:
     generated = _geography_sources(filters, geographies)
+    generated.update(_student_frl_sources(filters, student_frl_estimates))
     if "optimization" in filters:
         generated.update(_optimization_sources(filters["optimization"], school_years))
     if "assignment" in filters:
         generated.update(_assignment_sources(filters["assignment"], school_years))
     return generated
+
+
+def _validate_student_frl_source_vintages(
+    filters: Mapping[str, Mapping[str, Any]], source_values: Mapping[str, Any]
+) -> None:
+    for group, group_filters in filters.items():
+        estimate = group_filters["frl_estimate"]
+        if estimate is None:
+            continue
+        role = f"{group}.frl_estimate"
+        source = source_values.get(role)
+        if not isinstance(source, ResolvedSource):
+            raise ValueError(
+                f"Student FRL source role {role!r} must resolve to exactly one file."
+            )
+        target_vintage = group_filters["geography_vintage"]
+        if source.geography_vintage != target_vintage:
+            raise ValueError(
+                f"Student FRL estimate {estimate!r} uses Census geography "
+                f"{source.geography_vintage!r}, but {group}.geography_vintage is "
+                f"{target_vintage!r}."
+            )
 
 
 def load_scenario(
@@ -1196,7 +1262,10 @@ def load_scenario(
         for role in _ANNUAL_ASSIGNMENT_ROLES:
             declared_sources.pop(role, None)
     generated_sources = _registry_sources(
-        filters, base["school_years"], base["geographies"]
+        filters,
+        base["school_years"],
+        base["geographies"],
+        base["student_frl_estimates"],
     )
     sources = _deep_merge(declared_sources, generated_sources)
     sources = _deep_merge(sources, declared_overrides)
@@ -1213,6 +1282,7 @@ def load_scenario(
         )
         for role, source in sources.items()
     }
+    _validate_student_frl_source_vintages(filters, source_values)
     return DataScenario(
         id=scenario["id"],
         schema_version=base["schema_version"],

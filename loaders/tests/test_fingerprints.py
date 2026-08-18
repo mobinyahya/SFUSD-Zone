@@ -158,6 +158,7 @@ def test_normalized_selectors_change_manifests_semantics_and_cache_identity(
             "capacity_scenario": "programs",
             "include_mission_bay": False,
             "geography_vintage": "2010",
+            "frl_estimate": None,
             "outside_district_students": "ignore",
         }
     }

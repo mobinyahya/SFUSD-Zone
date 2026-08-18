@@ -590,6 +590,11 @@ files:
     root: data
     classification: public
     geography_vintage: "2020"
+  student_frl.updated_2526:
+    path: Data/student_frl/updated_frl_blocks_2526.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2020"
 
   assignment.program_codes:
     path: Data/program_codes.csv
@@ -764,6 +769,9 @@ geographies:
       blockgroup: census.adjacency.blockgroup.2020
       tract: census.adjacency.tract.2020
     manual_edges: bundled.manual_edges.2020
+
+student_frl_estimates:
+  updated_2526: student_frl.updated_2526
 
 school_years:
   "1415":

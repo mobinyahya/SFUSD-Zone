@@ -30,7 +30,7 @@ class Dataset:
         self.data = config.data_scenario
         self.ingest = IngestConfig(unit=config.unit, data=self.data)
         graph_roles = [
-            loaders.STUDENT_ROLE,
+            *loaders.student_source_roles(self.ingest),
             loaders.SCHOOL_ROLE,
             *loaders.capacity_source_roles(self.ingest),
             *loaders.census_geometry_roles(self.data, self.ingest.unit),

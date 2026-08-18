@@ -41,13 +41,15 @@ def _student_scenario(
     *,
     frame=None,
     student_population="enrolled",
+    frl_counts=None,
     **filter_overrides,
 ):
     cleaned = tmp_path / "Data" / "Cleaned"
     cleaned.mkdir(parents=True, exist_ok=True)
     prefix = "enrolled" if student_population == "enrolled" else "student"
+    student_path = cleaned / f"{prefix}_2122.csv"
     (frame if frame is not None else _student_frame()).to_csv(
-        cleaned / f"{prefix}_2122.csv", index=False
+        student_path, index=False
     )
     filters = {
         "years": ["2122"],
@@ -58,7 +60,23 @@ def _student_scenario(
         "program_population": "GE",
     }
     filters.update(filter_overrides)
+    sources = None
+    if frl_counts is not None:
+        frl_path = tmp_path / "frl-counts.csv"
+        frl_counts.to_csv(frl_path, index=False)
+        filters.update({"geography_vintage": "2020", "frl_estimate": "updated_2526"})
+        sources = {
+            "optimization.students": {
+                "path": str(student_path),
+                "geography_vintage": "2020",
+            },
+            "optimization.frl_estimate": {
+                "path": str(frl_path),
+                "geography_vintage": "2020",
+            },
+        }
     return scenario_factory(
+        sources=sources,
         filters={"optimization": filters},
         data_root=tmp_path,
     )
@@ -79,7 +97,7 @@ def test_projected_centroids_latlon_avoids_geographic_crs_warning():
     assert -122.5 < centroids.iloc[0].x < -122.4
 
 
-def test_student_cache_uses_v6_content_addressed_layout(tmp_path, scenario_factory):
+def test_student_cache_uses_v7_content_addressed_layout(tmp_path, scenario_factory):
     baseline = _ingest(_student_scenario(tmp_path, scenario_factory))
     all_population = _ingest(
         _student_scenario(tmp_path, scenario_factory, program_population="All")
@@ -88,10 +106,57 @@ def test_student_cache_uses_v6_content_addressed_layout(tmp_path, scenario_facto
     baseline_namespace = loaders._student_cache_namespace(baseline)
     changed_namespace = loaders._student_cache_namespace(all_population)
 
-    assert baseline_namespace.path.parent.name == "v6"
+    assert baseline_namespace.path.parent.name == "v7"
     assert baseline_namespace.path.parent.parent.name == "students"
     assert loaders._student_cache_path(baseline).endswith("/students.csv")
     assert baseline_namespace.key != changed_namespace.key
+
+
+def test_true_frl_counts_feed_optimization_with_student_file_fallback(
+    tmp_path, scenario_factory
+):
+    counts = pd.DataFrame(
+        {
+            "BlockID": [1001, 1002],
+            "Not FRL": [1, 0],
+            "FRLunch": [3, 0],
+            "Students": [4, 0],
+            "FRL Rate": [0.8, None],
+        }
+    )
+    cfg = _ingest(_student_scenario(tmp_path, scenario_factory, frl_counts=counts))
+
+    students = loaders.load_students(cfg)
+
+    assert students["FRL"].tolist() == pytest.approx([0.75, 0.0])
+    assert loaders.student_source_roles(cfg) == [
+        "optimization.students",
+        "optimization.frl_estimate",
+    ]
+
+
+def test_student_cache_identity_includes_selected_frl_count_contents(
+    tmp_path, scenario_factory
+):
+    first_counts = pd.DataFrame(
+        {
+            "BlockID": [1001],
+            "Not FRL": [1],
+            "FRLunch": [3],
+            "Students": [4],
+        }
+    )
+    first = _ingest(
+        _student_scenario(tmp_path, scenario_factory, frl_counts=first_counts)
+    )
+    first_key = loaders._student_cache_namespace(first).key
+
+    second_counts = first_counts.assign(FRLunch=2, **{"Not FRL": 2})
+    second = _ingest(
+        _student_scenario(tmp_path, scenario_factory, frl_counts=second_counts)
+    )
+
+    assert loaders._student_cache_namespace(second).key != first_key
 
 
 def test_selected_rounds_keep_r2_only_student_and_do_not_inflate_program_types(

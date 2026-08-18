@@ -19,6 +19,7 @@ from assignment.student_assignment.configerator import Configerator
 from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
 from assignment.student_assignment.market_generator.school_choice_market import (
     SchoolChoiceMarket,
+    assignment_source_identity,
 )
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
@@ -58,7 +59,7 @@ _CONSOLIDATED_RUN_ESTIMATES = {
     ),
 }
 _SHARED_SOURCE_MAP_SHA256 = (
-    "37b8b3c8b43991c0f93345f567ffd6d50b55e1e65e5accad31f5af6519fc5f49"
+    "0f5ce5074b3c71be4b64dfdbc4a21da94d0c6c55b474ee1a5c304f740380fe85"
 )
 
 
@@ -98,7 +99,7 @@ def test_consolidated_run_source_maps_match_shared_data_semantics(
         semantic_maps, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
 
-    assert len(semantic_maps["assignment.zones"]) == 256
+    assert len(semantic_maps["assignment.zones"]) == 292
     assert len(semantic_maps["assignment.citywide_zones"]) == 1
     assert hashlib.sha256(encoded).hexdigest() == (
         _SHARED_SOURCE_MAP_SHA256
@@ -440,6 +441,38 @@ def test_market_reconfigure_reuses_tables_until_source_identity_changes(
 
     assert calls == {"students": 1, "programs": 1, "schools": 2}
     assert market.students is not original_students
+
+
+def test_assignment_source_identity_includes_selected_frl_count_contents(tmp_path):
+    estimate_path = tmp_path / "frl-counts.csv"
+    estimate_path.write_text(
+        "BlockID,Not FRL,FRLunch,Students\n1001,1,3,4\n", encoding="utf-8"
+    )
+    data = {
+        "scenario": "legacy",
+        "overrides": {
+            "sources": {
+                "assignment.frl_estimate": {
+                    "path": str(estimate_path),
+                    "geography_vintage": "2020",
+                }
+            },
+            "filters": {
+                "assignment": {
+                    "geography_vintage": "2020",
+                    "frl_estimate": "updated_2526",
+                }
+            },
+        },
+    }
+    first = assignment_source_identity(load_scenario(data, environ={}))
+
+    estimate_path.write_text(
+        "BlockID,Not FRL,FRLunch,Students\n1001,2,2,4\n", encoding="utf-8"
+    )
+    second = assignment_source_identity(load_scenario(data, environ={}))
+
+    assert second != first
 
 
 def _write_round_gap_sources(tmp_path):

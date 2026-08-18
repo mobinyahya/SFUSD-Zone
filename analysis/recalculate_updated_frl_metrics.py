@@ -97,7 +97,10 @@ DEFAULT_ZONE_MATCHES_ROOT = (
     PROJECT_ROOT
     / "analysis/matches/zone_subconfigs_choice_model_25_soft_reserves_updated"
 )
-DEFAULT_UPDATED_FRL = PROJECT_ROOT / "analysis/updated_frl_block.csv"
+DEFAULT_UPDATED_FRL = Path(
+    "/soalnas/share/data/school_choice/Data/student_frl/"
+    "updated_frl_blocks_2526.csv"
+)
 DEFAULT_2020_BLOCKS = Path(
     "/soalnas/share/data/school_choice/Census/2020/blocks/tl_2020_06075_tabblock20.shp"
 )

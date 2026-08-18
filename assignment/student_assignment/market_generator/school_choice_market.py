@@ -64,6 +64,8 @@ def assignment_source_identity(data_scenario) -> str:
     roles = list(ASSIGNMENT_IMMUTABLE_SOURCE_ROLES)
     if data_scenario.filter("assignment", "capacity_scenario") != "programs":
         roles.append("assignment.capacity")
+    if data_scenario.filter("assignment", "frl_estimate") is not None:
+        roles.append("assignment.frl_estimate")
     for role in ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES:
         try:
             data_scenario.resolved(role)

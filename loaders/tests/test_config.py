@@ -467,12 +467,24 @@ def test_generated_zones_scenario_uses_supported_registry_bundle():
     assert scenario.source("assignment.schools").catalog_id == (
         "assignment.schools.current_mission_bay"
     )
-    assert scenario.source_map("assignment.zones")[
-        "Zones_4_FRL_Dev_0.10_Objective_1060"
+    assert scenario.filter("assignment", "geography_vintage") == "2020"
+    assert scenario.source("assignment.geography.blockgroups").catalog_id == (
+        "census.blockgroups.2020"
+    )
+    zones = scenario.source_map("assignment.zones")
+    assert len(zones) == 292
+    assert "Con1" in zones
+    assert all(
+        source.geography_vintage == "2020"
+        for alias, source in zones.items()
+        if alias != "Con1"
+    )
+    assert zones[
+        "Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020"
     ].path == (
         Path(
-            "/soalnas/share/data/school_choice/Data/assignment/zones/"
-            "Zones_4_FRL_Dev_0.10_Objective_1060.csv"
+            "/soalnas/share/data/school_choice/Data/assignment/zones_2020/"
+            "Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020.csv"
         )
     )
 
@@ -618,6 +630,60 @@ def test_geography_vintage_selects_complete_2020_bundles():
         )
 
 
+def test_named_frl_estimate_requires_matching_census_vintage():
+    scenario = load_scenario(
+        {
+            "scenario": "legacy",
+            "overrides": {
+                "filters": {
+                    "optimization": {
+                        "geography_vintage": "2020",
+                        "frl_estimate": "updated_2526",
+                    },
+                    "assignment": {
+                        "geography_vintage": "2020",
+                        "frl_estimate": "updated_2526",
+                    },
+                }
+            },
+        },
+        environ={},
+    )
+
+    assert scenario.source("optimization.frl_estimate").catalog_id == (
+        "student_frl.updated_2526"
+    )
+    assert scenario.source("assignment.frl_estimate").path == (
+        scenario.roots["data"] / "Data/student_frl"
+        / "updated_frl_blocks_2526.csv"
+    )
+
+    default = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
+    assert default.filter("optimization", "frl_estimate") is None
+    with pytest.raises(KeyError, match="optimization.frl_estimate"):
+        default.source("optimization.frl_estimate")
+
+    with pytest.raises(ValueError, match="uses Census geography '2020'.*'2010'"):
+        load_scenario(
+            {
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"frl_estimate": "updated_2526"}}
+                },
+            },
+            environ={},
+        )
+
+    with pytest.raises(ValueError, match="FRL estimate 'unknown'.*unavailable"):
+        load_scenario(
+            {
+                "scenario": "legacy",
+                "overrides": {"filters": {"optimization": {"frl_estimate": "unknown"}}},
+            },
+            environ={},
+        )
+
+
 @pytest.mark.parametrize("year", [23, "23", "2324-25", " 2324"])
 def test_noncanonical_school_year_values_are_rejected(year):
     with pytest.raises(ValueError, match="four-character school-year string"):
@@ -643,6 +709,7 @@ def test_noncanonical_school_year_values_are_rejected(year):
         ("optimization", {"rounds": 1}, "rounds must be all or"),
         ("optimization", {"program_population": " "}, "non-empty string"),
         ("optimization", {"include_k8": 1}, "include_k8 must be a boolean"),
+        ("optimization", {"frl_estimate": 1}, "must be a non-empty string"),
         (
             "optimization",
             {"outside_district_students": "drop"},

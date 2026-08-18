@@ -23,6 +23,7 @@ from loaders.geography import (
 )
 from loaders.tables import (
     SPECIAL_PROGRAMS,
+    apply_student_frl_estimate,
     apply_capacity_scenario,
     filter_outside_district_students,
     load_program_records,
@@ -48,6 +49,7 @@ __all__ = [
     "SPECIAL_PROGRAMS",
     "anchor_data_config",
     "apply_capacity_scenario",
+    "apply_student_frl_estimate",
     "apply_block_edge_overrides",
     "block_edge_override_fingerprint",
     "filter_outside_district_students",

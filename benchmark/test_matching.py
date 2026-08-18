@@ -288,6 +288,7 @@ def test_run_matching_for_solution_writes_mapping_and_populations(
         "capacity_scenario": "programs",
         "include_mission_bay": True,
         "geography_vintage": "2010",
+        "frl_estimate": None,
         "outside_district_students": "ignore",
     }
     zone_sources = captured_config["value"]["data"]["overrides"]["sources"][
