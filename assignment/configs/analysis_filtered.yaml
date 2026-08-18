@@ -9,20 +9,20 @@ runs:
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance_ranks/2_False_new/status_quo"
     year: 23
     config_path: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance_ranks/2_False_new/config.yaml"
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
   - label: "Distance < 3 miles"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance_ranks/3_False_new/status_quo"
     year: 23
     config_path: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/filtered_distance_ranks/3_False_new/config.yaml"
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
   - label: "Baseline Run"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/choice_01_12_2026/status_quo"
     year: 23
     config_path: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/choice_01_12_2026/config.yaml"
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
     
 
 

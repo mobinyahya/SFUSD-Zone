@@ -1,7 +1,7 @@
 # Example policy config using custom-generated zones from pickle files.
 # 
 # Before using:
-# 1. Run: python scripts/generate_zone_from_pickle.py --input path/to/zone.pkl --output /share/data/school_choice/Data/assignment/zones/custom-zone.csv
+# 1. Run: python scripts/generate_zone_from_pickle.py --input path/to/zone.pkl --output /soalnas/share/data/school_choice/Data/assignment/zones/custom-zone.csv
 # 2. Add the zone path to the run config under data.overrides.sources.assignment.zones
 # 3. Update the policy name below to match your zone-file key
 

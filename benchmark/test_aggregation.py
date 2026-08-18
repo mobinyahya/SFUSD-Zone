@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -353,6 +354,25 @@ def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     summary, _ = aggregate_results(str(tmp_path))
     assert summary.loc[0, "status"] == "FEASIBLE"
     assert summary.loc[0, "num_zones"] == 2
+
+
+def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path):
+    run_dir, _ = _write_synthetic_run(tmp_path)
+    manifest_path = run_dir / MANIFEST_FILENAME
+    result_path = run_dir / RESULT_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    manifest["stages"][0]["contiguous"] = False
+    result["run"]["stages"][0]["contiguous"] = True
+    write_json(str(manifest_path), manifest)
+    write_json(str(result_path), result)
+
+    _, stages = aggregate_results(
+        str(tmp_path), summary_csv="summary.csv", stages_csv="stages.csv"
+    )
+
+    assert bool(stages.loc[0, "contiguous"]) is True
+    assert (tmp_path / ".benchmark-aggregate.lock").exists()
 
 
 def _write_synthetic_run(tmp_path):

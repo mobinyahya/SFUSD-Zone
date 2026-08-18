@@ -65,7 +65,7 @@ tasks:
     seed: 15
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/iterative_choice_updated_8'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/iterative_choice_updated_8'
   capacity: 40
   max_workers: 20
   max_tasks_per_worker: 5

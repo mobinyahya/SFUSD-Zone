@@ -72,7 +72,7 @@ def test_default_graph_root_uses_v11_shared_cache_namespace():
 
     assert dataset._graph_namespace.schema_version == 11
     assert dataset._graph_namespace.version_dir == Path(
-        "/share/data/school_choice/Data/caches/graphs/v11"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v11"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 

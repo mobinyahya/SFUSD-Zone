@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from Config.Constants import zone_colors  # noqa: E402
 from optimization.data.loaders import load_census_shapefile  # noqa: E402
 
-DEFAULT_ZONE_ROOT = Path("/share/data/school_choice/simulation-files/zones")
+DEFAULT_ZONE_ROOT = Path("/soalnas/share/data/school_choice/simulation-files/zones")
 DEFAULT_SMALL_ZONES = (
     DEFAULT_ZONE_ROOT / "Zones_13-FRL_Dev_0.25-Objective_2500_BG.csv"
 )

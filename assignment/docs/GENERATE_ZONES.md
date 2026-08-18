@@ -21,13 +21,13 @@ cd student-assignment
 # Convert a single pickle file
 python scripts/generators/generate_zone_from_pickle.py \
     --input /path/to/Generated_Zones/Zones_6/FRL_Dev_0.20/cost_123.456.pkl \
-    --output /share/data/school_choice/Data/assignment/zones/6zone-frl20-1.csv \
+    --output /soalnas/share/data/school_choice/Data/assignment/zones/6zone-frl20-1.csv \
     --building-blocks block_group
 
 # Or convert all pickle files in a directory
 python scripts/generators/generate_zone_from_pickle.py \
     --input-dir /path/to/Generated_Zones/Zones_6/FRL_Dev_0.20/ \
-    --output-dir /share/data/school_choice/Data/assignment/zones/ \
+    --output-dir /soalnas/share/data/school_choice/Data/assignment/zones/ \
     --building-blocks block_group
 ```
 

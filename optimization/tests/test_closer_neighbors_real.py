@@ -17,7 +17,7 @@ from optimization.data.closer_neighbors import (
 from optimization.data.dataset import Dataset
 from optimization.data.loaders import load_area_table, load_census_shapefile
 
-SHARED_DATA_ROOT = Path("/share/data/school_choice")
+SHARED_DATA_ROOT = Path("/soalnas/share/data/school_choice")
 
 pytestmark = [
     pytest.mark.real_data,

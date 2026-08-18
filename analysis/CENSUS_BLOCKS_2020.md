@@ -2,7 +2,7 @@
 
 The official U.S. Census Bureau 2020 P.L. 94-171 TIGER/Line Block, Block Group,
 and Tract layers for San Francisco County (state FIPS `06`, county FIPS `075`)
-are stored under `/share/data/school_choice/Census/2020/`. Original archives,
+are stored under `/soalnas/share/data/school_choice/Census/2020/`. Original archives,
 ISO metadata, and extracted Shapefile sidecars are retained there.
 
 The Block source is:

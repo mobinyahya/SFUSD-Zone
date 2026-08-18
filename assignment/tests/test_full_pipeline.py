@@ -7,7 +7,7 @@ tests/fixtures/fake_2223/:
     config generation -> run_custom_config.py (DA simulation)
     -> analyze_trends.py -> metrics_comparison.xlsx
 
-Because every input lives in the repository (no /share/data, no real
+Because every input lives in the repository (no /soalnas/share/data, no real
 student records), this test also proves that a fresh clone of the branch
 is self-sufficient — see scripts/test_clean_checkout.sh.
 

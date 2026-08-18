@@ -23,6 +23,30 @@ uv run python -m benchmark.run path/to/sweep.yaml
 uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 ```
 
+### Slurm
+
+Generate a task snapshot and submission script without contacting Slurm:
+
+```bash
+uv run python -m benchmark.slurm plan path/to/sweep.yaml
+```
+
+Submit the same two-phase job graph directly:
+
+```bash
+uv run python -m benchmark.slurm submit path/to/sweep.yaml
+```
+
+Each sweep task is one optimization job using the config's `workers` count. A
+one-core metrics job runs after it and safely updates `summary.csv` and
+`stages.csv`. Recursive and iterative strategy stages stay within one
+optimization job. Slurm mode rejects enabled `matching` and assignment-based
+`choice_metrics`; local capacity and worker-pool settings are not used.
+
+Plans, scripts, and logs are written beneath
+`<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition
+`soal`.
+
 The YAML `mode` can be `run` or `metrics`. The CLI `--mode` flag overrides the YAML value.
 
 Aggregation is automatic after both modes.

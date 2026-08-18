@@ -1,8 +1,8 @@
 schema_version: 2
 
 roots:
-  data: /share/data/school_choice
-  cache: /share/data/school_choice/Data/caches
+  data: /soalnas/share/data/school_choice
+  cache: /soalnas/share/data/school_choice/Data/caches
 
 files:
   optimization.students.enrolled.1415:

@@ -48,7 +48,7 @@ from optimization.levels import LevelSpec  # noqa: E402
 LOGGER = logging.getLogger(__name__)
 
 ITERATION_COUNT = 25
-DEFAULT_RUNS_ROOT = Path("/share/data/school_choice/local_runs/sfusd_zone_test_3")
+DEFAULT_RUNS_ROOT = Path("/soalnas/share/data/school_choice/local_runs/sfusd_zone_test_3")
 DEFAULT_POLICY = PROJECT_ROOT / "benchmark/matching/zones+soft_reserves_05frl.yaml"
 DEFAULT_MATCHES_ROOT = PROJECT_ROOT / "analysis/matches/zones+soft_reserves_05frl_25"
 DEFAULT_BASE_ZONE_MATCHES_ROOT = (
@@ -56,7 +56,7 @@ DEFAULT_BASE_ZONE_MATCHES_ROOT = (
 )
 DEFAULT_PLOTS_ROOT = PROJECT_ROOT / "analysis/plots"
 DEFAULT_NEW_CTIP_PATH = Path(
-    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
+    "/soalnas/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
 )
 
 

@@ -140,7 +140,7 @@ and filters and are not universal.
 
 Student-program distances use CacheStore artifact
 `student_program_distances/v4` under
-`/share/data/school_choice/Data/caches` by default. Cache identity includes
+`/soalnas/share/data/school_choice/Data/caches` by default. Cache identity includes
 source contents, filters, an opaque ordered student-identity fingerprint and
 count, and the algorithm version. The restricted-derived cache manifest and
 reference never contain raw student IDs.
@@ -266,6 +266,6 @@ Metric definitions and the distinction between `eval_assignment_basic()` and
 settings file. Scalars use `: "${VAR:=default}"`, so environment variables
 always win; the run matrix uses bash arrays. See
 `scripts/settings/models_cluster.env` (production values, including all
-`/share/data` paths) and `scripts/settings/models_test.env` (committed
+`/soalnas/share/data` paths) and `scripts/settings/models_test.env` (committed
 fake dataset in `tests/fixtures/fake_2223/`, exercised by
 `tests/test_full_pipeline.py`).

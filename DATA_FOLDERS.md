@@ -67,8 +67,8 @@ The loader resolves these declared and built-in roots:
 
 | Root | Default | Notes |
 |---|---|---|
-| `data` | `/share/data/school_choice` | External source datasets |
-| `cache` | `/share/data/school_choice/Data/caches` | Shared derived artifacts |
+| `data` | `/soalnas/share/data/school_choice` | External source datasets |
+| `cache` | `/soalnas/share/data/school_choice/Data/caches` | Shared derived artifacts |
 | `package` | `loaders/configs/` | Built-in special root; cannot be overridden |
 | `repository` | Repository root | Built-in special root; cannot be overridden |
 
@@ -87,7 +87,7 @@ data:
 ```
 
 The scenario resolves its direct zone sources below
-`/share/data/school_choice/Data/assignment/zones/`. Override `data` through
+`/soalnas/share/data/school_choice/Data/assignment/zones/`. Override `data` through
 `SFUSD_DATA_ROOT` or `data.overrides.roots.data` when using another shared root.
 
 To relocate all shared caches for a run, override the cache root:
@@ -274,7 +274,7 @@ is independent of the data-catalog schema version in source manifests.
 With the defaults, a graph payload therefore lives at a path like:
 
 ```text
-/share/data/school_choice/Data/caches/graphs/v11/<sha256>/Block_0.pickle
+/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/Block_0.pickle
 ```
 
 `closer_neighbors/v3` predates the generic namespace layout. It keeps one

@@ -12,7 +12,12 @@ from benchmark.config import (
 from benchmark.parallel import BatchResult, run_sweep, run_tasks
 from benchmark.regenerate import regenerate_metrics
 from benchmark.results import discover_run_dirs
-from benchmark.runner import TaskResult, run_optimization_task
+from benchmark.runner import (
+    TaskResult,
+    evaluate_optimization_task,
+    run_optimization_phase,
+    run_optimization_task,
+)
 from benchmark.choice_metrics import (
     ChoiceMetricsBatchResult,
     ChoiceMetricsResult,
@@ -33,6 +38,8 @@ __all__ = [
     "ChoiceMetricsResult",
     "run_sweep",
     "run_tasks",
+    "run_optimization_phase",
+    "evaluate_optimization_task",
     "run_optimization_task",
     "run_choice_metrics_for_existing_runs",
     "regenerate_metrics",

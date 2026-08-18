@@ -21,7 +21,7 @@ if __package__ in {None, ""}:
 from loaders import SPECIAL_PROGRAMS  # noqa: E402
 
 
-DEFAULT_CLEANED_DIR = Path("/share/data/school_choice/Data/Cleaned")
+DEFAULT_CLEANED_DIR = Path("/soalnas/share/data/school_choice/Data/Cleaned")
 
 
 def _parse_list(value: Any, column: str) -> list[Any]:

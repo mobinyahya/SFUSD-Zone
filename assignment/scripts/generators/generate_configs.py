@@ -17,7 +17,7 @@ OUTPUT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 # Data Base Paths (relative to project root or absolute)
 STUDENT_DATA_BASE = Path("local-data/student_filter")
 PROGRAM_DATA_BASE = Path("local-data/program_filter")
-SCHOOL_DATA_BASE = Path("/share/data/school_choice/Data/Cleaned")
+SCHOOL_DATA_BASE = Path("/soalnas/share/data/school_choice/Data/Cleaned")
 
 
 def main():

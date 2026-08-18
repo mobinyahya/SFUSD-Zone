@@ -60,10 +60,31 @@ binary, so it needs no root on the cluster. To get started:
 Everyone who runs `uv sync` gets the identical pinned environment, so
 dependencies stay synchronized across users. To add an external dependency, run
 `uv add <package-name>`.
+
+### Slurm assignment runs
+
+Generate a resolved plan and scripts without contacting Slurm:
+
+```bash
+uv run python -m assignment.slurm generate --config assignment/configs/kumar.config.yaml
+```
+
+Submit the generated job graph directly:
+
+```bash
+uv run python -m assignment.slurm submit --config assignment/configs/kumar.config.yaml
+```
+
+The launcher creates one one-core job for every subconfig and iteration pair.
+When `export-aggregate-metrics` is true, it also creates one dependent metrics
+job per subconfig. `export-local-metrics` adds school, ZIP code, and attendance
+area CSVs to the citywide report. Plans, worker scripts, and logs are written
+under `<paths.assignment-folder>/slurm/`; aggregate CSV updates are locked and
+safe to retry. All jobs use Slurm account and partition `soal`.
   
 ### Data Files
 
-Application source data is read directly from `/share/data/school_choice/`.
+Application source data is read directly from `/soalnas/share/data/school_choice/`.
 Do not create per-user copies or change generated configs to point into a home
 directory. If a required file is missing, add it to the documented shared
 location in `DATA_FOLDERS.md`.

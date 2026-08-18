@@ -54,7 +54,7 @@ DEFAULT_POLICIES = (
 )
 DEFAULT_MATCHES_ROOT = PROJECT_ROOT / "analysis/matches/status_quo_policies_25"
 DEFAULT_NEW_CTIP_PATH = Path(
-    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
+    "/soalnas/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
 )
 ITERATION_PATTERN = re.compile(r"_iteration(\d+)\.csv$")
 

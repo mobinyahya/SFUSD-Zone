@@ -14,7 +14,7 @@ year: 23   # 2-digit school year (23 -> 2023-24)
 # Evaluator inputs (the same files the simulations were built from).
 program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
 student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
-schools_data: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
+schools_data: /soalnas/share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
 new_ctip_path:           # optional .npy equity-block file; empty to skip
 
 # Frontier axes. Must be metric names produced by

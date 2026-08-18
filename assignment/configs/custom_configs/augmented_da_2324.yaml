@@ -3,78 +3,78 @@ data:
   overrides:
     sources:
       assignment.students:
-        path: /share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
+        path: /soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv
         classification: restricted
       assignment.programs:
-        path: /share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
+        path: /soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv
         classification: internal
       assignment.schools:
-        path: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+        path: /soalnas/share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
         classification: internal
       assignment.estimate:
-        path: /share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv
+        path: /soalnas/share/data/school_choice/simulation-files/choice-model/estimates_2324_exp8_0514.csv
         classification: restricted
       assignment.school_coordinates:
-        path: /share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
+        path: /soalnas/share/data/school_choice/Data/Cleaned/schools_rehauled_withMissionBay_2324.csv
         classification: internal
       assignment.zones:
         10zone:
-          path: /share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/10-zone-11_BG.csv
           classification: public
         13zone:
-          path: /share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/13-zone-7_BG.csv
           classification: public
         18zone_1:
-          path: /share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/18-zone-1_1_BG.csv
           classification: public
         18zone_2:
-          path: /share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/18-zone-1_2_BG.csv
           classification: public
         59zone:
-          path: /share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/59-zone-1_B.csv
           classification: public
         6zone-1:
-          path: /share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/6-zone-1_BG.csv
           classification: public
         6zone-9_1:
-          path: /share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/6-zone-9_1_BG.csv
           classification: public
         6zone-9_2:
-          path: /share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/6-zone-9_2_BG.csv
           classification: public
         Con1:
-          path: /share/data/school_choice/simulation-files/zones/concept1zones.csv
+          path: /soalnas/share/data/school_choice/simulation-files/zones/concept1zones.csv
           classification: public
         Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1430.0_6-zone-3.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2150.0_10-zone-6.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-6.csv
           classification: public
         Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.15_Objective_2270.0_10-zone-3.csv
           classification: public
         Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_10_FRL_Dev_0.20_Objective_1960.0_10-zone.csv
           classification: public
         Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_13_FRL_Dev_0.25_Objective_2500.0_13-zone-2.csv
           classification: public
         Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2820.0_18-zone-1.csv
           classification: public
         Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_18_FRL_Dev_0.30_Objective_2830.0_18-zone-6.csv
           classification: public
         Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone:
-          path: /share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
+          path: /soalnas/share/data/school_choice/Data/assignment/zones/Zones_6_FRL_Dev_0.10_Objective_1500.0_6-zone.csv
           classification: public
       assignment.citywide_zones:
         18zone_1_2-BG-0point3miles:
-          path: /share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
+          path: /soalnas/share/data/school_choice/simulation-files/zones/18-zone_1_2-additiona-0point3miles.txt
           classification: public
     filters:
       assignment:

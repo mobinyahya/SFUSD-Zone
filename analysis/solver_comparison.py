@@ -12,7 +12,7 @@ import pandas as pd
 import seaborn as sns
 
 
-DEFAULT_RESULTS_DIR = Path("/share/data/school_choice/local_runs/solver_comparison")
+DEFAULT_RESULTS_DIR = Path("/soalnas/share/data/school_choice/local_runs/solver_comparison")
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 
 SUCCESS_STATUSES = {"FEASIBLE", "OPTIMAL"}

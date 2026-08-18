@@ -1,6 +1,6 @@
 data:
-  students_csv: /share/data/school_choice/Data/Cleaned/student_2324.csv
-  schools_csv: /share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
+  students_csv: /soalnas/share/data/school_choice/Data/Cleaned/student_2324.csv
+  schools_csv: /soalnas/share/data/school_choice/Data/Cleaned/schools_rehauled_2324.csv
   estimates_csv: null
 distance: 1.5
 number: null

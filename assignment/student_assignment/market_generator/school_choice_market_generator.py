@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -186,6 +187,195 @@ class MarketGenerator(SchoolChoiceMarket):
             self._finalize_aggregate_metric_batch()
         return self._complete_aggregate_metric_reports()
 
+    def _activate_subconfig(self, subconfig_name: str) -> None:
+        """Activate one named policy overlay without advancing iterator state."""
+        if self.config.get("subconfig-name") == subconfig_name:
+            return
+        configured = self.configurator.original_config.get("subconfigs", [])
+        if subconfig_name not in configured:
+            raise ValueError(
+                f"Unknown assignment subconfig {subconfig_name!r}; expected one of "
+                f"{configured}."
+            )
+
+        previous_source_identity = getattr(self, "source_identity", None)
+        self.configurator.load_subconfig_by_name(subconfig_name)
+        self._materialize_config(self.configurator.config)
+        self._validate_config(self.config)
+        current_source_identity = getattr(self, "source_identity", None)
+        if previous_source_identity is None or current_source_identity is None:
+            self._reset_zones()
+        elif previous_source_identity != current_source_identity:
+            self._initialize_market_data()
+            self._initialize_utility_model()
+            self._aggregate_metric_evaluator = None
+        else:
+            self._reuse_market_data()
+            self._reuse_utility_model()
+
+    @staticmethod
+    def iteration_seed(base_seed: int, iteration: int) -> int:
+        """Return a stable NumPy seed for one absolute assignment iteration."""
+        if (
+            isinstance(iteration, bool)
+            or not isinstance(iteration, int)
+            or iteration < 0
+        ):
+            raise ValueError("Assignment iteration must be a non-negative integer.")
+        payload = f"sfusd-assignment-v1:{int(base_seed)}:{iteration}".encode("ascii")
+        return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
+
+    def _validate_target_iteration(self, iteration: int) -> None:
+        start = self.config["iterations"]["start"]
+        end = self.config["iterations"]["end"]
+        if isinstance(iteration, bool) or not isinstance(iteration, int):
+            raise ValueError("Assignment iteration must be an integer.")
+        if iteration < start or iteration >= end:
+            raise ValueError(
+                f"Iteration {iteration} is outside the configured range "
+                f"[{start}, {end})."
+            )
+
+    def create_target_iteration_generator(
+        self, iteration: int
+    ) -> Generator[pd.DataFrame, None, None]:
+        """Run one iteration while expanding every configured policy option."""
+        self._validate_target_iteration(iteration)
+        for policy in self.config["policies"]:
+            if policy == "real_match":
+                np.random.seed(
+                    self.iteration_seed(self.config["random-seed"], iteration)
+                )
+                yield self._read_real_match()
+                continue
+
+            for reserve_option, restrict_option in product(
+                self._get_reserve_options(), self._get_restrict_options()
+            ):
+                self.config["guard-rails"] = reserve_option["guard-rails"]
+                self.config["reserve-settings"] = reserve_option["reserve-settings"]
+                self.config["restrict-zone"] = restrict_option["restrict-zone"]
+                self.config["citywide-or-lp"] = restrict_option["citywide-or-lp"]
+                self._reset_zones()
+
+                policy_options = self._policy_data_options(policy)
+                target_paths = [
+                    self._assignment_save_path(policy_data, iteration)
+                    for policy_data in policy_options
+                ]
+                if self.config.get("reuse_assignments", True) and all(
+                    path.is_file() for path in target_paths
+                ):
+                    for policy_data in policy_options:
+                        yield self._load_reusable_assignment(policy_data, iteration)
+                    continue
+
+                # A targeted retry owns only this iteration's variants. Never
+                # remove complete outputs belonging to sibling iteration jobs.
+                for path in target_paths:
+                    path.unlink(missing_ok=True)
+                yield from self._run_single_iteration_of_policy(iteration, policy)
+
+    def simulate_target(
+        self,
+        subconfig_name: str,
+        iteration: int,
+        *,
+        write_utility_output: bool = False,
+    ) -> None:
+        """Run exactly one subconfig and iteration without touching shared reports."""
+        self._activate_subconfig(subconfig_name)
+        self._validate_target_iteration(iteration)
+        utility_config = self.config.get("utility-model", {})
+        utility_save_path = utility_config.get("save-path")
+        export_metrics = self.config.get("export-aggregate-metrics", False)
+        self.config["export-aggregate-metrics"] = False
+        if not write_utility_output:
+            utility_config.pop("save-path", None)
+        try:
+            self.execute_generator(self.create_target_iteration_generator(iteration))
+        finally:
+            self.config["export-aggregate-metrics"] = export_metrics
+            if utility_save_path is not None:
+                utility_config["save-path"] = utility_save_path
+
+    def _expected_saved_assignment_specs(self):
+        """Return every saved assignment expected by the active subconfig."""
+        specs = []
+        for policy in self.config["policies"]:
+            if policy == "real_match":
+                policy_data = Policy(
+                    name="real_match",
+                    ctip=None,
+                    rounds_merged=None,
+                    tiebreaker=None,
+                )
+                specs.append(
+                    (
+                        self._assignment_save_path(policy_data, None),
+                        self._get_assignment_save_name(policy_data, None),
+                        None,
+                    )
+                )
+                continue
+
+            for reserve_option, restrict_option in product(
+                self._get_reserve_options(), self._get_restrict_options()
+            ):
+                self.config["guard-rails"] = reserve_option["guard-rails"]
+                self.config["reserve-settings"] = reserve_option["reserve-settings"]
+                self.config["restrict-zone"] = restrict_option["restrict-zone"]
+                self.config["citywide-or-lp"] = restrict_option["citywide-or-lp"]
+                for iteration in range(
+                    self.config["iterations"]["start"],
+                    self.config["iterations"]["end"],
+                ):
+                    for policy_data in self._policy_data_options(policy):
+                        specs.append(
+                            (
+                                self._assignment_save_path(policy_data, iteration),
+                                self._get_assignment_save_name(policy_data, iteration),
+                                iteration,
+                            )
+                        )
+        return specs
+
+    def evaluate_saved_subconfig(self, subconfig_name: str) -> dict[str, pd.DataFrame]:
+        """Evaluate all saved iterations for one subconfig without running DA."""
+        self._activate_subconfig(subconfig_name)
+        if not self.config.get("export-aggregate-metrics", False):
+            raise ValueError(
+                "Metrics-only evaluation requires export-aggregate-metrics=true."
+            )
+
+        specs = self._expected_saved_assignment_specs()
+        missing = [path for path, _save_name, _iteration in specs if not path.is_file()]
+        if missing:
+            preview = ", ".join(str(path) for path in missing[:5])
+            suffix = "" if len(missing) <= 5 else f" (and {len(missing) - 5} more)"
+            raise FileNotFoundError(
+                f"Missing {len(missing)} expected assignment file(s): {preview}{suffix}"
+            )
+
+        self._reset_aggregate_metric_reports()
+        self._aggregate_metric_evaluator = None
+        write_aggregate_metrics = self._write_aggregate_metrics
+        self._write_aggregate_metrics = False
+        try:
+            for assignment_path, save_name, iteration in specs:
+                assignment_df = self._validate_reusable_assignment(
+                    pd.read_csv(assignment_path), assignment_path
+                )
+                self._record_assignment_metric_reports(
+                    assignment_df, save_name, iteration
+                )
+            reports = self._complete_aggregate_metric_reports()
+        finally:
+            self._write_aggregate_metrics = write_aggregate_metrics
+        if reports is None:
+            raise RuntimeError("Metrics-only evaluation produced no reports.")
+        return reports
+
     def _reset_aggregate_metric_reports(self):
         self._aggregate_metric_batches = {
             report: [] for report in self.AGGREGATE_METRIC_FILES
@@ -308,6 +498,102 @@ class MarketGenerator(SchoolChoiceMarket):
             if staging_dir.exists():
                 shutil.rmtree(staging_dir)
 
+    @classmethod
+    def merge_aggregate_metric_reports(
+        cls, assignment_path, subconfig_name: str, reports
+    ) -> None:
+        """Atomically replace one subconfig's aggregate rows under a file lock."""
+        import fcntl
+
+        assignment_path = pathlib.Path(assignment_path).expanduser()
+        assignment_path.mkdir(parents=True, exist_ok=True)
+        output_dir = assignment_path / "aggregate_metrics"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = assignment_path / ".aggregate_metrics.lock"
+
+        with lock_path.open("a+") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
+                    output_path = output_dir / filename
+                    incoming = reports.get(report_name)
+                    if incoming is None and not output_path.is_file():
+                        continue
+                    if incoming is None:
+                        incoming = pd.DataFrame()
+                    else:
+                        incoming = incoming.copy()
+                        if "config_name" not in incoming.columns:
+                            raise ValueError(
+                                f"{report_name} metrics are missing config_name."
+                            )
+                        incoming_names = incoming["config_name"].astype("string")
+                        owned = incoming_names.eq(
+                            subconfig_name
+                        ) | incoming_names.str.startswith(
+                            f"{subconfig_name}/", na=False
+                        )
+                        if not owned.all():
+                            raise ValueError(
+                                f"{report_name} metrics contain rows not owned by "
+                                f"subconfig {subconfig_name!r}."
+                            )
+
+                    existing = (
+                        pd.read_csv(output_path)
+                        if output_path.is_file()
+                        else pd.DataFrame()
+                    )
+                    if "config_name" in existing.columns:
+                        existing_names = existing["config_name"].astype("string")
+                        owned = existing_names.eq(
+                            subconfig_name
+                        ) | existing_names.str.startswith(
+                            f"{subconfig_name}/", na=False
+                        )
+                        existing = existing.loc[~owned].copy()
+
+                    columns = list(existing.columns)
+                    columns.extend(
+                        column for column in incoming.columns if column not in columns
+                    )
+                    merged = pd.concat(
+                        [
+                            existing.reindex(columns=columns),
+                            incoming.reindex(columns=columns),
+                        ],
+                        ignore_index=True,
+                        sort=False,
+                    )
+                    sort_columns = [
+                        column
+                        for column in cls.AGGREGATE_METRIC_GROUPS[report_name]
+                        if column in merged.columns
+                    ]
+                    if sort_columns and not merged.empty:
+                        merged = merged.sort_values(sort_columns, kind="stable")
+                    merged = merged.reset_index(drop=True)
+
+                    temporary_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w",
+                            encoding="utf-8",
+                            newline="",
+                            dir=output_dir,
+                            prefix=f".{filename}.",
+                            suffix=".tmp",
+                            delete=False,
+                        ) as temporary_file:
+                            temporary_path = pathlib.Path(temporary_file.name)
+                            merged.to_csv(temporary_file, index=False)
+                        os.replace(temporary_path, output_path)
+                    finally:
+                        if temporary_path is not None:
+                            temporary_path.unlink(missing_ok=True)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
     @staticmethod
     def clear_aggregate_metric_reports(assignment_path):
         output_dir = pathlib.Path(assignment_path).expanduser() / "aggregate_metrics"
@@ -424,6 +710,9 @@ class MarketGenerator(SchoolChoiceMarket):
         Returns:
             Generator[pd.DataFrame]: saved assignments for each priority subsetting
         """
+        np.random.seed(
+            self.iteration_seed(self.config.get("random-seed", 0), iteration)
+        )
         if self.config["utility-model"]["enable"]:
             self.umodel.draw_utility_model_randomness(
                 iteration,

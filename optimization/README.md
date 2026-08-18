@@ -51,7 +51,7 @@ independently.
   relaxed imbalance. Requested sizes are upper targets because KaHIP may return
   fewer nonempty partitions.
 - **Shared graph cache.** Parameter-specific graph namespaces are stored below
-  `/share/data/school_choice/Data/caches/graphs/v11` by default. The cache key
+  `/soalnas/share/data/school_choice/Data/caches/graphs/v11` by default. The cache key
   includes scenario filters, exact source contents, and the partition policy.
 
 ## Running
@@ -74,7 +74,7 @@ uv run python -m optimization.run optimization/config.example.yaml -o ./out --vi
 
 Rendered maps are written to the optimization output directory as
 `visualization_<stage>.png`. Cached geometry artifacts are written under
-`/share/data/school_choice/Data/caches/visualization_geometry/v4/<sha256>/` as
+`/soalnas/share/data/school_choice/Data/caches/visualization_geometry/v4/<sha256>/` as
 `geometry.pkl` with a validated `manifest.json`. This does not use benchmark,
 choice, or heatmap code.
 

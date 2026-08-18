@@ -12,7 +12,7 @@ import pandas as pd
 import seaborn as sns
 
 
-DEFAULT_RESULTS_DIR = Path("/share/data/school_choice/local_runs/full_recursive_sweep")
+DEFAULT_RESULTS_DIR = Path("/soalnas/share/data/school_choice/local_runs/full_recursive_sweep")
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "plots"
 
 SINGLE_APPROACH_LABEL = "Single Block_0"

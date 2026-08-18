@@ -99,14 +99,14 @@ DEFAULT_ZONE_MATCHES_ROOT = (
 )
 DEFAULT_UPDATED_FRL = PROJECT_ROOT / "analysis/updated_frl_block.csv"
 DEFAULT_2020_BLOCKS = Path(
-    "/share/data/school_choice/Census/2020/blocks/tl_2020_06075_tabblock20.shp"
+    "/soalnas/share/data/school_choice/Census/2020/blocks/tl_2020_06075_tabblock20.shp"
 )
 DEFAULT_FALLBACK_BLOCKS = (
     PROJECT_ROOT / "analysis/recalculate_updated_frl_fallback_blocks.csv"
 )
-DEFAULT_ALL_STUDENTS = Path("/share/data/school_choice/Data/Cleaned/student_2324.csv")
+DEFAULT_ALL_STUDENTS = Path("/soalnas/share/data/school_choice/Data/Cleaned/student_2324.csv")
 DEFAULT_NEW_CTIP = Path(
-    "/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
+    "/soalnas/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/ETB_2024.npy"
 )
 
 FRL_MAX_DEV_METRIC = "FRL Max Dev"

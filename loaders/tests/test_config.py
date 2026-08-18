@@ -328,9 +328,9 @@ def test_absolute_string_source_override_is_allowed(tmp_path):
 def test_legacy_exposes_assignment_integration_roles_and_default_cache_root():
     scenario = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
 
-    assert scenario.cache_root == Path("/share/data/school_choice/Data/caches")
+    assert scenario.cache_root == Path("/soalnas/share/data/school_choice/Data/caches")
     assert scenario.source("assignment.estimate").path == Path(
-        "/share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy"
+        "/soalnas/share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy"
     )
     assert scenario.source("assignment.block_data").path.name == (
         "SF 2010 blks 022119 with field descriptions (1).xlsx"
@@ -471,7 +471,7 @@ def test_generated_zones_scenario_uses_supported_registry_bundle():
         "Zones_4_FRL_Dev_0.10_Objective_1060"
     ].path == (
         Path(
-            "/share/data/school_choice/Data/assignment/zones/"
+            "/soalnas/share/data/school_choice/Data/assignment/zones/"
             "Zones_4_FRL_Dev_0.10_Objective_1060.csv"
         )
     )

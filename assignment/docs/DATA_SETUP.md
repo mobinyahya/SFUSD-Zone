@@ -24,8 +24,8 @@ configs contain output paths only; there is no hostname-based source selection.
 
 `loaders/configs/base.yaml` schema 2 is the single catalog and central
 `school_years` registry. Its default source root is
-`/share/data/school_choice`; its default cache root is
-`/share/data/school_choice/Data/caches`. Scenarios select invariant roles and
+`/soalnas/share/data/school_choice`; its default cache root is
+`/soalnas/share/data/school_choice/Data/caches`. Scenarios select invariant roles and
 provide complete default selectors. The merged run filters derive annual
 student, program, and school roles from the registry.
 
@@ -112,7 +112,7 @@ student inputs; normal runs select the annual source and apply `rounds` and
 
 ```bash
 uv run python -m assignment.scripts.preprocessing.prepare_kg_r1_inputs \
-  --output-dir /share/data/school_choice/Data/Cleaned/choice_inputs_2324
+  --output-dir /soalnas/share/data/school_choice/Data/Cleaned/choice_inputs_2324
 ```
 
 Only an experiment that specifically requires those materialized files should
@@ -134,7 +134,7 @@ Student-program distances are CacheStore artifact
 `student_program_distances`, schema v4. The default root is:
 
 ```text
-/share/data/school_choice/Data/caches
+/soalnas/share/data/school_choice/Data/caches
 ```
 
 Cache identity includes student/program/school-coordinate source contents,

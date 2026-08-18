@@ -8,146 +8,146 @@ runs:
   - label: "status_quo"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/status_quo"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "status_quo+guardrails"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/status_quo+guardrails"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "status_quo+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/status_quo+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "status_quo+reserves_05frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/status_quo+reserves_05frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "status_quo+reserves_06frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/status_quo+reserves_06frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "new_policy_03_11 (ctip1_noSibling)"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/new_policy_03_11/aa_noRestrict_noReserve_ctip1_noSibling"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "new_policy_03_11 (noCtip_noSibling)"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/new_policy_03_11/aa_noRestrict_noReserve_noCtip_noSibling"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "new_policy_2_03_10"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/new_policy_2_03_10"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "small_zones+no_reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/small_zones+no_reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "small_zones+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/small_zones+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "small_zones+reserves_05frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/small_zones+reserves_05frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "small_zones+reserves_06frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/small_zones+reserves_06frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "medium_zones+no_reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/medium_zones+no_reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "medium_zones+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/medium_zones+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "medium_zones+reserves_05frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/medium_zones+reserves_05frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "medium_zones+reserves_06frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/medium_zones+reserves_06frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "distance_05_1_2+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/distance_05_1_2+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "distance_05_1_2+reserves_05frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/distance_05_1_2+reserves_05frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "distance_05_1_2+reserves_06frl"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/distance_05_1_2+reserves_06frl"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "Zones_10_0.15_2150+no_reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/generated/Zones_10_FRL_Dev_0.15_Objective_2150+no_reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "Zones_10_0.25_2120+no_reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/generated/Zones_10_FRL_Dev_0.25_Objective_2120+no_reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "Zones_10_0.25_2120+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/generated/Zones_10_FRL_Dev_0.25_Objective_2120+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "Zones_6_0.10_1430+no_reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/generated/Zones_6_FRL_Dev_0.10_Objective_1430+no_reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
   - label: "Zones_6_0.10_1430+reserves"
     folder: "<STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/generated/Zones_6_FRL_Dev_0.10_Objective_1430+reserves"
     year: 23
-    program_data: "/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
-    student_data: "/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
+    program_data: "/soalnas/share/data/school_choice/Data/Cleaned/programs_without_specialprogs_2324.csv"
+    student_data: "/soalnas/share/data/school_choice/Data/Cleaned/r1_filter_student_without_specialprogs_2324.csv"
 
 
 single_metrics:

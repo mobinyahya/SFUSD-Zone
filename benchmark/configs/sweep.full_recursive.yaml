@@ -65,7 +65,7 @@ tasks:
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/full_recursive_sweep/'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/full_recursive_sweep/'
   capacity: 40              # total solver-thread slots available on the machine
   max_workers: 5            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth

@@ -37,7 +37,7 @@ local_runs/*
 /Cleaned_new
 /configs/policy_configs/2405-SFUSD-simulations
 run_commands.txt
-/share
+/soalnas/share
 r1_filter_student_without_specialprogs_2324.numbers
 .DS_Store
 choice_model.npy

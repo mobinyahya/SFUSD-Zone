@@ -392,13 +392,13 @@ if __name__ == "__main__":
         "--students",
         type=Path,
         help="Path to student CSV file.",
-        default="/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/r1_filter_student_without_specialprogs_2324.csv",
+        default="/soalnas/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/r1_filter_student_without_specialprogs_2324.csv",
     )
     parser.add_argument(
         "--schools",
         type=Path,
         help="Path to school CSV file.",
-        default="/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/schools_rehauled_withMissionBay_2324.csv",
+        default="/soalnas/share/data/school_choice/Data/2025_cleaned_data/Cleaned_new/schools_rehauled_withMissionBay_2324.csv",
     )
     parser.add_argument(
         "--output",

@@ -33,7 +33,7 @@ from assignment.student_assignment.market_generator.priority_generator import (
 
 _CONSOLIDATED_RUN_ESTIMATES = {
     "all_zones.yaml": (
-        "/share/data/school_choice/simulation-files/choice-model/"
+        "/soalnas/share/data/school_choice/simulation-files/choice-model/"
         "estimates_2324_exp8_0514.csv"
     ),
     "all_zones_gesplit.yaml": (

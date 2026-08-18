@@ -1,5 +1,5 @@
 SCALING_CONST = 100
-SFUSD_DATA_ROOT = "/share/data/school_choice"
+SFUSD_DATA_ROOT = "/soalnas/share/data/school_choice"
 
 PROGRAM_NAMES = {
     # General Education

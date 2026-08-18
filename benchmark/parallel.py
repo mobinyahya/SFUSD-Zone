@@ -225,6 +225,8 @@ def _valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> b
         return False
     if manifest.get("schema_version") != 1:
         return False
+    if manifest.get("phase") == "optimization":
+        return False
     if manifest.get("status") == "ERROR" and execution.rerun_failed:
         return False
     return True

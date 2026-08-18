@@ -72,7 +72,50 @@ def resolve_variables(item, root_config):
         return item
 
 
-def _write_provenance_config(custom_config: dict) -> None:
+def load_custom_config(
+    config_path: str | pathlib.Path,
+    *,
+    sample: str | None = None,
+    frac: str | None = None,
+    assignment_folder: str | pathlib.Path | None = None,
+    absolute_assignment_folder: bool = False,
+) -> dict:
+    """Load substitutions and anchor a custom assignment configuration."""
+    config_path = pathlib.Path(config_path).expanduser().resolve()
+    with config_path.open(encoding="utf-8") as stream:
+        raw_config = yaml.safe_load(stream)
+    if not isinstance(raw_config, dict):
+        raise ValueError(f"Config {config_path} must be a YAML mapping.")
+    if sample:
+        raw_config["sample"] = sample
+    if frac:
+        raw_config["frac"] = frac
+
+    custom_config = resolve_variables(raw_config, raw_config)
+    if isinstance(custom_config.get("data"), dict):
+        custom_config["data"] = anchor_data_config(
+            custom_config["data"], config_path.parent
+        )
+    if assignment_folder is not None:
+        custom_config.setdefault("paths", {})["assignment-folder"] = str(
+            assignment_folder
+        )
+    if absolute_assignment_folder:
+        try:
+            output = custom_config["paths"]["assignment-folder"]
+        except KeyError as exc:
+            raise ValueError(
+                "Config must define paths.assignment-folder when saving assignments."
+            ) from exc
+        custom_config["paths"]["assignment-folder"] = str(
+            pathlib.Path(output).expanduser().resolve()
+        )
+    return custom_config
+
+
+def _write_provenance_config(
+    custom_config: dict, *, clear_aggregate_metrics: bool = True
+) -> None:
     """Write the complete resolved config once, before workers start."""
     if not custom_config.get("save-assignment", True):
         return
@@ -87,7 +130,7 @@ def _write_provenance_config(custom_config: dict) -> None:
     output_dir = pathlib.Path(assignment_folder).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     aggregate_dir = output_dir / "aggregate_metrics"
-    if aggregate_dir.exists():
+    if clear_aggregate_metrics and aggregate_dir.exists():
         shutil.rmtree(aggregate_dir)
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -169,22 +212,11 @@ def generate(config_path, sample, frac, workers):
     if workers < 1:
         raise click.BadParameter("--workers must be >= 1")
 
-    # 1. Load the raw YAML
-    with open(config_path) as f:
-        raw_config = yaml.safe_load(f)
-
-    # 2. APPLY OVERRIDES HERE
-    if sample:
-        raw_config["sample"] = sample
-    if frac:
-        raw_config["frac"] = frac
-
-    # 3. Resolve variables using the updated raw_config
-    custom_config = resolve_variables(raw_config, raw_config)
-    if isinstance(custom_config.get("data"), dict):
-        custom_config["data"] = anchor_data_config(
-            custom_config["data"], pathlib.Path(config_path).resolve().parent
-        )
+    custom_config = load_custom_config(
+        config_path,
+        sample=sample,
+        frac=frac,
+    )
 
     subconfigs_list = custom_config.get("subconfigs", [])
     duplicate_subconfigs = sorted(

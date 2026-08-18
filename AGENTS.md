@@ -117,7 +117,7 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
 Graphs are cached by exact source contents, data filters, and partition-policy
-parameters under `/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
+parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
 
 ## Benchmarking
 
@@ -166,4 +166,4 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `hints` | `voronoi` | Warm-start method: `voronoi` or `none` |
 | `seed` | `42` | Solver seed |
 
-Graph cache path: `/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
+Graph cache path: `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.

@@ -35,7 +35,7 @@ tasks:
 
 
 execution:
-  output_dir: '/share/data/school_choice/local_runs/59_recur_5/'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/59_recur_5/'
   capacity: 48              # total solver-thread slots available on the machine
   max_workers: 5            # max concurrent Python worker processes
   max_tasks_per_worker: 25  # recycle processes to limit memory growth

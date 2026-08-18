@@ -194,12 +194,12 @@ documented in **[docs/CONFIG_OPTIONS.md](docs/CONFIG_OPTIONS.md)**.
 `loaders/configs/base.yaml` schema 2 is the central file catalog and
 `school_years` registry. Scenarios provide invariant inputs and selector
 defaults; run filter overrides select registry inputs under
-`/share/data/school_choice/`. Direct objects under `data.overrides.sources` are
+`/soalnas/share/data/school_choice/`. Direct objects under `data.overrides.sources` are
 only for exceptional experiments and take precedence over registry sources.
 Local and cluster path files contain only output locations.
 
 Paths in the example configs are **explicit** — either a shared cluster path
-(`/share/data/school_choice/...`, used as-is) or a placeholder token you replace
+(`/soalnas/share/data/school_choice/...`, used as-is) or a placeholder token you replace
 with your own **absolute** path:
 
 | Token | Replace with (absolute path) |

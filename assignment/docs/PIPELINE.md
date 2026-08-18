@@ -22,7 +22,7 @@ uv sync            # install pinned deps into .venv (see README for uv setup)
 
 The data is **not** redistributable and is **not** in the repo. Every
 environment must provide the central catalog's data root, which defaults to
-`/share/data/school_choice/`. Local and cluster path configs contain outputs
+`/soalnas/share/data/school_choice/`. Local and cluster path configs contain outputs
 only. There is no home-directory data fallback.
 
 See **[DATA_SETUP.md](DATA_SETUP.md)** for the per-file path reference.
@@ -67,7 +67,7 @@ The historical program export can be reproduced with:
 
 ```bash
 python scripts/preprocessing/filter_programs.py
-# reads  /share/data/school_choice/Data/Cleaned/programs_{YY}.csv  (years 2013–2023)
+# reads  /soalnas/share/data/school_choice/Data/Cleaned/programs_{YY}.csv  (years 2013–2023)
 # writes local-data/program_filter/programs_without_specialprogs_{YY}.csv
 ```
 
@@ -93,9 +93,9 @@ outputs. Source overrides take precedence over registry roles.
 Skip this for baselines like `status_quo_real` (no zone restriction → no zone
 file is ever opened). Two kinds of zone files appear in the configs:
 
-- **Shared cluster zones** — `/share/data/school_choice/simulation-files/zones/*.csv`.
+- **Shared cluster zones** — `/soalnas/share/data/school_choice/simulation-files/zones/*.csv`.
   Already exist; nothing to generate.
-- **Generated zones** — `/share/data/school_choice/Data/assignment/zones/Zones_*.csv`
+- **Generated zones** — `/soalnas/share/data/school_choice/Data/assignment/zones/Zones_*.csv`
   (e.g. `Zones_10_FRL_Dev_0.15_Objective_2250.0_10-zone-3.csv`). These come from
   `.pkl` files produced by an **external upstream zone-optimization pipeline**
   (`Zone_Generation`), which is **provided separately and is not part of this
@@ -104,7 +104,7 @@ file is ever opened). Two kinds of zone files appear in the configs:
   ```bash
   python scripts/generators/generate_zone_from_pickle.py \
       --input-dir /path/to/Generated_Zones/Zones_10/FRL_Dev_0.15/ \
-      --output-dir /share/data/school_choice/Data/assignment/zones/ \
+      --output-dir /soalnas/share/data/school_choice/Data/assignment/zones/ \
       --building-blocks block_group
   ```
 

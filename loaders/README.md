@@ -150,8 +150,8 @@ and cannot be declared or overridden.
 
 | Root | Current default | Description |
 |---|---|---|
-| `data` | `/share/data/school_choice` | External source files. |
-| `cache` | `/share/data/school_choice/Data/caches` | Content-addressed derived artifacts. |
+| `data` | `/soalnas/share/data/school_choice` | External source files. |
+| `cache` | `/soalnas/share/data/school_choice/Data/caches` | Content-addressed derived artifacts. |
 | `package` | `loaders/configs/` | Built-in root for packaged configuration files. |
 | `repository` | Repository root | Built-in root for checked-in files outside `loaders/configs/`. |
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any, Mapping
 
 import pandas as pd
@@ -43,9 +46,23 @@ def aggregate_results(
     summary_csv: str | None = None,
     stages_csv: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Aggregate run-level and stage-level benchmark outputs."""
+    """Aggregate outputs under a shared sidecar lock using atomic CSV writes."""
 
-    root = os.path.expanduser(root_folder)
+    root = str(Path(root_folder).expanduser().resolve())
+    with _aggregation_lock(root):
+        return _aggregate_results_unlocked(
+            root,
+            summary_csv=summary_csv,
+            stages_csv=stages_csv,
+        )
+
+
+def _aggregate_results_unlocked(
+    root: str,
+    *,
+    summary_csv: str | None,
+    stages_csv: str | None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     run_rows: list[dict[str, Any]] = []
     stage_rows: list[dict[str, Any]] = []
 
@@ -123,7 +140,9 @@ def _stage_rows(
             "avg_reock_score": metrics_stage.get("avg_reock_score"),
             "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
             "wall_time": stage.get("wall_time"),
-            "contiguous": stage.get("contiguous"),
+            "contiguous": metrics_stage.get("contiguous")
+            if "contiguous" in metrics_stage
+            else stage.get("contiguous"),
             "num_nodes": metrics_stage.get("num_nodes"),
             "num_zones": stage.get("num_zones"),
             "solver_log_path": metadata.get("solver_log_path"),
@@ -154,7 +173,32 @@ def _write_csv(df: pd.DataFrame, root: str, path: str) -> None:
     if not output.is_absolute():
         output = Path(root) / output
     output.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output, index=False)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent
+    )
+    os.close(fd)
+    try:
+        df.to_csv(temporary, index=False)
+        os.replace(temporary, output)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+@contextmanager
+def _aggregation_lock(root: str):
+    root_path = Path(root)
+    root_path.mkdir(parents=True, exist_ok=True)
+    lock_path = root_path / ".benchmark-aggregate.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _cell(value: Any) -> Any:

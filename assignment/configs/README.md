@@ -21,7 +21,7 @@ subconfigs:
 
 ## Troubleshooting
 
-If you get path-related errors, verify that `/share/data/school_choice/` is mounted and that the referenced shared file exists.
+If you get path-related errors, verify that `/soalnas/share/data/school_choice/` is mounted and that the referenced shared file exists.
 
 If you are getting validation errors loading your config (missing required values or unexpected values), try re-generating your config from the base config 
 by changing the name of your config file or deleting it.
