@@ -26,6 +26,7 @@ from benchmark.runner import (
 )
 from benchmark.slurm import (
     SlurmPlan,
+    _build_parser,
     create_plan,
     load_plan,
     run_evaluation_worker,
@@ -38,6 +39,18 @@ from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
+
+
+@pytest.mark.parametrize("command", ["generate", "submit"])
+def test_public_commands_require_config_option(command):
+    parser = _build_parser()
+
+    args = parser.parse_args([command, "--config", "sweep.yaml"])
+
+    assert args.command == command
+    assert args.config == "sweep.yaml"
+    with pytest.raises(SystemExit):
+        parser.parse_args([command, "sweep.yaml"])
 
 
 def test_submission_script_has_required_directives_and_dependency_wiring(tmp_path):

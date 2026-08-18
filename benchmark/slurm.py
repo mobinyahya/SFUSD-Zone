@@ -477,10 +477,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    plan_parser = subparsers.add_parser(
-        "plan", help="Generate a plan and sbatch script without contacting Slurm."
+    generate_parser = subparsers.add_parser(
+        "generate", help="Generate a plan and sbatch script without contacting Slurm."
     )
-    _add_generation_arguments(plan_parser)
+    _add_generation_arguments(generate_parser)
 
     submit_parser = subparsers.add_parser(
         "submit", help="Generate a plan and explicitly submit all jobs with sbatch."
@@ -503,7 +503,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_generation_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("config", help="Path to simulation sweep YAML.")
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to simulation sweep YAML.",
+    )
     parser.add_argument(
         "--plan",
         help=(
@@ -532,7 +536,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = _build_parser().parse_args(argv)
     try:
-        if args.command in {"plan", "submit"}:
+        if args.command in {"generate", "submit"}:
             plan = create_plan(args.config)
             plan_path = write_plan(plan, args.plan)
             script_path = write_submission_script(plan, plan_path, args.script)

@@ -28,13 +28,13 @@ uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 Generate a task snapshot and submission script without contacting Slurm:
 
 ```bash
-uv run python -m benchmark.slurm plan path/to/sweep.yaml
+uv run python -m benchmark.slurm generate --config path/to/sweep.yaml
 ```
 
 Submit the same two-phase job graph directly:
 
 ```bash
-uv run python -m benchmark.slurm submit path/to/sweep.yaml
+uv run python -m benchmark.slurm submit --config path/to/sweep.yaml
 ```
 
 Each sweep task is one optimization job using the config's `workers` count. A
