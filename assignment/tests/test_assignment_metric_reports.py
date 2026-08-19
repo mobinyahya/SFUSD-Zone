@@ -193,7 +193,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     expected = {
         "Distance Av (All Assigned)",
         "#Schools above 10% district FRL",
-        "#GE Schools above +15% district FRL (Non-Designated)",
+        "#GE programs above +15% district FRL (Non-Designated)",
         "Dissimilarity (High FRL)",
         "Black exposure to FRL prob",
         "Prop Top 3 choice Non-Designated (Black)",
@@ -218,18 +218,14 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         == 1
     )
     assert metrics["#Students in schools above +15% district FRL (ET (2024))"] == 0
-    assert metrics["#GE Schools above +15% district FRL (Non-Designated)"] == 1
+    assert metrics["#GE programs above +15% district FRL (Non-Designated)"] == 1
     assert metrics["Prop Top 1 choice (All Assigned)"] == 2 / 5
     assert metrics["Prop Top 1 choice (All Assigned) numerator"] == 2
     assert metrics["Prop Top 1 choice (All Assigned) denominator"] == 5
     assert metrics["Prop Top 3 choice (All Assigned)"] == 3 / 5
-    assert metrics["Proportion of students in top 1 (All Students)"] == 2 / 6
-    assert metrics[
-        "Proportion of students in top 1 (All Students) numerator"
-    ] == 2
-    assert metrics[
-        "Proportion of students in top 1 (All Students) denominator"
-    ] == 6
+    assert metrics["Prop Top 1 choice (All Students)"] == 2 / 6
+    assert metrics["Prop Top 1 choice (All Students) numerator"] == 2
+    assert metrics["Prop Top 1 choice (All Students) denominator"] == 6
     assert metrics["Top 3 in-zone choice (All Assigned)"] == 3 / 5
     assert metrics["Variance of rank (All Assigned)"] == pytest.approx(1.7)
     assert metrics["Prop Distance > 3 and designated (All Assigned)"] == 1 / 5
@@ -249,7 +245,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
 
     monkeypatch.setattr(evaluator, "_prepare_full_report_aggregates", track_prepare)
     reports = evaluator.eval_aggregate_metric_reports("config-a")
-    assert set(reports) == {"school", "zip_code", "attendance_area", "citywide"}
+    assert set(reports) == {"program", "zip_code", "attendance_area", "citywide"}
     expected_contexts = (
         1
         + pd.to_numeric(students["zipcode"]).nunique()
@@ -257,7 +253,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     )
     assert len(prepare_calls) == expected_contexts
     assert sum(
-        call_kwargs.get("include_school_report_stats", False)
+        call_kwargs.get("include_program_report_stats", False)
         for _, call_kwargs in prepare_calls
     ) == 1
 
@@ -267,21 +263,17 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     )
     assert set(citywide_only) == {"citywide"}
     assert len(prepare_calls) == 1
-    assert not prepare_calls[0][1].get("include_school_report_stats", False)
+    assert not prepare_calls[0][1].get("include_program_report_stats", False)
 
-    school_metrics = reports["school"]
-    assert school_metrics["config_name"].eq("config-a").all()
-    alpha = school_metrics.set_index("school_id").loc[101]
+    program_metrics = reports["program"]
+    assert program_metrics["config_name"].eq("config-a").all()
+    alpha = program_metrics.set_index("program_id").loc["101-GE-KG"]
     assert alpha["school_name"] == "Alpha"
     assert alpha["school_category"] == "Attendance"
-    assert alpha["school_frl_enrolled"] == pytest.approx(0.85)
     assert alpha["mean_travel_dist_assigned"] == 4
     assert alpha["mean_travel_dist_designated"] == 4
-    assert alpha["mean_travel_dist_enrolled"] == 4
-    assert alpha["mean_student_choice_assigned"] == 1
-    assert alpha["percent_assigned"] == 0.5
     assert alpha["percent_designated"] == 0.5
-    assert alpha["school_utilization"] == 0.2
+    assert alpha["program_utilization"] == 0.2
 
     zip_metrics = reports["zip_code"]
     assert set(zip_metrics.columns) == {"config_name", "zip_code", *metrics.index}
@@ -334,6 +326,368 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         legacy_evaluator.eval_aggregate_metric_reports("legacy")
 
 
+def test_program_report_uses_exact_program_assignments_and_schema():
+    students = pd.DataFrame(
+        {
+            "studentno": range(1, 9),
+            "census_block": range(11, 19),
+            "latitude": [37.70, 37.71, 37.72, 37.73, 37.74, 37.75, 37.76, 37.77],
+            "longitude": [
+                -122.40,
+                -122.41,
+                -122.42,
+                -122.43,
+                -122.44,
+                -122.45,
+                -122.46,
+                -122.47,
+            ],
+            "freelunch_prob": [0.9, 0.8, 0.7, 0.0, 0.0, 0.1, 0.4, 0.6],
+            "reducedlunch_prob": [0.0] * 8,
+            "resolved_ethnicity": [
+                "Asian",
+                "Black or African American",
+                "Hispanic/Latino",
+                "White",
+                "Other",
+                "Pacific Islander",
+                "Decline to State",
+                "Two or More Races",
+            ],
+            "median_hh_income": [
+                50_000,
+                70_000,
+                80_000,
+                140_000,
+                130_000,
+                110_000,
+                90_000,
+                100_000,
+            ],
+            "ctip1": [1, 0, 1, 0, 1, 0, 1, 0],
+            "zipcode": [94110, 94110, 94110, 94110, 94111, 94111, 94113, 94114],
+            "idschoolattendance": [101, 101, 101, 101, 101, 202, 202, 202],
+        }
+    )
+    assignments = _listed_assignments(
+        range(1, 9),
+        [1, 1, 1, 2, 2, 3, 4, 0],
+        [
+            "101-X-KG",
+            "101-X-KG",
+            "101-X-KG",
+            "101-Y-KG",
+            "101-Y-KG",
+            "202-Z-KG",
+            "202-U-KG",
+            "",
+        ],
+        [1, 2, 3, 1, 4, 2, 2, None],
+        [0, 1, 0, 1, 0, 0, 1, 0],
+    )
+    programs = pd.DataFrame(
+        {
+            "program_id": [
+                "101-X-KG",
+                "101-Y-KG",
+                "202-Z-KG",
+                "202-U-KG",
+                "202-V-KG",
+            ],
+            "programno": [1, 2, 3, 4, 5],
+            "school_id": [101, 101, 202, 202, 202],
+            "program_type": ["GE", "GE", "GE", "SA", "GE"],
+            "capacity": [2, 4, 4, 0, 3],
+        }
+    )
+    schools = pd.DataFrame(
+        {
+            "school_id": [101, 202],
+            "school_name": ["Alpha", "Beta"],
+            "category": ["Attendance", "Citywide"],
+            "lat": [37.70, 37.75],
+            "lon": [-122.40, -122.45],
+        }
+    )
+    distances = pd.DataFrame(
+        {
+            "101-X-KG": [1.0, 9.0, 5.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            "101-Y-KG": [1.0, 2.0, 3.0, 7.0, 9.0, 6.0, 7.0, 8.0],
+            "202-Z-KG": [1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 7.0, 8.0],
+            "202-U-KG": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 11.0, 8.0],
+            "202-V-KG": [1.0] * 8,
+        },
+        index=pd.Index(range(1, 9), name="studentno"),
+    )
+    evaluator = MatchEvaluator(
+        students,
+        assignments,
+        program_data=programs,
+        schools_data=schools,
+        distance_cache=distances,
+    )
+
+    assert evaluator.student_data["assigned school"].tolist() == [
+        101,
+        101,
+        101,
+        101,
+        101,
+        202,
+        202,
+        0,
+    ]
+    assert evaluator.student_data["assigned school"].dtype.kind in "iu"
+    assert evaluator.student_data.loc[:5, "programtype"].eq("GE").all()
+
+    reports = evaluator.eval_aggregate_metric_reports("config-a")
+    assert set(reports) == {"program", "zip_code", "attendance_area", "citywide"}
+    metrics = reports["citywide"].iloc[0]
+    for rank, numerator in [(1, 1), (2, 2), (3, 3)]:
+        name = f"Prop Top {rank} choice (All Students)"
+        assert metrics[name] == numerator / 8
+        assert metrics[f"{name} numerator"] == numerator
+        assert metrics[f"{name} denominator"] == 8
+
+    ge_labels = {
+        "#GE programs above +10% district FRL",
+        "Proportion of GE programs above +10% district FRL",
+        "#GE programs above +15% district FRL",
+        "Proportion of GE programs above +15% district FRL",
+        "#GE programs above +15% district FRL (Non-Designated)",
+        "#GE programs below -10% district FRL",
+        "Proportion of GE programs below -10% district FRL",
+        "#GE programs below -15% district FRL",
+        "Proportion of GE programs below -15% district FRL",
+        "AALPI in GE programs with +10% FRL",
+        "AALPI in GE programs with +15% FRL",
+        "AALPI in GE programs with -10% FRL",
+        "AALPI in GE programs with -15% FRL",
+    }
+    assert ge_labels <= set(metrics.index)
+    assert metrics["#Schools above 10% district FRL"] == 0
+    assert metrics["#GE programs above +10% district FRL"] == 1
+    assert metrics["Proportion of GE programs above +10% district FRL"] == 1 / 3
+    assert metrics["#GE programs above +15% district FRL"] == 1
+    assert metrics["Proportion of GE programs above +15% district FRL"] == 1 / 3
+    assert metrics["#GE programs above +15% district FRL (Non-Designated)"] == 1
+    assert metrics["#GE programs below -10% district FRL"] == 2
+    assert metrics["Proportion of GE programs below -10% district FRL"] == 2 / 3
+    assert metrics["#GE programs below -15% district FRL"] == 2
+    assert metrics["Proportion of GE programs below -15% district FRL"] == 2 / 3
+    assert metrics["AALPI in GE programs with +10% FRL"] == 2 / 3
+    assert metrics["AALPI in GE programs with +15% FRL"] == 2 / 3
+    assert metrics["AALPI in GE programs with -10% FRL"] == 1 / 3
+    assert metrics["AALPI in GE programs with -15% FRL"] == 1 / 3
+
+    old_labels = {
+        "#GE above +10% district FRL",
+        "GE above +10% district FRL",
+        "#GE above +15% district FRL",
+        "GE above +15% district FRL",
+        "#GE Schools above +15% district FRL (Non-Designated)",
+        "#GE below -10% district FRL",
+        "GE below -10% district FRL",
+        "#GE below -15% district FRL",
+        "GE below -15% district FRL",
+        "AALPI in GE with +10% FLR",
+        "AALPI in GE with +15% FLR",
+        "AALPI in GE with -10% FLR",
+        "AALPI in GE with -15% FLR",
+    }
+    assert old_labels.isdisjoint(metrics.index)
+    assert not any(
+        name.startswith("Proportion of students in top ")
+        and name.endswith("(All Students)")
+        for name in metrics.index
+    )
+
+    demographic_columns = [
+        column
+        for slug in [
+            "asian",
+            "black",
+            "decline_to_state",
+            "hispanic",
+            "other",
+            "pacific_islander",
+            "two_or_more_races",
+            "white",
+        ]
+        for column in [
+            f"non_designated_{slug}_students",
+            f"designated_{slug}_students",
+        ]
+    ]
+    program_metrics = reports["program"]
+    assert program_metrics.columns.tolist() == [
+        "config_name",
+        "program_id",
+        "school_id",
+        "school_name",
+        "school_category",
+        "program_type",
+        "capacity",
+        "assigned",
+        "designated",
+        "mean_travel_dist_assigned",
+        "mean_travel_dist_designated",
+        "percent_designated",
+        "program_utilization",
+        "overage",
+        "underage",
+        "prop_top_1",
+        "prop_top_2",
+        "prop_top_3",
+        *demographic_columns,
+    ]
+    assert program_metrics["program_id"].tolist() == programs["program_id"].tolist()
+    by_program = program_metrics.set_index("program_id")
+
+    program_x = by_program.loc["101-X-KG"]
+    assert program_x["school_id"] == 101
+    assert program_x["school_name"] == "Alpha"
+    assert program_x["school_category"] == "Attendance"
+    assert program_x["program_type"] == "GE"
+    assert program_x["capacity"] == 2
+    assert program_x["assigned"] == 3
+    assert program_x["designated"] == 1
+    assert program_x["mean_travel_dist_assigned"] == 5
+    assert program_x["mean_travel_dist_designated"] == 9
+    assert program_x["percent_designated"] == 1 / 3
+    assert program_x["program_utilization"] == 1.5
+    assert program_x["overage"] == 0.5
+    assert program_x["underage"] == 0
+    assert program_x["prop_top_1"] == 1 / 3
+    assert program_x["prop_top_2"] == 1 / 3
+    assert program_x["prop_top_3"] == 2 / 3
+    assert program_x["non_designated_asian_students"] == 1
+    assert program_x["designated_black_students"] == 1
+    assert program_x["non_designated_hispanic_students"] == 1
+
+    program_y = by_program.loc["101-Y-KG"]
+    assert program_y["assigned"] == 2
+    assert program_y["designated"] == 1
+    assert program_y["mean_travel_dist_assigned"] == 8
+    assert program_y["mean_travel_dist_designated"] == 7
+    assert program_y["percent_designated"] == 0.5
+    assert program_y["program_utilization"] == 0.5
+    assert program_y["overage"] == 0
+    assert program_y["underage"] == 0.5
+    assert program_y[["prop_top_1", "prop_top_2", "prop_top_3"]].eq(0).all()
+    assert program_y["non_designated_other_students"] == 1
+    assert program_y["designated_white_students"] == 1
+
+    program_z = by_program.loc["202-Z-KG"]
+    assert program_z["assigned"] == 1
+    assert program_z["designated"] == 0
+    assert program_z["program_utilization"] == 0.25
+    assert program_z["overage"] == 0
+    assert program_z["underage"] == 0.75
+    assert program_z["prop_top_1"] == 0
+    assert program_z["prop_top_2"] == 1
+    assert program_z["prop_top_3"] == 1
+    assert program_z["non_designated_pacific_islander_students"] == 1
+
+    zero_capacity_program = by_program.loc["202-U-KG"]
+    assert zero_capacity_program["assigned"] == 1
+    assert zero_capacity_program["designated"] == 1
+    assert zero_capacity_program["mean_travel_dist_assigned"] == 11
+    assert zero_capacity_program["mean_travel_dist_designated"] == 11
+    assert zero_capacity_program["percent_designated"] == 1
+    assert zero_capacity_program[
+        ["program_utilization", "overage", "underage"]
+    ].isna().all()
+    assert zero_capacity_program[["prop_top_1", "prop_top_2", "prop_top_3"]].eq(
+        0
+    ).all()
+    assert zero_capacity_program["designated_decline_to_state_students"] == 1
+
+    unassigned_program = by_program.loc["202-V-KG"]
+    assert unassigned_program["assigned"] == 0
+    assert unassigned_program["designated"] == 0
+    assert unassigned_program[demographic_columns].eq(0).all()
+    assert (
+        unassigned_program[
+            [
+                "mean_travel_dist_assigned",
+                "mean_travel_dist_designated",
+                "percent_designated",
+                "prop_top_1",
+                "prop_top_2",
+                "prop_top_3",
+            ]
+        ]
+        .isna()
+        .all()
+    )
+    assert unassigned_program["program_utilization"] == 0
+    assert unassigned_program["overage"] == 0
+    assert unassigned_program["underage"] == 1
+    assert {
+        "school_frl_enrolled",
+        "mean_travel_dist_enrolled",
+        "mean_student_choice_assigned",
+        "percent_assigned",
+        "school_utilization",
+    }.isdisjoint(program_metrics.columns)
+
+
+def test_ge_district_frl_metrics_use_all_assigned_students():
+    students = pd.DataFrame(
+        {
+            "studentno": [1, 2, 3],
+            "census_block": [11, 12, 13],
+            "latitude": [37.70, 37.71, 37.72],
+            "longitude": [-122.40, -122.41, -122.42],
+            "freelunch_prob": [0.7, 0.3, 1.0],
+            "reducedlunch_prob": [0.0, 0.0, 0.0],
+            "resolved_ethnicity": [
+                "Black or African American",
+                "White",
+                "Asian",
+            ],
+            "median_hh_income": [50_000, 100_000, 70_000],
+            "ctip1": [1, 0, 1],
+        }
+    )
+    assignments = _listed_assignments(
+        [1, 2, 3],
+        [1, 2, 3],
+        ["101-X-KG", "101-Y-KG", "202-SA-KG"],
+        [1, 1, 1],
+        [0, 0, 0],
+    )
+    programs = pd.DataFrame(
+        {
+            "program_id": ["101-X-KG", "101-Y-KG", "202-SA-KG"],
+            "programno": [1, 2, 3],
+            "school_id": [101, 101, 202],
+            "program_type": ["GE", "GE", "SA"],
+            "capacity": [10, 10, 10],
+        }
+    )
+    schools = pd.DataFrame(
+        {
+            "school_id": [101, 202],
+            "lat": [37.70, 37.72],
+            "lon": [-122.40, -122.42],
+        }
+    )
+
+    metrics = MatchEvaluator(
+        students,
+        assignments,
+        program_data=programs,
+        schools_data=schools,
+    ).eval_assignment_full()
+
+    assert metrics["#GE programs above +10% district FRL"] == 0
+    assert metrics["#GE programs above +15% district FRL"] == 0
+    assert metrics["#GE programs above +15% district FRL (Non-Designated)"] == 0
+    assert metrics["AALPI in GE programs with +10% FRL"] == 0
+
+
 def test_folder_discovery_only_returns_assignment_csvs(tmp_path):
     from assignment.scripts.analysis.analyze_trends import _collect_csv_files
 
@@ -372,6 +726,8 @@ def _minimal_full_inputs(tmp_path):
             "freelunch_prob": [0.5, 0.5],
             "reducedlunch_prob": [0.0, 0.0],
             "resolved_ethnicity": ["Asian", "White"],
+            "median_hh_income": [80_000, 120_000],
+            "ctip1": [1, 0],
         }
     )
     assignments = _listed_assignments(
@@ -393,6 +749,8 @@ def _minimal_full_inputs(tmp_path):
     schools = pd.DataFrame(
         {
             "school_id": [101, 202],
+            "school_name": ["Alpha", "Beta"],
+            "category": ["Attendance", "Citywide"],
             "lat": [37.7, 37.8],
             "lon": [-122.4, -122.5],
         }
@@ -412,6 +770,40 @@ def _make_full_evaluator(students, assignments, program_path, school_path):
         program_file=program_path,
         schools_latlon_path=school_path,
     )
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("duplicate", "duplicate school_id"),
+        ("blank_name", "missing or blank school_name"),
+        ("missing_category", "missing or blank category"),
+        ("unassigned_program_school", "absent from school metadata"),
+    ],
+)
+def test_program_report_requires_complete_school_metadata(tmp_path, case, message):
+    students, assignments, program_path, school_path = _minimal_full_inputs(tmp_path)
+    programs = pd.read_csv(program_path)
+    schools = pd.read_csv(school_path)
+    if case == "duplicate":
+        schools = pd.concat([schools, schools.iloc[[0]]], ignore_index=True)
+    elif case == "blank_name":
+        schools.loc[0, "school_name"] = " "
+    elif case == "missing_category":
+        schools.loc[0, "category"] = np.nan
+    else:
+        programs.loc[len(programs)] = ["303-GE-KG", 3, 303, "GE", 10]
+
+    evaluator = MatchEvaluator(
+        students,
+        assignments,
+        first_round=True,
+        program_data=programs,
+        schools_data=schools,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        evaluator.eval_assignment_metrics_by_program()
 
 
 def test_full_evaluator_can_replace_assignments_without_reloading_sources(tmp_path):

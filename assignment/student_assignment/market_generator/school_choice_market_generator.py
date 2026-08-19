@@ -32,17 +32,19 @@ from .school_choice_market import SchoolChoiceMarket
 
 class MarketGenerator(SchoolChoiceMarket):
     AGGREGATE_METRIC_FILES = {
-        "school": "metrics_by_school.csv",
+        "program": "metrics_by_program.csv",
         "zip_code": "metrics_by_zip_code.csv",
         "attendance_area": "metrics_by_attendance_area.csv",
         "citywide": "metrics_citywide.csv",
     }
     AGGREGATE_METRIC_GROUPS = {
-        "school": [
+        "program": [
             "config_name",
+            "program_id",
             "school_id",
             "school_name",
             "school_category",
+            "program_type",
         ],
         "zip_code": ["config_name", "zip_code"],
         "attendance_area": ["config_name", "attendance_area"],
@@ -521,30 +523,30 @@ class MarketGenerator(SchoolChoiceMarket):
         with lock_path.open("a+") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
+                (output_dir / "metrics_by_school.csv").unlink(missing_ok=True)
                 for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
                     output_path = output_dir / filename
                     incoming = reports.get(report_name)
-                    if incoming is None and not output_path.is_file():
-                        continue
                     if incoming is None:
-                        incoming = pd.DataFrame()
-                    else:
-                        incoming = incoming.copy()
-                        if "config_name" not in incoming.columns:
-                            raise ValueError(
-                                f"{report_name} metrics are missing config_name."
-                            )
-                        incoming_names = incoming["config_name"].astype("string")
-                        owned = incoming_names.eq(
-                            subconfig_name
-                        ) | incoming_names.str.startswith(
-                            f"{subconfig_name}/", na=False
+                        output_path.unlink(missing_ok=True)
+                        continue
+                    incoming = incoming.copy()
+                    incoming_columns = list(incoming.columns)
+                    if "config_name" not in incoming.columns:
+                        raise ValueError(
+                            f"{report_name} metrics are missing config_name."
                         )
-                        if not owned.all():
-                            raise ValueError(
-                                f"{report_name} metrics contain rows not owned by "
-                                f"subconfig {subconfig_name!r}."
-                            )
+                    incoming_names = incoming["config_name"].astype("string")
+                    owned = incoming_names.eq(
+                        subconfig_name
+                    ) | incoming_names.str.startswith(
+                        f"{subconfig_name}/", na=False
+                    )
+                    if not owned.all():
+                        raise ValueError(
+                            f"{report_name} metrics contain rows not owned by "
+                            f"subconfig {subconfig_name!r}."
+                        )
 
                     existing = (
                         pd.read_csv(output_path)
@@ -560,10 +562,7 @@ class MarketGenerator(SchoolChoiceMarket):
                         )
                         existing = existing.loc[~owned].copy()
 
-                    columns = list(existing.columns)
-                    columns.extend(
-                        column for column in incoming.columns if column not in columns
-                    )
+                    columns = incoming_columns
                     merged = pd.concat(
                         [
                             existing.reindex(columns=columns),

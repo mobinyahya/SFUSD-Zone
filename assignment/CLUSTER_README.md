@@ -77,10 +77,10 @@ uv run python -m assignment.slurm submit --config assignment/configs/kumar.confi
 
 The launcher creates one one-core job for every subconfig and iteration pair.
 When `export-aggregate-metrics` is true, it also creates one dependent metrics
-job per subconfig. `export-local-metrics` adds school, ZIP code, and attendance
-area CSVs to the citywide report. Plans, worker scripts, and logs are written
-under `<paths.assignment-folder>/slurm/`; aggregate CSV updates are locked and
-safe to retry. All jobs use Slurm account and partition `soal`.
+job per subconfig. `export-local-metrics` adds program, ZIP code, and attendance
+area CSVs alongside the citywide report. Plans, worker scripts, and logs are
+written under `<paths.assignment-folder>/slurm/`; aggregate CSV updates are
+locked and safe to retry. All jobs use Slurm account and partition `soal`.
   
 ### Data Files
 

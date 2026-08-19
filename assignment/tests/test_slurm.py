@@ -141,12 +141,14 @@ def test_targeted_retry_does_not_delete_sibling_iteration(tmp_path):
 
 def _reports(config_name, value):
     return {
-        "school": pd.DataFrame(
+        "program": pd.DataFrame(
             {
                 "config_name": [config_name],
+                "program_id": ["101-GE-KG"],
                 "school_id": [101],
                 "school_name": ["Alpha"],
                 "school_category": ["Attendance"],
+                "program_type": ["GE"],
                 "new_metric": [value],
             }
         ),
@@ -171,12 +173,15 @@ def _reports(config_name, value):
 def test_locked_metric_merge_is_local_and_idempotent(tmp_path):
     aggregate_dir = tmp_path / "aggregate_metrics"
     aggregate_dir.mkdir()
-    pd.DataFrame(
-        {
-            "config_name": ["other/variant", "policy+reserves_#3/old"],
-            "old_metric": [7.0, 8.0],
-        }
-    ).to_csv(aggregate_dir / "metrics_citywide.csv", index=False)
+    other_reports = _reports("other/variant", 7.0)
+    owned_reports = _reports("policy+reserves_#3/old", 8.0)
+    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
+        existing = pd.concat(
+            [other_reports[report_name], owned_reports[report_name]],
+            ignore_index=True,
+        ).rename(columns={"new_metric": "retired_metric"})
+        existing.to_csv(aggregate_dir / filename, index=False)
+    (aggregate_dir / "metrics_by_school.csv").write_text("obsolete")
     reports = _reports("policy+reserves_#3/variant", 2.0)
 
     MarketGenerator.merge_aggregate_metric_reports(
@@ -191,14 +196,51 @@ def test_locked_metric_merge_is_local_and_idempotent(tmp_path):
         "other/variant",
         "policy+reserves_#3/variant",
     ]
-    assert {"old_metric", "new_metric"} <= set(citywide.columns)
+    assert citywide.columns.tolist() == ["config_name", "new_metric"]
+    assert pd.isna(citywide.loc[0, "new_metric"])
+    assert citywide.loc[1, "new_metric"] == 2.0
     assert (tmp_path / ".aggregate_metrics.lock").is_file()
     assert {
-        "metrics_by_school.csv",
+        "metrics_by_program.csv",
         "metrics_by_zip_code.csv",
         "metrics_by_attendance_area.csv",
         "metrics_citywide.csv",
-    } <= {path.name for path in aggregate_dir.iterdir()}
+    } == {path.name for path in aggregate_dir.iterdir()}
+    program = pd.read_csv(aggregate_dir / "metrics_by_program.csv")
+    assert program.columns.tolist() == reports["program"].columns.tolist()
+    assert program["config_name"].tolist() == [
+        "other/variant",
+        "policy+reserves_#3/variant",
+    ]
+    assert pd.isna(program.loc[0, "new_metric"])
+    assert program.loc[1, "new_metric"] == 2.0
+    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
+        merged = pd.read_csv(aggregate_dir / filename)
+        assert merged.columns.tolist() == reports[report_name].columns.tolist()
+        assert "other/variant" in merged["config_name"].tolist()
+
+
+def test_locked_metric_merge_removes_disabled_local_reports(tmp_path):
+    aggregate_dir = tmp_path / "aggregate_metrics"
+    aggregate_dir.mkdir()
+    existing = _reports("other/variant", 7.0)
+    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
+        existing[report_name].to_csv(aggregate_dir / filename, index=False)
+
+    MarketGenerator.merge_aggregate_metric_reports(
+        tmp_path,
+        "policy",
+        {"citywide": _reports("policy/variant", 2.0)["citywide"]},
+    )
+
+    assert {path.name for path in aggregate_dir.iterdir()} == {
+        "metrics_citywide.csv"
+    }
+    citywide = pd.read_csv(aggregate_dir / "metrics_citywide.csv")
+    assert citywide["config_name"].tolist() == [
+        "other/variant",
+        "policy/variant",
+    ]
 
 
 def test_metrics_only_fails_before_evaluation_when_input_is_missing(tmp_path):

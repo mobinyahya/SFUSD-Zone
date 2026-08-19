@@ -197,15 +197,24 @@ def _assignment_saving_market(
     return market
 
 
-def _aggregate_reports(config_name, value):
+def _aggregate_reports(config_name, value, sibling_value=None):
+    program_ids = ["101-GE-KG"]
+    program_types = ["GE"]
+    program_values = [value]
+    if sibling_value is not None:
+        program_ids.append("101-GE-TK")
+        program_types.append("GE")
+        program_values.append(sibling_value)
     return {
-        "school": pd.DataFrame(
+        "program": pd.DataFrame(
             {
-                "config_name": [config_name],
-                "school_id": [101],
-                "school_name": ["Alpha"],
-                "school_category": ["Attendance"],
-                "metric": [value],
+                "config_name": [config_name] * len(program_ids),
+                "program_id": program_ids,
+                "school_id": [101] * len(program_ids),
+                "school_name": ["Alpha"] * len(program_ids),
+                "school_category": ["Attendance"] * len(program_ids),
+                "program_type": program_types,
+                "metric": program_values,
             }
         ),
         "zip_code": pd.DataFrame(
@@ -445,9 +454,14 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
         export_local_metrics=True,
     )
     evaluator = Mock()
-    values = iter([1.0, 3.0])
+    iteration_reports = iter(
+        [
+            _aggregate_reports("status_quo/policy", 1.0, 10.0),
+            _aggregate_reports("status_quo/policy", 3.0, 20.0),
+        ]
+    )
     evaluator.eval_aggregate_metric_reports.side_effect = (
-        lambda config_name, **_kwargs: _aggregate_reports(config_name, next(values))
+        lambda _config_name, **_kwargs: next(iteration_reports)
     )
     from_scenario = Mock(return_value=evaluator)
     monkeypatch.setattr(MatchEvaluator, "from_scenario", from_scenario)
@@ -481,7 +495,13 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
         (("status_quo/policy",), {"include_local_metrics": True}),
         (("status_quo/policy",), {"include_local_metrics": True}),
     ]
-    assert reports["school"].loc[0, "metric"] == 2
+    assert reports["program"]["program_id"].tolist() == [
+        "101-GE-KG",
+        "101-GE-TK",
+    ]
+    assert reports["program"]["program_type"].tolist() == ["GE", "GE"]
+    assert reports["program"]["metric"].tolist() == [2.0, 15.0]
+    assert reports["program"]["school_id"].tolist() == [101, 101]
     assert reports["zip_code"].loc[0, "metric"] == 2
     assert reports["attendance_area"].loc[0, "metric"] == 2
     assert reports["citywide"].loc[0, "metric"] == 2
@@ -553,20 +573,25 @@ def test_failed_metrics_export_removes_existing_assignment_marker(
 
 
 def test_combined_metric_writer_creates_only_four_run_level_csvs(tmp_path):
-    reports = _aggregate_reports("status_quo/policy", 2.0)
+    reports = _aggregate_reports("status_quo/policy", 2.0, 5.0)
     legacy_dir = tmp_path / "aggregate_metrics/old-config/iteration0"
     legacy_dir.mkdir(parents=True)
-    (legacy_dir / "metrics_by_school.csv").write_text("stale")
+    (legacy_dir / "obsolete.csv").write_text("stale")
 
     MarketGenerator.write_aggregate_metric_reports(tmp_path, reports)
 
     output_dir = tmp_path / "aggregate_metrics"
     assert {path.name for path in output_dir.iterdir()} == {
-        "metrics_by_school.csv",
+        "metrics_by_program.csv",
         "metrics_by_zip_code.csv",
         "metrics_by_attendance_area.csv",
         "metrics_citywide.csv",
     }
+    program = pd.read_csv(output_dir / "metrics_by_program.csv")
+    assert program["program_id"].tolist() == ["101-GE-KG", "101-GE-TK"]
+    assert program["program_type"].tolist() == ["GE", "GE"]
+    assert program["metric"].tolist() == [2.0, 5.0]
+    assert program["school_id"].tolist() == [101, 101]
     citywide = pd.read_csv(output_dir / "metrics_citywide.csv")
     assert citywide.loc[0, "config_name"] == "status_quo/policy"
     assert citywide.loc[0, "metric"] == 2
@@ -606,7 +631,16 @@ def test_empty_geography_report_keeps_metric_headers():
     combined = MarketGenerator.combine_aggregate_metric_reports(
         [
             {
-                "school": pd.DataFrame(),
+                "program": pd.DataFrame(
+                    columns=[
+                        "config_name",
+                        "program_id",
+                        "school_id",
+                        "school_name",
+                        "school_category",
+                        "program_type",
+                    ]
+                ),
                 "zip_code": averaged,
                 "attendance_area": pd.DataFrame(),
                 "citywide": pd.DataFrame(),

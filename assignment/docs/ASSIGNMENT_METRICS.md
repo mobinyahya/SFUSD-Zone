@@ -1,7 +1,7 @@
 # Assignment Metrics
 
 `student_assignment.evaluation.match_evaluator.MatchEvaluator` is the single
-assignment evaluator. It has two reports:
+assignment evaluator. It has two metric interfaces:
 
 - `eval_assignment_basic()` preserves the compact metric contract consumed by
   `choice/assignment_metrics.py` and the benchmark suite.
@@ -47,9 +47,9 @@ student's zone. Historical assignment files may also set it equal to ordinary
 rank. If the column is absent, the evaluator uses ordinary rank. No separate,
 reliable in-zone assignment indicator exists in these files.
 
-The `Proportion of students in top N (All Students)` family uses the complete
-filtered first-round cohort. Missing ranks, including unassigned students,
-compare false.
+`Prop Top 1 choice (All Students)`, `Prop Top 2 choice (All Students)`, and
+`Prop Top 3 choice (All Students)` use the complete filtered first-round cohort.
+Missing ranks, including unassigned students, compare false.
 
 ## FRL And Income Concentration
 
@@ -100,33 +100,45 @@ GE isolation metrics count GE program IDs from the program file, including GE
 programs with zero Black or Pacific Islander assignments. Program assignment
 counts are student counts by assigned program type and designation status.
 
-`utilization_<type>` is total assigned enrollment divided by total capacity for
+`utilization_<type>` is the total assigned count divided by total capacity for
 that program type. `utilization_rate_avg` preserves the migrated unweighted
 mean of individual program utilization rates; it is not district-wide filled
 seats divided by district-wide capacity.
 
-When `export-aggregate-metrics: true`, an assignment run writes four combined
-reports under `paths.assignment-folder/aggregate_metrics/`:
+When `export-aggregate-metrics: true`, an assignment run writes
+`metrics_citywide.csv` under
+`paths.assignment-folder/aggregate_metrics/`. It has one row per config and the
+complete citywide metric set as columns. Set `export-local-metrics: true` as
+well when any of these local reports are needed:
 
-- `metrics_by_school.csv` has one row per school. Enrolled means all simulated
-  placements (`programno > 0`), assigned means a non-designated placement, and
-  designated means `designation == 1`. School utilization is simulated
-  enrollment divided by the sum of the school's selected program capacities.
+- `metrics_by_program.csv` has one row for every program in the selected
+  program table, including programs with no assignments.
 - `metrics_by_zip_code.csv` has one row per non-missing student `zipcode`.
 - `metrics_by_attendance_area.csv` has one row per non-missing student
   `idschoolattendance`.
-- `metrics_citywide.csv` has one row per config and the complete citywide metric
-  set as columns.
+
+Each program row includes the program, school, and program-type identifiers and
+the selected program-table capacity. Assigned counts include every placement
+at that program (`programno > 0`), including designated placements. Designated
+counts are the subset of those assignments with `designation == 1`.
+
+Program utilization is assigned count divided by capacity; it is `NaN` when
+capacity is zero. Overage is `max((assigned - capacity) / capacity, 0)`, and
+underage is `max((capacity - assigned) / capacity, 0)`. Top-k rates use all
+students assigned to the program as their denominator. Their numerator counts
+non-designated assignments with rank at or below k. Demographic columns provide
+separate non-designated and designated counts for each reported group.
 
 The two residential-geography reports contain the complete full metric set,
 recomputed from the students residing in each geography. Program inventory and
 capacity diagnostics retain the evaluator's selected district program table.
 Every report has `config_name`, which identifies the subconfig and full policy
 variant but excludes the iteration suffix. Numeric metrics are averaged across
-iterations for each config and school, ZIP code, attendance area, or citywide
-row. No per-assignment metric CSVs are written. The option defaults to `false`.
+iterations for each config and program, ZIP code, attendance area, or citywide
+row. No per-assignment metric CSVs are written. Both export options default to
+`false`, and `export-local-metrics` requires `export-aggregate-metrics: true`.
 
-The basic metric `Programs with 1-4 AA` is a legacy benchmark field whose
-historical calculation counts schools with one to four Black students. The
-full report's explicitly named GE-program metric is the correctly scoped count
-of Black or Pacific Islander students by GE program.
+The basic benchmark metric keeps the code-facing name `Programs with 1-4 AA`.
+Its calculation counts schools with one to four Black students. The full
+report's explicitly named GE-program metric is the program-scoped count of
+Black or Pacific Islander students by GE program.

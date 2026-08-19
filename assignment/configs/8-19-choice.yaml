@@ -1,11 +1,14 @@
 data:
   scenario: assignment-generated-zones-2324
-  overrides: {}
+  overrides:
+    filters:
+      assignment:
+        special_programs: exclude_any_special
 iterations:
   end: 25
   start: 0
 paths:
-  assignment-folder: /soalnas/share/data/school_choice/local_runs/8-19-assignment-runs/assignments
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/8-19-choice-assignment-runs/assignments
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
@@ -36,6 +39,6 @@ subconfigs:
 - distance_05_1_2+reserves_05frl_#4
 utility-model:
   designate-lp-for-all: false
-  enable: false
+  enable: true
   list-length: 0.8*round(real_length)
-output_dir: /soalnas/share/data/school_choice/local_runs/8-19-assignment-runs/
+output_dir: /soalnas/share/data/school_choice/local_runs/8-19-choice-assignment-runs/

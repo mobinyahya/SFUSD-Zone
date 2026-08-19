@@ -7,9 +7,9 @@ DO NOT make changes to `base_config.yaml`.
 This file contains shared input paths, repository-relative output paths, and non-policy simulation options (like whether to use a utility model).
 
 `export-aggregate-metrics: true` exports citywide assignment metrics. Set
-`export-local-metrics: true` as well to also export metrics by school, ZIP code,
-and attendance area. Local metrics cannot be enabled when aggregate metrics are
-disabled.
+`export-local-metrics: true` as well to also export metrics by program, ZIP
+code, and attendance area. Local metrics cannot be enabled when aggregate
+metrics are disabled.
 
 To select which policies to run, add the policy configs to the subconfig section of your config. 
 For example,
