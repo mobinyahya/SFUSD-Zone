@@ -1,0 +1,20 @@
+data:
+  overrides: {}
+  scenario: legacy
+export-aggregate-metrics: false
+export-local-metrics: false
+iterations:
+  end: 15
+  start: 0
+paths:
+  assignment-folder: ./assignment_output/assignments/
+random-seed: 2023
+reuse_assignments: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- zones+reserves
+utility-model:
+  enable: true
+  list-length: '7'

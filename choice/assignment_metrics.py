@@ -8,6 +8,10 @@ from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
+from assignment.student_assignment.choice_ranks import (
+    listed_ranks_for_program_ids,
+    normalize_assignment_ranks,
+)
 
 
 CHOICE_AVG_STUDENT_DISTANCE = "choice_avg_student_distance"
@@ -110,6 +114,14 @@ DEPENDENCY_CHOICE_METRIC_COLUMNS = {
     name: PAPER_METRIC_COLUMN_OVERRIDES.get(name, dependency_metric_column(name))
     for name in PAPER_METRIC_NAMES
 }
+CHOICE_OUTCOME_METRIC_NAMES = [
+    name for name in PAPER_METRIC_NAMES if name.startswith("Top ")
+]
+CHOICE_OUTCOME_COUNT_COLUMNS = [
+    f"{DEPENDENCY_CHOICE_METRIC_COLUMNS[name]}_{suffix}"
+    for name in CHOICE_OUTCOME_METRIC_NAMES
+    for suffix in ("numerator", "denominator")
+]
 ADDITIONAL_CHOICE_METRIC_COLUMNS = [
     CHOICE_FRL_DISSIMILARITY,
     CHOICE_TOTAL_MNL_UTILITY,
@@ -117,6 +129,7 @@ ADDITIONAL_CHOICE_METRIC_COLUMNS = [
 CHOICE_METRIC_COLUMNS = list(
     dict.fromkeys(
         list(DEPENDENCY_CHOICE_METRIC_COLUMNS.values())
+        + CHOICE_OUTCOME_COUNT_COLUMNS
         + ADDITIONAL_CHOICE_METRIC_COLUMNS
     )
 )
@@ -140,15 +153,7 @@ def prepare_assignment_df(
     out = ensure_frl(out, student_data)
     out = ensure_assignment_distance(out, distance_data)
 
-    for column in [
-        "programno",
-        "rank",
-        "In-Zone Rank",
-        "designation",
-        "assignment_dist",
-        "frl",
-        "assigned_utility",
-    ]:
+    for column in ["assignment_dist", "frl", "assigned_utility"]:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
 
@@ -170,9 +175,20 @@ def choice_metrics_for_assignment(assignments: pd.DataFrame) -> dict[str, Any]:
 def dependency_metrics_to_choice_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {column: None for column in CHOICE_METRIC_COLUMNS}
     for name, value in dict(metrics).items():
-        column = DEPENDENCY_CHOICE_METRIC_COLUMNS.get(
-            name, dependency_metric_column(name)
+        count_suffix = next(
+            (
+                suffix
+                for suffix in ("numerator", "denominator")
+                if name.endswith(f" {suffix}")
+            ),
+            None,
         )
+        base_name = name.removesuffix(f" {count_suffix}") if count_suffix else name
+        column = DEPENDENCY_CHOICE_METRIC_COLUMNS.get(
+            base_name, dependency_metric_column(base_name)
+        )
+        if count_suffix:
+            column = f"{column}_{count_suffix}"
         out[column] = scalar_metric_value(value)
     return out
 
@@ -217,6 +233,19 @@ def _match_evaluator_for_assignment(assignments: pd.DataFrame):
     distance_df = distance_df.copy()
     distance_df.attrs = {}
 
+    listed_ranks = None
+    source_columns = {"selected_ranked_idschool", "selected_programs"}
+    round_one_columns = {"r1_ranked_idschool", "r1_programs"}
+    if source_columns <= set(student_df) or round_one_columns <= set(student_df):
+        listed_ranks = listed_ranks_for_program_ids(
+            student_df,
+            assignment_df["programcodes"].reindex(student_df.index),
+        ).reindex(assignment_df.index)
+    assignment_df = normalize_assignment_ranks(
+        assignment_df,
+        listed_ranks=listed_ranks,
+    )
+
     adapter = _StudentsAdapter(
         student_data=student_df,
         distance_data=distance_df,
@@ -229,8 +258,10 @@ def _dependency_assignment_df(assignments: pd.DataFrame) -> pd.DataFrame:
     out = ensure_studentno(assignments).copy()
     if "studentno" not in out.columns:
         raise ValueError("Assignment metrics require a studentno column.")
-    out["studentno"] = pd.to_numeric(out["studentno"], errors="coerce")
-    out = out.dropna(subset=["studentno"]).copy()
+    if out["studentno"].isna().any():
+        raise ValueError("Assignment metrics require valid studentno values.")
+    if out["studentno"].duplicated().any():
+        raise ValueError("Assignment metrics require unique studentno values.")
     out["studentno"] = out["studentno"].astype(int)
 
     if "programcodes" not in out.columns:
@@ -238,29 +269,21 @@ def _dependency_assignment_df(assignments: pd.DataFrame) -> pd.DataFrame:
     out["programcodes"] = out["programcodes"].replace("", pd.NA)
     if "programno" not in out.columns:
         out["programno"] = out["programcodes"].notna().astype(int)
-    if "rank" not in out.columns:
-        out["rank"] = np.nan
     if "designation" not in out.columns:
         out["designation"] = 0
-    if "In-Zone Rank" not in out.columns:
-        out["In-Zone Rank"] = out["rank"]
 
-    for column in [
-        "programno",
-        "rank",
-        "designation",
-        "In-Zone Rank",
-        "assigned_utility",
-    ]:
-        if column in out.columns:
-            out[column] = pd.to_numeric(out[column], errors="coerce")
     keep = [
         column
         for column in [
             "studentno",
+            "assignment_schema_version",
             "programno",
             "programcodes",
+            "rank_basis",
+            "submitted_rank",
+            "utility_rank",
             "rank",
+            "mechanism_rank",
             "designation",
             "In-Zone Rank",
             "assigned_utility",
@@ -291,7 +314,12 @@ def _student_data_for_assignment(
             for column in [
                 "programno",
                 "programcodes",
+                "assignment_schema_version",
+                "rank_basis",
+                "submitted_rank",
+                "utility_rank",
                 "rank",
+                "mechanism_rank",
                 "designation",
                 "In-Zone Rank",
                 "assignment_dist",
@@ -333,6 +361,12 @@ def _fill_missing_student_columns(
         "frl",
         "resolved_ethnicity",
         "grade",
+        "selected_ranked_idschool",
+        "selected_programs",
+        "selected_listed_ranks",
+        "r1_ranked_idschool",
+        "r1_programs",
+        "r1_listed_ranks",
         "census_blockgroup",
         "N'hood SES Score",
         "SES_category",

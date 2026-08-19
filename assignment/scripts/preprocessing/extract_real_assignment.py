@@ -16,6 +16,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from assignment.student_assignment.choice_ranks import (
+    ASSIGNMENT_SCHEMA_VERSION,
+    LISTED_RANK_BASIS,
+    listed_preference_rank_matrix,
+    normalize_assignment_ranks,
+    ranks_for_matches,
+)
+
 
 def _normalize_grade(value) -> str:
     """Normalize numeric grades to the two-character program suffix."""
@@ -38,19 +46,26 @@ def extract_real_assignment(
     """Extract the real assignment from the student dataframe.
 
     This function extracts the Round 1 assignment columns from the student
-    dataframe and formats them according to the assignment schema.
+    dataframe and formats them according to the canonical assignment schema.
 
     Args:
         df_students: The student dataframe containing Round 1 assignment
-            columns (r1_idschool, r1_programcode, grade, r1_rank,
+            columns (r1_idschool, r1_programcode, grade,
+            r1_ranked_idschool, r1_programs, and optionally r1_rank and
             r1_isdesignation).
         df_programs: Programs dataframe used for an exact programno lookup.
 
     Returns:
-        A dataframe with columns: studentno, programno, programcodes, rank,
-        designation, In-Zone Rank.
+        A dataframe with canonical submitted and mechanism rank columns.
     """
-    required_columns = ["studentno", "r1_idschool", "r1_programcode", "grade"]
+    required_columns = [
+        "studentno",
+        "r1_idschool",
+        "r1_programcode",
+        "r1_ranked_idschool",
+        "r1_programs",
+        "grade",
+    ]
     missing_columns = [
         col for col in required_columns if col not in df_students.columns
     ]
@@ -183,7 +198,6 @@ def extract_real_assignment(
             raise ValueError(f"Invalid r1_rank for students: {students}")
     else:
         ranks = pd.Series(float("nan"), index=df_students.index, dtype=float)
-    assignment["rank"] = ranks.mask(~assigned)
 
     if "r1_isdesignation" in df_students:
         raw_designation = df_students["r1_isdesignation"]
@@ -200,15 +214,45 @@ def extract_real_assignment(
         designation = designation.fillna(0)
     else:
         designation = pd.Series(0, index=df_students.index, dtype=int)
+    unassigned_designated = ~assigned & designation.eq(1)
+    if unassigned_designated.any():
+        students = df_students.loc[unassigned_designated, "studentno"].tolist()
+        raise ValueError(f"Unassigned students cannot be designated: {students}")
     assignment["designation"] = designation.astype(int)
-    assignment["In-Zone Rank"] = assignment["rank"]
+
+    preference_columns = ["r1_ranked_idschool", "r1_programs", "grade"]
+    if "r1_listed_ranks" in df_students:
+        preference_columns.append("r1_listed_ranks")
+    submitted_rank = ranks_for_matches(
+        listed_preference_rank_matrix(
+            df_students[preference_columns],
+            program_lookup,
+        ),
+        assignment["programno"].to_numpy(),
+    )
+    assignment["assignment_schema_version"] = ASSIGNMENT_SCHEMA_VERSION
+    assignment["rank_basis"] = LISTED_RANK_BASIS
+    assignment["submitted_rank"] = submitted_rank
+    assignment["utility_rank"] = np.nan
+    assignment["rank"] = submitted_rank
+    assignment["mechanism_rank"] = ranks.mask(~assigned)
+    assignment["In-Zone Rank"] = assignment["mechanism_rank"]
+    assignment = normalize_assignment_ranks(
+        assignment,
+        listed_ranks=pd.Series(submitted_rank, index=assignment.index),
+    )
 
     # Select and order output columns
     output_columns = [
+        "assignment_schema_version",
         "studentno",
         "programno",
         "programcodes",
+        "rank_basis",
+        "submitted_rank",
+        "utility_rank",
         "rank",
+        "mechanism_rank",
         "designation",
         "In-Zone Rank",
     ]

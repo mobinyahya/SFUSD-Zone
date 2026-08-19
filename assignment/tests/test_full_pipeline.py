@@ -43,6 +43,8 @@ KEY_METRICS = [
     "Unassigned",
     "Distance Av (All Assigned)",
     "Prop Top 1 choice (All Assigned)",
+    "Prop Top 1 choice (All Assigned) numerator",
+    "Prop Top 1 choice (All Assigned) denominator",
     "Prop Top 3 choice (All Assigned)",
 ]
 
@@ -156,8 +158,39 @@ def test_full_pipeline_tiny(tmp_path):
             f"found {sorted(found_iterations)}"
         )
         assignment_df = pd.read_csv(assignment_csvs[0])
-        for column in ["studentno", "programno", "programcodes", "rank"]:
-            assert column in assignment_df.columns
+        canonical_columns = {
+            "assignment_schema_version",
+            "studentno",
+            "programno",
+            "programcodes",
+            "rank_basis",
+            "submitted_rank",
+            "utility_rank",
+            "rank",
+            "mechanism_rank",
+            "designation",
+            "In-Zone Rank",
+        }
+        assert canonical_columns <= set(assignment_df.columns)
+        assert assignment_df["assignment_schema_version"].eq(2).all()
+        expected_basis = "utility" if label in UTILITY_RUN_LABELS else "listed"
+        assert assignment_df["rank_basis"].eq(expected_basis).all()
+        basis_rank = assignment_df[
+            "utility_rank" if expected_basis == "utility" else "submitted_rank"
+        ]
+        pd.testing.assert_series_equal(
+            assignment_df["rank"], basis_rank, check_names=False
+        )
+        pd.testing.assert_series_equal(
+            assignment_df["mechanism_rank"],
+            assignment_df["In-Zone Rank"],
+            check_names=False,
+        )
+        unassigned = assignment_df["programno"].eq(0)
+        assert assignment_df.loc[
+            unassigned,
+            ["rank", "submitted_rank", "utility_rank", "mechanism_rank"],
+        ].isna().all(axis=None)
 
     # Utility-model runs save their drawn utility matrix.
     for label in UTILITY_RUN_LABELS:

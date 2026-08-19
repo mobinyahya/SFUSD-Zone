@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from loaders import CacheStore, DataScenario, SPECIAL_PROGRAMS, identity_fingerprint
 
+from ..choice_ranks import listed_preference_rank_matrix
 from ..definitions.constants import LANGUAGE_PATHWAY_PRIORITIES
 
 
@@ -83,6 +84,7 @@ class Students:
         self.get_diversity_categories()
 
         self._prefs = {}
+        self._selected_rank_matrix = None
         self._sibling = None
         self._prek = None
 
@@ -293,6 +295,15 @@ class Students:
             prefs[row_index, : len(program_indices)] = program_indices
         self._prefs["selected"] = prefs
         return prefs
+
+    def selected_preference_rank_matrix(self) -> np.ndarray:
+        """Return policy-independent exact-program ranks from the source list."""
+        if self._selected_rank_matrix is None:
+            self._selected_rank_matrix = listed_preference_rank_matrix(
+                self.student_data,
+                self.programs.indices,
+            )
+        return self._selected_rank_matrix
 
     def _make_distance_ranking(self):
         """Create (number of students) by (number of programs) array indicating

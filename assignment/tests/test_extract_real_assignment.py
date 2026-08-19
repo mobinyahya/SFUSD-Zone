@@ -5,10 +5,42 @@ import pytest
 from assignment.scripts.preprocessing.extract_real_assignment import (
     extract_real_assignment,
 )
+from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
 
 
-def test_extract_real_assignment_retains_unassigned_and_missing_rank():
-    students = pd.DataFrame(
+def _student_frame(data):
+    frame = pd.DataFrame(data)
+    ranked_schools = []
+    ranked_programs = []
+    listed_ranks = []
+    for _, row in frame.iterrows():
+        school = pd.to_numeric(
+            pd.Series([row["r1_idschool"]]), errors="coerce"
+        ).iloc[0]
+        program = row["r1_programcode"]
+        if pd.notna(school) and school > 0 and pd.notna(program):
+            ranked_schools.append([int(school)])
+            ranked_programs.append([str(program)])
+            rank = pd.to_numeric(
+                pd.Series([row.get("r1_rank")]), errors="coerce"
+            ).iloc[0]
+            listed_ranks.append(
+                [int(rank)]
+                if pd.notna(rank) and rank > 0 and float(rank).is_integer()
+                else [1]
+            )
+        else:
+            ranked_schools.append([])
+            ranked_programs.append([])
+            listed_ranks.append([])
+    frame["r1_ranked_idschool"] = ranked_schools
+    frame["r1_programs"] = ranked_programs
+    frame["r1_listed_ranks"] = listed_ranks
+    return frame
+
+
+def test_extract_real_assignment_reconstructs_submitted_rank():
+    students = _student_frame(
         {
             "studentno": [1, 2],
             "r1_idschool": [101, np.nan],
@@ -23,13 +55,18 @@ def test_extract_real_assignment_retains_unassigned_and_missing_rank():
     assert assignments["studentno"].tolist() == [1, 2]
     assert assignments["programno"].tolist() == [1, 0]
     assert assignments["programcodes"].tolist() == ["101-GE-KG", ""]
-    assert assignments["rank"].isna().all()
+    assert assignments["assignment_schema_version"].eq(
+        ASSIGNMENT_SCHEMA_VERSION
+    ).all()
+    assert assignments["rank_basis"].eq("listed").all()
+    assert assignments.loc[0, "rank"] == 1
+    assert pd.isna(assignments.loc[1, "rank"])
     assert assignments["In-Zone Rank"].isna().all()
     assert assignments["designation"].tolist() == [0, 0]
 
 
 def test_extract_real_assignment_masks_unassigned_rank():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1, 2],
             "r1_idschool": [101, np.nan],
@@ -49,7 +86,7 @@ def test_extract_real_assignment_masks_unassigned_rank():
 
 
 def test_extract_real_assignment_requires_program_table():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [101],
@@ -63,7 +100,7 @@ def test_extract_real_assignment_requires_program_table():
 
 
 def test_extract_real_assignment_requires_exact_program_mapping():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [101],
@@ -78,7 +115,7 @@ def test_extract_real_assignment_requires_exact_program_mapping():
 
 
 def test_extract_real_assignment_normalizes_numeric_grade():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [101],
@@ -94,7 +131,7 @@ def test_extract_real_assignment_normalizes_numeric_grade():
 
 
 def test_extract_real_assignment_normalizes_sparse_program_numbers():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [404],
@@ -115,7 +152,7 @@ def test_extract_real_assignment_normalizes_sparse_program_numbers():
 
 
 def test_extract_real_assignment_rejects_duplicate_students():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1, 1],
             "r1_idschool": [101, 101],
@@ -130,7 +167,7 @@ def test_extract_real_assignment_rejects_duplicate_students():
 
 
 def test_extract_real_assignment_rejects_duplicate_program_numbers():
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [101],
@@ -149,6 +186,22 @@ def test_extract_real_assignment_rejects_duplicate_program_numbers():
         extract_real_assignment(students, programs)
 
 
+def test_extract_real_assignment_rejects_unassigned_designation():
+    students = _student_frame(
+        {
+            "studentno": [1],
+            "r1_idschool": [np.nan],
+            "r1_programcode": [np.nan],
+            "grade": ["KG"],
+            "r1_isdesignation": [1],
+        }
+    )
+    programs = pd.DataFrame({"program_id": ["101-GE-KG"], "programno": [1]})
+
+    with pytest.raises(ValueError, match="Unassigned students cannot be designated"):
+        extract_real_assignment(students, programs)
+
+
 @pytest.mark.parametrize(
     ("column", "value", "message"),
     [
@@ -159,7 +212,7 @@ def test_extract_real_assignment_rejects_duplicate_program_numbers():
     ],
 )
 def test_extract_real_assignment_rejects_invalid_metrics(column, value, message):
-    students = pd.DataFrame(
+    students = _student_frame(
         {
             "studentno": [1],
             "r1_idschool": [101],

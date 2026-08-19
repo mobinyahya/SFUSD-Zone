@@ -178,9 +178,13 @@ def _assignment_saving_market(
             {"101-GE-KG": [1.0, 2.0]},
             index=pd.Index([1, 2], name="studentno"),
         ),
+        selected_preference_rank_matrix=Mock(
+            return_value=np.array([[1.0], [1.0]])
+        ),
     )
     market.programs = SimpleNamespace(
         codes={0: np.nan, 1: "101-GE-KG"},
+        indices={"101-GE-KG": 1},
         program_df=pd.DataFrame({"capacity": [10]}),
     )
     market.preference_generator = SimpleNamespace(pref_length=1)
@@ -248,6 +252,70 @@ def _write_reusable_assignment(market, iteration):
         np.array([1, 2]),
         np.zeros(2),
     )
+
+
+def test_saved_rank_uses_source_listed_position_not_filtered_mechanism_rank(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    market.students.selected_preference_rank_matrix.return_value = np.array(
+        [[4.0], [1.0]]
+    )
+
+    assignment = market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+
+    assert assignment.loc[0, "rank_basis"] == "listed"
+    assert assignment.loc[0, "submitted_rank"] == 4
+    assert assignment.loc[0, "rank"] == 4
+    assert assignment.loc[0, "mechanism_rank"] == 1
+    assert assignment.loc[1, ["rank", "mechanism_rank"]].isna().all()
+
+
+def test_saved_utility_rank_is_independent_from_submitted_rank(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    market.config["utility-model"]["enable"] = True
+    market.students.selected_preference_rank_matrix.return_value = np.array(
+        [[4.0], [1.0]]
+    )
+    market.umodel = SimpleNamespace(
+        original_preferences=np.array([[1], [1]]),
+        original_utilities=np.array([[10.0], [5.0]]),
+    )
+
+    assignment = market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+
+    assert assignment.loc[0, "rank_basis"] == "utility"
+    assert assignment.loc[0, "submitted_rank"] == 4
+    assert assignment.loc[0, "utility_rank"] == 1
+    assert assignment.loc[0, "rank"] == 1
+
+
+def test_saved_mechanism_rank_preserves_designation_position(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+
+    assignment = market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([7, 2]),
+        np.zeros(2),
+    )
+
+    assert assignment.loc[0, "mechanism_rank"] == 7
+    assert assignment.loc[0, "designation"] == 1
 
 
 def test_complete_assignment_run_is_reused_and_exported(tmp_path):
@@ -318,6 +386,17 @@ def test_assignment_reuse_can_be_disabled(tmp_path):
     assert not market._assignment_save_path(
         Policy("zones", 0, 0, "STB"), 0
     ).exists()
+
+
+def test_assignment_reuse_rejects_rank_basis_from_different_policy_mode(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    policy = Policy("zones", 0, 0, "STB")
+    _write_reusable_assignment(market, 0)
+    market.config["utility-model"]["enable"] = True
+
+    with pytest.raises(ValueError, match="does not match policy"):
+        market._load_reusable_assignment(policy, 0)
 
 
 def test_real_match_assignment_is_reused_before_reconstruction(tmp_path):

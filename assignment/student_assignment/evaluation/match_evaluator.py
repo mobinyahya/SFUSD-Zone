@@ -27,6 +27,13 @@ from loaders import (
     load_student_records,
 )
 
+from ..choice_ranks import (
+    ChoiceRate,
+    cumulative_choice_rates,
+    listed_preference_rank_matrix,
+    normalize_assignment_ranks,
+    ranks_for_matches,
+)
 from ..data_interfaces.programs import Programs
 from ..definitions.constants import ZONE_COLORS
 
@@ -103,7 +110,7 @@ class _FullReportAggregates:
     ge_non_designated_students: pd.DataFrame
     ge_non_designated_school_frl_context: tuple[float, pd.Series]
     ge_aapi_counts: np.ndarray
-    all_student_top_choice_rates: dict[int, float]
+    all_student_top_choice_outcomes: dict[int, ChoiceRate]
 
 
 class MatchEvaluator:
@@ -235,10 +242,6 @@ class MatchEvaluator:
         self.assignments = assignments.copy()
         if "designation" not in self.assignments:
             self.assignments["designation"] = 0
-        if "In-Zone Rank" not in self.assignments:
-            if "rank" not in self.assignments:
-                raise ValueError("Assignments are missing required column: rank")
-            self.assignments["In-Zone Rank"] = self.assignments["rank"]
         self._validate_full_assignments()
         self.student_data = self.student_data.merge(
             self.assignments,
@@ -518,7 +521,7 @@ class MatchEvaluator:
         )
 
     def _validate_full_assignments(self):
-        required_columns = {"studentno", "programno", "programcodes", "rank"}
+        required_columns = {"studentno", "programno", "programcodes"}
         missing_columns = required_columns - set(self.assignments.columns)
         if missing_columns:
             raise ValueError(
@@ -619,25 +622,10 @@ class MatchEvaluator:
                 f"{missing_locations}"
             )
 
-        for column in ("rank", "In-Zone Rank"):
-            raw_values = self.assignments[column]
-            numeric_values = pd.to_numeric(raw_values, errors="coerce")
-            supplied = raw_values.notna() & raw_values.astype("string").str.strip().ne(
-                ""
-            )
-            invalid_values = supplied & (
-                numeric_values.isna()
-                | ~np.isfinite(numeric_values)
-                | (numeric_values <= 0)
-                | (numeric_values % 1 != 0)
-            )
-            if invalid_values.any():
-                students = self.assignments.loc[invalid_values, "studentno"].tolist()
-                raise ValueError(
-                    f"Assignments contain invalid {column} values for students: "
-                    f"{students}"
-                )
-            self.assignments[column] = numeric_values
+        self.assignments = normalize_assignment_ranks(
+            self.assignments,
+            listed_ranks=self._full_source_submitted_ranks(),
+        )
 
         raw_designation = self.assignments["designation"]
         designation = pd.to_numeric(raw_designation, errors="coerce")
@@ -660,6 +648,31 @@ class MatchEvaluator:
         self.assignments["designation"] = designation
         self.assignments["programcodes"] = program_codes.fillna("").astype(str)
 
+    def _full_source_submitted_ranks(self) -> pd.Series | None:
+        columns = set(self.student_data.columns)
+        has_selected = {
+            "selected_ranked_idschool",
+            "selected_programs",
+        } <= columns
+        has_first_round = {"r1_ranked_idschool", "r1_programs"} <= columns
+        if not has_selected and not has_first_round:
+            return None
+
+        rank_matrix = listed_preference_rank_matrix(
+            self.student_data,
+            self._program_number_by_id,
+        )
+        matches = (
+            self.assignments.set_index("studentno")["programno"]
+            .reindex(self.student_data["studentno"])
+            .to_numpy()
+        )
+        ranks = ranks_for_matches(rank_matrix, matches)
+        rank_by_student = pd.Series(ranks, index=self.student_data["studentno"])
+        return self.assignments["studentno"].map(rank_by_student).set_axis(
+            self.assignments.index
+        )
+
     @staticmethod
     def _has_special_program(value):
         if not isinstance(value, (list, tuple, np.ndarray)):
@@ -677,6 +690,29 @@ class MatchEvaluator:
         self.students = students
         self.distance_data = distances
         self.assignments = assignments.copy()
+        if "designation" not in self.assignments:
+            self.assignments["designation"] = 0
+        self._validate_basic_assignment_values()
+        listed_ranks = None
+        if hasattr(students, "selected_preference_rank_matrix"):
+            rank_matrix = students.selected_preference_rank_matrix()
+            student_ids = students.student_data.index
+            matches = (
+                self.assignments["programno"].reindex(student_ids).fillna(0).to_numpy()
+            )
+            rank_by_student = pd.Series(
+                ranks_for_matches(rank_matrix, matches),
+                index=student_ids,
+            )
+            listed_ranks = pd.Series(
+                self.assignments.index.map(rank_by_student),
+                index=self.assignments.index,
+                dtype=float,
+            )
+        self.assignments = normalize_assignment_ranks(
+            self.assignments,
+            listed_ranks=listed_ranks,
+        )
         if "assigned_utility" in self.assignments:
             self.assignments["assigned_utility"] = self.assignments[
                 "assigned_utility"
@@ -690,9 +726,7 @@ class MatchEvaluator:
         for column, default in {
             "assignment": pd.NA,
             "programno": 0,
-            "rank": np.nan,
             "designation": 0,
-            "In-Zone Rank": np.nan,
             "freelunch_prob": 0.0,
             "reducedlunch_prob": 0.0,
             "resolved_ethnicity": "",
@@ -717,6 +751,35 @@ class MatchEvaluator:
         self.match_ranks = self.assignments["rank"]
         self.num_students = len(self.student_data)
         self.num_schools = self.student_data["assigned school"].nunique()
+
+    def _validate_basic_assignment_values(self):
+        if "programno" not in self.assignments:
+            raise ValueError("Assignments are missing required column: programno")
+        programno = pd.to_numeric(self.assignments["programno"], errors="coerce")
+        invalid_programno = (
+            programno.isna()
+            | ~np.isfinite(programno)
+            | programno.lt(0)
+            | programno.mod(1).ne(0)
+        )
+        if invalid_programno.any():
+            raise ValueError("Assignments contain invalid programno values.")
+        self.assignments["programno"] = programno.astype(int)
+
+        designation = pd.to_numeric(
+            self.assignments["designation"], errors="coerce"
+        )
+        invalid_designation = (
+            designation.isna()
+            | ~np.isfinite(designation)
+            | ~designation.isin([0, 1])
+        )
+        if invalid_designation.any():
+            raise ValueError("Assignments contain invalid designation values.")
+        assigned = self.assignments["programno"].gt(0)
+        if ((~assigned) & designation.eq(1)).any():
+            raise ValueError("Unassigned students cannot be designated.")
+        self.assignments["designation"] = designation.astype(int)
 
     def _assigned_distances(self, distances):
         if distances is None or distances.empty:
@@ -830,7 +893,11 @@ class MatchEvaluator:
             "Low FRL": low_frl_assigned,
         }
         for group, students in groups.items():
-            metrics[f"Top 3 choice {group}"] = self.metric_top_choice(students, 3)
+            self._record_choice_outcome(
+                metrics,
+                f"Top 3 choice {group}",
+                self._top_choice_outcomes(students, "rank", [3])[3],
+            )
             metrics[f"Distance Av {group}"] = self.metric_dist_av(students)
             metrics[f"{group} in school with +15% FRL"] = self.metric_FRL_concentration(
                 assigned_students, students, 0.15
@@ -858,22 +925,32 @@ class MatchEvaluator:
             if "assigned_utility" in assigned_students
             else np.nan
         )
-        return {
+        metrics = {
             "Unassigned": self.metric_unassigned(student_data),
             "Designated": self.metric_designated(assigned_students),
-            "Top 3 choice": self.metric_top_choice(assigned_students, 3),
-            "Top 1 choice": self.metric_top_choice(assigned_students, 1),
-            "Top 3 in-zone choice": self.metric_top_in_zone_choice(
-                assigned_students, 3
-            ),
-            "Top 1 in-zone choice": self.metric_top_in_zone_choice(
-                assigned_students, 1
-            ),
             "Dist >= 3, Rank >= 5": self.metric_dist_and_rank(
                 assigned_students, 3, 5
             ).mean(),
             "Avg utility": utility,
         }
+        choice_outcomes = self._top_choice_outcomes(
+            assigned_students, "rank", [1, 3]
+        )
+        mechanism_outcomes = self._top_choice_outcomes(
+            assigned_students, "mechanism_rank", [1, 3]
+        )
+        for threshold in (1, 3):
+            self._record_choice_outcome(
+                metrics,
+                f"Top {threshold} choice",
+                choice_outcomes[threshold],
+            )
+            self._record_choice_outcome(
+                metrics,
+                f"Top {threshold} in-zone choice",
+                mechanism_outcomes[threshold],
+            )
+        return metrics
 
     @staticmethod
     def _assigned_mask(student_data):
@@ -971,47 +1048,27 @@ class MatchEvaluator:
     def metric_designated(assigned_students):
         return pd.to_numeric(assigned_students["designation"], errors="coerce").mean()
 
-    @staticmethod
-    def _submitted_top_choice_mask(students, rank_column, threshold):
-        ranks = pd.to_numeric(students[rank_column], errors="coerce")
-        if "designation" in students:
-            designated = (
-                pd.to_numeric(students["designation"], errors="coerce").fillna(0).ne(0)
-            )
-        else:
-            designated = pd.Series(False, index=students.index)
-        return ranks.le(threshold) & ~designated
-
     @classmethod
     def metric_top_choice(cls, assigned_students, threshold):
-        return cls._submitted_top_choice_mask(
-            assigned_students, "rank", threshold
-        ).mean()
+        return cls._top_choice_outcomes(
+            assigned_students, "rank", [threshold]
+        )[threshold].value
 
     @staticmethod
-    def _top_choice_rates(students, rank_column, thresholds):
-        """Return several submitted-choice rates from one rank conversion."""
-        thresholds = tuple(thresholds)
-        if students.empty:
-            return {threshold: np.nan for threshold in thresholds}
-        ranks = students[rank_column].to_numpy(
-            dtype=float,
-            na_value=np.nan,
-        )
-        if "designation" in students:
-            designated = students["designation"].to_numpy(dtype=bool)
-        else:
-            designated = np.zeros(len(students), dtype=bool)
-        return {
-            threshold: np.mean((ranks <= threshold) & ~designated)
-            for threshold in thresholds
-        }
+    def _top_choice_outcomes(students, rank_column, thresholds):
+        return cumulative_choice_rates(students, rank_column, thresholds)
+
+    @staticmethod
+    def _record_choice_outcome(metrics, name, outcome):
+        metrics[name] = outcome.value
+        metrics[f"{name} numerator"] = outcome.numerator
+        metrics[f"{name} denominator"] = outcome.denominator
 
     @classmethod
     def metric_top_in_zone_choice(cls, assigned_students, threshold):
-        return cls._submitted_top_choice_mask(
-            assigned_students, "In-Zone Rank", threshold
-        ).mean()
+        return cls._top_choice_outcomes(
+            assigned_students, "mechanism_rank", [threshold]
+        )[threshold].value
 
     @staticmethod
     def metric_dist_and_rank(assigned_students, distance, rank):
@@ -1874,11 +1931,18 @@ class MatchEvaluator:
                     ].to_numpy()
                 )
         # School choice.
-        metrics["Assigned to 1st choice"] = self.metric_top_choice(
-            cur_assigned_students, 1
+        choice_outcomes = self._top_choice_outcomes(
+            cur_assigned_students, "rank", [1, 3]
         )
-        metrics["Assigned top-3 choice"] = self.metric_top_choice(
-            cur_assigned_students, 3
+        self._record_choice_outcome(
+            metrics,
+            "Assigned to 1st choice",
+            choice_outcomes[1],
+        )
+        self._record_choice_outcome(
+            metrics,
+            "Assigned top-3 choice",
+            choice_outcomes[3],
         )
         # Distances
         metrics["Avg. Distance"] = cur_assigned_students["assignment_dist"].mean()
@@ -2441,7 +2505,7 @@ class MatchEvaluator:
                 ge_non_designated_school_frl_context
             ),
             ge_aapi_counts=self._ge_aapi_counts(student_data),
-            all_student_top_choice_rates=self._top_choice_rates(
+            all_student_top_choice_outcomes=self._top_choice_outcomes(
                 student_data, "rank", range(1, 11)
             ),
         )
@@ -2815,21 +2879,25 @@ class MatchEvaluator:
         }
 
         for student_type, data_student in dico_student_type.items():
-            top_choice_rates = self._top_choice_rates(
+            top_choice_outcomes = self._top_choice_outcomes(
                 data_student, "rank", range(1, 4)
             )
-            in_zone_choice_rates = self._top_choice_rates(
-                data_student, "In-Zone Rank", range(1, 4)
+            mechanism_choice_outcomes = self._top_choice_outcomes(
+                data_student, "mechanism_rank", range(1, 4)
             )
             for rank in range(1, 4):
-                metrics[f"Prop Top {rank} choice ({student_type})"] = (
-                    top_choice_rates[rank]
+                self._record_choice_outcome(
+                    metrics,
+                    f"Prop Top {rank} choice ({student_type})",
+                    top_choice_outcomes[rank],
                 )
             metrics[f"Mean Choice ({student_type})"] = data_student["rank"].mean()
             metrics[f"Median Choice ({student_type})"] = data_student["rank"].median()
             for rank in range(1, 4):
-                metrics[f"Top {rank} in-zone choice ({student_type})"] = (
-                    in_zone_choice_rates[rank]
+                self._record_choice_outcome(
+                    metrics,
+                    f"Top {rank} in-zone choice ({student_type})",
+                    mechanism_choice_outcomes[rank],
                 )
 
             metrics[f"Distance Av ({student_type})"] = data_student[
@@ -2923,18 +2991,26 @@ class MatchEvaluator:
         schools_avg_frl_rel = school_frl_probs[
             school_frl_probs > district_frl_prob
         ].index
-        all_student_top_choice_rates = aggregates.all_student_top_choice_rates
+        all_student_top_choice_outcomes = (
+            aggregates.all_student_top_choice_outcomes
+        )
+        for rank, outcome in all_student_top_choice_outcomes.items():
+            self._record_choice_outcome(
+                metrics,
+                f"Proportion of students in top {rank} (All Students)",
+                outcome,
+            )
 
         for group in FULL_REPORT_GROUPS + list(dico_income.keys()):
             students = aggregates.student_groups[group]
             distance_values = students["assignment_dist"].to_numpy()
             rank_values = students["rank"].to_numpy()
-            in_zone_rank_values = students["In-Zone Rank"].to_numpy()
+            in_zone_rank_values = students["mechanism_rank"].to_numpy()
             designation_values = students["designation"].to_numpy()
             designated_mask = designation_values == 1
             non_designated_mask = designation_values == 0
             non_designated_group = students[non_designated_mask]
-            top_choice_rates = self._top_choice_rates(
+            top_choice_outcomes = self._top_choice_outcomes(
                 students,
                 "rank",
                 range(1, 11),
@@ -2984,19 +3060,18 @@ class MatchEvaluator:
             # -----------------------
 
             # --- Added Choice Metrics for Subgroups ---
+            for rank in range(1, 4):
+                self._record_choice_outcome(
+                    metrics,
+                    f"Prop Top {rank} choice ({group})",
+                    top_choice_outcomes[rank],
+                )
             if len(students) > 0:
-                for rank in range(1, 4):
-                    metrics[f"Prop Top {rank} choice ({group})"] = top_choice_rates[
-                        rank
-                    ]
                 metrics[f"Distance Av ({group})"] = students["assignment_dist"].mean()
                 metrics[f"Distance Median ({group})"] = students[
                     "assignment_dist"
                 ].median()
             else:
-                metrics[f"Prop Top 1 choice ({group})"] = np.nan
-                metrics[f"Prop Top 2 choice ({group})"] = np.nan
-                metrics[f"Prop Top 3 choice ({group})"] = np.nan
                 metrics[f"Distance Av ({group})"] = np.nan
                 metrics[f"Distance Median ({group})"] = np.nan
             # ------------------------------------------
@@ -3026,38 +3101,45 @@ class MatchEvaluator:
                 metrics[f"Number of designated students ({group})"] = int(
                     designated_mask.sum()
                 )
-                non_designated_choice_rates = self._top_choice_rates(
+                non_designated_choice_outcomes = self._top_choice_outcomes(
                     non_designated_group,
                     "rank",
                     range(1, 4),
                 )
-                metrics[f"Prop Top 1 choice Non-Designated ({group})"] = (
-                    non_designated_choice_rates[1]
+                self._record_choice_outcome(
+                    metrics,
+                    f"Prop Top 1 choice Non-Designated ({group})",
+                    non_designated_choice_outcomes[1],
                 )
 
-                metrics[f"Prop Top 2 choice Non-Designated ({group})"] = (
-                    non_designated_choice_rates[2]
+                self._record_choice_outcome(
+                    metrics,
+                    f"Prop Top 2 choice Non-Designated ({group})",
+                    non_designated_choice_outcomes[2],
                 )
 
                 for i in range(1, 11):
-                    metrics[f"Proportion of students in top {i} ({group})"] = (
-                        top_choice_rates[i]
+                    self._record_choice_outcome(
+                        metrics,
+                        f"Proportion of students in top {i} ({group})",
+                        top_choice_outcomes[i],
                     )
-                    metrics[f"Proportion of students in top {i} (All Students)"] = (
-                        all_student_top_choice_rates[i]
-                    )
-                metrics[f"Prop Top 3 choice Non-Designated ({group})"] = (
-                    non_designated_choice_rates[3]
+                self._record_choice_outcome(
+                    metrics,
+                    f"Prop Top 3 choice Non-Designated ({group})",
+                    non_designated_choice_outcomes[3],
                 )
-                non_designated_in_zone_rates = self._top_choice_rates(
+                non_designated_mechanism_outcomes = self._top_choice_outcomes(
                     non_designated_group,
-                    "In-Zone Rank",
+                    "mechanism_rank",
                     range(1, 4),
                 )
                 for rank in range(1, 4):
-                    metrics[
-                        f"Top {rank} in-zone choice Non-Designated ({group})"
-                    ] = non_designated_in_zone_rates[rank]
+                    self._record_choice_outcome(
+                        metrics,
+                        f"Top {rank} in-zone choice Non-Designated ({group})",
+                        non_designated_mechanism_outcomes[rank],
+                    )
                 metrics[f"Mean Choice Non-Designated ({group})"] = (
                     non_designated_group["rank"].mean()
                 )
@@ -3151,7 +3233,7 @@ class MatchEvaluator:
             if len(students) > 0:
                 metrics[f"Variance of rank ({group})"] = students["rank"].var()
                 metrics[f"Variance of in-zone rank ({group})"] = students[
-                    "In-Zone Rank"
+                    "mechanism_rank"
                 ].var()
                 metrics[f"Variance of distance ({group})"] = students[
                     "assignment_dist"

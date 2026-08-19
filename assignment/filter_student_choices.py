@@ -289,6 +289,9 @@ def load_estimates(
     df["r1_programs"] = df["selected_programs"].apply(
         lambda x: str([i.split("-")[1] for i in x])
     )
+    df["r1_listed_ranks"] = df["selected_programs"].apply(
+        lambda programs: str(list(range(1, len(programs) + 1)))
+    )
     df["grade"] = df["selected_programs"].apply(
         lambda x: [i.split("-")[2] for i in x]
     )
@@ -311,7 +314,13 @@ def merge_students_with_estimates(
         Students DataFrame with estimate-derived columns merged in.
     """
     # remove the columns in df_estimates that are not needed
-    cols_to_keep = ["studentno", "r1_ranked_idschool", "r1_programs", "grade"]
+    cols_to_keep = [
+        "studentno",
+        "r1_ranked_idschool",
+        "r1_programs",
+        "r1_listed_ranks",
+        "grade",
+    ]
     df_estimates = df_estimates[cols_to_keep]
 
     # remove the columns in df_students that are in df_estimates except studentno
@@ -321,11 +330,9 @@ def merge_students_with_estimates(
     ) - {"studentno"}
     df_students = df_students.drop(columns=common_columns, errors="ignore")
 
-    # Estimate rankings have no corresponding historical rank, lottery, or
-    # cohort metadata. Retaining those old per-choice lists would associate
-    # values with the wrong schools, so preserve the columns as explicitly
-    # empty where downstream readers expect them.
-    for col in ["r1_listed_ranks", "r1_randomnumber", "r1_cohortstring"]:
+    # Estimate rankings have no corresponding historical lottery or cohort
+    # metadata. Retaining those lists would associate values with the wrong schools.
+    for col in ["r1_randomnumber", "r1_cohortstring"]:
         if col in df_students.columns:
             df_students[col] = "[]"
 

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 import yaml
 from assignment.student_assignment.configerator import Configerator
+from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
 from assignment.student_assignment.data_interfaces.students import Students
 from loaders import CacheStore, load_scenario
 
@@ -56,6 +57,26 @@ from optimization.tests.synthetic import FakeDataset, make_grid_problem
 
 
 MATCHING_CONFIG = "benchmark/matching/zones+hard_reserves_06frl.yaml"
+
+
+def _canonical_assignment(data, rank_basis="listed"):
+    frame = pd.DataFrame(data)
+    assigned = pd.to_numeric(frame["programno"], errors="coerce").gt(0)
+    rank = pd.to_numeric(frame.pop("rank"), errors="coerce").where(assigned)
+    if "In-Zone Rank" in frame:
+        mechanism_rank = pd.to_numeric(
+            frame.pop("In-Zone Rank"), errors="coerce"
+        ).where(assigned)
+    else:
+        mechanism_rank = rank.copy()
+    frame["assignment_schema_version"] = ASSIGNMENT_SCHEMA_VERSION
+    frame["rank_basis"] = rank_basis
+    frame["submitted_rank"] = rank if rank_basis == "listed" else pd.NA
+    frame["utility_rank"] = rank if rank_basis == "utility" else pd.NA
+    frame["rank"] = rank
+    frame["mechanism_rank"] = mechanism_rank
+    frame["In-Zone Rank"] = mechanism_rank
+    return frame
 
 
 def test_sweep_yaml_accepts_matching_config(tmp_path):
@@ -359,14 +380,14 @@ def test_generated_config_is_rewritten_with_distance_cache_reference(
     def fake_run(config, assignments_dir, *, workers=1):
         output = assignments_dir / config["subconfig-name"] / "assignment.csv"
         output.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
+        _canonical_assignment(
             {
                 "studentno": [1],
                 "programno": [1],
                 "programcodes": ["664-GE-KG"],
                 "rank": [1],
                 "designation": [0],
-            }
+            },
         ).to_csv(output, index=False)
         return reference
 
@@ -394,10 +415,37 @@ def test_choice_metrics_noop_without_assignments(tmp_path):
     assert result is None
 
 
-def test_choice_metrics_compute_assignment_outcomes(tmp_path):
+def test_choice_metrics_reconstruct_legacy_listed_rank_from_source(tmp_path):
     assignments_dir = tmp_path / "matching" / "assignments_raw" / "policy"
     assignments_dir.mkdir(parents=True)
     pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "programno": [12, 0],
+            "programcodes": ["202-GE-KG", ""],
+            "rank": [1, 1],
+            "designation": [0, 0],
+            "In-Zone Rank": [1, 1],
+            "selected_ranked_idschool": ["[101, 202]", "[101]"],
+            "selected_programs": ["['GE', 'GE']", "['GE']"],
+            "selected_listed_ranks": ["[1, 4]", "[1]"],
+            "grade": ["KG", "KG"],
+        }
+    ).to_csv(assignments_dir / "assignment.csv", index=False)
+
+    result = compute_choice_metrics_for_run(
+        str(tmp_path),
+        ChoiceMetricsRunConfig(enabled=True),
+    )
+
+    assert result.metrics[CHOICE_PERCENT_TOP_1] == 0
+    assert result.metrics[CHOICE_PERCENT_TOP_3] == 0
+
+
+def test_choice_metrics_compute_assignment_outcomes(tmp_path):
+    assignments_dir = tmp_path / "matching" / "assignments_raw" / "policy"
+    assignments_dir.mkdir(parents=True)
+    _canonical_assignment(
         {
             "studentno": [1, 2, 3, 4],
             "programno": [11, 12, 13, 0],
@@ -408,7 +456,8 @@ def test_choice_metrics_compute_assignment_outcomes(tmp_path):
             "assigned_utility": [10.0, 20.0, 30.0, None],
             "freelunch_prob": [0.8, 0.8, 0.1, 0.1],
             "reducedlunch_prob": [0.1, 0.1, 0.0, 0.0],
-        }
+        },
+        "utility",
     ).to_csv(assignments_dir / "assignment.csv", index=False)
 
     result = compute_choice_metrics_for_run(
@@ -424,6 +473,8 @@ def test_choice_metrics_compute_assignment_outcomes(tmp_path):
     assert metrics[CHOICE_PERCENT_DESIGNATED] == 1 / 3
     assert metrics[CHOICE_PERCENT_TOP_1] == 1 / 3
     assert metrics[CHOICE_PERCENT_TOP_3] == 2 / 3
+    assert metrics[f"{CHOICE_PERCENT_TOP_1}_numerator"] == 1
+    assert metrics[f"{CHOICE_PERCENT_TOP_1}_denominator"] == 3
     assert metrics[CHOICE_AVG_MNL_UTILITY] == 20.0
     assert metrics[CHOICE_TOTAL_MNL_UTILITY] == 60.0
     assert round(metrics[CHOICE_SES3_DISSIMILARITY], 6) == round(1 / 6, 6)
@@ -438,7 +489,7 @@ def test_choice_metrics_support_multiple_matching_configs(tmp_path):
     for name, utility in [("first", 10.0), ("second", 20.0)]:
         assignments_dir = tmp_path / "matching" / name / "assignments_raw" / "policy"
         assignments_dir.mkdir(parents=True)
-        pd.DataFrame(
+        _canonical_assignment(
             {
                 "studentno": [1, 2],
                 "programno": [11, 0],
@@ -448,7 +499,8 @@ def test_choice_metrics_support_multiple_matching_configs(tmp_path):
                 "assigned_utility": [utility, None],
                 "freelunch_prob": [0.3, 0.7],
                 "reducedlunch_prob": [0.0, 0.0],
-            }
+            },
+            "utility",
         ).to_csv(assignments_dir / "assignment.csv", index=False)
 
     result = compute_choice_metrics_for_run(
@@ -477,11 +529,15 @@ def test_choice_metrics_average_mnl_utility_across_assignments(tmp_path):
         "freelunch_prob": [0.3, 0.7],
         "reducedlunch_prob": [0.0, 0.0],
     }
-    pd.DataFrame({**base, "assigned_utility": [1.0, 2.0]}).to_csv(
+    _canonical_assignment(
+        {**base, "assigned_utility": [1.0, 2.0]}, "utility"
+    ).to_csv(
         assignments_dir / "assignment_a.csv",
         index=False,
     )
-    pd.DataFrame({**base, "assigned_utility": [3.0, 4.0]}).to_csv(
+    _canonical_assignment(
+        {**base, "assigned_utility": [3.0, 4.0]}, "utility"
+    ).to_csv(
         assignments_dir / "assignment_b.csv",
         index=False,
     )
@@ -499,7 +555,7 @@ def test_choice_metrics_mode_updates_existing_result(tmp_path):
     run_dir, _ = _write_synthetic_run(tmp_path)
     assignments_dir = run_dir / "matching" / "assignments_raw" / "policy"
     assignments_dir.mkdir(parents=True)
-    pd.DataFrame(
+    _canonical_assignment(
         {
             "studentno": [1, 2],
             "programno": [11, 0],
@@ -509,7 +565,7 @@ def test_choice_metrics_mode_updates_existing_result(tmp_path):
             "assignment_dist": [1.25, None],
             "freelunch_prob": [0.3, 0.7],
             "reducedlunch_prob": [0.0, 0.0],
-        }
+        },
     ).to_csv(assignments_dir / "assignment.csv", index=False)
 
     batch = run_choice_metrics_for_existing_runs(
@@ -528,7 +584,7 @@ def test_choice_metrics_mode_skips_infeasible_final_solution(tmp_path):
     run_dir, _ = _write_recursive_infeasible_run(tmp_path)
     assignments_dir = run_dir / "matching" / "assignments_raw" / "policy"
     assignments_dir.mkdir(parents=True)
-    pd.DataFrame(
+    _canonical_assignment(
         {
             "studentno": [1, 2],
             "programno": [11, 0],
@@ -538,7 +594,7 @@ def test_choice_metrics_mode_skips_infeasible_final_solution(tmp_path):
             "assignment_dist": [1.25, None],
             "freelunch_prob": [0.3, 0.7],
             "reducedlunch_prob": [0.0, 0.0],
-        }
+        },
     ).to_csv(assignments_dir / "assignment.csv", index=False)
     payload = matching_runner._load_json(os.path.join(run_dir, RESULT_FILENAME))
     payload["choice_metrics"] = {"status": "OK"}
@@ -1042,7 +1098,7 @@ def _stub_student_assignment(monkeypatch):
         )
         output = assignments_dir / config["subconfig-name"] / "assignment.csv"
         output.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
+        _canonical_assignment(
             {
                 "studentno": [1, 2, 3],
                 "programno": [11, 12, 0],
@@ -1050,7 +1106,8 @@ def _stub_student_assignment(monkeypatch):
                 "rank": [1, 2, 0],
                 "designation": [0, 0, 0],
                 "In-Zone Rank": [1, 2, 0],
-            }
+            },
+            "utility",
         ).to_csv(output, index=False)
 
     class FakeSession:

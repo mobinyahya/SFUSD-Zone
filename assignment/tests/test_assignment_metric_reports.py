@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
 from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
 
 
@@ -11,6 +12,35 @@ from assignment.student_assignment.evaluation.match_evaluator import MatchEvalua
 class StudentsStub:
     student_data: pd.DataFrame
     round_participation: np.ndarray
+
+
+def _listed_assignments(
+    studentno,
+    programno,
+    programcodes,
+    submitted_rank,
+    designation,
+    mechanism_rank=None,
+):
+    submitted_rank = pd.Series(submitted_rank, dtype=float)
+    if mechanism_rank is None:
+        mechanism_rank = submitted_rank
+    mechanism_rank = pd.Series(mechanism_rank, dtype=float)
+    return pd.DataFrame(
+        {
+            "assignment_schema_version": ASSIGNMENT_SCHEMA_VERSION,
+            "studentno": studentno,
+            "programno": programno,
+            "programcodes": programcodes,
+            "rank_basis": "listed",
+            "submitted_rank": submitted_rank,
+            "utility_rank": np.nan,
+            "rank": submitted_rank,
+            "mechanism_rank": mechanism_rank,
+            "designation": designation,
+            "In-Zone Rank": mechanism_rank,
+        }
+    )
 
 
 def test_basic_report_preserves_benchmark_contract():
@@ -29,15 +59,13 @@ def test_basic_report_preserves_benchmark_contract():
             "census_blockgroup": [10, 10, 20],
         }
     ).set_index("studentno")
-    assignments = pd.DataFrame(
-        {
-            "studentno": [1, 2, 3],
-            "programno": [1, 2, 0],
-            "programcodes": ["101-GE-KG", "202-GE-KG", pd.NA],
-            "rank": [1, 3, 4],
-            "designation": [0, 1, 0],
-            "In-Zone Rank": [1, 2, 4],
-        }
+    assignments = _listed_assignments(
+        [1, 2, 3],
+        [1, 2, 0],
+        ["101-GE-KG", "202-GE-KG", pd.NA],
+        [1, 3, None],
+        [0, 1, 0],
+        [1, 2, None],
     ).set_index("studentno")
     distances = pd.DataFrame(
         {"101-GE-KG": [0.25, 2.0, 1.0], "202-GE-KG": [3.0, 4.0, 2.0]},
@@ -50,11 +78,13 @@ def test_basic_report_preserves_benchmark_contract():
     assert metrics["Distance Av"] == 2.125
     assert metrics["Unassigned"] == 1 / 3
     assert metrics["Top 1 choice"] == 0.5
+    assert metrics["Top 1 choice numerator"] == 1
+    assert metrics["Top 1 choice denominator"] == 2
     assert np.isscalar(metrics["Dist >= 3, Rank >= 5"])
     assert metrics["Dissimilarity SES3"] == 0.25
     assert "BG Cohesion (3)" in metrics
     assert metrics["# Racial majority schools"] == 2
-    assert len(metrics) == 48
+    assert len(metrics) == 70
 
 
 def test_full_report_covers_metric_families_without_mutating_inputs(
@@ -72,6 +102,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
                 "[202]",
             ],
             "r1_programs": ["['GE']"] * 6,
+            "r1_listed_ranks": ["[1]", "[2]", "[1]", "[4]", "[5]", "[3]"],
             "census_block": [11, 12, 13, 14, 15, 16],
             "latitude": [37.70, 37.71, 37.72, 37.73, 37.74, 37.75],
             "longitude": [-122.40, -122.41, -122.42, -122.43, -122.44, -122.45],
@@ -91,22 +122,19 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
             "idschoolattendance": [101, 101, 202, 202, 101, 202],
         }
     )
-    assignments = pd.DataFrame(
-        {
-            "studentno": range(1, 7),
-            "programno": [1, 1, 2, 2, 0, 2],
-            "programcodes": [
-                "101-GE-KG",
-                "101-GE-KG",
-                "202-GE-KG",
-                "202-GE-KG",
-                "",
-                "202-GE-KG",
-            ],
-            "rank": [1, 2, 1, 4, 5, 3],
-            "designation": [0, 1, 0, 0, 0, 0],
-            "In-Zone Rank": [1, 2, 1, 4, 5, 3],
-        }
+    assignments = _listed_assignments(
+        range(1, 7),
+        [1, 1, 2, 2, 0, 2],
+        [
+            "101-GE-KG",
+            "101-GE-KG",
+            "202-GE-KG",
+            "202-GE-KG",
+            "",
+            "202-GE-KG",
+        ],
+        [1, 2, 1, 4, None, 3],
+        [0, 1, 0, 0, 0, 0],
     )
     original_assignments = assignments.copy(deep=True)
     distance_cache = pd.DataFrame(
@@ -192,7 +220,16 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     assert metrics["#Students in schools above +15% district FRL (ET (2024))"] == 0
     assert metrics["#GE Schools above +15% district FRL (Non-Designated)"] == 1
     assert metrics["Prop Top 1 choice (All Assigned)"] == 2 / 5
+    assert metrics["Prop Top 1 choice (All Assigned) numerator"] == 2
+    assert metrics["Prop Top 1 choice (All Assigned) denominator"] == 5
     assert metrics["Prop Top 3 choice (All Assigned)"] == 3 / 5
+    assert metrics["Proportion of students in top 1 (All Students)"] == 2 / 6
+    assert metrics[
+        "Proportion of students in top 1 (All Students) numerator"
+    ] == 2
+    assert metrics[
+        "Proportion of students in top 1 (All Students) denominator"
+    ] == 6
     assert metrics["Top 3 in-zone choice (All Assigned)"] == 3 / 5
     assert metrics["Variance of rank (All Assigned)"] == pytest.approx(1.7)
     assert metrics["Prop Distance > 3 and designated (All Assigned)"] == 1 / 5
@@ -268,20 +305,31 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     assert citywide.loc[0, "config_name"] == "config-a"
     assert set(citywide.columns) == {"config_name", *metrics.index}
 
+    legacy_assignments = assignments[
+        [
+            "studentno",
+            "programno",
+            "programcodes",
+            "rank",
+            "In-Zone Rank",
+        ]
+    ].copy()
+    legacy_assignments["rank"] = 1
     legacy_evaluator = MatchEvaluator(
         students,
-        assignments.drop(columns=["designation", "In-Zone Rank"]),
+        legacy_assignments,
         first_round=True,
         no_special_program=True,
         program_file=program_path,
         schools_latlon_path=school_path,
     )
     assert not legacy_evaluator.student_data["designation"].any()
-    pd.testing.assert_series_equal(
-        legacy_evaluator.student_data["In-Zone Rank"],
-        legacy_evaluator.student_data["rank"],
-        check_names=False,
-    )
+    assert legacy_evaluator.student_data["submitted_rank"].tolist()[:4] == [
+        1,
+        2,
+        1,
+        4,
+    ]
     with pytest.raises(ValueError, match="cached student-program distance matrix"):
         legacy_evaluator.eval_aggregate_metric_reports("legacy")
 
@@ -326,15 +374,12 @@ def _minimal_full_inputs(tmp_path):
             "resolved_ethnicity": ["Asian", "White"],
         }
     )
-    assignments = pd.DataFrame(
-        {
-            "studentno": [1, 2],
-            "programno": [1, 2],
-            "programcodes": ["101-GE-KG", "202-GE-KG"],
-            "rank": [1, 1],
-            "designation": [0, 0],
-            "In-Zone Rank": [1, 1],
-        }
+    assignments = _listed_assignments(
+        [1, 2],
+        [1, 2],
+        ["101-GE-KG", "202-GE-KG"],
+        [1, 1],
+        [0, 0],
     )
     programs = pd.DataFrame(
         {
@@ -375,11 +420,17 @@ def test_full_evaluator_can_replace_assignments_without_reloading_sources(tmp_pa
         students, assignments, program_path, school_path
     )
     updated_assignments = assignments.copy()
-    updated_assignments.loc[0, ["programno", "programcodes", "rank"]] = [
-        2,
-        "202-GE-KG",
-        2,
-    ]
+    updated_assignments.loc[
+        0,
+        [
+            "programno",
+            "programcodes",
+            "submitted_rank",
+            "rank",
+            "mechanism_rank",
+            "In-Zone Rank",
+        ],
+    ] = [2, "202-GE-KG", np.nan, np.nan, 2, 2]
 
     evaluator.update_assignments(updated_assignments)
     fresh_evaluator = _make_full_evaluator(
@@ -452,6 +503,15 @@ def test_full_evaluator_rejects_invalid_metric_values(tmp_path, column, value):
 def test_full_evaluator_rejects_designated_unassigned_student(tmp_path):
     students, assignments, program_path, school_path = _minimal_full_inputs(tmp_path)
     assignments.loc[0, ["programno", "programcodes", "designation"]] = [0, "", 1]
+    assignments.loc[
+        0,
+        [
+            "submitted_rank",
+            "rank",
+            "mechanism_rank",
+            "In-Zone Rank",
+        ],
+    ] = np.nan
 
     with pytest.raises(ValueError, match="Unassigned students cannot be designated"):
         _make_full_evaluator(students, assignments, program_path, school_path)
@@ -568,8 +628,12 @@ def test_legacy_assignment_aggregation_preserves_iteration_nan(tmp_path, monkeyp
             return pd.Series({"metric": self.value})
 
     monkeypatch.setattr(evaluate_assignments, "MatchEvaluator", EvaluatorStub)
-    pd.DataFrame({"value": [1.0]}).to_csv(tmp_path / "policy_iteration0.csv")
-    pd.DataFrame({"value": [np.nan]}).to_csv(tmp_path / "policy_iteration1.csv")
+    pd.DataFrame({"studentno": [1], "value": [1.0]}).to_csv(
+        tmp_path / "policy_iteration0.csv", index=False
+    )
+    pd.DataFrame({"studentno": [1], "value": [np.nan]}).to_csv(
+        tmp_path / "policy_iteration1.csv", index=False
+    )
     market = SimpleNamespace(students=SimpleNamespace(distance_data=pd.DataFrame()))
     table_path = tmp_path / "summary.csv"
 
@@ -595,7 +659,9 @@ def test_legacy_assignment_analysis_fails_on_missing_iteration(tmp_path, monkeyp
             return pd.Series({"metric": 1.0})
 
     monkeypatch.setattr(evaluate_assignments, "MatchEvaluator", EvaluatorStub)
-    pd.DataFrame({"value": [1.0]}).to_csv(tmp_path / "policy_iteration0.csv")
+    pd.DataFrame({"studentno": [1], "value": [1.0]}).to_csv(
+        tmp_path / "policy_iteration0.csv", index=False
+    )
     market = SimpleNamespace(students=SimpleNamespace(distance_data=pd.DataFrame()))
     table_path = tmp_path / "summary.csv"
 

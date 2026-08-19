@@ -5,7 +5,6 @@ import pathlib
 import re
 import shutil
 import tempfile
-import warnings
 from collections.abc import Generator
 from itertools import product
 
@@ -13,6 +12,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from ..choice_ranks import (
+    ASSIGNMENT_SCHEMA_VERSION,
+    LISTED_RANK_BASIS,
+    UTILITY_RANK_BASIS,
+    normalize_assignment_ranks,
+    ranks_for_matches,
+    ranks_from_preference_order,
+)
 from ..configerator import Configerator
 from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
@@ -996,67 +1003,36 @@ class MarketGenerator(SchoolChoiceMarket):
         match_utilities[match == 0] = np.nan
         return match_utilities
 
-    def _calculate_rank(
-        self,
-        prefs: np.ndarray,
-        policy: str,
-        match: np.ndarray,
-        in_zone_ranks: np.ndarray,
-    ) -> np.ndarray:
-        """Calculate rank of assigned program for each student.
-
-        Designated students and unassigned students are given a rank of one greater than
-        their last ranked program.
-
-        Args:
-            prefs (np.ndarray): student preferences
-            policy (str): policy name
-            match (np.ndarray): matched program array
-            in_zone_ranks (np.ndarray): rank of assigned program array
-
-        Returns:
-            np.ndarray: rank of assigned program array
-        """
-        rank = np.zeros(self.n)
-        # TODO: Decide what rank makes sense for unassigned students
-        unassigned_idxs = np.where(match == 0)[0]
-        rank[unassigned_idxs] = (
-            self.preference_generator.pref_length[unassigned_idxs] + 1
+    def _choice_rank_columns(self, match: np.ndarray, policy: str):
+        """Return policy-independent listed or utility ranks for each match."""
+        student_count = len(match)
+        submitted_rank = ranks_for_matches(
+            self.students.selected_preference_rank_matrix(),
+            match,
         )
-
-        # Designated students: rank = pref_length + 1 (per docstring contract).
-        # Without this, the rank reflects the position of the matched program in
-        # the full preference list including appended designation programs,
-        # which can be arbitrarily large (e.g. 106 for a real list of length 1).
-        designated_idxs = np.where(
-            np.logical_and(
-                in_zone_ranks > self.preference_generator.pref_length, match > 0
+        utility_rank = np.full(student_count, np.nan)
+        if self.config["utility-model"]["enable"]:
+            utility_rank = ranks_from_preference_order(
+                self.umodel.original_preferences,
+                match,
             )
-        )[0]
-        rank[designated_idxs] = (
-            self.preference_generator.pref_length[designated_idxs] + 1
-        )
+            if policy != "real_match":
+                return UTILITY_RANK_BASIS, submitted_rank, utility_rank, utility_rank
+        return LISTED_RANK_BASIS, submitted_rank, utility_rank, submitted_rank
 
-        assigned_not_designated_idxs = (
-            set(range(self.n)) - set(unassigned_idxs) - set(designated_idxs)
+    def _source_submitted_ranks(self, assignment_df: pd.DataFrame) -> pd.Series:
+        """Return source ranks aligned to assignment rows by student identity."""
+        match_by_student = assignment_df.set_index("studentno")["programno"]
+        student_ids = self.students.student_data.index
+        matches = match_by_student.reindex(student_ids).to_numpy()
+        source_ranks = ranks_for_matches(
+            self.students.selected_preference_rank_matrix(),
+            matches,
         )
-        using_umodel = (
-            self.config["utility-model"]["enable"] and policy != "real_match"
+        rank_by_student = pd.Series(source_ranks, index=student_ids)
+        return assignment_df["studentno"].map(rank_by_student).set_axis(
+            assignment_df.index
         )
-        full_prefs = self.umodel.original_preferences if using_umodel else prefs
-        missing_matches = 0
-        for idx in assigned_not_designated_idxs:
-            try:
-                rank[idx] = np.where(full_prefs[idx, :] == match[idx])[0][0] + 1
-            except IndexError:
-                missing_matches += 1
-        if missing_matches:
-            warnings.warn(
-                f"{missing_matches} assigned programs were absent from student "
-                "preference lists; their ranks remain unset.",
-                stacklevel=2,
-            )
-        return rank
 
     def _generate_assignment(
         self, prefs: np.ndarray, priorities: np.ndarray
@@ -1090,9 +1066,6 @@ class MarketGenerator(SchoolChoiceMarket):
             cutoffs,
             rank,
         ) = da.run()
-        rank = np.clip(
-            rank, a_min=None, a_max=self.preference_generator.pref_length + 1
-        )
         match, rank = self._overscribe_attendance_area(prefs, match, rank)
         return match, rank, cutoffs
 
@@ -1124,9 +1097,6 @@ class MarketGenerator(SchoolChoiceMarket):
             reserve_settings=self.config["reserve-settings"],
             strictGuards=self.config["guard-rails"],
         )
-        rank = np.clip(
-            rank, a_min=None, a_max=self.preference_generator.pref_length + 1
-        )
         cutoffs = np.zeros(
             [len(match)]
         )  # TODO: calculate cutoffs in reserve setting
@@ -1143,12 +1113,22 @@ class MarketGenerator(SchoolChoiceMarket):
             / save_name
         )
 
-    def _validate_reusable_assignment(self, assignment_df, assignment_path):
+    def _validate_reusable_assignment(
+        self,
+        assignment_df,
+        assignment_path,
+        policy_data: Policy | None = None,
+    ):
         required_columns = {
+            "assignment_schema_version",
             "studentno",
             "programno",
             "programcodes",
             "rank",
+            "rank_basis",
+            "submitted_rank",
+            "utility_rank",
+            "mechanism_rank",
             "designation",
             "In-Zone Rank",
         }
@@ -1207,19 +1187,27 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         assignment_df["programcodes"] = program_codes.fillna("").astype(str)
 
-        for column in ("rank", "In-Zone Rank"):
-            values = pd.to_numeric(assignment_df[column], errors="coerce")
-            invalid = (
-                values.isna()
-                | ~np.isfinite(values)
-                | (values <= 0)
-                | (values % 1 != 0)
+        try:
+            assignment_df = normalize_assignment_ranks(
+                assignment_df,
+                listed_ranks=self._source_submitted_ranks(assignment_df),
             )
-            if invalid.any():
+        except ValueError as exc:
+            raise ValueError(
+                f"Reusable assignment {assignment_path} has invalid ranks: {exc}"
+            ) from exc
+        if policy_data is not None:
+            expected_basis = (
+                UTILITY_RANK_BASIS
+                if self.config["utility-model"]["enable"]
+                and policy_data.name != "real_match"
+                else LISTED_RANK_BASIS
+            )
+            if not assignment_df["rank_basis"].eq(expected_basis).all():
                 raise ValueError(
-                    f"Reusable assignment {assignment_path} has invalid {column} values"
+                    f"Reusable assignment {assignment_path} has rank_basis that "
+                    f"does not match policy {policy_data.name!r}"
                 )
-            assignment_df[column] = values.astype(int)
 
         designation = pd.to_numeric(
             assignment_df["designation"], errors="coerce"
@@ -1274,6 +1262,7 @@ class MarketGenerator(SchoolChoiceMarket):
         assignment_df = self._validate_reusable_assignment(
             pd.read_csv(assignment_path),
             assignment_path,
+            policy_data,
         )
         self._record_assignment_metric_reports(
             assignment_df,
@@ -1305,17 +1294,24 @@ class MarketGenerator(SchoolChoiceMarket):
             pd.DataFrame: saved student assignments
         """
         assignment_df = pd.DataFrame()
+        assignment_df["assignment_schema_version"] = np.full(
+            len(match), ASSIGNMENT_SCHEMA_VERSION, dtype=int
+        )
         assignment_df["studentno"] = self.students.student_data.index
         assignment_df["programno"] = match
         assignment_df["programcodes"] = [
             self.programs.codes.get(x, np.nan) for x in match
         ]
-        if self.config["restrict-zone"]:
-            assignment_df["rank"] = self._calculate_rank(
-                prefs, policy_data.name, match, in_zone_rank
-            )
-        else:
-            assignment_df["rank"] = in_zone_rank
+        rank_basis, submitted_rank, utility_rank, choice_rank = (
+            self._choice_rank_columns(match, policy_data.name)
+        )
+        mechanism_rank = np.asarray(in_zone_rank, dtype=float).copy()
+        mechanism_rank[match == 0] = np.nan
+        assignment_df["rank_basis"] = rank_basis
+        assignment_df["submitted_rank"] = submitted_rank
+        assignment_df["utility_rank"] = utility_rank
+        assignment_df["rank"] = choice_rank
+        assignment_df["mechanism_rank"] = mechanism_rank
         assignment_df["designation"] = np.where(
             np.logical_and(
                 in_zone_rank > self.preference_generator.pref_length, match > 0
@@ -1325,7 +1321,11 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         if self.config["utility-model"]["enable"]:
             assignment_df["assigned_utility"] = self._get_match_utilities(match)
-        assignment_df["In-Zone Rank"] = in_zone_rank
+        assignment_df["In-Zone Rank"] = mechanism_rank
+        assignment_df = normalize_assignment_ranks(
+            assignment_df,
+            listed_ranks=pd.Series(submitted_rank, index=assignment_df.index),
+        )
         # TODO: add cutoffs to assignment_df?
 
         save_name = self._get_assignment_save_name(policy_data, iteration)

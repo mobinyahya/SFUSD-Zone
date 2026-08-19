@@ -16,6 +16,17 @@ class EvaluateAssignments:
         self.distances = market.students.distance_data
         self.iterations = iterations
 
+    @staticmethod
+    def _read_assignment(path: pathlib.Path) -> pd.DataFrame:
+        assignment = pd.read_csv(path)
+        if "studentno" not in assignment:
+            raise ValueError(f"Assignment is missing studentno: {path}")
+        if assignment["studentno"].isna().any() or assignment[
+            "studentno"
+        ].duplicated().any():
+            raise ValueError(f"Assignment has invalid studentno values: {path}")
+        return assignment.set_index("studentno")
+
     def evaluate_results(
         self,
         assignment_path: pathlib.Path,
@@ -36,7 +47,7 @@ class EvaluateAssignments:
         sim_num = 0
         me = MatchEvaluator(
             self.market.students,
-            pd.read_csv(filename, index_col=0),
+            self._read_assignment(filename),
             self.distances,
         )
         result = me.eval_assignment_basic()
@@ -56,10 +67,9 @@ class EvaluateAssignments:
                 else:
                     filename = assignment_path / (assignment_name + ".csv")
                 info = pd.Series({"Assignment": assignment_name})
-                # assignment_df = pd.read_csv(filename, index_col=0)
                 me = MatchEvaluator(
                     self.market.students,
-                    pd.read_csv(filename, index_col=0),
+                    self._read_assignment(filename),
                     self.distances,
                 )
                 self.me = me

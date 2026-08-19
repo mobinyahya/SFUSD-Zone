@@ -28,6 +28,7 @@ def test_estimate_school_ids_are_integers(tmp_path):
 
     assert school_ids == [101, 202]
     assert all(isinstance(school_id, int) for school_id in school_ids)
+    assert ast.literal_eval(estimates.loc[0, "r1_listed_ranks"]) == [1, 2]
 
 
 def test_filter_keeps_populated_lists_aligned_and_empty_ancillary_lists_empty():
@@ -86,7 +87,7 @@ def test_filter_rejects_misaligned_populated_choice_lists():
         )
 
 
-def test_merge_clears_choice_metadata_that_does_not_match_estimates():
+def test_merge_replaces_ranks_and_clears_unmatched_choice_metadata():
     students = pd.DataFrame(
         {
             "studentno": [7],
@@ -103,13 +104,15 @@ def test_merge_clears_choice_metadata_that_does_not_match_estimates():
             "studentno": [7],
             "r1_ranked_idschool": ["[101, 202]"],
             "r1_programs": ["['GE', 'GE']"],
+            "r1_listed_ranks": ["[1, 2]"],
             "grade": ["KG"],
         }
     )
 
     merged = merge_students_with_estimates(students, estimates)
 
-    for column in ["r1_listed_ranks", "r1_randomnumber", "r1_cohortstring"]:
+    assert merged.loc[0, "r1_listed_ranks"] == "[1, 2]"
+    for column in ["r1_randomnumber", "r1_cohortstring"]:
         assert merged.loc[0, column] == "[]"
 
 
