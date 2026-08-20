@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import subprocess
 from unittest.mock import Mock
@@ -86,23 +87,30 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
     submit_script = submit_path.read_text()
     assert submit_script.count("assignment_ids+=(") == MAX_ASSIGNMENT_JOBS
     assert submit_script.count("metrics_ids+=(") == MAX_METRICS_JOBS
+    assert submit_script.count('finalizer_id="$(submit_job') == 1
     assert (
         submit_script.count('--dependency="afterany:${metrics_dependency_')
         == MAX_METRICS_JOBS
     )
     assert "assignment_dependency" not in submit_script
+    assert '--dependency="afterany:${finalizer_dependency}"' in submit_script
+    assert "This Slurm plan has already been submitted" in submit_script
     assert submit_script.count("$(submit_job") == MAX_SLURM_JOBS
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
 
-def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
+def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path, monkeypatch):
     plan_path = (tmp_path / "plan.json").resolve()
     special_name = "policy+reserves_#3"
+    fragment_dir = (tmp_path / "fragments").resolve()
+    fragment_dir.mkdir()
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,
+        "run_id": "test-run",
         "workspace_root": str(pathlib.Path(__file__).parents[2]),
         "plan_path": str(plan_path),
         "assignment_folder": str((tmp_path / "assignments").resolve()),
+        "metrics_fragment_dir": str(fragment_dir),
         "subconfigs": [{"name": special_name, "config": {}}],
         "assignment_tasks": [
             {
@@ -112,7 +120,7 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
             }
             for iteration in range(2)
         ],
-        "metrics_tasks": [{"subconfig": special_name}],
+        "metrics_tasks": [{"subconfig": special_name, "report_names": ["citywide"]}],
         "allocations": _build_allocations(2, 1),
     }
     plan_path.write_text(json.dumps(plan))
@@ -136,9 +144,38 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
     assert '--dependency="afterany:${metrics_dependency_2}"' in submit_script
     assert submit_script.count("assignment_ids+=(") == 2
     assert submit_script.count("metrics_ids+=(") == 1
-    assert submit_script.count("$(submit_job") == 3
+    assert submit_script.count('finalizer_id="$(submit_job') == 1
+    assert submit_script.count("$(submit_job") == 4
     assert "srun" not in submit_script
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sbatch_count = tmp_path / "sbatch-count"
+    fake_sbatch = fake_bin / "sbatch"
+    fake_sbatch.write_text(
+        "#!/usr/bin/env bash\n"
+        f"if [[ ! -e {sbatch_count} ]]; then\n"
+        f"  touch {sbatch_count}\n"
+        "  printf '123\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n"
+    )
+    fake_sbatch.chmod(0o755)
+    cancelled = tmp_path / "cancelled"
+    fake_scancel = fake_bin / "scancel"
+    fake_scancel.write_text(
+        "#!/usr/bin/env bash\n" f"printf '%s\\n' \"$@\" > {cancelled}\n"
+    )
+    fake_scancel.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+
+    result = subprocess.run(["bash", str(submit_path)], check=False)
+
+    assert result.returncode != 0
+    assert cancelled.read_text().splitlines() == ["123"]
+    assert not (plan_path.parent / ".submitted").exists()
 
 
 def test_worker_process_reuses_market_across_iterations_and_subconfigs(
@@ -255,7 +292,11 @@ def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
         "export-local-metrics": False,
     }
     plan = {
-        "metrics_tasks": [{"subconfig": "first"}],
+        "run_id": "run-1",
+        "metrics_fragment_dir": str(tmp_path / "fragments"),
+        "metrics_tasks": [
+            {"subconfig": "first", "report_names": ["citywide"]}
+        ],
         "subconfigs": [{"name": "first", "config": config}],
         "assignment_folder": str(tmp_path / "assignments"),
     }
@@ -283,9 +324,15 @@ def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
             submitted.append(work_batch)
             return ImmediateFuture(function(work_batch))
 
-    payloads = {iteration: {"iteration": iteration} for iteration in range(5)}
+    payloads = {
+        iteration: {
+            "iteration": iteration,
+            "expected_config_names": ["first/variant"],
+        }
+        for iteration in range(5)
+    }
     combine = Mock(return_value={"citywide": pd.DataFrame()})
-    merge = Mock()
+    write_fragment = Mock()
     monkeypatch.setattr(assignment_slurm, "ProcessPoolExecutor", FakeExecutor)
     monkeypatch.setattr(assignment_slurm, "as_completed", lambda futures: futures)
     monkeypatch.setattr(
@@ -294,7 +341,7 @@ def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
         lambda _task_index, iteration: payloads[iteration],
     )
     monkeypatch.setattr(MarketGenerator, "combine_metric_batch_payloads", combine)
-    monkeypatch.setattr(MarketGenerator, "merge_aggregate_metric_reports", merge)
+    monkeypatch.setattr(MarketGenerator, "write_metric_fragment", write_fragment)
 
     failed = assignment_slurm._run_metrics_allocation(
         plan, tmp_path / "plan.json", allocation
@@ -308,17 +355,37 @@ def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
     combine.assert_called_once_with(
         [payloads[index] for index in range(5)], include_local_metrics=False
     )
-    merge.assert_called_once()
+    write_fragment.assert_called_once_with(
+        str(tmp_path / "fragments"),
+        run_id="run-1",
+        subconfig_name="first",
+        reports=combine.return_value,
+        expected_report_names=["citywide"],
+        expected_config_names=["first/variant"],
+    )
 
 
 def test_saved_metric_batches_reuse_existing_evaluator(tmp_path):
     assignment_path = tmp_path / "assignment.csv"
     assignment_path.write_text("studentno\n1\n")
     market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {"subconfig-name": "test"}
     evaluator = object()
     market._aggregate_metric_evaluator = evaluator
     market._validate_reusable_assignment = Mock(return_value=pd.DataFrame())
-    market._record_assignment_metric_reports = Mock()
+    market._record_assignment_metric_reports = Mock(
+        side_effect=lambda _assignment, save_name, iteration: market._aggregate_metric_batches[
+            "citywide"
+        ].append(
+            pd.DataFrame(
+                {
+                    "config_name": [
+                        market._metric_config_name(save_name, iteration)
+                    ]
+                }
+            )
+        )
+    )
 
     for iteration in (0, 1):
         market._evaluate_saved_metric_specs(
@@ -348,6 +415,7 @@ def test_parallel_metric_reduction_applies_frl_threshold_after_averaging():
                     }
                 )
             ],
+            "expected_config_names": ["config/policy"],
         }
 
     reports = MarketGenerator.combine_metric_batch_payloads(
@@ -358,6 +426,43 @@ def test_parallel_metric_reduction_applies_frl_threshold_after_averaging():
     citywide = reports["citywide"].iloc[0]
     assert citywide["metric"] == 2.0
     assert citywide["Alternative # of GE programs above +10% district FRL"] == 1
+
+
+def test_parallel_metric_reduction_requires_every_expected_variant():
+    payload = {
+        "reports": {
+            "citywide": [
+                pd.DataFrame({"config_name": ["config/present"], "metric": [1.0]})
+            ]
+        },
+        "frl_threshold_inputs": [],
+        "expected_config_names": ["config/missing", "config/present"],
+    }
+
+    with pytest.raises(ValueError, match="every expected assignment variant"):
+        MarketGenerator.combine_metric_batch_payloads(
+            [payload], include_local_metrics=False
+        )
+
+
+def test_metric_report_frames_require_every_local_group():
+    first = _reports("first/variant", 1.0)["program"]
+    second = pd.concat(
+        [
+            _reports("second/variant", 2.0)["program"],
+            _reports("second/variant", 3.0)["program"].assign(
+                program_id="202-GE-KG", school_id=202, school_name="Beta"
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    with pytest.raises(ValueError, match="inconsistent grouping keys"):
+        MarketGenerator._validate_metric_report_frames(
+            "program",
+            [first, second],
+            expected_config_names=["first/variant", "second/variant"],
+        )
 
 
 def test_large_assignment_plan_runs_multiple_waves_per_allocation():
@@ -456,75 +561,233 @@ def _reports(config_name, value):
     }
 
 
-def test_locked_metric_merge_is_local_and_idempotent(tmp_path):
-    aggregate_dir = tmp_path / "aggregate_metrics"
-    aggregate_dir.mkdir()
-    other_reports = _reports("other/variant", 7.0)
-    owned_reports = _reports("policy+reserves_#3/old", 8.0)
-    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
-        existing = pd.concat(
-            [other_reports[report_name], owned_reports[report_name]],
-            ignore_index=True,
-        ).rename(columns={"new_metric": "retired_metric"})
-        existing.to_csv(aggregate_dir / filename, index=False)
-    (aggregate_dir / "metrics_by_school.csv").write_text("obsolete")
-    reports = _reports("policy+reserves_#3/variant", 2.0)
+def test_metric_fragments_preserve_every_row_and_column(tmp_path):
+    fragment_root = tmp_path / "fragments"
+    first = _reports("first/variant", 1 / 13)
+    second = _reports("second/variant", 2 / 13)
+    first["citywide"]["first_only"] = 9_007_199_254_740_993
+    first["citywide"]["second_only"] = pd.NA
+    second["citywide"]["first_only"] = pd.NA
+    second["citywide"]["second_only"] = 22
 
-    MarketGenerator.merge_aggregate_metric_reports(
-        tmp_path, "policy+reserves_#3", reports
+    for subconfig, reports in (("first", first), ("second", second)):
+        MarketGenerator.write_metric_fragment(
+            fragment_root,
+            run_id="run-1",
+            subconfig_name=subconfig,
+            reports=reports,
+            expected_report_names=reports,
+            expected_config_names=[f"{subconfig}/variant"],
+        )
+        MarketGenerator.write_metric_fragment(
+            fragment_root,
+            run_id="run-1",
+            subconfig_name=subconfig,
+            reports=reports,
+            expected_report_names=reports,
+            expected_config_names=[f"{subconfig}/variant"],
+        )
+
+    conflicting = {name: report.copy() for name, report in first.items()}
+    conflicting["citywide"].loc[0, "new_metric"] = 99
+    with pytest.raises(RuntimeError, match="conflicts"):
+        MarketGenerator.write_metric_fragment(
+            fragment_root,
+            run_id="run-1",
+            subconfig_name="first",
+            reports=conflicting,
+            expected_report_names=conflicting,
+            expected_config_names=["first/variant"],
+        )
+
+    combined, manifests = MarketGenerator.combine_metric_fragments(
+        fragment_root,
+        run_id="run-1",
+        expected_fragments=[
+            {"subconfig": "first", "report_names": list(first)},
+            {"subconfig": "second", "report_names": list(second)},
+        ],
     )
-    MarketGenerator.merge_aggregate_metric_reports(
-        tmp_path, "policy+reserves_#3", reports
-    )
 
-    citywide = pd.read_csv(aggregate_dir / "metrics_citywide.csv")
-    assert citywide["config_name"].tolist() == [
-        "other/variant",
-        "policy+reserves_#3/variant",
+    citywide = combined["citywide"]
+    assert citywide["config_name"].tolist() == ["first/variant", "second/variant"]
+    assert citywide.columns.tolist() == [
+        "config_name",
+        "new_metric",
+        "first_only",
+        "second_only",
     ]
-    assert citywide.columns.tolist() == ["config_name", "new_metric"]
-    assert pd.isna(citywide.loc[0, "new_metric"])
-    assert citywide.loc[1, "new_metric"] == 2.0
-    assert (tmp_path / ".aggregate_metrics.lock").is_file()
-    assert {
-        "metrics_by_program.csv",
-        "metrics_by_zip_code.csv",
-        "metrics_by_attendance_area.csv",
-        "metrics_citywide.csv",
-    } == {path.name for path in aggregate_dir.iterdir()}
-    program = pd.read_csv(aggregate_dir / "metrics_by_program.csv")
-    assert program.columns.tolist() == reports["program"].columns.tolist()
-    assert program["config_name"].tolist() == [
-        "other/variant",
-        "policy+reserves_#3/variant",
-    ]
-    assert pd.isna(program.loc[0, "new_metric"])
-    assert program.loc[1, "new_metric"] == 2.0
-    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
-        merged = pd.read_csv(aggregate_dir / filename)
-        assert merged.columns.tolist() == reports[report_name].columns.tolist()
-        assert "other/variant" in merged["config_name"].tolist()
+    assert citywide["new_metric"].tolist() == [1 / 13, 2 / 13]
+    assert citywide["first_only"].iloc[0] == 9_007_199_254_740_993
+    assert pd.isna(citywide["first_only"].iloc[1])
+    assert pd.isna(citywide["second_only"].iloc[0])
+    assert citywide["second_only"].iloc[1] == 22
+    assert set(manifests) == {"first", "second"}
+    for report_name in MarketGenerator.AGGREGATE_METRIC_FILES:
+        assert len(combined[report_name]) == 2
 
-
-def test_locked_metric_merge_removes_disabled_local_reports(tmp_path):
-    aggregate_dir = tmp_path / "aggregate_metrics"
-    aggregate_dir.mkdir()
-    existing = _reports("other/variant", 7.0)
-    for report_name, filename in MarketGenerator.AGGREGATE_METRIC_FILES.items():
-        existing[report_name].to_csv(aggregate_dir / filename, index=False)
-
-    MarketGenerator.merge_aggregate_metric_reports(
+    MarketGenerator.write_aggregate_metric_reports(
         tmp_path,
-        "policy",
-        {"citywide": _reports("policy/variant", 2.0)["citywide"]},
+        combined,
+        manifest={
+            "schema_version": 1,
+            "run_id": "run-1",
+            "subconfigs": ["first", "second"],
+            "fragments": manifests,
+        },
+    )
+    aggregate_manifest = json.loads(
+        (tmp_path / "aggregate_metrics/manifest.json").read_text()
+    )
+    assert aggregate_manifest["subconfigs"] == ["first", "second"]
+    assert aggregate_manifest["aggregate_reports"]["citywide"]["row_count"] == 2
+    published = pd.read_csv(
+        tmp_path / "aggregate_metrics/metrics_citywide.csv",
+        dtype={"first_only": "Int64"},
+        float_precision="round_trip",
+    )
+    assert published.columns.tolist() == citywide.columns.tolist()
+    assert len(published) == len(citywide)
+    assert published.loc[0, "new_metric"] == 1 / 13
+    assert published.loc[0, "first_only"] == 9_007_199_254_740_993
+
+
+def test_metric_finalization_rejects_missing_or_corrupt_fragments(tmp_path):
+    fragment_root = tmp_path / "fragments"
+    fragment_root.mkdir()
+    expected = [
+        {"subconfig": "first", "report_names": ["citywide"]},
+        {"subconfig": "second", "report_names": ["citywide"]},
+    ]
+    with pytest.raises(ValueError, match="does not cover every expected config"):
+        MarketGenerator.write_metric_fragment(
+            fragment_root,
+            run_id="run-1",
+            subconfig_name="first",
+            reports={
+                "citywide": pd.DataFrame(columns=["config_name", "new_metric"])
+            },
+            expected_report_names=["citywide"],
+            expected_config_names=["first/variant"],
+        )
+    MarketGenerator.write_metric_fragment(
+        fragment_root,
+        run_id="run-1",
+        subconfig_name="first",
+        reports={"citywide": _reports("first/variant", 1.0)["citywide"]},
+        expected_report_names=["citywide"],
+        expected_config_names=["first/variant"],
     )
 
-    assert {path.name for path in aggregate_dir.iterdir()} == {"metrics_citywide.csv"}
-    citywide = pd.read_csv(aggregate_dir / "metrics_citywide.csv")
-    assert citywide["config_name"].tolist() == [
-        "other/variant",
-        "policy/variant",
-    ]
+    with pytest.raises(ValueError, match="incomplete"):
+        MarketGenerator.combine_metric_fragments(
+            fragment_root, run_id="run-1", expected_fragments=expected
+        )
+
+    MarketGenerator.write_metric_fragment(
+        fragment_root,
+        run_id="run-1",
+        subconfig_name="second",
+        reports={"citywide": _reports("second/variant", 2.0)["citywide"]},
+        expected_report_names=["citywide"],
+        expected_config_names=["second/variant"],
+    )
+    first_dir = fragment_root / MarketGenerator.metric_fragment_id("first")
+    with (first_dir / "metrics_citywide.csv").open("a") as stream:
+        stream.write("corrupt,row\n")
+
+    with pytest.raises(ValueError, match="checksum"):
+        MarketGenerator.combine_metric_fragments(
+            fragment_root, run_id="run-1", expected_fragments=expected
+        )
+
+
+def test_metric_finalization_rejects_inconsistent_fragment_columns(tmp_path):
+    fragment_root = tmp_path / "fragments"
+    first = {"citywide": _reports("first/variant", 1.0)["citywide"]}
+    second = {"citywide": _reports("second/variant", 2.0)["citywide"]}
+    first["citywide"]["missing_from_second"] = 3.0
+    for subconfig, reports in (("first", first), ("second", second)):
+        MarketGenerator.write_metric_fragment(
+            fragment_root,
+            run_id="run-1",
+            subconfig_name=subconfig,
+            reports=reports,
+            expected_report_names=["citywide"],
+            expected_config_names=[f"{subconfig}/variant"],
+        )
+
+    with pytest.raises(ValueError, match="inconsistent citywide columns"):
+        MarketGenerator.combine_metric_fragments(
+            fragment_root,
+            run_id="run-1",
+            expected_fragments=[
+                {"subconfig": "first", "report_names": ["citywide"]},
+                {"subconfig": "second", "report_names": ["citywide"]},
+            ],
+        )
+
+
+def test_slurm_finalizer_does_not_publish_incomplete_run(tmp_path, monkeypatch):
+    aggregate_dir = tmp_path / "assignments/aggregate_metrics"
+    aggregate_dir.mkdir(parents=True)
+    published_path = aggregate_dir / "metrics_citywide.csv"
+    published_path.write_text("config_name,new_metric\nprevious/variant,7\n")
+    fragment_root = tmp_path / "fragments"
+    fragment_root.mkdir()
+    plan_path = tmp_path / "plan.json"
+    plan = {
+        "run_id": "run-1",
+        "metrics_fragment_dir": str(fragment_root),
+        "assignment_folder": str(tmp_path / "assignments"),
+        "metrics_tasks": [
+            {"subconfig": "missing", "report_names": ["citywide"]}
+        ],
+    }
+    monkeypatch.setattr(
+        assignment_slurm, "load_plan", lambda _path: (plan, plan_path)
+    )
+
+    with pytest.raises(ValueError, match="incomplete"):
+        assignment_slurm.run_metrics_finalizer(plan_path)
+
+    assert published_path.read_text() == (
+        "config_name,new_metric\nprevious/variant,7\n"
+    )
+
+    MarketGenerator.write_metric_fragment(
+        fragment_root,
+        run_id="run-1",
+        subconfig_name="missing",
+        reports={"citywide": _reports("missing/variant", 2.0)["citywide"]},
+        expected_report_names=["citywide"],
+        expected_config_names=["missing/variant"],
+    )
+    assignment_slurm.run_metrics_finalizer(plan_path)
+
+    published = pd.read_csv(published_path)
+    assert published["config_name"].tolist() == ["missing/variant"]
+    manifest = json.loads((aggregate_dir / "manifest.json").read_text())
+    assert manifest["run_id"] == "run-1"
+    assert manifest["subconfigs"] == ["missing"]
+
+
+def test_aggregate_publication_lock_preserves_existing_output(tmp_path):
+    aggregate_dir = tmp_path / "aggregate_metrics"
+    aggregate_dir.mkdir()
+    published_path = aggregate_dir / "metrics_citywide.csv"
+    published_path.write_text("config_name,new_metric\nprevious/variant,7\n")
+    (tmp_path / ".aggregate_metrics.publish.lock").mkdir()
+
+    with pytest.raises(RuntimeError, match="Another process"):
+        MarketGenerator.write_aggregate_metric_reports(
+            tmp_path,
+            {"citywide": _reports("new/variant", 2.0)["citywide"]},
+        )
+
+    assert published_path.read_text() == (
+        "config_name,new_metric\nprevious/variant,7\n"
+    )
 
 
 def test_metrics_only_fails_before_evaluation_when_input_is_missing(tmp_path):

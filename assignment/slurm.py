@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import uuid
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -21,14 +22,20 @@ from loaders import load_scenario
 
 from .run_custom_config import _write_provenance_config, load_custom_config
 from .student_assignment.configerator import Configerator
+from .student_assignment.market_generator.school_choice_market_generator import (
+    MarketGenerator,
+)
 
 
 WORKSPACE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-PLAN_SCHEMA_VERSION = 2
+PLAN_SCHEMA_VERSION = 3
 MAX_CPUS_PER_NODE = 40
 MAX_ASSIGNMENT_JOBS = 12
 MAX_METRICS_JOBS = 8
-MAX_SLURM_JOBS = MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS
+MAX_METRICS_FINALIZER_JOBS = 1
+MAX_SLURM_JOBS = (
+    MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS + MAX_METRICS_FINALIZER_JOBS
+)
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "OPENBLAS_NUM_THREADS": "1",
@@ -153,6 +160,13 @@ def _build_allocations(
                     ),
                 }
             )
+        allocations.append(
+            {
+                "phase": "metrics-finalize",
+                "task_indices": [],
+                "cpus": 1,
+            }
+        )
     return allocations
 
 
@@ -191,6 +205,14 @@ def build_slurm_plan(
     subconfig_names = list(configurator.config.get("subconfigs", []))
     if not subconfig_names:
         raise ValueError("Slurm assignment runs require at least one subconfig.")
+    duplicate_subconfigs = sorted(
+        {name for name in subconfig_names if subconfig_names.count(name) > 1}
+    )
+    if duplicate_subconfigs:
+        raise ValueError(
+            f"Slurm assignment config contains duplicate subconfigs: "
+            f"{duplicate_subconfigs}."
+        )
 
     output_path = pathlib.Path(
         configurator.config["paths"]["assignment-folder"]
@@ -201,9 +223,12 @@ def build_slurm_plan(
         if plan_dir is not None
         else output_path / "slurm"
     )
-    plan_directory.mkdir(parents=True, exist_ok=True)
-    plan_path = (plan_directory / "assignment_plan.json").resolve()
-    provenance_path = (plan_directory / "provenance.json").resolve()
+    run_id = uuid.uuid4().hex
+    run_directory = plan_directory / run_id
+    run_directory.mkdir(parents=True, exist_ok=False)
+    plan_path = (run_directory / "assignment_plan.json").resolve()
+    provenance_path = (run_directory / "provenance.json").resolve()
+    metrics_fragment_dir = (run_directory / "metric_fragments").resolve()
 
     resolved_subconfigs = []
     for name in subconfig_names:
@@ -227,7 +252,14 @@ def build_slurm_plan(
         for iteration in range(start, end)
     ]
     metrics_tasks = [
-        {"subconfig": entry["name"]}
+        {
+            "subconfig": entry["name"],
+            "report_names": (
+                list(MarketGenerator.AGGREGATE_METRIC_FILES)
+                if entry["config"].get("export-local-metrics", False)
+                else ["citywide"]
+            ),
+        }
         for entry in resolved_subconfigs
         if entry["config"].get("export-aggregate-metrics", False)
     ]
@@ -242,8 +274,11 @@ def build_slurm_plan(
         metrics_work_counts=metrics_work_counts,
     )
     generated_at = datetime.now(timezone.utc).isoformat()
+    if metrics_tasks:
+        metrics_fragment_dir.mkdir(parents=True, exist_ok=False)
     provenance = {
         "schema_version": PLAN_SCHEMA_VERSION,
+        "run_id": run_id,
         "generated_at": generated_at,
         "workspace_root": str(WORKSPACE_ROOT),
         "source_config": str(source_path),
@@ -253,12 +288,14 @@ def build_slurm_plan(
     }
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,
+        "run_id": run_id,
         "generated_at": generated_at,
         "workspace_root": str(WORKSPACE_ROOT),
         "source_config": str(source_path),
         "assignment_folder": str(output_path),
         "plan_path": str(plan_path),
         "provenance_path": str(provenance_path),
+        "metrics_fragment_dir": str(metrics_fragment_dir),
         "utility_output_owner": utility_owner,
         "subconfigs": resolved_subconfigs,
         "assignment_tasks": assignment_tasks,
@@ -294,12 +331,76 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
     metrics_jobs = sum(
         allocation.get("phase") == "metrics" for allocation in allocations
     )
-    if assignment_jobs > MAX_ASSIGNMENT_JOBS or metrics_jobs > MAX_METRICS_JOBS:
+    finalizer_jobs = sum(
+        allocation.get("phase") == "metrics-finalize" for allocation in allocations
+    )
+    if (
+        assignment_jobs > MAX_ASSIGNMENT_JOBS
+        or metrics_jobs > MAX_METRICS_JOBS
+        or finalizer_jobs > MAX_METRICS_FINALIZER_JOBS
+    ):
         raise ValueError("Assignment Slurm plan exceeds its phase job limits.")
+    metrics_tasks = plan.get("metrics_tasks", [])
+    if finalizer_jobs != int(bool(metrics_tasks)):
+        raise ValueError(
+            "Assignment Slurm plan must have exactly one finalizer when metrics "
+            "tasks are present."
+        )
+    if metrics_tasks:
+        if not plan.get("run_id"):
+            raise ValueError("Assignment Slurm metrics plan is missing run_id.")
+        fragment_dir = pathlib.Path(plan.get("metrics_fragment_dir", ""))
+        if not fragment_dir.is_absolute() or not fragment_dir.is_dir():
+            raise ValueError(
+                "Assignment Slurm metrics fragment directory must be an existing "
+                "absolute directory."
+            )
+        metric_subconfigs = [task.get("subconfig") for task in metrics_tasks]
+        if len(metric_subconfigs) != len(set(metric_subconfigs)):
+            raise ValueError("Assignment Slurm plan has duplicate metrics tasks.")
+        for task in metrics_tasks:
+            report_names = MarketGenerator._ordered_report_names(
+                task.get("report_names", [])
+            )
+            if "citywide" not in report_names:
+                raise ValueError(
+                    "Assignment Slurm metrics tasks must include citywide metrics."
+                )
+    subconfigs = [entry.get("name") for entry in plan.get("subconfigs", [])]
+    if len(subconfigs) != len(set(subconfigs)):
+        raise ValueError("Assignment Slurm plan has duplicate subconfigs.")
+    if any(task.get("subconfig") not in subconfigs for task in metrics_tasks):
+        raise ValueError("Assignment Slurm metrics task has an unknown subconfig.")
+    assigned_task_indices = []
+    metrics_task_indices = []
     for allocation in allocations:
         cpus = int(allocation.get("cpus", 0))
         if cpus < 1 or cpus > MAX_CPUS_PER_NODE:
             raise ValueError(f"Invalid assignment Slurm allocation CPU count: {cpus}.")
+        phase = allocation.get("phase")
+        task_indices = allocation.get("task_indices")
+        if not isinstance(task_indices, list) or any(
+            isinstance(index, bool) or not isinstance(index, int)
+            for index in task_indices
+        ):
+            raise ValueError("Assignment Slurm allocation has invalid task indices.")
+        if phase == "assignment":
+            assigned_task_indices.extend(task_indices)
+        elif phase == "metrics":
+            metrics_task_indices.extend(task_indices)
+        elif phase == "metrics-finalize":
+            if task_indices:
+                raise ValueError("Metrics finalizer cannot own evaluation tasks.")
+        else:
+            raise ValueError(f"Unknown assignment Slurm phase {phase!r}.")
+    if sorted(assigned_task_indices) != list(
+        range(len(plan.get("assignment_tasks", [])))
+    ):
+        raise ValueError(
+            "Assignment Slurm allocations do not cover each assignment task once."
+        )
+    if sorted(metrics_task_indices) != list(range(len(metrics_tasks))):
+        raise ValueError("Assignment Slurm allocations do not cover each metrics task once.")
     return plan, path
 
 
@@ -411,6 +512,44 @@ def write_slurm_scripts(
     submit_lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
+        f"submission_marker={shlex.quote(str(absolute_plan_path.parent / '.submitted'))}",
+        'if ! mkdir "$submission_marker"; then',
+        '  printf "This Slurm plan has already been submitted: %s\\n" '
+        '"$submission_marker" >&2',
+        "  exit 1",
+        "fi",
+        "assignment_ids=()",
+        "metrics_ids=()",
+        'finalizer_id=""',
+        "cleanup_submission() {",
+        "  local status=$? cancel_status=0",
+        "  set +u",
+        "  local all_ids=(\"${assignment_ids[@]}\" \"${metrics_ids[@]}\")",
+        "  set -u",
+        "  local submitted_ids=() job_id",
+        '  for job_id in "${all_ids[@]}"; do',
+        '    if [[ -n "$job_id" ]]; then',
+        '      submitted_ids+=("$job_id")',
+        "    fi",
+        "  done",
+        "  trap - EXIT",
+        '  if (( status != 0 )); then',
+        '    if [[ -n "$finalizer_id" ]]; then',
+        '      submitted_ids+=("$finalizer_id")',
+        "    fi",
+        '    if (( ${#submitted_ids[@]} > 0 )); then',
+        '      scancel "${submitted_ids[@]}" || cancel_status=$?',
+        "    fi",
+        "    if (( cancel_status == 0 )); then",
+        '      rmdir "$submission_marker"',
+        "    else",
+        '      printf "Partial submission could not be cancelled; plan remains '
+        'locked: %s\\n" "$submission_marker" >&2',
+        "    fi",
+        "  fi",
+        '  exit "$status"',
+        "}",
+        "trap cleanup_submission EXIT",
         "submit_job() {",
         "  local raw_id job_id",
         '  raw_id=$(sbatch --parsable -A soal -p soal "$@")',
@@ -422,13 +561,20 @@ def write_slurm_scripts(
         "  printf '%s\\n' \"$job_id\"",
         "}",
     ]
-    submit_lines.append("assignment_ids=()")
     metrics_allocations = []
+    finalizer_allocations = []
     metrics_dependencies = _metrics_dependency_slots(plan)
     for index, allocation in enumerate(plan["allocations"]):
         if allocation["phase"] == "metrics":
             metrics_allocations.append((index, allocation))
             continue
+        if allocation["phase"] == "metrics-finalize":
+            finalizer_allocations.append((index, allocation))
+            continue
+        if allocation["phase"] != "assignment":
+            raise ValueError(
+                f"Unknown assignment Slurm phase {allocation['phase']!r}."
+            )
         static_args = shlex.join(
             [
                 "--ntasks=1",
@@ -440,7 +586,6 @@ def write_slurm_scripts(
         )
         submit_lines.append(f'assignment_ids+=("$(submit_job {static_args})")')
     if metrics_allocations:
-        submit_lines.append("metrics_ids=()")
         for index, allocation in metrics_allocations:
             static_args = shlex.join(
                 [
@@ -462,6 +607,28 @@ def write_slurm_scripts(
                 f'metrics_ids+=("$(submit_job {static_args} '
                 f'{dependency}{metric_script})")'
             )
+    if finalizer_allocations:
+        if len(finalizer_allocations) != 1 or not metrics_allocations:
+            raise ValueError("Metrics finalizer requires metrics allocations.")
+        index, allocation = finalizer_allocations[0]
+        static_args = shlex.join(
+            [
+                "--ntasks=1",
+                f"--cpus-per-task={allocation['cpus']}",
+                "--chdir",
+                str(workspace_root),
+            ]
+        )
+        finalizer_script = shlex.quote(str(allocation_scripts[index]))
+        references = ":".join(
+            f"${{metrics_ids[{slot}]}}" for slot in range(len(metrics_allocations))
+        )
+        submit_lines.append(f'finalizer_dependency="{references}"')
+        submit_lines.append(
+            f'finalizer_id="$(submit_job {static_args} '
+            f'--dependency="afterany:${{finalizer_dependency}}" '
+            f'{finalizer_script})"'
+        )
 
     submit_lines.append(
         f"printf 'Submitted {len(plan['allocations'])} Slurm allocations.\\n'"
@@ -618,8 +785,16 @@ def _run_metrics_allocation(
                 ordered_payloads,
                 include_local_metrics=config.get("export-local-metrics", False),
             )
-            MarketGenerator.merge_aggregate_metric_reports(
-                plan["assignment_folder"], task["subconfig"], reports
+            expected_config_names = MarketGenerator.metric_payload_config_names(
+                ordered_payloads
+            )
+            MarketGenerator.write_metric_fragment(
+                plan["metrics_fragment_dir"],
+                run_id=plan["run_id"],
+                subconfig_name=task["subconfig"],
+                reports=reports,
+                expected_report_names=task["report_names"],
+                expected_config_names=expected_config_names,
             )
         except Exception as exc:
             print(
@@ -655,14 +830,48 @@ def run_assignment_worker(
 
 
 def run_metrics_worker(plan_path: str | pathlib.Path, subconfig_name: str) -> None:
-    """Evaluate and merge all saved iterations for one planned subconfig."""
+    """Evaluate all saved iterations and write one subconfig fragment."""
     plan, _ = load_plan(plan_path)
-    if not any(task["subconfig"] == subconfig_name for task in plan["metrics_tasks"]):
+    matches = [
+        task for task in plan["metrics_tasks"] if task["subconfig"] == subconfig_name
+    ]
+    if len(matches) != 1:
         raise ValueError(f"No metrics task is planned for {subconfig_name!r}.")
     market = _create_market(plan, subconfig_name)
     reports = market.evaluate_saved_subconfig(subconfig_name)
-    market.merge_aggregate_metric_reports(
-        plan["assignment_folder"], subconfig_name, reports
+    expected_config_names = market.expected_saved_metric_config_names()
+    market.write_metric_fragment(
+        plan["metrics_fragment_dir"],
+        run_id=plan["run_id"],
+        subconfig_name=subconfig_name,
+        reports=reports,
+        expected_report_names=matches[0]["report_names"],
+        expected_config_names=expected_config_names,
+    )
+
+
+def run_metrics_finalizer(plan_path: str | pathlib.Path) -> None:
+    """Validate all planned fragments and publish the aggregate exactly once."""
+    from .student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+
+    plan, absolute_plan_path = load_plan(plan_path)
+    reports, fragments = MarketGenerator.combine_metric_fragments(
+        plan["metrics_fragment_dir"],
+        run_id=plan["run_id"],
+        expected_fragments=plan["metrics_tasks"],
+    )
+    MarketGenerator.write_aggregate_metric_reports(
+        plan["assignment_folder"],
+        reports,
+        manifest={
+            "schema_version": MarketGenerator.METRIC_FRAGMENT_SCHEMA_VERSION,
+            "run_id": plan["run_id"],
+            "plan_path": str(absolute_plan_path),
+            "subconfigs": [task["subconfig"] for task in plan["metrics_tasks"]],
+            "fragments": fragments,
+        },
     )
 
 
@@ -698,6 +907,9 @@ def run_allocation_worker(plan_path: str | pathlib.Path, allocation_index: int) 
                 if _run_metrics_allocation(plan, absolute_plan_path, allocation)
                 else 0
             )
+        elif allocation["phase"] == "metrics-finalize":
+            run_metrics_finalizer(absolute_plan_path)
+            return 0
         else:
             raise ValueError(f"Unknown assignment Slurm phase {allocation['phase']!r}.")
 

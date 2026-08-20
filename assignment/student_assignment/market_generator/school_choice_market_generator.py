@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import pathlib
 import re
 import shutil
@@ -31,6 +30,8 @@ from .school_choice_market import SchoolChoiceMarket
 
 
 class MarketGenerator(SchoolChoiceMarket):
+    METRIC_FRAGMENT_SCHEMA_VERSION = 1
+    AGGREGATE_MANIFEST_FILENAME = "manifest.json"
     AGGREGATE_METRIC_FILES = {
         "program": "metrics_by_program.csv",
         "zip_code": "metrics_by_zip_code.csv",
@@ -365,6 +366,9 @@ class MarketGenerator(SchoolChoiceMarket):
             include_local_metrics=self.config.get("export-local-metrics", False),
         )
 
+    def expected_saved_metric_config_names(self):
+        return self._metric_config_names(self._expected_saved_assignment_specs())
+
     def evaluate_saved_subconfig_iteration(
         self, subconfig_name: str, iteration: int | None
     ) -> dict:
@@ -400,6 +404,30 @@ class MarketGenerator(SchoolChoiceMarket):
                 pd.read_csv(assignment_path), assignment_path
             )
             self._record_assignment_metric_reports(assignment_df, save_name, iteration)
+        expected_config_names = [
+            self._metric_config_name(save_name, iteration)
+            for _path, save_name, iteration in specs
+        ]
+        expected_report_names = (
+            tuple(self.AGGREGATE_METRIC_FILES)
+            if self.config.get("export-local-metrics", False)
+            else ("citywide",)
+        )
+        actual_report_names = {
+            name for name, frames in self._aggregate_metric_batches.items() if frames
+        }
+        if actual_report_names != set(expected_report_names):
+            raise ValueError(
+                "Metric evaluation did not produce every expected report: "
+                f"expected {list(expected_report_names)}, found "
+                f"{sorted(actual_report_names)}."
+            )
+        for report_name in expected_report_names:
+            self._validate_metric_report_frames(
+                report_name,
+                self._aggregate_metric_batches[report_name],
+                expected_config_names=expected_config_names,
+            )
         return {
             "reports": {
                 name: list(frames)
@@ -407,7 +435,29 @@ class MarketGenerator(SchoolChoiceMarket):
                 if frames
             },
             "frl_threshold_inputs": list(self._frl_threshold_input_batches),
+            "expected_config_names": self._metric_config_names(specs),
         }
+
+    def _metric_config_names(self, specs):
+        return sorted(
+            {
+                self._metric_config_name(save_name, iteration)
+                for _path, save_name, iteration in specs
+            }
+        )
+
+    def _metric_config_name(self, save_name, iteration):
+        subconfig_name = self.config.get("subconfig-name", "default")
+        variant_name = self._metric_variant_name(save_name, iteration)
+        return f"{subconfig_name}/{variant_name}"
+
+    @staticmethod
+    def _metric_variant_name(save_name, iteration):
+        variant_name = pathlib.Path(save_name).stem
+        iteration_suffix = f"_iteration{iteration}" if iteration is not None else None
+        if iteration_suffix and variant_name.endswith(iteration_suffix):
+            variant_name = variant_name[: -len(iteration_suffix)]
+        return variant_name
 
     def _reset_aggregate_metric_reports(self):
         self._aggregate_metric_batches = {
@@ -511,12 +561,16 @@ class MarketGenerator(SchoolChoiceMarket):
     @classmethod
     def combine_metric_batch_payloads(cls, payloads, *, include_local_metrics: bool):
         """Reduce parallel metric batches with the same semantics as sequential runs."""
+        payloads = list(payloads)
         batches = {name: [] for name in cls.AGGREGATE_METRIC_FILES}
         frl_threshold_inputs = []
         for payload in payloads:
             for name, frames in payload["reports"].items():
                 batches[name].extend(frames)
             frl_threshold_inputs.extend(payload["frl_threshold_inputs"])
+        for report_name, frames in batches.items():
+            if frames:
+                cls._validate_metric_report_frames(report_name, frames)
 
         averaged = {
             name: cls._average_aggregate_metric_frames(name, frames)
@@ -539,7 +593,77 @@ class MarketGenerator(SchoolChoiceMarket):
             )
             for name in report_names
         }
-        return cls.combine_aggregate_metric_reports([reports])
+        reports = cls.combine_aggregate_metric_reports([reports])
+        expected_config_names = cls.metric_payload_config_names(payloads)
+        actual_config_names = sorted(
+            reports["citywide"]["config_name"].astype(str).unique().tolist()
+        )
+        if actual_config_names != expected_config_names:
+            raise ValueError(
+                "Citywide metrics do not cover every expected assignment variant: "
+                f"expected {expected_config_names}, found {actual_config_names}."
+            )
+        return reports
+
+    @staticmethod
+    def metric_payload_config_names(payloads):
+        names = set()
+        for payload in payloads:
+            expected = payload.get("expected_config_names")
+            if not isinstance(expected, list) or not expected:
+                raise ValueError("Metric payload is missing expected config names.")
+            names.update(expected)
+        return sorted(names)
+
+    @classmethod
+    def _validate_metric_report_frames(
+        cls, report_name, frames, *, expected_config_names=None
+    ):
+        frames = list(frames)
+        if expected_config_names is not None and len(frames) != len(
+            expected_config_names
+        ):
+            raise ValueError(
+                f"{report_name} metrics produced {len(frames)} frame(s) for "
+                f"{len(expected_config_names)} expected assignment variant(s)."
+            )
+        schemas = {tuple(frame.columns) for frame in frames}
+        if len(schemas) != 1:
+            raise ValueError(
+                f"{report_name} metric frames have inconsistent columns."
+            )
+        entity_columns = [
+            column
+            for column in cls.AGGREGATE_METRIC_GROUPS[report_name]
+            if column != "config_name"
+        ]
+        expected_entities = None
+        for index, frame in enumerate(frames):
+            cls._validate_aggregate_metric_report(report_name, frame)
+            names = frame["config_name"].astype(str).unique().tolist()
+            if expected_config_names is not None and names != [
+                expected_config_names[index]
+            ]:
+                raise ValueError(
+                    f"{report_name} metrics do not match expected config "
+                    f"{expected_config_names[index]!r}."
+                )
+            if not entity_columns:
+                if len(frame) != 1:
+                    raise ValueError(
+                        f"{report_name} metrics must contain one row per config."
+                    )
+                continue
+            entities = frame[entity_columns].astype(object).mask(
+                frame[entity_columns].isna(), None
+            )
+            entity_keys = set(entities.itertuples(index=False, name=None))
+            if expected_entities is None:
+                expected_entities = entity_keys
+            elif entity_keys != expected_entities:
+                raise ValueError(
+                    f"{report_name} metric frames have inconsistent grouping keys."
+                )
 
     def _record_aggregate_metric_reports(self, reports):
         for report_name, report in reports.items():
@@ -591,7 +715,19 @@ class MarketGenerator(SchoolChoiceMarket):
                 if reports is not None and report_name in reports
             ]
             if frames:
-                frame = pd.concat(frames, ignore_index=True, sort=False)
+                columns = list(
+                    dict.fromkeys(column for source in frames for column in source)
+                )
+                prepared = []
+                for source in frames:
+                    source = source.astype(object).copy()
+                    for column in columns:
+                        if column not in source:
+                            source[column] = pd.Series(
+                                [pd.NA] * len(source), dtype=object
+                            )
+                    prepared.append(source[columns])
+                frame = pd.concat(prepared, ignore_index=True, sort=False)
                 if not frame.empty:
                     frame = frame.sort_values(
                         cls.AGGREGATE_METRIC_GROUPS[report_name],
@@ -606,115 +742,435 @@ class MarketGenerator(SchoolChoiceMarket):
         return combined
 
     @classmethod
-    def write_aggregate_metric_reports(cls, assignment_path, reports):
+    def _validate_aggregate_metric_report(
+        cls, report_name, report, *, subconfig_name=None
+    ):
+        if report_name not in cls.AGGREGATE_METRIC_FILES:
+            raise ValueError(f"Unknown aggregate metric report {report_name!r}.")
+        if not isinstance(report, pd.DataFrame):
+            raise TypeError(f"{report_name} metrics must be a pandas DataFrame.")
+        duplicate_columns = report.columns[report.columns.duplicated()].tolist()
+        if duplicate_columns:
+            raise ValueError(
+                f"{report_name} metrics have duplicate columns: {duplicate_columns}."
+            )
+        group_columns = cls.AGGREGATE_METRIC_GROUPS[report_name]
+        missing_columns = [
+            column for column in group_columns if column not in report.columns
+        ]
+        if missing_columns:
+            raise ValueError(
+                f"{report_name} metrics are missing grouping columns: "
+                f"{missing_columns}."
+            )
+        if report["config_name"].isna().any():
+            raise ValueError(f"{report_name} metrics contain a blank config_name.")
+        if subconfig_name is not None:
+            names = report["config_name"].astype("string")
+            owned = names.eq(subconfig_name) | names.str.startswith(
+                f"{subconfig_name}/", na=False
+            )
+            if not owned.all():
+                raise ValueError(
+                    f"{report_name} metrics contain rows not owned by subconfig "
+                    f"{subconfig_name!r}."
+                )
+        if report.duplicated(group_columns).any():
+            raise ValueError(
+                f"{report_name} metrics contain duplicate grouping keys."
+            )
+
+    @classmethod
+    def _ordered_report_names(cls, report_names):
+        report_names = tuple(report_names)
+        if len(report_names) != len(set(report_names)):
+            raise ValueError("Aggregate metric report names must be unique.")
+        unknown = sorted(set(report_names) - set(cls.AGGREGATE_METRIC_FILES))
+        if unknown:
+            raise ValueError(f"Unknown aggregate metric reports: {unknown}.")
+        return tuple(name for name in cls.AGGREGATE_METRIC_FILES if name in report_names)
+
+    @staticmethod
+    def _file_sha256(path):
+        digest = hashlib.sha256()
+        with pathlib.Path(path).open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @classmethod
+    def _write_metric_csv(cls, path, report_name, report):
+        cls._validate_aggregate_metric_report(report_name, report)
+        report.to_csv(path, index=False)
+        dtypes = {}
+        for column in report:
+            inferred = pd.api.types.infer_dtype(report[column].dropna(), skipna=True)
+            if inferred == "integer":
+                dtypes[column] = "Int64"
+            elif inferred == "boolean":
+                dtypes[column] = "boolean"
+            elif inferred in {"string", "unicode"}:
+                dtypes[column] = "string"
+        round_trip = pd.read_csv(
+            path,
+            dtype=dtypes,
+            float_precision="round_trip",
+        )
+        expected = report.astype(object).mask(report.isna(), None)
+        actual = round_trip.astype(object).mask(round_trip.isna(), None)
+        try:
+            pd.testing.assert_frame_equal(
+                expected.reset_index(drop=True),
+                actual,
+                check_dtype=False,
+                check_exact=True,
+            )
+        except AssertionError as exc:
+            raise ValueError(
+                f"{report_name} metrics did not round-trip through CSV without "
+                "changing values."
+            ) from exc
+        return {
+            "filename": pathlib.Path(path).name,
+            "sha256": cls._file_sha256(path),
+            "row_count": len(report),
+            "columns": list(report.columns),
+            "dtypes": dtypes,
+        }
+
+    @staticmethod
+    def _write_json(path, value):
+        with pathlib.Path(path).open("w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+
+    @staticmethod
+    def metric_fragment_id(subconfig_name):
+        return hashlib.sha256(subconfig_name.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def write_metric_fragment(
+        cls,
+        fragment_root,
+        *,
+        run_id,
+        subconfig_name,
+        reports,
+        expected_report_names,
+        expected_config_names,
+    ):
+        """Write one immutable, checksummed subconfig metrics fragment."""
+        report_names = cls._ordered_report_names(expected_report_names)
+        if set(reports) != set(report_names):
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} expected reports "
+                f"{list(report_names)}, received {sorted(reports)}."
+            )
+        expected_config_names = sorted(set(expected_config_names))
+        if not expected_config_names:
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} has no expected config names."
+            )
+        actual_config_names = sorted(
+            reports["citywide"]["config_name"].astype(str).unique().tolist()
+        )
+        if actual_config_names != expected_config_names:
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} does not cover every expected "
+                f"config: expected {expected_config_names}, found "
+                f"{actual_config_names}."
+            )
+
+        fragment_root = pathlib.Path(fragment_root).expanduser()
+        fragment_root.mkdir(parents=True, exist_ok=True)
+        fragment_id = cls.metric_fragment_id(subconfig_name)
+        output_dir = fragment_root / fragment_id
+        staging_dir = pathlib.Path(
+            tempfile.mkdtemp(prefix=f".{fragment_id}.", dir=fragment_root)
+        )
+        try:
+            report_metadata = {}
+            for report_name in report_names:
+                report = reports[report_name]
+                cls._validate_aggregate_metric_report(
+                    report_name, report, subconfig_name=subconfig_name
+                )
+                report_metadata[report_name] = cls._write_metric_csv(
+                    staging_dir / cls.AGGREGATE_METRIC_FILES[report_name],
+                    report_name,
+                    report,
+                )
+            manifest = {
+                "schema_version": cls.METRIC_FRAGMENT_SCHEMA_VERSION,
+                "run_id": run_id,
+                "subconfig_name": subconfig_name,
+                "expected_config_names": expected_config_names,
+                "reports": report_metadata,
+            }
+            cls._write_json(staging_dir / cls.AGGREGATE_MANIFEST_FILENAME, manifest)
+
+            if output_dir.exists():
+                try:
+                    _existing_reports, existing_manifest = cls._read_metric_fragment(
+                        fragment_root,
+                        run_id=run_id,
+                        subconfig_name=subconfig_name,
+                        expected_report_names=report_names,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Existing metrics fragment {output_dir} is invalid."
+                    ) from exc
+                if existing_manifest != manifest:
+                    raise RuntimeError(
+                        f"Metrics fragment {subconfig_name!r} conflicts with an "
+                        "existing fragment for this run."
+                    )
+                return output_dir
+
+            staging_dir.rename(output_dir)
+            return output_dir
+        finally:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+
+    @classmethod
+    def _read_metric_fragment(
+        cls,
+        fragment_root,
+        *,
+        run_id,
+        subconfig_name,
+        expected_report_names,
+    ):
+        report_names = cls._ordered_report_names(expected_report_names)
+        fragment_id = cls.metric_fragment_id(subconfig_name)
+        fragment_dir = pathlib.Path(fragment_root).expanduser() / fragment_id
+        manifest_path = fragment_dir / cls.AGGREGATE_MANIFEST_FILENAME
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                f"Missing metrics fragment for subconfig {subconfig_name!r}: "
+                f"{fragment_dir}"
+            )
+        with manifest_path.open(encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        expected_identity = {
+            "schema_version": cls.METRIC_FRAGMENT_SCHEMA_VERSION,
+            "run_id": run_id,
+            "subconfig_name": subconfig_name,
+        }
+        for key, expected in expected_identity.items():
+            if manifest.get(key) != expected:
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} has invalid {key}: "
+                    f"{manifest.get(key)!r}."
+                )
+        report_metadata = manifest.get("reports")
+        if not isinstance(report_metadata, dict) or set(report_metadata) != set(
+            report_names
+        ):
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} does not contain exactly "
+                f"the expected reports {list(report_names)}."
+            )
+        expected_config_names = manifest.get("expected_config_names")
+        if (
+            not isinstance(expected_config_names, list)
+            or not expected_config_names
+            or expected_config_names != sorted(set(expected_config_names))
+        ):
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} has invalid expected config "
+                "names."
+            )
+        expected_files = {
+            cls.AGGREGATE_MANIFEST_FILENAME,
+            *(cls.AGGREGATE_METRIC_FILES[name] for name in report_names),
+        }
+        actual_files = {path.name for path in fragment_dir.iterdir()}
+        if actual_files != expected_files:
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} has unexpected files: "
+                f"{sorted(actual_files ^ expected_files)}."
+            )
+
+        reports = {}
+        for report_name in report_names:
+            metadata = report_metadata[report_name]
+            expected_filename = cls.AGGREGATE_METRIC_FILES[report_name]
+            if metadata.get("filename") != expected_filename:
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} has an invalid filename "
+                    f"for {report_name}."
+                )
+            report_path = fragment_dir / expected_filename
+            checksum = cls._file_sha256(report_path)
+            if checksum != metadata.get("sha256"):
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} failed the {report_name} "
+                    "checksum."
+                )
+            columns = metadata.get("columns")
+            dtypes = metadata.get("dtypes")
+            if (
+                not isinstance(columns, list)
+                or not isinstance(dtypes, dict)
+                or not set(dtypes) <= set(columns)
+                or not set(dtypes.values()) <= {"Int64", "boolean", "string"}
+            ):
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} has invalid {report_name} "
+                    "schema metadata."
+                )
+            report = pd.read_csv(
+                report_path,
+                dtype=dtypes,
+                float_precision="round_trip",
+            )
+            if list(report.columns) != columns:
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} changed {report_name} "
+                    "columns."
+                )
+            if len(report) != metadata.get("row_count"):
+                raise ValueError(
+                    f"Metrics fragment {subconfig_name!r} changed {report_name} "
+                    "row count."
+                )
+            cls._validate_aggregate_metric_report(
+                report_name, report, subconfig_name=subconfig_name
+            )
+            reports[report_name] = report
+        actual_config_names = sorted(
+            reports["citywide"]["config_name"].astype(str).unique().tolist()
+        )
+        if actual_config_names != expected_config_names:
+            raise ValueError(
+                f"Metrics fragment {subconfig_name!r} is missing expected citywide "
+                "config rows."
+            )
+        return reports, manifest
+
+    @classmethod
+    def combine_metric_fragments(cls, fragment_root, *, run_id, expected_fragments):
+        """Validate every planned fragment and combine without dropping columns."""
+        expected_fragments = list(expected_fragments)
+        subconfig_names = [item["subconfig"] for item in expected_fragments]
+        if len(subconfig_names) != len(set(subconfig_names)):
+            raise ValueError("Expected metrics fragments contain duplicate subconfigs.")
+        fragment_root = pathlib.Path(fragment_root).expanduser()
+        if not fragment_root.is_dir():
+            raise FileNotFoundError(f"Metrics fragment directory is missing: {fragment_root}")
+        expected_ids = {cls.metric_fragment_id(name) for name in subconfig_names}
+        actual_entries = {path.name for path in fragment_root.iterdir()}
+        if actual_entries != expected_ids:
+            raise ValueError(
+                "Metrics fragment directory is incomplete or contains unexpected "
+                f"entries: {sorted(actual_entries ^ expected_ids)}."
+            )
+
+        report_sets = []
+        manifests = {}
+        for item in expected_fragments:
+            reports, manifest = cls._read_metric_fragment(
+                fragment_root,
+                run_id=run_id,
+                subconfig_name=item["subconfig"],
+                expected_report_names=item["report_names"],
+            )
+            report_sets.append(reports)
+            manifests[item["subconfig"]] = manifest
+
+        combined = cls.combine_aggregate_metric_reports(report_sets)
+        for report_name, report in combined.items():
+            source_frames = [
+                reports[report_name]
+                for reports in report_sets
+                if report_name in reports
+            ]
+            schemas = {tuple(frame.columns) for frame in source_frames}
+            if len(schemas) != 1:
+                raise ValueError(
+                    f"Metrics fragments have inconsistent {report_name} columns; "
+                    "refusing to publish incomplete metrics."
+                )
+            expected_rows = sum(len(frame) for frame in source_frames)
+            expected_columns = list(
+                dict.fromkeys(
+                    column for frame in source_frames for column in frame.columns
+                )
+            )
+            if len(report) != expected_rows:
+                raise RuntimeError(
+                    f"Combined {report_name} metrics lost rows: expected "
+                    f"{expected_rows}, found {len(report)}."
+                )
+            if list(report.columns) != expected_columns:
+                raise RuntimeError(
+                    f"Combined {report_name} metrics lost or reordered columns."
+                )
+            cls._validate_aggregate_metric_report(report_name, report)
+        return combined, manifests
+
+    @classmethod
+    def write_aggregate_metric_reports(cls, assignment_path, reports, *, manifest=None):
         assignment_path = pathlib.Path(assignment_path).expanduser()
         assignment_path.mkdir(parents=True, exist_ok=True)
         output_dir = assignment_path / "aggregate_metrics"
         staging_dir = pathlib.Path(
             tempfile.mkdtemp(prefix="aggregate_metrics.tmp.", dir=assignment_path)
         )
+        lock_dir = assignment_path / ".aggregate_metrics.publish.lock"
+        lock_acquired = False
+        backup_dir = None
         try:
-            for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
-                if report_name in reports:
-                    reports[report_name].to_csv(staging_dir / filename, index=False)
-            cls.clear_aggregate_metric_reports(assignment_path)
-            staging_dir.replace(output_dir)
+            report_names = cls._ordered_report_names(reports)
+            report_metadata = {}
+            for report_name in report_names:
+                report_metadata[report_name] = cls._write_metric_csv(
+                    staging_dir / cls.AGGREGATE_METRIC_FILES[report_name],
+                    report_name,
+                    reports[report_name],
+                )
+            if manifest is not None:
+                aggregate_manifest = dict(manifest)
+                aggregate_manifest["aggregate_reports"] = report_metadata
+                cls._write_json(
+                    staging_dir / cls.AGGREGATE_MANIFEST_FILENAME,
+                    aggregate_manifest,
+                )
+
+            try:
+                lock_dir.mkdir()
+                lock_acquired = True
+            except FileExistsError as exc:
+                raise RuntimeError(
+                    "Another process is publishing aggregate metrics."
+                ) from exc
+            if output_dir.exists() or output_dir.is_symlink():
+                backup_dir = pathlib.Path(
+                    tempfile.mkdtemp(
+                        prefix="aggregate_metrics.previous.", dir=assignment_path
+                    )
+                )
+                backup_dir.rmdir()
+                output_dir.replace(backup_dir)
+            try:
+                staging_dir.replace(output_dir)
+            except Exception:
+                if backup_dir is not None and backup_dir.exists():
+                    backup_dir.replace(output_dir)
+                raise
+            if backup_dir is not None and backup_dir.exists():
+                if backup_dir.is_dir():
+                    shutil.rmtree(backup_dir)
+                else:
+                    backup_dir.unlink()
         finally:
             if staging_dir.exists():
                 shutil.rmtree(staging_dir)
-
-    @classmethod
-    def merge_aggregate_metric_reports(
-        cls, assignment_path, subconfig_name: str, reports
-    ) -> None:
-        """Atomically replace one subconfig's aggregate rows under a file lock."""
-        import fcntl
-
-        assignment_path = pathlib.Path(assignment_path).expanduser()
-        assignment_path.mkdir(parents=True, exist_ok=True)
-        output_dir = assignment_path / "aggregate_metrics"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = assignment_path / ".aggregate_metrics.lock"
-
-        with lock_path.open("a+") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                (output_dir / "metrics_by_school.csv").unlink(missing_ok=True)
-                for report_name, filename in cls.AGGREGATE_METRIC_FILES.items():
-                    output_path = output_dir / filename
-                    incoming = reports.get(report_name)
-                    if incoming is None:
-                        output_path.unlink(missing_ok=True)
-                        continue
-                    incoming = incoming.copy()
-                    incoming_columns = list(incoming.columns)
-                    if "config_name" not in incoming.columns:
-                        raise ValueError(
-                            f"{report_name} metrics are missing config_name."
-                        )
-                    incoming_names = incoming["config_name"].astype("string")
-                    owned = incoming_names.eq(
-                        subconfig_name
-                    ) | incoming_names.str.startswith(
-                        f"{subconfig_name}/", na=False
-                    )
-                    if not owned.all():
-                        raise ValueError(
-                            f"{report_name} metrics contain rows not owned by "
-                            f"subconfig {subconfig_name!r}."
-                        )
-
-                    existing = (
-                        pd.read_csv(output_path)
-                        if output_path.is_file()
-                        else pd.DataFrame()
-                    )
-                    if "config_name" in existing.columns:
-                        existing_names = existing["config_name"].astype("string")
-                        owned = existing_names.eq(
-                            subconfig_name
-                        ) | existing_names.str.startswith(
-                            f"{subconfig_name}/", na=False
-                        )
-                        existing = existing.loc[~owned].copy()
-
-                    columns = incoming_columns
-                    merged = pd.concat(
-                        [
-                            existing.reindex(columns=columns),
-                            incoming.reindex(columns=columns),
-                        ],
-                        ignore_index=True,
-                        sort=False,
-                    )
-                    sort_columns = [
-                        column
-                        for column in cls.AGGREGATE_METRIC_GROUPS[report_name]
-                        if column in merged.columns
-                    ]
-                    if sort_columns and not merged.empty:
-                        merged = merged.sort_values(sort_columns, kind="stable")
-                    merged = merged.reset_index(drop=True)
-
-                    temporary_path = None
-                    try:
-                        with tempfile.NamedTemporaryFile(
-                            mode="w",
-                            encoding="utf-8",
-                            newline="",
-                            dir=output_dir,
-                            prefix=f".{filename}.",
-                            suffix=".tmp",
-                            delete=False,
-                        ) as temporary_file:
-                            temporary_path = pathlib.Path(temporary_file.name)
-                            merged.to_csv(temporary_file, index=False)
-                        os.replace(temporary_path, output_path)
-                    finally:
-                        if temporary_path is not None:
-                            temporary_path.unlink(missing_ok=True)
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            if lock_acquired:
+                lock_dir.rmdir()
 
     @staticmethod
     def clear_aggregate_metric_reports(assignment_path):
@@ -1372,10 +1828,7 @@ class MarketGenerator(SchoolChoiceMarket):
         else:
             evaluator.overscribe_aa = self.config.get("overscribe_aa", False)
             evaluator.update_assignments(assignment_df)
-        variant_name = pathlib.Path(save_name).stem
-        iteration_suffix = f"_iteration{iteration}" if iteration is not None else None
-        if iteration_suffix and variant_name.endswith(iteration_suffix):
-            variant_name = variant_name[: -len(iteration_suffix)]
+        variant_name = self._metric_variant_name(save_name, iteration)
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
         reports = evaluator.eval_aggregate_metric_reports(
             config_name,
