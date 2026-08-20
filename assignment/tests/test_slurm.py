@@ -7,13 +7,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from assignment.slurm import build_slurm_plan, write_slurm_scripts
+from assignment.slurm import (
+    MAX_CPUS_PER_NODE,
+    MAX_SLURM_JOBS,
+    PLAN_SCHEMA_VERSION,
+    _build_allocations,
+    build_slurm_plan,
+    write_slurm_scripts,
+)
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
 
 
-def test_kumar_plan_has_one_job_per_subconfig_iteration(tmp_path):
+def test_kumar_plan_batches_tasks_into_twelve_allocations(tmp_path):
     config_path = pathlib.Path(__file__).parents[1] / "configs/kumar.config.yaml"
 
     plan, plan_path = build_slurm_plan(
@@ -24,6 +31,26 @@ def test_kumar_plan_has_one_job_per_subconfig_iteration(tmp_path):
 
     assert len(plan["assignment_tasks"]) == 475
     assert len(plan["metrics_tasks"]) == 19
+    assert len(plan["allocations"]) == MAX_SLURM_JOBS
+    assignment_allocations = [
+        allocation
+        for allocation in plan["allocations"]
+        if allocation["phase"] == "assignment"
+    ]
+    assert len(assignment_allocations) == MAX_SLURM_JOBS - 1
+    assert all(
+        allocation["cpus"] == MAX_CPUS_PER_NODE for allocation in assignment_allocations
+    )
+    assert sorted(
+        index
+        for allocation in assignment_allocations
+        for index in allocation["task_indices"]
+    ) == list(range(475))
+    assert plan["allocations"][-1] == {
+        "phase": "metrics",
+        "task_indices": list(range(19)),
+        "cpus": 19,
+    }
     assert pathlib.Path(plan["assignment_folder"]).is_absolute()
     assert plan_path.is_absolute()
     assert pathlib.Path(plan["provenance_path"]).is_file()
@@ -44,7 +71,7 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
     plan_path = (tmp_path / "plan.json").resolve()
     special_name = "policy+reserves_#3"
     plan = {
-        "schema_version": 1,
+        "schema_version": PLAN_SCHEMA_VERSION,
         "workspace_root": str(pathlib.Path(__file__).parents[2]),
         "plan_path": str(plan_path),
         "assignment_folder": str((tmp_path / "assignments").resolve()),
@@ -58,28 +85,39 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
             for iteration in range(2)
         ],
         "metrics_tasks": [{"subconfig": special_name}],
+        "allocations": _build_allocations(2, 1),
     }
     plan_path.write_text(json.dumps(plan))
 
     submit_path = write_slurm_scripts(plan_path)
     submit_script = submit_path.read_text()
-    worker_scripts = sorted(submit_path.parent.glob("assignment-*.sh"))
+    worker_scripts = sorted(submit_path.parent.glob("assignment-allocation-*.sh"))
 
-    assert len(worker_scripts) == 2
+    assert len(worker_scripts) == 1
     worker_script = worker_scripts[0].read_text()
     assert "#SBATCH -A soal" in worker_script
     assert "#SBATCH -p soal" in worker_script
     assert "#SBATCH --ntasks=1" in worker_script
-    assert "#SBATCH --cpus-per-task=1" in worker_script
+    assert "#SBATCH --cpus-per-task=2" in worker_script
     assert "export OMP_NUM_THREADS=1" in worker_script
-    assert f"--subconfig '{special_name}'" in worker_script
+    assert "allocation-worker" in worker_script
+    assert "--allocation-index 0" in worker_script
     assert "sbatch --parsable -A soal -p soal" in submit_script
     assert "--ntasks=1" in submit_script
     assert "job_id=${raw_id%%;*}" in submit_script
-    assert '--dependency="afterok:${dependency_0}"' in submit_script
-    assert submit_script.count("assignment_ids_0+=(") == 2
+    assert '--dependency="afterany:${assignment_dependency}"' in submit_script
+    assert submit_script.count("assignment_ids+=(") == 1
+    assert submit_script.count("$(submit_job") == 2
     assert "srun" not in submit_script
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
+
+
+def test_large_assignment_plan_runs_multiple_waves_per_allocation():
+    allocations = _build_allocations(12 * 40 * 3, 0)
+
+    assert len(allocations) == MAX_SLURM_JOBS
+    assert {allocation["cpus"] for allocation in allocations} == {MAX_CPUS_PER_NODE}
+    assert {len(allocation["task_indices"]) for allocation in allocations} == {120}
 
 
 def _rng_market(tmp_path):
@@ -233,9 +271,7 @@ def test_locked_metric_merge_removes_disabled_local_reports(tmp_path):
         {"citywide": _reports("policy/variant", 2.0)["citywide"]},
     )
 
-    assert {path.name for path in aggregate_dir.iterdir()} == {
-        "metrics_citywide.csv"
-    }
+    assert {path.name for path in aggregate_dir.iterdir()} == {"metrics_citywide.csv"}
     citywide = pd.read_csv(aggregate_dir / "metrics_citywide.csv")
     assert citywide["config_name"].tolist() == [
         "other/variant",

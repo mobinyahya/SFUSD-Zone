@@ -12,7 +12,7 @@ optimization_defaults:
   hints: voronoi
   levels: [Block_0]
   racial_dev: -1
-  workers: 48
+  workers: 40
   centroids_type:  4-zone-rec-3
   frl_dev: 0.15
   overage: 0.3

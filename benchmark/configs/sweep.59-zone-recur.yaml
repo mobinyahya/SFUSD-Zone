@@ -15,7 +15,7 @@ optimization_defaults:
   centroid_neighbor_radius: 0
 
   gap_limits: [0, 0, 0]
-  workers: 48
+  workers: 40
 
 sweep:
   centroids_type: ['59-zone']

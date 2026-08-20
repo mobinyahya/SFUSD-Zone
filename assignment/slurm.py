@@ -1,15 +1,16 @@
-"""Plan, submit, and execute one-core Slurm assignment jobs."""
+"""Plan, submit, and execute batched Slurm assignment jobs."""
 
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import hashlib
 import json
 import os
 import pathlib
-import re
 import shlex
 import subprocess
+import sys
 import tempfile
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -22,7 +23,9 @@ from .student_assignment.configerator import Configerator
 
 
 WORKSPACE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 2
+MAX_CPUS_PER_NODE = 40
+MAX_SLURM_JOBS = 12
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "OPENBLAS_NUM_THREADS": "1",
@@ -99,6 +102,45 @@ def _data_provenance(config: dict) -> dict:
     }
 
 
+def _task_batches(task_count: int, batch_count: int) -> list[list[int]]:
+    batch_count = min(task_count, batch_count)
+    quotient, remainder = divmod(task_count, batch_count)
+    batches = []
+    start = 0
+    for index in range(batch_count):
+        size = quotient + (index < remainder)
+        batches.append(list(range(start, start + size)))
+        start += size
+    return batches
+
+
+def _build_allocations(assignment_count: int, metrics_count: int) -> list[dict]:
+    allocations = []
+    assignment_job_limit = MAX_SLURM_JOBS - (1 if metrics_count else 0)
+    if assignment_count:
+        assignment_job_count = min(
+            assignment_job_limit,
+            (assignment_count + MAX_CPUS_PER_NODE - 1) // MAX_CPUS_PER_NODE,
+        )
+        for task_indices in _task_batches(assignment_count, assignment_job_count):
+            allocations.append(
+                {
+                    "phase": "assignment",
+                    "task_indices": task_indices,
+                    "cpus": min(MAX_CPUS_PER_NODE, len(task_indices)),
+                }
+            )
+    if metrics_count:
+        allocations.append(
+            {
+                "phase": "metrics",
+                "task_indices": list(range(metrics_count)),
+                "cpus": min(MAX_CPUS_PER_NODE, metrics_count),
+            }
+        )
+    return allocations
+
+
 def build_slurm_plan(
     config_path: str | pathlib.Path,
     *,
@@ -160,6 +202,7 @@ def build_slurm_plan(
         for entry in resolved_subconfigs
         if entry["config"].get("export-aggregate-metrics", False)
     ]
+    allocations = _build_allocations(len(assignment_tasks), len(metrics_tasks))
     generated_at = datetime.now(timezone.utc).isoformat()
     provenance = {
         "schema_version": PLAN_SCHEMA_VERSION,
@@ -182,6 +225,7 @@ def build_slurm_plan(
         "subconfigs": resolved_subconfigs,
         "assignment_tasks": assignment_tasks,
         "metrics_tasks": metrics_tasks,
+        "allocations": allocations,
     }
 
     # The launcher owns shared run metadata. Workers are explicitly configured
@@ -203,13 +247,14 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
         )
     if pathlib.Path(plan.get("plan_path", "")) != path:
         raise ValueError(f"Plan path does not match its recorded absolute path: {path}")
+    allocations = plan.get("allocations", [])
+    if not allocations or len(allocations) > MAX_SLURM_JOBS:
+        raise ValueError("Assignment Slurm plan has an invalid allocation count.")
+    for allocation in allocations:
+        cpus = int(allocation.get("cpus", 0))
+        if cpus < 1 or cpus > MAX_CPUS_PER_NODE:
+            raise ValueError(f"Invalid assignment Slurm allocation CPU count: {cpus}.")
     return plan, path
-
-
-def _slug(value: str) -> str:
-    token = re.sub(r"[^A-Za-z0-9.-]+", "-", value).strip("-") or "subconfig"
-    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
-    return f"{token[:40]}-{digest}"
 
 
 def _job_script(
@@ -218,13 +263,14 @@ def _job_script(
     log_path: pathlib.Path,
     command: list[str],
     workspace_root: pathlib.Path,
+    cpus: int,
 ) -> str:
     lines = [
         "#!/usr/bin/env bash",
         "#SBATCH -A soal",
         "#SBATCH -p soal",
         "#SBATCH --ntasks=1",
-        "#SBATCH --cpus-per-task=1",
+        f"#SBATCH --cpus-per-task={cpus}",
         f"#SBATCH --job-name={job_name}",
         f"#SBATCH --chdir={workspace_root}",
         f"#SBATCH --output={log_path}",
@@ -255,66 +301,34 @@ def write_slurm_scripts(
     directory.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    assignment_scripts = {}
-    for task in plan["assignment_tasks"]:
-        name = task["subconfig"]
-        iteration = task["iteration"]
-        token = _slug(name)
-        script_path = directory / f"assignment-{token}-iteration{iteration}.sh"
+    allocation_scripts = {}
+    for index, allocation in enumerate(plan["allocations"]):
+        phase = allocation["phase"]
+        script_path = directory / f"{phase}-allocation-{index}.sh"
         command = [
             "uv",
             "run",
             "python",
             "-m",
             "assignment.slurm",
-            "assignment-worker",
+            "allocation-worker",
             "--plan",
             str(absolute_plan_path),
-            "--subconfig",
-            name,
-            "--iteration",
-            str(iteration),
+            "--allocation-index",
+            str(index),
         ]
         _write_text_atomic(
             script_path,
             _job_script(
-                job_name=f"asg-{token[:24]}-{iteration}",
-                log_path=logs_dir / f"assignment-{token}-{iteration}-%j.log",
+                job_name=f"asg-{phase}-{index}",
+                log_path=logs_dir / f"{phase}-allocation-{index}-%j.log",
                 command=command,
                 workspace_root=workspace_root,
+                cpus=allocation["cpus"],
             ),
             executable=True,
         )
-        assignment_scripts[(name, iteration)] = script_path.resolve()
-
-    metrics_scripts = {}
-    for task in plan["metrics_tasks"]:
-        name = task["subconfig"]
-        token = _slug(name)
-        script_path = directory / f"metrics-{token}.sh"
-        command = [
-            "uv",
-            "run",
-            "python",
-            "-m",
-            "assignment.slurm",
-            "metrics-worker",
-            "--plan",
-            str(absolute_plan_path),
-            "--subconfig",
-            name,
-        ]
-        _write_text_atomic(
-            script_path,
-            _job_script(
-                job_name=f"metrics-{token[:24]}",
-                log_path=logs_dir / f"metrics-{token}-%j.log",
-                command=command,
-                workspace_root=workspace_root,
-            ),
-            executable=True,
-        )
-        metrics_scripts[name] = script_path.resolve()
+        allocation_scripts[index] = script_path.resolve()
 
     submit_lines = [
         "#!/usr/bin/env bash",
@@ -330,47 +344,48 @@ def write_slurm_scripts(
         "  printf '%s\\n' \"$job_id\"",
         "}",
     ]
-    tasks_by_subconfig = {entry["name"]: [] for entry in plan["subconfigs"]}
-    for task in plan["assignment_tasks"]:
-        tasks_by_subconfig[task["subconfig"]].append(task)
-
-    for index, entry in enumerate(plan["subconfigs"]):
-        name = entry["name"]
-        variable = f"assignment_ids_{index}"
-        submit_lines.append(f"{variable}=()")
-        for task in tasks_by_subconfig[name]:
-            static_args = shlex.join(
-                [
-                    "--ntasks=1",
-                    "--cpus-per-task=1",
-                    "--chdir",
-                    str(workspace_root),
-                    str(assignment_scripts[(name, task["iteration"])]),
-                ]
-            )
-            submit_lines.append(f'{variable}+=("$(submit_job {static_args})")')
-        if name in metrics_scripts:
-            dependency = f"dependency_{index}"
+    submit_lines.append("assignment_ids=()")
+    metrics_allocation = None
+    for index, allocation in enumerate(plan["allocations"]):
+        if allocation["phase"] == "metrics":
+            metrics_allocation = (index, allocation)
+            continue
+        static_args = shlex.join(
+            [
+                "--ntasks=1",
+                f"--cpus-per-task={allocation['cpus']}",
+                "--chdir",
+                str(workspace_root),
+                str(allocation_scripts[index]),
+            ]
+        )
+        submit_lines.append(f'assignment_ids+=("$(submit_job {static_args})")')
+    if metrics_allocation is not None:
+        index, allocation = metrics_allocation
+        static_args = shlex.join(
+            [
+                "--ntasks=1",
+                f"--cpus-per-task={allocation['cpus']}",
+                "--chdir",
+                str(workspace_root),
+            ]
+        )
+        metric_script = shlex.quote(str(allocation_scripts[index]))
+        if any(item["phase"] == "assignment" for item in plan["allocations"]):
             submit_lines.append(
-                f"{dependency}=$(IFS=:; printf '%s' \"${{{variable}[*]}}\")"
+                "assignment_dependency=$(IFS=:; printf '%s' \"${assignment_ids[*]}\")"
             )
-            static_args = shlex.join(
-                [
-                    "--ntasks=1",
-                    "--cpus-per-task=1",
-                    "--chdir",
-                    str(workspace_root),
-                ]
-            )
-            metric_script = shlex.quote(str(metrics_scripts[name]))
             submit_lines.append(
-                f"metrics_id_{index}=$(submit_job {static_args} "
-                f'--dependency="afterok:${{{dependency}}}" {metric_script})'
+                f"metrics_id=$(submit_job {static_args} "
+                f'--dependency="afterany:${{assignment_dependency}}" {metric_script})'
+            )
+        else:
+            submit_lines.append(
+                f"metrics_id=$(submit_job {static_args} {metric_script})"
             )
 
     submit_lines.append(
-        f"printf 'Submitted {len(plan['assignment_tasks'])} assignment and "
-        f"{len(plan['metrics_tasks'])} metrics jobs.\\n'"
+        f"printf 'Submitted {len(plan['allocations'])} Slurm allocations.\\n'"
     )
     submit_path = (directory / "submit.sh").resolve()
     _write_text_atomic(submit_path, "\n".join(submit_lines) + "\n", executable=True)
@@ -439,6 +454,70 @@ def run_metrics_worker(plan_path: str | pathlib.Path, subconfig_name: str) -> No
     )
 
 
+def _validate_worker_cpus(expected: int) -> None:
+    allocated = os.environ.get("SLURM_CPUS_PER_TASK")
+    if allocated is None:
+        return
+    try:
+        actual = int(allocated)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid SLURM_CPUS_PER_TASK={allocated!r}.") from exc
+    if actual != expected:
+        raise RuntimeError(
+            f"Worker expected {expected} CPU(s), but Slurm allocated {actual}."
+        )
+
+
+def run_allocation_worker(plan_path: str | pathlib.Path, allocation_index: int) -> int:
+    """Execute all work tasks assigned to one Slurm allocation."""
+    try:
+        plan, absolute_plan_path = load_plan(plan_path)
+        if allocation_index < 0 or allocation_index >= len(plan["allocations"]):
+            raise IndexError(
+                f"Allocation index {allocation_index} is outside the plan."
+            )
+        allocation = plan["allocations"][allocation_index]
+        _validate_worker_cpus(allocation["cpus"])
+        if allocation["phase"] == "assignment":
+            tasks = plan["assignment_tasks"]
+            function = run_assignment_worker
+            arguments = [
+                (
+                    absolute_plan_path,
+                    tasks[index]["subconfig"],
+                    tasks[index]["iteration"],
+                )
+                for index in allocation["task_indices"]
+            ]
+        elif allocation["phase"] == "metrics":
+            tasks = plan["metrics_tasks"]
+            function = run_metrics_worker
+            arguments = [
+                (absolute_plan_path, tasks[index]["subconfig"])
+                for index in allocation["task_indices"]
+            ]
+        else:
+            raise ValueError(f"Unknown assignment Slurm phase {allocation['phase']!r}.")
+
+        failed = False
+        with ProcessPoolExecutor(max_workers=allocation["cpus"]) as executor:
+            futures = {executor.submit(function, *args): args for args in arguments}
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(
+                        f"{allocation['phase'].title()} task {futures[future]} failed: {exc}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    failed = True
+        return 1 if failed else 0
+    except Exception as exc:
+        print(f"Assignment allocation failed: {exc}", file=sys.stderr, flush=True)
+        return 1
+
+
 def _plan_options(function):
     options = [
         click.option(
@@ -488,8 +567,9 @@ def generate_command(config_path, assignment_folder, plan_dir, sample, frac) -> 
     )
     submit_path = write_slurm_scripts(plan_path)
     click.echo(
-        f"Planned {len(plan['assignment_tasks'])} assignment and "
-        f"{len(plan['metrics_tasks'])} metrics jobs."
+        f"Planned {len(plan['assignment_tasks'])} assignment tasks, "
+        f"{len(plan['metrics_tasks'])} metrics tasks, and "
+        f"{len(plan['allocations'])} Slurm allocations."
     )
     click.echo(f"Plan: {plan_path}")
     click.echo(f"Submission script: {submit_path}")
@@ -510,31 +590,17 @@ def submit_command(config_path, assignment_folder, plan_dir, sample, frac) -> No
     subprocess.run(["bash", str(submit_path)], cwd=WORKSPACE_ROOT, check=True)
 
 
-@cli.command("assignment-worker", hidden=True)
-@click.option("--iteration", required=True, type=int)
-@click.option("--subconfig", required=True)
+@cli.command("allocation-worker", hidden=True)
+@click.option("--allocation-index", required=True, type=int)
 @click.option(
     "--plan",
     "plan_path",
     required=True,
     type=click.Path(exists=True, dir_okay=False, path_type=pathlib.Path),
 )
-def assignment_worker_command(plan_path, subconfig, iteration) -> None:
-    """Run one assignment task from a resolved plan."""
-    run_assignment_worker(plan_path, subconfig, iteration)
-
-
-@cli.command("metrics-worker", hidden=True)
-@click.option("--subconfig", required=True)
-@click.option(
-    "--plan",
-    "plan_path",
-    required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=pathlib.Path),
-)
-def metrics_worker_command(plan_path, subconfig) -> None:
-    """Run one metrics task from a resolved plan."""
-    run_metrics_worker(plan_path, subconfig)
+def allocation_worker_command(plan_path, allocation_index) -> None:
+    """Run one batch of assignment or metrics tasks from a resolved plan."""
+    raise SystemExit(run_allocation_worker(plan_path, allocation_index))
 
 
 if __name__ == "__main__":

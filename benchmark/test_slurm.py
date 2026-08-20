@@ -25,12 +25,13 @@ from benchmark.runner import (
     run_optimization_phase,
 )
 from benchmark.slurm import (
+    MAX_SLURM_JOBS,
     SlurmPlan,
     _build_parser,
+    _plan_allocations,
     create_plan,
     load_plan,
-    run_evaluation_worker,
-    run_optimization_worker,
+    run_benchmark_worker,
     submission_script,
     submit_plan,
     write_plan,
@@ -53,29 +54,29 @@ def test_public_commands_require_config_option(command):
         parser.parse_args([command, "sweep.yaml"])
 
 
-def test_submission_script_has_required_directives_and_dependency_wiring(tmp_path):
+def test_submission_script_has_required_directives(tmp_path):
     plan = _plan(tmp_path)
     plan_path = tmp_path / ".slurm" / "plan.json"
 
     script = submission_script(plan, plan_path)
 
-    assert script.count("sbatch --parsable -A soal -p soal") == 2
-    assert script.count("--ntasks=1") == 2
+    assert script.count("sbatch --parsable -A soal -p soal") == 1
+    assert script.count("--ntasks=1") == 1
     assert "--cpus-per-task=4" in script
-    assert "--cpus-per-task=1" in script
     assert "--export=ALL,OMP_NUM_THREADS=1" in script
-    assert "optimization_job_0=$(sbatch" in script
-    assert '--dependency="afterany:${optimization_job_0}"' in script
-    assert "worker-optimize" in script
-    assert "worker-evaluate" in script
+    assert "benchmark_job_0=$(sbatch" in script
+    assert "--dependency" not in script
+    assert "worker-allocation" in script
+    assert "--allocation-index" in script
     assert "srun" not in script
     assert "--cpus-per-task=99" not in script
+    subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 
-def test_submit_uses_parsable_account_partition_and_afterany(tmp_path):
+def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     plan = _plan(tmp_path)
     calls = []
-    job_ids = iter(("120;cluster\n", "121\n"))
+    job_ids = iter(("120;cluster\n",))
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
@@ -84,13 +85,11 @@ def test_submit_uses_parsable_account_partition_and_afterany(tmp_path):
     submitted = submit_plan(plan, tmp_path / "plan.json", run=fake_run)
 
     assert len(submitted) == 1
-    assert submitted[0].optimization_job_id == "120"
-    assert submitted[0].evaluation_job_id == "121"
+    assert submitted[0].phase == "benchmark"
+    assert submitted[0].job_id == "120"
     assert calls[0][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
-    assert calls[1][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
-    assert "--dependency=afterany:120" in calls[1][0]
     assert "--cpus-per-task=4" in calls[0][0]
-    assert "--cpus-per-task=1" in calls[1][0]
+    assert not any(value.startswith("--dependency") for value in calls[0][0])
     assert all(
         call[1] == {"check": True, "capture_output": True, "text": True}
         for call in calls
@@ -170,35 +169,143 @@ def test_submit_rejects_duplicate_tasks_before_sbatch(tmp_path, duplicate):
     assert calls == []
 
 
-def test_workers_enforce_allocations_and_return_nonzero_on_logical_errors(
+def test_worker_enforces_allocation_and_evaluates_after_optimization(
     tmp_path, monkeypatch
 ):
     plan = _plan(tmp_path)
+    second_task = replace(
+        plan.tasks[0],
+        task_id="second",
+        config_hash="second-hash",
+        output_dir=str((tmp_path / "second-run").resolve()),
+    )
+    plan = replace(plan, tasks=[plan.tasks[0], second_task])
     monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
-    optimization_calls = []
+    events = []
     monkeypatch.setattr(
         "benchmark.slurm.run_optimization_phase",
-        lambda task: optimization_calls.append(task)
-        or TaskResult(task.task_id, task.output_dir, "FEASIBLE"),
-    )
-    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "3")
-
-    assert run_optimization_worker("plan.json", 0) == 1
-    assert optimization_calls == []
-
-    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "1")
-    monkeypatch.setattr(
-        "benchmark.slurm.evaluate_optimization_task",
-        lambda *args, **kwargs: TaskResult("task", "output", "ERROR"),
+        lambda task: (
+            events.append(("optimize", task.task_id))
+            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+        ),
     )
     aggregate_calls = []
     monkeypatch.setattr(
         "benchmark.slurm.aggregate_results",
         lambda *args, **kwargs: aggregate_calls.append((args, kwargs)),
     )
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "7")
 
-    assert run_evaluation_worker("plan.json", 0) == 1
+    assert run_benchmark_worker("plan.json", 0) == 1
+    assert events == []
+    assert aggregate_calls == []
+
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
+    executor_workers = []
+
+    class ImmediateExecutor:
+        def __init__(self, max_workers):
+            executor_workers.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def submit(self, function, *args):
+            from concurrent.futures import Future
+
+            future = Future()
+            try:
+                future.set_result(function(*args))
+            except Exception as exc:
+                future.set_exception(exc)
+            return future
+
+    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", ImmediateExecutor)
+    monkeypatch.setattr(
+        "benchmark.slurm.evaluate_optimization_task",
+        lambda task, **kwargs: (
+            events.append(("evaluate", task.task_id))
+            or TaskResult(task.task_id, task.output_dir, "ERROR")
+        ),
+    )
+
+    assert run_benchmark_worker("plan.json", 0) == 1
+    assert [phase for phase, _task_id in events] == [
+        "optimize",
+        "optimize",
+        "evaluate",
+        "evaluate",
+    ]
+    assert executor_workers == [2, 8]
     assert len(aggregate_calls) == 1
+
+
+def test_large_benchmark_plan_uses_twelve_allocations_and_usable_cpus(tmp_path):
+    tasks = [
+        BenchmarkTask(
+            task_id=f"task-{index}",
+            config_hash=f"hash-{index}",
+            config={"workers": 9},
+            output_dir=str((tmp_path / f"run-{index}").resolve()),
+            capacity_slots=99,
+        )
+        for index in range(100)
+    ]
+    plan = replace(_plan(tmp_path), tasks=tasks)
+
+    allocations = _plan_allocations(plan)
+
+    assert len(allocations) == MAX_SLURM_JOBS
+    assert {item.phase for item in allocations} == {"benchmark"}
+    assert {item.cpus for item in allocations} == {36}
+    assert all(item.cpus // item.task_cpus == 4 for item in allocations)
+    assert sorted(index for item in allocations for index in item.task_indices) == list(
+        range(100)
+    )
+    assert (
+        submission_script(plan, tmp_path / "plan.json").count("sbatch --parsable")
+        == MAX_SLURM_JOBS
+    )
+
+
+@pytest.mark.parametrize(
+    ("workers", "task_count", "expected_cpus"),
+    [(9, 4, 36), (8, 5, 40), (24, 1, 24)],
+)
+def test_allocation_cpu_requests_have_no_unusable_remainder(
+    tmp_path, workers, task_count, expected_cpus
+):
+    tasks = [
+        BenchmarkTask(
+            task_id=f"task-{index}",
+            config_hash=f"hash-{index}",
+            config={"workers": workers},
+            output_dir=str((tmp_path / f"run-{index}").resolve()),
+            capacity_slots=99,
+        )
+        for index in range(task_count)
+    ]
+
+    allocations = _plan_allocations(replace(_plan(tmp_path), tasks=tasks))
+
+    assert allocations[0].cpus == expected_cpus
+
+
+def test_submit_rejects_tasks_requiring_more_than_one_node(tmp_path):
+    task = replace(_plan(tmp_path).tasks[0], config={"workers": 41})
+    calls = []
+
+    with pytest.raises(ValueError, match="cannot exceed 40"):
+        submit_plan(
+            replace(_plan(tmp_path), tasks=[task]),
+            tmp_path / "plan.json",
+            run=lambda *args, **kwargs: calls.append(args),
+        )
+
+    assert calls == []
 
 
 def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkeypatch):
@@ -240,7 +347,9 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     monkeypatch.setattr(
         OptimizationConfig, "make_solver", lambda self, output_dir=None: object()
     )
-    monkeypatch.setattr(OptimizationConfig, "make_strategy", lambda self: FakeStrategy())
+    monkeypatch.setattr(
+        OptimizationConfig, "make_strategy", lambda self: FakeStrategy()
+    )
 
     import benchmark.runner as runner
 
