@@ -7,8 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import assignment.slurm as assignment_slurm
 from assignment.slurm import (
+    MAX_ASSIGNMENT_JOBS,
     MAX_CPUS_PER_NODE,
+    MAX_METRICS_JOBS,
     MAX_SLURM_JOBS,
     PLAN_SCHEMA_VERSION,
     _build_allocations,
@@ -20,7 +23,7 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
 )
 
 
-def test_kumar_plan_batches_tasks_into_twelve_allocations(tmp_path):
+def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_path):
     config_path = pathlib.Path(__file__).parents[1] / "configs/kumar.config.yaml"
 
     plan, plan_path = build_slurm_plan(
@@ -37,20 +40,25 @@ def test_kumar_plan_batches_tasks_into_twelve_allocations(tmp_path):
         for allocation in plan["allocations"]
         if allocation["phase"] == "assignment"
     ]
-    assert len(assignment_allocations) == MAX_SLURM_JOBS - 1
-    assert all(
-        allocation["cpus"] == MAX_CPUS_PER_NODE for allocation in assignment_allocations
-    )
+    assert len(assignment_allocations) == MAX_ASSIGNMENT_JOBS
+    assert {allocation["cpus"] for allocation in assignment_allocations} == {39, 40}
     assert sorted(
         index
         for allocation in assignment_allocations
         for index in allocation["task_indices"]
     ) == list(range(475))
-    assert plan["allocations"][-1] == {
-        "phase": "metrics",
-        "task_indices": list(range(19)),
-        "cpus": 19,
-    }
+    metrics_allocations = [
+        allocation
+        for allocation in plan["allocations"]
+        if allocation["phase"] == "metrics"
+    ]
+    assert len(metrics_allocations) == MAX_METRICS_JOBS
+    assert {allocation["cpus"] for allocation in metrics_allocations} == {2, 3}
+    assert sorted(
+        index
+        for allocation in metrics_allocations
+        for index in allocation["task_indices"]
+    ) == list(range(19))
     assert pathlib.Path(plan["assignment_folder"]).is_absolute()
     assert plan_path.is_absolute()
     assert pathlib.Path(plan["provenance_path"]).is_file()
@@ -65,6 +73,16 @@ def test_kumar_plan_batches_tasks_into_twelve_allocations(tmp_path):
             "write_utility_output": True,
         }
     ]
+    submit_path = write_slurm_scripts(plan_path)
+    submit_script = submit_path.read_text()
+    assert submit_script.count("assignment_ids+=(") == MAX_ASSIGNMENT_JOBS
+    assert submit_script.count("metrics_ids+=(") == MAX_METRICS_JOBS
+    assert (
+        submit_script.count('--dependency="afterany:${assignment_dependency}"')
+        == MAX_METRICS_JOBS
+    )
+    assert submit_script.count("$(submit_job") == MAX_SLURM_JOBS
+    subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
 
 def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
@@ -93,12 +111,12 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
     submit_script = submit_path.read_text()
     worker_scripts = sorted(submit_path.parent.glob("assignment-allocation-*.sh"))
 
-    assert len(worker_scripts) == 1
+    assert len(worker_scripts) == 2
     worker_script = worker_scripts[0].read_text()
     assert "#SBATCH -A soal" in worker_script
     assert "#SBATCH -p soal" in worker_script
     assert "#SBATCH --ntasks=1" in worker_script
-    assert "#SBATCH --cpus-per-task=2" in worker_script
+    assert "#SBATCH --cpus-per-task=1" in worker_script
     assert "export OMP_NUM_THREADS=1" in worker_script
     assert "allocation-worker" in worker_script
     assert "--allocation-index 0" in worker_script
@@ -106,16 +124,121 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
     assert "--ntasks=1" in submit_script
     assert "job_id=${raw_id%%;*}" in submit_script
     assert '--dependency="afterany:${assignment_dependency}"' in submit_script
-    assert submit_script.count("assignment_ids+=(") == 1
-    assert submit_script.count("$(submit_job") == 2
+    assert submit_script.count("assignment_ids+=(") == 2
+    assert submit_script.count("metrics_ids+=(") == 1
+    assert submit_script.count("$(submit_job") == 3
     assert "srun" not in submit_script
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
+
+
+def test_worker_process_reuses_market_across_iterations_and_subconfigs(
+    tmp_path, monkeypatch
+):
+    events = []
+
+    class FakeMarketGenerator:
+        def __init__(
+            self, *, config, assignment_path, write_config, write_aggregate_metrics
+        ):
+            events.append(("initialize", config["subconfig-name"]))
+            self.config = dict(config)
+
+        def reconfigure(self, config, assignment_path, *, write_config):
+            events.append(("reconfigure", config["subconfig-name"]))
+            self.config = dict(config)
+
+        def simulate_target(self, subconfig_name, iteration, *, write_utility_output):
+            events.append(("simulate", subconfig_name, iteration))
+
+    plan = {
+        "plan_path": str(tmp_path / "plan.json"),
+        "assignment_folder": str(tmp_path / "assignments"),
+        "subconfigs": [
+            {"name": name, "config": {"subconfig-name": name}}
+            for name in ("first", "second")
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": subconfig,
+                "iteration": iteration,
+                "write_utility_output": False,
+            }
+            for subconfig, iteration in [
+                ("first", 0),
+                ("first", 1),
+                ("second", 0),
+                ("first", 2),
+            ]
+        ],
+    }
+    monkeypatch.setattr(assignment_slurm, "_WORKER_PLAN", plan)
+    monkeypatch.setattr(assignment_slurm, "_WORKER_MARKET_GENERATOR", None)
+    monkeypatch.setattr(assignment_slurm, "_WORKER_MARKET_KEY", None)
+    monkeypatch.setattr(
+        "assignment.student_assignment.market_generator."
+        "school_choice_market_generator.MarketGenerator",
+        FakeMarketGenerator,
+    )
+
+    for task_index in range(4):
+        assignment_slurm._run_cached_assignment_task(task_index)
+
+    assert events == [
+        ("initialize", "first"),
+        ("simulate", "first", 0),
+        ("simulate", "first", 1),
+        ("reconfigure", "second"),
+        ("simulate", "second", 0),
+        ("reconfigure", "first"),
+        ("simulate", "first", 2),
+    ]
+
+
+def test_allocation_pool_initializes_each_process_with_the_plan(tmp_path, monkeypatch):
+    plan_path = (tmp_path / "plan.json").resolve()
+    plan = {
+        "allocations": [{"phase": "assignment", "task_indices": [3, 7], "cpus": 2}],
+    }
+    seen = {}
+
+    class FinishedFuture:
+        def result(self):
+            return None
+
+    class FakeExecutor:
+        def __init__(self, max_workers, initializer, initargs):
+            seen["executor"] = (max_workers, initializer, initargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def submit(self, function, task_index):
+            seen.setdefault("submissions", []).append((function, task_index))
+            return FinishedFuture()
+
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda path: (plan, plan_path))
+    monkeypatch.setattr(assignment_slurm, "ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(assignment_slurm, "as_completed", lambda futures: list(futures))
+
+    assert assignment_slurm.run_allocation_worker(plan_path, 0) == 0
+    assert seen["executor"] == (
+        2,
+        assignment_slurm._initialize_worker,
+        (plan_path,),
+    )
+    assert seen["submissions"] == [
+        (assignment_slurm._run_cached_assignment_task, 3),
+        (assignment_slurm._run_cached_assignment_task, 7),
+    ]
 
 
 def test_large_assignment_plan_runs_multiple_waves_per_allocation():
     allocations = _build_allocations(12 * 40 * 3, 0)
 
-    assert len(allocations) == MAX_SLURM_JOBS
+    assert len(allocations) == MAX_ASSIGNMENT_JOBS
     assert {allocation["cpus"] for allocation in allocations} == {MAX_CPUS_PER_NODE}
     assert {len(allocation["task_indices"]) for allocation in allocations} == {120}
 

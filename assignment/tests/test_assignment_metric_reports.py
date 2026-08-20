@@ -385,6 +385,16 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         [1, 2, 3, 1, 4, 2, 2, None],
         [0, 1, 0, 1, 0, 0, 1, 0],
     )
+    assignments["overage_seat"] = [
+        False,
+        False,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
     programs = pd.DataFrame(
         {
             "program_id": [
@@ -425,6 +435,7 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         program_data=programs,
         schools_data=schools,
         distance_cache=distances,
+        overscribe_aa=True,
     )
 
     assert evaluator.student_data["assigned school"].tolist() == [
@@ -533,6 +544,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         "mean_travel_dist_assigned",
         "mean_travel_dist_designated",
         "percent_designated",
+        "frl_assigned",
+        "frl_designated",
+        "frl_non_designated",
         "program_utilization",
         "overage",
         "underage",
@@ -555,6 +569,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert program_x["mean_travel_dist_assigned"] == 5
     assert program_x["mean_travel_dist_designated"] == 9
     assert program_x["percent_designated"] == 1 / 3
+    assert program_x["frl_assigned"] == pytest.approx(0.8)
+    assert program_x["frl_designated"] == pytest.approx(0.8)
+    assert program_x["frl_non_designated"] == pytest.approx(0.8)
     assert program_x["program_utilization"] == 1.5
     assert program_x["overage"] == 0.5
     assert program_x["underage"] == 0
@@ -571,6 +588,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert program_y["mean_travel_dist_assigned"] == 8
     assert program_y["mean_travel_dist_designated"] == 7
     assert program_y["percent_designated"] == 0.5
+    assert program_y[
+        ["frl_assigned", "frl_designated", "frl_non_designated"]
+    ].eq(0).all()
     assert program_y["program_utilization"] == 0.5
     assert program_y["overage"] == 0
     assert program_y["underage"] == 0.5
@@ -581,6 +601,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     program_z = by_program.loc["202-Z-KG"]
     assert program_z["assigned"] == 1
     assert program_z["designated"] == 0
+    assert program_z["frl_assigned"] == pytest.approx(0.1)
+    assert pd.isna(program_z["frl_designated"])
+    assert program_z["frl_non_designated"] == pytest.approx(0.1)
     assert program_z["program_utilization"] == 0.25
     assert program_z["overage"] == 0
     assert program_z["underage"] == 0.75
@@ -595,6 +618,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert zero_capacity_program["mean_travel_dist_assigned"] == 11
     assert zero_capacity_program["mean_travel_dist_designated"] == 11
     assert zero_capacity_program["percent_designated"] == 1
+    assert zero_capacity_program["frl_assigned"] == pytest.approx(0.4)
+    assert zero_capacity_program["frl_designated"] == pytest.approx(0.4)
+    assert pd.isna(zero_capacity_program["frl_non_designated"])
     assert zero_capacity_program[
         ["program_utilization", "overage", "underage"]
     ].isna().all()
@@ -606,6 +632,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     unassigned_program = by_program.loc["202-V-KG"]
     assert unassigned_program["assigned"] == 0
     assert unassigned_program["designated"] == 0
+    assert unassigned_program[
+        ["frl_assigned", "frl_designated", "frl_non_designated"]
+    ].isna().all()
     assert unassigned_program[demographic_columns].eq(0).all()
     assert (
         unassigned_program[
@@ -631,6 +660,18 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         "percent_assigned",
         "school_utilization",
     }.isdisjoint(program_metrics.columns)
+
+    assert metrics["overage"] == pytest.approx(1 / 13)
+    zip_metrics = reports["zip_code"].set_index("zip_code")
+    assert zip_metrics.loc[94110, "overage"] == pytest.approx(1 / 4)
+    assert zip_metrics.loc[94111, "overage"] == 0
+    attendance_metrics = reports["attendance_area"].set_index("attendance_area")
+    assert attendance_metrics.loc[101, "overage"] == pytest.approx(1 / 5)
+    assert attendance_metrics.loc[202, "overage"] == 0
+
+    evaluator.overscribe_aa = False
+    evaluator.update_assignments(assignments)
+    assert evaluator.eval_assignment_full()["overage"] == 0
 
 
 def test_ge_district_frl_metrics_use_all_assigned_students():

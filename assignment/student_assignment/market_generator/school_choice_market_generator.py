@@ -392,6 +392,7 @@ class MarketGenerator(SchoolChoiceMarket):
         self._aggregate_metric_results = {
             report: [] for report in self.AGGREGATE_METRIC_FILES
         }
+        self._frl_threshold_input_batches = []
 
     @classmethod
     def _average_aggregate_metric_frames(cls, report_name, frames):
@@ -418,12 +419,70 @@ class MarketGenerator(SchoolChoiceMarket):
     def _finalize_aggregate_metric_batch(self):
         if not self.config.get("export-aggregate-metrics", False):
             return
+        averaged_reports = {}
         for report_name, frames in self._aggregate_metric_batches.items():
             if frames:
-                self._aggregate_metric_results[report_name].append(
-                    self._average_aggregate_metric_frames(report_name, frames)
+                averaged_reports[report_name] = self._average_aggregate_metric_frames(
+                    report_name, frames
                 )
             frames.clear()
+        if self._frl_threshold_input_batches and "citywide" in averaged_reports:
+            alternatives = self._alternative_frl_threshold_metrics(
+                self._frl_threshold_input_batches
+            )
+            averaged_reports["citywide"] = averaged_reports["citywide"].merge(
+                alternatives, on="config_name", how="left", validate="one_to_one"
+            )
+        self._frl_threshold_input_batches.clear()
+        for report_name, report in averaged_reports.items():
+            self._aggregate_metric_results[report_name].append(report)
+
+    @staticmethod
+    def _alternative_frl_threshold_metrics(frames):
+        combined = pd.concat(frames, ignore_index=True, sort=False)
+        averaged = combined.groupby(
+            ["config_name", "program_id"],
+            as_index=False,
+            dropna=False,
+            sort=True,
+        )[["frl_assigned", "frl_non_designated"]].mean()
+        district_frl = combined.groupby("config_name", sort=True)["district_frl"].mean()
+        specifications = {
+            "Alternative # of GE programs above +10% district FRL": (
+                "frl_assigned",
+                0.10,
+            ),
+            "Alternative # of GE programs above +15% district FRL": (
+                "frl_assigned",
+                0.15,
+            ),
+            "Alternative # of GE programs above +15% district FRL (Non-Designated)": (
+                "frl_non_designated",
+                0.15,
+            ),
+            "Alternative # of GE programs below -10% district FRL": (
+                "frl_assigned",
+                -0.10,
+            ),
+            "Alternative # of GE programs below -15% district FRL": (
+                "frl_assigned",
+                -0.15,
+            ),
+        }
+        rows = []
+        for config_name, programs in averaged.groupby("config_name", sort=True):
+            district_average = district_frl.loc[config_name]
+            row = {"config_name": config_name}
+            for name, (column, threshold) in specifications.items():
+                values = programs[column]
+                matching = (
+                    values >= district_average + threshold
+                    if threshold >= 0
+                    else values <= district_average + threshold
+                )
+                row[name] = int(matching.sum())
+            rows.append(row)
+        return pd.DataFrame(rows, columns=["config_name", *specifications])
 
     def _record_aggregate_metric_reports(self, reports):
         for report_name, report in reports.items():
@@ -807,14 +866,24 @@ class MarketGenerator(SchoolChoiceMarket):
                     match,
                     in_zone_rank,
                     cutoffs,
+                    overage_seats,
                 ) = self._generate_assignment_with_guardrails(prefs, priorities)
             else:
-                match, in_zone_rank, cutoffs = self._generate_assignment(
-                    prefs, priorities
-                )
+                (
+                    match,
+                    in_zone_rank,
+                    cutoffs,
+                    overage_seats,
+                ) = self._generate_assignment(prefs, priorities)
 
             yield self._save_assignment(
-                prefs, policy_data, iteration, match, in_zone_rank, cutoffs
+                prefs,
+                policy_data,
+                iteration,
+                match,
+                in_zone_rank,
+                cutoffs,
+                overage_seats,
             )
 
     def _policy_data_options(self, policy):
@@ -861,13 +930,16 @@ class MarketGenerator(SchoolChoiceMarket):
         prefs: np.ndarray,
         match: np.ndarray,
         in_zone_rank: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Place otherwise-unassigned students at their attendance-area school."""
+        overage_seats = np.zeros(len(match), dtype=bool)
         if not self.config.get("overscribe_aa", False):
-            return match, in_zone_rank
+            return match, in_zone_rank, overage_seats
 
         match = match.copy()
         in_zone_rank = in_zone_rank.copy()
+        capacities = np.asarray(self.programs.capacity)
+        enrollment = np.bincount(match, minlength=len(capacities) + 1)
         attendance_areas = self.students.attendance_area
         grade = self.config["grade"]
 
@@ -880,7 +952,11 @@ class MarketGenerator(SchoolChoiceMarket):
             if program_idx is None:
                 continue
 
+            overage_seats[student_idx] = (
+                enrollment[program_idx] >= capacities[program_idx - 1]
+            )
             match[student_idx] = program_idx
+            enrollment[program_idx] += 1
             preference_ranks = np.flatnonzero(
                 prefs[student_idx] == program_idx
             )
@@ -890,7 +966,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 else self.preference_generator.pref_length[student_idx] + 1
             )
 
-        return match, in_zone_rank
+        return match, in_zone_rank, overage_seats
 
     def _get_final_program(self, df: pd.DataFrame):
         """Modify dataframe in place to add final program column.
@@ -1035,7 +1111,7 @@ class MarketGenerator(SchoolChoiceMarket):
 
     def _generate_assignment(
         self, prefs: np.ndarray, priorities: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Assign students to schools with the desired mechanisms, calculating rank and cutoffs.
 
         Args:
@@ -1043,9 +1119,7 @@ class MarketGenerator(SchoolChoiceMarket):
             priorities (np.ndarray): student priorities
 
         Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]: matched program array, rank of assigned
-                program array, and cutoffs (the lowest priority students assigned, if program
-                is at capacity)
+            Matched programs, assignment ranks, cutoffs, and overage-seat flags.
         """
         if self.config["assignment-algorithm"] != "DA":
             raise ValueError(
@@ -1065,12 +1139,14 @@ class MarketGenerator(SchoolChoiceMarket):
             cutoffs,
             rank,
         ) = da.run()
-        match, rank = self._overscribe_attendance_area(prefs, match, rank)
-        return match, rank, cutoffs
+        match, rank, overage_seats = self._overscribe_attendance_area(
+            prefs, match, rank
+        )
+        return match, rank, cutoffs, overage_seats
 
     def _generate_assignment_with_guardrails(
         self, preferences: np.ndarray, priorities: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Generate an assignment using reserves (guardrails).
 
         Args:
@@ -1078,8 +1154,7 @@ class MarketGenerator(SchoolChoiceMarket):
             priorities (np.ndarray): student priorities
 
         Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]: matched program array, rank of assigned
-                program array, and cutoffs
+            Matched programs, assignment ranks, cutoffs, and overage-seat flags.
         """
         guardrail_cache_key = (
             getattr(self, "_active_policy_cache_context", None),
@@ -1099,10 +1174,10 @@ class MarketGenerator(SchoolChoiceMarket):
         cutoffs = np.zeros(
             [len(match)]
         )  # TODO: calculate cutoffs in reserve setting
-        match, rank = self._overscribe_attendance_area(
+        match, rank, overage_seats = self._overscribe_attendance_area(
             preferences, match, rank
         )
-        return match, rank, cutoffs
+        return match, rank, cutoffs, overage_seats
 
     def _assignment_save_path(self, policy_data, iteration):
         save_name = self._get_assignment_save_name(policy_data, iteration)
@@ -1234,22 +1309,24 @@ class MarketGenerator(SchoolChoiceMarket):
                 assignment_df,
                 program_data=self.programs.program_df,
                 distance_cache=self.students.distance_data,
+                overscribe_aa=self.config.get("overscribe_aa", False),
             )
             self._aggregate_metric_evaluator = evaluator
         else:
+            evaluator.overscribe_aa = self.config.get("overscribe_aa", False)
             evaluator.update_assignments(assignment_df)
         variant_name = pathlib.Path(save_name).stem
         iteration_suffix = f"_iteration{iteration}" if iteration is not None else None
         if iteration_suffix and variant_name.endswith(iteration_suffix):
             variant_name = variant_name[: -len(iteration_suffix)]
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
-        self._record_aggregate_metric_reports(
-            evaluator.eval_aggregate_metric_reports(
-                config_name,
-                include_local_metrics=self.config.get(
-                    "export-local-metrics", False
-                ),
-            )
+        reports = evaluator.eval_aggregate_metric_reports(
+            config_name,
+            include_local_metrics=self.config.get("export-local-metrics", False),
+        )
+        self._record_aggregate_metric_reports(reports)
+        self._frl_threshold_input_batches.append(
+            evaluator.eval_frl_threshold_inputs(config_name)
         )
 
     def _load_reusable_assignment(self, policy_data, iteration):
@@ -1278,6 +1355,7 @@ class MarketGenerator(SchoolChoiceMarket):
         match: np.ndarray,
         in_zone_rank: np.ndarray,
         cutoffs: np.ndarray,
+        overage_seats: np.ndarray | None = None,
     ) -> pd.DataFrame:
         """Create and save a dataframe with student assignments.
 
@@ -1318,6 +1396,8 @@ class MarketGenerator(SchoolChoiceMarket):
             1,
             0,
         )
+        if overage_seats is not None:
+            assignment_df["overage_seat"] = np.asarray(overage_seats, dtype=bool)
         if self.config["utility-model"]["enable"]:
             assignment_df["assigned_utility"] = self._get_match_utilities(match)
         assignment_df["In-Zone Rank"] = mechanism_rank

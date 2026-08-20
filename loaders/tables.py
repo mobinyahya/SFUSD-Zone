@@ -204,12 +204,12 @@ def _filter_student_rows(
     frame: pd.DataFrame,
     source_rows: np.ndarray,
     keep: pd.Series | np.ndarray,
-    source_row_count: int,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     mask = np.asarray(keep, dtype=bool)
     source_rows = source_rows[mask]
     frame = frame.loc[mask].copy()
-    _set_source_attrs(frame, source_rows, source_row_count)
+    frame.attrs.pop("source_rows", None)
+    frame.attrs.pop("source_row_count", None)
     return frame, source_rows
 
 
@@ -234,7 +234,6 @@ def filter_outside_district_students(
         frame,
         source_rows,
         frame["census_block"].notna(),
-        source_row_count,
     )
     filtered = filtered.reset_index(drop=True)
     _set_source_attrs(filtered, source_rows, source_row_count)
@@ -390,7 +389,7 @@ def normalize_student_records(
     normalized_grades = frame["grade"].map(normalize_grade)
     grade_mask = normalized_grades.isin(grades)
     frame, source_rows = _filter_student_rows(
-        frame, source_rows, grade_mask, source_row_count
+        frame, source_rows, grade_mask
     )
     frame["grade"] = normalized_grades.loc[frame.index]
     _validate_student_identities(frame)
@@ -518,7 +517,7 @@ def normalize_student_records(
 
     if special_mode == "exclude_any_special":
         frame, source_rows = _filter_student_rows(
-            frame, source_rows, ~any_special, source_row_count
+            frame, source_rows, ~any_special
         )
 
     for column in _SCHOOL_LIST_COLUMNS:
@@ -594,7 +593,7 @@ def normalize_student_records(
     for round_number in rounds:
         participating |= frame[f"r{round_number}_ranked_idschool"].map(bool)
     frame, source_rows = _filter_student_rows(
-        frame, source_rows, participating, source_row_count
+        frame, source_rows, participating
     )
 
     first_rounds: list[int] = []

@@ -233,6 +233,18 @@ def _aggregate_reports(config_name, value, sibling_value=None):
     }
 
 
+def _frl_threshold_inputs(config_name):
+    return pd.DataFrame(
+        {
+            "config_name": [config_name],
+            "program_id": ["101-GE-KG"],
+            "frl_assigned": [0.5],
+            "frl_non_designated": [0.5],
+            "district_frl": [0.5],
+        }
+    )
+
+
 def _configure_reuse_market(market):
     market.config.update(
         {
@@ -463,6 +475,9 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     evaluator.eval_aggregate_metric_reports.side_effect = (
         lambda _config_name, **_kwargs: next(iteration_reports)
     )
+    evaluator.eval_frl_threshold_inputs.return_value = _frl_threshold_inputs(
+        "status_quo/policy"
+    )
     from_scenario = Mock(return_value=evaluator)
     monkeypatch.setattr(MatchEvaluator, "from_scenario", from_scenario)
 
@@ -522,6 +537,9 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
             {"config_name": ["status_quo/policy"], "metric": [2.0]}
         )
     }
+    evaluator.eval_frl_threshold_inputs.return_value = _frl_threshold_inputs(
+        "status_quo/policy"
+    )
     monkeypatch.setattr(
         MatchEvaluator,
         "from_scenario",
@@ -653,6 +671,52 @@ def test_empty_geography_report_keeps_metric_headers():
         "zip_code",
         "metric",
     ]
+
+
+def test_alternative_frl_thresholds_compare_after_averaging_iterations():
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = {"export-aggregate-metrics": True}
+    market._reset_aggregate_metric_reports()
+    metric = "#GE programs above +15% district FRL"
+    market._aggregate_metric_batches["citywide"] = [
+        pd.DataFrame({"config_name": ["config-a"], metric: [1]}),
+        pd.DataFrame({"config_name": ["config-a"], metric: [1]}),
+    ]
+    market._frl_threshold_input_batches = [
+        pd.DataFrame(
+            {
+                "config_name": ["config-a", "config-a"],
+                "program_id": ["A", "B"],
+                "frl_assigned": [0.8, 0.2],
+                "frl_non_designated": [0.92, 0.2],
+                "district_frl": [0.5, 0.5],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "config_name": ["config-a", "config-a"],
+                "program_id": ["A", "B"],
+                "frl_assigned": [0.4, 0.6],
+                "frl_non_designated": [0.42, 0.6],
+                "district_frl": [0.5, 0.5],
+            }
+        ),
+    ]
+
+    market._finalize_aggregate_metric_batch()
+
+    citywide = market._aggregate_metric_results["citywide"][0].iloc[0]
+    assert citywide[metric] == 1
+    assert citywide["Alternative # of GE programs above +10% district FRL"] == 1
+    assert citywide["Alternative # of GE programs above +15% district FRL"] == 0
+    assert (
+        citywide[
+            "Alternative # of GE programs above +15% district FRL (Non-Designated)"
+        ]
+        == 1
+    )
+    assert citywide["Alternative # of GE programs below -10% district FRL"] == 1
+    assert citywide["Alternative # of GE programs below -15% district FRL"] == 0
 
 
 def test_preference_length_real_plus_three_and_ethnicity_means():

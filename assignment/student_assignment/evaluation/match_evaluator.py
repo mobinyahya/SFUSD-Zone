@@ -121,6 +121,7 @@ class _FullReportAggregates:
     ge_non_designated_program_frl_context: tuple[pd.Series, float]
     ge_aapi_counts: np.ndarray
     all_student_top_choice_outcomes: dict[int, ChoiceRate]
+    overage: float
 
 
 class MatchEvaluator:
@@ -144,6 +145,7 @@ class MatchEvaluator:
         program_data=None,
         schools_data=None,
         distance_cache=None,
+        overscribe_aa=False,
     ):
         """Build an evaluator from benchmark objects or standalone data frames.
 
@@ -153,6 +155,7 @@ class MatchEvaluator:
         program and school CSV paths.
         """
         self._set_program_groups()
+        self.overscribe_aa = overscribe_aa
         if not isinstance(student_data, pd.DataFrame):
             self._init_basic(student_data, assignments, distances)
             return
@@ -273,6 +276,7 @@ class MatchEvaluator:
             self._program_type_by_id
         )
         self.student_data["assigned school"] = self.student_data["assigned_school"]
+        self._mark_overage_seats()
         if self._distance_cache is None:
             self.eval_distance()
         else:
@@ -280,6 +284,45 @@ class MatchEvaluator:
                 self._assignment_distances_from_cache()
             )
         return self
+
+    def _mark_overage_seats(self):
+        self.student_data["overage_seat"] = False
+        if not self.overscribe_aa:
+            return
+        if "capacity" not in self.programs:
+            raise ValueError("Overage metrics require program column: capacity")
+
+        assigned = self._assigned_mask(self.student_data) & self.student_data[
+            "programtype"
+        ].eq("GE")
+        if "overage_seat" in self.assignments:
+            overage_seats = pd.to_numeric(
+                self.assignments["overage_seat"], errors="coerce"
+            )
+            if overage_seats.isna().any() or not overage_seats.isin([0, 1]).all():
+                raise ValueError("Assignments contain invalid overage_seat values")
+            overage_by_student = pd.Series(
+                overage_seats.astype(bool).to_numpy(),
+                index=self.assignments["studentno"],
+            )
+            marked = self.student_data["studentno"].map(overage_by_student)
+            if (marked & ~assigned).any():
+                raise ValueError(
+                    "Only students assigned to GE programs can occupy overage seats"
+                )
+            self.student_data["overage_seat"] = marked.to_numpy(dtype=bool)
+            return
+
+        assigned_students = self.student_data.loc[assigned]
+        seat_numbers = (
+            assigned_students.groupby("assignment", sort=False).cumcount() + 1
+        )
+        capacities = assigned_students["assignment"].map(
+            self.programs.set_index("program_id")["capacity"]
+        )
+        self.student_data.loc[assigned, "overage_seat"] = (
+            seat_numbers.to_numpy() > capacities.to_numpy()
+        )
 
     @classmethod
     def from_scenario(
@@ -2080,6 +2123,9 @@ class MatchEvaluator:
             self._safe_ratio(value, total)
             for value, total in zip(designated, assigned, strict=True)
         ]
+        programs["frl_assigned"] = program_ids.map(assigned_stats["frl"])
+        programs["frl_designated"] = program_ids.map(designated_stats["frl"])
+        programs["frl_non_designated"] = program_ids.map(non_designated_stats["frl"])
         programs["program_utilization"] = [
             self._safe_ratio(total, seats)
             for total, seats in zip(assigned, capacity, strict=True)
@@ -2125,6 +2171,9 @@ class MatchEvaluator:
                 "mean_travel_dist_assigned",
                 "mean_travel_dist_designated",
                 "percent_designated",
+                "frl_assigned",
+                "frl_designated",
+                "frl_non_designated",
                 "program_utilization",
                 "overage",
                 "underage",
@@ -2194,6 +2243,28 @@ class MatchEvaluator:
             "idschoolattendance", "attendance_area"
         )
 
+    def eval_frl_threshold_inputs(self, config_name):
+        """Return per-program inputs for average-first FRL threshold metrics."""
+        assigned_students = self.student_data[self._assigned_mask(self.student_data)]
+        ge_students = assigned_students[assigned_students["programtype"] == "GE"]
+        non_designated = ge_students[ge_students["designation"] == 0]
+        program_ids = self.programs.loc[
+            self.programs["program_type"] == "GE", "program_id"
+        ]
+        return pd.DataFrame(
+            {
+                "config_name": config_name,
+                "program_id": program_ids,
+                "frl_assigned": program_ids.map(
+                    ge_students.groupby("assignment")["frl"].mean()
+                ),
+                "frl_non_designated": program_ids.map(
+                    non_designated.groupby("assignment")["frl"].mean()
+                ),
+                "district_frl": assigned_students["frl"].mean(),
+            }
+        ).reset_index(drop=True)
+
     def eval_aggregate_metric_reports(
         self, config_name, *, include_local_metrics=True
     ):
@@ -2220,6 +2291,7 @@ class MatchEvaluator:
         district_aggregates = self._prepare_full_report_aggregates(
             self.student_data,
             include_program_report_stats=include_local_metrics,
+            district_scope=True,
         )
         citywide_metrics = self._eval_assignment_full_from_aggregates(
             district_aggregates
@@ -2416,7 +2488,11 @@ class MatchEvaluator:
         return theil_sum / (district_entropy * ethnic_total.sum())
 
     def _prepare_full_report_aggregates(
-        self, student_data, *, include_program_report_stats=False
+        self,
+        student_data,
+        *,
+        include_program_report_stats=False,
+        district_scope=False,
     ):
         assigned_students = student_data[student_data["programno"] > 0]
         designated_students = assigned_students[
@@ -2488,7 +2564,14 @@ class MatchEvaluator:
 
         def program_report_stats(students):
             source = students[
-                ["assignment", "studentno", "assignment_dist", "rank", "ethnicity"]
+                [
+                    "assignment",
+                    "studentno",
+                    "assignment_dist",
+                    "rank",
+                    "ethnicity",
+                    "frl",
+                ]
             ].copy()
             for rank in range(1, 4):
                 source[f"top_{rank}"] = source["rank"] <= rank
@@ -2497,6 +2580,7 @@ class MatchEvaluator:
             return source.groupby("assignment").agg(
                 count=("studentno", "size"),
                 assignment_dist=("assignment_dist", "mean"),
+                frl=("frl", "mean"),
                 **{f"top_{rank}": (f"top_{rank}", "sum") for rank in range(1, 4)},
                 **{
                     ethnicity: (ethnicity, "sum")
@@ -2552,6 +2636,17 @@ class MatchEvaluator:
             ge_non_designated_students.groupby("assignment")["frl"].mean(),
             district_frl,
         )
+        if not self.overscribe_aa:
+            overage = 0.0
+        else:
+            denominator = (
+                self.programs["capacity"].sum()
+                if district_scope
+                else len(assigned_students)
+            )
+            overage = self._safe_ratio(
+                assigned_students["overage_seat"].sum(), denominator
+            )
         return _FullReportAggregates(
             student_data=student_data,
             assigned_students=assigned_students,
@@ -2581,6 +2676,7 @@ class MatchEvaluator:
             all_student_top_choice_outcomes=self._top_choice_outcomes(
                 student_data, "rank", range(1, 4)
             ),
+            overage=overage,
         )
 
     def eval_assignment_full(self, student_data=None):
@@ -2590,10 +2686,13 @@ class MatchEvaluator:
                 "eval_assignment_full requires raw student/assignment data and "
                 "the program_file and schools_latlon_path resources"
             )
+        district_scope = student_data is None
         if student_data is None:
             student_data = self.student_data
         return self._eval_assignment_full_from_aggregates(
-            self._prepare_full_report_aggregates(student_data)
+            self._prepare_full_report_aggregates(
+                student_data, district_scope=district_scope
+            )
         )
 
     def _eval_assignment_full_from_aggregates(self, aggregates):
@@ -2952,6 +3051,7 @@ class MatchEvaluator:
         all_designated = assigned_students["designation"].mean()
         metrics["#Designated"] = assigned_students["designation"].sum()
         metrics["Designated"] = all_designated
+        metrics["overage"] = aggregates.overage
 
         dico_student_type = {
             "All Assigned": assigned_students,

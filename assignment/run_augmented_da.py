@@ -136,12 +136,14 @@ class AugmentedMarketGenerator(MarketGenerator):
                     match,
                     in_zone_rank,
                     cutoffs,
+                    overage_seats,
                 ) = self._generate_assignment_with_guardrails(prefs, priorities)
             else:
                 (
                     match,
                     in_zone_rank,
                     cutoffs,
+                    overage_seats,
                 ) = self._generate_assignment(prefs, priorities)
 
             yield self._save_assignment(
@@ -151,6 +153,7 @@ class AugmentedMarketGenerator(MarketGenerator):
                 match,
                 in_zone_rank,
                 cutoffs,
+                overage_seats,
             )
 
     def _augment_real_preferences(

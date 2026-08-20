@@ -456,12 +456,13 @@ def test_overscribe_aa_defaults_to_false():
 
     match = np.array([0])
     rank = np.array([1])
-    updated_match, updated_rank = market._overscribe_attendance_area(
+    updated_match, updated_rank, overage_seats = market._overscribe_attendance_area(
         np.array([[1]]), match, rank
     )
 
     np.testing.assert_array_equal(updated_match, match)
     np.testing.assert_array_equal(updated_rank, rank)
+    np.testing.assert_array_equal(overage_seats, [False])
 
 
 def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
@@ -472,13 +473,14 @@ def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
         idx2studentno={0: 10, 1: 11, 2: 12},
     )
     market.programs = SimpleNamespace(
-        indices={"101-GE-KG": 1, "200-GE-KG": 2, "102-GE-KG": 3}
+        indices={"101-GE-KG": 1, "200-GE-KG": 2, "102-GE-KG": 3},
+        capacity=np.array([0, 1, 1]),
     )
     market.preference_generator = SimpleNamespace(
         pref_length=np.array([2, 2, 1])
     )
 
-    match, rank = market._overscribe_attendance_area(
+    match, rank, overage_seats = market._overscribe_attendance_area(
         np.array([[2, 1, 0], [2, 3, 0], [2, 0, 0]]),
         np.array([0, 2, 0]),
         np.array([2, 1, 2]),
@@ -486,6 +488,7 @@ def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
 
     np.testing.assert_array_equal(match, [1, 2, 0])
     np.testing.assert_array_equal(rank, [2, 1, 2])
+    np.testing.assert_array_equal(overage_seats, [True, False, False])
 
 
 def test_overscribe_aa_allows_enrollment_above_capacity():
@@ -507,9 +510,10 @@ def test_overscribe_aa_allows_enrollment_above_capacity():
     market.preference_generator = SimpleNamespace(pref_length=np.array([1, 1]))
     prefs = np.array([[1], [1]])
 
-    match, rank, _ = market._generate_assignment(
+    match, rank, _, overage_seats = market._generate_assignment(
         prefs, np.array([[10, 0], [20, 0]])
     )
 
     np.testing.assert_array_equal(match, [1, 1])
     assert np.count_nonzero(match == 1) > market.programs.capacity[0]
+    assert overage_seats.sum() == 1
