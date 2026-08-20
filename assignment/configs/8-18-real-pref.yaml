@@ -9,7 +9,7 @@ paths:
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
-reuse-assignments: true
+reuse_assignments: true
 
 r1-only: true
 rounds-merged-options:

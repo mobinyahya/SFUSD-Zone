@@ -3041,6 +3041,7 @@ class MatchEvaluator:
         all_designated = assigned_students["designation"].mean()
         metrics["#Designated"] = assigned_students["designation"].sum()
         metrics["Designated"] = all_designated
+        metrics["num_overage_seats"] = int(assigned_students["overage_seat"].sum())
         metrics["overage"] = aggregates.overage
 
         dico_student_type = {

@@ -662,12 +662,17 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     }.isdisjoint(program_metrics.columns)
 
     assert metrics["overage"] == pytest.approx(1 / 8)
+    assert metrics["num_overage_seats"] == 1
     zip_metrics = reports["zip_code"].set_index("zip_code")
     assert zip_metrics.loc[94110, "overage"] == pytest.approx(1 / 5)
+    assert zip_metrics.loc[94110, "num_overage_seats"] == 1
     assert zip_metrics.loc[94111, "overage"] == 0
+    assert zip_metrics.loc[94111, "num_overage_seats"] == 0
     attendance_metrics = reports["attendance_area"].set_index("attendance_area")
     assert attendance_metrics.loc[101, "overage"] == pytest.approx(1 / 6)
+    assert attendance_metrics.loc[101, "num_overage_seats"] == 1
     assert attendance_metrics.loc[202, "overage"] == 0
+    assert attendance_metrics.loc[202, "num_overage_seats"] == 0
 
     evaluator.overscribe_aa = False
     evaluator.update_assignments(assignments)
