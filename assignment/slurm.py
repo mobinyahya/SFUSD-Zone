@@ -28,14 +28,12 @@ from .student_assignment.market_generator.school_choice_market_generator import 
 
 
 WORKSPACE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-PLAN_SCHEMA_VERSION = 3
+PLAN_SCHEMA_VERSION = 4
 MAX_CPUS_PER_NODE = 40
 MAX_ASSIGNMENT_JOBS = 12
 MAX_METRICS_JOBS = 8
 MAX_METRICS_FINALIZER_JOBS = 1
-MAX_SLURM_JOBS = (
-    MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS + MAX_METRICS_FINALIZER_JOBS
-)
+MAX_SLURM_JOBS = MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "OPENBLAS_NUM_THREADS": "1",
@@ -160,13 +158,7 @@ def _build_allocations(
                     ),
                 }
             )
-        allocations.append(
-            {
-                "phase": "metrics-finalize",
-                "task_indices": [],
-                "cpus": 1,
-            }
-        )
+        allocations[-1]["phase"] = "metrics-finalize"
     return allocations
 
 
@@ -329,7 +321,8 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
         allocation.get("phase") == "assignment" for allocation in allocations
     )
     metrics_jobs = sum(
-        allocation.get("phase") == "metrics" for allocation in allocations
+        allocation.get("phase") in {"metrics", "metrics-finalize"}
+        for allocation in allocations
     )
     finalizer_jobs = sum(
         allocation.get("phase") == "metrics-finalize" for allocation in allocations
@@ -389,8 +382,7 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
         elif phase == "metrics":
             metrics_task_indices.extend(task_indices)
         elif phase == "metrics-finalize":
-            if task_indices:
-                raise ValueError("Metrics finalizer cannot own evaluation tasks.")
+            metrics_task_indices.extend(task_indices)
         else:
             raise ValueError(f"Unknown assignment Slurm phase {phase!r}.")
     if sorted(assigned_task_indices) != list(
@@ -446,7 +438,7 @@ def _metrics_dependency_slots(plan: dict) -> dict[int, list[int]]:
 
     dependencies = {}
     for allocation_index, allocation in enumerate(plan["allocations"]):
-        if allocation["phase"] != "metrics":
+        if allocation["phase"] not in {"metrics", "metrics-finalize"}:
             continue
         subconfigs = {
             plan["metrics_tasks"][task_index]["subconfig"]
@@ -608,8 +600,8 @@ def write_slurm_scripts(
                 f'{dependency}{metric_script})")'
             )
     if finalizer_allocations:
-        if len(finalizer_allocations) != 1 or not metrics_allocations:
-            raise ValueError("Metrics finalizer requires metrics allocations.")
+        if len(finalizer_allocations) != 1:
+            raise ValueError("Metrics tasks require exactly one finalizer allocation.")
         index, allocation = finalizer_allocations[0]
         static_args = shlex.join(
             [
@@ -620,9 +612,16 @@ def write_slurm_scripts(
             ]
         )
         finalizer_script = shlex.quote(str(allocation_scripts[index]))
-        references = ":".join(
-            f"${{metrics_ids[{slot}]}}" for slot in range(len(metrics_allocations))
-        )
+        references = [
+            *(f"${{metrics_ids[{slot}]}}" for slot in range(len(metrics_allocations))),
+            *(
+                f"${{assignment_ids[{slot}]}}"
+                for slot in metrics_dependencies[index]
+            ),
+        ]
+        if not references:
+            raise ValueError("Metrics finalizer has no upstream dependencies.")
+        references = ":".join(references)
         submit_lines.append(f'finalizer_dependency="{references}"')
         submit_lines.append(
             f'finalizer_id="$(submit_job {static_args} '
@@ -908,6 +907,8 @@ def run_allocation_worker(plan_path: str | pathlib.Path, allocation_index: int) 
                 else 0
             )
         elif allocation["phase"] == "metrics-finalize":
+            if _run_metrics_allocation(plan, absolute_plan_path, allocation):
+                return 1
             run_metrics_finalizer(absolute_plan_path)
             return 0
         else:

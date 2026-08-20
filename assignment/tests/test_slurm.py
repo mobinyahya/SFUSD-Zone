@@ -51,9 +51,13 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
     metrics_allocations = [
         allocation
         for allocation in plan["allocations"]
-        if allocation["phase"] == "metrics"
+        if allocation["phase"] in {"metrics", "metrics-finalize"}
     ]
     assert len(metrics_allocations) == MAX_METRICS_JOBS
+    assert sum(
+        allocation["phase"] == "metrics-finalize"
+        for allocation in metrics_allocations
+    ) == 1
     assert {allocation["cpus"] for allocation in metrics_allocations} == {
         MAX_CPUS_PER_NODE
     }
@@ -86,11 +90,11 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
     submit_path = write_slurm_scripts(plan_path)
     submit_script = submit_path.read_text()
     assert submit_script.count("assignment_ids+=(") == MAX_ASSIGNMENT_JOBS
-    assert submit_script.count("metrics_ids+=(") == MAX_METRICS_JOBS
+    assert submit_script.count("metrics_ids+=(") == MAX_METRICS_JOBS - 1
     assert submit_script.count('finalizer_id="$(submit_job') == 1
     assert (
         submit_script.count('--dependency="afterany:${metrics_dependency_')
-        == MAX_METRICS_JOBS
+        == MAX_METRICS_JOBS - 1
     )
     assert "assignment_dependency" not in submit_script
     assert '--dependency="afterany:${finalizer_dependency}"' in submit_script
@@ -141,11 +145,13 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path, monkeypat
     assert "sbatch --parsable -A soal -p soal" in submit_script
     assert "--ntasks=1" in submit_script
     assert "job_id=${raw_id%%;*}" in submit_script
-    assert '--dependency="afterany:${metrics_dependency_2}"' in submit_script
+    assert "finalizer_dependency=" in submit_script
+    assert "${assignment_ids[0]}" in submit_script
+    assert "${assignment_ids[1]}" in submit_script
     assert submit_script.count("assignment_ids+=(") == 2
-    assert submit_script.count("metrics_ids+=(") == 1
+    assert submit_script.count("metrics_ids+=(") == 0
     assert submit_script.count('finalizer_id="$(submit_job') == 1
-    assert submit_script.count("$(submit_job") == 4
+    assert submit_script.count("$(submit_job") == 3
     assert "srun" not in submit_script
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
@@ -280,6 +286,30 @@ def test_allocation_pool_initializes_each_process_with_the_plan(tmp_path, monkey
         (assignment_slurm._run_cached_assignment_task, 3),
         (assignment_slurm._run_cached_assignment_task, 7),
     ]
+
+
+def test_final_metrics_allocation_evaluates_then_publishes(tmp_path, monkeypatch):
+    plan_path = (tmp_path / "plan.json").resolve()
+    plan = {
+        "allocations": [
+            {"phase": "metrics-finalize", "task_indices": [2], "cpus": 4}
+        ]
+    }
+    run_metrics = Mock(return_value=False)
+    finalize = Mock()
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda _path: (plan, plan_path))
+    monkeypatch.setattr(assignment_slurm, "_run_metrics_allocation", run_metrics)
+    monkeypatch.setattr(assignment_slurm, "run_metrics_finalizer", finalize)
+
+    assert assignment_slurm.run_allocation_worker(plan_path, 0) == 0
+    run_metrics.assert_called_once_with(plan, plan_path, plan["allocations"][0])
+    finalize.assert_called_once_with(plan_path)
+
+    run_metrics.reset_mock()
+    run_metrics.return_value = True
+    finalize.reset_mock()
+    assert assignment_slurm.run_allocation_worker(plan_path, 0) == 1
+    finalize.assert_not_called()
 
 
 def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
