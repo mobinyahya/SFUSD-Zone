@@ -365,8 +365,8 @@ def test_program_report_uses_exact_program_assignments_and_schema():
                 100_000,
             ],
             "ctip1": [1, 0, 1, 0, 1, 0, 1, 0],
-            "zipcode": [94110, 94110, 94110, 94110, 94111, 94111, 94113, 94114],
-            "idschoolattendance": [101, 101, 101, 101, 101, 202, 202, 202],
+            "zipcode": [94110, 94110, 94110, 94110, 94111, 94111, 94113, 94110],
+            "idschoolattendance": [101, 101, 101, 101, 101, 202, 202, 101],
         }
     )
     assignments = _listed_assignments(
@@ -661,12 +661,12 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         "school_utilization",
     }.isdisjoint(program_metrics.columns)
 
-    assert metrics["overage"] == pytest.approx(1 / 13)
+    assert metrics["overage"] == pytest.approx(1 / 8)
     zip_metrics = reports["zip_code"].set_index("zip_code")
-    assert zip_metrics.loc[94110, "overage"] == pytest.approx(1 / 4)
+    assert zip_metrics.loc[94110, "overage"] == pytest.approx(1 / 5)
     assert zip_metrics.loc[94111, "overage"] == 0
     attendance_metrics = reports["attendance_area"].set_index("attendance_area")
-    assert attendance_metrics.loc[101, "overage"] == pytest.approx(1 / 5)
+    assert attendance_metrics.loc[101, "overage"] == pytest.approx(1 / 6)
     assert attendance_metrics.loc[202, "overage"] == 0
 
     evaluator.overscribe_aa = False

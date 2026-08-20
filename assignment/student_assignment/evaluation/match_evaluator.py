@@ -2291,7 +2291,6 @@ class MatchEvaluator:
         district_aggregates = self._prepare_full_report_aggregates(
             self.student_data,
             include_program_report_stats=include_local_metrics,
-            district_scope=True,
         )
         citywide_metrics = self._eval_assignment_full_from_aggregates(
             district_aggregates
@@ -2492,7 +2491,6 @@ class MatchEvaluator:
         student_data,
         *,
         include_program_report_stats=False,
-        district_scope=False,
     ):
         assigned_students = student_data[student_data["programno"] > 0]
         designated_students = assigned_students[
@@ -2639,13 +2637,8 @@ class MatchEvaluator:
         if not self.overscribe_aa:
             overage = 0.0
         else:
-            denominator = (
-                self.programs["capacity"].sum()
-                if district_scope
-                else len(assigned_students)
-            )
             overage = self._safe_ratio(
-                assigned_students["overage_seat"].sum(), denominator
+                assigned_students["overage_seat"].sum(), len(student_data)
             )
         return _FullReportAggregates(
             student_data=student_data,
@@ -2686,13 +2679,10 @@ class MatchEvaluator:
                 "eval_assignment_full requires raw student/assignment data and "
                 "the program_file and schools_latlon_path resources"
             )
-        district_scope = student_data is None
         if student_data is None:
             student_data = self.student_data
         return self._eval_assignment_full_from_aggregates(
-            self._prepare_full_report_aggregates(
-                student_data, district_scope=district_scope
-            )
+            self._prepare_full_report_aggregates(student_data)
         )
 
     def _eval_assignment_full_from_aggregates(self, aggregates):
