@@ -482,7 +482,7 @@ def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
 
     match, rank, overage_seats = market._overscribe_attendance_area(
         np.array([[2, 1, 0], [2, 3, 0], [2, 0, 0]]),
-        np.array([0, 2, 0]),
+        np.array([0.0, 2.0, 0.0]),
         np.array([2, 1, 2]),
     )
 

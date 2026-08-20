@@ -1456,9 +1456,14 @@ class MarketGenerator(SchoolChoiceMarket):
         if not self.config.get("overscribe_aa", False):
             return match, in_zone_rank, overage_seats
 
-        match = match.copy()
-        in_zone_rank = in_zone_rank.copy()
         capacities = np.asarray(self.programs.capacity)
+        match = np.asarray(match)
+        if not np.all(np.isfinite(match)) or not np.all(match == np.floor(match)):
+            raise ValueError("Program matches must contain integer program indices.")
+        match = match.astype(np.int64, copy=True)
+        if np.any(match < 0) or np.any(match > len(capacities)):
+            raise ValueError("Program match index is outside the program table.")
+        in_zone_rank = in_zone_rank.copy()
         enrollment = np.bincount(match, minlength=len(capacities) + 1)
         attendance_areas = self.students.attendance_area
         grade = self.config["grade"]
