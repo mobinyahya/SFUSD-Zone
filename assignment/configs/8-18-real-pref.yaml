@@ -5,7 +5,7 @@ iterations:
   end: 25
   start: 0
 paths:
-  assignment-folder: /soalnas/share/data/school_choice/local_runs/8-19-real-acc-fr/
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/8-19-real-acc-frfr/assignments
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
@@ -38,4 +38,4 @@ utility-model:
   designate-lp-for-all: false
   enable: false
   list-length: 0.8*round(real_length)
-output_dir: /soalnas/share/data/school_choice/local_runs/8-19-real-acc-fr/
+output_dir: /soalnas/share/data/school_choice/local_runs/8-19-real-acc-frfr/
