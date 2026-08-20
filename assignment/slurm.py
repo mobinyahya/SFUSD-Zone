@@ -330,6 +330,38 @@ def _job_script(
     return "\n".join(lines) + "\n"
 
 
+def _metrics_dependency_slots(plan: dict) -> dict[int, list[int]]:
+    """Map each metrics allocation to assignment ID array slots it consumes."""
+    assignment_slots = {}
+    producers = defaultdict(set)
+    for allocation_index, allocation in enumerate(plan["allocations"]):
+        if allocation["phase"] != "assignment":
+            continue
+        slot = len(assignment_slots)
+        assignment_slots[allocation_index] = slot
+        for task_index in allocation["task_indices"]:
+            task = plan["assignment_tasks"][task_index]
+            producers[task["subconfig"]].add(slot)
+
+    dependencies = {}
+    for allocation_index, allocation in enumerate(plan["allocations"]):
+        if allocation["phase"] != "metrics":
+            continue
+        subconfigs = {
+            plan["metrics_tasks"][task_index]["subconfig"]
+            for task_index in allocation["task_indices"]
+        }
+        slots = sorted(
+            {slot for subconfig in subconfigs for slot in producers[subconfig]}
+        )
+        if assignment_slots and not slots:
+            raise ValueError(
+                f"Metrics allocation {allocation_index} has no assignment producers."
+            )
+        dependencies[allocation_index] = slots
+    return dependencies
+
+
 def write_slurm_scripts(
     plan_path: str | pathlib.Path,
     *,
@@ -392,6 +424,7 @@ def write_slurm_scripts(
     ]
     submit_lines.append("assignment_ids=()")
     metrics_allocations = []
+    metrics_dependencies = _metrics_dependency_slots(plan)
     for index, allocation in enumerate(plan["allocations"]):
         if allocation["phase"] == "metrics":
             metrics_allocations.append((index, allocation))
@@ -407,13 +440,6 @@ def write_slurm_scripts(
         )
         submit_lines.append(f'assignment_ids+=("$(submit_job {static_args})")')
     if metrics_allocations:
-        has_assignments = any(
-            item["phase"] == "assignment" for item in plan["allocations"]
-        )
-        if has_assignments:
-            submit_lines.append(
-                "assignment_dependency=$(IFS=:; printf '%s' \"${assignment_ids[*]}\")"
-            )
         submit_lines.append("metrics_ids=()")
         for index, allocation in metrics_allocations:
             static_args = shlex.join(
@@ -425,11 +451,13 @@ def write_slurm_scripts(
                 ]
             )
             metric_script = shlex.quote(str(allocation_scripts[index]))
-            dependency = (
-                '--dependency="afterany:${assignment_dependency}" '
-                if has_assignments
-                else ""
-            )
+            slots = metrics_dependencies[index]
+            dependency = ""
+            if slots:
+                variable = f"metrics_dependency_{index}"
+                references = ":".join(f"${{assignment_ids[{slot}]}}" for slot in slots)
+                submit_lines.append(f'{variable}="{references}"')
+                dependency = f'--dependency="afterany:${{{variable}}}" '
             submit_lines.append(
                 f'metrics_ids+=("$(submit_job {static_args} '
                 f'{dependency}{metric_script})")'

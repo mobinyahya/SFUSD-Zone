@@ -61,6 +61,13 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
         for allocation in metrics_allocations
         for index in allocation["task_indices"]
     ) == list(range(19))
+    dependencies = assignment_slurm._metrics_dependency_slots(plan)
+    assert len(dependencies) == MAX_METRICS_JOBS
+    assert len(set(map(tuple, dependencies.values()))) > 1
+    assert all(0 < len(slots) < MAX_ASSIGNMENT_JOBS for slots in dependencies.values())
+    assert set().union(*map(set, dependencies.values())) == set(
+        range(MAX_ASSIGNMENT_JOBS)
+    )
     assert pathlib.Path(plan["assignment_folder"]).is_absolute()
     assert plan_path.is_absolute()
     assert pathlib.Path(plan["provenance_path"]).is_file()
@@ -80,9 +87,10 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
     assert submit_script.count("assignment_ids+=(") == MAX_ASSIGNMENT_JOBS
     assert submit_script.count("metrics_ids+=(") == MAX_METRICS_JOBS
     assert (
-        submit_script.count('--dependency="afterany:${assignment_dependency}"')
+        submit_script.count('--dependency="afterany:${metrics_dependency_')
         == MAX_METRICS_JOBS
     )
+    assert "assignment_dependency" not in submit_script
     assert submit_script.count("$(submit_job") == MAX_SLURM_JOBS
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
@@ -125,7 +133,7 @@ def test_generated_scripts_quote_names_and_wire_dependencies(tmp_path):
     assert "sbatch --parsable -A soal -p soal" in submit_script
     assert "--ntasks=1" in submit_script
     assert "job_id=${raw_id%%;*}" in submit_script
-    assert '--dependency="afterany:${assignment_dependency}"' in submit_script
+    assert '--dependency="afterany:${metrics_dependency_2}"' in submit_script
     assert submit_script.count("assignment_ids+=(") == 2
     assert submit_script.count("metrics_ids+=(") == 1
     assert submit_script.count("$(submit_job") == 3
