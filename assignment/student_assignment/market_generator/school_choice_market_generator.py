@@ -357,7 +357,35 @@ class MarketGenerator(SchoolChoiceMarket):
                 "Metrics-only evaluation requires export-aggregate-metrics=true."
             )
 
-        specs = self._expected_saved_assignment_specs()
+        payload = self._evaluate_saved_metric_specs(
+            self._expected_saved_assignment_specs()
+        )
+        return self.combine_metric_batch_payloads(
+            [payload],
+            include_local_metrics=self.config.get("export-local-metrics", False),
+        )
+
+    def evaluate_saved_subconfig_iteration(
+        self, subconfig_name: str, iteration: int | None
+    ) -> dict:
+        """Evaluate one iteration's saved files and return unreduced metric batches."""
+        self._activate_subconfig(subconfig_name)
+        if not self.config.get("export-aggregate-metrics", False):
+            raise ValueError(
+                "Metrics-only evaluation requires export-aggregate-metrics=true."
+            )
+        specs = [
+            spec
+            for spec in self._expected_saved_assignment_specs()
+            if spec[2] == iteration
+        ]
+        if not specs:
+            raise ValueError(
+                f"No saved assignment files are expected for iteration {iteration!r}."
+            )
+        return self._evaluate_saved_metric_specs(specs)
+
+    def _evaluate_saved_metric_specs(self, specs) -> dict:
         missing = [path for path, _save_name, _iteration in specs if not path.is_file()]
         if missing:
             preview = ", ".join(str(path) for path in missing[:5])
@@ -367,23 +395,19 @@ class MarketGenerator(SchoolChoiceMarket):
             )
 
         self._reset_aggregate_metric_reports()
-        self._aggregate_metric_evaluator = None
-        write_aggregate_metrics = self._write_aggregate_metrics
-        self._write_aggregate_metrics = False
-        try:
-            for assignment_path, save_name, iteration in specs:
-                assignment_df = self._validate_reusable_assignment(
-                    pd.read_csv(assignment_path), assignment_path
-                )
-                self._record_assignment_metric_reports(
-                    assignment_df, save_name, iteration
-                )
-            reports = self._complete_aggregate_metric_reports()
-        finally:
-            self._write_aggregate_metrics = write_aggregate_metrics
-        if reports is None:
-            raise RuntimeError("Metrics-only evaluation produced no reports.")
-        return reports
+        for assignment_path, save_name, iteration in specs:
+            assignment_df = self._validate_reusable_assignment(
+                pd.read_csv(assignment_path), assignment_path
+            )
+            self._record_assignment_metric_reports(assignment_df, save_name, iteration)
+        return {
+            "reports": {
+                name: list(frames)
+                for name, frames in self._aggregate_metric_batches.items()
+                if frames
+            },
+            "frl_threshold_inputs": list(self._frl_threshold_input_batches),
+        }
 
     def _reset_aggregate_metric_reports(self):
         self._aggregate_metric_batches = {
@@ -483,6 +507,39 @@ class MarketGenerator(SchoolChoiceMarket):
                 row[name] = int(matching.sum())
             rows.append(row)
         return pd.DataFrame(rows, columns=["config_name", *specifications])
+
+    @classmethod
+    def combine_metric_batch_payloads(cls, payloads, *, include_local_metrics: bool):
+        """Reduce parallel metric batches with the same semantics as sequential runs."""
+        batches = {name: [] for name in cls.AGGREGATE_METRIC_FILES}
+        frl_threshold_inputs = []
+        for payload in payloads:
+            for name, frames in payload["reports"].items():
+                batches[name].extend(frames)
+            frl_threshold_inputs.extend(payload["frl_threshold_inputs"])
+
+        averaged = {
+            name: cls._average_aggregate_metric_frames(name, frames)
+            for name, frames in batches.items()
+            if frames
+        }
+        if frl_threshold_inputs and "citywide" in averaged:
+            alternatives = cls._alternative_frl_threshold_metrics(frl_threshold_inputs)
+            averaged["citywide"] = averaged["citywide"].merge(
+                alternatives, on="config_name", how="left", validate="one_to_one"
+            )
+        report_names = (
+            tuple(cls.AGGREGATE_METRIC_FILES)
+            if include_local_metrics
+            else ("citywide",)
+        )
+        reports = {
+            name: averaged.get(
+                name, pd.DataFrame(columns=cls.AGGREGATE_METRIC_GROUPS[name])
+            )
+            for name in report_names
+        }
+        return cls.combine_aggregate_metric_reports([reports])
 
     def _record_aggregate_metric_reports(self, reports):
         for report_name, report in reports.items():

@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime, timezone
 
@@ -119,7 +120,12 @@ def _task_batches(task_count: int, batch_count: int) -> list[list[int]]:
     return batches
 
 
-def _build_allocations(assignment_count: int, metrics_count: int) -> list[dict]:
+def _build_allocations(
+    assignment_count: int,
+    metrics_count: int,
+    *,
+    metrics_work_counts: list[int] | None = None,
+) -> list[dict]:
     allocations = []
     if assignment_count:
         assignment_job_count = min(MAX_ASSIGNMENT_JOBS, assignment_count)
@@ -132,16 +138,36 @@ def _build_allocations(assignment_count: int, metrics_count: int) -> list[dict]:
                 }
             )
     if metrics_count:
+        work_counts = metrics_work_counts or [1] * metrics_count
+        if len(work_counts) != metrics_count or any(count < 1 for count in work_counts):
+            raise ValueError("Metrics work counts must cover every metrics task.")
         metrics_job_count = min(MAX_METRICS_JOBS, metrics_count)
         for task_indices in _task_batches(metrics_count, metrics_job_count):
             allocations.append(
                 {
                     "phase": "metrics",
                     "task_indices": task_indices,
-                    "cpus": min(MAX_CPUS_PER_NODE, len(task_indices)),
+                    "cpus": min(
+                        MAX_CPUS_PER_NODE,
+                        sum(work_counts[index] for index in task_indices),
+                    ),
                 }
             )
     return allocations
+
+
+def _metrics_iterations(config: dict) -> list[int | None]:
+    policies = config.get("policies", [])
+    iterations: list[int | None] = []
+    if any(policy != "real_match" for policy in policies):
+        iterations.extend(
+            range(config["iterations"]["start"], config["iterations"]["end"])
+        )
+    if "real_match" in policies:
+        iterations.append(None)
+    if not iterations:
+        raise ValueError("Metrics subconfigs require at least one policy iteration.")
+    return iterations
 
 
 def build_slurm_plan(
@@ -205,7 +231,16 @@ def build_slurm_plan(
         for entry in resolved_subconfigs
         if entry["config"].get("export-aggregate-metrics", False)
     ]
-    allocations = _build_allocations(len(assignment_tasks), len(metrics_tasks))
+    metrics_work_counts = [
+        len(_metrics_iterations(entry["config"]))
+        for entry in resolved_subconfigs
+        if entry["config"].get("export-aggregate-metrics", False)
+    ]
+    allocations = _build_allocations(
+        len(assignment_tasks),
+        len(metrics_tasks),
+        metrics_work_counts=metrics_work_counts,
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
     provenance = {
         "schema_version": PLAN_SCHEMA_VERSION,
@@ -464,15 +499,108 @@ def _run_cached_assignment_task(task_index: int) -> None:
     )
 
 
-def _run_cached_metrics_task(task_index: int) -> None:
+def _run_cached_metrics_iteration(task_index: int, iteration: int | None) -> dict:
     if _WORKER_PLAN is None:
         raise RuntimeError("Assignment worker process was not initialized.")
     task = _WORKER_PLAN["metrics_tasks"][task_index]
     market = _market_for_subconfig(_WORKER_PLAN, task["subconfig"])
-    reports = market.evaluate_saved_subconfig(task["subconfig"])
-    market.merge_aggregate_metric_reports(
-        _WORKER_PLAN["assignment_folder"], task["subconfig"], reports
+    return market.evaluate_saved_subconfig_iteration(task["subconfig"], iteration)
+
+
+def _run_cached_metrics_batch(work_items: list[tuple[int, int | None]]) -> list[tuple]:
+    results = []
+    for task_index, iteration in work_items:
+        try:
+            payload = _run_cached_metrics_iteration(task_index, iteration)
+            results.append((task_index, iteration, payload, None))
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            results.append((task_index, iteration, None, error))
+    return results
+
+
+def _run_metrics_allocation(
+    plan: dict, plan_path: pathlib.Path, allocation: dict
+) -> bool:
+    from .student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
     )
+
+    work_items = []
+    for task_index in allocation["task_indices"]:
+        task = plan["metrics_tasks"][task_index]
+        config = _subconfig_entry(plan, task["subconfig"])["config"]
+        work_items.extend(
+            (task_index, iteration) for iteration in _metrics_iterations(config)
+        )
+
+    work_batches = [
+        [work_items[index] for index in indices]
+        for indices in _task_batches(
+            len(work_items), min(allocation["cpus"], len(work_items))
+        )
+    ]
+    payloads = defaultdict(dict)
+    failed_tasks = set()
+    with ProcessPoolExecutor(
+        max_workers=allocation["cpus"],
+        initializer=_initialize_worker,
+        initargs=(plan_path,),
+    ) as executor:
+        futures = {
+            executor.submit(_run_cached_metrics_batch, work_batch): work_batch
+            for work_batch in work_batches
+        }
+        for future in as_completed(futures):
+            try:
+                results = future.result()
+            except Exception as exc:
+                work_batch = futures[future]
+                print(
+                    f"Metrics worker batch {work_batch} failed: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                failed_tasks.update(task_index for task_index, _ in work_batch)
+                continue
+            for task_index, iteration, payload, error in results:
+                if error is None:
+                    payloads[task_index][iteration] = payload
+                    continue
+                print(
+                    f"Metrics task {task_index}, iteration {iteration!r} "
+                    f"failed: {error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                failed_tasks.add(task_index)
+
+    failed = bool(failed_tasks)
+    for task_index in allocation["task_indices"]:
+        if task_index in failed_tasks:
+            continue
+        task = plan["metrics_tasks"][task_index]
+        config = _subconfig_entry(plan, task["subconfig"])["config"]
+        try:
+            ordered_payloads = [
+                payloads[task_index][iteration]
+                for iteration in _metrics_iterations(config)
+            ]
+            reports = MarketGenerator.combine_metric_batch_payloads(
+                ordered_payloads,
+                include_local_metrics=config.get("export-local-metrics", False),
+            )
+            MarketGenerator.merge_aggregate_metric_reports(
+                plan["assignment_folder"], task["subconfig"], reports
+            )
+        except Exception as exc:
+            print(
+                f"Metrics task {task_index} reduction failed: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            failed = True
+    return failed
 
 
 def run_assignment_worker(
@@ -537,7 +665,11 @@ def run_allocation_worker(plan_path: str | pathlib.Path, allocation_index: int) 
         if allocation["phase"] == "assignment":
             function = _run_cached_assignment_task
         elif allocation["phase"] == "metrics":
-            function = _run_cached_metrics_task
+            return (
+                1
+                if _run_metrics_allocation(plan, absolute_plan_path, allocation)
+                else 0
+            )
         else:
             raise ValueError(f"Unknown assignment Slurm phase {allocation['phase']!r}.")
 

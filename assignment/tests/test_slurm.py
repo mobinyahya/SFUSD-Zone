@@ -53,7 +53,9 @@ def test_kumar_plan_batches_into_twelve_assignment_and_eight_metrics_jobs(tmp_pa
         if allocation["phase"] == "metrics"
     ]
     assert len(metrics_allocations) == MAX_METRICS_JOBS
-    assert {allocation["cpus"] for allocation in metrics_allocations} == {2, 3}
+    assert {allocation["cpus"] for allocation in metrics_allocations} == {
+        MAX_CPUS_PER_NODE
+    }
     assert sorted(
         index
         for allocation in metrics_allocations
@@ -233,6 +235,121 @@ def test_allocation_pool_initializes_each_process_with_the_plan(tmp_path, monkey
         (assignment_slurm._run_cached_assignment_task, 3),
         (assignment_slurm._run_cached_assignment_task, 7),
     ]
+
+
+def test_metrics_allocation_parallelizes_iterations_and_reduces_once(
+    tmp_path, monkeypatch
+):
+    config = {
+        "subconfig-name": "first",
+        "policies": ["zones"],
+        "iterations": {"start": 0, "end": 5},
+        "export-local-metrics": False,
+    }
+    plan = {
+        "metrics_tasks": [{"subconfig": "first"}],
+        "subconfigs": [{"name": "first", "config": config}],
+        "assignment_folder": str(tmp_path / "assignments"),
+    }
+    allocation = {"phase": "metrics", "task_indices": [0], "cpus": 2}
+    submitted = []
+
+    class ImmediateFuture:
+        def __init__(self, value):
+            self.value = value
+
+        def result(self):
+            return self.value
+
+    class FakeExecutor:
+        def __init__(self, max_workers, initializer, initargs):
+            assert max_workers == 2
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def submit(self, function, work_batch):
+            submitted.append(work_batch)
+            return ImmediateFuture(function(work_batch))
+
+    payloads = {iteration: {"iteration": iteration} for iteration in range(5)}
+    combine = Mock(return_value={"citywide": pd.DataFrame()})
+    merge = Mock()
+    monkeypatch.setattr(assignment_slurm, "ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(assignment_slurm, "as_completed", lambda futures: futures)
+    monkeypatch.setattr(
+        assignment_slurm,
+        "_run_cached_metrics_iteration",
+        lambda _task_index, iteration: payloads[iteration],
+    )
+    monkeypatch.setattr(MarketGenerator, "combine_metric_batch_payloads", combine)
+    monkeypatch.setattr(MarketGenerator, "merge_aggregate_metric_reports", merge)
+
+    failed = assignment_slurm._run_metrics_allocation(
+        plan, tmp_path / "plan.json", allocation
+    )
+
+    assert not failed
+    assert submitted == [
+        [(0, 0), (0, 1), (0, 2)],
+        [(0, 3), (0, 4)],
+    ]
+    combine.assert_called_once_with(
+        [payloads[index] for index in range(5)], include_local_metrics=False
+    )
+    merge.assert_called_once()
+
+
+def test_saved_metric_batches_reuse_existing_evaluator(tmp_path):
+    assignment_path = tmp_path / "assignment.csv"
+    assignment_path.write_text("studentno\n1\n")
+    market = MarketGenerator.__new__(MarketGenerator)
+    evaluator = object()
+    market._aggregate_metric_evaluator = evaluator
+    market._validate_reusable_assignment = Mock(return_value=pd.DataFrame())
+    market._record_assignment_metric_reports = Mock()
+
+    for iteration in (0, 1):
+        market._evaluate_saved_metric_specs(
+            [(assignment_path, f"assignment_iteration{iteration}.csv", iteration)]
+        )
+
+    assert market._aggregate_metric_evaluator is evaluator
+    assert market._record_assignment_metric_reports.call_count == 2
+
+
+def test_parallel_metric_reduction_applies_frl_threshold_after_averaging():
+    def payload(metric, first_frl):
+        return {
+            "reports": {
+                "citywide": [
+                    pd.DataFrame({"config_name": ["config/policy"], "metric": [metric]})
+                ]
+            },
+            "frl_threshold_inputs": [
+                pd.DataFrame(
+                    {
+                        "config_name": ["config/policy", "config/policy"],
+                        "program_id": ["A", "B"],
+                        "frl_assigned": [first_frl, 0.4],
+                        "frl_non_designated": [first_frl, 0.4],
+                        "district_frl": [0.5, 0.5],
+                    }
+                )
+            ],
+        }
+
+    reports = MarketGenerator.combine_metric_batch_payloads(
+        [payload(1.0, 0.8), payload(3.0, 0.4)],
+        include_local_metrics=False,
+    )
+
+    citywide = reports["citywide"].iloc[0]
+    assert citywide["metric"] == 2.0
+    assert citywide["Alternative # of GE programs above +10% district FRL"] == 1
 
 
 def test_large_assignment_plan_runs_multiple_waves_per_allocation():
