@@ -247,12 +247,14 @@ class MarketGenerator(SchoolChoiceMarket):
             )
 
     def create_target_iteration_generator(
-        self, iteration: int
+        self, iteration: int, *, include_real_match: bool = True
     ) -> Generator[pd.DataFrame, None, None]:
         """Run one iteration while expanding every configured policy option."""
         self._validate_target_iteration(iteration)
         for policy in self.config["policies"]:
             if policy == "real_match":
+                if not include_real_match:
+                    continue
                 np.random.seed(
                     self.iteration_seed(self.config["random-seed"], iteration)
                 )
@@ -291,6 +293,7 @@ class MarketGenerator(SchoolChoiceMarket):
         subconfig_name: str,
         iteration: int,
         *,
+        include_real_match: bool = True,
         write_utility_output: bool = False,
     ) -> None:
         """Run exactly one subconfig and iteration without touching shared reports."""
@@ -303,7 +306,11 @@ class MarketGenerator(SchoolChoiceMarket):
         if not write_utility_output:
             utility_config.pop("save-path", None)
         try:
-            self.execute_generator(self.create_target_iteration_generator(iteration))
+            self.execute_generator(
+                self.create_target_iteration_generator(
+                    iteration, include_real_match=include_real_match
+                )
+            )
         finally:
             self.config["export-aggregate-metrics"] = export_metrics
             if utility_save_path is not None:
@@ -1920,13 +1927,6 @@ class MarketGenerator(SchoolChoiceMarket):
         save_name = self._get_assignment_save_name(policy_data, iteration)
         save_path = self._assignment_save_path(policy_data, iteration)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.config.get("export-aggregate-metrics", False):
-            save_path.unlink(missing_ok=True)
-            self._record_assignment_metric_reports(
-                assignment_df,
-                save_name,
-                iteration,
-            )
         temporary_path = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -1942,6 +1942,12 @@ class MarketGenerator(SchoolChoiceMarket):
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+        if self.config.get("export-aggregate-metrics", False):
+            self._record_assignment_metric_reports(
+                assignment_df,
+                save_name,
+                iteration,
+            )
         return assignment_df
 
     def _get_assignment_save_name(

@@ -562,7 +562,7 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
     )
 
 
-def test_failed_metrics_export_removes_existing_assignment_marker(
+def test_failed_metrics_export_preserves_written_assignment(
     tmp_path, monkeypatch
 ):
     market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
@@ -587,7 +587,9 @@ def test_failed_metrics_export_removes_existing_assignment_marker(
             np.zeros(2),
         )
 
-    assert not save_path.exists()
+    assignment = pd.read_csv(save_path)
+    assert assignment["studentno"].tolist() == [1, 2]
+    assert assignment["programno"].tolist() == [1, 0]
 
 
 def test_combined_metric_writer_creates_only_four_run_level_csvs(tmp_path):
