@@ -14,7 +14,9 @@ from assignment.slurm import (
     write_slurm_scripts,
 )
 from assignment.slurm_graph import (
+    MAX_ASSIGNMENT_JOBS,
     MAX_CPUS_PER_NODE,
+    MAX_METRICS_JOBS,
     MAX_SLURM_JOBS,
     build_job_graph,
     topological_jobs,
@@ -25,7 +27,7 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
 )
 
 
-def test_kumar_plan_uses_twelve_jobs_with_explicit_dependencies(tmp_path):
+def test_kumar_plan_uses_twenty_jobs_with_targeted_dependencies(tmp_path):
     config_path = pathlib.Path(__file__).parents[1] / "configs/kumar.config.yaml"
 
     plan, plan_path = build_slurm_plan(
@@ -38,20 +40,43 @@ def test_kumar_plan_uses_twelve_jobs_with_explicit_dependencies(tmp_path):
     assert len(plan["metrics_tasks"]) == 19
     assert len(plan["jobs"]) == MAX_SLURM_JOBS
     assignment_jobs = [job for job in plan["jobs"] if job["kind"] == "assignment"]
-    assert len(assignment_jobs) == MAX_SLURM_JOBS - 1
-    assert {job["cpus"] for job in assignment_jobs} == {MAX_CPUS_PER_NODE}
+    assert len(assignment_jobs) == MAX_ASSIGNMENT_JOBS
+    assert {job["cpus"] for job in assignment_jobs} == {39, MAX_CPUS_PER_NODE}
     assert sorted(
         index
         for job in assignment_jobs
         for index in job["task_indices"]
     ) == list(range(475))
-    finalizer = plan["jobs"][-1]
-    assert finalizer == {
-        "id": "metrics-finalize",
-        "kind": "metrics-finalize",
-        "task_indices": list(range(19)),
-        "cpus": MAX_CPUS_PER_NODE,
-        "dependencies": {"afterok": [job["id"] for job in assignment_jobs]},
+    metrics_jobs = [job for job in plan["jobs"] if job["kind"].startswith("metrics")]
+    assert len(metrics_jobs) == MAX_METRICS_JOBS
+    assert {job["cpus"] for job in metrics_jobs} == {MAX_CPUS_PER_NODE}
+    assert sorted(
+        index for job in metrics_jobs for index in job["task_indices"]
+    ) == list(range(19))
+    assignment_job_ids = {job["id"] for job in assignment_jobs}
+    for job in metrics_jobs:
+        required_subconfigs = {
+            plan["metrics_tasks"][index]["subconfig"]
+            for index in job["task_indices"]
+        }
+        expected_assignment_ids = {
+            assignment_job["id"]
+            for assignment_job in assignment_jobs
+            if any(
+                plan["assignment_tasks"][index]["subconfig"]
+                in required_subconfigs
+                for index in assignment_job["task_indices"]
+            )
+        }
+        actual_assignment_ids = (
+            set(job["dependencies"]["afterok"]) & assignment_job_ids
+        )
+        assert actual_assignment_ids == expected_assignment_ids
+        assert actual_assignment_ids != assignment_job_ids
+    finalizer = metrics_jobs[-1]
+    assert finalizer["id"] == "metrics-finalize"
+    assert set(finalizer["dependencies"]["afterok"]) >= {
+        job["id"] for job in metrics_jobs[:-1]
     }
     assert pathlib.Path(plan["assignment_folder"]).is_absolute()
     assert plan_path.is_absolute()
@@ -72,7 +97,8 @@ def test_kumar_plan_uses_twelve_jobs_with_explicit_dependencies(tmp_path):
     submit_script = submit_path.read_text()
     assert "submit-plan" in submit_script
     assert "sbatch" not in submit_script
-    assert len(list(submit_path.parent.glob("assignment-*.sh"))) == 11
+    assert len(list(submit_path.parent.glob("assignment-*.sh"))) == 12
+    assert len(list(submit_path.parent.glob("metrics-*.sh"))) == 8
     assert (submit_path.parent / "metrics-finalize.sh").is_file()
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
@@ -86,7 +112,9 @@ def test_submission_persists_ids_wires_dependencies_and_cancels_on_failure(
         "run_id": "test-run",
         "workspace_root": str(pathlib.Path(__file__).parents[2]),
         "plan_path": str(plan_path),
-        "jobs": build_job_graph(2, 1),
+        "jobs": build_job_graph(
+            2, 1, metric_assignment_dependencies=[[0, 1]]
+        ),
     }
     plan_path.write_text(json.dumps(plan))
     monkeypatch.setattr(
@@ -338,7 +366,7 @@ def test_metrics_job_parallelizes_iterations_and_reduces_once(
         "subconfigs": [{"name": "first", "config": config}],
         "assignment_folder": str(tmp_path / "assignments"),
     }
-    job = {"kind": "metrics-finalize", "task_indices": [0], "cpus": 2}
+    job = {"kind": "metrics", "task_indices": [0], "cpus": 2}
     submitted = []
 
     class ImmediateFuture:
@@ -504,17 +532,25 @@ def test_metric_report_frames_require_every_local_group():
 def test_large_assignment_plan_runs_multiple_waves_per_job():
     jobs = build_job_graph(12 * 40 * 3, 0)
 
-    assert len(jobs) == MAX_SLURM_JOBS
+    assert len(jobs) == MAX_ASSIGNMENT_JOBS
     assert {job["cpus"] for job in jobs} == {MAX_CPUS_PER_NODE}
     assert {len(job["task_indices"]) for job in jobs} == {120}
 
 
 def test_job_graph_rejects_missing_dependencies_and_cycles():
-    jobs = build_job_graph(4, 1)
+    metric_dependencies = [[0, 1, 2, 3]]
+    jobs = build_job_graph(
+        4, 1, metric_assignment_dependencies=metric_dependencies
+    )
     jobs[-1]["dependencies"] = {"afterok": ["assignment-0"]}
 
-    with pytest.raises(ValueError, match="every assignment job"):
-        validate_job_graph(jobs, assignment_count=4, metrics_count=1)
+    with pytest.raises(ValueError, match="exact required dependencies"):
+        validate_job_graph(
+            jobs,
+            assignment_count=4,
+            metrics_count=1,
+            metric_assignment_dependencies=metric_dependencies,
+        )
 
     cyclic = [
         {"id": "first", "dependencies": {"afterok": ["second"]}},

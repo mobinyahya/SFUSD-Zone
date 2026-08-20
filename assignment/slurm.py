@@ -34,7 +34,7 @@ from .student_assignment.market_generator.school_choice_market_generator import 
 
 
 WORKSPACE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-PLAN_SCHEMA_VERSION = 5
+PLAN_SCHEMA_VERSION = 6
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "OPENBLAS_NUM_THREADS": "1",
@@ -199,6 +199,34 @@ def _planned_metrics_tasks(subconfigs: list[dict]) -> list[dict]:
     ]
 
 
+def _metric_assignment_dependencies(
+    assignment_tasks: list[dict], subconfigs: list[dict], metrics_tasks: list[dict]
+) -> list[list[int]]:
+    configs = {entry["name"]: entry["config"] for entry in subconfigs}
+    real_match_tasks = [
+        index
+        for index, task in enumerate(assignment_tasks)
+        if task["include_real_match"]
+    ]
+    dependencies = []
+    for metrics_task in metrics_tasks:
+        subconfig_name = metrics_task["subconfig"]
+        task_dependencies = [
+            index
+            for index, assignment_task in enumerate(assignment_tasks)
+            if assignment_task["subconfig"] == subconfig_name
+        ]
+        if "real_match" in configs[subconfig_name].get("policies", []):
+            task_dependencies.extend(real_match_tasks)
+        task_dependencies = sorted(set(task_dependencies))
+        if not task_dependencies:
+            raise ValueError(
+                f"Metrics task {subconfig_name!r} has no assignment producers."
+            )
+        dependencies.append(task_dependencies)
+    return dependencies
+
+
 def build_slurm_plan(
     config_path: str | pathlib.Path,
     *,
@@ -266,10 +294,14 @@ def build_slurm_plan(
         for entry in resolved_subconfigs
         if entry["config"].get("export-aggregate-metrics", False)
     ]
+    metric_assignment_dependencies = _metric_assignment_dependencies(
+        assignment_tasks, resolved_subconfigs, metrics_tasks
+    )
     jobs = build_job_graph(
         len(assignment_tasks),
         len(metrics_tasks),
         metrics_work_counts=metrics_work_counts,
+        metric_assignment_dependencies=metric_assignment_dependencies,
     )
     generated_at = datetime.now(timezone.utc).isoformat()
     if metrics_tasks:
@@ -368,6 +400,9 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
         jobs,
         assignment_count=len(assignment_tasks),
         metrics_count=len(metrics_tasks),
+        metric_assignment_dependencies=_metric_assignment_dependencies(
+            assignment_tasks, subconfig_entries, metrics_tasks
+        ),
     )
     return plan, path
 
@@ -778,6 +813,8 @@ def run_job_worker(plan_path: str | pathlib.Path, job_id: str) -> int:
         _validate_worker_cpus(job["cpus"])
         if job["kind"] == "assignment":
             function = _run_cached_assignment_task
+        elif job["kind"] == "metrics":
+            return 1 if _run_metrics_job(plan, absolute_plan_path, job) else 0
         elif job["kind"] == "metrics-finalize":
             if _run_metrics_job(plan, absolute_plan_path, job):
                 return 1
