@@ -26,7 +26,7 @@ optimization_defaults:
 sweep:
   centroids_type: ['13-zone-6',  '13-zone-7', '13-zone-5', '18-zone-1', '18-zone-2', '18-zone-3']
   frl_dev: [0.15]
-  seeds: [0, 1, 2, 3, 4]
+  seed: [0, 1, 2, 3, 4]
   # ignoring racial deviations
   overage: [0.15, 0.2,  -1]
   shortage: [0.15, 0.2, -1]
