@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 
 from benchmark.config import (
     BenchmarkTask,
-    ChoiceMetricsRunConfig,
     ExecutionConfig,
     MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
+    VisualizationRunConfig,
 )
 from benchmark.runner import (
     MANIFEST_FILENAME,
@@ -79,7 +79,7 @@ def run_sweep(sweep: SimulationSweep) -> BatchResult:
         execution=sweep.execution,
         metrics=sweep.metrics,
         matching=sweep.matching,
-        choice_metrics=sweep.choice_metrics,
+        visualization=sweep.visualization,
     )
 
 
@@ -89,7 +89,7 @@ def run_tasks(
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
     matching: MatchingRunConfig | None = None,
-    choice_metrics: ChoiceMetricsRunConfig | None = None,
+    visualization: VisualizationRunConfig | None = None,
 ) -> BatchResult:
     start = time.time()
     batch = BatchResult(total=len(tasks))
@@ -97,6 +97,23 @@ def run_tasks(
 
     for task in tasks:
         if execution.skip_existing and _valid_existing_result(task, execution):
+            if visualization and visualization.enabled:
+                try:
+                    from benchmark.visualize import ensure_task_visualizations
+
+                    ensure_task_visualizations(task, visualization)
+                except Exception as exc:
+                    if execution.fail_fast:
+                        raise
+                    batch.add(
+                        TaskResult(
+                            task_id=task.task_id,
+                            output_dir=task.output_dir,
+                            status="ERROR",
+                            error_message=str(exc) or exc.__class__.__name__,
+                        )
+                    )
+                    continue
             batch.add(
                 TaskResult(
                     task_id=task.task_id,
@@ -115,7 +132,7 @@ def run_tasks(
                 strict_metrics=metrics.strict,
                 compute_stage_metrics=metrics.compute_stage_metrics,
                 matching=matching,
-                choice_metrics=choice_metrics,
+                visualization=visualization,
             )
             batch.add(result)
             _print_progress(batch)
@@ -124,7 +141,7 @@ def run_tasks(
         batch.total_wall_time = time.time() - start
         return batch
 
-    _run_parallel(pending, execution, metrics, matching, choice_metrics, batch)
+    _run_parallel(pending, execution, metrics, matching, visualization, batch)
     batch.total_wall_time = time.time() - start
     return batch
 
@@ -134,7 +151,7 @@ def _run_parallel(
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
     matching: MatchingRunConfig | None,
-    choice_metrics: ChoiceMetricsRunConfig | None,
+    visualization: VisualizationRunConfig | None,
     batch: BatchResult,
 ) -> None:
     if not pending:
@@ -164,7 +181,7 @@ def _run_parallel(
                     metrics.strict,
                     metrics.compute_stage_metrics,
                     matching,
-                    choice_metrics,
+                    visualization,
                 )
                 futures[future] = (task, _effective_slots(task, capacity))
                 running_slots += _effective_slots(task, capacity)
@@ -201,14 +218,14 @@ def _worker_run_task(
     strict_metrics: bool,
     compute_stage_metrics: bool,
     matching: MatchingRunConfig | None,
-    choice_metrics: ChoiceMetricsRunConfig | None,
+    visualization: VisualizationRunConfig | None,
 ) -> TaskResult:
     return run_optimization_task(
         task,
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
-        choice_metrics=choice_metrics,
+        visualization=visualization,
     )
 
 

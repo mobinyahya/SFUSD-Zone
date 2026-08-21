@@ -17,22 +17,22 @@ rounds-merged-options:
 save-assignment: true
 subconfigs:
 - small_zones+no_reserves
-- small_zones+reserves
-- small_zones+reserves_05frl
-- small_zones+reserves_06frl
-- medium_zones+no_reserves
-- medium_zones+reserves
+# - small_zones+reserves
+# - small_zones+reserves_05frl
+# - small_zones+reserves_06frl
+# - medium_zones+no_reserves
+# - medium_zones+reserves
 - medium_zones+reserves_05frl
-- medium_zones+reserves_06frl
-- distance_05_1_2+reserves
-- distance_05_1_2+reserves_05frl
-- distance_05_1_2+reserves_06frl
+# - medium_zones+reserves_06frl
+# - distance_05_1_2+reserves
+# - distance_05_1_2+reserves_05frl
+# - distance_05_1_2+reserves_06frl
 - status_quo
 - status_quo_3
 - status_quo_4
-- status_quo+reserves
-- status_quo+reserves_05frl
-- status_quo+reserves_06frl
+# - status_quo+reserves
+# - status_quo+reserves_05frl
+# - status_quo+reserves_06frl
 - distance_05_1_2+reserves_05frl_#3
 - distance_05_1_2+reserves_05frl_#4
 utility-model:

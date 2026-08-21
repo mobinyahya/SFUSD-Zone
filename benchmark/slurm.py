@@ -18,8 +18,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 from benchmark.config import (
     BenchmarkTask,
+    MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
+    VisualizationRunConfig,
     json_ready,
 )
 from benchmark.results import aggregate_results
@@ -31,9 +33,12 @@ from benchmark.runner import (
 )
 
 
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 3
 MAX_CPUS_PER_NODE = 40
 MAX_SLURM_JOBS = 12
+MAX_DOWNSTREAM_SLURM_JOBS = 8
+MAX_DOWNSTREAM_ASSIGNMENT_JOBS = 6
+MAX_DOWNSTREAM_METRICS_JOBS = 2
 SLURM_DIRNAME = ".slurm"
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
@@ -58,6 +63,9 @@ class SlurmPlan:
     output_root: str
     metrics: MetricsRunConfig
     tasks: list[BenchmarkTask]
+    visualization: VisualizationRunConfig = VisualizationRunConfig()
+    matching: MatchingRunConfig = MatchingRunConfig()
+    assignment_plan_path: str | None = None
     schema_version: int = PLAN_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,6 +78,9 @@ class SlurmPlan:
                 "project_root": self.project_root,
                 "output_root": self.output_root,
                 "metrics": asdict(self.metrics),
+                "visualization": asdict(self.visualization),
+                "matching": asdict(self.matching),
+                "assignment_plan_path": self.assignment_plan_path,
                 "tasks": [asdict(task) for task in self.tasks],
             }
         )
@@ -101,6 +112,13 @@ class SlurmPlan:
             output_root=str(value["output_root"]),
             metrics=MetricsRunConfig.from_dict(value.get("metrics")),
             tasks=tasks,
+            visualization=VisualizationRunConfig.from_dict(value.get("visualization")),
+            matching=MatchingRunConfig.from_dict(value.get("matching")),
+            assignment_plan_path=(
+                str(value["assignment_plan_path"])
+                if value.get("assignment_plan_path")
+                else None
+            ),
         )
         _validate_plan(plan)
         return plan
@@ -136,6 +154,28 @@ def create_plan(config_path: str) -> SlurmPlan:
         replace(task, output_dir=str(Path(task.output_dir).expanduser().resolve()))
         for task in sweep.generate_tasks()
     ]
+    assignment_plan_path = None
+    if sweep.matching.enabled:
+        from assignment.run_custom_config import load_custom_config
+        from assignment.slurm import build_generated_zone_slurm_plan
+
+        assignment_config = load_custom_config(sweep.matching.config)
+        metrics_enabled = bool(assignment_config.get("export-aggregate-metrics", False))
+        assignment_jobs = (
+            MAX_DOWNSTREAM_ASSIGNMENT_JOBS
+            if metrics_enabled
+            else MAX_DOWNSTREAM_SLURM_JOBS
+        )
+        metrics_jobs = MAX_DOWNSTREAM_METRICS_JOBS if metrics_enabled else 0
+        _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
+            sweep.matching.config,
+            _assignment_targets(tasks, sweep.matching),
+            plan_dir=output_root / SLURM_DIRNAME / "assignment",
+            max_assignment_jobs=assignment_jobs,
+            max_metrics_jobs=metrics_jobs,
+        )
+        assignment_plan_path = str(generated_plan_path)
+
     plan = SlurmPlan(
         name=sweep.name,
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -144,6 +184,9 @@ def create_plan(config_path: str) -> SlurmPlan:
         output_root=str(output_root),
         metrics=sweep.metrics,
         tasks=tasks,
+        visualization=sweep.visualization,
+        matching=sweep.matching,
+        assignment_plan_path=assignment_plan_path,
     )
     _validate_plan(plan)
     return plan
@@ -184,7 +227,7 @@ def write_submission_script(
 
 
 def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
-    """Render independent batched benchmark allocations."""
+    """Render benchmark allocations and the dependent assignment graph."""
 
     _validate_plan(plan)
     allocations = _plan_allocations(plan)
@@ -195,6 +238,15 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
         lines.append(f"{variable}=$({_shell_command(command)})")
         lines.append(f'{variable}="${{{variable}%%;*}}"')
         lines.append(f'printf "%s\\n" "allocation {index}=${{{variable}}}"')
+        lines.append("")
+    if plan.assignment_plan_path:
+        from assignment.slurm import write_slurm_scripts
+
+        assignment_submit = write_slurm_scripts(plan.assignment_plan_path)
+        command = [shlex.quote(str(assignment_submit))]
+        for index in range(len(allocations)):
+            command.extend(["--upstream-job-id", f'"${{benchmark_job_{index}}}"'])
+        lines.append(" ".join(command))
         lines.append("")
     return "\n".join(lines)
 
@@ -222,6 +274,34 @@ def submit_plan(
                 job_id=job_id,
             )
         )
+    if plan.assignment_plan_path:
+        import json
+
+        from assignment.slurm import submit_slurm_plan, write_slurm_scripts
+
+        assignment_submit = write_slurm_scripts(plan.assignment_plan_path)
+        submission_path = submit_slurm_plan(
+            plan.assignment_plan_path,
+            script_dir=assignment_submit.parent,
+            runner=run,
+            upstream_job_ids=[item.job_id for item in submitted],
+            sbatch=sbatch,
+        )
+        with submission_path.open(encoding="utf-8") as stream:
+            assignment_submission = json.load(stream)
+        offset = len(submitted)
+        from assignment.slurm import load_plan as load_assignment_plan
+
+        assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
+        jobs_by_id = {job["id"]: job for job in assignment_plan["jobs"]}
+        submitted.extend(
+            SubmittedAllocation(
+                allocation_index=offset + index,
+                phase=jobs_by_id[item["job_id"]]["kind"],
+                job_id=item["slurm_job_id"],
+            )
+            for index, item in enumerate(assignment_submission["jobs"])
+        )
     return submitted
 
 
@@ -230,12 +310,19 @@ def _run_optimization_task(task: BenchmarkTask) -> TaskResult:
 
 
 def _run_evaluation_task(
-    task: BenchmarkTask, strict_metrics: bool, compute_stage_metrics: bool
+    task: BenchmarkTask,
+    strict_metrics: bool,
+    compute_stage_metrics: bool,
+    matching: MatchingRunConfig,
+    visualization: VisualizationRunConfig,
 ) -> TaskResult:
     return evaluate_optimization_task(
         task,
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
+        matching=matching,
+        visualization=visualization,
+        execute_assignments=False,
     )
 
 
@@ -274,6 +361,8 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
                     _task_at(plan, index),
                     plan.metrics.strict,
                     plan.metrics.compute_stage_metrics,
+                    plan.matching,
+                    plan.visualization,
                 ): index
                 for index in allocation.task_indices
             }
@@ -309,13 +398,6 @@ def _validate_sweep(sweep: SimulationSweep) -> None:
         raise ValueError(
             f"Slurm benchmark execution supports only mode 'run', not {sweep.mode!r}."
         )
-    if sweep.matching.enabled:
-        raise ValueError("Slurm benchmark execution does not support enabled matching.")
-    if sweep.choice_metrics.enabled:
-        raise ValueError(
-            "Slurm benchmark execution does not support enabled assignment-based "
-            "choice_metrics."
-        )
 
 
 def _validate_plan(plan: SlurmPlan) -> None:
@@ -326,6 +408,16 @@ def _validate_plan(plan: SlurmPlan) -> None:
         raise ValueError("Slurm plan project_root must be absolute.")
     if not plan.tasks:
         raise ValueError("Slurm benchmark plan contains no tasks.")
+    if (
+        plan.visualization.artifact_dir
+        and not Path(plan.visualization.artifact_dir).is_absolute()
+    ):
+        raise ValueError("Visualization artifact_dir must be absolute for Slurm.")
+    if plan.matching.enabled:
+        if not plan.assignment_plan_path:
+            raise ValueError("Matching-enabled plans require an assignment Slurm plan.")
+        if not Path(plan.assignment_plan_path).is_absolute():
+            raise ValueError("Assignment Slurm plan path must be absolute.")
 
     hashes: dict[str, str] = {}
     output_dirs: dict[str, str] = {}
@@ -428,6 +520,44 @@ def _plan_allocations(plan: SlurmPlan) -> list[SlurmAllocation]:
                 )
             )
     return allocations
+
+
+def _assignment_targets(
+    tasks: list[BenchmarkTask], matching: MatchingRunConfig
+) -> list[dict[str, str]]:
+    from assignment.generated_zones import (
+        GENERATED_ZONE_FILENAME,
+        SKIP_MARKER_FILENAME,
+    )
+    from benchmark.assignment import zone_building_blocks
+
+    targets = []
+    for task in tasks:
+        config = task.optimization_config()
+        vintage = config.data_scenario.filter("optimization", "geography_vintage")
+        unit = zone_building_blocks(config.unit)
+        folders = [("root", Path(task.output_dir))]
+        if matching.compute_stage_assignments:
+            prefix = "iteration" if "iterative" in config.strategy.lower() else "stage"
+            folders.extend(
+                (
+                    f"stage-{index}",
+                    Path(task.output_dir) / "stages" / f"{prefix}_{index:02d}_{level}",
+                )
+                for index, level in enumerate(config.levels)
+            )
+        for suffix, folder in folders:
+            targets.append(
+                {
+                    "id": f"{task.task_id}-{suffix}",
+                    "assignment_folder": str(folder.resolve()),
+                    "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
+                    "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
+                    "zone_building_blocks": unit,
+                    "geography_vintage": vintage,
+                }
+            )
+    return targets
 
 
 def _artifact_path(plan: SlurmPlan, value: str | None, default_name: str) -> Path:

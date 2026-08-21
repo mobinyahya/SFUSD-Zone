@@ -36,6 +36,7 @@ optimization_defaults:
           include_k8: false
           include_citywide: false
           include_mission_bay: true
+          geography_vintage: "2020"
 
 sweep:
   seed: [42, 12]
@@ -54,15 +55,9 @@ metrics:
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
 
-# Optional student-assignment matching simulation.
-# Run matching independently with:
+# Optional student assignment.
+# Run assignment independently with:
 #   uv run python -m benchmark.run benchmark/sweep.test.yaml --mode matching
 matching:
   enabled: true
-  config: benchmark/matching/medium_zones_no_reserves_no_sib.yaml
-
-# Optional assignment-based choice metrics. These use matching assignment CSVs,
-# do nothing when no assignments exist, and can be run independently with:
-#   uv run python -m benchmark.run benchmark/sweep.test.yaml --mode choice_metrics
-choice_metrics:
-  enabled: true
+  config: ../assignment/configs/8-19-choice.yaml

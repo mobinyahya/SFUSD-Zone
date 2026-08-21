@@ -4,11 +4,24 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
-from benchmark.config import SimulationSweep
-from benchmark.runner import load_solutions
-from optimization.visualization import visualize_solutions
+from benchmark.config import (
+    BenchmarkTask,
+    SimulationSweep,
+    VisualizationRunConfig,
+)
+from benchmark.runner import (
+    MANIFEST_FILENAME,
+    load_manifest,
+    load_solutions,
+    write_json,
+)
+from optimization.visualization import RenderResult, visualize_solutions
+
+
+VISUALIZATION_MANIFEST_SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -18,6 +31,7 @@ class SweepVisualizationSummary:
     total_runs: int = 0
     rendered_runs: int = 0
     rendered_figures: int = 0
+    cached_runs: int = 0
     skipped_runs: int = 0
     skipped_stages: int = 0
     failed_runs: int = 0
@@ -31,8 +45,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--viz-stages",
         choices=["final", "all"],
-        default="final",
-        help="Render only the final saved stage or every saved stage. Default: final.",
+        default=None,
+        help="Override visualization.stages from the sweep config.",
     )
     parser.add_argument(
         "--artifact-dir",
@@ -58,6 +72,7 @@ def main(argv: list[str] | None = None) -> None:
         f"runs={summary.total_runs}, "
         f"rendered_runs={summary.rendered_runs}, "
         f"figures={summary.rendered_figures}, "
+        f"cached_runs={summary.cached_runs}, "
         f"skipped_runs={summary.skipped_runs}, "
         f"skipped_stages={summary.skipped_stages}, "
         f"failed_runs={summary.failed_runs}"
@@ -67,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
 def visualize_sweep(
     config_path: str | Path,
     *,
-    stages: str = "final",
+    stages: str | None = None,
     artifact_dir: str | Path | None = None,
     fail_fast: bool = False,
 ) -> SweepVisualizationSummary:
@@ -76,23 +91,28 @@ def visualize_sweep(
     sweep = SimulationSweep.from_yaml(str(config_path))
     tasks = sweep.generate_tasks()
     summary = SweepVisualizationSummary(total_runs=len(tasks))
+    settings = VisualizationRunConfig(
+        enabled=True,
+        stages=stages or sweep.visualization.stages,
+        artifact_dir=(
+            str(Path(artifact_dir).expanduser().resolve())
+            if artifact_dir is not None
+            else sweep.visualization.artifact_dir
+        ),
+    )
 
     for task in tasks:
         run_dir = Path(task.output_dir).expanduser()
         try:
-            solutions, optimization_config, _ = load_solutions(str(run_dir))
-            if not solutions:
+            results, cached = ensure_task_visualizations(task, settings)
+            if cached:
+                summary.cached_runs += 1
+                print(f"CACHE {run_dir}: existing visualizations")
+                continue
+            if results is None:
                 summary.skipped_runs += 1
                 print(f"SKIP {run_dir}: no saved stages")
                 continue
-
-            results = visualize_solutions(
-                solutions,
-                output_dir=run_dir,
-                stages=stages,
-                config=optimization_config,
-                artifact_dir=artifact_dir,
-            )
             figure_count = sum(len(result.figure_paths) for result in results)
             skipped_count = sum(1 for result in results if result.skipped)
 
@@ -119,6 +139,110 @@ def visualize_sweep(
                 raise
 
     return summary
+
+
+def ensure_task_visualizations(
+    task: BenchmarkTask,
+    settings: VisualizationRunConfig,
+) -> tuple[list[RenderResult] | None, bool]:
+    """Render one task unless its versioned output artifacts are complete."""
+
+    run_dir = Path(task.output_dir).expanduser()
+    manifest = load_manifest(str(run_dir))
+    if manifest.get("config_hash") != task.config_hash:
+        raise ValueError(f"Manifest config hash does not match task {task.task_id}.")
+    if visualization_is_current(manifest, run_dir, settings):
+        return [], True
+
+    solutions, optimization_config, manifest = load_solutions(str(run_dir))
+    if not solutions:
+        return None, False
+    results = render_task_visualizations(
+        solutions,
+        optimization_config,
+        run_dir,
+        settings,
+        manifest,
+    )
+    write_json(str(run_dir / MANIFEST_FILENAME), manifest)
+    return results, False
+
+
+def render_task_visualizations(
+    solutions,
+    optimization_config,
+    run_dir: str | Path,
+    settings: VisualizationRunConfig,
+    manifest: dict,
+) -> list[RenderResult]:
+    """Render maps and attach a reusable artifact record to a run manifest."""
+
+    output_dir = Path(run_dir).expanduser()
+    results = visualize_solutions(
+        solutions,
+        output_dir=output_dir,
+        stages=settings.stages,
+        config=optimization_config,
+        artifact_dir=settings.artifact_dir,
+    )
+    manifest["visualization"] = {
+        "schema_version": VISUALIZATION_MANIFEST_SCHEMA_VERSION,
+        "stages": settings.stages,
+        "artifacts": [
+            {
+                "stage": result.stage,
+                "figures": [
+                    os.path.relpath(path, output_dir) for path in result.figure_paths
+                ],
+                "geometry_artifact": (
+                    str(result.geometry_artifact)
+                    if result.geometry_artifact is not None
+                    else None
+                ),
+                "skipped": result.skipped,
+            }
+            for result in results
+        ],
+    }
+    return results
+
+
+def visualization_is_current(
+    manifest: dict,
+    run_dir: str | Path,
+    settings: VisualizationRunConfig,
+) -> bool:
+    """Return whether a manifest references complete current visualization output."""
+
+    record = manifest.get("visualization")
+    if not isinstance(record, dict):
+        return False
+    if record.get("schema_version") != VISUALIZATION_MANIFEST_SCHEMA_VERSION:
+        return False
+    if record.get("stages") != settings.stages:
+        return False
+    artifacts = record.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        return False
+
+    root = Path(run_dir).expanduser().resolve()
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            return False
+        figures = artifact.get("figures")
+        if not isinstance(figures, list):
+            return False
+        if not figures and not artifact.get("skipped"):
+            return False
+        for figure in figures:
+            path = (root / str(figure)).resolve()
+            if (
+                not path.is_relative_to(root)
+                or not path.is_file()
+                or path.stat().st_size == 0
+            ):
+                return False
+    return True
 
 
 if __name__ == "__main__":

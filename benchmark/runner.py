@@ -15,8 +15,8 @@ from optimization.config import OptimizationConfig
 from optimization.solution import ZoneSolution, graph_fingerprint
 from benchmark.config import (
     BenchmarkTask,
-    ChoiceMetricsRunConfig,
     MatchingRunConfig,
+    VisualizationRunConfig,
     config_snapshot,
     json_ready,
     optimization_config_from_dict,
@@ -45,7 +45,8 @@ def run_optimization_task(
     strict_metrics: bool = True,
     compute_stage_metrics: bool = False,
     matching: MatchingRunConfig | None = None,
-    choice_metrics: ChoiceMetricsRunConfig | None = None,
+    visualization: VisualizationRunConfig | None = None,
+    execute_assignments: bool = True,
 ) -> TaskResult:
     """Run optimization and metrics together for local execution."""
 
@@ -57,7 +58,8 @@ def run_optimization_task(
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
-        choice_metrics=choice_metrics,
+        visualization=visualization,
+        execute_assignments=execute_assignments,
         loaded=loaded,
     )
 
@@ -75,7 +77,8 @@ def evaluate_optimization_task(
     strict_metrics: bool = True,
     compute_stage_metrics: bool = False,
     matching: MatchingRunConfig | None = None,
-    choice_metrics: ChoiceMetricsRunConfig | None = None,
+    visualization: VisualizationRunConfig | None = None,
+    execute_assignments: bool = True,
     dataset=None,
 ) -> TaskResult:
     """Reconstruct and evaluate one previously persisted optimization task."""
@@ -85,7 +88,8 @@ def evaluate_optimization_task(
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
-        choice_metrics=choice_metrics,
+        visualization=visualization,
+        execute_assignments=execute_assignments,
         dataset=dataset,
     )
 
@@ -173,7 +177,8 @@ def _evaluate_optimization_task(
     strict_metrics: bool,
     compute_stage_metrics: bool,
     matching: MatchingRunConfig | None,
-    choice_metrics: ChoiceMetricsRunConfig | None,
+    visualization: VisualizationRunConfig | None,
+    execute_assignments: bool,
     dataset=None,
     loaded: tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]] | None = None,
 ) -> TaskResult:
@@ -181,6 +186,7 @@ def _evaluate_optimization_task(
     started_at = _now()
     manifest: dict[str, Any] = {}
     config = task.optimization_config()
+    failure_phase = "metrics_error"
 
     try:
         if loaded is None:
@@ -201,7 +207,9 @@ def _evaluate_optimization_task(
         else:
             solutions, config, manifest = loaded
         if not solutions:
-            raise ValueError("No saved optimization stages are available for evaluation.")
+            raise ValueError(
+                "No saved optimization stages are available for evaluation."
+            )
 
         calculator = MetricsCalculator(
             solutions,
@@ -213,39 +221,35 @@ def _evaluate_optimization_task(
         final_solution = calculator.context.solution
         final_solution.save(output_dir)
 
-        matching_result = None
-        stage_matching_result = None
         if matching and matching.enabled:
-            from benchmark.matching import (
-                StudentAssignmentSession,
-                run_matching_for_solution,
-                run_matching_for_stages,
-            )
+            from benchmark.assignment import process_solution_assignments
 
-            matching_workers = max(1, int(config.workers or 1))
-            student_assignment_session = StudentAssignmentSession()
-            shared_precomputed_dir = (
-                Path(output_dir).resolve() / "matching" / "precomputed"
-            )
-            if final_solution.feasible:
-                matching_result = run_matching_for_solution(
-                    final_solution,
-                    output_dir,
-                    matching,
-                    student_assignment_session=student_assignment_session,
-                    precomputed_dir=shared_precomputed_dir,
-                    workers=matching_workers,
-                )
-            stage_matching_result = run_matching_for_stages(
+            process_solution_assignments(
                 solutions,
+                final_solution,
                 manifest.get("stages", []),
                 output_dir,
+                config,
                 matching,
-                choice_metrics=choice_metrics,
-                student_assignment_session=student_assignment_session,
-                precomputed_dir=shared_precomputed_dir,
-                workers=matching_workers,
+                execute=execute_assignments,
             )
+
+        if visualization and visualization.enabled:
+            from benchmark.visualize import (
+                render_task_visualizations,
+                visualization_is_current,
+            )
+
+            failure_phase = "visualization_error"
+            if not visualization_is_current(manifest, output_dir, visualization):
+                render_task_visualizations(
+                    solutions,
+                    config,
+                    output_dir,
+                    visualization,
+                    manifest,
+                )
+            failure_phase = "metrics_error"
 
         result_payload = result_payload_for(
             metrics=metrics,
@@ -253,39 +257,6 @@ def _evaluate_optimization_task(
             solutions=solutions,
             task=task,
         )
-        previous_payload = _load_json_if_present(
-            os.path.join(output_dir, RESULT_FILENAME)
-        )
-        if matching_result is not None:
-            from benchmark.matching import (
-                merge_matching_result,
-                merge_stage_matching_result,
-            )
-
-            merge_matching_result(result_payload, matching_result)
-            merge_stage_matching_result(result_payload, stage_matching_result)
-        elif final_solution.feasible:
-            from benchmark.matching import preserve_matching_payload
-
-            preserve_matching_payload(result_payload, previous_payload)
-
-        choice_metrics_result = None
-        if choice_metrics and choice_metrics.enabled and final_solution.feasible:
-            from benchmark.choice_metrics import (
-                compute_choice_metrics_for_run,
-                merge_choice_metrics_result,
-            )
-
-            choice_metrics_result = compute_choice_metrics_for_run(
-                output_dir,
-                choice_metrics,
-            )
-            merge_choice_metrics_result(result_payload, choice_metrics_result)
-        elif final_solution.feasible:
-            from benchmark.choice_metrics import preserve_choice_metrics_payload
-
-            preserve_choice_metrics_payload(result_payload, previous_payload)
-
         write_json(os.path.join(output_dir, RESULT_FILENAME), result_payload)
         manifest.update(
             {
@@ -316,7 +287,7 @@ def _evaluate_optimization_task(
             str(manifest.get("started_at") or started_at),
             stage_records,
             exc,
-            phase="metrics_error",
+            phase=failure_phase,
             manifest=manifest,
         )
 
@@ -644,16 +615,6 @@ def _save_error_result(
         total_wall_time=total_wall_time,
         error_message=error_message,
     )
-
-
-def _load_json_if_present(path: str) -> dict[str, Any]:
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
 
 
 def _merge_stage_contiguity(

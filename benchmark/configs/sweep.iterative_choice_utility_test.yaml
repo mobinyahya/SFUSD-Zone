@@ -43,6 +43,7 @@ optimization_defaults:
           include_k8: false
           include_citywide: false
           include_mission_bay: true
+          geography_vintage: "2020"
 
 sweep:
   seed: [42]
@@ -64,9 +65,5 @@ metrics:
 
 matching:
   enabled: true
-  config: benchmark/matching/sd.yaml
+  config: ../../assignment/configs/8-19-choice.yaml
   compute_stage_assignments: true
-
-choice_metrics:
-  enabled: true
-  compute_stage_metrics: true

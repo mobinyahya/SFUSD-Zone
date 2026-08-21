@@ -35,17 +35,29 @@ def build_job_graph(
     *,
     metrics_work_counts: list[int] | None = None,
     metric_assignment_dependencies: list[list[int]] | None = None,
+    max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
+    max_metrics_jobs: int = MAX_METRICS_JOBS,
 ) -> list[dict]:
     """Allocate assignment and dependent metrics work across Slurm jobs."""
     if assignment_count < 1:
         raise ValueError("A Slurm plan requires at least one assignment task.")
     if metrics_count < 0:
         raise ValueError("Metrics task count cannot be negative.")
+    if (
+        isinstance(max_assignment_jobs, bool)
+        or not isinstance(max_assignment_jobs, int)
+        or max_assignment_jobs < 1
+    ):
+        raise ValueError("Assignment job limit must be at least one.")
+    if (
+        isinstance(max_metrics_jobs, bool)
+        or not isinstance(max_metrics_jobs, int)
+        or max_metrics_jobs < int(bool(metrics_count))
+    ):
+        raise ValueError("Metrics plans require at least one metrics job.")
 
     work_counts = (
-        [1] * metrics_count
-        if metrics_work_counts is None
-        else metrics_work_counts
+        [1] * metrics_count if metrics_work_counts is None else metrics_work_counts
     )
     if len(work_counts) != metrics_count or any(
         isinstance(count, bool) or not isinstance(count, int) or count < 1
@@ -59,7 +71,7 @@ def build_job_graph(
     )
 
     assignment_batches = _task_batches(
-        assignment_count, min(assignment_count, MAX_ASSIGNMENT_JOBS)
+        assignment_count, min(assignment_count, max_assignment_jobs)
     )
     jobs = [
         {
@@ -74,7 +86,7 @@ def build_job_graph(
 
     assignment_jobs = list(jobs)
     if metrics_count:
-        metric_job_count = min(metrics_count, MAX_METRICS_JOBS)
+        metric_job_count = min(metrics_count, max_metrics_jobs)
         metric_batches = _task_batches(metrics_count, metric_job_count)
         for index, task_indices in enumerate(metric_batches):
             required_assignment_tasks = {
@@ -111,6 +123,8 @@ def build_job_graph(
         assignment_count=assignment_count,
         metrics_count=metrics_count,
         metric_assignment_dependencies=metric_assignment_dependencies,
+        max_assignment_jobs=max_assignment_jobs,
+        max_metrics_jobs=max_metrics_jobs,
     )
     return jobs
 
@@ -161,7 +175,9 @@ def topological_jobs(jobs: Iterable[dict]) -> list[dict]:
     remaining = {job["id"]: set(dependency_ids(job)) for job in ordered_input}
     unknown = set().union(*remaining.values(), set()) - jobs_by_id.keys()
     if unknown:
-        raise ValueError(f"Slurm jobs reference unknown dependencies: {sorted(unknown)}.")
+        raise ValueError(
+            f"Slurm jobs reference unknown dependencies: {sorted(unknown)}."
+        )
 
     result = []
     completed = set()
@@ -186,11 +202,12 @@ def validate_job_graph(
     assignment_count: int,
     metrics_count: int,
     metric_assignment_dependencies: list[list[int]] | None = None,
+    max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
+    max_metrics_jobs: int = MAX_METRICS_JOBS,
 ) -> None:
-    if not jobs or len(jobs) > MAX_SLURM_JOBS:
-        raise ValueError(
-            f"Slurm plans require between 1 and {MAX_SLURM_JOBS} jobs."
-        )
+    max_jobs = max_assignment_jobs + max_metrics_jobs
+    if not jobs or len(jobs) > max_jobs:
+        raise ValueError(f"Slurm plans require between 1 and {max_jobs} jobs.")
 
     assignment_indices = []
     metrics_indices = []
@@ -260,9 +277,9 @@ def validate_job_graph(
         raise ValueError("Slurm jobs must cover every assignment task exactly once.")
     if sorted(metrics_indices) != list(range(metrics_count)):
         raise ValueError("Slurm jobs must cover every metrics task exactly once.")
-    if len(assignment_jobs) > MAX_ASSIGNMENT_JOBS:
+    if len(assignment_jobs) > max_assignment_jobs:
         raise ValueError("Slurm plan exceeds the assignment job limit.")
-    if len(metrics_jobs) + len(finalizers) > MAX_METRICS_JOBS:
+    if len(metrics_jobs) + len(finalizers) > max_metrics_jobs:
         raise ValueError("Slurm plan exceeds the metrics job limit.")
     if len(finalizers) != int(bool(metrics_count)):
         raise ValueError("Metrics plans require exactly one finalizer job.")
@@ -280,12 +297,12 @@ def validate_job_graph(
         expected_dependencies = [
             assignment_job["id"]
             for assignment_job in assignment_jobs
-            if required_assignment_tasks.intersection(
-                assignment_job["task_indices"]
-            )
+            if required_assignment_tasks.intersection(assignment_job["task_indices"])
         ]
         if job["kind"] == "metrics-finalize":
-            expected_dependencies.extend(metric_job["id"] for metric_job in metrics_jobs)
+            expected_dependencies.extend(
+                metric_job["id"] for metric_job in metrics_jobs
+            )
         if job["dependencies"] != {"afterok": expected_dependencies}:
             raise ValueError(
                 f"Slurm job {job['id']!r} does not have its exact required dependencies."

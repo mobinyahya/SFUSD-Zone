@@ -71,23 +71,18 @@ metrics:
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
 
-# Optional student-assignment matching simulation.
-# Run matching independently with:
+# Optional maps for every benchmark zoning. Existing PNGs are reused on skipped
+# runs; content-addressed geometry artifacts are shared locally and on Slurm.
+visualization:
+  enabled: false
+  stages: final  # final | all
+  # artifact_dir: '/shared/path/to/visualization-cache'
+
+# Optional student assignment. The complete base config selects policy
+# subconfigs and controls aggregate/local metric exports.
+# Run assignment independently with:
 #   uv run python -m benchmark.run benchmark/sweep.example.yaml --mode matching
 # matching:
 #   enabled: true
-#   config: benchmark/matching/medium_zones_no_reserves_no_sib.yaml
-#   # Or run multiple matching templates for each optimization output:
-#   # configs:
-#   #   - name: no_reserves_no_sib
-#   #     config: benchmark/matching/medium_zones_no_reserves_no_sib.yaml
-#   #   - name: sd
-#   #     config: benchmark/matching/sd.yaml
-#   compute_stage_assignments: false  # opt in to matching each recursive/iterative stage
-
-# Optional assignment-based choice metrics. These use matching assignment CSVs,
-# do nothing when no assignments exist, and can be run independently with:
-#   uv run python -m benchmark.run benchmark/sweep.example.yaml --mode choice_metrics
-# choice_metrics:
-#   enabled: true
-#   compute_stage_metrics: false  # opt in to assignment metrics for stage matching outputs
+#   config: ../assignment/configs/8-19-choice.yaml
+#   compute_stage_assignments: false

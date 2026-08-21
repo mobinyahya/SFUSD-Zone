@@ -86,85 +86,73 @@ class MetricsRunConfig:
 
 
 @dataclass(frozen=True)
-class ChoiceMetricsRunConfig:
-    """Student-assignment outcome metrics for benchmark runs."""
+class VisualizationRunConfig:
+    """Solution-map settings for every run in a simulation sweep."""
 
     enabled: bool = False
-    compute_stage_metrics: bool = False
+    stages: str = "final"
+    artifact_dir: str | None = None
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "ChoiceMetricsRunConfig":
-        return _dataclass_from_dict(cls, data or {})
-
-
-@dataclass(frozen=True)
-class MatchingConfigSpec:
-    """One student-assignment template to run for each zoning solution."""
-
-    name: str
-    config: str | None = None
-
-    @classmethod
-    def from_value(cls, value: Any, index: int = 0) -> "MatchingConfigSpec":
-        if value is None:
-            return cls(name="default" if index == 0 else f"default_{index}")
-        if isinstance(value, str):
-            return cls(name=_matching_name_from_path(value, index), config=value)
-        if not isinstance(value, Mapping):
-            raise ValueError(
-                "matching.configs entries must be strings or mappings with name/config."
-            )
-
-        allowed = {"name", "config", "path"}
-        unknown = set(value) - allowed
+    def from_dict(
+        cls, data: Mapping[str, Any] | None, *, base_dir: Path | None = None
+    ) -> "VisualizationRunConfig":
+        raw = dict(data or {})
+        allowed = {"enabled", "stages", "artifact_dir"}
+        unknown = set(raw) - allowed
         if unknown:
-            raise ValueError(f"Unknown MatchingConfigSpec keys: {sorted(unknown)}")
-        config = value.get("config", value.get("path"))
-        if config is not None:
-            config = str(config)
-        raw_name = value.get("name")
-        name = str(raw_name) if raw_name else _matching_name_from_path(config, index)
-        return cls(name=name, config=config)
+            raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
+
+        stages = str(raw.get("stages", "final"))
+        if stages not in {"final", "all"}:
+            raise ValueError("visualization.stages must be 'final' or 'all'.")
+
+        artifact_dir = raw.get("artifact_dir")
+        if artifact_dir is not None:
+            path = Path(str(artifact_dir)).expanduser()
+            if base_dir is not None and not path.is_absolute():
+                path = base_dir / path
+            artifact_dir = str(path.resolve())
+
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            stages=stages,
+            artifact_dir=artifact_dir,
+        )
 
 
 @dataclass(frozen=True)
 class MatchingRunConfig:
-    """Student-assignment simulation settings for benchmark runs."""
+    """Assignment base config used with generated benchmark zones."""
 
     enabled: bool = False
     config: str | None = None
-    configs: list[MatchingConfigSpec] = field(default_factory=list)
     compute_stage_assignments: bool = False
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "MatchingRunConfig":
+    def from_dict(
+        cls, data: Mapping[str, Any] | None, *, base_dir: Path | None = None
+    ) -> "MatchingRunConfig":
         raw = dict(data or {})
-        allowed = {"enabled", "config", "configs", "compute_stage_assignments"}
+        allowed = {"enabled", "config", "compute_stage_assignments"}
         unknown = set(raw) - allowed
         if unknown:
             raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
 
         config = raw.get("config")
         if config is not None:
-            config = str(config)
-        configs = [
-            MatchingConfigSpec.from_value(value, idx)
-            for idx, value in enumerate(raw.get("configs") or [])
-        ]
-        if not configs and (config is not None or raw.get("enabled")):
-            configs = [MatchingConfigSpec.from_value(config, 0)]
+            path = Path(str(config)).expanduser()
+            if base_dir is not None and not path.is_absolute():
+                path = base_dir / path
+            config = str(path.resolve())
+        if raw.get("enabled") and config is None:
+            raise ValueError("matching.config is required when matching is enabled.")
 
         return cls(
             enabled=bool(raw.get("enabled", False)),
             config=config,
-            configs=configs,
             compute_stage_assignments=bool(raw.get("compute_stage_assignments", False)),
         )
-
-    def config_specs(self) -> list[MatchingConfigSpec]:
-        if self.configs:
-            return list(self.configs)
-        return [MatchingConfigSpec.from_value(self.config, 0)]
 
 
 @dataclass(frozen=True)
@@ -192,10 +180,10 @@ class SimulationSweep:
     tasks: list[dict[str, Any]] = field(default_factory=list)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     metrics: MetricsRunConfig = field(default_factory=MetricsRunConfig)
-    matching: MatchingRunConfig = field(default_factory=MatchingRunConfig)
-    choice_metrics: ChoiceMetricsRunConfig = field(
-        default_factory=ChoiceMetricsRunConfig
+    visualization: VisualizationRunConfig = field(
+        default_factory=VisualizationRunConfig
     )
+    matching: MatchingRunConfig = field(default_factory=MatchingRunConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "SimulationSweep":
@@ -212,8 +200,8 @@ class SimulationSweep:
             "tasks",
             "execution",
             "metrics",
+            "visualization",
             "matching",
-            "choice_metrics",
         }
         unknown_top_level = set(raw) - allowed_top_level
         if unknown_top_level:
@@ -221,10 +209,8 @@ class SimulationSweep:
 
         name = str(raw.get("name") or config_path.stem)
         mode = str(raw.get("mode", "run"))
-        if mode not in {"run", "metrics", "matching", "choice_metrics"}:
-            raise ValueError(
-                "mode must be one of: run, metrics, matching, choice_metrics"
-            )
+        if mode not in {"run", "metrics", "matching"}:
+            raise ValueError("mode must be one of: run, metrics, matching")
 
         optimization_defaults = dict(raw.get("optimization_defaults") or {})
         sweep = dict(raw.get("sweep") or {})
@@ -251,8 +237,12 @@ class SimulationSweep:
             tasks=[_restore_special_values(dict(task)) for task in tasks],
             execution=ExecutionConfig.from_dict(raw.get("execution")),
             metrics=MetricsRunConfig.from_dict(raw.get("metrics")),
-            matching=MatchingRunConfig.from_dict(raw.get("matching")),
-            choice_metrics=ChoiceMetricsRunConfig.from_dict(raw.get("choice_metrics")),
+            visualization=VisualizationRunConfig.from_dict(
+                raw.get("visualization"), base_dir=config_path.parent
+            ),
+            matching=MatchingRunConfig.from_dict(
+                raw.get("matching"), base_dir=config_path.parent
+            ),
         )
 
     def generate_tasks(self) -> list[BenchmarkTask]:
@@ -343,9 +333,7 @@ def optimization_config_hash(
 def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     scenario = config.data_scenario
     roles = [
-        role
-        for role in OPTIMIZATION_SOURCE_ROLES
-        if _scenario_has_role(scenario, role)
+        role for role in OPTIMIZATION_SOURCE_ROLES if _scenario_has_role(scenario, role)
     ]
     if config.capacity_scenario != "programs" and _scenario_has_role(
         scenario, "optimization.capacity"
@@ -471,12 +459,6 @@ def _dataclass_from_dict(cls, data: Mapping[str, Any]):
     if unknown:
         raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
     return cls(**{k: v for k, v in data.items() if k in field_names})
-
-
-def _matching_name_from_path(path: str | None, index: int) -> str:
-    if path:
-        return Path(str(path)).stem or f"config_{index}"
-    return "default" if index == 0 else f"default_{index}"
 
 
 def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:

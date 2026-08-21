@@ -11,10 +11,10 @@ import pytest
 
 from benchmark.config import (
     BenchmarkTask,
-    ChoiceMetricsRunConfig,
     MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
+    VisualizationRunConfig,
     optimization_config_to_dict,
 )
 from benchmark.runner import (
@@ -40,6 +40,7 @@ from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
+from optimization.visualization import RenderResult
 
 
 @pytest.mark.parametrize("command", ["generate", "submit"])
@@ -73,6 +74,47 @@ def test_submission_script_has_required_directives(tmp_path):
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 
+def test_submission_script_queues_eight_dependent_assignment_jobs(tmp_path):
+    from assignment.slurm import build_generated_zone_slurm_plan
+
+    assignment_config = (
+        Path(__file__).parents[1] / "assignment/configs/8-19-choice.yaml"
+    )
+    target = tmp_path / "run"
+    assignment_plan, assignment_plan_path = build_generated_zone_slurm_plan(
+        assignment_config,
+        [
+            {
+                "id": "run-root",
+                "assignment_folder": str(target),
+                "zone_file": str(target / "assignment_zones.csv"),
+                "skip_marker": str(target / ".assignment-skipped"),
+                "zone_building_blocks": "block_group",
+                "geography_vintage": "2020",
+            }
+        ],
+        plan_dir=tmp_path / "assignment-plan",
+        max_assignment_jobs=6,
+        max_metrics_jobs=2,
+    )
+    plan = replace(
+        _plan(tmp_path),
+        matching=MatchingRunConfig(
+            enabled=True,
+            config=str(assignment_config),
+        ),
+        assignment_plan_path=str(assignment_plan_path),
+    )
+
+    script = submission_script(plan, tmp_path / "benchmark-plan.json")
+
+    assert len(assignment_plan["jobs"]) == 8
+    assert '--upstream-job-id "${benchmark_job_0}"' in script
+    scripts = assignment_plan_path.parent / "scripts"
+    assert len(list(scripts.glob("*.sh"))) == 9
+    subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+
+
 def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     plan = _plan(tmp_path)
     calls = []
@@ -100,16 +142,6 @@ def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     ("sweep", "message"),
     [
         (SimulationSweep(mode="metrics"), "supports only mode 'run'"),
-        (
-            SimulationSweep(matching=MatchingRunConfig(enabled=True)),
-            "enabled matching",
-        ),
-        (
-            SimulationSweep(
-                choice_metrics=ChoiceMetricsRunConfig(enabled=True),
-            ),
-            "choice_metrics",
-        ),
     ],
 )
 def test_planning_rejects_unsupported_modes_before_generating_tasks(
@@ -141,6 +173,8 @@ def test_plan_roundtrip_snapshots_tasks_metrics_and_absolute_paths(tmp_path):
     assert loaded.to_dict() == plan.to_dict()
     assert loaded.tasks[0].config["workers"] == 4
     assert loaded.metrics.compute_stage_metrics is True
+    assert loaded.visualization.enabled is True
+    assert loaded.visualization.stages == "all"
     assert Path(loaded.output_root).is_absolute()
     assert Path(loaded.tasks[0].output_dir).is_absolute()
 
@@ -202,6 +236,7 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
 
     monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
     executor_workers = []
+    evaluation_kwargs = []
 
     class ImmediateExecutor:
         def __init__(self, max_workers):
@@ -224,12 +259,15 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
             return future
 
     monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", ImmediateExecutor)
+
+    def fake_evaluate(task, **kwargs):
+        evaluation_kwargs.append(kwargs)
+        events.append(("evaluate", task.task_id))
+        return TaskResult(task.task_id, task.output_dir, "ERROR")
+
     monkeypatch.setattr(
         "benchmark.slurm.evaluate_optimization_task",
-        lambda task, **kwargs: (
-            events.append(("evaluate", task.task_id))
-            or TaskResult(task.task_id, task.output_dir, "ERROR")
-        ),
+        fake_evaluate,
     )
 
     assert run_benchmark_worker("plan.json", 0) == 1
@@ -240,6 +278,9 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         "evaluate",
     ]
     assert executor_workers == [2, 8]
+    assert all(
+        kwargs["visualization"] == plan.visualization for kwargs in evaluation_kwargs
+    )
     assert len(aggregate_calls) == 1
 
 
@@ -369,6 +410,21 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
             return self.delegate.context
 
     monkeypatch.setattr(runner, "MetricsCalculator", CalculatorSpy)
+    visualization_calls = []
+
+    def fake_visualize(solutions, output_dir, **kwargs):
+        visualization_calls.append((solutions, output_dir, kwargs))
+        path = Path(output_dir) / "visualization_stage_00_Block_0.png"
+        path.write_bytes(b"png")
+        return [
+            RenderResult(
+                stage="stage_00_Block_0",
+                figure_paths=[path],
+                geometry_artifact=tmp_path / "cached-geometry.pkl",
+            )
+        ]
+
+    monkeypatch.setattr("benchmark.visualize.visualize_solutions", fake_visualize)
 
     optimization = run_optimization_phase(task)
 
@@ -387,6 +443,7 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
         task,
         dataset=FakeDataset(problem),
         compute_stage_metrics=True,
+        visualization=VisualizationRunConfig(enabled=True),
     )
 
     assert evaluated.status == "FEASIBLE"
@@ -396,6 +453,8 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert manifest["phase"] == "complete"
     assert manifest["final_stage"] == "stage_00_Block_0"
     assert result["metrics"]
+    assert manifest["visualization"]["stages"] == "final"
+    assert visualization_calls[0][2]["artifact_dir"] is None
     assert (run_dir / "zone_dict_Block_0.json").exists()
 
 
@@ -456,6 +515,11 @@ def _plan(tmp_path: Path) -> SlurmPlan:
         output_root=str(tmp_path.resolve()),
         metrics=MetricsRunConfig(strict=False, compute_stage_metrics=True),
         tasks=[task],
+        visualization=VisualizationRunConfig(
+            enabled=True,
+            stages="all",
+            artifact_dir=str((tmp_path / "visualization-cache").resolve()),
+        ),
     )
 
 

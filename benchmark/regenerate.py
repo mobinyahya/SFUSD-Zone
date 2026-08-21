@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 import os
 
-from benchmark.config import BenchmarkTask, optimization_config_hash
-from benchmark.choice_metrics import preserve_choice_metrics_payload
-from benchmark.matching import preserve_matching_payload
+from benchmark.config import (
+    BenchmarkTask,
+    VisualizationRunConfig,
+    optimization_config_hash,
+)
 from benchmark.results import discover_run_dirs
 from benchmark.runner import (
     MANIFEST_FILENAME,
@@ -34,6 +35,7 @@ def regenerate_metrics(
     *,
     strict: bool = True,
     compute_stage_metrics: bool = False,
+    visualization: VisualizationRunConfig | None = None,
     fail_fast: bool = False,
     dataset_factory=None,
 ) -> RegenerationResult:
@@ -76,18 +78,26 @@ def regenerate_metrics(
                 compute_stage_metrics=compute_stage_metrics,
             )
             metrics = calculator.compute()
+            if visualization and visualization.enabled:
+                from benchmark.visualize import (
+                    render_task_visualizations,
+                    visualization_is_current,
+                )
+
+                if not visualization_is_current(manifest, run_dir, visualization):
+                    render_task_visualizations(
+                        solutions,
+                        config,
+                        run_dir,
+                        visualization,
+                        manifest,
+                    )
             payload = result_payload_for(
                 metrics=metrics,
                 config=config,
                 solutions=solutions,
                 task=task,
             )
-            previous_payload = _load_previous_result(
-                os.path.join(run_dir, RESULT_FILENAME)
-            )
-            if calculator.context.solution.feasible:
-                preserve_matching_payload(payload, previous_payload)
-                preserve_choice_metrics_payload(payload, previous_payload)
             write_json(os.path.join(run_dir, RESULT_FILENAME), payload)
             manifest["status"] = payload.get("status") or manifest.get("status")
             manifest["final_stage"] = metrics.run.get("final_stage")
@@ -104,13 +114,3 @@ def regenerate_metrics(
             if fail_fast:
                 raise
     return result
-
-
-def _load_previous_result(path: str) -> dict:
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}

@@ -79,12 +79,8 @@ def _write_custom_sweep(tmp_path: Path, location: str = "optimization_defaults")
                     "path": "inputs/students.csv",
                     "companions": ["inputs/students.meta"],
                 },
-                "assignment.students": {
-                    "path": "inputs/assignment-students.csv"
-                },
-                "assignment.programs": {
-                    "path": "inputs/assignment-programs.csv"
-                },
+                "assignment.students": {"path": "inputs/assignment-students.csv"},
+                "assignment.programs": {"path": "inputs/assignment-programs.csv"},
             },
         },
     }
@@ -121,7 +117,9 @@ def test_sweep_anchors_every_supported_data_shape_before_cwd_change(
     task = sweep.generate_tasks()[0]
 
     data = task.config["data"]
-    assert data["scenario"] == str((sweep_path.parent / "scenarios/custom.yaml").resolve())
+    assert data["scenario"] == str(
+        (sweep_path.parent / "scenarios/custom.yaml").resolve()
+    )
     assert data["overrides"]["roots"] == {
         "data": str((sweep_path.parent / "relative-data").resolve()),
         "cache": str((sweep_path.parent / "relative-cache").resolve()),
@@ -176,3 +174,39 @@ def test_task_identity_ignores_unconsumed_assignment_sources(tmp_path):
     second = sweep.generate_tasks()[0]
 
     assert first.config_hash == second.config_hash
+
+
+def test_visualization_config_anchors_shared_artifact_dir(tmp_path):
+    config_path = tmp_path / "configs" / "sweep.yaml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "visualization": {
+                    "enabled": True,
+                    "stages": "all",
+                    "artifact_dir": "../shared-viz-cache",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sweep = SimulationSweep.from_yaml(str(config_path))
+
+    assert sweep.visualization.enabled is True
+    assert sweep.visualization.stages == "all"
+    assert sweep.visualization.artifact_dir == str(
+        (tmp_path / "shared-viz-cache").resolve()
+    )
+
+
+def test_visualization_config_rejects_unknown_stage_mode(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"visualization": {"stages": "coarse"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="visualization.stages"):
+        SimulationSweep.from_yaml(str(config_path))

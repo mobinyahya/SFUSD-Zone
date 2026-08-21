@@ -151,8 +151,6 @@ def _stage_rows(
             "solver_progress_format": metadata.get("solver_progress_format"),
             "solver_progress_count": metadata.get("solver_progress_count"),
         }
-        row.update(_metric_values(metrics_stage.get("matching_metrics")))
-        row.update(_metric_values(metrics_stage.get("choice_metrics_metrics")))
         rows.append(row)
     return rows
 
@@ -206,12 +204,6 @@ def _cell(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
     return value
-
-
-def _metric_values(values: Mapping[str, Any] | None) -> dict[str, Any]:
-    if not values:
-        return {}
-    return {str(key): _cell(value) for key, value in values.items()}
 
 
 def _join(values) -> str:

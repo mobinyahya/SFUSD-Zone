@@ -6,7 +6,10 @@ mode: run  # run | metrics
 optimization_defaults:
   data:
     scenario: legacy
-    overrides: {}
+    overrides:
+      filters:
+        optimization:
+          geography_vintage: "2020"
   carry_over_compute: true
   save_solver_logs: true
   save_solver_progress: true
@@ -50,15 +53,5 @@ metrics:
 
 matching:
   enabled: true
-  configs:
-    - name: no_reserves
-      config: benchmark/matching/zones+no_reserves.yaml
-    - name: soft_reserves
-      config: benchmark/matching/zones+soft_reserves_06frl.yaml
-    - name: hard_reserves
-      config: benchmark/matching/zones+hard_reserves_06frl.yaml
+  config: ../../assignment/configs/8-19-choice.yaml
   compute_stage_assignments: false
-
-choice_metrics:
-  enabled: true
-  compute_stage_metrics: false

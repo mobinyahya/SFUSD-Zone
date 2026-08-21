@@ -198,6 +198,37 @@ def test_successful_submission_is_durable_and_cannot_repeat(tmp_path, monkeypatc
         )
 
 
+def test_submission_adds_external_dependencies_to_assignment_jobs(
+    tmp_path, monkeypatch
+):
+    plan_path = (tmp_path / "plan.json").resolve()
+    plan = {
+        "schema_version": PLAN_SCHEMA_VERSION,
+        "run_id": "test-run",
+        "workspace_root": str(pathlib.Path(__file__).parents[2]),
+        "plan_path": str(plan_path),
+        "jobs": build_job_graph(1, 0),
+    }
+    plan_path.write_text(json.dumps(plan))
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda _path: (plan, plan_path))
+    submit_path = write_slurm_scripts(plan_path)
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "321\n", "")
+
+    assignment_slurm.submit_slurm_plan(
+        plan_path,
+        script_dir=submit_path.parent,
+        runner=fake_run,
+        upstream_job_ids=["100", "101"],
+    )
+
+    assert calls[0][:2] == ["sbatch", "--parsable"]
+    assert "--dependency=afterok:100:101" in calls[0]
+
+
 def test_worker_process_reuses_market_across_iterations_and_subconfigs(
     tmp_path, monkeypatch
 ):

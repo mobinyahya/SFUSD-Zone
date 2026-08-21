@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("config", help="Path to simulation sweep YAML.")
     parser.add_argument(
         "--mode",
-        choices=["run", "metrics", "matching", "choice_metrics"],
+        choices=["run", "metrics", "matching"],
         help="Override the mode declared in the YAML file.",
     )
     args = parser.parse_args(argv)
@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> None:
             execution=sweep.execution,
             metrics=sweep.metrics,
             matching=sweep.matching,
-            choice_metrics=sweep.choice_metrics,
+            visualization=sweep.visualization,
         )
         print(
             f"Completed {batch.completed}/{batch.total}; "
@@ -42,31 +42,15 @@ def main(argv: list[str] | None = None) -> None:
         )
         _aggregate(output_dir, sweep)
     elif mode == "matching":
-        from benchmark.matching import run_matching_for_existing_runs
+        from benchmark.assignment import run_assignments_for_existing_runs
 
-        result = run_matching_for_existing_runs(
+        result = run_assignments_for_existing_runs(
             output_dir,
             sweep.matching,
-            choice_metrics=sweep.choice_metrics,
             fail_fast=sweep.execution.fail_fast,
         )
         print(
-            f"Matched {result.successful}/{result.total}; "
-            f"failed={result.failed}, skipped={result.skipped}"
-        )
-        _aggregate(output_dir, sweep)
-    elif mode == "choice_metrics":
-        from benchmark.choice_metrics import (
-            run_choice_metrics_for_existing_runs,
-        )
-
-        result = run_choice_metrics_for_existing_runs(
-            output_dir,
-            sweep.choice_metrics,
-            fail_fast=sweep.execution.fail_fast,
-        )
-        print(
-            f"Choice metrics {result.successful}/{result.total}; "
+            f"Assigned {result.successful}/{result.total}; "
             f"failed={result.failed}, skipped={result.skipped}"
         )
         _aggregate(output_dir, sweep)
@@ -75,6 +59,7 @@ def main(argv: list[str] | None = None) -> None:
             output_dir,
             strict=sweep.metrics.strict,
             compute_stage_metrics=sweep.metrics.compute_stage_metrics,
+            visualization=sweep.visualization,
             fail_fast=sweep.execution.fail_fast,
         )
         print(
