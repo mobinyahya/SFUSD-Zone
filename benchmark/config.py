@@ -15,7 +15,7 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
-from loaders import anchor_data_config
+from loaders import DataScenario, anchor_data_config
 from optimization.config import OptimizationConfig
 
 
@@ -249,13 +249,28 @@ class SimulationSweep:
         overrides = list(_sweep_overrides(self.sweep)) or [{}]
         explicit_tasks = self.tasks or [{}]
         tasks: list[BenchmarkTask] = []
+        scenarios: dict[str, DataScenario] = {}
+        source_manifests: dict[tuple[str, str, str], dict[str, Any]] = {}
         for sweep_values, task_values in product(overrides, explicit_tasks):
             config_data = dict(self.optimization_defaults)
             config_data.update(sweep_values)
             config_data.update(task_values)
-            config = optimization_config_from_dict(config_data)
+            data_key = stable_hash(
+                config_data.get("data", {"scenario": "legacy", "overrides": {}})
+            )
+            config = optimization_config_from_dict(
+                config_data, data_scenario=scenarios.get(data_key)
+            )
+            scenarios.setdefault(data_key, config.data_scenario)
             config_dict = optimization_config_to_dict(config)
-            config_hash = optimization_config_hash(config)
+            manifest_key = (data_key, config.choice_model, config.capacity_scenario)
+            source_manifest = source_manifests.get(manifest_key)
+            if source_manifest is None:
+                source_manifest = _benchmark_source_manifest(config)
+                source_manifests[manifest_key] = source_manifest
+            config_hash = optimization_config_hash(
+                config, source_manifest=source_manifest
+            )
             output_dir = os.path.join(
                 os.path.expanduser(self.execution.output_dir),
                 format_output_path(
@@ -274,7 +289,9 @@ class SimulationSweep:
         return tasks
 
 
-def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig:
+def optimization_config_from_dict(
+    data: Mapping[str, Any], *, data_scenario: DataScenario | None = None
+) -> OptimizationConfig:
     """Construct a :class:`OptimizationConfig` from a saved config snapshot."""
 
     restored = _restore_special_values(dict(data))
@@ -283,7 +300,7 @@ def optimization_config_from_dict(data: Mapping[str, Any]) -> OptimizationConfig
     if unknown:
         raise ValueError(f"Unknown optimization config keys: {sorted(unknown)}")
     kwargs = {k: v for k, v in restored.items() if k in field_names}
-    return OptimizationConfig(**kwargs)
+    return OptimizationConfig(**kwargs, _resolved_data_scenario=data_scenario)
 
 
 def optimization_config_to_dict(
@@ -312,6 +329,8 @@ def stable_hash(value: Any) -> str:
 
 def optimization_config_hash(
     config: OptimizationConfig | Mapping[str, Any],
+    *,
+    source_manifest: Mapping[str, Any] | None = None,
 ) -> str:
     """Hash optimization semantics and resolved source contents deterministically."""
     resolved = (
@@ -321,7 +340,8 @@ def optimization_config_hash(
     )
     semantic = copy.deepcopy(optimization_config_to_dict(resolved))
     semantic.pop("data", None)
-    source_manifest = _benchmark_source_manifest(resolved)
+    if source_manifest is None:
+        source_manifest = _benchmark_source_manifest(resolved)
     return stable_hash(
         {
             "optimization": semantic,

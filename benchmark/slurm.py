@@ -23,6 +23,7 @@ from benchmark.config import (
     SimulationSweep,
     VisualizationRunConfig,
     json_ready,
+    stable_hash,
 )
 from benchmark.results import aggregate_results
 from benchmark.runner import (
@@ -530,21 +531,29 @@ def _assignment_targets(
         SKIP_MARKER_FILENAME,
     )
     from benchmark.assignment import zone_building_blocks
+    from loaders import load_scenario
+    from optimization.levels import LevelSpec
 
     targets = []
+    scenarios = {}
     for task in tasks:
-        config = task.optimization_config()
-        vintage = config.data_scenario.filter("optimization", "geography_vintage")
-        unit = zone_building_blocks(config.unit)
+        data_key = stable_hash(task.config["data"])
+        scenario = scenarios.get(data_key)
+        if scenario is None:
+            scenario = load_scenario(task.config["data"])
+            scenarios[data_key] = scenario
+        vintage = scenario.filter("optimization", "geography_vintage")
+        unit = zone_building_blocks(LevelSpec.parse(task.config["levels"][0]).unit)
         folders = [("root", Path(task.output_dir))]
         if matching.compute_stage_assignments:
-            prefix = "iteration" if "iterative" in config.strategy.lower() else "stage"
+            strategy = str(task.config["strategy"])
+            prefix = "iteration" if "iterative" in strategy.lower() else "stage"
             folders.extend(
                 (
                     f"stage-{index}",
                     Path(task.output_dir) / "stages" / f"{prefix}_{index:02d}_{level}",
                 )
-                for index, level in enumerate(config.levels)
+                for index, level in enumerate(task.config["levels"])
             )
         for suffix, folder in folders:
             targets.append(

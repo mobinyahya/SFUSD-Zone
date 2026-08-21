@@ -104,30 +104,51 @@ def resolve_generated_zone_batch_config(
         raise ValueError("Generated-zone target IDs must be unique.")
 
     output_path = Path(assignment_folder).expanduser().resolve()
+    base = copy.deepcopy(base_config)
+    base.setdefault("paths", {})["assignment-folder"] = str(output_path)
+
+    scenario = load_scenario(base["data"])
+    assignment_vintage = scenario.filter("assignment", "geography_vintage")
+    for target in targets:
+        geography_vintage = target.get("geography_vintage")
+        if geography_vintage is not None and geography_vintage != assignment_vintage:
+            raise ValueError(
+                "Optimization and assignment geography vintages differ: "
+                f"{geography_vintage!r} != {assignment_vintage!r}."
+            )
+
+    configurator = Configerator.from_config(base)
+    policy_names = list(configurator.config.get("subconfigs", []))
+    if not policy_names:
+        raise ValueError("Generated-zone assignment requires at least one subconfig.")
+    templates = []
+    for policy_name in policy_names:
+        configurator.load_subconfig_by_name(policy_name)
+        config = copy.deepcopy(configurator.config)
+        config["subconfigs"] = []
+        config["paths"]["assignment-folder"] = str(output_path)
+        templates.append({"name": policy_name, "config": config})
+
     resolved = []
     for target, target_id in zip(targets, target_ids, strict=True):
-        _target_base, entries = resolve_generated_zone_config(
-            base_config,
-            zone_file=target["zone_file"],
-            assignment_folder=output_path,
-            zone_building_blocks=str(target["zone_building_blocks"]),
-            geography_vintage=target.get("geography_vintage"),
-        )
-        for entry in entries:
-            name = f"{target_id}:{entry['name']}"
-            config = entry["config"]
+        zone_path = Path(target["zone_file"]).expanduser().resolve()
+        for template in templates:
+            config = copy.deepcopy(template["config"])
+            _inject_generated_zone(
+                config, zone_path, str(target["zone_building_blocks"])
+            )
+            policy_name = template["name"]
+            name = f"{target_id}:{policy_name}"
             config["subconfig-name"] = name
             resolved.append(
                 {
                     "name": name,
-                    "policy": entry["name"],
+                    "policy": policy_name,
                     "target": target_id,
                     "config": config,
                 }
             )
 
-    base = copy.deepcopy(base_config)
-    base.setdefault("paths", {})["assignment-folder"] = str(output_path)
     base["subconfigs"] = [entry["name"] for entry in resolved]
     return base, resolved
 

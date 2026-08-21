@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field, fields
+from dataclasses import InitVar, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -72,12 +72,13 @@ class OptimizationConfig:
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
+    _resolved_data_scenario: InitVar[DataScenario | None] = None
 
-    def __post_init__(self):
+    def __post_init__(self, _resolved_data_scenario: DataScenario | None):
         if not isinstance(self.data, Mapping):
             raise ValueError("data must be a {scenario, overrides} map.")
         self.data = deepcopy(dict(self.data))
-        self._data_scenario = load_scenario(self.data)
+        self._data_scenario = _resolved_data_scenario or load_scenario(self.data)
 
         # All levels in a run share one unit (the base graph is built per unit).
         specs = [LevelSpec.parse(level) for level in self.levels]
