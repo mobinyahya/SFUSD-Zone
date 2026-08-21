@@ -19,7 +19,7 @@ optimization_defaults:
   boundary_radius: 1
   gap_limits: [0, 0]
   workers: 8
-  centroid_neighbor_radius: 1
+  centroid_neighbor_radius: 0
   cp_sat_search_strategy: distance_to_centroid
   solver: 'cp_bool'
 
