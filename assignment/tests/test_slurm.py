@@ -27,7 +27,7 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
 )
 
 
-def test_kumar_plan_uses_twenty_jobs_with_targeted_dependencies(tmp_path):
+def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     config_path = pathlib.Path(__file__).parents[1] / "configs/kumar.config.yaml"
 
     plan, plan_path = build_slurm_plan(
@@ -36,17 +36,15 @@ def test_kumar_plan_uses_twenty_jobs_with_targeted_dependencies(tmp_path):
         plan_dir=tmp_path / "plan",
     )
 
-    assert len(plan["assignment_tasks"]) == 475
+    assert len(plan["assignment_tasks"]) == 19
     assert len(plan["metrics_tasks"]) == 19
     assert len(plan["jobs"]) == MAX_SLURM_JOBS
     assignment_jobs = [job for job in plan["jobs"] if job["kind"] == "assignment"]
     assert len(assignment_jobs) == MAX_ASSIGNMENT_JOBS
-    assert {job["cpus"] for job in assignment_jobs} == {39, MAX_CPUS_PER_NODE}
+    assert {job["cpus"] for job in assignment_jobs} == {25, MAX_CPUS_PER_NODE}
     assert sorted(
-        index
-        for job in assignment_jobs
-        for index in job["task_indices"]
-    ) == list(range(475))
+        index for job in assignment_jobs for index in job["task_indices"]
+    ) == list(range(19))
     metrics_jobs = [job for job in plan["jobs"] if job["kind"].startswith("metrics")]
     assert len(metrics_jobs) == MAX_METRICS_JOBS
     assert {job["cpus"] for job in metrics_jobs} == {MAX_CPUS_PER_NODE}
@@ -56,21 +54,17 @@ def test_kumar_plan_uses_twenty_jobs_with_targeted_dependencies(tmp_path):
     assignment_job_ids = {job["id"] for job in assignment_jobs}
     for job in metrics_jobs:
         required_subconfigs = {
-            plan["metrics_tasks"][index]["subconfig"]
-            for index in job["task_indices"]
+            plan["metrics_tasks"][index]["subconfig"] for index in job["task_indices"]
         }
         expected_assignment_ids = {
             assignment_job["id"]
             for assignment_job in assignment_jobs
             if any(
-                plan["assignment_tasks"][index]["subconfig"]
-                in required_subconfigs
+                plan["assignment_tasks"][index]["subconfig"] in required_subconfigs
                 for index in assignment_job["task_indices"]
             )
         }
-        actual_assignment_ids = (
-            set(job["dependencies"]["afterok"]) & assignment_job_ids
-        )
+        actual_assignment_ids = set(job["dependencies"]["afterok"]) & assignment_job_ids
         assert actual_assignment_ids == expected_assignment_ids
         assert actual_assignment_ids != assignment_job_ids
     finalizer = metrics_jobs[-1]
@@ -88,7 +82,6 @@ def test_kumar_plan_uses_twenty_jobs_with_targeted_dependencies(tmp_path):
     assert utility_owners == [
         {
             "subconfig": "small_zones+no_reserves",
-            "iteration": 0,
             "include_real_match": False,
             "write_utility_output": True,
         }
@@ -112,14 +105,10 @@ def test_submission_persists_ids_wires_dependencies_and_cancels_on_failure(
         "run_id": "test-run",
         "workspace_root": str(pathlib.Path(__file__).parents[2]),
         "plan_path": str(plan_path),
-        "jobs": build_job_graph(
-            2, 1, metric_assignment_dependencies=[[0, 1]]
-        ),
+        "jobs": build_job_graph(2, 1, metric_assignment_dependencies=[[0, 1]]),
     }
     plan_path.write_text(json.dumps(plan))
-    monkeypatch.setattr(
-        assignment_slurm, "load_plan", lambda _path: (plan, plan_path)
-    )
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda _path: (plan, plan_path))
 
     submit_path = write_slurm_scripts(plan_path)
     submit_script = submit_path.read_text()
@@ -175,9 +164,7 @@ def test_successful_submission_is_durable_and_cannot_repeat(tmp_path, monkeypatc
         "jobs": build_job_graph(1, 0),
     }
     plan_path.write_text(json.dumps(plan))
-    monkeypatch.setattr(
-        assignment_slurm, "load_plan", lambda _path: (plan, plan_path)
-    )
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda _path: (plan, plan_path))
     submit_path = write_slurm_scripts(plan_path)
 
     def fake_run(command, **_kwargs):
@@ -189,9 +176,7 @@ def test_successful_submission_is_durable_and_cannot_repeat(tmp_path, monkeypatc
 
     state = json.loads(submission_path.read_text())
     assert state["status"] == "submitted"
-    assert state["jobs"] == [
-        {"job_id": "assignment-0", "slurm_job_id": "321"}
-    ]
+    assert state["jobs"] == [{"job_id": "assignment-0", "slurm_job_id": "321"}]
     with pytest.raises(RuntimeError, match="already has submission state"):
         assignment_slurm.submit_slurm_plan(
             plan_path, script_dir=submit_path.parent, runner=fake_run
@@ -259,22 +244,23 @@ def test_worker_process_reuses_market_across_iterations_and_subconfigs(
         "plan_path": str(tmp_path / "plan.json"),
         "assignment_folder": str(tmp_path / "assignments"),
         "subconfigs": [
-            {"name": name, "config": {"subconfig-name": name}}
+            {
+                "name": name,
+                "config": {
+                    "subconfig-name": name,
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 3},
+                },
+            }
             for name in ("first", "second")
         ],
         "assignment_tasks": [
             {
                 "subconfig": subconfig,
-                "iteration": iteration,
                 "include_real_match": False,
                 "write_utility_output": False,
             }
-            for subconfig, iteration in [
-                ("first", 0),
-                ("first", 1),
-                ("second", 0),
-                ("first", 2),
-            ]
+            for subconfig in ("first", "second")
         ],
     }
     monkeypatch.setattr(assignment_slurm, "_WORKER_PLAN", plan)
@@ -286,8 +272,9 @@ def test_worker_process_reuses_market_across_iterations_and_subconfigs(
         FakeMarketGenerator,
     )
 
-    for task_index in range(4):
-        assignment_slurm._run_cached_assignment_task(task_index)
+    assert assignment_slurm._run_cached_assignment_batch(0, [0, 1]) == []
+    assert assignment_slurm._run_cached_assignment_batch(1, [0]) == []
+    assert assignment_slurm._run_cached_assignment_batch(0, [2]) == []
 
     assert events == [
         ("initialize", "first"),
@@ -317,7 +304,7 @@ def test_job_pool_initializes_each_process_with_the_plan(tmp_path, monkeypatch):
 
     class FinishedFuture:
         def result(self):
-            return None
+            return []
 
     class FakeExecutor:
         def __init__(self, max_workers, initializer, initargs):
@@ -329,11 +316,18 @@ def test_job_pool_initializes_each_process_with_the_plan(tmp_path, monkeypatch):
         def __exit__(self, *_args):
             return False
 
-        def submit(self, function, task_index):
-            seen.setdefault("submissions", []).append((function, task_index))
+        def submit(self, function, task_index, iterations):
+            seen.setdefault("submissions", []).append(
+                (function, task_index, iterations)
+            )
             return FinishedFuture()
 
     monkeypatch.setattr(assignment_slurm, "load_plan", lambda path: (plan, plan_path))
+    monkeypatch.setattr(
+        assignment_slurm,
+        "_assignment_batches",
+        lambda _plan, _job: [(3, [0, 1]), (7, [2])],
+    )
     monkeypatch.setattr(assignment_slurm, "ProcessPoolExecutor", FakeExecutor)
     monkeypatch.setattr(assignment_slurm, "as_completed", lambda futures: list(futures))
 
@@ -344,8 +338,8 @@ def test_job_pool_initializes_each_process_with_the_plan(tmp_path, monkeypatch):
         (plan_path,),
     )
     assert seen["submissions"] == [
-        (assignment_slurm._run_cached_assignment_task, 3),
-        (assignment_slurm._run_cached_assignment_task, 7),
+        (assignment_slurm._run_cached_assignment_batch, 3, [0, 1]),
+        (assignment_slurm._run_cached_assignment_batch, 7, [2]),
     ]
 
 
@@ -379,9 +373,7 @@ def test_final_metrics_job_evaluates_then_publishes(tmp_path, monkeypatch):
     finalize.assert_not_called()
 
 
-def test_metrics_job_parallelizes_iterations_and_reduces_once(
-    tmp_path, monkeypatch
-):
+def test_metrics_job_parallelizes_iterations_and_reduces_once(tmp_path, monkeypatch):
     config = {
         "subconfig-name": "first",
         "policies": ["zones"],
@@ -391,9 +383,7 @@ def test_metrics_job_parallelizes_iterations_and_reduces_once(
     plan = {
         "run_id": "run-1",
         "metrics_fragment_dir": str(tmp_path / "fragments"),
-        "metrics_tasks": [
-            {"subconfig": "first", "report_names": ["citywide"]}
-        ],
+        "metrics_tasks": [{"subconfig": "first", "report_names": ["citywide"]}],
         "subconfigs": [{"name": "first", "config": config}],
         "assignment_folder": str(tmp_path / "assignments"),
     }
@@ -469,15 +459,11 @@ def test_saved_metric_batches_reuse_existing_evaluator(tmp_path):
     market._aggregate_metric_evaluator = evaluator
     market._validate_reusable_assignment = Mock(return_value=pd.DataFrame())
     market._record_assignment_metric_reports = Mock(
-        side_effect=lambda _assignment, save_name, iteration: market._aggregate_metric_batches[
-            "citywide"
-        ].append(
-            pd.DataFrame(
-                {
-                    "config_name": [
-                        market._metric_config_name(save_name, iteration)
-                    ]
-                }
+        side_effect=lambda _assignment, save_name, iteration: (
+            market._aggregate_metric_batches["citywide"].append(
+                pd.DataFrame(
+                    {"config_name": [market._metric_config_name(save_name, iteration)]}
+                )
             )
         )
     )
@@ -568,11 +554,70 @@ def test_large_assignment_plan_runs_multiple_waves_per_job():
     assert {len(job["task_indices"]) for job in jobs} == {120}
 
 
+def test_assignment_batches_keep_independent_runs_intact():
+    plan = {
+        "subconfigs": [
+            {
+                "name": f"run-{index}",
+                "config": {
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 5},
+                },
+            }
+            for index in range(4)
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": f"run-{index}",
+                "include_real_match": False,
+                "write_utility_output": index == 0,
+            }
+            for index in range(4)
+        ],
+    }
+
+    batches = assignment_slurm._assignment_batches(
+        plan, {"task_indices": [0, 1, 2, 3], "cpus": 3}
+    )
+
+    assert batches == [
+        (0, [0, 1, 2, 3, 4]),
+        (1, [0, 1, 2, 3, 4]),
+        (2, [0, 1, 2, 3, 4]),
+        (3, [0, 1, 2, 3, 4]),
+    ]
+
+
+def test_assignment_batches_use_idle_cpus_within_one_run():
+    plan = {
+        "subconfigs": [
+            {
+                "name": "only-run",
+                "config": {
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 5},
+                },
+            }
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": "only-run",
+                "include_real_match": False,
+                "write_utility_output": True,
+            }
+        ],
+    }
+
+    batches = assignment_slurm._assignment_batches(
+        plan, {"task_indices": [0], "cpus": 5}
+    )
+
+    assert batches == [(0, [index]) for index in range(5)]
+
+
 def test_job_graph_rejects_missing_dependencies_and_cycles():
     metric_dependencies = [[0, 1, 2, 3]]
-    jobs = build_job_graph(
-        4, 1, metric_assignment_dependencies=metric_dependencies
-    )
+    jobs = build_job_graph(4, 1, metric_assignment_dependencies=metric_dependencies)
     jobs[-1]["dependencies"] = {"afterok": ["assignment-0"]}
 
     with pytest.raises(ValueError, match="exact required dependencies"):
@@ -608,12 +653,18 @@ def test_assignment_planner_has_one_real_match_writer():
         ]
     )
 
-    assert len(tasks) == 4
-    assert [task["iteration"] for task in tasks] == [0, 0, 1, 2]
+    assert len(tasks) == 2
     assert sum(task["include_real_match"] for task in tasks) == 1
     assert [task["subconfig"] for task in tasks if task["write_utility_output"]] == [
         "mixed"
     ]
+    assert assignment_slurm._assignment_work_counts(
+        tasks,
+        [
+            subconfig("historical", ["real_match"]),
+            subconfig("mixed", ["real_match", "zones"]),
+        ],
+    ) == [1, 3]
 
 
 def _rng_market(tmp_path):
@@ -807,9 +858,7 @@ def test_metric_finalization_rejects_missing_or_corrupt_fragments(tmp_path):
             fragment_root,
             run_id="run-1",
             subconfig_name="first",
-            reports={
-                "citywide": pd.DataFrame(columns=["config_name", "new_metric"])
-            },
+            reports={"citywide": pd.DataFrame(columns=["config_name", "new_metric"])},
             expected_report_names=["citywide"],
             expected_config_names=["first/variant"],
         )
@@ -883,13 +932,10 @@ def test_slurm_finalizer_does_not_publish_incomplete_run(tmp_path, monkeypatch):
         "run_id": "run-1",
         "metrics_fragment_dir": str(fragment_root),
         "assignment_folder": str(tmp_path / "assignments"),
-        "metrics_tasks": [
-            {"subconfig": "missing", "report_names": ["citywide"]}
-        ],
+        "subconfigs": [{"name": "missing"}],
+        "metrics_tasks": [{"subconfig": "missing", "report_names": ["citywide"]}],
     }
-    monkeypatch.setattr(
-        assignment_slurm, "load_plan", lambda _path: (plan, plan_path)
-    )
+    monkeypatch.setattr(assignment_slurm, "load_plan", lambda _path: (plan, plan_path))
 
     with pytest.raises(ValueError, match="incomplete"):
         assignment_slurm.run_metrics_finalizer(plan_path)

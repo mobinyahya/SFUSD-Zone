@@ -106,7 +106,8 @@ def test_2020_auxiliary_blocks_are_filtered_from_optimization_data_and_graph():
     graph = dataset.graph_for("Block_0")
     graph_ids = {int(attributes["area_id"]) for _, attributes in graph.nodes(data=True)}
 
-    assert present_auxiliary_ids == set(AUX_BG[:3])
+    assert 60759804011000 not in census_ids
+    assert present_auxiliary_ids == set(AUX_BG[1:3])
     assert census_ids - area_ids == present_auxiliary_ids
     assert census_ids - graph_ids == present_auxiliary_ids
 

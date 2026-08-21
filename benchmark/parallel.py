@@ -131,17 +131,18 @@ def run_tasks(
                 task,
                 strict_metrics=metrics.strict,
                 compute_stage_metrics=metrics.compute_stage_metrics,
-                matching=matching,
                 visualization=visualization,
             )
             batch.add(result)
             _print_progress(batch)
             if result.status == "ERROR" and execution.fail_fast:
                 break
+        _run_matching_batch(execution, matching)
         batch.total_wall_time = time.time() - start
         return batch
 
-    _run_parallel(pending, execution, metrics, matching, visualization, batch)
+    _run_parallel(pending, execution, metrics, visualization, batch)
+    _run_matching_batch(execution, matching)
     batch.total_wall_time = time.time() - start
     return batch
 
@@ -150,7 +151,6 @@ def _run_parallel(
     pending: list[BenchmarkTask],
     execution: ExecutionConfig,
     metrics: MetricsRunConfig,
-    matching: MatchingRunConfig | None,
     visualization: VisualizationRunConfig | None,
     batch: BatchResult,
 ) -> None:
@@ -180,7 +180,6 @@ def _run_parallel(
                     task,
                     metrics.strict,
                     metrics.compute_stage_metrics,
-                    matching,
                     visualization,
                 )
                 futures[future] = (task, _effective_slots(task, capacity))
@@ -217,14 +216,12 @@ def _worker_run_task(
     task: BenchmarkTask,
     strict_metrics: bool,
     compute_stage_metrics: bool,
-    matching: MatchingRunConfig | None,
     visualization: VisualizationRunConfig | None,
 ) -> TaskResult:
     return run_optimization_task(
         task,
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
-        matching=matching,
         visualization=visualization,
     )
 
@@ -271,6 +268,25 @@ def _max_workers(execution: ExecutionConfig, task_count: int) -> int:
     cpu_count = os.cpu_count() or 1
     capacity = execution.capacity or cpu_count
     return max(1, min(task_count, cpu_count, int(capacity)))
+
+
+def _run_matching_batch(
+    execution: ExecutionConfig, matching: MatchingRunConfig | None
+) -> None:
+    if not matching or not matching.enabled:
+        return
+    from benchmark.assignment import run_assignments_for_existing_runs
+
+    result = run_assignments_for_existing_runs(
+        execution.output_dir,
+        matching,
+        fail_fast=execution.fail_fast,
+    )
+    print(
+        f"Assigned {result.successful}/{result.total}; "
+        f"failed={result.failed}, skipped={result.skipped}",
+        flush=True,
+    )
 
 
 def _print_progress(batch: BatchResult) -> None:

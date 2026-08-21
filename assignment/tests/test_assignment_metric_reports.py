@@ -453,6 +453,13 @@ def test_program_report_uses_exact_program_assignments_and_schema():
 
     reports = evaluator.eval_aggregate_metric_reports("config-a")
     assert set(reports) == {"program", "zip_code", "attendance_area", "citywide"}
+    heatmap_data = evaluator.eval_ge_utilization_by_school("config-a").set_index(
+        "school_id"
+    )
+    assert heatmap_data.loc[101, "capacity"] == 6
+    assert heatmap_data.loc[101, "assigned"] == 5
+    assert heatmap_data.loc[202, "capacity"] == 7
+    assert heatmap_data.loc[202, "assigned"] == 1
     metrics = reports["citywide"].iloc[0]
     for rank, numerator in [(1, 1), (2, 2), (3, 3)]:
         name = f"Prop Top {rank} choice (All Students)"

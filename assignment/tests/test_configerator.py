@@ -23,6 +23,10 @@ def test_local_metrics_export_is_disabled_by_default():
     assert _valid_config()["export-local-metrics"] is False
 
 
+def test_heatmap_export_is_disabled_by_default():
+    assert _valid_config()["export_heatmaps"] is False
+
+
 def test_assignment_reuse_is_enabled_by_default():
     assert _valid_config()["reuse_assignments"] is True
 
@@ -38,6 +42,14 @@ def test_aggregate_metrics_export_must_be_boolean():
 def test_local_metrics_export_must_be_boolean():
     config = _valid_config()
     config["export-local-metrics"] = "true"
+
+    with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+def test_heatmap_export_must_be_boolean():
+    config = _valid_config()
+    config["export_heatmaps"] = "true"
 
     with pytest.raises(ValueError):
         Configerator.from_config(config)

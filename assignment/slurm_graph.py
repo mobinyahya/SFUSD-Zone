@@ -29,10 +29,21 @@ def _task_batches(task_count: int, batch_count: int) -> list[list[int]]:
     return batches
 
 
+def _work_counts(task_count: int, values: list[int] | None, label: str) -> list[int]:
+    counts = [1] * task_count if values is None else values
+    if len(counts) != task_count or any(
+        isinstance(count, bool) or not isinstance(count, int) or count < 1
+        for count in counts
+    ):
+        raise ValueError(f"{label} work counts must cover every {label.lower()} task.")
+    return counts
+
+
 def build_job_graph(
     assignment_count: int,
     metrics_count: int,
     *,
+    assignment_work_counts: list[int] | None = None,
     metrics_work_counts: list[int] | None = None,
     metric_assignment_dependencies: list[list[int]] | None = None,
     max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
@@ -56,14 +67,10 @@ def build_job_graph(
     ):
         raise ValueError("Metrics plans require at least one metrics job.")
 
-    work_counts = (
-        [1] * metrics_count if metrics_work_counts is None else metrics_work_counts
+    assignment_counts = _work_counts(
+        assignment_count, assignment_work_counts, "Assignment"
     )
-    if len(work_counts) != metrics_count or any(
-        isinstance(count, bool) or not isinstance(count, int) or count < 1
-        for count in work_counts
-    ):
-        raise ValueError("Metrics work counts must cover every metrics task.")
+    metric_counts = _work_counts(metrics_count, metrics_work_counts, "Metrics")
     _validate_metric_dependencies(
         metric_assignment_dependencies,
         assignment_count=assignment_count,
@@ -78,7 +85,10 @@ def build_job_graph(
             "id": f"assignment-{index}",
             "kind": "assignment",
             "task_indices": task_indices,
-            "cpus": min(MAX_CPUS_PER_NODE, len(task_indices)),
+            "cpus": min(
+                MAX_CPUS_PER_NODE,
+                sum(assignment_counts[task_index] for task_index in task_indices),
+            ),
             "dependencies": {},
         }
         for index, task_indices in enumerate(assignment_batches)
@@ -113,7 +123,7 @@ def build_job_graph(
                     "task_indices": task_indices,
                     "cpus": min(
                         MAX_CPUS_PER_NODE,
-                        sum(work_counts[task_index] for task_index in task_indices),
+                        sum(metric_counts[task_index] for task_index in task_indices),
                     ),
                     "dependencies": {"afterok": dependencies},
                 }
@@ -122,6 +132,8 @@ def build_job_graph(
         jobs,
         assignment_count=assignment_count,
         metrics_count=metrics_count,
+        assignment_work_counts=assignment_counts,
+        metrics_work_counts=metric_counts,
         metric_assignment_dependencies=metric_assignment_dependencies,
         max_assignment_jobs=max_assignment_jobs,
         max_metrics_jobs=max_metrics_jobs,
@@ -201,6 +213,8 @@ def validate_job_graph(
     *,
     assignment_count: int,
     metrics_count: int,
+    assignment_work_counts: list[int] | None = None,
+    metrics_work_counts: list[int] | None = None,
     metric_assignment_dependencies: list[list[int]] | None = None,
     max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
     max_metrics_jobs: int = MAX_METRICS_JOBS,
@@ -209,6 +223,10 @@ def validate_job_graph(
     if not jobs or len(jobs) > max_jobs:
         raise ValueError(f"Slurm plans require between 1 and {max_jobs} jobs.")
 
+    assignment_counts = _work_counts(
+        assignment_count, assignment_work_counts, "Assignment"
+    )
+    metric_counts = _work_counts(metrics_count, metrics_work_counts, "Metrics")
     assignment_indices = []
     metrics_indices = []
     assignment_jobs = []
@@ -283,6 +301,24 @@ def validate_job_graph(
         raise ValueError("Slurm plan exceeds the metrics job limit.")
     if len(finalizers) != int(bool(metrics_count)):
         raise ValueError("Metrics plans require exactly one finalizer job.")
+    for job in assignment_jobs:
+        expected_cpus = min(
+            MAX_CPUS_PER_NODE,
+            sum(assignment_counts[index] for index in job["task_indices"]),
+        )
+        if job["cpus"] != expected_cpus:
+            raise ValueError(
+                f"Slurm job {job['id']!r} requires exactly {expected_cpus} CPU(s)."
+            )
+    for job in [*metrics_jobs, *finalizers]:
+        expected_cpus = min(
+            MAX_CPUS_PER_NODE,
+            sum(metric_counts[index] for index in job["task_indices"]),
+        )
+        if job["cpus"] != expected_cpus:
+            raise ValueError(
+                f"Slurm job {job['id']!r} requires exactly {expected_cpus} CPU(s)."
+            )
     _validate_metric_dependencies(
         metric_assignment_dependencies,
         assignment_count=assignment_count,

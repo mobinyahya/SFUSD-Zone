@@ -170,6 +170,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
             sweep.matching.config,
             _assignment_targets(tasks, sweep.matching),
+            assignment_folder=output_root,
             plan_dir=output_root / SLURM_DIRNAME / "assignment",
             max_assignment_jobs=assignment_jobs,
             max_metrics_jobs=metrics_jobs,
@@ -322,7 +323,6 @@ def _run_evaluation_task(
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
         visualization=visualization,
-        execute_assignments=False,
     )
 
 
@@ -550,7 +550,6 @@ def _assignment_targets(
             targets.append(
                 {
                     "id": f"{task.task_id}-{suffix}",
-                    "assignment_folder": str(folder.resolve()),
                     "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
                     "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
                     "zone_building_blocks": unit,
@@ -767,7 +766,15 @@ def main(argv: list[str] | None = None) -> int:
             script_path = write_submission_script(plan, plan_path, args.script)
             print(f"Plan: {plan_path}")
             print(f"Submission script: {script_path}")
-            print(f"Tasks: {len(plan.tasks)}")
+            print(f"Benchmark tasks: {len(plan.tasks)}")
+            if plan.assignment_plan_path:
+                from assignment.slurm import load_plan as load_assignment_plan
+
+                assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
+                print(
+                    f"Assignment tasks: {len(assignment_plan['assignment_tasks'])} "
+                    f"across {len(assignment_plan['jobs'])} Slurm jobs"
+                )
             if args.command == "submit":
                 submitted = submit_plan(plan, plan_path, sbatch=args.sbatch)
                 for job in submitted:

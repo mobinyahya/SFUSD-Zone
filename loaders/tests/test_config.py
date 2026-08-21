@@ -126,6 +126,7 @@ def test_bundled_scenarios_are_declared_as_package_data():
         "historical-2324.yaml",
         "legacy.yaml",
         "mission-bay-2324.yaml",
+        "summer-26-zoning.yaml",
     }
     scenario_resources = files("loaders").joinpath("configs", "scenarios")
     assert {resource.name for resource in scenario_resources.iterdir()} == expected

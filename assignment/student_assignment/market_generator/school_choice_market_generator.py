@@ -10,6 +10,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 import yaml
+from loaders import load_scenario, load_school_records
 
 from ..choice_ranks import (
     ASSIGNMENT_SCHEMA_VERSION,
@@ -302,7 +303,9 @@ class MarketGenerator(SchoolChoiceMarket):
         utility_config = self.config.get("utility-model", {})
         utility_save_path = utility_config.get("save-path")
         export_metrics = self.config.get("export-aggregate-metrics", False)
+        export_heatmaps = self.config.get("export_heatmaps", False)
         self.config["export-aggregate-metrics"] = False
+        self.config["export_heatmaps"] = False
         if not write_utility_output:
             utility_config.pop("save-path", None)
         try:
@@ -313,6 +316,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         finally:
             self.config["export-aggregate-metrics"] = export_metrics
+            self.config["export_heatmaps"] = export_heatmaps
             if utility_save_path is not None:
                 utility_config["save-path"] = utility_save_path
 
@@ -360,14 +364,25 @@ class MarketGenerator(SchoolChoiceMarket):
     def evaluate_saved_subconfig(self, subconfig_name: str) -> dict[str, pd.DataFrame]:
         """Evaluate all saved iterations for one subconfig without running DA."""
         self._activate_subconfig(subconfig_name)
-        if not self.config.get("export-aggregate-metrics", False):
+        if not (
+            self.config.get("export-aggregate-metrics", False)
+            or self.config.get("export_heatmaps", False)
+        ):
             raise ValueError(
-                "Metrics-only evaluation requires export-aggregate-metrics=true."
+                "Metrics-only evaluation requires a metric or heatmap export."
             )
 
         payload = self._evaluate_saved_metric_specs(
             self._expected_saved_assignment_specs()
         )
+        if self.config.get("export_heatmaps", False):
+            self.export_heatmap_reports(
+                self.output_assignment_path,
+                self.external_config,
+                self.combine_heatmap_batch_payloads([payload]),
+            )
+        if not self.config.get("export-aggregate-metrics", False):
+            return {}
         return self.combine_metric_batch_payloads(
             [payload],
             include_local_metrics=self.config.get("export-local-metrics", False),
@@ -381,9 +396,12 @@ class MarketGenerator(SchoolChoiceMarket):
     ) -> dict:
         """Evaluate one iteration's saved files and return unreduced metric batches."""
         self._activate_subconfig(subconfig_name)
-        if not self.config.get("export-aggregate-metrics", False):
+        if not (
+            self.config.get("export-aggregate-metrics", False)
+            or self.config.get("export_heatmaps", False)
+        ):
             raise ValueError(
-                "Metrics-only evaluation requires export-aggregate-metrics=true."
+                "Metrics-only evaluation requires a metric or heatmap export."
             )
         specs = [
             spec
@@ -415,10 +433,13 @@ class MarketGenerator(SchoolChoiceMarket):
             self._metric_config_name(save_name, iteration)
             for _path, save_name, iteration in specs
         ]
+        export_metrics = self.config.get("export-aggregate-metrics")
+        if export_metrics is None:
+            export_metrics = any(self._aggregate_metric_batches.values())
         expected_report_names = (
             tuple(self.AGGREGATE_METRIC_FILES)
-            if self.config.get("export-local-metrics", False)
-            else ("citywide",)
+            if export_metrics and self.config.get("export-local-metrics", False)
+            else (("citywide",) if export_metrics else ())
         )
         actual_report_names = {
             name for name, frames in self._aggregate_metric_batches.items() if frames
@@ -442,6 +463,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 if frames
             },
             "frl_threshold_inputs": list(self._frl_threshold_input_batches),
+            "heatmaps": list(self._heatmap_metric_batches),
             "expected_config_names": self._metric_config_names(specs),
         }
 
@@ -474,6 +496,7 @@ class MarketGenerator(SchoolChoiceMarket):
             report: [] for report in self.AGGREGATE_METRIC_FILES
         }
         self._frl_threshold_input_batches = []
+        self._heatmap_metric_batches = []
 
     @classmethod
     def _average_aggregate_metric_frames(cls, report_name, frames):
@@ -498,6 +521,16 @@ class MarketGenerator(SchoolChoiceMarket):
         )
 
     def _finalize_aggregate_metric_batch(self):
+        if self._heatmap_metric_batches:
+            from ..evaluation.heatmaps import average_heatmap_data
+
+            heatmap_data = average_heatmap_data(self._heatmap_metric_batches)
+            self._heatmap_metric_batches.clear()
+            self.export_heatmap_reports(
+                self.output_assignment_path,
+                self.external_config,
+                heatmap_data,
+            )
         if not self.config.get("export-aggregate-metrics", False):
             return
         averaged_reports = {}
@@ -612,6 +645,44 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         return reports
 
+    @classmethod
+    def combine_heatmap_batch_payloads(cls, payloads):
+        """Average per-school GE utilization across assignment iterations."""
+        from ..evaluation.heatmaps import average_heatmap_data
+
+        payloads = list(payloads)
+        heatmap_data = average_heatmap_data(
+            [frame for payload in payloads for frame in payload.get("heatmaps", [])]
+        )
+        expected_config_names = cls.metric_payload_config_names(payloads)
+        actual_config_names = sorted(
+            heatmap_data["config_name"].astype(str).unique().tolist()
+        )
+        if actual_config_names != expected_config_names:
+            raise ValueError(
+                "Heatmap data do not cover every expected assignment variant: "
+                f"expected {expected_config_names}, found {actual_config_names}."
+            )
+        return heatmap_data
+
+    @staticmethod
+    def export_heatmap_reports(assignment_path, config, heatmap_data):
+        """Render averaged attendance-area heatmaps for all policy variants."""
+        from ..evaluation.heatmaps import export_attendance_area_heatmaps
+
+        scenario = load_scenario(config["data"])
+        schools = load_school_records(
+            scenario,
+            "assignment.schools",
+            filter_group="assignment",
+        )
+        return export_attendance_area_heatmaps(
+            assignment_path,
+            scenario,
+            schools,
+            heatmap_data,
+        )
+
     @staticmethod
     def metric_payload_config_names(payloads):
         names = set()
@@ -677,9 +748,9 @@ class MarketGenerator(SchoolChoiceMarket):
             self._aggregate_metric_batches[report_name].append(report)
 
     def _complete_aggregate_metric_reports(self):
+        self._finalize_aggregate_metric_batch()
         if not self.config.get("export-aggregate-metrics", False):
             return None
-        self._finalize_aggregate_metric_batch()
         report_names = (
             tuple(self.AGGREGATE_METRIC_FILES)
             if self.config.get("export-local-metrics", False)
@@ -1823,7 +1894,9 @@ class MarketGenerator(SchoolChoiceMarket):
         return assignment_df
 
     def _record_assignment_metric_reports(self, assignment_df, save_name, iteration):
-        if not self.config.get("export-aggregate-metrics", False):
+        export_metrics = self.config.get("export-aggregate-metrics", False)
+        export_heatmaps = self.config.get("export_heatmaps", False)
+        if not (export_metrics or export_heatmaps):
             return
         from ..evaluation.match_evaluator import MatchEvaluator
 
@@ -1842,14 +1915,19 @@ class MarketGenerator(SchoolChoiceMarket):
             evaluator.update_assignments(assignment_df)
         variant_name = self._metric_variant_name(save_name, iteration)
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
-        reports = evaluator.eval_aggregate_metric_reports(
-            config_name,
-            include_local_metrics=self.config.get("export-local-metrics", False),
-        )
-        self._record_aggregate_metric_reports(reports)
-        self._frl_threshold_input_batches.append(
-            evaluator.eval_frl_threshold_inputs(config_name)
-        )
+        if export_metrics:
+            reports = evaluator.eval_aggregate_metric_reports(
+                config_name,
+                include_local_metrics=self.config.get("export-local-metrics", False),
+            )
+            self._record_aggregate_metric_reports(reports)
+            self._frl_threshold_input_batches.append(
+                evaluator.eval_frl_threshold_inputs(config_name)
+            )
+        if export_heatmaps:
+            self._heatmap_metric_batches.append(
+                evaluator.eval_ge_utilization_by_school(config_name)
+            )
 
     def _load_reusable_assignment(self, policy_data, iteration):
         if not self.config.get("reuse_assignments", True):
@@ -1947,7 +2025,9 @@ class MarketGenerator(SchoolChoiceMarket):
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
-        if self.config.get("export-aggregate-metrics", False):
+        if self.config.get("export-aggregate-metrics", False) or self.config.get(
+            "export_heatmaps", False
+        ):
             self._record_assignment_metric_reports(
                 assignment_df,
                 save_name,

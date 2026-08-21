@@ -8,7 +8,7 @@ from pathlib import Path
 from assignment.generated_zones import (
     GENERATED_ZONE_FILENAME,
     SKIP_MARKER_FILENAME,
-    run_generated_zone_assignment,
+    run_generated_zone_assignments,
     write_generated_zones,
 )
 from benchmark.config import MatchingRunConfig, optimization_config_from_dict
@@ -35,20 +35,22 @@ def process_solution_assignments(
     config: OptimizationConfig,
     matching: MatchingRunConfig,
     *,
-    execute: bool = True,
-) -> None:
-    """Prepare generated zones and optionally execute assignment for one run."""
+    target_prefix: str | None = None,
+) -> list[dict]:
+    """Prepare generated zone targets for one benchmark run."""
     if not matching.config:
         raise ValueError("Assignment execution requires matching.config.")
     root = Path(output_dir).expanduser().resolve()
-    targets = [(final_solution, root)]
+    prefix = target_prefix or root.name
+    solution_targets = [(final_solution, root, f"{prefix}-root")]
     if matching.compute_stage_assignments:
-        targets.extend(
-            (solution, root / stage["path"])
+        solution_targets.extend(
+            (solution, root / stage["path"], f"{prefix}-stage-{stage['index']}")
             for solution, stage in zip(solutions, stage_records)
         )
 
-    for solution, target in targets:
+    targets = []
+    for solution, target, target_id in solution_targets:
         skip_marker = target / SKIP_MARKER_FILENAME
         if not solution.feasible or solution.metadata.get("partial_assignment"):
             target.mkdir(parents=True, exist_ok=True)
@@ -57,21 +59,21 @@ def process_solution_assignments(
             )
             continue
         skip_marker.unlink(missing_ok=True)
-        if execute:
-            run_generated_zone_assignment(
-                matching.config,
-                solution.area_assignment(),
-                assignment_folder=target,
-                zone_building_blocks=zone_building_blocks(solution.level.unit),
-                geography_vintage=config.data_scenario.filter(
+        zone_file = target / GENERATED_ZONE_FILENAME
+        write_generated_zones(solution.area_assignment(), zone_file)
+        targets.append(
+            {
+                "id": target_id,
+                "zone_file": str(zone_file),
+                "skip_marker": str(skip_marker),
+                "zone_building_blocks": zone_building_blocks(solution.level.unit),
+                "geography_vintage": config.data_scenario.filter(
                     "optimization", "geography_vintage"
                 ),
-                workers=max(1, int(config.workers or 1)),
-            )
-        else:
-            write_generated_zones(
-                solution.area_assignment(), target / GENERATED_ZONE_FILENAME
-            )
+            }
+        )
+
+    return targets
 
 
 def run_assignments_for_existing_runs(
@@ -81,13 +83,16 @@ def run_assignments_for_existing_runs(
     fail_fast: bool = False,
     dataset_factory=None,
 ) -> AssignmentBatchResult:
-    """Execute assignment for every saved benchmark run."""
+    """Execute one root-level assignment batch for every saved benchmark run."""
     result = AssignmentBatchResult()
     run_dirs = discover_run_dirs(root_folder)
     if not matching.enabled:
         result.total = len(run_dirs)
         result.skipped = len(run_dirs)
         return result
+    targets = []
+    prepared_runs = 0
+    workers = 1
     for run_dir in run_dirs:
         result.total += 1
         try:
@@ -103,19 +108,39 @@ def run_assignments_for_existing_runs(
                 result.skipped += 1
                 continue
             final_solution = MetricsContext(solutions, config=config).solution
-            process_solution_assignments(
-                solutions,
-                final_solution,
-                manifest.get("stages", []),
-                run_dir,
-                config,
-                matching,
+            targets.extend(
+                process_solution_assignments(
+                    solutions,
+                    final_solution,
+                    manifest.get("stages", []),
+                    run_dir,
+                    config,
+                    matching,
+                    target_prefix=str(manifest["task_id"]),
+                )
             )
-            result.successful += 1
+            workers = max(workers, int(config.workers or 1))
+            prepared_runs += 1
         except Exception:
             result.failed += 1
             if fail_fast:
                 raise
+
+    if not targets:
+        result.successful += prepared_runs
+        return result
+    try:
+        run_generated_zone_assignments(
+            matching.config,
+            targets,
+            assignment_folder=root_folder,
+            workers=workers,
+        )
+        result.successful += prepared_runs
+    except Exception:
+        result.failed += prepared_runs
+        if fail_fast:
+            raise
     return result
 
 

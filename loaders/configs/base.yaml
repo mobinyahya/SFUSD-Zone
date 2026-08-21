@@ -514,6 +514,16 @@ files:
       - shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.prj
     classification: public
     geography_vintage: "2010"
+  assignment.attendance_areas.2013:
+    path: shapefiles/2013 ESAAs SFUSD.shp
+    root: data
+    companions:
+      - shapefiles/2013 ESAAs SFUSD.dat
+      - shapefiles/2013 ESAAs SFUSD.key
+      - shapefiles/2013 ESAAs SFUSD.shx
+      - shapefiles/2013 ESAAs SFUSD.prj
+    classification: public
+    geography_vintage: "2010"
   census.block_crosswalk:
     path: Zones/Optimization/block_blockgroup_tract.csv
     root: data

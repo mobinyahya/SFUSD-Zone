@@ -79,6 +79,22 @@ def _geoid_column(frame: pd.DataFrame, vintage: str) -> str:
     )
 
 
+def _water_only_mask(geometry: gpd.GeoDataFrame, vintage: str) -> pd.Series:
+    mask = pd.Series(False, index=geometry.index)
+    if vintage != "2020":
+        return mask
+
+    by_lower = {str(column).lower(): str(column) for column in geometry.columns}
+    land_column = by_lower.get("aland20")
+    water_column = by_lower.get("awater20")
+    if land_column is None or water_column is None:
+        return mask
+
+    land = pd.to_numeric(geometry[land_column], errors="coerce")
+    water = pd.to_numeric(geometry[water_column], errors="coerce")
+    return land.eq(0) & water.gt(0)
+
+
 def load_geography_crosswalk(
     scenario: DataScenario,
     group: str,
@@ -182,10 +198,12 @@ def load_census_geometry(
     if result[unit].duplicated().any():
         duplicates = result.loc[result[unit].duplicated(False), unit].head(5).tolist()
         raise ValueError(f"{source_label} contains duplicate GEOIDs: {duplicates}.")
+    source_geoids = set(result[unit])
+    result = result.loc[~_water_only_mask(geometry, vintage)].copy()
 
     if unit == "Block":
         crosswalk = load_geography_crosswalk(scenario, group)
-        missing = set(crosswalk["Block"]) - set(result["Block"])
+        missing = set(crosswalk["Block"]) - source_geoids
         if missing:
             raise ValueError(
                 f"Census {vintage} Block geometry/crosswalk mismatch: "

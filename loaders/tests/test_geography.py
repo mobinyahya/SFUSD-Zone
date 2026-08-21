@@ -14,7 +14,11 @@ from loaders.tables import filter_outside_district_students
 
 
 def _geography_scenario(
-    tmp_path, scenario_factory, *, outside_district_students="ignore"
+    tmp_path,
+    scenario_factory,
+    *,
+    group="assignment",
+    outside_district_students="ignore",
 ):
     blocks_path = tmp_path / "blocks.shp"
     blockgroups_path = tmp_path / "blockgroups.shp"
@@ -22,39 +26,66 @@ def _geography_scenario(
     crosswalk_path = tmp_path / "crosswalk.csv"
     gpd.GeoDataFrame(
         {
-            "GEOID20": ["060750101001000", "060750101001001"],
+            "GEOID20": [
+                "060750101001000",
+                "060750101001001",
+                "060759901001000",
+            ],
+            "ALAND20": [100, 100, 0],
+            "AWATER20": [0, 0, 100],
             "geometry": [
                 box(-122.50, 37.70, -122.49, 37.71),
                 box(-122.49, 37.70, -122.48, 37.71),
+                box(-122.48, 37.70, -122.47, 37.71),
             ],
         },
         crs="EPSG:4326",
     ).to_file(blocks_path)
-    parent_geometry = [box(-122.50, 37.70, -122.48, 37.71)]
+    parent_geometry = [
+        box(-122.50, 37.70, -122.48, 37.71),
+        box(-122.48, 37.70, -122.47, 37.71),
+    ]
     gpd.GeoDataFrame(
-        {"GEOID20": ["060750101001"], "geometry": parent_geometry},
+        {
+            "GEOID20": ["060750101001", "060759901001"],
+            "ALAND20": [200, 0],
+            "AWATER20": [0, 100],
+            "geometry": parent_geometry,
+        },
         crs="EPSG:4326",
     ).to_file(blockgroups_path)
     gpd.GeoDataFrame(
-        {"GEOID20": ["06075010100"], "geometry": parent_geometry},
+        {
+            "GEOID20": ["06075010100", "06075990100"],
+            "ALAND20": [200, 0],
+            "AWATER20": [0, 100],
+            "geometry": parent_geometry,
+        },
         crs="EPSG:4326",
     ).to_file(tracts_path)
     pd.DataFrame(
         {
-            "Block": [60750101001000, 60750101001001],
-            "BlockGroup": [60750101001, 60750101001],
-            "Tract": [6075010100, 6075010100],
+            "Block": [60750101001000, 60750101001001, 60759901001000],
+            "BlockGroup": [60750101001, 60750101001, 60759901001],
+            "Tract": [6075010100, 6075010100, 6075990100],
         }
     ).to_csv(crosswalk_path, index=False)
+    prefix = f"{group}.geography"
+    sources = {
+        f"{prefix}.blocks": {"path": str(blocks_path)},
+        f"{prefix}.blockgroups": {"path": str(blockgroups_path)},
+        f"{prefix}.tracts": {"path": str(tracts_path)},
+        f"{prefix}.crosswalk": {"path": str(crosswalk_path)},
+    }
+    if group == "optimization":
+        sources["optimization.census"] = sources.pop("optimization.geography.blocks")
+        sources["optimization.crosswalk"] = sources.pop(
+            "optimization.geography.crosswalk"
+        )
     return scenario_factory(
-        sources={
-            "assignment.geography.blocks": {"path": str(blocks_path)},
-            "assignment.geography.blockgroups": {"path": str(blockgroups_path)},
-            "assignment.geography.tracts": {"path": str(tracts_path)},
-            "assignment.geography.crosswalk": {"path": str(crosswalk_path)},
-        },
+        sources=sources,
         filters={
-            "assignment": {
+            group: {
                 "geography_vintage": "2020",
                 "outside_district_students": outside_district_students,
             }
@@ -62,12 +93,15 @@ def _geography_scenario(
     )
 
 
-def test_loads_blocks_and_derives_parent_geometry(tmp_path, scenario_factory):
-    scenario = _geography_scenario(tmp_path, scenario_factory)
+@pytest.mark.parametrize("group", ["assignment", "optimization"])
+def test_loads_2020_geography_without_water_only_areas(
+    tmp_path, scenario_factory, group
+):
+    scenario = _geography_scenario(tmp_path, scenario_factory, group=group)
 
-    blocks = load_census_geometry(scenario, "assignment", "Block")
-    blockgroups = load_census_geometry(scenario, "assignment", "BlockGroup")
-    tracts = load_census_geometry(scenario, "assignment", "Tract")
+    blocks = load_census_geometry(scenario, group, "Block")
+    blockgroups = load_census_geometry(scenario, group, "BlockGroup")
+    tracts = load_census_geometry(scenario, group, "Tract")
 
     assert blocks["Block"].tolist() == [60750101001000, 60750101001001]
     assert blockgroups["BlockGroup"].tolist() == [60750101001]

@@ -2038,6 +2038,33 @@ class MatchEvaluator:
             )
         return metrics
 
+    def eval_ge_utilization_by_school(self, config_name):
+        """Return GE capacity and assignments grouped by school for heatmaps."""
+        if self._mode != "full":
+            raise ValueError("GE utilization requires a full MatchEvaluator instance")
+        required = {"program_id", "school_id", "program_type", "capacity"}
+        missing = sorted(required - set(self.programs.columns))
+        if missing:
+            raise ValueError(f"GE utilization requires program columns: {missing}")
+
+        ge_programs = self.programs.loc[
+            self.programs["program_type"].eq("GE"),
+            ["program_id", "school_id", "capacity"],
+        ].copy()
+        assigned = self.student_data.loc[
+            self.student_data["programno"] > 0, "assignment"
+        ].value_counts()
+        ge_programs["assigned"] = ge_programs["program_id"].map(assigned).fillna(0)
+        result = (
+            ge_programs.groupby("school_id", as_index=False, sort=True)[
+                ["capacity", "assigned"]
+            ]
+            .sum(min_count=1)
+            .reset_index(drop=True)
+        )
+        result.insert(0, "config_name", config_name)
+        return result
+
     def eval_assignment_metrics_by_program(self, aggregates=None):
         """Return simulated assignment outcomes with one row per program."""
         if self._mode != "full":

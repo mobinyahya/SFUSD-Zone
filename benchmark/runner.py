@@ -46,7 +46,6 @@ def run_optimization_task(
     compute_stage_metrics: bool = False,
     matching: MatchingRunConfig | None = None,
     visualization: VisualizationRunConfig | None = None,
-    execute_assignments: bool = True,
 ) -> TaskResult:
     """Run optimization and metrics together for local execution."""
 
@@ -59,7 +58,6 @@ def run_optimization_task(
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
         visualization=visualization,
-        execute_assignments=execute_assignments,
         loaded=loaded,
     )
 
@@ -78,7 +76,6 @@ def evaluate_optimization_task(
     compute_stage_metrics: bool = False,
     matching: MatchingRunConfig | None = None,
     visualization: VisualizationRunConfig | None = None,
-    execute_assignments: bool = True,
     dataset=None,
 ) -> TaskResult:
     """Reconstruct and evaluate one previously persisted optimization task."""
@@ -89,7 +86,6 @@ def evaluate_optimization_task(
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
         visualization=visualization,
-        execute_assignments=execute_assignments,
         dataset=dataset,
     )
 
@@ -178,7 +174,6 @@ def _evaluate_optimization_task(
     compute_stage_metrics: bool,
     matching: MatchingRunConfig | None,
     visualization: VisualizationRunConfig | None,
-    execute_assignments: bool,
     dataset=None,
     loaded: tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]] | None = None,
 ) -> TaskResult:
@@ -231,7 +226,6 @@ def _evaluate_optimization_task(
                 output_dir,
                 config,
                 matching,
-                execute=execute_assignments,
             )
 
         if visualization and visualization.enabled:

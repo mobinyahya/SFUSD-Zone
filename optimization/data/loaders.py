@@ -53,7 +53,7 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-STUDENT_CACHE_SCHEMA_VERSION = 7
+STUDENT_CACHE_SCHEMA_VERSION = 8
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 STUDENT_ROLE = "optimization.students"
@@ -213,7 +213,7 @@ def _student_cache_namespace(cfg: IngestConfig) -> CacheNamespace:
 
 
 def _student_cache_path(cfg: IngestConfig) -> str:
-    """Return the v7 student CSV path for cache introspection."""
+    """Return the v8 student CSV path for cache introspection."""
     return str(_student_cache_namespace(cfg).payload_path("students.csv"))
 
 

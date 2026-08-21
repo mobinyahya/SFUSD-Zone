@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import click
 from loaders import load_scenario
 
-from .generated_zones import resolve_generated_zone_config
+from .generated_zones import resolve_generated_zone_batch_config
 from .run_custom_config import _write_provenance_config, load_custom_config
 from .slurm_graph import (
     MAX_ASSIGNMENT_JOBS,
@@ -37,7 +37,7 @@ from .student_assignment.market_generator.school_choice_market_generator import 
 
 
 WORKSPACE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-PLAN_SCHEMA_VERSION = 7
+PLAN_SCHEMA_VERSION = 9
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "OPENBLAS_NUM_THREADS": "1",
@@ -143,6 +143,15 @@ def _metrics_iterations(config: dict) -> list[int | None]:
     return iterations
 
 
+def _assignment_iterations(config: dict) -> list[int]:
+    policies = config.get("policies", [])
+    if any(policy != "real_match" for policy in policies):
+        return list(range(config["iterations"]["start"], config["iterations"]["end"]))
+    if "real_match" in policies:
+        return [config["iterations"]["start"]]
+    return []
+
+
 def _planned_assignment_tasks(subconfigs: list[dict]) -> list[dict]:
     tasks = []
     real_match_planned = False
@@ -151,27 +160,19 @@ def _planned_assignment_tasks(subconfigs: list[dict]) -> list[dict]:
         policies = config.get("policies", [])
         has_simulation = any(policy != "real_match" for policy in policies)
         has_real_match = "real_match" in policies
-        start = config["iterations"]["start"]
-        end = config["iterations"]["end"]
-        if has_simulation:
-            iterations = range(start, end)
-        elif has_real_match and not real_match_planned:
-            iterations = [start]
-        else:
+        if not _assignment_iterations(config):
             continue
-        for iteration in iterations:
-            include_real_match = (
-                has_real_match and not real_match_planned and iteration == start
-            )
-            tasks.append(
-                {
-                    "subconfig": _subconfig_key(entry),
-                    "iteration": iteration,
-                    "include_real_match": include_real_match,
-                    "write_utility_output": False,
-                }
-            )
-            real_match_planned |= include_real_match
+        if not has_simulation and (not has_real_match or real_match_planned):
+            continue
+        include_real_match = has_real_match and not real_match_planned
+        tasks.append(
+            {
+                "subconfig": _subconfig_key(entry),
+                "include_real_match": include_real_match,
+                "write_utility_output": False,
+            }
+        )
+        real_match_planned |= include_real_match
     if not tasks:
         raise ValueError("Slurm assignment runs require at least one assignment task.")
     simulation_subconfigs = {
@@ -187,17 +188,37 @@ def _planned_assignment_tasks(subconfigs: list[dict]) -> list[dict]:
     return tasks
 
 
+def _assignment_work_counts(
+    assignment_tasks: list[dict], subconfigs: list[dict]
+) -> list[int]:
+    configs = {_subconfig_key(entry): entry["config"] for entry in subconfigs}
+    return [
+        len(_assignment_iterations(configs[task["subconfig"]]))
+        for task in assignment_tasks
+    ]
+
+
+def _utility_output_owner(assignment_tasks: list[dict], subconfigs: list[dict]) -> dict:
+    task = next(task for task in assignment_tasks if task["write_utility_output"])
+    entry = _subconfig_entry_from_entries(subconfigs, task["subconfig"])
+    return {
+        "subconfig": task["subconfig"],
+        "iteration": _assignment_iterations(entry["config"])[0],
+    }
+
+
 def _planned_metrics_tasks(subconfigs: list[dict]) -> list[dict]:
     tasks = []
     for entry in subconfigs:
-        if not entry["config"].get("export-aggregate-metrics", False):
+        export_metrics = entry["config"].get("export-aggregate-metrics", False)
+        if not (export_metrics or entry["config"].get("export_heatmaps", False)):
             continue
         task = {
             "subconfig": _subconfig_key(entry),
             "report_names": (
                 list(MarketGenerator.AGGREGATE_METRIC_FILES)
-                if entry["config"].get("export-local-metrics", False)
-                else ["citywide"]
+                if export_metrics and entry["config"].get("export-local-metrics", False)
+                else (["citywide"] if export_metrics else [])
             ),
         }
         if "target" in entry:
@@ -291,15 +312,20 @@ def build_slurm_plan(
         resolved_subconfigs.append({"name": name, "config": subconfig})
 
     assignment_tasks = _planned_assignment_tasks(resolved_subconfigs)
-    utility_task = next(
-        task for task in assignment_tasks if task["write_utility_output"]
+    assignment_work_counts = _assignment_work_counts(
+        assignment_tasks, resolved_subconfigs
     )
-    utility_owner = {key: utility_task[key] for key in ("subconfig", "iteration")}
+    utility_owner = _utility_output_owner(assignment_tasks, resolved_subconfigs)
     metrics_tasks = _planned_metrics_tasks(resolved_subconfigs)
     metrics_work_counts = [
-        len(_metrics_iterations(entry["config"]))
-        for entry in resolved_subconfigs
-        if entry["config"].get("export-aggregate-metrics", False)
+        len(
+            _metrics_iterations(
+                _subconfig_entry_from_entries(resolved_subconfigs, task["subconfig"])[
+                    "config"
+                ]
+            )
+        )
+        for task in metrics_tasks
     ]
     metric_assignment_dependencies = _metric_assignment_dependencies(
         assignment_tasks, resolved_subconfigs, metrics_tasks
@@ -307,6 +333,7 @@ def build_slurm_plan(
     jobs = build_job_graph(
         len(assignment_tasks),
         len(metrics_tasks),
+        assignment_work_counts=assignment_work_counts,
         metrics_work_counts=metrics_work_counts,
         metric_assignment_dependencies=metric_assignment_dependencies,
         max_assignment_jobs=max_assignment_jobs,
@@ -358,6 +385,7 @@ def build_generated_zone_slurm_plan(
     config_path: str | pathlib.Path,
     targets: list[dict],
     *,
+    assignment_folder: str | pathlib.Path,
     plan_dir: str | pathlib.Path,
     max_assignment_jobs: int,
     max_metrics_jobs: int,
@@ -371,6 +399,8 @@ def build_generated_zone_slurm_plan(
     if len(target_ids) != len(set(target_ids)):
         raise ValueError("Generated-zone Slurm target IDs must be unique.")
 
+    output_path = pathlib.Path(assignment_folder).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
     plan_directory = pathlib.Path(plan_dir).expanduser().resolve()
     run_id = uuid.uuid4().hex
     run_directory = plan_directory / run_id
@@ -379,48 +409,32 @@ def build_generated_zone_slurm_plan(
     provenance_path = (run_directory / "provenance.json").resolve()
     metrics_fragment_dir = (run_directory / "metric_fragments").resolve()
 
-    resolved_subconfigs = []
+    base_config, resolved_subconfigs = resolve_generated_zone_batch_config(
+        base_config,
+        targets,
+        assignment_folder=output_path,
+    )
+    targets_by_id = {str(target["id"]): target for target in targets}
+    for entry in resolved_subconfigs:
+        target = targets_by_id[entry["target"]]
+        entry["skip_marker"] = str(pathlib.Path(target["skip_marker"]).resolve())
+
     resolved_targets = []
     for target in targets:
         target_id = str(target["id"])
-        assignment_folder = pathlib.Path(target["assignment_folder"]).resolve()
-        base, entries = resolve_generated_zone_config(
-            base_config,
-            zone_file=target["zone_file"],
-            assignment_folder=assignment_folder,
-            zone_building_blocks=str(target["zone_building_blocks"]),
-            geography_vintage=target.get("geography_vintage"),
-        )
-        _write_provenance_config(base, clear_aggregate_metrics=False)
-        target_fragment_dir = (
-            metrics_fragment_dir / hashlib.sha256(target_id.encode("utf-8")).hexdigest()
-        )
         resolved_targets.append(
             {
                 "id": target_id,
-                "assignment_folder": str(assignment_folder),
                 "zone_file": str(pathlib.Path(target["zone_file"]).resolve()),
                 "skip_marker": str(pathlib.Path(target["skip_marker"]).resolve()),
-                "metrics_fragment_dir": str(target_fragment_dir),
             }
         )
-        for entry in entries:
-            resolved_subconfigs.append(
-                {
-                    **entry,
-                    "key": f"{target_id}:{entry['name']}",
-                    "target": target_id,
-                    "assignment_folder": str(assignment_folder),
-                    "skip_marker": str(pathlib.Path(target["skip_marker"]).resolve()),
-                    "metrics_fragment_dir": str(target_fragment_dir),
-                }
-            )
 
     assignment_tasks = _planned_assignment_tasks(resolved_subconfigs)
-    utility_task = next(
-        task for task in assignment_tasks if task["write_utility_output"]
+    assignment_work_counts = _assignment_work_counts(
+        assignment_tasks, resolved_subconfigs
     )
-    utility_owner = {key: utility_task[key] for key in ("subconfig", "iteration")}
+    utility_owner = _utility_output_owner(assignment_tasks, resolved_subconfigs)
     metrics_tasks = _planned_metrics_tasks(resolved_subconfigs)
     metrics_work_counts = [
         len(
@@ -438,16 +452,14 @@ def build_generated_zone_slurm_plan(
     jobs = build_job_graph(
         len(assignment_tasks),
         len(metrics_tasks),
+        assignment_work_counts=assignment_work_counts,
         metrics_work_counts=metrics_work_counts,
         metric_assignment_dependencies=metric_assignment_dependencies,
         max_assignment_jobs=max_assignment_jobs,
         max_metrics_jobs=max_metrics_jobs,
     )
     if metrics_tasks:
-        for target in resolved_targets:
-            pathlib.Path(target["metrics_fragment_dir"]).mkdir(
-                parents=True, exist_ok=False
-            )
+        metrics_fragment_dir.mkdir(parents=True, exist_ok=False)
 
     generated_at = datetime.now(timezone.utc).isoformat()
     provenance = {
@@ -457,6 +469,8 @@ def build_generated_zone_slurm_plan(
         "workspace_root": str(WORKSPACE_ROOT),
         "source_config": str(source_path),
         "source_config_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+        "resolved_config": base_config,
+        "data": _data_provenance(base_config),
         "targets": resolved_targets,
     }
     plan = {
@@ -465,7 +479,7 @@ def build_generated_zone_slurm_plan(
         "generated_at": generated_at,
         "workspace_root": str(WORKSPACE_ROOT),
         "source_config": str(source_path),
-        "assignment_folder": str(plan_directory),
+        "assignment_folder": str(output_path),
         "plan_path": str(plan_path),
         "provenance_path": str(provenance_path),
         "metrics_fragment_dir": str(metrics_fragment_dir),
@@ -480,6 +494,7 @@ def build_generated_zone_slurm_plan(
             "metrics": max_metrics_jobs,
         },
     }
+    _write_provenance_config(base_config, clear_aggregate_metrics=False)
     _write_json_atomic(provenance_path, provenance)
     _write_json_atomic(plan_path, plan)
     return _jsonable(plan), plan_path
@@ -511,7 +526,7 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
     utility_owners = [
         task for task in assignment_tasks if task.get("write_utility_output")
     ]
-    expected_owner = {key: utility_owners[0][key] for key in ("subconfig", "iteration")}
+    expected_owner = _utility_output_owner(assignment_tasks, subconfig_entries)
     if len(utility_owners) != 1 or plan.get("utility_output_owner") != expected_owner:
         raise ValueError("Assignment Slurm plan has an invalid utility output owner.")
 
@@ -521,11 +536,7 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
     if metrics_tasks:
         if not plan.get("run_id"):
             raise ValueError("Assignment Slurm metrics plan is missing run_id.")
-        fragment_dirs = (
-            [pathlib.Path(target["metrics_fragment_dir"]) for target in plan["targets"]]
-            if plan.get("targets")
-            else [pathlib.Path(plan.get("metrics_fragment_dir", ""))]
-        )
+        fragment_dirs = [pathlib.Path(plan.get("metrics_fragment_dir", ""))]
         if any(not path.is_absolute() or not path.is_dir() for path in fragment_dirs):
             raise ValueError(
                 "Assignment Slurm metrics fragment directories must be existing "
@@ -535,7 +546,7 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
             report_names = MarketGenerator._ordered_report_names(
                 task.get("report_names", [])
             )
-            if "citywide" not in report_names:
+            if report_names and "citywide" not in report_names:
                 raise ValueError(
                     "Assignment Slurm metrics tasks must include citywide metrics."
                 )
@@ -558,6 +569,19 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
         jobs,
         assignment_count=len(assignment_tasks),
         metrics_count=len(metrics_tasks),
+        assignment_work_counts=_assignment_work_counts(
+            assignment_tasks, subconfig_entries
+        ),
+        metrics_work_counts=[
+            len(
+                _metrics_iterations(
+                    _subconfig_entry_from_entries(subconfig_entries, task["subconfig"])[
+                        "config"
+                    ]
+                )
+            )
+            for task in metrics_tasks
+        ],
         metric_assignment_dependencies=_metric_assignment_dependencies(
             assignment_tasks, subconfig_entries, metrics_tasks
         ),
@@ -823,20 +847,110 @@ def _initialize_worker(plan_path: str | pathlib.Path) -> None:
     _WORKER_MARKET_KEY = None
 
 
-def _run_cached_assignment_task(task_index: int) -> None:
+def _run_cached_assignment_batch(
+    task_index: int, iterations: list[int]
+) -> list[tuple[int, str]]:
+    global _WORKER_MARKET_GENERATOR, _WORKER_MARKET_KEY
     if _WORKER_PLAN is None:
         raise RuntimeError("Assignment worker process was not initialized.")
     task = _WORKER_PLAN["assignment_tasks"][task_index]
     entry = _subconfig_entry(_WORKER_PLAN, task["subconfig"])
     if _entry_is_skipped(entry):
-        return
-    market = _market_for_subconfig(_WORKER_PLAN, task["subconfig"])
-    market.simulate_target(
-        entry["name"],
-        task["iteration"],
-        include_real_match=task["include_real_match"],
-        write_utility_output=task["write_utility_output"],
-    )
+        return []
+
+    first_iteration = _assignment_iterations(entry["config"])[0]
+    errors = []
+    for iteration in iterations:
+        try:
+            market = _market_for_subconfig(_WORKER_PLAN, task["subconfig"])
+            market.simulate_target(
+                entry["name"],
+                iteration,
+                include_real_match=(
+                    task["include_real_match"] and iteration == first_iteration
+                ),
+                write_utility_output=(
+                    task["write_utility_output"] and iteration == first_iteration
+                ),
+            )
+        except Exception as exc:
+            errors.append((iteration, f"{type(exc).__name__}: {exc}"))
+            _WORKER_MARKET_GENERATOR = None
+            _WORKER_MARKET_KEY = None
+    return errors
+
+
+def _assignment_batches(plan: dict, job: dict) -> list[tuple[int, list[int]]]:
+    work = []
+    for task_index in job["task_indices"]:
+        task = plan["assignment_tasks"][task_index]
+        entry = _subconfig_entry(plan, task["subconfig"])
+        work.append((task_index, _assignment_iterations(entry["config"])))
+
+    batch_counts = [1] * len(work)
+    target_batches = min(job["cpus"], sum(len(iterations) for _, iterations in work))
+    while sum(batch_counts) < target_batches:
+        candidates = [
+            index
+            for index, (_, iterations) in enumerate(work)
+            if batch_counts[index] < len(iterations)
+        ]
+        index = max(
+            candidates,
+            key=lambda value: (
+                (len(work[value][1]) + batch_counts[value] - 1) // batch_counts[value],
+                len(work[value][1]),
+                -value,
+            ),
+        )
+        batch_counts[index] += 1
+
+    batches = []
+    for (task_index, iterations), batch_count in zip(work, batch_counts, strict=True):
+        batches.extend(
+            (task_index, [iterations[index] for index in indices])
+            for indices in _task_batches(len(iterations), batch_count)
+        )
+    return batches
+
+
+def _run_assignment_job(plan: dict, plan_path: pathlib.Path, job: dict) -> bool:
+    batches = _assignment_batches(plan, job)
+    failed = False
+    with ProcessPoolExecutor(
+        max_workers=job["cpus"],
+        initializer=_initialize_worker,
+        initargs=(plan_path,),
+    ) as executor:
+        futures = {
+            executor.submit(_run_cached_assignment_batch, task_index, iterations): (
+                task_index,
+                iterations,
+            )
+            for task_index, iterations in batches
+        }
+        for future in as_completed(futures):
+            task_index, iterations = futures[future]
+            try:
+                errors = future.result()
+            except Exception as exc:
+                print(
+                    f"Assignment task {task_index}, iterations {iterations} failed: "
+                    f"{exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                failed = True
+                continue
+            for iteration, error in errors:
+                print(
+                    f"Assignment task {task_index}, iteration {iteration} failed: "
+                    f"{error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                failed = True
+    return failed
 
 
 def _run_cached_metrics_iteration(task_index: int, iteration: int | None) -> dict:
@@ -933,21 +1047,31 @@ def _run_metrics_job(plan: dict, plan_path: pathlib.Path, job: dict) -> bool:
                 payloads[task_index][iteration]
                 for iteration in _metrics_iterations(config)
             ]
-            reports = MarketGenerator.combine_metric_batch_payloads(
-                ordered_payloads,
-                include_local_metrics=config.get("export-local-metrics", False),
-            )
-            expected_config_names = MarketGenerator.metric_payload_config_names(
-                ordered_payloads
-            )
-            MarketGenerator.write_metric_fragment(
-                entry.get("metrics_fragment_dir", plan["metrics_fragment_dir"]),
-                run_id=plan["run_id"],
-                subconfig_name=entry["name"],
-                reports=reports,
-                expected_report_names=task["report_names"],
-                expected_config_names=expected_config_names,
-            )
+            if config.get("export_heatmaps", False):
+                heatmap_data = MarketGenerator.combine_heatmap_batch_payloads(
+                    ordered_payloads
+                )
+                MarketGenerator.export_heatmap_reports(
+                    config["paths"]["assignment-folder"],
+                    config,
+                    heatmap_data,
+                )
+            if task["report_names"]:
+                reports = MarketGenerator.combine_metric_batch_payloads(
+                    ordered_payloads,
+                    include_local_metrics=config.get("export-local-metrics", False),
+                )
+                expected_config_names = MarketGenerator.metric_payload_config_names(
+                    ordered_payloads
+                )
+                MarketGenerator.write_metric_fragment(
+                    entry.get("metrics_fragment_dir", plan["metrics_fragment_dir"]),
+                    run_id=plan["run_id"],
+                    subconfig_name=entry["name"],
+                    reports=reports,
+                    expected_report_names=task["report_names"],
+                    expected_config_names=expected_config_names,
+                )
         except Exception as exc:
             print(
                 f"Metrics task {task_index} reduction failed: {exc}",
@@ -965,57 +1089,30 @@ def run_metrics_finalizer(plan_path: str | pathlib.Path) -> None:
     )
 
     plan, absolute_plan_path = load_plan(plan_path)
-    if not plan.get("targets"):
-        reports, fragments = MarketGenerator.combine_metric_fragments(
-            plan["metrics_fragment_dir"],
-            run_id=plan["run_id"],
-            expected_fragments=plan["metrics_tasks"],
-        )
-        MarketGenerator.write_aggregate_metric_reports(
-            plan["assignment_folder"],
-            reports,
-            manifest={
-                "schema_version": MarketGenerator.METRIC_FRAGMENT_SCHEMA_VERSION,
-                "run_id": plan["run_id"],
-                "plan_path": str(absolute_plan_path),
-                "subconfigs": [task["subconfig"] for task in plan["metrics_tasks"]],
-                "fragments": fragments,
-            },
-        )
+    aggregate_tasks = [
+        task
+        for task in plan["metrics_tasks"]
+        if task["report_names"]
+        and not _entry_is_skipped(_subconfig_entry(plan, task["subconfig"]))
+    ]
+    if not aggregate_tasks:
         return
-
-    for target in plan["targets"]:
-        expected = [
-            task
-            for task in plan["metrics_tasks"]
-            if task.get("target", "default") == target["id"]
-            and not _entry_is_skipped(_subconfig_entry(plan, task["subconfig"]))
-        ]
-        if not expected:
-            continue
-        fragment_specs = [
-            {
-                **task,
-                "subconfig": _subconfig_entry(plan, task["subconfig"])["name"],
-            }
-            for task in expected
-        ]
-        reports, fragments = MarketGenerator.combine_metric_fragments(
-            target["metrics_fragment_dir"],
-            run_id=plan["run_id"],
-            expected_fragments=fragment_specs,
-        )
-        MarketGenerator.write_aggregate_metric_reports(
-            target["assignment_folder"],
-            reports,
-            manifest={
-                "schema_version": MarketGenerator.METRIC_FRAGMENT_SCHEMA_VERSION,
-                "run_id": plan["run_id"],
-                "plan_path": str(absolute_plan_path),
-                "subconfigs": [item["subconfig"] for item in fragment_specs],
-                "fragments": fragments,
-            },
-        )
+    reports, fragments = MarketGenerator.combine_metric_fragments(
+        plan["metrics_fragment_dir"],
+        run_id=plan["run_id"],
+        expected_fragments=aggregate_tasks,
+    )
+    MarketGenerator.write_aggregate_metric_reports(
+        plan["assignment_folder"],
+        reports,
+        manifest={
+            "schema_version": MarketGenerator.METRIC_FRAGMENT_SCHEMA_VERSION,
+            "run_id": plan["run_id"],
+            "plan_path": str(absolute_plan_path),
+            "subconfigs": [task["subconfig"] for task in aggregate_tasks],
+            "fragments": fragments,
+        },
+    )
 
 
 def _validate_worker_cpus(expected: int) -> None:
@@ -1042,7 +1139,7 @@ def run_job_worker(plan_path: str | pathlib.Path, job_id: str) -> int:
         job = matches[0]
         _validate_worker_cpus(job["cpus"])
         if job["kind"] == "assignment":
-            function = _run_cached_assignment_task
+            return 1 if _run_assignment_job(plan, absolute_plan_path, job) else 0
         elif job["kind"] == "metrics":
             return 1 if _run_metrics_job(plan, absolute_plan_path, job) else 0
         elif job["kind"] == "metrics-finalize":
@@ -1052,28 +1149,6 @@ def run_job_worker(plan_path: str | pathlib.Path, job_id: str) -> int:
             return 0
         else:
             raise ValueError(f"Unknown Slurm job kind {job['kind']!r}.")
-
-        failed = False
-        with ProcessPoolExecutor(
-            max_workers=job["cpus"],
-            initializer=_initialize_worker,
-            initargs=(absolute_plan_path,),
-        ) as executor:
-            futures = {
-                executor.submit(function, task_index): task_index
-                for task_index in job["task_indices"]
-            }
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    print(
-                        f"Assignment task {futures[future]} failed: {exc}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = True
-        return 1 if failed else 0
     except Exception as exc:
         print(f"Slurm job failed: {exc}", file=sys.stderr, flush=True)
         return 1

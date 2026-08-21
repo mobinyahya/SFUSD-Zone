@@ -86,13 +86,13 @@ def test_submission_script_queues_eight_dependent_assignment_jobs(tmp_path):
         [
             {
                 "id": "run-root",
-                "assignment_folder": str(target),
                 "zone_file": str(target / "assignment_zones.csv"),
                 "skip_marker": str(target / ".assignment-skipped"),
                 "zone_building_blocks": "block_group",
                 "geography_vintage": "2020",
             }
         ],
+        assignment_folder=tmp_path,
         plan_dir=tmp_path / "assignment-plan",
         max_assignment_jobs=6,
         max_metrics_jobs=2,

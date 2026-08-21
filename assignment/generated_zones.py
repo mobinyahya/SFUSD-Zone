@@ -71,6 +71,67 @@ def resolve_generated_zone_configs(
     )
 
 
+def resolve_generated_zone_batch_configs(
+    config_path: str | Path,
+    targets: list[dict],
+    *,
+    assignment_folder: str | Path,
+) -> tuple[dict, list[dict]]:
+    """Resolve the target-by-policy product into one assignment batch."""
+    base = load_custom_config(
+        config_path,
+        assignment_folder=assignment_folder,
+        absolute_assignment_folder=True,
+    )
+    return resolve_generated_zone_batch_config(
+        base,
+        targets,
+        assignment_folder=assignment_folder,
+    )
+
+
+def resolve_generated_zone_batch_config(
+    base_config: dict,
+    targets: list[dict],
+    *,
+    assignment_folder: str | Path,
+) -> tuple[dict, list[dict]]:
+    """Inject every generated zone target as a unique policy subconfig."""
+    if not targets:
+        raise ValueError("Generated-zone assignment requires at least one target.")
+    target_ids = [str(target["id"]) for target in targets]
+    if len(target_ids) != len(set(target_ids)):
+        raise ValueError("Generated-zone target IDs must be unique.")
+
+    output_path = Path(assignment_folder).expanduser().resolve()
+    resolved = []
+    for target, target_id in zip(targets, target_ids, strict=True):
+        _target_base, entries = resolve_generated_zone_config(
+            base_config,
+            zone_file=target["zone_file"],
+            assignment_folder=output_path,
+            zone_building_blocks=str(target["zone_building_blocks"]),
+            geography_vintage=target.get("geography_vintage"),
+        )
+        for entry in entries:
+            name = f"{target_id}:{entry['name']}"
+            config = entry["config"]
+            config["subconfig-name"] = name
+            resolved.append(
+                {
+                    "name": name,
+                    "policy": entry["name"],
+                    "target": target_id,
+                    "config": config,
+                }
+            )
+
+    base = copy.deepcopy(base_config)
+    base.setdefault("paths", {})["assignment-folder"] = str(output_path)
+    base["subconfigs"] = [entry["name"] for entry in resolved]
+    return base, resolved
+
+
 def resolve_generated_zone_config(
     base_config: dict,
     *,
@@ -130,6 +191,32 @@ def run_generated_zone_assignment(
         zone_building_blocks=zone_building_blocks,
         geography_vintage=geography_vintage,
     )
+    _run_generated_zone_configs(base, resolved, output_path, workers)
+
+
+def run_generated_zone_assignments(
+    config_path: str | Path,
+    targets: list[dict],
+    *,
+    assignment_folder: str | Path,
+    workers: int = 1,
+) -> None:
+    """Run all generated zone targets as one root-level assignment batch."""
+    output_path = Path(assignment_folder).expanduser().resolve()
+    base, resolved = resolve_generated_zone_batch_configs(
+        config_path,
+        targets,
+        assignment_folder=output_path,
+    )
+    _run_generated_zone_configs(base, resolved, output_path, workers)
+
+
+def _run_generated_zone_configs(
+    base: dict,
+    resolved: list[dict],
+    output_path: Path,
+    workers: int,
+) -> None:
     _write_provenance_config(base)
     reports = _run_resolved_configs(resolved, workers=max(1, int(workers)))
     if base.get("export-aggregate-metrics", False):

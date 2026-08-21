@@ -17,6 +17,7 @@ sources:
   assignment.capacity: capacity.stanford.scenarios_abcd
   assignment.estimate: utility.oct1.npy
   assignment.block_data: ctip.workbook.2013
+  assignment.attendance_areas: assignment.attendance_areas.2013
   assignment.new_ctip: ctip.array.block.2024
   assignment.new_ctip_blockgroup: ctip.array.blockgroup.2024
   assignment.zones:

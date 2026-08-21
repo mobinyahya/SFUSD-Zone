@@ -12,6 +12,7 @@ sources:
     additions: bundled.manual_edges.additions
   assignment.program_codes: assignment.program_codes
   assignment.estimate: utility.2324.exp8
+  assignment.attendance_areas: assignment.attendance_areas.2013
   assignment.ctip:
     workbook: ctip.workbook.2013
     block: ctip.array.block.2024

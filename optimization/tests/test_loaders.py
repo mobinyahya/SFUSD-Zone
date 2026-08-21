@@ -97,7 +97,7 @@ def test_projected_centroids_latlon_avoids_geographic_crs_warning():
     assert -122.5 < centroids.iloc[0].x < -122.4
 
 
-def test_student_cache_uses_v7_content_addressed_layout(tmp_path, scenario_factory):
+def test_student_cache_uses_v8_content_addressed_layout(tmp_path, scenario_factory):
     baseline = _ingest(_student_scenario(tmp_path, scenario_factory))
     all_population = _ingest(
         _student_scenario(tmp_path, scenario_factory, program_population="All")
@@ -106,7 +106,7 @@ def test_student_cache_uses_v7_content_addressed_layout(tmp_path, scenario_facto
     baseline_namespace = loaders._student_cache_namespace(baseline)
     changed_namespace = loaders._student_cache_namespace(all_population)
 
-    assert baseline_namespace.path.parent.name == "v7"
+    assert baseline_namespace.path.parent.name == "v8"
     assert baseline_namespace.path.parent.parent.name == "students"
     assert loaders._student_cache_path(baseline).endswith("/students.csv")
     assert baseline_namespace.key != changed_namespace.key

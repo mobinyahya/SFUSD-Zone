@@ -1,319 +1,644 @@
 {
   "schema_version": 4,
-  "generated_at": "2026-08-16T07:11:12.531594+00:00",
+  "generated_at": "2026-08-21T21:58:14.928155+00:00",
   "level": "Block_0",
   "case_definition": "Every Block_0 node against every coordinate-bearing school centroid; max_distance and candidate restrictions are ignored.",
   "base_radius_miles": 0.25,
   "include_nearby_non_neighbors": true,
-  "graph_fingerprint": "c57cee66e45036c0",
-  "node_count": 5983,
+  "graph_fingerprint": "444f63987c984a9b",
+  "node_count": 5952,
   "school_count": 76,
-  "case_count": 0,
+  "case_count": 2,
   "school_centroids": {
     "413": {
-      "node": 5013,
+      "node": 5002,
       "area_id": 60750426011000
     },
     "420": {
-      "node": 2027,
+      "node": 2019,
       "area_id": 60750212003004
     },
     "435": {
-      "node": 5173,
+      "node": 5161,
       "area_id": 60750476003005
     },
     "449": {
-      "node": 1548,
+      "node": 1542,
       "area_id": 60750178043004
     },
     "453": {
-      "node": 2664,
+      "node": 2655,
       "area_id": 60750234002015
     },
     "456": {
-      "node": 2456,
+      "node": 2448,
       "area_id": 60750229032009
     },
     "476": {
-      "node": 5628,
+      "node": 5607,
       "area_id": 60750611012016
     },
     "478": {
-      "node": 3555,
+      "node": 3546,
       "area_id": 60750301021012
     },
     "479": {
-      "node": 819,
+      "node": 813,
       "area_id": 60750133005002
     },
     "481": {
-      "node": 3192,
+      "node": 3183,
       "area_id": 60750260031009
     },
     "485": {
-      "node": 3625,
+      "node": 3616,
       "area_id": 60750303011000
     },
     "488": {
-      "node": 4058,
+      "node": 4049,
       "area_id": 60750309005015
     },
     "490": {
-      "node": 339,
+      "node": 335,
       "area_id": 60750113002001
     },
     "493": {
-      "node": 3138,
+      "node": 3129,
       "area_id": 60750260011002
     },
     "497": {
-      "node": 2295,
+      "node": 2287,
       "area_id": 60750227022008
     },
     "505": {
-      "node": 1829,
+      "node": 1821,
       "area_id": 60750205002004
     },
     "507": {
-      "node": 2504,
+      "node": 2496,
       "area_id": 60750230031002
     },
     "509": {
-      "node": 1239,
+      "node": 1233,
       "area_id": 60750166012005
     },
     "513": {
-      "node": 3078,
+      "node": 3069,
       "area_id": 60750257023005
     },
     "521": {
-      "node": 3130,
+      "node": 3121,
       "area_id": 60750259002014
     },
     "525": {
-      "node": 905,
+      "node": 899,
       "area_id": 60750153001002
     },
     "537": {
-      "node": 2198,
+      "node": 2190,
       "area_id": 60750218001002
     },
     "539": {
-      "node": 4631,
+      "node": 4622,
       "area_id": 60750330022005
     },
     "544": {
-      "node": 4786,
+      "node": 4777,
       "area_id": 60750351021006
     },
     "549": {
-      "node": 5146,
+      "node": 5134,
       "area_id": 60750452022000
     },
     "562": {
-      "node": 131,
+      "node": 129,
       "area_id": 60750104022002
     },
     "569": {
-      "node": 4989,
+      "node": 4978,
       "area_id": 60750402001003
     },
     "575": {
-      "node": 4161,
+      "node": 4152,
       "area_id": 60750311001003
     },
     "589": {
-      "node": 1393,
+      "node": 1387,
       "area_id": 60750171022001
     },
     "593": {
-      "node": 3387,
+      "node": 3378,
       "area_id": 60750263022007
     },
     "603": {
-      "node": 2393,
+      "node": 2385,
       "area_id": 60750228031005
     },
     "614": {
-      "node": 2986,
+      "node": 2977,
       "area_id": 60750256002003
     },
     "618": {
-      "node": 1942,
+      "node": 1934,
       "area_id": 60750209004002
     },
     "625": {
-      "node": 2539,
+      "node": 2531,
       "area_id": 60750231022004
     },
     "638": {
-      "node": 213,
+      "node": 209,
       "area_id": 60750107012003
     },
     "644": {
-      "node": 3597,
+      "node": 3588,
       "area_id": 60750302012005
     },
     "650": {
-      "node": 1308,
+      "node": 1302,
       "area_id": 60750168022001
     },
     "656": {
-      "node": 2811,
+      "node": 2802,
       "area_id": 60750254013000
     },
     "664": {
-      "node": 5229,
+      "node": 5217,
       "area_id": 60750478012003
     },
     "670": {
-      "node": 4706,
+      "node": 4697,
       "area_id": 60750332011001
     },
     "676": {
-      "node": 4436,
+      "node": 4427,
       "area_id": 60750327004002
     },
     "680": {
-      "node": 2708,
+      "node": 2699,
       "area_id": 60750252001001
     },
     "691": {
-      "node": 3426,
+      "node": 3417,
       "area_id": 60750263032002
     },
     "714": {
-      "node": 1691,
+      "node": 1683,
       "area_id": 60750201021001
     },
     "718": {
-      "node": 1340,
+      "node": 1334,
       "area_id": 60750170001005
     },
     "722": {
-      "node": 3856,
+      "node": 3847,
       "area_id": 60750307001022
     },
     "723": {
-      "node": 2388,
+      "node": 2380,
       "area_id": 60750228031000
     },
     "724": {
-      "node": 2139,
+      "node": 2131,
       "area_id": 60750216001015
     },
     "729": {
-      "node": 3136,
+      "node": 3127,
       "area_id": 60750260011000
     },
     "735": {
-      "node": 1218,
+      "node": 1212,
       "area_id": 60750165003002
     },
     "746": {
-      "node": 4307,
+      "node": 4298,
       "area_id": 60750313021003
     },
     "750": {
-      "node": 4864,
+      "node": 4854,
       "area_id": 60750353001001
     },
     "760": {
-      "node": 2836,
+      "node": 2827,
       "area_id": 60750254022004
     },
     "782": {
-      "node": 4520,
+      "node": 4511,
       "area_id": 60750329011006
     },
     "786": {
-      "node": 1092,
+      "node": 1086,
       "area_id": 60750159002003
     },
     "790": {
-      "node": 305,
+      "node": 301,
       "area_id": 60750111022002
     },
     "796": {
-      "node": 1812,
+      "node": 1804,
       "area_id": 60750204024003
     },
     "801": {
-      "node": 95,
+      "node": 93,
       "area_id": 60750103001013
     },
     "814": {
-      "node": 776,
+      "node": 770,
       "area_id": 60750132003005
     },
     "816": {
-      "node": 1740,
+      "node": 1732,
       "area_id": 60750203002001
     },
     "820": {
-      "node": 4362,
+      "node": 4353,
       "area_id": 60750314022003
     },
     "823": {
-      "node": 682,
+      "node": 676,
       "area_id": 60750130011003
     },
     "830": {
-      "node": 2546,
+      "node": 2538,
       "area_id": 60750231031003
     },
     "834": {
-      "node": 272,
+      "node": 268,
       "area_id": 60750110011001
     },
     "838": {
-      "node": 5685,
+      "node": 5664,
       "area_id": 60750614011004
     },
     "842": {
-      "node": 4209,
+      "node": 4200,
       "area_id": 60750311004011
     },
     "848": {
-      "node": 5003,
+      "node": 4992,
       "area_id": 60750402003004
     },
     "859": {
-      "node": 504,
+      "node": 500,
       "area_id": 60750124053001
     },
     "862": {
-      "node": 4889,
+      "node": 4879,
       "area_id": 60750353003005
     },
     "867": {
-      "node": 3449,
+      "node": 3440,
       "area_id": 60750264012005
     },
     "872": {
-      "node": 183,
+      "node": 179,
       "area_id": 60750106002000
     },
     "876": {
-      "node": 3895,
+      "node": 3886,
       "area_id": 60750308001002
     },
     "910": {
-      "node": 5465,
+      "node": 5446,
       "area_id": 60750605021001
     },
     "911": {
-      "node": 5660,
+      "node": 5639,
       "area_id": 60750612001013
     },
     "912": {
-      "node": 1567,
+      "node": 1561,
       "area_id": 60750179031011
     },
     "999": {
-      "node": 5492,
+      "node": 5473,
       "area_id": 60750607012013
     }
   },
-  "cases": []
+  "cases": [
+    {
+      "focal_node": 1607,
+      "focal_area_id": 60750179032001,
+      "school_id": 912,
+      "centroid_node": 1561,
+      "centroid_area_id": 60750179031011,
+      "distance_to_centroid_miles": 2.5552704751883613,
+      "case_number": 1,
+      "plot": "case_0001_block_60750179032001_school_912.png",
+      "plot_radius_miles": 1.343826395751216,
+      "nearest_closer_endpoint_miles": 1.343826395751216,
+      "include_nearby_non_neighbors": true,
+      "focal_label": 1,
+      "centroid_label": null,
+      "existing_neighbor_labels": [
+        2,
+        3
+      ],
+      "within_radius_labels": [
+        1,
+        2,
+        4,
+        5,
+        6
+      ],
+      "closer_candidate_labels": [
+        6
+      ],
+      "labels": {
+        "1": {
+          "node": 1607,
+          "area_id": 60750179032001,
+          "distance_to_focal_miles": 0.0,
+          "distance_to_centroid_miles": 2.5552704751883613,
+          "roles": [
+            "focal",
+            "within_radius"
+          ]
+        },
+        "2": {
+          "node": 54,
+          "area_id": 60750102021001,
+          "distance_to_focal_miles": 1.1521360309302318,
+          "distance_to_centroid_miles": 2.999737761711777,
+          "roles": [
+            "existing_neighbor",
+            "within_radius"
+          ]
+        },
+        "3": {
+          "node": 1550,
+          "area_id": 60750179031000,
+          "distance_to_focal_miles": 2.4328587270996644,
+          "distance_to_centroid_miles": 3.392456538105426,
+          "roles": [
+            "existing_neighbor"
+          ]
+        },
+        "4": {
+          "node": 55,
+          "area_id": 60750102021002,
+          "distance_to_focal_miles": 1.2674635253450586,
+          "distance_to_centroid_miles": 3.137184230368528,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "5": {
+          "node": 58,
+          "area_id": 60750102021005,
+          "distance_to_focal_miles": 1.3131291347382528,
+          "distance_to_centroid_miles": 2.8123733081823357,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "6": {
+          "node": 4,
+          "area_id": 60750101011005,
+          "distance_to_focal_miles": 1.343826395751216,
+          "distance_to_centroid_miles": 2.4852087742025675,
+          "roles": [
+            "within_radius",
+            "strictly_closer",
+            "missing_edge"
+          ]
+        }
+      }
+    },
+    {
+      "focal_node": 2248,
+      "focal_area_id": 60750226002000,
+      "school_id": 912,
+      "centroid_node": 1561,
+      "centroid_area_id": 60750179031011,
+      "distance_to_centroid_miles": 4.147355420693756,
+      "case_number": 2,
+      "plot": "case_0002_block_60750226002000_school_912.png",
+      "plot_radius_miles": 0.5081850303474021,
+      "nearest_closer_endpoint_miles": 0.5081850303474021,
+      "include_nearby_non_neighbors": true,
+      "focal_label": 1,
+      "centroid_label": null,
+      "existing_neighbor_labels": [
+        2,
+        3,
+        4
+      ],
+      "within_radius_labels": [
+        1,
+        2,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "closer_candidate_labels": [
+        19
+      ],
+      "labels": {
+        "1": {
+          "node": 2248,
+          "area_id": 60750226002000,
+          "distance_to_focal_miles": 0.0,
+          "distance_to_centroid_miles": 4.147355420693756,
+          "roles": [
+            "focal",
+            "within_radius"
+          ]
+        },
+        "2": {
+          "node": 2249,
+          "area_id": 60750226002001,
+          "distance_to_focal_miles": 0.2223657895226711,
+          "distance_to_centroid_miles": 4.19792047278929,
+          "roles": [
+            "existing_neighbor",
+            "within_radius"
+          ]
+        },
+        "3": {
+          "node": 5881,
+          "area_id": 60759809001000,
+          "distance_to_focal_miles": 0.8923693151989573,
+          "distance_to_centroid_miles": 5.105214529417744,
+          "roles": [
+            "existing_neighbor"
+          ]
+        },
+        "4": {
+          "node": 5883,
+          "area_id": 60759809001002,
+          "distance_to_focal_miles": 0.7592832327121485,
+          "distance_to_centroid_miles": 5.130022568120335,
+          "roles": [
+            "existing_neighbor"
+          ]
+        },
+        "5": {
+          "node": 2259,
+          "area_id": 60750226002011,
+          "distance_to_focal_miles": 0.36440083289795205,
+          "distance_to_centroid_miles": 4.598049641121702,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "6": {
+          "node": 2258,
+          "area_id": 60750226002010,
+          "distance_to_focal_miles": 0.37272910392876396,
+          "distance_to_centroid_miles": 4.511937511292024,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "7": {
+          "node": 2228,
+          "area_id": 60750226001000,
+          "distance_to_focal_miles": 0.388885690885497,
+          "distance_to_centroid_miles": 4.683769923379795,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "8": {
+          "node": 2250,
+          "area_id": 60750226002002,
+          "distance_to_focal_miles": 0.40129709139489683,
+          "distance_to_centroid_miles": 4.426692533885221,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "9": {
+          "node": 2260,
+          "area_id": 60750226002012,
+          "distance_to_focal_miles": 0.4169135658906487,
+          "distance_to_centroid_miles": 4.612151366512157,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "10": {
+          "node": 2257,
+          "area_id": 60750226002009,
+          "distance_to_focal_miles": 0.42447578947634096,
+          "distance_to_centroid_miles": 4.525662522753386,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "11": {
+          "node": 2229,
+          "area_id": 60750226001001,
+          "distance_to_focal_miles": 0.43856599414432784,
+          "distance_to_centroid_miles": 4.697671451803258,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "12": {
+          "node": 2256,
+          "area_id": 60750226002008,
+          "distance_to_focal_miles": 0.4496106523858499,
+          "distance_to_centroid_miles": 4.440491785802104,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "13": {
+          "node": 2261,
+          "area_id": 60750226002013,
+          "distance_to_focal_miles": 0.466880677051003,
+          "distance_to_centroid_miles": 4.624312790405139,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "14": {
+          "node": 2251,
+          "area_id": 60750226002003,
+          "distance_to_focal_miles": 0.4745760902732873,
+          "distance_to_centroid_miles": 4.254190986381158,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "15": {
+          "node": 2262,
+          "area_id": 60750226002014,
+          "distance_to_focal_miles": 0.4746779603021708,
+          "distance_to_centroid_miles": 4.5392928990206265,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "16": {
+          "node": 2236,
+          "area_id": 60750226001008,
+          "distance_to_focal_miles": 0.4790523550524783,
+          "distance_to_centroid_miles": 4.855226089167387,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "17": {
+          "node": 2230,
+          "area_id": 60750226001002,
+          "distance_to_focal_miles": 0.48658580519996547,
+          "distance_to_centroid_miles": 4.7095460065639525,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "18": {
+          "node": 2255,
+          "area_id": 60750226002007,
+          "distance_to_focal_miles": 0.49818607798481856,
+          "distance_to_centroid_miles": 4.454398258148959,
+          "roles": [
+            "within_radius",
+            "missing_edge"
+          ]
+        },
+        "19": {
+          "node": 5482,
+          "area_id": 60750607013007,
+          "distance_to_focal_miles": 0.5081850303474021,
+          "distance_to_centroid_miles": 4.09733978291657,
+          "roles": [
+            "within_radius",
+            "strictly_closer",
+            "missing_edge"
+          ]
+        }
+      }
+    }
+  ]
 }
