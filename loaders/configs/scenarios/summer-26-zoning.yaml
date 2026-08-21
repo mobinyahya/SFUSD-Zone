@@ -1,0 +1,47 @@
+id: summer-26-zoning
+
+sources:
+  optimization.schools: optimization.schools.current
+  optimization.programs: assignment.programs.2324
+  optimization.adjacency:
+    block: census.adjacency.block
+    blockgroup: census.adjacency.blockgroup
+  optimization.centroids: bundled.centroids
+  optimization.manual_edges:
+    reviewed: bundled.manual_edges.reviewed
+    additions: bundled.manual_edges.additions
+  assignment.program_codes: assignment.program_codes
+  assignment.estimate: utility.2324.exp8
+  assignment.ctip:
+    workbook: ctip.workbook.2013
+    block: ctip.array.block.2024
+    blockgroup: ctip.array.blockgroup.2024
+  choice.estimate: utility.2324.exp8
+
+filters:
+  optimization:
+    years: ["2122", "2223", "2324"]
+    grades: [KG]
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    program_population: All
+    capacity_scenario: programs
+    include_k8: false
+    include_citywide: false
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore
+  assignment:
+    year: "2324"
+    grades: [KG]
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    capacity_profile: status_quo
+    capacity_scenario: programs
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore

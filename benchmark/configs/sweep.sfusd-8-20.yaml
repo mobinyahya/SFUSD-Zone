@@ -1,0 +1,58 @@
+# Optimization-native benchmark sweep.
+
+name: sfusd_8_20
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: false
+  save_solver_progress: false
+  max_distance: 3
+  hints: voronoi
+  racial_dev: -1
+  looseness: 1.25
+  strategy: 'recursive'
+  levels: ['Block_2', 'Block_1']
+  solve_time_limits: [400, 800]
+  boundary_radius: 1
+  gap_limits: [0, 0]
+  workers: 8
+  centroid_neighbor_radius: 1
+  cp_sat_search_strategy: distance_to_centroid
+  solver: 'cp_bool'
+
+sweep:
+  centroids_type: ['13-zone-6',  '13-zone-7', '13-zone-5', '18-zone-1', '18-zone-2', '18-zone-3']
+  frl_dev: [0.15]
+  seeds: [0, 1, 2, 3, 4]
+  # ignoring racial deviations
+  overage: [0.15, 0.2,  -1]
+  shortage: [0.15, 0.2, -1]
+
+
+execution:
+  output_dir: '/home/kumarc/sfusd/SFUSD-Zone/optimization_output/sfusd_results'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+matching:
+  enabled: false
+  configs:
+    - name: no_reserves
+      config: benchmark/matching/zones+no_reserves.yaml
+    - name: soft_reserves
+      config: benchmark/matching/zones+soft_reserves_06frl.yaml
+  compute_stage_assignments: false
+
+choice_metrics:
+  enabled: false
+  compute_stage_metrics: false
