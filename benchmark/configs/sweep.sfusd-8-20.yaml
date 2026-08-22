@@ -14,8 +14,8 @@ optimization_defaults:
   racial_dev: -1
   looseness: 1.25
   strategy: 'recursive'
-  levels: ['Block_2', 'Block_1']
-  solve_time_limits: [400, 800]
+  levels: ['Block_2', 'Block_0']
+  solve_time_limits: [600,600]
   boundary_radius: 1
   gap_limits: [0, 0]
   workers: 8
@@ -28,12 +28,12 @@ sweep:
   frl_dev: [0.15]
   seed: [0, 1, 2, 3, 4, 5, 6, 7]
   # ignoring racial deviations
-  overage: [0.15, 0.2,  -1]
-  shortage: [0.15, 0.2, -1]
+  overage: [0.2]
+  shortage: [0.2]
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/sfusd_8_21_v1'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/sfusd_8_21_v2'
   skip_existing: true
   rerun_failed: true
   sequential: false

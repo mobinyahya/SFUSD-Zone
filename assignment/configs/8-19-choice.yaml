@@ -13,6 +13,7 @@ random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
 export_heatmaps: true
+reuse_assignments: true
 
 r1-only: true
 rounds-merged-options:
