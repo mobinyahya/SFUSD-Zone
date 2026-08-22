@@ -171,7 +171,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
             sweep.matching.config,
             _assignment_targets(tasks, sweep.matching),
-            assignment_folder=output_root,
+            assignment_folder=output_root / "assignments",
             plan_dir=output_root / SLURM_DIRNAME / "assignment",
             max_assignment_jobs=assignment_jobs,
             max_metrics_jobs=metrics_jobs,

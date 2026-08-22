@@ -11,6 +11,7 @@ import pytest
 
 from benchmark.config import (
     BenchmarkTask,
+    ExecutionConfig,
     MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
@@ -160,6 +161,49 @@ def test_planning_rejects_unsupported_modes_before_generating_tasks(
 
     with pytest.raises(ValueError, match=message):
         create_plan(str(tmp_path / "sweep.yaml"))
+
+
+def test_matching_plan_uses_assignments_subdirectory(tmp_path, monkeypatch):
+    assignment_config = tmp_path / "assignment.yaml"
+    task = BenchmarkTask(
+        task_id="task",
+        config_hash="hash",
+        config={"workers": 1},
+        output_dir=str((tmp_path / "run").resolve()),
+        capacity_slots=1,
+    )
+    sweep = SimulationSweep(
+        execution=ExecutionConfig(output_dir=str(tmp_path)),
+        matching=MatchingRunConfig(enabled=True, config=str(assignment_config)),
+    )
+    calls = []
+    assignment_plan_path = tmp_path / ".slurm/assignment/plan.json"
+    monkeypatch.setattr(
+        SimulationSweep,
+        "from_yaml",
+        classmethod(lambda cls, path: sweep),
+    )
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task])
+    monkeypatch.setattr(
+        "assignment.run_custom_config.load_custom_config", lambda path: {}
+    )
+    monkeypatch.setattr(
+        "benchmark.slurm._assignment_targets", lambda tasks, matching: [{"id": "task"}]
+    )
+
+    def build_assignment_plan(config, targets, **kwargs):
+        calls.append((config, targets, kwargs))
+        return {}, assignment_plan_path
+
+    monkeypatch.setattr(
+        "assignment.slurm.build_generated_zone_slurm_plan", build_assignment_plan
+    )
+
+    plan = create_plan(str(tmp_path / "sweep.yaml"))
+
+    assert plan.assignment_plan_path == str(assignment_plan_path)
+    assert calls[0][2]["assignment_folder"] == tmp_path / "assignments"
+    assert calls[0][2]["plan_dir"] == tmp_path / ".slurm/assignment"
 
 
 def test_plan_roundtrip_snapshots_tasks_metrics_and_absolute_paths(tmp_path):

@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,7 +14,10 @@ from assignment.slurm import build_generated_zone_slurm_plan
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
-from benchmark.assignment import process_solution_assignments
+from benchmark.assignment import (
+    process_solution_assignments,
+    run_assignments_for_existing_runs,
+)
 from benchmark.config import MatchingRunConfig, SimulationSweep
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
@@ -164,6 +168,46 @@ def test_generated_zone_batch_publishes_metrics_once_at_root(tmp_path, monkeypat
     assert len(resolved) == 2 * len({entry["policy"] for entry in resolved})
     assert resolved_batches[0][1] == 3
     assert published == [(tmp_path.resolve(), {"citywide": [{"citywide": "report"}]})]
+
+
+def test_existing_run_batch_uses_assignments_subdirectory(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    config = SimpleNamespace(workers=3)
+    calls = []
+    monkeypatch.setattr(
+        "benchmark.assignment.discover_run_dirs", lambda root: [str(run_dir)]
+    )
+    monkeypatch.setattr(
+        "benchmark.assignment.load_solutions",
+        lambda path, dataset=None: ([object()], config, {"task_id": "task"}),
+    )
+    monkeypatch.setattr(
+        "benchmark.assignment.MetricsContext",
+        lambda solutions, config: SimpleNamespace(solution=object()),
+    )
+    monkeypatch.setattr(
+        "benchmark.assignment.process_solution_assignments",
+        lambda *args, **kwargs: [{"id": "task-root"}],
+    )
+    monkeypatch.setattr(
+        "benchmark.assignment.run_generated_zone_assignments",
+        lambda assignment_config, targets, **kwargs: calls.append(
+            (assignment_config, targets, kwargs)
+        ),
+    )
+
+    result = run_assignments_for_existing_runs(
+        str(tmp_path), MatchingRunConfig(enabled=True, config="assignment.yaml")
+    )
+
+    assert result.successful == 1
+    assert calls == [
+        (
+            "assignment.yaml",
+            [{"id": "task-root"}],
+            {"assignment_folder": tmp_path / "assignments", "workers": 3},
+        )
+    ]
 
 
 def test_solution_processing_prepares_root_and_stage_targets(tmp_path):

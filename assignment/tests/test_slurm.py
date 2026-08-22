@@ -701,11 +701,13 @@ def _rng_market(tmp_path):
 def test_independent_iteration_rng_matches_full_generation(tmp_path):
     market = _rng_market(tmp_path)
     sequential = list(market.create_iterations_generator())
+    market._reset_zones.reset_mock()
     targeted = list(market.create_target_iteration_generator(2))
 
     assert sequential[2].loc[0, "draw"] == targeted[0].loc[0, "draw"]
     assert sequential[5].loc[0, "draw"] == targeted[1].loc[0, "draw"]
     assert sequential[2].loc[0, "draw"] == sequential[5].loc[0, "draw"]
+    market._reset_zones.assert_not_called()
     assert MarketGenerator.iteration_seed(2023, 2) != MarketGenerator.iteration_seed(
         2023, 1
     )
