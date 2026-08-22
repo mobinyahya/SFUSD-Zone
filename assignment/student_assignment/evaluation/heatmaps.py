@@ -1,17 +1,26 @@
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from loaders import CacheStore, DataScenario, load_school_records
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patheffects import Normal, withStroke
-from matplotlib.cm import ScalarMappable
 
 
 HEATMAP_COLUMNS = ["config_name", "school_id", "capacity", "assigned"]
+ATTENDANCE_AREA_CACHE_SCHEMA_VERSION = 1
+ATTENDANCE_AREA_PAYLOAD = "geometry.pkl"
+ATTENDANCE_AREA_SOURCE_ROLES = (
+    "assignment.attendance_areas",
+    "assignment.schools",
+)
 UTILIZATION_COLORMAP = LinearSegmentedColormap.from_list(
     "attendance_area_utilization",
     ["#69bd63", "#f2efe4", "#ed6a5a"],
@@ -35,12 +44,11 @@ def _short_school_name(name: str) -> str:
     return re.sub(r"\s+ES(?:\s+\([^)]*\))?$", "", str(name), flags=re.I)
 
 
-def build_attendance_area_data(
+def build_attendance_area_geometry(
     areas: gpd.GeoDataFrame,
     schools: pd.DataFrame,
-    school_utilization: pd.DataFrame,
 ) -> gpd.GeoDataFrame:
-    """Attach one policy's GE utilization data to attendance-area polygons."""
+    """Map attendance schools to polygons once for reuse across policies."""
     required_school_columns = {"school_id", "school_name", "category", "lat", "lon"}
     missing = sorted(required_school_columns - set(schools.columns))
     if missing:
@@ -73,25 +81,51 @@ def build_attendance_area_data(
             f"{missing_names}."
         )
 
-    polygon_names = (
-        joined.assign(_name=joined["school_name"].map(_short_school_name))
-        .groupby("attendance_area_index", sort=True)["_name"]
-        .agg(lambda values: " / ".join(dict.fromkeys(values)))
-        .rename("attendance_area_name")
+    joined["school_id"] = pd.to_numeric(joined["school_id"], errors="raise").astype(
+        "int64"
     )
-    if len(polygon_names) != len(indexed_areas):
+    polygon_data = (
+        joined.assign(_name=joined["school_name"].map(_short_school_name))
+        .groupby("attendance_area_index", sort=True)
+        .agg(
+            attendance_area_name=(
+                "_name",
+                lambda values: " / ".join(dict.fromkeys(values)),
+            ),
+            school_ids=(
+                "school_id",
+                lambda values: tuple(dict.fromkeys(int(value) for value in values)),
+            ),
+        )
+    )
+    if len(polygon_data) != len(indexed_areas):
         raise ValueError(
             "Every attendance-area polygon must contain an attendance school."
         )
+    return gpd.GeoDataFrame(
+        indexed_areas.join(polygon_data), geometry="geometry", crs=areas.crs
+    )
 
+
+def attach_attendance_area_utilization(
+    area_geometry: gpd.GeoDataFrame,
+    school_utilization: pd.DataFrame,
+) -> gpd.GeoDataFrame:
+    """Attach one policy's GE utilization to pre-mapped area geometry."""
     utilization = school_utilization[HEATMAP_COLUMNS[1:]].copy()
     utilization["school_id"] = pd.to_numeric(
         utilization["school_id"], errors="raise"
     ).astype("int64")
-    school_to_polygon = joined[["school_id", "attendance_area_index"]].copy()
+    school_to_polygon = (
+        area_geometry[["school_ids"]]
+        .explode("school_ids")
+        .reset_index()
+        .rename(columns={"school_ids": "school_id"})
+    )
     school_to_polygon["school_id"] = pd.to_numeric(
         school_to_polygon["school_id"], errors="raise"
     ).astype("int64")
+
     by_attendance_area = (
         utilization.merge(school_to_polygon, on="school_id", how="inner")
         .groupby("attendance_area_index", as_index=True, sort=True)[
@@ -100,7 +134,7 @@ def build_attendance_area_data(
         .sum(min_count=1)
     )
 
-    result = indexed_areas.join(polygon_names).join(by_attendance_area)
+    result = area_geometry.drop(columns="school_ids").copy().join(by_attendance_area)
     positive_capacity = result["capacity"] > 0
     result["utilization"] = (result["assigned"] / result["capacity"]).where(
         positive_capacity
@@ -108,7 +142,78 @@ def build_attendance_area_data(
     result["seat_difference"] = (result["capacity"] - result["assigned"]).where(
         positive_capacity
     )
-    return gpd.GeoDataFrame(result, geometry="geometry", crs=areas.crs)
+    return gpd.GeoDataFrame(result, geometry="geometry", crs=area_geometry.crs)
+
+
+def build_attendance_area_data(
+    areas: gpd.GeoDataFrame,
+    schools: pd.DataFrame,
+    school_utilization: pd.DataFrame,
+) -> gpd.GeoDataFrame:
+    """Build and populate attendance-area geometry without using the cache."""
+    geometry = build_attendance_area_geometry(areas, schools)
+    return attach_attendance_area_utilization(geometry, school_utilization)
+
+
+def _valid_cached_geometry(value: Any) -> bool:
+    required = {"attendance_area_name", "school_ids", "geometry"}
+    return (
+        isinstance(value, gpd.GeoDataFrame)
+        and required <= set(value.columns)
+        and value.crs is not None
+        and not value.empty
+        and value.index.name == "attendance_area_index"
+        and not value.index.duplicated().any()
+        and not value["attendance_area_name"].isna().any()
+        and value["school_ids"]
+        .map(lambda ids: isinstance(ids, tuple) and bool(ids))
+        .all()
+        and not value.geometry.isna().any()
+        and not value.geometry.is_empty.any()
+    )
+
+
+class AttendanceAreaArtifactStore:
+    """Build and reuse source-aware attendance-area geometry."""
+
+    def __init__(
+        self,
+        scenario: DataScenario,
+        area_loader: Callable[[], gpd.GeoDataFrame] | None = None,
+        school_loader: Callable[[], pd.DataFrame] | None = None,
+    ):
+        if not isinstance(scenario, DataScenario):
+            raise TypeError("AttendanceAreaArtifactStore requires a DataScenario.")
+        self.scenario = scenario
+        self.area_loader = area_loader or (
+            lambda: gpd.read_file(
+                self.scenario.source("assignment.attendance_areas").path
+            )
+        )
+        self.school_loader = school_loader or (
+            lambda: load_school_records(
+                self.scenario,
+                "assignment.schools",
+                filter_group="assignment",
+            )
+        )
+
+    def geometry(self) -> tuple[gpd.GeoDataFrame, Path]:
+        namespace = CacheStore(self.scenario).namespace(
+            "attendance_area_heatmap_geometry",
+            {"operation": "map_attendance_schools_to_polygons"},
+            schema_version=ATTENDANCE_AREA_CACHE_SCHEMA_VERSION,
+            roles=ATTENDANCE_AREA_SOURCE_ROLES,
+            classification="internal-derived",
+        )
+        path = namespace.payload_path(ATTENDANCE_AREA_PAYLOAD)
+        geometry = namespace.load_pickle(ATTENDANCE_AREA_PAYLOAD)
+        if not _valid_cached_geometry(geometry):
+            geometry = build_attendance_area_geometry(
+                self.area_loader(), self.school_loader()
+            )
+            path = namespace.save_pickle(ATTENDANCE_AREA_PAYLOAD, geometry)
+        return geometry.copy(), path
 
 
 def _seat_label(value: float) -> str:
@@ -205,17 +310,17 @@ def render_attendance_area_heatmap(
 
 def export_attendance_area_heatmaps(
     assignment_path: str | Path,
-    scenario,
-    schools: pd.DataFrame,
+    scenario: DataScenario,
     heatmap_data: pd.DataFrame,
 ) -> list[Path]:
     if heatmap_data.empty:
         return []
-    source = scenario.source("assignment.attendance_areas")
-    areas = gpd.read_file(source.path)
+    area_geometry, _ = AttendanceAreaArtifactStore(scenario).geometry()
     outputs = []
     for config_name, utilization in heatmap_data.groupby("config_name", sort=True):
-        by_attendance_area = build_attendance_area_data(areas, schools, utilization)
+        by_attendance_area = attach_attendance_area_utilization(
+            area_geometry, utilization
+        )
         outputs.append(
             render_attendance_area_heatmap(
                 by_attendance_area,

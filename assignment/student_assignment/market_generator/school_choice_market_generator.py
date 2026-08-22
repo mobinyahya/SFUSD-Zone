@@ -10,7 +10,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 import yaml
-from loaders import load_scenario, load_school_records
+from loaders import load_scenario
 
 from ..choice_ranks import (
     ASSIGNMENT_SCHEMA_VERSION,
@@ -678,15 +678,9 @@ class MarketGenerator(SchoolChoiceMarket):
         from ..evaluation.heatmaps import export_attendance_area_heatmaps
 
         scenario = load_scenario(config["data"])
-        schools = load_school_records(
-            scenario,
-            "assignment.schools",
-            filter_group="assignment",
-        )
         return export_attendance_area_heatmaps(
             assignment_path,
             scenario,
-            schools,
             heatmap_data,
         )
 

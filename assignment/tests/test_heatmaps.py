@@ -1,9 +1,13 @@
+import json
+
 import geopandas as gpd
 import pandas as pd
 import pytest
+from loaders import DataScenario, ResolvedSource
 from shapely.geometry import box
 
 from assignment.student_assignment.evaluation.heatmaps import (
+    AttendanceAreaArtifactStore,
     average_heatmap_data,
     build_attendance_area_data,
     render_attendance_area_heatmap,
@@ -46,6 +50,24 @@ def _utilization():
             "assigned": [30.0, 70.0, 10.0],
         }
     )
+
+
+def _scenario(tmp_path):
+    area_source = tmp_path / "areas.geojson"
+    school_source = tmp_path / "schools.csv"
+    area_source.write_text("areas-v1", encoding="utf-8")
+    school_source.write_text("schools-v1", encoding="utf-8")
+    scenario = DataScenario(
+        id="heatmap-test",
+        schema_version=2,
+        roots={"cache": tmp_path / "cache"},
+        filters={"assignment": {"include_mission_bay": True}},
+        _source_values={
+            "assignment.attendance_areas": ResolvedSource(path=area_source),
+            "assignment.schools": ResolvedSource(path=school_source),
+        },
+    )
+    return scenario, area_source, school_source
 
 
 def test_webster_and_mission_bay_share_one_attendance_area():
@@ -107,3 +129,61 @@ def test_every_attendance_area_requires_a_school():
 
     with pytest.raises(ValueError, match="Every attendance-area polygon"):
         build_attendance_area_data(_areas(), schools, _utilization())
+
+
+def test_attendance_area_geometry_is_source_aware_and_cached(tmp_path):
+    scenario, _, _ = _scenario(tmp_path)
+    calls = {"areas": 0, "schools": 0}
+
+    def load_areas():
+        calls["areas"] += 1
+        return _areas()
+
+    def load_schools():
+        calls["schools"] += 1
+        return _schools()
+
+    store = AttendanceAreaArtifactStore(
+        scenario,
+        area_loader=load_areas,
+        school_loader=load_schools,
+    )
+    first, first_path = store.geometry()
+    second, second_path = store.geometry()
+
+    assert calls == {"areas": 1, "schools": 1}
+    assert first_path == second_path
+    assert first_path.is_relative_to(
+        tmp_path / "cache/attendance_area_heatmap_geometry/v1"
+    )
+    manifest = json.loads(
+        (first_path.parent / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["classification"] == "internal-derived"
+    assert set(manifest["sources"]["sources"]) == {
+        "assignment.attendance_areas",
+        "assignment.schools",
+    }
+    assert first["school_ids"].tolist() == second["school_ids"].tolist()
+
+
+def test_attendance_area_cache_changes_when_school_source_changes(tmp_path):
+    scenario, _, school_source = _scenario(tmp_path)
+    calls = 0
+
+    def load_areas():
+        nonlocal calls
+        calls += 1
+        return _areas()
+
+    store = AttendanceAreaArtifactStore(
+        scenario,
+        area_loader=load_areas,
+        school_loader=_schools,
+    )
+    _, first_path = store.geometry()
+    school_source.write_text("schools-version-two", encoding="utf-8")
+    _, second_path = store.geometry()
+
+    assert calls == 2
+    assert first_path != second_path
