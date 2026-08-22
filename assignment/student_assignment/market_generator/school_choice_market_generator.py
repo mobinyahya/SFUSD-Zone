@@ -265,11 +265,18 @@ class MarketGenerator(SchoolChoiceMarket):
             for reserve_option, restrict_option in product(
                 self._get_reserve_options(), self._get_restrict_options()
             ):
+                restriction_changed = (
+                    self.config.get("restrict-zone")
+                    != restrict_option["restrict-zone"]
+                    or self.config.get("citywide-or-lp", [])
+                    != restrict_option["citywide-or-lp"]
+                )
                 self.config["guard-rails"] = reserve_option["guard-rails"]
                 self.config["reserve-settings"] = reserve_option["reserve-settings"]
                 self.config["restrict-zone"] = restrict_option["restrict-zone"]
                 self.config["citywide-or-lp"] = restrict_option["citywide-or-lp"]
-                self._reset_zones()
+                if restriction_changed:
+                    self._reset_zones()
 
                 policy_options = self._policy_data_options(policy)
                 target_paths = [

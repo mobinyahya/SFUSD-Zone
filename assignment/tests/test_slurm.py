@@ -713,6 +713,21 @@ def test_independent_iteration_rng_matches_full_generation(tmp_path):
     )
 
 
+def test_targeted_iteration_resets_zones_when_restriction_changes(tmp_path):
+    market = _rng_market(tmp_path)
+    market.config["guard-rails-reserve-options"] = [
+        {"guard-rails": -1, "reserve-settings": {}}
+    ]
+    market.config["restrict-zone-options"] = [
+        {"restrict-zone": False, "citywide-or-lp": []},
+        {"restrict-zone": True, "citywide-or-lp": []},
+    ]
+
+    list(market.create_target_iteration_generator(2))
+
+    market._reset_zones.assert_called_once_with()
+
+
 def test_targeted_retry_does_not_delete_sibling_iteration(tmp_path):
     market = _rng_market(tmp_path)
     market.config["guard-rails-reserve-options"] = [
