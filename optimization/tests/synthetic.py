@@ -272,6 +272,9 @@ class FakeDataset:
         }
         return [school_to_node[int(sid)] for sid in school_ids]
 
+    def closer_neighbors_for(self, level):
+        return self._problem.G.graph["closer_neighbors"]
+
     def problem_for(
         self,
         level,

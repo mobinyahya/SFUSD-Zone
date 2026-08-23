@@ -138,7 +138,9 @@ def _stage_rows(
             "normalized_cut_edges": metrics_stage.get("normalized_cut_edges"),
             "fractional_cut_edges": metrics_stage.get("fractional_cut_edges"),
             "avg_reock_score": metrics_stage.get("avg_reock_score"),
+            "max_reock_score": metrics_stage.get("max_reock_score"),
             "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
+            "max_polsby_popper_score": metrics_stage.get("max_polsby_popper_score"),
             "wall_time": stage.get("wall_time"),
             "contiguous": metrics_stage.get("contiguous")
             if "contiguous" in metrics_stage

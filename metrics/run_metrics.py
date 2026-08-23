@@ -59,7 +59,11 @@ def compute(context: MetricsContext) -> MetricOutput:
             "normalized_cut_edges": spatial.normalized_cut_edges if spatial else None,
             "fractional_cut_edges": spatial.fractional_cut_edges if spatial else None,
             "avg_reock_score": spatial.avg_reock_score if spatial else None,
+            "max_reock_score": spatial.max_reock_score if spatial else None,
             "avg_polsby_popper_score": spatial.avg_polsby_popper_score
+            if spatial
+            else None,
+            "max_polsby_popper_score": spatial.max_polsby_popper_score
             if spatial
             else None,
             "wall_time": solution.wall_time,
@@ -80,7 +84,9 @@ def compute(context: MetricsContext) -> MetricOutput:
             flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
             flat[f"fractional_cut_edges_{name}"] = row["fractional_cut_edges"]
             flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
+            flat[f"max_reock_score_{name}"] = row["max_reock_score"]
             flat[f"avg_polsby_popper_score_{name}"] = row["avg_polsby_popper_score"]
+            flat[f"max_polsby_popper_score_{name}"] = row["max_polsby_popper_score"]
         if final_is_eligible and level_counts[solution.level.name] == 1:
             flat[f"objective_{solution.level.name}"] = solution.objective
             flat[f"wall_time_{solution.level.name}"] = solution.wall_time
@@ -93,8 +99,12 @@ def compute(context: MetricsContext) -> MetricOutput:
                     "fractional_cut_edges"
                 ]
                 flat[f"avg_reock_score_{solution.level.name}"] = row["avg_reock_score"]
+                flat[f"max_reock_score_{solution.level.name}"] = row["max_reock_score"]
                 flat[f"avg_polsby_popper_score_{solution.level.name}"] = row[
                     "avg_polsby_popper_score"
+                ]
+                flat[f"max_polsby_popper_score_{solution.level.name}"] = row[
+                    "max_polsby_popper_score"
                 ]
 
     final_stage = stage_rows[context.final_stage_index]

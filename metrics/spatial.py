@@ -30,7 +30,9 @@ class SpatialMetrics:
     normalized_cut_edges: float
     fractional_cut_edges: float
     avg_reock_score: float
+    max_reock_score: float
     avg_polsby_popper_score: float
+    max_polsby_popper_score: float
 
 
 def compute_spatial_metrics(
@@ -50,7 +52,9 @@ def compute_spatial_metrics(
             normalized_cut_edges=0.0,
             fractional_cut_edges=0.0,
             avg_reock_score=0.0,
+            max_reock_score=0.0,
             avg_polsby_popper_score=0.0,
+            max_polsby_popper_score=0.0,
         )
 
     block_G = _block0_graph(solution, config)
@@ -67,7 +71,12 @@ def compute_spatial_metrics(
     total_edges = block_G.number_of_edges()
     fractional_cut_edges = cut_edges / total_edges if total_edges else 0.0
 
-    avg_reock_score, avg_polsby_popper_score = _average_zone_shape_scores(
+    (
+        avg_reock_score,
+        max_reock_score,
+        avg_polsby_popper_score,
+        max_polsby_popper_score,
+    ) = _zone_shape_scores(
         solution,
         config,
         graph=block_G,
@@ -79,7 +88,9 @@ def compute_spatial_metrics(
         normalized_cut_edges=normalized_cut_edges,
         fractional_cut_edges=fractional_cut_edges,
         avg_reock_score=avg_reock_score,
+        max_reock_score=max_reock_score,
         avg_polsby_popper_score=avg_polsby_popper_score,
+        max_polsby_popper_score=max_polsby_popper_score,
     )
 
 
@@ -142,18 +153,18 @@ def _cut_edges(
     return cut
 
 
-def _average_zone_shape_scores(
+def _zone_shape_scores(
     solution: ZoneSolution,
     config: Mapping[str, Any] | OptimizationConfig,
     *,
     graph=None,
     assignment: Mapping[int, int] | None = None,
     level: LevelSpec | None = None,
-) -> tuple[float, float]:
+) -> tuple[float, float, float, float]:
     assignment = solution.assignment if assignment is None else assignment
     areas = _node_area_metrics(solution, config, graph=graph, level=level)
     if areas.empty:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0
 
     assigned = areas[["node", "geometry"]].copy()
     assigned["zone_id"] = assigned["node"].map(
@@ -161,7 +172,7 @@ def _average_zone_shape_scores(
     )
     assigned = assigned.dropna(subset=["zone_id", "geometry"]).copy()
     if assigned.empty:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0
     assigned["zone_id"] = assigned["zone_id"].astype(int)
 
     zones = assigned.dissolve(by="zone_id", as_index=False)[["zone_id", "geometry"]]
@@ -178,7 +189,12 @@ def _average_zone_shape_scores(
         reock_scores.append(_reock_score(geometry, area))
         polsby_popper_scores.append(_polsby_popper_score(area, perimeter))
 
-    return _mean(reock_scores), _mean(polsby_popper_scores)
+    return (
+        _mean(reock_scores),
+        max(reock_scores, default=0.0),
+        _mean(polsby_popper_scores),
+        max(polsby_popper_scores, default=0.0),
+    )
 
 
 def _node_area_metrics(
@@ -202,9 +218,9 @@ def _node_area_metrics(
         return graph_geometry
 
     source_config = _optimization_config_for_solution(solution, config)
-    geometry, _ = VisualizationArtifactStore(
-        source_config.data_scenario
-    ).geometry_for(level, G)
+    geometry, _ = VisualizationArtifactStore(source_config.data_scenario).geometry_for(
+        level, G
+    )
     return _prepare_injected_geometry(geometry)
 
 

@@ -55,7 +55,9 @@ class MetricColumns:
     NORMALIZED_CUT_EDGES = "normalized_cut_edges"
     FRACTIONAL_CUT_EDGES = "fractional_cut_edges"
     AVG_REOCK_SCORE = "avg_reock_score"
+    MAX_REOCK_SCORE = "max_reock_score"
     AVG_POLSBY_POPPER_SCORE = "avg_polsby_popper_score"
+    MAX_POLSBY_POPPER_SCORE = "max_polsby_popper_score"
     AVG_TOTAL_PROGRAMS = "avg_total_programs_per_zone"
     AVG_LANGUAGE_IMMERSION = "avg_language_immersion_per_zone"
     AVG_SPECIAL_ED = "avg_special_ed_per_zone"
@@ -487,6 +489,15 @@ STRUCTURE_METRICS = [
         short_name="Reock",
     ),
     MetricSpec(
+        column="max_reock_score",
+        display_name="Maximum Reock Score",
+        description="Maximum Reock compactness score among zones. For each zone, area is divided by the area of its minimum enclosing circle. Higher means the most compact zone is more compact. Range 0-1.",
+        category="structure",
+        direction="maximize",
+        is_core=False,
+        short_name="Max Reock",
+    ),
+    MetricSpec(
         column="avg_polsby_popper_score",
         display_name="Average Polsby-Popper Score",
         description="Average Polsby-Popper compactness score across zones. For each zone, 4*pi*area/perimeter^2 is computed from projected zone geometry. Higher means zones are more compact. Range 0-1.",
@@ -494,6 +505,15 @@ STRUCTURE_METRICS = [
         direction="maximize",
         is_core=False,
         short_name="PP",
+    ),
+    MetricSpec(
+        column="max_polsby_popper_score",
+        display_name="Maximum Polsby-Popper Score",
+        description="Maximum Polsby-Popper compactness score among zones. For each zone, 4*pi*area/perimeter^2 is computed from projected zone geometry. Higher means the most compact zone is more compact. Range 0-1.",
+        category="structure",
+        direction="maximize",
+        is_core=False,
+        short_name="Max PP",
     ),
     MetricSpec(
         column="num_zones",

@@ -19,7 +19,9 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.NORMALIZED_CUT_EDGES: spatial.normalized_cut_edges,
         MetricColumns.FRACTIONAL_CUT_EDGES: spatial.fractional_cut_edges,
         MetricColumns.AVG_REOCK_SCORE: spatial.avg_reock_score,
+        MetricColumns.MAX_REOCK_SCORE: spatial.max_reock_score,
         MetricColumns.AVG_POLSBY_POPPER_SCORE: spatial.avg_polsby_popper_score,
+        MetricColumns.MAX_POLSBY_POPPER_SCORE: spatial.max_polsby_popper_score,
         MetricColumns.CONTIGUOUS: int(is_contiguous(context)),
         MetricColumns.SOLUTION_CODE: compute_solution_code(context.area_assignment),
     }

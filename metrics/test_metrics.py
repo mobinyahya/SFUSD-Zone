@@ -84,7 +84,13 @@ def test_optimization_metrics_on_single_solution():
         expected_cut_edges / solution.problem.G.number_of_edges()
     )
     assert 0 < result.metrics["avg_reock_score"] <= 1
+    assert result.metrics["avg_reock_score"] <= result.metrics["max_reock_score"] <= 1
     assert 0 < result.metrics["avg_polsby_popper_score"] <= 1
+    assert (
+        result.metrics["avg_polsby_popper_score"]
+        <= result.metrics["max_polsby_popper_score"]
+        <= 1
+    )
     assert result.metrics["final_objective"] == 12.0
     assert result.metrics["contiguous"] == 1
     assert result.metrics["avg_total_programs_per_zone"] == 2.0

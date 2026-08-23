@@ -74,6 +74,29 @@ def test_boundary_candidates_anchors_centroids_before_relaxing_neighbors():
     assert 0 in cands[3]
 
 
+def test_relax_unsupported_candidates_opens_closer_path():
+    G = nx.Graph([(0, 1), (1, 2), (2, 3), (3, 0), (2, 4), (3, 4)])
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset({3})},
+        1: {100: frozenset({2}), 200: frozenset({2})},
+        2: {100: frozenset({3}), 200: frozenset({4})},
+        3: {100: frozenset({0}), 200: frozenset({4})},
+        4: {100: frozenset({3}), 200: frozenset()},
+    }
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1, 4: 1}
+    candidates = {node: {zone} for node, zone in assignment.items()}
+
+    relaxed = contiguity.relax_unsupported_candidates(
+        G, assignment, [0, 4], [100, 200], candidates
+    )
+
+    assert 1 not in relaxed
+    assert relaxed[2] == {0, 1}
+    assert relaxed[3] == {0, 1}
+    assert relaxed[0] == {0}
+    assert relaxed[4] == {1}
+
+
 def test_contiguity_supports_do_not_fall_back_for_geometry_local_minimum():
     G = nx.path_graph(3)
     G.graph["closer_neighbors"] = {

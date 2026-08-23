@@ -12,11 +12,11 @@ optimization_defaults:
   max_distance: 5
   hints: voronoi
   racial_dev: -1
-  looseness: 1.25
+  looseness: 1.2  
   strategy: 'recursive'
   levels: ['Block_2', 'Block_0']
   solve_time_limits: [600,600]
-  boundary_radius: 1
+  boundary_radius: 2
   gap_limits: [0, 0]
   workers: 8
   centroid_neighbor_radius: 0
@@ -33,7 +33,7 @@ sweep:
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/sfusd_8_21_v2'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/sfusd_8_21_v3'
   skip_existing: true
   rerun_failed: true
   sequential: false

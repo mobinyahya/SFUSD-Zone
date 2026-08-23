@@ -20,9 +20,9 @@ def test_spatial_metrics_load_block0_through_solution_config(monkeypatch, tmp_pa
     coarse = nx.Graph()
     coarse.add_node(0, area_id=100)
     crosswalk_path = tmp_path / "crosswalk.csv"
-    pd.DataFrame(
-        {"Block": [10, 11], "BlockGroup": [100, 100]}
-    ).to_csv(crosswalk_path, index=False)
+    pd.DataFrame({"Block": [10, 11], "BlockGroup": [100, 100]}).to_csv(
+        crosswalk_path, index=False
+    )
     config = OptimizationConfig(
         levels=["BlockGroup_0"],
         data={
@@ -78,3 +78,26 @@ def test_spatial_metrics_do_not_read_legacy_graph_paths(tmp_path):
             solution,
             config={"block0_graph_path": str(legacy_path)},
         )
+
+
+def test_spatial_metrics_include_maximum_zone_shape_scores():
+    graph = nx.Graph()
+    graph.add_node(0, area_id=10, geometry=box(0, 0, 1, 1))
+    graph.add_node(1, area_id=11, geometry=box(2, 0, 6, 1))
+    solution = ZoneSolution(
+        problem=ZoneProblem(
+            graph,
+            LevelSpec("Block", 0),
+            [0, 1],
+            [100, 200],
+        ),
+        assignment={0: 0, 1: 1},
+        status="FEASIBLE",
+    )
+
+    result = compute_spatial_metrics(solution)
+
+    assert result.max_reock_score > result.avg_reock_score
+    assert result.max_polsby_popper_score > result.avg_polsby_popper_score
+    assert result.max_reock_score <= 1
+    assert result.max_polsby_popper_score <= 1

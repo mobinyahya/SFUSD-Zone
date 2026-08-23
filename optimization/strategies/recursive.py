@@ -72,8 +72,16 @@ class RecursiveStrategy(Strategy):
                 )
                 for z, centroid in enumerate(centroids):
                     projected[centroid] = z
+                dataset.closer_neighbors_for(level)
                 candidates = contiguity.boundary_candidates(
                     dst_G, projected, centroids, radius=radius
+                )
+                candidates = contiguity.relax_unsupported_candidates(
+                    dst_G,
+                    projected,
+                    centroids,
+                    prev.problem.centroid_school_ids,
+                    candidates,
                 )
                 problem = dataset.problem_for(
                     level,

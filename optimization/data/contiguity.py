@@ -15,7 +15,9 @@ This module provides:
   helpers,
 * :func:`repair` -- a post-hoc assignment fixer,
 * :func:`boundary_candidates` -- the candidate-narrowing used by the recursive
-  strategy to relax only near zone borders.
+  strategy to relax only near zone borders,
+* :func:`relax_unsupported_candidates` -- targeted expansion for projected
+  blocks without monotone support toward their centroid.
 """
 
 from __future__ import annotations
@@ -216,3 +218,60 @@ def boundary_candidates(
     for z, centroid in enumerate(centroids):
         candidates[centroid] = {z}
     return candidates
+
+
+def relax_unsupported_candidates(
+    G: nx.Graph,
+    assignment: dict[int, int],
+    centroids: list[int],
+    centroid_school_ids: list[int],
+    candidates: dict[int, set[int]],
+) -> dict[int, set[int]]:
+    """Relax projected blocks without a same-zone closer neighbor.
+
+    The unsupported block itself falls back to distance-based candidacy. Its
+    projected zone is also opened along closer-neighbor paths so a reassignment
+    can retain monotone support toward the centroid.
+    """
+    if len(centroid_school_ids) != len(centroids):
+        raise ValueError("Candidate relaxation requires one school ID per centroid.")
+    relation = G.graph.get(CLOSER_NEIGHBORS_GRAPH_KEY)
+    if relation is None:
+        raise ValueError(
+            "Graph has no precomputed geometry-based closer-neighbor relation."
+        )
+
+    result = {node: set(zones) for node, zones in candidates.items()}
+    unsupported: dict[int, set[int]] = {}
+    for node, zone in assignment.items():
+        if node == centroids[zone]:
+            continue
+        school_id = int(centroid_school_ids[zone])
+        closer = relation[node][school_id]
+        if not any(assignment.get(neighbor) == zone for neighbor in closer):
+            unsupported.setdefault(zone, set()).add(node)
+            result.pop(node, None)
+
+    centroid_set = set(centroids)
+    for zone, sources in unsupported.items():
+        school_id = int(centroid_school_ids[zone])
+        stack = [
+            neighbor
+            for source in sources
+            for neighbor in relation[source][school_id]
+        ]
+        seen = set(sources)
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            if node in centroid_set and node != centroids[zone]:
+                continue
+            if node in result:
+                result[node].add(zone)
+            stack.extend(relation[node][school_id])
+
+    for zone, centroid in enumerate(centroids):
+        result[centroid] = {zone}
+    return result
