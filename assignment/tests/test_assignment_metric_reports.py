@@ -67,6 +67,7 @@ def test_basic_report_preserves_benchmark_contract():
         [0, 1, 0],
         [1, 2, None],
     ).set_index("studentno")
+    assignments["assigned_utility"] = [10.0, 4.0, 0.0]
     distances = pd.DataFrame(
         {"101-GE-KG": [0.25, 2.0, 1.0], "202-GE-KG": [3.0, 4.0, 2.0]},
         index=pd.Index([1, 2, 3], name="studentno"),
@@ -84,7 +85,9 @@ def test_basic_report_preserves_benchmark_contract():
     assert metrics["Dissimilarity SES3"] == 0.25
     assert "BG Cohesion (3)" in metrics
     assert metrics["# Racial majority schools"] == 2
-    assert len(metrics) == 70
+    assert metrics["Total Utility"] == 14
+    assert metrics["Average Utility"] == 14 / 3
+    assert len(metrics) == 71
 
 
 def test_full_report_covers_metric_families_without_mutating_inputs(
@@ -136,6 +139,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         [1, 2, 1, 4, None, 3],
         [0, 1, 0, 0, 0, 0],
     )
+    assignments["assigned_utility"] = [10.0, 4.0, 3.0, 2.0, 0.0, 1.0]
     original_assignments = assignments.copy(deep=True)
     distance_cache = pd.DataFrame(
         {
@@ -226,6 +230,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     assert metrics["Prop Top 1 choice (All Students)"] == 2 / 6
     assert metrics["Prop Top 1 choice (All Students) numerator"] == 2
     assert metrics["Prop Top 1 choice (All Students) denominator"] == 6
+    assert metrics["Total Utility"] == 20
+    assert metrics["Average Utility"] == 20 / 6
     assert metrics["Top 3 in-zone choice (All Assigned)"] == 3 / 5
     assert metrics["Variance of rank (All Assigned)"] == pytest.approx(1.7)
     assert metrics["Prop Distance > 3 and designated (All Assigned)"] == 1 / 5
@@ -283,6 +289,8 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     zip_94113 = zip_metrics.set_index("zip_code").loc[94113]
     assert zip_94113["Tot Nb Assigned (Round 1)"] == 0
     assert zip_94113["Unassigned"] == 1
+    assert zip_94113["Total Utility"] == 0
+    assert zip_94113["Average Utility"] == 0
 
     attendance_metrics = reports["attendance_area"]
     assert set(attendance_metrics.columns) == {

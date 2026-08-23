@@ -978,18 +978,13 @@ class MatchEvaluator:
         }
 
     def _basic_choice_metrics(self, student_data, assigned_students):
-        utility = (
-            assigned_students["assigned_utility"].mean()
-            if "assigned_utility" in assigned_students
-            else np.nan
-        )
         metrics = {
             "Unassigned": self.metric_unassigned(student_data),
             "Designated": self.metric_designated(assigned_students),
             "Dist >= 3, Rank >= 5": self.metric_dist_and_rank(
                 assigned_students, 3, 5
             ).mean(),
-            "Avg utility": utility,
+            **self._utility_metrics(student_data),
         }
         choice_outcomes = self._top_choice_outcomes(
             assigned_students, "rank", [1, 3]
@@ -1009,6 +1004,22 @@ class MatchEvaluator:
                 mechanism_outcomes[threshold],
             )
         return metrics
+
+    @classmethod
+    def _utility_metrics(cls, student_data):
+        if "assigned_utility" not in student_data:
+            return {"Total Utility": np.nan, "Average Utility": np.nan}
+
+        utilities = pd.to_numeric(student_data["assigned_utility"], errors="coerce")
+        utilities = utilities.where(cls._assigned_mask(student_data), 0.0)
+        total_utility = utilities.sum(skipna=False)
+        average_utility = (
+            total_utility / len(student_data) if len(student_data) else np.nan
+        )
+        return {
+            "Total Utility": total_utility,
+            "Average Utility": average_utility,
+        }
 
     @staticmethod
     def _assigned_mask(student_data):
@@ -3060,6 +3071,7 @@ class MatchEvaluator:
 
         # CHOICE METRICS
 
+        metrics.update(self._utility_metrics(student_data))
         metrics["#Unassigned"] = student_data[student_data["programno"] == 0].shape[0]
         metrics["Unassigned"] = self._safe_ratio(
             student_data[student_data["programno"] == 0].shape[0],

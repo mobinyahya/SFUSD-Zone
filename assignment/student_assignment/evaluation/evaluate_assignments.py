@@ -125,7 +125,8 @@ class EvaluateAssignments:
             "Top 3 in-zone choice",
             "Top 1 in-zone choice",
             "Dist >= 3, Rank >= 5",
-            "Avg utility",
+            "Total Utility",
+            "Average Utility",
         ]
         community_cohesion = ["BG Cohesion (3)"]
 

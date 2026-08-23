@@ -321,6 +321,7 @@ def test_saved_utility_rank_is_independent_from_submitted_rank(tmp_path):
     assert assignment.loc[0, "submitted_rank"] == 4
     assert assignment.loc[0, "utility_rank"] == 1
     assert assignment.loc[0, "rank"] == 1
+    assert assignment["assigned_utility"].tolist() == [10.0, 0.0]
 
 
 def test_saved_mechanism_rank_preserves_designation_position(tmp_path):

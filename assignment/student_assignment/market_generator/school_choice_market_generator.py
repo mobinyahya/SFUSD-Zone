@@ -1672,7 +1672,7 @@ class MarketGenerator(SchoolChoiceMarket):
         match_utilities = np.take_along_axis(
             self.umodel.original_utilities, match_idxs, axis=1
         ).flatten()
-        match_utilities[match == 0] = np.nan
+        match_utilities[match == 0] = 0.0
         return match_utilities
 
     def _choice_rank_columns(self, match: np.ndarray, policy: str):
