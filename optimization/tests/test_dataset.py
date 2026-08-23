@@ -66,13 +66,13 @@ def test_graph_cache_path_ignores_centroid_choice(tmp_path):
     assert baseline._graph_path(level) == changed._graph_path(level)
 
 
-def test_default_graph_root_uses_v12_shared_cache_namespace():
+def test_default_graph_root_uses_v13_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
 
-    assert dataset._graph_namespace.schema_version == 12
+    assert dataset._graph_namespace.schema_version == 13
     assert dataset._graph_namespace.version_dir == Path(
-        "/soalnas/share/data/school_choice/Data/caches/graphs/v12"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v13"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 
@@ -197,7 +197,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     assert first.graph_for("Block_0") is graph
     manifest = first._graph_namespace.manifest()
     assert manifest is not None
-    assert manifest["schema_version"] == 12
+    assert manifest["schema_version"] == 13
     assert manifest["payloads"]["Block_0.pickle"]["format"] == "pickle"
 
     monkeypatch.setattr(

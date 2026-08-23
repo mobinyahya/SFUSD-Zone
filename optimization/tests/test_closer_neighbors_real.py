@@ -9,13 +9,16 @@ from pathlib import Path
 import networkx as nx
 import pytest
 
-from Config.Constants import AUX_BG
 from optimization.config import OptimizationConfig
 from optimization.data.closer_neighbors import (
     SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY,
 )
 from optimization.data.dataset import Dataset
-from optimization.data.loaders import load_area_table, load_census_shapefile
+from optimization.data.loaders import (
+    EXCLUDED_OPTIMIZATION_BLOCKS,
+    load_area_table,
+    load_census_shapefile,
+)
 
 SHARED_DATA_ROOT = Path("/soalnas/share/data/school_choice")
 
@@ -95,11 +98,11 @@ def _empty_supports(vintage: str) -> tuple[nx.Graph, dict[int, list[dict]]]:
     return graph, dict(failures)
 
 
-def test_2020_auxiliary_blocks_are_filtered_from_optimization_data_and_graph():
+def test_2020_excluded_blocks_are_filtered_from_optimization_data_and_graph():
     dataset = _dataset("2020")
     census = load_census_shapefile("Block", dataset.data)
     census_ids = set(census["Block"].astype("int64"))
-    present_auxiliary_ids = census_ids & set(AUX_BG)
+    present_excluded_ids = census_ids & EXCLUDED_OPTIMIZATION_BLOCKS
 
     area = load_area_table(dataset.ingest)
     area_ids = set(area["Block"].astype("int64"))
@@ -107,9 +110,16 @@ def test_2020_auxiliary_blocks_are_filtered_from_optimization_data_and_graph():
     graph_ids = {int(attributes["area_id"]) for _, attributes in graph.nodes(data=True)}
 
     assert 60759804011000 not in census_ids
-    assert present_auxiliary_ids == set(AUX_BG[1:3])
-    assert census_ids - area_ids == present_auxiliary_ids
-    assert census_ids - graph_ids == present_auxiliary_ids
+    assert present_excluded_ids == {
+        60759804011001,
+        60759804011002,
+        60750179031000,
+        60750179031055,
+        60750179032001,
+        60750479041002,
+    }
+    assert census_ids - area_ids == present_excluded_ids
+    assert census_ids - graph_ids == present_excluded_ids
 
 
 @pytest.mark.parametrize("vintage", ["2010", "2020"])

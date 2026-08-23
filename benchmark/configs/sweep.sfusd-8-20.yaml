@@ -15,7 +15,7 @@ optimization_defaults:
   overage: 0.2
   shortage: 0.2
   frl_dev: 0.15
-  looseness: 1.2  
+  looseness: 1.05
   strategy: 'recursive'
   levels: ['Block_2', 'Block_0']
   solve_time_limits: [400,600]

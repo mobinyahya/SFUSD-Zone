@@ -71,7 +71,8 @@ class ZoneProblem:
         A negative value disables its corresponding bound.
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
-        that centroid's zone.
+        that centroid's zone. Nodes marked ``max_distance_exempt`` are candidates
+        for every zone regardless of distance.
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
@@ -266,11 +267,14 @@ class ZoneProblem:
         if self._candidates is None:
             cand: dict[int, set[int]] = {}
             for node in self.G.nodes():
-                allowed = {
-                    z
-                    for z, centroid in enumerate(self.centroids)
-                    if self.distance(centroid, node) <= self.max_distance
-                }
+                if self.G.nodes[node].get("max_distance_exempt", False):
+                    allowed = set(range(self.Z))
+                else:
+                    allowed = {
+                        z
+                        for z, centroid in enumerate(self.centroids)
+                        if self.distance(centroid, node) <= self.max_distance
+                    }
                 # A node always remains a candidate for its own centroid's zone
                 # so the instance stays feasible even with a tight max_distance.
                 cand[node] = allowed

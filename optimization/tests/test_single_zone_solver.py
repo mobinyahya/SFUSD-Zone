@@ -63,6 +63,14 @@ def test_single_zone_solver_enforces_max_distance():
     assert set(solution.assignment) == {2, 3, 4}
 
 
+def test_distance_exempt_node_is_candidate_beyond_max_distance():
+    problem = make_single_zone_problem(max_distance=1.0)
+    problem.G.nodes[0]["max_distance_exempt"] = True
+
+    assert problem.candidate_zones(0) == {0}
+    assert problem.candidate_zones(1) == set()
+
+
 def test_single_zone_solver_requires_nodes_within_centroid_neighbor_radius():
     problem = make_single_zone_problem()
     problem.G.nodes[3]["ge_capacity"] = 2.0

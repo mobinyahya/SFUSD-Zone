@@ -24,7 +24,7 @@ _SUM_ATTRS = [
     "FRL",
 ]
 
-GRAPH_CACHE_SCHEMA_VERSION = 12
+GRAPH_CACHE_SCHEMA_VERSION = 13
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
@@ -61,6 +61,8 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
             "school_ids": list(row["school_ids"]),
             "lat": float(row["Lat"]),
             "lon": float(row["Lon"]),
+            "max_distance_exempt": cfg.unit == "Block"
+            and loaders.is_max_distance_exempt_block(row[cfg.unit]),
         }
         for eth in AREA_ETHNICITIES:
             attrs[eth] = float(row[eth])
@@ -119,6 +121,7 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
                 block_ids=[],
                 lat=0.0,
                 lon=0.0,
+                max_distance_exempt=False,
             )
         n = new_G.nodes[part]
         b = parent_G.nodes[node]
@@ -127,6 +130,7 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
         for e in AREA_ETHNICITIES:
             n[e] += float(b[e])
         n["school_ids"].extend(b.get("school_ids", []))
+        n["max_distance_exempt"] |= bool(b.get("max_distance_exempt", False))
         if "area_id" in b:
             n["block_ids"].append(b["area_id"])
         else:
@@ -189,6 +193,7 @@ def partition_cache_policy(unit: str) -> dict:
         "initial_imbalance": PARTITION_INITIAL_IMBALANCE,
         "weight_scale": PARTITION_WEIGHT_SCALE,
         "school_nodes_are_singletons": True,
+        "max_distance_exempt_nodes_stay_separate": True,
         "hierarchical": True,
         "node_targets": {
             str(depth): target
@@ -356,7 +361,16 @@ def _partition_non_school_nodes(
 ) -> tuple[dict[int, int], list[float]]:
     if not G:
         return {}, []
-    components = [sorted(component) for component in nx.connected_components(G)]
+    partition_graph = G.copy()
+    partition_graph.remove_edges_from(
+        (u, v)
+        for u, v in G.edges()
+        if bool(G.nodes[u].get("max_distance_exempt", False))
+        != bool(G.nodes[v].get("max_distance_exempt", False))
+    )
+    components = [
+        sorted(component) for component in nx.connected_components(partition_graph)
+    ]
     components.sort(key=lambda component: (-len(component), component[0]))
     counts = _component_partition_counts(
         G,
@@ -370,7 +384,7 @@ def _partition_non_school_nodes(
     offset = 0
     for component, count in zip(components, counts):
         groups, imbalance = _partition_graph_kahip(
-            G.subgraph(component).copy(), count, population_attr
+            partition_graph.subgraph(component).copy(), count, population_attr
         )
         imbalances.append(imbalance)
         for part, nodes in groups.items():

@@ -56,6 +56,17 @@ OUTPUT_LATLON_CRS = "EPSG:4326"
 STUDENT_CACHE_SCHEMA_VERSION = 8
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
+EXCLUDED_OPTIMIZATION_BLOCKS = frozenset(
+    {
+        *AUX_BG,
+        60750179031000,  # Angel Island
+        60750179031055,  # Alameda Point
+        60750179032001,  # Alcatraz Island
+        60750479041002,  # Seal Rocks
+    }
+)
+TREASURE_ISLAND_BLOCK_GROUP = 60750179031
+
 STUDENT_ROLE = "optimization.students"
 FRL_ESTIMATE_ROLE = "optimization.frl_estimate"
 SCHOOL_ROLE = "optimization.schools"
@@ -525,6 +536,8 @@ def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
     student_stats[cfg.unit] = student_stats[cfg.unit].astype(int)
     area = student_stats.merge(school_stats, how="outer", on=cfg.unit)
     area = _add_missing_areas(area, cfg)
+    if cfg.unit == "Block":
+        area = area.loc[~area[cfg.unit].isin(EXCLUDED_OPTIMIZATION_BLOCKS)].copy()
     area.fillna(value=0, inplace=True)
     if cfg.capacity_scenario == "Closure":
         area = _apply_closure_scaling(area)
@@ -586,7 +599,8 @@ def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     """Append census areas that have neither students nor schools."""
     crosswalk = read_csv(cfg.data, CROSSWALK_ROLE, low_memory=False)
     valid = set(crosswalk[cfg.unit].dropna().astype("int64"))
-    census = set(load_census_shapefile(cfg.unit, cfg.data)[cfg.unit]) - set(AUX_BG)
+    excluded = EXCLUDED_OPTIMIZATION_BLOCKS if cfg.unit == "Block" else set()
+    census = set(load_census_shapefile(cfg.unit, cfg.data)[cfg.unit]) - excluded
     have = set(area[cfg.unit].astype(int))
     missing = (census & valid) - have
     if missing:
@@ -833,6 +847,11 @@ def load_manual_block_edges(cfg: IngestConfig) -> list[tuple[int, int]]:
     return sorted(edges)
 
 
+def is_max_distance_exempt_block(area_id: int) -> bool:
+    """Return whether a Block belongs to Treasure or Yerba Buena Island."""
+    return int(area_id) // 1000 == TREASURE_ISLAND_BLOCK_GROUP
+
+
 __all__ = [
     "ADJACENCY_ROLE",
     "AREA_DISTANCE_CACHE_SCHEMA_VERSION",
@@ -842,6 +861,7 @@ __all__ = [
     "CENSUS_ROLE",
     "CENTROID_ROLE",
     "CROSSWALK_ROLE",
+    "EXCLUDED_OPTIMIZATION_BLOCKS",
     "FRL_ESTIMATE_ROLE",
     "IngestConfig",
     "MANUAL_EDGE_ROLE",
@@ -862,5 +882,6 @@ __all__ = [
     "load_school_locations",
     "load_schools",
     "load_students",
+    "is_max_distance_exempt_block",
     "student_source_roles",
 ]

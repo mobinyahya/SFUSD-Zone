@@ -215,6 +215,32 @@ def test_component_partitioning_keeps_disconnected_inputs_separate(monkeypatch):
     assert partition[0] != partition[4]
 
 
+def test_component_partitioning_keeps_distance_exempt_nodes_separate():
+    G = make_grid_graph(1, 4)
+    for node in G:
+        G.nodes[node]["max_distance_exempt"] = node < 2
+
+    partition, _ = graph_builder._partition_non_school_nodes(
+        G,
+        2,
+        "ge_students",
+    )
+
+    exempt_parts = {partition[node] for node in (0, 1)}
+    regular_parts = {partition[node] for node in (2, 3)}
+    assert exempt_parts.isdisjoint(regular_parts)
+
+
+def test_aggregate_propagates_distance_exemption():
+    G = make_grid_graph(1, 3)
+    G.nodes[1]["max_distance_exempt"] = True
+
+    coarse = graph_builder.aggregate(G, {0: 0, 1: 0, 2: 1})
+
+    assert coarse.nodes[0]["max_distance_exempt"] is True
+    assert coarse.nodes[1]["max_distance_exempt"] is False
+
+
 def test_component_partition_counts_follow_population():
     G = make_grid_graph(2, 4)
     G.remove_edges_from((u, v) for u, v in list(G.edges()) if u < 4 <= v)
