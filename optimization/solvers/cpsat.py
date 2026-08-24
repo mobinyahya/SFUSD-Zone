@@ -524,17 +524,26 @@ class _CpSatSolver(Solver):
         for u, v in problem.G.edges():
             boundary = m.NewBoolVar(f"boundary_limit_{u}_{v}")
             self._boundary_limit_vars[(u, v)] = boundary
-            for zone in problem.candidate_zones(u) | problem.candidate_zones(v):
-                xu = x.get((zone, u))
-                xv = x.get((zone, v))
-                if xu is not None and xv is not None:
-                    m.Add(boundary >= xu - xv)
-                    m.Add(boundary >= xv - xu)
-                    m.Add(boundary <= 2 - xu - xv)
-                elif xu is not None:
-                    m.Add(boundary >= xu)
-                elif xv is not None:
-                    m.Add(boundary >= xv)
+            if self.name == "cp_single_zone":
+                m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(boundary)
+                m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(boundary.Not())
+                boundary_vars.append(boundary)
+                continue
+
+            candidates_u = problem.candidate_zones(u)
+            candidates_v = problem.candidate_zones(v)
+            common = candidates_u & candidates_v
+            cost_u = 2 * len(common) + len(candidates_u - candidates_v)
+            cost_v = 2 * len(common) + len(candidates_v - candidates_u)
+            selected, other = (u, v) if cost_u <= cost_v else (v, u)
+            for zone in problem.candidate_zones(selected):
+                selector = x[(zone, selected)]
+                other_zone = x.get((zone, other))
+                if other_zone is None:
+                    m.AddImplication(selector, boundary)
+                    continue
+                m.AddBoolOr([selector.Not(), other_zone, boundary])
+                m.AddBoolOr([selector.Not(), other_zone.Not(), boundary.Not()])
             boundary_vars.append(boundary)
 
         max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())

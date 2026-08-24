@@ -16,16 +16,16 @@ optimization_defaults:
   overage: -1
   shortage: -1
   frl_dev: 0.15
-  strategy: 'mid'
+  strategy: 'single'
+  enumerated_solutions: 1000
   levels: ['Block_2']
-  solve_time_limits: [14400]
+  solve_time_limits: [30]
   # boundary_radius: 1
   gap_limits: [0]
-  workers: 40
+  workers: 1
   centroid_neighbor_radius: 0
   # cp_sat_search_strategy: distance_to_centroid
   solver: 'cp_bool'
-  mid_lottery_scale: 50
 
 sweep:
   centroids_type: ['6-zone-9']
@@ -33,7 +33,7 @@ sweep:
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/mid_test_v1'
+  output_dir: './benchmark_output/test_feasible_7'
   skip_existing: true
   rerun_failed: true
   sequential: false
@@ -46,10 +46,10 @@ metrics:
 
 visualization:
   enabled: true
-  stages: final  # final | all
+  stages: all  # final | all
 
 
 matching:
-  enabled: true
+  enabled: false
   config: ../../assignment/configs/8-18-real-pref-zone-only.yaml
   compute_stage_assignments: false

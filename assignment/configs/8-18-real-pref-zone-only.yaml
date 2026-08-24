@@ -9,6 +9,7 @@ paths:
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
+export-heatmaps: true
 reuse_assignments: true
 
 r1-only: true
