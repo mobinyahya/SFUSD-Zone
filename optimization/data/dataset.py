@@ -43,7 +43,7 @@ class Dataset:
                 "unit": self.ingest.unit,
                 "optimization_filters": self.ingest.filters,
                 "partition_policy": graph_builder.partition_cache_policy(
-                    self.ingest.unit
+                    self.ingest.unit, config.weight_edges
                 ),
             },
             schema_version=graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
@@ -80,7 +80,9 @@ class Dataset:
 
     def _generate(self, level: LevelSpec) -> nx.Graph:
         if level.is_base:
-            return graph_builder.build_base_graph(self.ingest)
+            return graph_builder.build_base_graph(
+                self.ingest, weight_edges=self.config.weight_edges
+            )
         targets = LEVEL_NODE_TARGETS.get(level.unit, {})
         if level.depth not in targets:
             raise ValueError(f"No predefined graph size for level {level.name}.")
@@ -211,6 +213,7 @@ class Dataset:
             overage=self.config.overage * constraint_multiplier,
             shortage=self.config.shortage * constraint_multiplier,
             max_distance=self.config.max_distance,
+            weight_edges=self.config.weight_edges,
             fixed=fixed,
             candidates=candidates,
             hint=hint,

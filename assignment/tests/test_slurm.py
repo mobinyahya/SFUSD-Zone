@@ -459,7 +459,7 @@ def test_saved_metric_batches_reuse_existing_evaluator(tmp_path):
     market._aggregate_metric_evaluator = evaluator
     market._validate_reusable_assignment = Mock(return_value=pd.DataFrame())
     market._record_assignment_metric_reports = Mock(
-        side_effect=lambda _assignment, save_name, iteration: (
+        side_effect=lambda _assignment, save_name, iteration, _policy: (
             market._aggregate_metric_batches["citywide"].append(
                 pd.DataFrame(
                     {"config_name": [market._metric_config_name(save_name, iteration)]}
@@ -470,7 +470,14 @@ def test_saved_metric_batches_reuse_existing_evaluator(tmp_path):
 
     for iteration in (0, 1):
         market._evaluate_saved_metric_specs(
-            [(assignment_path, f"assignment_iteration{iteration}.csv", iteration)]
+            [
+                (
+                    assignment_path,
+                    f"assignment_iteration{iteration}.csv",
+                    iteration,
+                    "Con1",
+                )
+            ]
         )
 
     assert market._aggregate_metric_evaluator is evaluator
@@ -1003,7 +1010,7 @@ def test_metrics_only_fails_before_evaluation_when_input_is_missing(tmp_path):
         "export-aggregate-metrics": True,
     }
     market._expected_saved_assignment_specs = Mock(
-        return_value=[(tmp_path / "missing.csv", "variant_iteration0.csv", 0)]
+        return_value=[(tmp_path / "missing.csv", "variant_iteration0.csv", 0, "Con1")]
     )
     market._reset_aggregate_metric_reports = Mock()
     market._record_assignment_metric_reports = Mock()

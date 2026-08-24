@@ -9,7 +9,7 @@ import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES
 from loaders.edge_overrides import apply_block_edge_overrides
-from optimization.data import loaders
+from optimization.data import edge_weights, loaders
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS
@@ -35,7 +35,7 @@ PARTITION_MODE = "strong"
 # ====================================================================== #
 # Base graph
 # ====================================================================== #
-def build_base_graph(cfg: IngestConfig) -> nx.Graph:
+def build_base_graph(cfg: IngestConfig, *, weight_edges: bool = False) -> nx.Graph:
     """Depth-0 graph for ``cfg.unit``."""
     area = loaders.load_area_table(cfg)
     area2idx = {int(a): idx for idx, a in zip(area.index, area[cfg.unit])}
@@ -75,8 +75,20 @@ def build_base_graph(cfg: IngestConfig) -> nx.Graph:
         for nb in neighbors.get(idx, []):
             G.add_edge(idx, nb)
 
+    source_edges = {_edge_key(u, v) for u, v in G.edges()}
+    manual_edges = []
     if cfg.unit == "Block":
-        apply_block_edge_overrides(G, loaders.load_manual_block_edges(cfg))
+        manual_edges = loaders.load_manual_block_edges(cfg)
+        apply_block_edge_overrides(G, manual_edges)
+
+    if weight_edges:
+        edge_weights.assign_boundary_weights(
+            G,
+            loaders.load_census_shapefile(cfg.unit, cfg.data),
+            cfg.unit,
+            source_edges=source_edges,
+            manual_area_edges=manual_edges,
+        )
 
     G.graph["distance_dict"] = distance_dict
     G.graph["school_data"] = _school_data(cfg)
@@ -149,10 +161,31 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
         new_G.nodes[part]["lon"] = slon / w if w else 0.0
 
     # Adjacency from crossing parent edges also reattaches school singletons.
-    for u, v in parent_G.edges():
+    weighted = bool(parent_G.graph.get("weight_edges", False))
+    for u, v, attrs in parent_G.edges(data=True):
         pu, pv = partition[u], partition[v]
         if pu != pv:
-            new_G.add_edge(pu, pv)
+            if not new_G.has_edge(pu, pv):
+                new_G.add_edge(pu, pv)
+                if weighted:
+                    new_G.edges[pu, pv].update(
+                        {
+                            edge_weights.SHARED_BOUNDARY_ATTR: 0.0,
+                            edge_weights.BOUNDARY_WEIGHT_ATTR: 0,
+                            edge_weights.MANUAL_EDGE_ATTR: False,
+                        }
+                    )
+            if weighted:
+                edge = new_G.edges[pu, pv]
+                edge[edge_weights.SHARED_BOUNDARY_ATTR] += float(
+                    attrs[edge_weights.SHARED_BOUNDARY_ATTR]
+                )
+                edge[edge_weights.BOUNDARY_WEIGHT_ATTR] += edge_weights.edge_weight(
+                    parent_G, u, v
+                )
+                edge[edge_weights.MANUAL_EDGE_ATTR] |= bool(
+                    attrs.get(edge_weights.MANUAL_EDGE_ATTR, False)
+                )
 
     # distances between aggregated centroids
     distance_dict: dict[int, dict[int, float]] = {}
@@ -172,6 +205,14 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
     new_G.graph["school_data"] = parent_G.graph["school_data"]
     new_G.graph["program_population"] = parent_G.graph["program_population"]
     new_G.graph["partition"] = dict(partition)
+    if weighted:
+        for key in (
+            "weight_edges",
+            "boundary_crs",
+            "boundary_weight_unit",
+            "manual_edge_weight_m",
+        ):
+            new_G.graph[key] = parent_G.graph[key]
     if "manual_block_edges" in parent_G.graph:
         new_G.graph["manual_block_edges"] = parent_G.graph["manual_block_edges"]
         new_G.graph["manual_block_edge_fingerprint"] = parent_G.graph[
@@ -183,9 +224,9 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
 # ====================================================================== #
 # Hierarchy partitioning
 # ====================================================================== #
-def partition_cache_policy(unit: str) -> dict:
+def partition_cache_policy(unit: str, weight_edges: bool = False) -> dict:
     """Return the partition policy included in graph cache namespaces."""
-    return {
+    policy = {
         "backend": "kahip",
         "backend_version": version("kahip"),
         "mode": PARTITION_MODE,
@@ -200,6 +241,9 @@ def partition_cache_policy(unit: str) -> dict:
             for depth, target in sorted(LEVEL_NODE_TARGETS.get(unit, {}).items())
         },
     }
+    if weight_edges:
+        policy["edge_weighting"] = edge_weights.weighting_policy()
+    return policy
 
 
 def population_attribute(program_population: str) -> str:
@@ -250,11 +294,13 @@ def _partition_graph_kahip(
     node_to_idx = {node: idx for idx, node in enumerate(nodes)}
     xadj = [0]
     adjncy: list[int] = []
+    adjacency_weights: list[int] = []
     for node in nodes:
-        adjncy.extend(sorted(node_to_idx[neighbor] for neighbor in G.neighbors(node)))
+        for neighbor in sorted(G.neighbors(node)):
+            adjncy.append(node_to_idx[neighbor])
+            adjacency_weights.append(edge_weights.edge_weight(G, node, neighbor))
         xadj.append(len(adjncy))
     vertex_weights = _integer_population_weights(G, nodes, population_attr)
-    edge_weights = [1] * len(adjncy)
 
     imbalance = PARTITION_INITIAL_IMBALANCE
     last_reason = "KaHIP returned no result"
@@ -263,7 +309,7 @@ def _partition_graph_kahip(
             _, membership = kahip.kaffpa(
                 vertex_weights,
                 xadj,
-                edge_weights,
+                adjacency_weights,
                 adjncy,
                 target_partition_count,
                 imbalance,
@@ -445,11 +491,17 @@ def aggregate_level(
     return coarse
 
 
-def build_hierarchy(cfg: IngestConfig) -> dict[int, nx.Graph]:
+def build_hierarchy(
+    cfg: IngestConfig, *, weight_edges: bool = False
+) -> dict[int, nx.Graph]:
     """Build every predefined level sequentially from its immediate parent."""
-    graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg)}
+    graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg, weight_edges=weight_edges)}
     for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
         graphs[depth] = aggregate_level(
             graphs[depth - 1], target, cfg.program_population
         )
     return graphs
+
+
+def _edge_key(u: int, v: int) -> tuple[int, int]:
+    return (u, v) if u < v else (v, u)

@@ -18,6 +18,7 @@ import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES, AALPI_ETHNICITIES
 from choice.objective import ChoiceObjective
+from optimization.data.edge_weights import edge_weight
 from optimization.levels import LevelSpec
 
 if TYPE_CHECKING:
@@ -76,6 +77,9 @@ class ZoneProblem:
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
+    weight_edges:
+        Whether boundary objectives use integer-metre shared-boundary weights
+        instead of one unit per cut edge.
     fixed:
         Optional ``{node: zone}`` assignments forced by a strategy (e.g. a
         coarse solution projected down in recursive zoning).
@@ -102,6 +106,7 @@ class ZoneProblem:
     shortage: float = 0.2
     max_distance: float = float("inf")
     boundary_prop: float = -1.0
+    weight_edges: bool = False
 
     fixed: Optional[dict[int, int]] = None
     candidates: Optional[dict[int, set[int]]] = None
@@ -121,6 +126,8 @@ class ZoneProblem:
             raise ValueError(
                 "centroid_school_ids must have one school ID per centroid node."
             )
+        if not isinstance(self.weight_edges, bool):
+            raise ValueError("weight_edges must be a Boolean.")
 
     # ------------------------------------------------------------------ #
     # basic dimensions
@@ -139,6 +146,9 @@ class ZoneProblem:
 
     def neighbors(self, node: int) -> list[int]:
         return list(self.G.neighbors(node))
+
+    def boundary_weight(self, u: int, v: int) -> int:
+        return edge_weight(self.G, u, v, weighted=self.weight_edges)
 
     # ------------------------------------------------------------------ #
     # node / graph attributes

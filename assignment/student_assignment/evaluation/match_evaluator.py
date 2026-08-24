@@ -2049,31 +2049,86 @@ class MatchEvaluator:
             )
         return metrics
 
-    def eval_ge_utilization_by_school(self, config_name):
-        """Return GE capacity and assignments grouped by school for heatmaps."""
+    def eval_heatmap_data(self, config_name, building_block):
+        """Return GE seat counts and unassigned students by source geography."""
         if self._mode != "full":
-            raise ValueError("GE utilization requires a full MatchEvaluator instance")
+            raise ValueError("Heatmap metrics require a full MatchEvaluator instance")
         required = {"program_id", "school_id", "program_type", "capacity"}
         missing = sorted(required - set(self.programs.columns))
         if missing:
-            raise ValueError(f"GE utilization requires program columns: {missing}")
+            raise ValueError(f"Heatmap metrics require program columns: {missing}")
+
+        area_columns = {
+            "attendance_area": ("school_id", "idschoolattendance"),
+            "block": ("Block", "census_block"),
+            "block_group": ("BlockGroup", "census_blockgroup"),
+            "tract": ("Tract", "census_tract"),
+        }
+        if building_block not in area_columns:
+            raise ValueError(f"Unsupported heatmap building block {building_block!r}")
+        school_area, student_area = area_columns[building_block]
+        required_school_columns = {"school_id", "category", school_area}
+        missing = sorted(required_school_columns - set(self.schools_latlon.columns))
+        if missing:
+            raise ValueError(f"Heatmap metrics require school columns: {missing}")
+        if student_area not in self.student_data:
+            raise ValueError(f"Heatmap metrics require student column {student_area!r}")
 
         ge_programs = self.programs.loc[
             self.programs["program_type"].eq("GE"),
             ["program_id", "school_id", "capacity"],
         ].copy()
+        attendance_schools = self.schools_latlon.loc[
+            self.schools_latlon["category"]
+            .astype("string")
+            .str.casefold()
+            .eq("attendance"),
+            list(dict.fromkeys(["school_id", school_area])),
+        ].copy()
+        attendance_schools["area_id"] = attendance_schools[school_area]
+        ge_programs = ge_programs.merge(
+            attendance_schools,
+            on="school_id",
+            how="inner",
+            validate="many_to_one",
+        )
         assigned = self.student_data.loc[
-            self.student_data["programno"] > 0, "assignment"
+            self._assigned_mask(self.student_data), "assignment"
         ].value_counts()
         ge_programs["assigned"] = ge_programs["program_id"].map(assigned).fillna(0)
-        result = (
-            ge_programs.groupby("school_id", as_index=False, sort=True)[
-                ["capacity", "assigned"]
-            ]
+        ge_counts = (
+            ge_programs.dropna(subset=["area_id"])
+            .groupby("area_id", as_index=False, sort=True)[["capacity", "assigned"]]
             .sum(min_count=1)
-            .reset_index(drop=True)
         )
-        result.insert(0, "config_name", config_name)
+
+        unassigned = (
+            self.student_data.loc[
+                ~self._assigned_mask(self.student_data), [student_area]
+            ]
+            .dropna()
+            .groupby(student_area, as_index=False, sort=True)
+            .size()
+            .rename(columns={student_area: "area_id", "size": "unassigned"})
+        )
+        resident_areas = self.student_data[[student_area]].rename(
+            columns={student_area: "area_id"}
+        )
+        areas = (
+            pd.concat([ge_counts[["area_id"]], resident_areas], ignore_index=True)
+            .dropna()
+            .drop_duplicates()
+        )
+        result = (
+            areas.merge(ge_counts, on="area_id", how="left")
+            .merge(unassigned, on="area_id", how="left")
+            .fillna(0)
+        )
+        result["area_id"] = pd.to_numeric(result["area_id"], errors="raise").astype(
+            "int64"
+        )
+        result = result.sort_values("area_id").reset_index(drop=True)
+        result.insert(0, "config_name", str(config_name))
         return result
 
     def eval_assignment_metrics_by_program(self, aggregates=None):

@@ -11,7 +11,8 @@ from Config.Constants import AREA_ETHNICITIES
 from Config.metrics_config import MetricColumns
 from metrics import MetricsCalculator
 from optimization.config import OptimizationConfig
-from optimization.data.contiguity import boundary_edges
+from optimization.data.contiguity import boundary_cost, boundary_edges
+from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
 from optimization.solvers import get_solver
 from optimization.tests.synthetic import make_single_zone_problem
 
@@ -52,6 +53,26 @@ def test_single_zone_solver_selects_optimal_connected_zone():
     for ethnicity in AREA_ETHNICITIES:
         count = sum(problem.ethnicity(node, ethnicity) for node in solution.assignment)
         assert count == problem.district_racial[ethnicity] * students
+
+
+def test_single_zone_solver_uses_weighted_boundary_objective():
+    problem = make_single_zone_problem(weight_edges=True)
+    problem.G.graph["weight_edges"] = True
+    for edge, weight in zip(problem.G.edges(), [2, 3, 5, 7, 11, 13]):
+        problem.G.edges[edge][BOUNDARY_WEIGHT_ATTR] = weight
+
+    solution = _solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.objective == boundary_cost(
+        problem.G,
+        solution.assignment,
+        weight_edges=True,
+    )
+    assert (
+        solution.metadata["objective_kind"] == "selected_zone_weighted_boundary_length"
+    )
+    assert solution.metadata["objective_unit"] == "meter"
 
 
 def test_single_zone_solver_enforces_max_distance():

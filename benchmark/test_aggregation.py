@@ -132,6 +132,31 @@ execution:
     assert tasks[0].config["secondary_objective"] is True
 
 
+def test_sweep_expands_weight_edges_and_changes_task_identity(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        f"""
+optimization_defaults:
+  levels: ['BlockGroup_0']
+  data:
+    scenario: legacy
+    overrides:
+      roots:
+        cache: '{tmp_path / "graphs"}'
+sweep:
+  weight_edges: [false, true]
+execution:
+  output_dir: '{tmp_path / "out"}'
+""",
+        encoding="utf-8",
+    )
+
+    tasks = SimulationSweep.from_yaml(str(config_path)).generate_tasks()
+
+    assert [task.config["weight_edges"] for task in tasks] == [False, True]
+    assert tasks[0].config_hash != tasks[1].config_hash
+
+
 def test_sweep_yaml_rejects_aggregate_only_mode(tmp_path):
     config_path = tmp_path / "sweep.yaml"
     config_path.write_text(

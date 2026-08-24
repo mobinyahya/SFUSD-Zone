@@ -10,11 +10,15 @@ from choice.models import DistanceChoiceModel
 from choice.objective import ChoiceObjective
 from optimization.config import OptimizationConfig
 from optimization.data import contiguity
+from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
 from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
-from optimization.tests.solver_contract import assert_valid_solution
-from optimization.tests.synthetic import make_grid_problem
+from optimization.tests.solver_contract import (
+    assert_valid_solution,
+    solve_contract_problem,
+)
+from optimization.tests.synthetic import make_grid_problem, make_solver_contract_problem
 
 
 def test_config_passes_cpsat_parameters_to_solver():
@@ -54,6 +58,34 @@ def test_cp_bool_solver_supports_secondary_objective():
         problem.G,
         solution.assignment,
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "secondary_objective"),
+    [
+        ("cp_int", False),
+        ("cp_bool", False),
+        ("cp_bool", True),
+        ("mip", False),
+        ("mip", True),
+    ],
+)
+def test_solvers_use_weighted_boundary_objective(name, secondary_objective):
+    problem = make_solver_contract_problem(weight_edges=True)
+    problem.G.graph["weight_edges"] = True
+    for edge, weight in zip(problem.G.edges(), [3, 11, 5]):
+        problem.G.edges[edge][BOUNDARY_WEIGHT_ATTR] = weight
+
+    solution = solve_contract_problem(
+        name,
+        problem,
+        secondary_objective=secondary_objective,
+    )
+
+    assert_valid_solution(problem, solution)
+    assert solution.objective == 11
+    assert solution.metadata["objective_kind"] == "weighted_boundary_length"
+    assert solution.metadata["objective_unit"] == "meter"
 
 
 def test_cpsat_solver_applies_configured_cp_sat_parameters():

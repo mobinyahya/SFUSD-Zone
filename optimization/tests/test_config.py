@@ -7,6 +7,17 @@ import yaml
 from optimization.config import OptimizationConfig
 
 
+def test_weight_edges_defaults_false_and_requires_boolean():
+    assert OptimizationConfig(levels=["BlockGroup_0"]).weight_edges is False
+    assert (
+        OptimizationConfig(levels=["BlockGroup_0"], weight_edges=True).weight_edges
+        is True
+    )
+
+    with pytest.raises(ValueError, match="weight_edges must be a Boolean"):
+        OptimizationConfig(levels=["BlockGroup_0"], weight_edges=1)
+
+
 @pytest.mark.parametrize(
     ("old_key", "value"),
     [

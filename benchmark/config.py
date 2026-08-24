@@ -340,6 +340,8 @@ def optimization_config_hash(
     )
     semantic = copy.deepcopy(optimization_config_to_dict(resolved))
     semantic.pop("data", None)
+    if semantic.get("weight_edges") is False:
+        semantic.pop("weight_edges")
     if source_manifest is None:
         source_manifest = _benchmark_source_manifest(resolved)
     return stable_hash(

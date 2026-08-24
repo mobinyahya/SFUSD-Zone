@@ -7,7 +7,7 @@ import math
 import networkx as nx
 import pytest
 
-from optimization.data.contiguity import boundary_edges
+from optimization.data.contiguity import boundary_cost
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers import get_solver
@@ -96,7 +96,11 @@ def assert_valid_solution(
 
     if check_boundary_objective:
         assert solution.objective == pytest.approx(
-            boundary_edges(problem.G, solution.assignment),
+            boundary_cost(
+                problem.G,
+                solution.assignment,
+                weight_edges=problem.weight_edges,
+            ),
             abs=tolerance,
         )
     assert solution.wall_time is not None

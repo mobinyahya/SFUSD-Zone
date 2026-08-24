@@ -322,6 +322,13 @@ class _CpSatSolver(Solver):
                     "choice_cuts": len(problem.choice_objective.cuts),
                 }
             )
+        elif problem.weight_edges:
+            metadata.update(
+                {
+                    "objective_kind": "weighted_boundary_length",
+                    "objective_unit": "meter",
+                }
+            )
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
@@ -567,7 +574,7 @@ class CpBoolSolver(_CpSatSolver):
         y: _ZoneVars,
     ) -> None:
         if self.options.get("secondary_objective", False):
-            boundary_vars = []
+            boundary_terms = []
             for u, v in problem.G.edges():
                 zones = problem.candidate_zones(u) | problem.candidate_zones(v)
                 b = m.NewBoolVar(f"bnd_{u}_{v}")
@@ -581,11 +588,11 @@ class CpBoolSolver(_CpSatSolver):
                         m.Add(b >= xu)
                     elif xv is not None:
                         m.Add(b >= xv)
-                boundary_vars.append(b)
-            m.Minimize(sum(boundary_vars))
+                boundary_terms.append(problem.boundary_weight(u, v) * b)
+            m.Minimize(sum(boundary_terms))
             return
 
-        boundary_vars = []
+        boundary_terms = []
         for u, v in problem.G.edges():
             zones = problem.candidate_zones(u) | problem.candidate_zones(v)
             b = m.NewBoolVar(f"bnd_{u}_{v}")
@@ -605,8 +612,8 @@ class CpBoolSolver(_CpSatSolver):
                     # z is only a candidate for v. If v takes it, u cannot, so edge is cut.
                     m.Add(b == 1).OnlyEnforceIf(xv)
 
-            boundary_vars.append(b)
-        m.Minimize(sum(boundary_vars))
+            boundary_terms.append(problem.boundary_weight(u, v) * b)
+        m.Minimize(sum(boundary_terms))
 
 
 @register("cp_int")
@@ -714,13 +721,13 @@ class CpIntSolver(CpBoolSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        boundary_vars = []
+        boundary_terms = []
         for u, v in problem.G.edges():
             b = m.NewBoolVar(f"bnd_{u}_{v}")
             m.Add(y[u] != y[v]).OnlyEnforceIf(b)
             m.Add(y[u] == y[v]).OnlyEnforceIf(b.Not())
-            boundary_vars.append(b)
-        m.Minimize(sum(boundary_vars))
+            boundary_terms.append(problem.boundary_weight(u, v) * b)
+        m.Minimize(sum(boundary_terms))
 
 
 @register("cp_single_zone")
@@ -733,7 +740,11 @@ class CpSingleZoneSolver(CpBoolSolver):
         solution.metadata.update(
             {
                 "partial_assignment": True,
-                "objective_kind": "selected_zone_boundary",
+                "objective_kind": (
+                    "selected_zone_weighted_boundary_length"
+                    if problem.weight_edges
+                    else "selected_zone_boundary"
+                ),
                 "centroid_node": problem.centroids[0],
                 "centroid_school_id": problem.centroid_school_ids[0],
                 "selected_node_count": len(solution.assignment),
@@ -847,13 +858,13 @@ class CpSingleZoneSolver(CpBoolSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        boundary_vars = []
+        boundary_terms = []
         for u, v in problem.G.edges():
             b = m.NewBoolVar(f"bnd_{u}_{v}")
             m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(b)
             m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(b.Not())
-            boundary_vars.append(b)
-        m.Minimize(sum(boundary_vars))
+            boundary_terms.append(problem.boundary_weight(u, v) * b)
+        m.Minimize(sum(boundary_terms))
 
 
 def _scaled(value: float, scale: float) -> int:

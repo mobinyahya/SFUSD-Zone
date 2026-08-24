@@ -299,6 +299,7 @@ class FakeDataset:
             overage=self._problem.overage * constraint_multiplier,
             shortage=self._problem.shortage * constraint_multiplier,
             max_distance=self._problem.max_distance,
+            weight_edges=self._problem.weight_edges,
             fixed=fixed,
             candidates=candidates,
             hint=hint,

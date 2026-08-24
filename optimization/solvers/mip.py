@@ -124,6 +124,13 @@ class MipSolver(Solver):
                     "choice_cuts": len(problem.choice_objective.cuts),
                 }
             )
+        elif problem.weight_edges:
+            metadata.update(
+                {
+                    "objective_kind": "weighted_boundary_length",
+                    "objective_unit": "meter",
+                }
+            )
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
@@ -357,7 +364,7 @@ class MipSolver(Solver):
                     z_vars.append(z_var)
 
                 m.addConstr(b == gp.quicksum(z_vars))
-                boundary.append(b)
+                boundary.append(problem.boundary_weight(u, v) * b)
 
             m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
             return
@@ -375,7 +382,7 @@ class MipSolver(Solver):
                     m.addConstr(b >= xu)
                 elif xv is not None:
                     m.addConstr(b >= xv)
-            boundary.append(b)
+            boundary.append(problem.boundary_weight(u, v) * b)
         m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
 
     def _add_choice_objective(

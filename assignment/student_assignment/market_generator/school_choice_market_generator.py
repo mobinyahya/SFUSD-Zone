@@ -343,6 +343,7 @@ class MarketGenerator(SchoolChoiceMarket):
                         self._assignment_save_path(policy_data, None),
                         self._get_assignment_save_name(policy_data, None),
                         None,
+                        policy_data.name,
                     )
                 )
                 continue
@@ -364,6 +365,7 @@ class MarketGenerator(SchoolChoiceMarket):
                                 self._assignment_save_path(policy_data, iteration),
                                 self._get_assignment_save_name(policy_data, iteration),
                                 iteration,
+                                policy_data.name,
                             )
                         )
         return specs
@@ -422,7 +424,11 @@ class MarketGenerator(SchoolChoiceMarket):
         return self._evaluate_saved_metric_specs(specs)
 
     def _evaluate_saved_metric_specs(self, specs) -> dict:
-        missing = [path for path, _save_name, _iteration in specs if not path.is_file()]
+        missing = [
+            path
+            for path, _save_name, _iteration, _policy in specs
+            if not path.is_file()
+        ]
         if missing:
             preview = ", ".join(str(path) for path in missing[:5])
             suffix = "" if len(missing) <= 5 else f" (and {len(missing) - 5} more)"
@@ -431,14 +437,16 @@ class MarketGenerator(SchoolChoiceMarket):
             )
 
         self._reset_aggregate_metric_reports()
-        for assignment_path, save_name, iteration in specs:
+        for assignment_path, save_name, iteration, policy in specs:
             assignment_df = self._validate_reusable_assignment(
                 pd.read_csv(assignment_path), assignment_path
             )
-            self._record_assignment_metric_reports(assignment_df, save_name, iteration)
+            self._record_assignment_metric_reports(
+                assignment_df, save_name, iteration, policy
+            )
         expected_config_names = [
             self._metric_config_name(save_name, iteration)
-            for _path, save_name, iteration in specs
+            for _path, save_name, iteration, _policy in specs
         ]
         export_metrics = self.config.get("export-aggregate-metrics")
         if export_metrics is None:
@@ -478,7 +486,7 @@ class MarketGenerator(SchoolChoiceMarket):
         return sorted(
             {
                 self._metric_config_name(save_name, iteration)
-                for _path, save_name, iteration in specs
+                for _path, save_name, iteration, _policy in specs
             }
         )
 
@@ -674,11 +682,11 @@ class MarketGenerator(SchoolChoiceMarket):
 
     @staticmethod
     def export_heatmap_reports(assignment_path, config, heatmap_data):
-        """Render averaged attendance-area heatmaps for all policy variants."""
-        from ..evaluation.heatmaps import export_attendance_area_heatmaps
+        """Render averaged assignment heatmaps for all policy variants."""
+        from ..evaluation.heatmaps import export_assignment_heatmaps
 
         scenario = load_scenario(config["data"])
-        return export_attendance_area_heatmaps(
+        return export_assignment_heatmaps(
             assignment_path,
             scenario,
             heatmap_data,
@@ -1894,7 +1902,9 @@ class MarketGenerator(SchoolChoiceMarket):
         assignment_df["designation"] = designation.astype(int)
         return assignment_df
 
-    def _record_assignment_metric_reports(self, assignment_df, save_name, iteration):
+    def _record_assignment_metric_reports(
+        self, assignment_df, save_name, iteration, policy
+    ):
         export_metrics = self.config.get("export-aggregate-metrics", False)
         export_heatmaps = self.config.get("export_heatmaps", False)
         if not (export_metrics or export_heatmaps):
@@ -1926,9 +1936,21 @@ class MarketGenerator(SchoolChoiceMarket):
                 evaluator.eval_frl_threshold_inputs(config_name)
             )
         if export_heatmaps:
-            self._heatmap_metric_batches.append(
-                evaluator.eval_ge_utilization_by_school(config_name)
+            building_block = (
+                "attendance_area"
+                if policy == "real_match"
+                else self.config["zone-building-blocks"]
             )
+            zone_file = (
+                ""
+                if policy == "real_match"
+                else self.config["paths"]["zone-files"][policy]
+            )
+            heatmap_data = evaluator.eval_heatmap_data(config_name, building_block)
+            heatmap_data.insert(1, "policy", policy)
+            heatmap_data.insert(2, "building_block", building_block)
+            heatmap_data.insert(3, "zone_file", str(zone_file))
+            self._heatmap_metric_batches.append(heatmap_data)
 
     def _load_reusable_assignment(self, policy_data, iteration):
         if not self.config.get("reuse_assignments", True):
@@ -1945,6 +1967,7 @@ class MarketGenerator(SchoolChoiceMarket):
             assignment_df,
             self._get_assignment_save_name(policy_data, iteration),
             iteration,
+            policy_data.name,
         )
         return assignment_df
 
@@ -2033,6 +2056,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 assignment_df,
                 save_name,
                 iteration,
+                policy_data.name,
             )
         return assignment_df
 

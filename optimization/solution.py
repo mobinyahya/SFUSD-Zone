@@ -16,8 +16,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from optimization.progress import SolverProgressEntry
+from optimization.data.edge_weights import edge_weight
 from optimization.problem import ZoneProblem
+from optimization.progress import SolverProgressEntry
 
 
 def graph_fingerprint(G) -> str:
@@ -35,8 +36,12 @@ def graph_fingerprint(G) -> str:
             digest.update(b",")
         digest.update(b";")
     digest.update(b"|edges|")
+    weighted = bool(G.graph.get("weight_edges", False))
     for u, v in sorted(tuple(sorted((int(u), int(v)))) for u, v in G.edges()):
-        digest.update(f"{u},{v};".encode("utf-8"))
+        if weighted:
+            digest.update(f"{u},{v},{edge_weight(G, u, v)};".encode("utf-8"))
+        else:
+            digest.update(f"{u},{v};".encode("utf-8"))
     return digest.hexdigest()[:16]
 
 

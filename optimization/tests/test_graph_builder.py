@@ -1,8 +1,14 @@
 import kahip
+import networkx as nx
 import pandas as pd
 import pytest
 
 from optimization.data import graph_builder
+from optimization.data.edge_weights import (
+    BOUNDARY_WEIGHT_ATTR,
+    MANUAL_EDGE_ATTR,
+    SHARED_BOUNDARY_ATTR,
+)
 from optimization.data.loaders import IngestConfig
 from optimization.tests.synthetic import make_grid_graph
 
@@ -69,6 +75,40 @@ def test_aggregate_can_chain_and_preserves_base_ids():
     assert sum(len(attrs["block_ids"]) for _, attrs in coarse.nodes(data=True)) == 6
 
 
+def test_aggregate_sums_crossing_boundary_weights():
+    graph = make_grid_graph(1, 3)
+    graph.add_edge(0, 2)
+    graph.graph.update(
+        {
+            "weight_edges": True,
+            "boundary_crs": "EPSG:32610",
+            "boundary_weight_unit": "meter",
+            "manual_edge_weight_m": 4.0,
+        }
+    )
+    graph.edges[0, 2].update(
+        {
+            SHARED_BOUNDARY_ATTR: 4.5,
+            BOUNDARY_WEIGHT_ATTR: 5,
+            MANUAL_EDGE_ATTR: False,
+        }
+    )
+    graph.edges[1, 2].update(
+        {
+            SHARED_BOUNDARY_ATTR: 6.5,
+            BOUNDARY_WEIGHT_ATTR: 7,
+            MANUAL_EDGE_ATTR: True,
+        }
+    )
+
+    coarse = graph_builder.aggregate(graph, {0: 0, 1: 0, 2: 1})
+
+    assert coarse.edges[0, 1][SHARED_BOUNDARY_ATTR] == 11
+    assert coarse.edges[0, 1][BOUNDARY_WEIGHT_ATTR] == 12
+    assert coarse.edges[0, 1][MANUAL_EDGE_ATTR] is True
+    assert coarse.graph["weight_edges"] is True
+
+
 def test_kahip_partition_uses_population_weights_and_strong_mode(monkeypatch):
     G = make_grid_graph(2, 2)
     captured = {}
@@ -95,6 +135,26 @@ def test_kahip_partition_uses_population_weights_and_strong_mode(monkeypatch):
     assert args[8] == kahip.STRONG
     assert groups == {0: [0, 1], 1: [2, 3]}
     assert imbalance == 0.8
+
+
+def test_kahip_partition_uses_boundary_weights(monkeypatch):
+    graph = nx.path_graph(4)
+    for node in graph:
+        graph.nodes[node]["ge_students"] = 1.0
+    graph.graph["weight_edges"] = True
+    for edge, weight in zip(graph.edges(), [3, 5, 7]):
+        graph.edges[edge][BOUNDARY_WEIGHT_ATTR] = weight
+    captured = {}
+
+    def fake_kaffpa(*args):
+        captured["edge_weights"] = args[2]
+        return 1, [0, 0, 1, 1]
+
+    monkeypatch.setattr(kahip, "kaffpa", fake_kaffpa)
+
+    graph_builder._partition_graph_kahip(graph, 2, "ge_students")
+
+    assert captured["edge_weights"] == [3, 3, 5, 5, 7, 7]
 
 
 def test_kahip_partition_relaxes_imbalance_until_valid(monkeypatch):

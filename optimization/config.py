@@ -51,6 +51,7 @@ class OptimizationConfig:
     save_solver_logs: bool = False
     save_solver_progress: bool = False
     secondary_objective: bool = False
+    weight_edges: bool = False
     seed: int = 42
     workers: int = 8
     linearization_level: int | None = None
@@ -104,6 +105,8 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
+        if not isinstance(self.weight_edges, bool):
+            raise ValueError("weight_edges must be a Boolean.")
         if isinstance(self.boundary_prop, bool):
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
         try:

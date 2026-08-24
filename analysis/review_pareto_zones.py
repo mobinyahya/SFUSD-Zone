@@ -36,11 +36,9 @@ from benchmark.visualize import render_task_visualizations  # noqa: E402
 
 # True means minimize; False means maximize.
 OBJECTIVES = {
-    "normalized_cut_edges": True,
-    "avg_polsby_popper_score": False,
-    "avg_reock_score": False,
     "max_reock_score": False,
     "max_polsby_popper_score": False,
+    "Total Utility": True,
     "#Schools above 10% district FRL": True,
     "#Schools above 15% district FRL": True,
     "Dissimilarity (High FRL)": True,
@@ -51,8 +49,8 @@ OBJECTIVES = {
     "Prop Top 1 choice (All Students)": False,
     "Prop Top 3 choice (All Students)": False,
 }
-ZONE_METRICS = list(OBJECTIVES)[:5]
-ASSIGNMENT_METRICS = list(OBJECTIVES)[5:]
+ZONE_METRICS = ["max_reock_score", "max_polsby_popper_score"]
+ASSIGNMENT_METRICS = [metric for metric in OBJECTIVES if metric not in ZONE_METRICS]
 OUTPUT_COLUMNS = ["task_id", "config_name", "path", *OBJECTIVES]
 FEASIBLE_STATUSES = {"FEASIBLE", "OPTIMAL"}
 DECISIONS_FILENAME = "pareto_reviews.json"
@@ -60,6 +58,7 @@ DECISIONS_FILENAME = "pareto_reviews.json"
 
 def pareto_front(frame: pd.DataFrame) -> pd.DataFrame:
     """Return rows not dominated across the configured objectives."""
+    first_objective = next(iter(OBJECTIVES))
     _require_columns(frame, OBJECTIVES, "Pareto observations")
     values = frame[list(OBJECTIVES)].apply(pd.to_numeric, errors="coerce")
     invalid = values.isna().any(axis=1)
@@ -78,7 +77,10 @@ def pareto_front(frame: pd.DataFrame) -> pd.DataFrame:
 
     return (
         frame.loc[~dominated, OUTPUT_COLUMNS]
-        .sort_values(["normalized_cut_edges", "task_id", "config_name"])
+        .sort_values(
+            [first_objective, "task_id", "config_name"],
+            ascending=[OBJECTIVES[first_objective], True, True],
+        )
         .reset_index(drop=True)
     )
 

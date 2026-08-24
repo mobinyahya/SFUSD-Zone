@@ -25,6 +25,7 @@ from __future__ import annotations
 import networkx as nx
 
 from optimization.data.closer_neighbors import CLOSER_NEIGHBORS_GRAPH_KEY
+from optimization.data.edge_weights import boundary_cost as weighted_boundary_cost
 
 
 def closer_supports(
@@ -121,6 +122,16 @@ def is_contiguous(
 def boundary_edges(G: nx.Graph, assignment: dict[int, int]) -> int:
     """Number of edges whose endpoints fall in different zones."""
     return sum(1 for u, v in G.edges() if assignment.get(u) != assignment.get(v))
+
+
+def boundary_cost(
+    G: nx.Graph,
+    assignment: dict[int, int],
+    *,
+    weight_edges: bool,
+) -> int:
+    """Cut-edge count or integer-metre weighted boundary cost."""
+    return weighted_boundary_cost(G, assignment, weighted=weight_edges)
 
 
 def repair(

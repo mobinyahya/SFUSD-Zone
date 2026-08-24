@@ -100,3 +100,14 @@ def test_graph_fingerprint_changes_when_topology_changes():
     second.add_edge(0, 1)
 
     assert graph_fingerprint(first) != graph_fingerprint(second)
+
+
+def test_graph_fingerprint_tracks_weighted_boundary_cost():
+    first = nx.Graph()
+    first.add_nodes_from([(0, {"area_id": 1000}), (1, {"area_id": 1001})])
+    first.add_edge(0, 1, boundary_weight=10)
+    first.graph["weight_edges"] = True
+    second = first.copy()
+    second.edges[0, 1]["boundary_weight"] = 11
+
+    assert graph_fingerprint(first) != graph_fingerprint(second)

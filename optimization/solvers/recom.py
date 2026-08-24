@@ -98,7 +98,8 @@ class _State:
     zone_violations: list[tuple[float, ...]]
     violations: tuple[float, ...]
     boundary_pairs: dict[tuple[int, int], int]
-    cut_edges: int
+    boundary_costs: dict[tuple[int, int], int]
+    boundary_cost: int
 
     @property
     def feasible(self) -> bool:
@@ -112,7 +113,8 @@ class _State:
             zone_violations=list(self.zone_violations),
             violations=tuple(self.violations),
             boundary_pairs=dict(self.boundary_pairs),
-            cut_edges=self.cut_edges,
+            boundary_costs=dict(self.boundary_costs),
+            boundary_cost=self.boundary_cost,
         )
 
 
@@ -126,7 +128,7 @@ class _CutCandidate:
     violations_a: tuple[float, ...]
     violations_b: tuple[float, ...]
     global_violations: tuple[float, ...]
-    cut_edges: int
+    boundary_cost: int
 
     @property
     def pair_feasible(self) -> bool:
@@ -150,7 +152,7 @@ class _Move:
     violations_a: tuple[float, ...]
     violations_b: tuple[float, ...]
     global_violations: tuple[float, ...]
-    cut_edges: int
+    boundary_cost: int
 
     @property
     def globally_feasible(self) -> bool:
@@ -161,7 +163,7 @@ class _Move:
 class _Snapshot:
     assignment: tuple[int, ...]
     violations: tuple[float, ...]
-    cut_edges: int
+    boundary_cost: int
 
     @property
     def feasible(self) -> bool:
@@ -215,8 +217,12 @@ class _ReComContext:
                     self.node_to_pos[neighbor] for neighbor in problem.G.neighbors(node)
                 )
             )
+        graph_edges = tuple(problem.G.edges())
         self.edges = tuple(
-            (self.node_to_pos[u], self.node_to_pos[v]) for u, v in problem.G.edges()
+            (self.node_to_pos[u], self.node_to_pos[v]) for u, v in graph_edges
+        )
+        self.edge_weights = tuple(
+            problem.boundary_weight(u, v) for u, v in graph_edges
         )
         incident: list[list[int]] = [[] for _ in self.nodes]
         for edge_id, (u, v) in enumerate(self.edges):
@@ -313,16 +319,19 @@ class _ReComContext:
                 values[zone][idx] += value
 
         boundary_pairs: dict[tuple[int, int], int] = {}
-        cut_edges = 0
-        for u, v in self.edges:
+        boundary_costs: dict[tuple[int, int], int] = {}
+        boundary_cost = 0
+        for edge_id, (u, v) in enumerate(self.edges):
             zone_u = assignment[u]
             zone_v = assignment[v]
             if zone_u == zone_v:
                 internal_edges[zone_u] += 1
                 continue
-            cut_edges += 1
+            weight = self.edge_weights[edge_id]
+            boundary_cost += weight
             pair = _zone_pair(zone_u, zone_v)
             boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
+            boundary_costs[pair] = boundary_costs.get(pair, 0) + weight
 
         zone_stats = [
             _ZoneStats(
@@ -348,7 +357,8 @@ class _ReComContext:
             zone_violations=zone_violations,
             violations=violations,
             boundary_pairs=boundary_pairs,
-            cut_edges=cut_edges,
+            boundary_costs=boundary_costs,
+            boundary_cost=boundary_cost,
         )
 
     def assignment_dict(
@@ -468,7 +478,7 @@ class _ReComKernel:
             violations_a=selected.violations_a,
             violations_b=selected.violations_b,
             global_violations=selected.global_violations,
-            cut_edges=selected.cut_edges,
+            boundary_cost=selected.boundary_cost,
         )
 
     def apply(self, state: _State, move: _Move) -> None:
@@ -491,7 +501,13 @@ class _ReComKernel:
             old_u = state.assignment[u]
             old_v = state.assignment[v]
             if old_u != old_v:
-                _change_boundary_count(state.boundary_pairs, old_u, old_v, -1)
+                _change_boundary_value(state.boundary_pairs, old_u, old_v, -1)
+                _change_boundary_value(
+                    state.boundary_costs,
+                    old_u,
+                    old_v,
+                    -self.context.edge_weights[edge_id],
+                )
 
         for node in nodes_a:
             state.assignment[node] = zone_a
@@ -503,7 +519,13 @@ class _ReComKernel:
             new_u = state.assignment[u]
             new_v = state.assignment[v]
             if new_u != new_v:
-                _change_boundary_count(state.boundary_pairs, new_u, new_v, 1)
+                _change_boundary_value(state.boundary_pairs, new_u, new_v, 1)
+                _change_boundary_value(
+                    state.boundary_costs,
+                    new_u,
+                    new_v,
+                    self.context.edge_weights[edge_id],
+                )
 
         state.zone_nodes[zone_a] = nodes_a
         state.zone_nodes[zone_b] = nodes_b
@@ -512,11 +534,11 @@ class _ReComKernel:
         state.zone_violations[zone_a] = move.violations_a
         state.zone_violations[zone_b] = move.violations_b
         state.violations = move.global_violations
-        state.cut_edges = move.cut_edges
+        state.boundary_cost = move.boundary_cost
 
     def _pair_graph(
         self, union: set[int]
-    ) -> tuple[dict[int, tuple[int, ...]], list[tuple[int, int]]]:
+    ) -> tuple[dict[int, tuple[int, ...]], list[int]]:
         pair_adjacency = {
             node: tuple(
                 neighbor
@@ -529,7 +551,7 @@ class _ReComKernel:
         for node in union:
             edge_ids.update(self.context.incident_edges[node])
         pair_edges = [
-            self.context.edges[edge_id]
+            edge_id
             for edge_id in edge_ids
             if self.context.edges[edge_id][0] in union
             and self.context.edges[edge_id][1] in union
@@ -612,7 +634,7 @@ class _ReComKernel:
         parent: list[int],
         depth: list[int],
         pair_adjacency: dict[int, tuple[int, ...]],
-        pair_edges: list[tuple[int, int]],
+        pair_edges: list[int],
     ) -> list[_CutCandidate]:
         context = self.context
         count = len(preorder)
@@ -646,15 +668,22 @@ class _ReComKernel:
             up.append([previous[previous[idx]] for idx in range(count)])
 
         delta = [0] * count
-        for u, v in pair_edges:
+        cost_delta = [0] * count
+        for edge_id in pair_edges:
+            u, v = context.edges[edge_id]
+            weight = context.edge_weights[edge_id]
             idx_u = local[u]
             idx_v = local[v]
             ancestor = _lca(idx_u, idx_v, depth, up)
             delta[idx_u] += 1
             delta[idx_v] += 1
             delta[ancestor] -= 2
+            cost_delta[idx_u] += weight
+            cost_delta[idx_v] += weight
+            cost_delta[ancestor] -= 2 * weight
         for idx in range(count - 1, 0, -1):
             delta[parent[idx]] += delta[idx]
+            cost_delta[parent[idx]] += cost_delta[idx]
 
         total_students = subtree_students[0]
         total_schools = subtree_schools[0]
@@ -664,7 +693,7 @@ class _ReComKernel:
         total_illegal_a = illegal_a[0]
         total_illegal_b = illegal_b[0]
         pair_edge_count = len(pair_edges)
-        old_pair_boundary = state.boundary_pairs.get(_zone_pair(zone_a, zone_b), 0)
+        old_pair_cost = state.boundary_costs.get(_zone_pair(zone_a, zone_b), 0)
         candidates: list[_CutCandidate] = []
 
         for idx in range(1, count):
@@ -672,6 +701,7 @@ class _ReComKernel:
             nodes_sub = subtree_nodes[idx]
             nodes_other = count - nodes_sub
             crossing = delta[idx]
+            crossing_cost = cost_delta[idx]
             internal_sub = (subtree_volume[idx] - crossing) // 2
             internal_other = pair_edge_count - crossing - internal_sub
             stats_sub = _ZoneStats(
@@ -695,7 +725,7 @@ class _ReComKernel:
                 seat_value=total_seats - subtree_seats[idx],
                 frl_value=total_frl - subtree_frl[idx],
             )
-            cut_edges = state.cut_edges - old_pair_boundary + crossing
+            boundary_cost = state.boundary_cost - old_pair_cost + crossing_cost
 
             if illegal_a[idx] == 0 and total_illegal_b - illegal_b[idx] == 0:
                 candidates.append(
@@ -708,7 +738,7 @@ class _ReComKernel:
                         True,
                         stats_sub,
                         stats_other,
-                        cut_edges,
+                        boundary_cost,
                     )
                 )
             if illegal_b[idx] == 0 and total_illegal_a - illegal_a[idx] == 0:
@@ -722,7 +752,7 @@ class _ReComKernel:
                         False,
                         stats_other,
                         stats_sub,
-                        cut_edges,
+                        boundary_cost,
                     )
                 )
         return candidates
@@ -737,7 +767,7 @@ class _ReComKernel:
         subtree_to_a: bool,
         stats_a: _ZoneStats,
         stats_b: _ZoneStats,
-        cut_edges: int,
+        boundary_cost: int,
     ) -> _CutCandidate:
         violations_a = self.context.zone_violations(stats_a)
         violations_b = self.context.zone_violations(stats_b)
@@ -761,7 +791,7 @@ class _ReComKernel:
             violations_a=violations_a,
             violations_b=violations_b,
             global_violations=global_violations,
-            cut_edges=cut_edges,
+            boundary_cost=boundary_cost,
         )
 
     def _relaxed_probabilities(self, candidates: list[_CutCandidate]) -> list[float]:
@@ -892,7 +922,7 @@ class _ReComSolverBase(Solver):
         return _Snapshot(
             assignment=tuple(state.assignment),
             violations=tuple(state.violations),
-            cut_edges=state.cut_edges,
+            boundary_cost=state.boundary_cost,
         )
 
     def _error_solution(
@@ -925,7 +955,13 @@ class _ReComSolverBase(Solver):
         else:
             status = "FEASIBLE"
             assignment = context.assignment_dict(best.assignment)
-            objective = float(best.cut_edges)
+            objective = float(best.boundary_cost)
+        if problem.weight_edges:
+            metadata = {
+                **metadata,
+                "objective_kind": "weighted_boundary_length",
+                "objective_unit": "meter",
+            }
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
@@ -938,7 +974,7 @@ class _ReComSolverBase(Solver):
     @staticmethod
     def _better_feasible(candidate: _Snapshot, best: _Snapshot | None) -> bool:
         return candidate.feasible and (
-            best is None or candidate.cut_edges < best.cut_edges
+            best is None or candidate.boundary_cost < best.boundary_cost
         )
 
     @staticmethod
@@ -1132,7 +1168,11 @@ class ShortBurstsSolver(_ReComSolverBase):
             "selected_burst_improvements": selected_improvements,
             "short_bursts_length": burst_length,
             "short_bursts_method": method,
-            "short_bursts_score": "running_max_linear_violations_else_cut_edges",
+            "short_bursts_score": (
+                "running_max_linear_violations_else_boundary_cost"
+                if problem.weight_edges
+                else "running_max_linear_violations_else_cut_edges"
+            ),
             "stop_reason": stop_reason,
             "initial_feasible": initial.feasible,
             "cut_selector": selector,
@@ -1146,18 +1186,18 @@ def _zone_pair(zone_a: int, zone_b: int) -> tuple[int, int]:
     return (zone_a, zone_b) if zone_a < zone_b else (zone_b, zone_a)
 
 
-def _change_boundary_count(
-    counts: dict[tuple[int, int], int],
+def _change_boundary_value(
+    values: dict[tuple[int, int], int],
     zone_a: int,
     zone_b: int,
     change: int,
 ) -> None:
     pair = _zone_pair(zone_a, zone_b)
-    updated = counts.get(pair, 0) + change
+    updated = values.get(pair, 0) + change
     if updated > 0:
-        counts[pair] = updated
+        values[pair] = updated
     else:
-        counts.pop(pair, None)
+        values.pop(pair, None)
 
 
 def _lca(node_a: int, node_b: int, depth: list[int], up: list[list[int]]) -> int:
@@ -1187,7 +1227,7 @@ def _burst_better(
     if candidate.feasible != incumbent.feasible:
         return candidate.feasible
     if candidate.feasible:
-        return candidate.cut_edges < incumbent.cut_edges
+        return candidate.boundary_cost < incumbent.boundary_cost
     return normalizer.penalty(candidate.violations) < (
         normalizer.penalty(incumbent.violations) - _EPS
     )

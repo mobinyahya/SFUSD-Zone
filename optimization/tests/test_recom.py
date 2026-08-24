@@ -8,7 +8,8 @@ import networkx as nx
 import pytest
 
 from optimization.config import OptimizationConfig
-from optimization.data.contiguity import boundary_edges
+from optimization.data.contiguity import boundary_cost, boundary_edges
+from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
 from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
@@ -219,7 +220,8 @@ def test_incremental_state_matches_full_rebuild_after_grid_walk() -> None:
 
         assert state.zone_nodes == rebuilt.zone_nodes
         assert state.boundary_pairs == rebuilt.boundary_pairs
-        assert state.cut_edges == rebuilt.cut_edges
+        assert state.boundary_costs == rebuilt.boundary_costs
+        assert state.boundary_cost == rebuilt.boundary_cost
         assert state.violations == pytest.approx(rebuilt.violations)
         for actual, expected in zip(state.zone_stats, rebuilt.zone_stats):
             assert actual.node_count == expected.node_count
@@ -317,6 +319,31 @@ def test_recom_rejects_choice_objective(solver_name: str) -> None:
         get_solver(solver_name).solve(problem)
 
 
+@pytest.mark.parametrize("solver_name", RECOM_SOLVERS)
+def test_recom_uses_weighted_boundary_cost(solver_name: str) -> None:
+    problem = make_solver_contract_problem(weight_edges=True)
+    problem.G.graph["weight_edges"] = True
+    for edge, weight in zip(problem.G.edges(), [3, 11, 5]):
+        problem.G.edges[edge][BOUNDARY_WEIGHT_ATTR] = weight
+
+    solution = get_solver(
+        solver_name,
+        recom_iterations=5,
+        short_bursts_length=2,
+        seed=3,
+    ).solve(problem)
+
+    _assert_valid_recom_solution(problem, solution)
+    assert solution.objective == boundary_cost(
+        problem.G,
+        solution.assignment,
+        weight_edges=True,
+    )
+    assert solution.objective != boundary_edges(problem.G, solution.assignment)
+    assert solution.metadata["objective_kind"] == "weighted_boundary_length"
+    assert solution.metadata["objective_unit"] == "meter"
+
+
 def _problem_without_feasible_contiguous_partition():
     problem = make_solver_contract_problem()
     for node, value in enumerate([1.0, 1.0, 0.0, 0.0]):
@@ -353,7 +380,7 @@ def _candidate(stats_a: _ZoneStats, stats_b: _ZoneStats) -> _CutCandidate:
         violations_a=(),
         violations_b=(),
         global_violations=(),
-        cut_edges=1,
+        boundary_cost=1,
     )
 
 
@@ -392,5 +419,9 @@ def _assert_valid_recom_solution(problem, solution) -> None:
             assert schools >= max(0.0, average - 1.0) - 1e-6
             assert schools <= average + 1.0 + 1e-6
 
-    assert solution.objective == boundary_edges(problem.G, solution.assignment)
+    assert solution.objective == boundary_cost(
+        problem.G,
+        solution.assignment,
+        weight_edges=problem.weight_edges,
+    )
     assert solution.is_contiguous()

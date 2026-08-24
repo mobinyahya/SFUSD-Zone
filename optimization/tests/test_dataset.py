@@ -66,6 +66,17 @@ def test_graph_cache_path_ignores_centroid_choice(tmp_path):
     assert baseline._graph_path(level) == changed._graph_path(level)
 
 
+def test_graph_cache_path_changes_for_weighted_edges(tmp_path):
+    baseline = Dataset(_config(tmp_path, weight_edges=False))
+    weighted = Dataset(_config(tmp_path, weight_edges=True))
+
+    assert baseline._graph_cache_namespace() != weighted._graph_cache_namespace()
+    assert (
+        "edge_weighting" not in baseline._graph_namespace.parameters["partition_policy"]
+    )
+    assert "edge_weighting" in weighted._graph_namespace.parameters["partition_policy"]
+
+
 def test_default_graph_root_uses_v13_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
@@ -165,7 +176,7 @@ def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypat
     monkeypatch.setattr(loaders, "load_students", lambda cfg: None)
     monkeypatch.setattr(
         "optimization.data.graph_builder.build_base_graph",
-        lambda cfg: base,
+        lambda cfg, **kwargs: base,
     )
 
     def fake_aggregate(parent, target, program_population):
@@ -190,7 +201,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     graph = nx.path_graph(3)
     config = _config(tmp_path)
     monkeypatch.setattr(
-        "optimization.data.graph_builder.build_base_graph", lambda cfg: graph
+        "optimization.data.graph_builder.build_base_graph", lambda cfg, **kwargs: graph
     )
     first = Dataset(config)
 
@@ -202,7 +213,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
 
     monkeypatch.setattr(
         "optimization.data.graph_builder.build_base_graph",
-        lambda cfg: (_ for _ in ()).throw(
+        lambda cfg, **kwargs: (_ for _ in ()).throw(
             AssertionError("validated graph payload should be reused")
         ),
     )
@@ -253,7 +264,7 @@ def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path, monkeypatch)
                 "area_id": 1000 + node,
             }
         )
-    dataset = Dataset(_config(tmp_path))
+    dataset = Dataset(_config(tmp_path, weight_edges=True))
     dataset._graphs["Block_0"] = G
     monkeypatch.setattr(
         dataset._closer_neighbor_store,
@@ -266,3 +277,4 @@ def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path, monkeypatch)
     assert dataset.school_ids_for("Block_0") == [100, 200]
     assert problem.centroids == [1]
     assert problem.centroid_school_ids == [200]
+    assert problem.weight_edges is True

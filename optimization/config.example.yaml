@@ -26,6 +26,7 @@ hints: voronoi                # voronoi | none
 save_solver_logs: false       # write solver logs under output/solver_logs
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 secondary_objective: false    # cp_bool/mip: use alternative boundary objective formulation
+weight_edges: false           # weight cut edges by shared boundary length in metres
 seed: 42
 workers: 8
 # CP-SAT-only solver parameters. Leave unset to use OR-Tools defaults.
