@@ -147,15 +147,29 @@ def test_attendance_area_policy_file_dissolves_to_zones(tmp_path):
 def test_census_zone_geometry_ignores_water_only_areas(tmp_path, monkeypatch):
     scenario, _, _ = _scenario(tmp_path)
     zone_file = tmp_path / "zones.csv"
-    zone_file.write_text("1,99\n2\n", encoding="utf-8")
+    zone_file.write_text("1,60759804011,99\n2\n", encoding="utf-8")
     census_geometry = gpd.GeoDataFrame(
-        {"BlockGroup": [1, 2]},
-        geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)],
+        {"Block": [10, 20, 60759804011000]},
+        geometry=[
+            box(0, 0, 1, 1),
+            box(1, 0, 2, 1),
+            box(-100, -100, -50, -50),
+        ],
         crs="EPSG:4326",
+    )
+    crosswalk = pd.DataFrame(
+        {
+            "Block": [10, 20, 60759804011000],
+            "BlockGroup": [1, 2, 60759804011],
+        }
     )
     monkeypatch.setattr(
         "assignment.student_assignment.evaluation.heatmaps.load_census_geometry",
         lambda *_args: census_geometry,
+    )
+    monkeypatch.setattr(
+        "assignment.student_assignment.evaluation.heatmaps.load_geography_crosswalk",
+        lambda *_args: crosswalk,
     )
 
     result = build_heatmap_geometry(scenario, "block_group", zone_file)

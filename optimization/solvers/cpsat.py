@@ -34,7 +34,7 @@ from optimization.solvers.balance import (
 )
 from optimization.solvers.base import Solver, register
 
-_SCALE = 100  # integer scaling for float coefficients
+CP_SAT_SCALE = 100  # integer scaling for float coefficients
 _SENSE = {"<=", ">=", "=="}
 _CP_SAT_INT_PARAMETERS = (
     "linearization_level",
@@ -94,6 +94,55 @@ class _CpSatProgressCallback(cp_model.CpSolverSolutionCallback):
                     selected = zone
                     break
             out.append(selected)
+        return tuple(out)
+
+
+class _CpSatEnumerationCallback(cp_model.CpSolverSolutionCallback):
+    def __init__(
+        self,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+        limit: int,
+        start: float,
+    ) -> None:
+        super().__init__()
+        self._nodes = tuple(problem.nodes)
+        self._limit = limit
+        self._start = start
+        self._seen: set[tuple[int, ...]] = set()
+        self.assignments: list[tuple[int, ...]] = []
+        self.elapsed_seconds: list[float] = []
+        if y:
+            self._y_vars = tuple(y[node] for node in self._nodes)
+            self._x_vars = None
+        else:
+            self._y_vars = None
+            self._x_vars = tuple(
+                tuple((z, x[(z, node)]) for z in sorted(problem.candidate_zones(node)))
+                for node in self._nodes
+            )
+
+    def on_solution_callback(self) -> None:
+        assignment = self._assignment()
+        if assignment in self._seen:
+            return
+        self._seen.add(assignment)
+        self.assignments.append(assignment)
+        self.elapsed_seconds.append(time.time() - self._start)
+        if len(self.assignments) >= self._limit:
+            self.StopSearch()
+
+    def _assignment(self) -> tuple[int, ...]:
+        if self._y_vars is not None:
+            return tuple(int(self.Value(var)) for var in self._y_vars)
+
+        out = []
+        for candidates in self._x_vars or ():
+            for zone, var in candidates:
+                if self.Value(var) == 1:
+                    out.append(zone)
+                    break
         return tuple(out)
 
 
@@ -225,7 +274,9 @@ class _CpSatSolver(Solver):
                     break
         return assignment
 
-    def _configure_solver_parameters(self, solver: cp_model.CpSolver) -> None:
+    def _configure_solver_parameters(
+        self, solver: cp_model.CpSolver, *, enumerate_solutions: bool = False
+    ) -> None:
         solver.parameters.max_time_in_seconds = float(
             self.options.get("solve_time_limit", 60)
         )
@@ -233,7 +284,10 @@ class _CpSatSolver(Solver):
             solver.parameters.relative_gap_limit = float(
                 self.options["relative_gap_limit"]
             )
-        solver.parameters.num_search_workers = int(self.options.get("workers", 5))
+        solver.parameters.num_search_workers = (
+            1 if enumerate_solutions else int(self.options.get("workers", 5))
+        )
+        solver.parameters.enumerate_all_solutions = enumerate_solutions
         solver.parameters.random_seed = int(self.options.get("seed", 42))
         for parameter_name in _CP_SAT_INT_PARAMETERS:
             value = self.options.get(parameter_name)
@@ -245,25 +299,44 @@ class _CpSatSolver(Solver):
             solver.parameters.search_branching = cp_model.PARTIAL_FIXED_SEARCH
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        solution = self._solve(problem)
+        assert isinstance(solution, ZoneSolution)
+        return solution
+
+    def enumerate_solutions(
+        self, problem: ZoneProblem, limit: int
+    ) -> list[ZoneSolution]:
+        if self.name not in {"cp_bool", "cp_int"}:
+            return super().enumerate_solutions(problem, limit)
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("Solution enumeration limit must be a positive integer.")
+        solutions = self._solve(problem, solution_limit=limit)
+        assert isinstance(solutions, list)
+        return solutions
+
+    def _solve(
+        self, problem: ZoneProblem, *, solution_limit: int | None = None
+    ) -> ZoneSolution | list[ZoneSolution]:
         self._centroid_neighbor_radius()
         m = cp_model.CpModel()
         x, y = self._build_assignment_vars(m, problem)
         self._add_core_constraints(m, problem, x, y)
-        if problem.choice_objective is None:
-            self._add_boundary_objective(m, problem, x, y)
-            progress = self._new_solver_progress_tracker(problem, maximize=False)
-        else:
-            self._add_choice_objective(m, problem, x)
+        progress = None
+        objective_scale = 1.0
+        if solution_limit is None:
+            maximize, objective_scale = self._add_model_objective(m, problem, x, y)
             progress = self._new_solver_progress_tracker(
                 problem,
-                maximize=True,
-                objective_scale=problem.choice_objective.scale,
+                maximize=maximize,
+                objective_scale=objective_scale,
             )
         self._add_search_strategy(m, problem, x, y)
         self._add_hints(m, problem, x, y)
 
         solver = cp_model.CpSolver()
-        self._configure_solver_parameters(solver)
+        self._configure_solver_parameters(
+            solver, enumerate_solutions=solution_limit is not None
+        )
         log_path = self._next_solver_log_path(problem)
         log_file = None
         if log_path:
@@ -280,16 +353,20 @@ class _CpSatSolver(Solver):
             solver.log_callback = write_log
 
         start = time.time()
-        progress_callback = (
-            _CpSatProgressCallback(problem, x, y, progress, start)
-            if progress is not None
-            else None
+        callback = (
+            _CpSatEnumerationCallback(problem, x, y, solution_limit, start)
+            if solution_limit is not None
+            else (
+                _CpSatProgressCallback(problem, x, y, progress, start)
+                if progress is not None
+                else None
+            )
         )
         try:
-            if progress_callback is None:
+            if callback is None:
                 status = solver.Solve(m)
             else:
-                status = solver.Solve(m, progress_callback)
+                status = solver.Solve(m, callback)
             wall = time.time() - start
         finally:
             if log_file is not None:
@@ -302,13 +379,22 @@ class _CpSatSolver(Solver):
             cp_model.MODEL_INVALID: "MODEL_INVALID",
         }.get(status, "UNKNOWN")
 
+        if solution_limit is not None:
+            assert isinstance(callback, _CpSatEnumerationCallback)
+            return self._enumerated_zone_solutions(
+                problem,
+                callback,
+                status_name,
+                wall,
+                solution_limit,
+                log_path,
+            )
+
         assignment = {}
         objective = None
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignment = self._extract_assignment(solver, problem, x, y)
-            objective = solver.ObjectiveValue()
-            if problem.choice_objective is not None:
-                objective /= problem.choice_objective.scale
+            objective = solver.ObjectiveValue() / objective_scale
 
         metadata = {
             "solver": self.name,
@@ -329,6 +415,7 @@ class _CpSatSolver(Solver):
                     "objective_unit": "meter",
                 }
             )
+        metadata.update(self._additional_solution_metadata(solver, m, status))
         return ZoneSolution(
             problem=problem,
             assignment=assignment,
@@ -338,6 +425,73 @@ class _CpSatSolver(Solver):
             metadata=metadata,
             solver_progress=list(progress.entries) if progress is not None else [],
         )
+
+    def _enumerated_zone_solutions(
+        self,
+        problem: ZoneProblem,
+        callback: _CpSatEnumerationCallback,
+        status: str,
+        wall_time: float,
+        limit: int,
+        log_path: str | None,
+    ) -> list[ZoneSolution]:
+        common_metadata = {
+            "solver": self.name,
+            "objective_kind": "none",
+            "enumerated_solutions_limit": limit,
+            "enumerated_solutions_found": len(callback.assignments),
+            "enumeration_wall_time_seconds": wall_time,
+            **self._solver_log_metadata(log_path),
+        }
+        if not callback.assignments:
+            return [
+                ZoneSolution(
+                    problem=problem,
+                    assignment={},
+                    status=status,
+                    objective=None,
+                    wall_time=wall_time,
+                    metadata=common_metadata,
+                )
+            ]
+
+        solution_status = status if status in {"OPTIMAL", "FEASIBLE"} else "FEASIBLE"
+        nodes = tuple(problem.nodes)
+        return [
+            ZoneSolution(
+                problem=problem,
+                assignment=dict(zip(nodes, assignment)),
+                status=solution_status,
+                objective=None,
+                wall_time=0.0,
+                metadata={
+                    **common_metadata,
+                    "enumerated_solution_index": index,
+                    "enumeration_discovery_time_seconds": callback.elapsed_seconds[
+                        index
+                    ],
+                },
+            )
+            for index, assignment in enumerate(callback.assignments)
+        ]
+
+    def _add_model_objective(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> tuple[bool, float]:
+        if problem.choice_objective is None:
+            self._add_boundary_objective(m, problem, x, y)
+            return False, 1.0
+        self._add_choice_objective(m, problem, x)
+        return True, float(problem.choice_objective.scale)
+
+    def _additional_solution_metadata(
+        self, solver: cp_model.CpSolver, model: cp_model.CpModel, status: int
+    ) -> dict[str, object]:
+        return {}
 
     # ------------------------------------------------------------------ #
     # Core constraints
@@ -376,6 +530,7 @@ class _CpSatSolver(Solver):
                 if xu is not None and xv is not None:
                     m.Add(boundary >= xu - xv)
                     m.Add(boundary >= xv - xu)
+                    m.Add(boundary <= 2 - xu - xv)
                 elif xu is not None:
                     m.Add(boundary >= xu)
                 elif xv is not None:
@@ -468,9 +623,11 @@ class _CpSatSolver(Solver):
         if sense not in _SENSE:
             raise ValueError(f"Bad sense {sense!r}.")
         expr = sum(
-            int(round(c * _SCALE)) * x[(z, i)] for (c, z, i) in terms if (z, i) in x
+            int(round(c * CP_SAT_SCALE)) * x[(z, i)]
+            for (c, z, i) in terms
+            if (z, i) in x
         )
-        r = int(round(rhs * _SCALE))
+        r = int(round(rhs * CP_SAT_SCALE))
         if sense == "<=":
             m.Add(expr <= r)
         elif sense == ">=":

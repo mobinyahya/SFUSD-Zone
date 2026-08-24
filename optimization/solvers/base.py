@@ -31,6 +31,11 @@ class Solver(ABC):
     @abstractmethod
     def solve(self, problem: ZoneProblem) -> ZoneSolution: ...
 
+    def enumerate_solutions(
+        self, problem: ZoneProblem, limit: int
+    ) -> list[ZoneSolution]:
+        raise ValueError(f"{self.name} does not support solution enumeration.")
+
     def _centroid_neighbor_radius(self) -> int:
         radius = self.options.get("centroid_neighbor_radius", 0)
         if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:

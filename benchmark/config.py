@@ -342,6 +342,8 @@ def optimization_config_hash(
     semantic.pop("data", None)
     if semantic.get("weight_edges") is False:
         semantic.pop("weight_edges")
+    if semantic.get("enumerated_solutions", -1) <= 0:
+        semantic.pop("enumerated_solutions", None)
     if source_manifest is None:
         source_manifest = _benchmark_source_manifest(resolved)
     return stable_hash(

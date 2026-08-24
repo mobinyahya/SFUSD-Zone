@@ -114,6 +114,39 @@ def test_cpsat_solver_applies_configured_cp_sat_parameters():
     assert cp_solver.parameters.search_branching == cp_model.PARTIAL_FIXED_SEARCH
 
 
+def test_cpsat_enumeration_forces_single_worker():
+    solver = get_solver("cp_int", workers=8)
+    cp_solver = cp_model.CpSolver()
+
+    solver._configure_solver_parameters(cp_solver, enumerate_solutions=True)
+
+    assert cp_solver.parameters.enumerate_all_solutions is True
+    assert cp_solver.parameters.num_search_workers == 1
+
+
+@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
+def test_cpsat_enumerates_distinct_solutions_without_an_objective(name, monkeypatch):
+    problem = make_grid_problem(3, 3)
+    solver = get_solver(name, solve_time_limit=10, workers=8, seed=7)
+
+    def fail_objective(*args):
+        pytest.fail("Enumeration must not build an objective")
+
+    monkeypatch.setattr(solver, "_add_model_objective", fail_objective)
+    solutions = solver.enumerate_solutions(problem, 5)
+
+    assert len(solutions) == 5
+    assert (
+        len({tuple(sorted(solution.assignment.items())) for solution in solutions}) == 5
+    )
+    for index, solution in enumerate(solutions):
+        assert_valid_solution(problem, solution, check_boundary_objective=False)
+        assert solution.objective is None
+        assert solution.metadata["objective_kind"] == "none"
+        assert solution.metadata["enumerated_solution_index"] == index
+        assert solution.metadata["enumerated_solutions_found"] == 5
+
+
 def test_cpsat_solver_rejects_unknown_search_strategy():
     solver = get_solver("cp_int", cp_sat_search_strategy="bad_strategy")
 

@@ -275,6 +275,32 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert (tmp_path / "stages.csv").exists()
 
 
+def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
+    problem = make_grid_problem(3, 3)
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_bool",
+        strategy="single",
+        enumerated_solutions=4,
+        workers=8,
+        seed=3,
+    )
+    solutions = config.make_strategy().run(FakeDataset(problem), config.make_solver())
+    stage_names = stage_names_for(solutions, config)
+
+    records = save_stage_artifacts(solutions, str(tmp_path), stage_names)
+    metrics = MetricsCalculator(solutions, config=config).compute()
+
+    assert len(records) == 4
+    assert len({record["path"] for record in records}) == 4
+    assert all((tmp_path / record["path"]).is_dir() for record in records)
+    assert records[-1]["metadata"]["enumerated_solution_selected"] is True
+    assert metrics.run["selection"] == "seeded_random_enumerated_solution"
+    assert metrics.run["total_wall_time"] == pytest.approx(
+        records[-1]["metadata"]["enumeration_wall_time_seconds"]
+    )
+
+
 def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
     run_dir, problem = _write_synthetic_run(tmp_path)
     mapping = {node: node + 100 for node in problem.G}

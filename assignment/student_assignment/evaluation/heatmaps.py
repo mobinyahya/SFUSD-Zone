@@ -11,6 +11,7 @@ from loaders import (
     CacheStore,
     DataScenario,
     load_census_geometry,
+    load_geography_crosswalk,
     load_school_records,
 )
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -18,6 +19,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patheffects import Normal, withStroke
+from optimization.data.loaders import EXCLUDED_OPTIMIZATION_BLOCKS
 
 
 HEATMAP_CONTEXT_COLUMNS = ["config_name", "policy", "building_block", "zone_file"]
@@ -292,10 +294,17 @@ def build_heatmap_geometry(
 
     unit = census_units[building_block]
     plan = _zone_plan(zone_file)
-    geometry = load_census_geometry(scenario, "assignment", unit).rename(
-        columns={unit: "area_id"}
-    )
-    geometry = geometry.merge(plan, on="area_id", how="inner", validate="one_to_one")
+    geometry = load_census_geometry(scenario, "assignment", "Block")
+    geometry = geometry.loc[
+        ~geometry["Block"].isin(EXCLUDED_OPTIMIZATION_BLOCKS)
+    ].copy()
+    if unit != "Block":
+        crosswalk = load_geography_crosswalk(scenario, "assignment")
+        geometry = geometry.merge(
+            crosswalk[["Block", unit]], on="Block", validate="one_to_one"
+        )
+    geometry = geometry.rename(columns={unit: "area_id"})
+    geometry = geometry.merge(plan, on="area_id", how="inner", validate="many_to_one")
     missing_zones = sorted(set(plan["zone_id"]) - set(geometry["zone_id"]))
     if missing_zones:
         raise ValueError(

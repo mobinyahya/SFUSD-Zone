@@ -1,0 +1,54 @@
+# Optimization-native benchmark sweep.
+
+name: sfusd_8_21
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: false
+  save_solver_progress: false
+  max_distance: 3
+  boundary_prop: 0.05
+  hints: voronoi
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  frl_dev: 0.2
+  strategy: 'mid'
+  levels: ['Block_3']
+  solve_time_limits: [14400]
+  # boundary_radius: 1
+  gap_limits: [0]
+  workers: 40
+  centroid_neighbor_radius: 0
+  # cp_sat_search_strategy: distance_to_centroid
+  solver: 'cp_bool'
+
+sweep:
+  centroids_type: ['6-zone-9']
+  seed: [0]
+
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/sfusd_8_21_v5'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final  # final | all
+
+
+matching:
+  enabled: true
+  config: ../../assignment/configs/8-18-real-pref-zone-only.yaml
+  compute_stage_assignments: false

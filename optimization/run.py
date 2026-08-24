@@ -52,7 +52,14 @@ def main(argv: list[str] | None = None) -> None:
     )
     solutions = strategy.run(dataset, solver)
 
-    for sol in solutions:
+    stage_prefix = "iteration" if "iterative" in config.strategy else "stage"
+    for index, sol in enumerate(solutions):
+        stage_dir = os.path.join(
+            args.output,
+            "stages",
+            f"{stage_prefix}_{index:02d}_{sol.level.name}",
+        )
+        sol.save(stage_dir)
         sol.save(args.output)
         contig = sol.is_contiguous() if sol.feasible else "n/a"
         print(

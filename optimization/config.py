@@ -21,7 +21,7 @@ from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
-_STRATEGIES = {"single", "recursive", "iterative_choice"}
+_STRATEGIES = {"single", "recursive", "iterative_choice", "mid"}
 
 
 def _legacy_data_config() -> dict[str, Any]:
@@ -58,6 +58,7 @@ class OptimizationConfig:
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
+    enumerated_solutions: int = -1
     recom_iterations: int = 1000
     short_bursts_length: int = 25
     short_bursts_method: str = "recom"
@@ -70,6 +71,8 @@ class OptimizationConfig:
     choice_utility_scale: float = 100.0
     choice_utility_hints: bool = False
     tolerance: float = 1e-6
+    mid_lottery_scale: int = 20
+    mid_utility_handling: str = "omit_nonpositive"
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
@@ -105,6 +108,17 @@ class OptimizationConfig:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
+        if isinstance(self.enumerated_solutions, bool) or not isinstance(
+            self.enumerated_solutions, int
+        ):
+            raise ValueError("enumerated_solutions must be an integer.")
+        if self.enumerated_solutions > 0:
+            if self.solver not in {"cp_bool", "cp_int"}:
+                raise ValueError(
+                    "enumerated_solutions requires solver='cp_bool' or 'cp_int'."
+                )
+            if self.strategy != "single":
+                raise ValueError("enumerated_solutions requires strategy='single'.")
         if not isinstance(self.weight_edges, bool):
             raise ValueError("weight_edges must be a Boolean.")
         if isinstance(self.boundary_prop, bool):
@@ -130,6 +144,32 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
+        if self.strategy == "mid":
+            if self.solver != "cp_bool":
+                raise ValueError("mid requires solver='cp_bool'.")
+            if self.program_population != "All":
+                raise ValueError("mid requires program_population='All'.")
+            optimization_vintage = self._data_scenario.filter(
+                "optimization", "geography_vintage"
+            )
+            assignment_vintage = self._data_scenario.filter(
+                "assignment", "geography_vintage"
+            )
+            if optimization_vintage != assignment_vintage:
+                raise ValueError(
+                    "mid requires matching optimization and assignment "
+                    "geography_vintage values."
+                )
+        if (
+            isinstance(self.mid_lottery_scale, bool)
+            or not isinstance(self.mid_lottery_scale, int)
+            or self.mid_lottery_scale <= 0
+        ):
+            raise ValueError("mid_lottery_scale must be a positive integer.")
+        if self.mid_utility_handling not in {"omit_nonpositive", "exponentiate"}:
+            raise ValueError(
+                "mid_utility_handling must be one of: exponentiate, omit_nonpositive."
+            )
         if (
             isinstance(self.centroid_neighbor_radius, bool)
             or not isinstance(self.centroid_neighbor_radius, int)
@@ -268,6 +308,8 @@ class OptimizationConfig:
             solve_time_limits=self.solve_time_limits,
             carry_over_compute=self.carry_over_compute,
             gap_limits=self.gap_limits,
+            enumerated_solutions=self.enumerated_solutions,
+            seed=self.seed,
             hints=self.hints,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
@@ -278,4 +320,6 @@ class OptimizationConfig:
             choice_utility_scale=self.choice_utility_scale,
             choice_utility_hints=self.choice_utility_hints,
             tolerance=self.tolerance,
+            mid_lottery_scale=self.mid_lottery_scale,
+            mid_utility_handling=self.mid_utility_handling,
         )

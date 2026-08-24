@@ -90,6 +90,29 @@ class PriorityGenerator:
         # Reset stb and mtb random lottery.
         self.reset_stb_mtb_lottery()
 
+    def get_base_policy_priorities(
+        self,
+        policy: str,
+        ctip: dict | str | int,
+        *,
+        zone_priority_matrix: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return policy priorities without rounds, designation, or lottery."""
+        if zone_priority_matrix is None:
+            self.generate_base_priorities(policy)
+        else:
+            expected = (self.market.n, self.market.num_programs)
+            zone_priority_matrix = np.asarray(zone_priority_matrix)
+            if zone_priority_matrix.shape != expected:
+                raise ValueError(
+                    "Zone priority matrix shape "
+                    f"{zone_priority_matrix.shape} does not match {expected}."
+                )
+            self.market.zones._zone_priority_matrix = zone_priority_matrix.copy()
+            self._zone_context_key = ("provided", id(self.market.zones))
+            self._policy_priorities_cache.clear()
+        return self._set_policy_priorities(ctip, policy).copy()
+
     def _set_rounds_merged(self, rounds_merged: int | str) -> np.ndarray:
         """Use priorities to determine if rounds of applicants are considered together or separately.
 

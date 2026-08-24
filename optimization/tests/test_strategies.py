@@ -1,5 +1,8 @@
 """Strategy tests using a FakeDataset (no SFUSD data required)."""
 
+import random
+from types import SimpleNamespace
+
 import pytest
 
 from choice.objective import ChoiceCut, ChoiceEvaluation
@@ -10,13 +13,14 @@ from optimization.solution import ZoneSolution
 from optimization.solvers import get_solver
 from optimization.strategies import get_strategy
 from optimization.strategies import iterative_choice as iterative_choice_module
+from optimization.strategies import mid as mid_module
 from optimization.strategies import single as single_module
 from optimization.strategies.base import available_strategies
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
 
 
 def test_only_supported_strategies_are_registered():
-    assert available_strategies() == ["iterative_choice", "recursive", "single"]
+    assert available_strategies() == ["iterative_choice", "mid", "recursive", "single"]
 
 
 @pytest.mark.parametrize(
@@ -39,14 +43,40 @@ def test_single_strategy():
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)
     solver = get_solver("cp_int", solve_time_limit=10, workers=1)
-    strat = get_strategy("single", levels=["BlockGroup_0"], boundary_prop=0.0)
+    strat = get_strategy("single", levels=["BlockGroup_0"], boundary_prop=0.5)
 
     solutions = strat.run(dataset, solver)
 
     assert len(solutions) == 1
     assert solutions[-1].status in ("OPTIMAL", "FEASIBLE")
     assert solutions[-1].is_contiguous()
-    assert solutions[-1].problem.boundary_prop < 0
+    assert solutions[-1].problem.boundary_prop == 0.5
+
+
+def test_single_strategy_selects_seeded_enumerated_solution_as_final():
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = get_solver("cp_int", solve_time_limit=10, workers=8, seed=5)
+    strat = get_strategy(
+        "single",
+        levels=["BlockGroup_0"],
+        enumerated_solutions=5,
+        seed=5,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    expected_index = random.Random(5).choice(range(5))
+    assert len(solutions) == 5
+    assert solutions[-1].metadata["enumerated_solution_index"] == expected_index
+    assert solutions[-1].metadata["enumerated_solution_selected"] is True
+    assert all(
+        solution.metadata["enumerated_solution_selected"] is False
+        for solution in solutions[:-1]
+    )
+    assert sum(solution.wall_time for solution in solutions) == pytest.approx(
+        solutions[-1].metadata["enumeration_wall_time_seconds"]
+    )
 
 
 def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
@@ -326,6 +356,84 @@ def test_config_passes_choice_utility_hints_to_iterative_strategy():
 
     assert strategy.options["choice_utility_hints"] is True
     assert strategy.options["boundary_prop"] == 0.25
+
+
+def test_config_validates_and_passes_mid_options():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_bool",
+        strategy="mid",
+        mid_lottery_scale=40,
+        mid_utility_handling="exponentiate",
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["mid_lottery_scale"] == 40
+    assert strategy.options["mid_utility_handling"] == "exponentiate"
+
+
+def test_config_rejects_incompatible_mid_solver_and_population():
+    with pytest.raises(ValueError, match="solver='cp_bool'"):
+        OptimizationConfig(levels=["BlockGroup_0"], strategy="mid")
+    with pytest.raises(ValueError, match="program_population='All'"):
+        OptimizationConfig(levels=["BlockGroup_0"], strategy="mid", solver="cp_bool")
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, True])
+def test_config_rejects_invalid_mid_lottery_scale(value):
+    with pytest.raises(ValueError, match="mid_lottery_scale"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_lottery_scale=value)
+
+
+def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeypatch):
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    solver = get_solver("cp_bool", solve_time_limit=1, relative_gap_limit=0.5)
+    captured = {}
+
+    class CapturingMidSolver:
+        def __init__(self, market, lottery_scale, **options):
+            captured.update(
+                market=market,
+                lottery_scale=lottery_scale,
+                options=options,
+            )
+
+        def solve(self, target_problem):
+            captured["problem"] = target_problem
+            return ZoneSolution(
+                problem=target_problem,
+                assignment=_split_assignment(target_problem),
+                status="OPTIMAL",
+            )
+
+    monkeypatch.setattr(mid_module, "build_mid_market", lambda *args: "market")
+    monkeypatch.setattr(mid_module, "initial_solution", lambda *args: None)
+    monkeypatch.setattr(mid_module, "MidCpSatSolver", CapturingMidSolver)
+    strategy = get_strategy(
+        "mid",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[2, 7],
+        gap_limits=[0.2, 0.01],
+        boundary_prop=0.25,
+        mid_lottery_scale=30,
+    )
+
+    solutions = strategy.run(dataset, solver)
+
+    assert solutions[0].level.name == "BlockGroup_0"
+    assert captured["lottery_scale"] == 30
+    assert captured["options"]["solve_time_limit"] == 7
+    assert captured["options"]["relative_gap_limit"] == 0.01
+    assert captured["problem"].overage == -1
+    assert captured["problem"].shortage == -1
+    assert captured["problem"].boundary_prop == 0.25
 
 
 def test_config_rejects_non_boolean_citywide_scenario_filter():

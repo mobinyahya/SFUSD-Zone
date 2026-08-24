@@ -140,6 +140,8 @@ def _strategy_name(context: MetricsContext) -> str:
 
 
 def _selection_reason(context: MetricsContext) -> str:
+    if context.solution.metadata.get("enumerated_solution_selected"):
+        return "seeded_random_enumerated_solution"
     if not context._is_iterative_run():
         return "literal_final_stage"
     if context.solution.metadata.get("choice_utility") is not None:

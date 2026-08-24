@@ -17,6 +17,7 @@ from optimization.strategies import (  # noqa: E402,F401
     single,
     recursive,
     iterative_choice,
+    mid,
 )
 
 __all__ = ["Strategy", "get_strategy", "register"]

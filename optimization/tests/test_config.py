@@ -18,6 +18,44 @@ def test_weight_edges_defaults_false_and_requires_boolean():
         OptimizationConfig(levels=["BlockGroup_0"], weight_edges=1)
 
 
+def test_enumerated_solutions_defaults_disabled_and_is_passed_to_single_strategy():
+    default = OptimizationConfig(levels=["BlockGroup_0"])
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_bool",
+        strategy="single",
+        enumerated_solutions=7,
+        seed=13,
+    )
+
+    assert default.enumerated_solutions == -1
+    strategy = config.make_strategy()
+    assert strategy.options["enumerated_solutions"] == 7
+    assert strategy.options["seed"] == 13
+
+
+@pytest.mark.parametrize("value", [True, 1.5, "2"])
+def test_enumerated_solutions_requires_an_integer(value):
+    with pytest.raises(ValueError, match="enumerated_solutions must be an integer"):
+        OptimizationConfig(levels=["BlockGroup_0"], enumerated_solutions=value)
+
+
+def test_enumerated_solutions_rejects_incompatible_solver_and_strategy():
+    with pytest.raises(ValueError, match="solver='cp_bool' or 'cp_int'"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="mip",
+            enumerated_solutions=2,
+        )
+    with pytest.raises(ValueError, match="strategy='single'"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="cp_int",
+            strategy="recursive",
+            enumerated_solutions=2,
+        )
+
+
 @pytest.mark.parametrize(
     ("old_key", "value"),
     [
