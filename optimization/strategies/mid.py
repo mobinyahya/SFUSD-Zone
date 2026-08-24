@@ -47,6 +47,7 @@ class MidStrategy(Strategy):
             market,
             self.options.get("mid_lottery_scale", 20),
             preprocessing_seconds=preprocessing_seconds,
+            transport_bounds=self.options.get("mid_transport_bounds", True),
             **solver.options,
         )
         return [mid_solver.solve(problem)]

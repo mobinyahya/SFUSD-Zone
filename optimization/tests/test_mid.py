@@ -69,9 +69,7 @@ def test_mid_market_rejects_utility_order_inconsistent_with_preferences():
                 MidProgram("A", 1, 1, True, None),
                 MidProgram("B", 2, 1, True, None),
             ),
-            types=(
-                MidType(0, 1, ("A", "B"), (0, 0), (1.0, 2.0), (100, 200)),
-            ),
+            types=(MidType(0, 1, ("A", "B"), (0, 0), (1.0, 2.0), (100, 200)),),
             student_count=1,
             outside_only_student_count=0,
             utility_student_count=1,
@@ -434,9 +432,7 @@ def test_mid_utility_gap_separation_activates_first_different_tail_rank():
             MidProgram("A", 1, 1, True, None),
             MidProgram("B", 2, 1, True, None),
         ),
-        types=(
-            MidType(0, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),
-        ),
+        types=(MidType(0, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),),
         student_count=1,
         outside_only_student_count=0,
         utility_student_count=1,
@@ -492,6 +488,44 @@ def test_mid_transport_relaxation_respects_shared_capacity():
     assert solution.metadata["mid_activated_preference_count"] == 0
 
 
+def test_mid_can_disable_transport_bounds():
+    problem = make_grid_problem(
+        2,
+        2,
+        program_population="All",
+        overage=-1,
+        shortage=-1,
+    )
+    market = MidMarket(
+        programs=(MidProgram("A", 1, 1, True, None),),
+        types=(
+            MidType(1, 1, ("A",), (0,), (2.0,), (200,)),
+            MidType(2, 1, ("A",), (0,), (1.0,), (100,)),
+        ),
+        student_count=2,
+        outside_only_student_count=0,
+        utility_student_count=2,
+        utility_handling="omit_nonpositive",
+    )
+    solver = MidCpSatSolver(
+        market,
+        20,
+        active_prefix_lengths={},
+        transport_bounds=False,
+        solve_time_limit=10,
+        workers=1,
+    )
+
+    solution = solver.solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.metadata["mid_raw_solver_objective"] == 6000
+    assert solution.metadata["mid_transport_bounds"] is False
+    assert solution.metadata["mid_transport_variable_count"] == 0
+    assert solution.metadata["mid_access_indicator_count"] == 0
+    assert solver.master_assignment_masses == ((20,), (20,))
+
+
 def test_mid_generated_master_uses_exact_prefix_and_transport_tail():
     problem = make_grid_problem(
         2,
@@ -505,9 +539,7 @@ def test_mid_generated_master_uses_exact_prefix_and_transport_tail():
             MidProgram("A", 1, 1, True, None),
             MidProgram("B", 2, 1, True, None),
         ),
-        types=(
-            MidType(1, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),
-        ),
+        types=(MidType(1, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),),
         student_count=1,
         outside_only_student_count=0,
         utility_student_count=1,

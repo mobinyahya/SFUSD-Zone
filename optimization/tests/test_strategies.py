@@ -372,6 +372,7 @@ def test_config_validates_and_passes_mid_options():
         strategy="mid",
         mid_lottery_scale=40,
         mid_utility_handling="exponentiate",
+        mid_transport_bounds=False,
         data={
             "scenario": "legacy",
             "overrides": {"filters": {"optimization": {"program_population": "All"}}},
@@ -382,6 +383,7 @@ def test_config_validates_and_passes_mid_options():
 
     assert strategy.options["mid_lottery_scale"] == 40
     assert strategy.options["mid_utility_handling"] == "exponentiate"
+    assert strategy.options["mid_transport_bounds"] is False
 
 
 def test_config_passes_feasible_hint_options():
@@ -416,6 +418,12 @@ def test_config_rejects_incompatible_mid_solver_and_population(strategy):
 def test_config_rejects_invalid_mid_lottery_scale(value):
     with pytest.raises(ValueError, match="mid_lottery_scale"):
         OptimizationConfig(levels=["BlockGroup_0"], mid_lottery_scale=value)
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "false"])
+def test_config_rejects_invalid_mid_transport_bounds(value):
+    with pytest.raises(ValueError, match="mid_transport_bounds"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_transport_bounds=value)
 
 
 def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeypatch):
@@ -464,7 +472,8 @@ def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeyp
     assert captured["problem"].boundary_prop == 0.25
 
 
-def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
+@pytest.mark.parametrize("transport_bounds", [True, False])
+def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bounds):
     from optimization.data.mid import MidMarket, MidProgram, MidType
 
     problem = make_grid_problem(2, 2, program_population="All")
@@ -496,6 +505,7 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
         gap_limits=[0],
         max_iterations=4,
         mid_lottery_scale=20,
+        mid_transport_bounds=transport_bounds,
     )
 
     solutions = strategy.run(dataset, solver)
@@ -510,22 +520,28 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
     assert final.metadata["mid_decomp_incumbent_least_cutoffs"] == {"A": 0, "B": 0}
     assert final.metadata["mid_continuum_welfare"] == 4.0
     assert final.metadata["mid_decomp_total_preference_count"] == 4
+    assert final.metadata["mid_transport_bounds"] is transport_bounds
     assert final.metadata["mid_decomp_activated_preference_count"] <= 4
     assert all(
         "activated_preferences_after" in record
         for record in final.metadata["mid_decomp_iterations"]
     )
     assert all(
-        record["remaining_variable_count"]
-        == record["activated_preferences_before"]
+        record["remaining_variable_count"] == record["activated_preferences_before"]
         for record in final.metadata["mid_decomp_iterations"]
     )
-    assert all(
-        record["transport_variable_count"]
-        == final.metadata["mid_decomp_total_preference_count"]
-        - record["activated_preferences_before"]
-        for record in final.metadata["mid_decomp_iterations"]
-    )
+    if transport_bounds:
+        assert all(
+            record["transport_variable_count"]
+            == final.metadata["mid_decomp_total_preference_count"]
+            - record["activated_preferences_before"]
+            for record in final.metadata["mid_decomp_iterations"]
+        )
+    else:
+        assert all(
+            record["transport_variable_count"] == 0
+            for record in final.metadata["mid_decomp_iterations"]
+        )
     assert (
         final.metadata["mid_decomp_budget_policy"]
         == "linearly_increasing_with_carry_forward"

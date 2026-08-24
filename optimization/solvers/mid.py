@@ -47,6 +47,7 @@ class MidCpSatSolver(CpBoolSolver):
         *,
         preprocessing_seconds: float = 0.0,
         active_prefix_lengths: dict[int, int] | None = None,
+        transport_bounds: bool = True,
         preprocessed: bool = False,
         **options,
     ) -> None:
@@ -64,6 +65,9 @@ class MidCpSatSolver(CpBoolSolver):
         self.active_prefix_lengths = (
             None if active_prefix_lengths is None else dict(active_prefix_lengths)
         )
+        if not isinstance(transport_bounds, bool):
+            raise ValueError("MID transport_bounds must be a Boolean.")
+        self.transport_bounds = transport_bounds
         self.preprocessed = preprocessed
         self._mid_variables: _MidVariables | None = None
         self.master_assignment_masses: tuple[tuple[int, ...], ...] | None = None
@@ -158,8 +162,12 @@ class MidCpSatSolver(CpBoolSolver):
 
         required_access = {
             (student_type.node, program_by_id[program_id].school_node)
-            for student_type in self.market.types
-            for program_id in student_type.programs
+            for type_index, student_type in enumerate(self.market.types)
+            for program_id in (
+                student_type.programs
+                if self.transport_bounds
+                else student_type.programs[: active_prefix_lengths[type_index]]
+            )
             if not program_by_id[program_id].citywide
         }
         access = {}
@@ -260,22 +268,29 @@ class MidCpSatSolver(CpBoolSolver):
             remaining_rows.append(tuple(row))
 
             tail = []
-            for rank in range(prefix_length, len(student_type.programs)):
-                program_id = student_type.programs[rank]
-                program = program_by_id[program_id]
-                access_key = (student_type.node, program.school_node)
-                if not program.citywide and fixed_access.get(access_key) is False:
-                    continue
-                mass = model.NewIntVar(
-                    0, scale, f"mid_transport_{type_index}_{rank}"
+            if self.transport_bounds:
+                for rank in range(prefix_length, len(student_type.programs)):
+                    program_id = student_type.programs[rank]
+                    program = program_by_id[program_id]
+                    access_key = (student_type.node, program.school_node)
+                    if not program.citywide and fixed_access.get(access_key) is False:
+                        continue
+                    mass = model.NewIntVar(
+                        0, scale, f"mid_transport_{type_index}_{rank}"
+                    )
+                    if not program.citywide and access_key in access:
+                        model.Add(mass <= scale * access[access_key])
+                    capacity_terms[program_id].append(student_type.count * mass)
+                    objective_terms.append(
+                        student_type.scaled_utility_sums[rank] * mass
+                    )
+                    tail.append((rank, mass))
+                if tail:
+                    model.Add(sum(variable for _, variable in tail) <= previous)
+            elif prefix_length < len(student_type.programs):
+                objective_terms.append(
+                    student_type.scaled_utility_sums[prefix_length] * previous
                 )
-                if not program.citywide and access_key in access:
-                    model.Add(mass <= scale * access[access_key])
-                capacity_terms[program_id].append(student_type.count * mass)
-                objective_terms.append(student_type.scaled_utility_sums[rank] * mass)
-                tail.append((rank, mass))
-            if tail:
-                model.Add(sum(variable for _, variable in tail) <= previous)
             transport_rows.append(tuple(tail))
 
         for program in self.market.programs:
@@ -290,13 +305,10 @@ class MidCpSatSolver(CpBoolSolver):
         if objective_bound > integer_limit:
             raise ValueError("MID fixed-point objective exceeds CP-SAT integer limits.")
         objective_expression_bound = scale * sum(
-            sum(student_type.scaled_utility_sums)
-            for student_type in self.market.types
+            sum(student_type.scaled_utility_sums) for student_type in self.market.types
         )
         if objective_bound + objective_expression_bound > cp_integer_limit:
-            raise ValueError(
-                "MID objective expression exceeds CP-SAT integer limits."
-            )
+            raise ValueError("MID objective expression exceeds CP-SAT integer limits.")
         objective = model.NewIntVar(0, objective_bound, "mid_total_welfare")
         model.Add(objective == sum(objective_terms))
         model.Maximize(objective)
@@ -319,7 +331,9 @@ class MidCpSatSolver(CpBoolSolver):
 
     def _validated_prefix_lengths(self) -> tuple[int, ...]:
         if self.active_prefix_lengths is None:
-            return tuple(len(student_type.programs) for student_type in self.market.types)
+            return tuple(
+                len(student_type.programs) for student_type in self.market.types
+            )
         for type_index, prefix_length in self.active_prefix_lengths.items():
             if isinstance(type_index, bool) or not isinstance(type_index, int):
                 raise ValueError("MID active-prefix type indices must be integers.")
@@ -409,6 +423,10 @@ class MidCpSatSolver(CpBoolSolver):
                 * int(round(hint.assignment_masses[type_index][rank]))
                 for rank, _ in variables.transport[type_index]
             )
+            if not self.transport_bounds and prefix_length < len(student_type.programs):
+                raw_objective += (
+                    student_type.scaled_utility_sums[prefix_length] * previous
+                )
         model.AddHint(variables.objective, raw_objective)
 
     def _add_hints(
@@ -450,6 +468,7 @@ class MidCpSatSolver(CpBoolSolver):
             "mid_lottery_scale": self.lottery_scale,
             "mid_utility_scale": self.market.utility_scale,
             "mid_utility_handling": self.market.utility_handling,
+            "mid_transport_bounds": self.transport_bounds,
             "mid_student_count": self.market.student_count,
             "mid_utility_student_count": self.market.utility_student_count,
             "mid_outside_only_student_count": self.market.outside_only_student_count,
@@ -529,6 +548,9 @@ class MidCpSatSolver(CpBoolSolver):
                     previous = remaining
                 for rank, variable in variables.transport[type_index]:
                     masses[rank] = int(solver.Value(variable))
+                prefix_length = variables.active_prefix_lengths[type_index]
+                if not self.transport_bounds and prefix_length < len(masses):
+                    masses[prefix_length] = previous
                 rows.append(tuple(masses))
             self.master_assignment_masses = tuple(rows)
         return metadata

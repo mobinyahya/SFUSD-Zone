@@ -74,6 +74,7 @@ class OptimizationConfig:
     tolerance: float = 1e-6
     mid_lottery_scale: int = 20
     mid_utility_handling: str = "omit_nonpositive"
+    mid_transport_bounds: bool = True
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
@@ -171,6 +172,8 @@ class OptimizationConfig:
             raise ValueError(
                 "mid_utility_handling must be one of: exponentiate, omit_nonpositive."
             )
+        if not isinstance(self.mid_transport_bounds, bool):
+            raise ValueError("mid_transport_bounds must be a Boolean.")
         if (
             isinstance(self.centroid_neighbor_radius, bool)
             or not isinstance(self.centroid_neighbor_radius, int)
@@ -334,4 +337,5 @@ class OptimizationConfig:
             tolerance=self.tolerance,
             mid_lottery_scale=self.mid_lottery_scale,
             mid_utility_handling=self.mid_utility_handling,
+            mid_transport_bounds=self.mid_transport_bounds,
         )

@@ -62,6 +62,9 @@ class MidDecompositionStrategy(Strategy):
         preprocessing_seconds = time.perf_counter() - preprocessing_start
 
         lottery_scale = int(self.options.get("mid_lottery_scale", 20))
+        transport_bounds = self.options.get("mid_transport_bounds", True)
+        if not isinstance(transport_bounds, bool):
+            raise ValueError("mid_decomp mid_transport_bounds must be a Boolean.")
         objective_scale = lottery_scale * market.utility_scale
         time_limit = _final_value(
             self.options.get("solve_time_limits"),
@@ -138,6 +141,7 @@ class MidDecompositionStrategy(Strategy):
                 lottery_scale,
                 preprocessing_seconds=preprocessing_seconds,
                 active_prefix_lengths=active,
+                transport_bounds=transport_bounds,
                 preprocessed=True,
                 **master_options,
             )
@@ -153,9 +157,7 @@ class MidDecompositionStrategy(Strategy):
                 {
                     "mid_decomp_iteration": iteration,
                     "mid_decomp_active_types_before": active_types_before,
-                    "mid_decomp_active_preferences_before": (
-                        active_preferences_before
-                    ),
+                    "mid_decomp_active_preferences_before": (active_preferences_before),
                     "mid_decomp_master_time_limit_seconds": master_time_limit,
                 }
             )
@@ -214,7 +216,7 @@ class MidDecompositionStrategy(Strategy):
                 incumbent_iteration = iteration
 
             if master.master_assignment_masses is None:
-                raise RuntimeError("MID master did not expose transportation masses.")
+                raise RuntimeError("MID master did not expose assignment masses.")
             separation = separate_mid_prefixes(
                 market,
                 candidate,
@@ -248,9 +250,7 @@ class MidDecompositionStrategy(Strategy):
                 "activated_preferences_after": sum(active.values()),
                 "overloaded_programs": list(separation.overloaded_programs),
                 "overload_activated_prefixes": sorted(overload_prefixes.items()),
-                "utility_gap_activated_prefixes": sorted(
-                    utility_gap_prefixes.items()
-                ),
+                "utility_gap_activated_prefixes": sorted(utility_gap_prefixes.items()),
                 "newly_activated_preference_count": activated_preferences,
                 "master_raw_objective": raw_objective,
                 "master_candidate_objective": raw_objective / objective_scale,
@@ -264,9 +264,8 @@ class MidDecompositionStrategy(Strategy):
                 "absolute_gap": absolute_gap,
                 "relative_gap": relative_gap,
                 "candidate_cutoffs": dict(cutoffs),
-                "model_variable_count": solution.metadata[
-                    "mid_model_variable_count"
-                ],
+                "transport_bounds": transport_bounds,
+                "model_variable_count": solution.metadata["mid_model_variable_count"],
                 "model_constraint_count": solution.metadata[
                     "mid_model_constraint_count"
                 ],
@@ -291,9 +290,7 @@ class MidDecompositionStrategy(Strategy):
                     "mid_decomp_active_preferences_after": sum(active.values()),
                     "mid_decomp_master_time_limit_seconds": master_time_limit,
                     "mid_decomp_overload_activated_count": len(overload_prefixes),
-                    "mid_decomp_utility_gap_activated_count": len(
-                        utility_gap_prefixes
-                    ),
+                    "mid_decomp_utility_gap_activated_count": len(utility_gap_prefixes),
                     "mid_decomp_candidate_cutoffs": dict(cutoffs),
                     "mid_decomp_global_lower_bound": lower_bound,
                     "mid_decomp_global_upper_bound": upper_bound,
@@ -348,6 +345,7 @@ class MidDecompositionStrategy(Strategy):
                 upper_bound_value=upper_bound_value,
                 objective_scale=objective_scale,
                 termination_reason=termination_reason,
+                transport_bounds=transport_bounds,
                 total_budget_seconds=time_limit,
                 preprocessing_seconds=preprocessing_seconds,
                 master_seconds=master_seconds,
@@ -402,6 +400,7 @@ class MidDecompositionStrategy(Strategy):
             upper_bound_value=upper_bound_value,
             objective_scale=objective_scale,
             termination_reason=termination_reason,
+            transport_bounds=transport_bounds,
             total_budget_seconds=time_limit,
             preprocessing_seconds=preprocessing_seconds,
             master_seconds=master_seconds,
@@ -528,6 +527,7 @@ def _add_summary_metadata(
     upper_bound_value: int | None,
     objective_scale: int,
     termination_reason: str,
+    transport_bounds: bool,
     total_budget_seconds: float,
     preprocessing_seconds: float,
     master_seconds: float,
@@ -546,6 +546,7 @@ def _add_summary_metadata(
             "mid_lottery_scale": objective_scale // market.utility_scale,
             "mid_utility_scale": market.utility_scale,
             "mid_utility_handling": market.utility_handling,
+            "mid_transport_bounds": transport_bounds,
             "mid_student_count": market.student_count,
             "mid_utility_student_count": market.utility_student_count,
             "mid_outside_only_student_count": market.outside_only_student_count,
@@ -585,8 +586,7 @@ def _add_summary_metadata(
                 for type_index, prefix_length in sorted(active.items())
             },
             "mid_decomp_overload_activated_count": sum(
-                len(record.get("overload_activated_prefixes", ()))
-                for record in records
+                len(record.get("overload_activated_prefixes", ())) for record in records
             ),
             "mid_decomp_utility_gap_activated_count": sum(
                 len(record.get("utility_gap_activated_prefixes", ()))

@@ -51,6 +51,7 @@ choice_utility_scale: 100     # CP-SAT integer scaling for choice objective vari
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 mid_lottery_scale: 20         # mid/mid_decomp: integer continuum-mass grid
 mid_utility_handling: omit_nonpositive  # mid/mid_decomp: omit_nonpositive | exponentiate
+mid_transport_bounds: true    # mid_decomp: constrain inactive tails by access and capacity
 
 # --- data ingestion ---
 data:
