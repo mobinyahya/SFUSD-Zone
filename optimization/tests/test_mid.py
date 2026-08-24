@@ -523,9 +523,82 @@ def test_mid_generated_master_uses_exact_prefix_and_transport_tail():
     ).solve(problem)
 
     assert solution.status == "OPTIMAL"
-    assert solution.metadata["mid_active_prefix_lengths"] == [1]
+    assert solution.metadata["mid_active_prefix_lengths"] == {"0": 1}
     assert solution.metadata["mid_remaining_variable_count"] == 1
     assert solution.metadata["mid_transport_variable_count"] == 1
+
+
+def test_mid_generated_models_replace_tail_rows_without_accumulation():
+    problem = make_grid_problem(
+        2,
+        2,
+        program_population="All",
+        overage=-1,
+        shortage=-1,
+    )
+    market = MidMarket(
+        programs=tuple(
+            MidProgram(program_id, school_id, 1, True, None)
+            for school_id, program_id in enumerate(("A", "B", "C"), start=1)
+        ),
+        types=(
+            MidType(
+                1,
+                1,
+                ("A", "B", "C"),
+                (0, 0, 0),
+                (3.0, 2.0, 1.0),
+                (300, 200, 100),
+            ),
+        ),
+        student_count=1,
+        outside_only_student_count=0,
+        utility_student_count=1,
+        utility_handling="omit_nonpositive",
+    )
+    stats = []
+    for prefix_length in range(4):
+        solution = MidCpSatSolver(
+            market,
+            20,
+            active_prefix_lengths={0: prefix_length},
+            solve_time_limit=10,
+            workers=1,
+        ).solve(problem)
+        assert solution.status == "OPTIMAL"
+        metadata = solution.metadata
+        assert (
+            metadata["mid_remaining_variable_count"]
+            + metadata["mid_transport_variable_count"]
+            == 3
+        )
+        assert metadata["mid_threshold_count"] == prefix_length
+        assert metadata["mid_effective_threshold_count"] == 0
+        stats.append(
+            (
+                metadata["mid_model_variable_count"],
+                metadata["mid_model_constraint_count"],
+            )
+        )
+
+    normalized_variables = [
+        variable_count - prefix_length
+        for prefix_length, (variable_count, _) in enumerate(stats)
+    ]
+    assert len(set(normalized_variables)) == 1
+    assert [constraints - stats[0][1] for _, constraints in stats] == [0, 2, 4, 5]
+
+    rebuilt = MidCpSatSolver(
+        market,
+        20,
+        active_prefix_lengths={0: 2},
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+    assert (
+        rebuilt.metadata["mid_model_variable_count"],
+        rebuilt.metadata["mid_model_constraint_count"],
+    ) == stats[2]
 
 
 def test_mid_transport_relaxation_respects_restricted_access():
@@ -656,9 +729,11 @@ def test_mid_partial_prefix_masters_bound_full_optimum():
         bounds[(first, second)] = solution.metadata["mid_raw_solver_objective"]
         assert bounds[(first, second)] >= full_value
 
-    for first, second in product(range(2), repeat=2):
-        assert bounds[(first + 1, second)] <= bounds[(first, second)]
-        assert bounds[(first, second + 1)] <= bounds[(first, second)]
+    for first, second in product(range(3), repeat=2):
+        if first < 2:
+            assert bounds[(first + 1, second)] <= bounds[(first, second)]
+        if second < 2:
+            assert bounds[(first, second + 1)] <= bounds[(first, second)]
 
 
 @pytest.mark.real_data

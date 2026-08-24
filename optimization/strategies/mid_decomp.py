@@ -264,6 +264,22 @@ class MidDecompositionStrategy(Strategy):
                 "absolute_gap": absolute_gap,
                 "relative_gap": relative_gap,
                 "candidate_cutoffs": dict(cutoffs),
+                "model_variable_count": solution.metadata[
+                    "mid_model_variable_count"
+                ],
+                "model_constraint_count": solution.metadata[
+                    "mid_model_constraint_count"
+                ],
+                "remaining_variable_count": solution.metadata[
+                    "mid_remaining_variable_count"
+                ],
+                "transport_variable_count": solution.metadata[
+                    "mid_transport_variable_count"
+                ],
+                "threshold_count": solution.metadata["mid_threshold_count"],
+                "effective_threshold_count": solution.metadata[
+                    "mid_effective_threshold_count"
+                ],
                 "master_time_limit_seconds": master_time_limit,
                 "master_seconds": iteration_master_seconds,
                 "oracle_seconds": iteration_oracle_seconds,

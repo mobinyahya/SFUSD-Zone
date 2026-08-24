@@ -426,9 +426,11 @@ metadata because the two objectives can rank zonings differently.
 6. Add exact continuous recurrences through each active prefix.
 7. Add access- and capacity-constrained transportation variables for every
    inactive tail.
-8. Expose candidate cutoffs, candidate objective, `ObjBound`, status, and model
+8. Create priority and effective-threshold variables only for active prefixes;
+   transportation tails use access indicators directly.
+9. Expose candidate cutoffs, candidate objective, `ObjBound`, status, and model
    sizes without converting to fixed-point units.
-9. Restrict hints to variables present in the generated master.
+10. Restrict hints to variables present in the generated master.
 
 ### `optimization/mid_oracle.py`
 
@@ -466,6 +468,8 @@ Record at least:
 - Formulation name identifying continuum generated MID utility.
 - Master and fixed-zoning solver statuses.
 - Iteration count and activated/total type and preference counts.
+- Variable, constraint, threshold, recurrence, and transportation counts by
+  iteration.
 - Overload and utility-gap activations.
 - Candidate objective and certified master upper bound by iteration.
 - Continuum `LB`, `UB`, absolute gap, and relative gap.

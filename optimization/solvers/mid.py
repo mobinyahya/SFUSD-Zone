@@ -99,11 +99,20 @@ class MidCpSatSolver(CpBoolSolver):
         observed_priorities: dict[str, set[int]] = {
             program_id: set() for program_id in program_by_id
         }
-        for student_type in self.market.types:
+        active_priorities: dict[str, set[int]] = {
+            program_id: set() for program_id in program_by_id
+        }
+        for type_index, student_type in enumerate(self.market.types):
             for program_id, priority in zip(
                 student_type.programs, student_type.priorities
             ):
                 observed_priorities[program_id].add(priority)
+            prefix_length = active_prefix_lengths[type_index]
+            for program_id, priority in zip(
+                student_type.programs[:prefix_length],
+                student_type.priorities[:prefix_length],
+            ):
+                active_priorities[program_id].add(priority)
 
         upper_bounds = {
             program_id: (max(priorities) + 1) * scale if priorities else 0
@@ -133,7 +142,7 @@ class MidCpSatSolver(CpBoolSolver):
             for program_id in program_by_id
         }
         thresholds = {}
-        for program_id, priorities in observed_priorities.items():
+        for program_id, priorities in active_priorities.items():
             upper = upper_bounds[program_id]
             for priority in sorted(priorities):
                 threshold = model.NewIntVar(
@@ -184,9 +193,11 @@ class MidCpSatSolver(CpBoolSolver):
 
         effective = {}
         effective_value = {}
-        for student_type in self.market.types:
+        for type_index, student_type in enumerate(self.market.types):
+            prefix_length = active_prefix_lengths[type_index]
             for program_id, priority in zip(
-                student_type.programs, student_type.priorities
+                student_type.programs[:prefix_length],
+                student_type.priorities[:prefix_length],
             ):
                 key = (student_type.node, program_id, priority)
                 if key in effective_value:
@@ -476,7 +487,13 @@ class MidCpSatSolver(CpBoolSolver):
             "mid_inactive_preference_count": (
                 self.market.preference_count - activated_preference_count
             ),
-            "mid_active_prefix_lengths": list(variables.active_prefix_lengths),
+            "mid_active_prefix_lengths": {
+                str(type_index): prefix_length
+                for type_index, prefix_length in enumerate(
+                    variables.active_prefix_lengths
+                )
+                if prefix_length
+            },
             "mid_model_variable_count": len(model.Proto().variables),
             "mid_model_constraint_count": len(model.Proto().constraints),
             "mid_model_hint_count": len(model.Proto().solution_hint.vars),

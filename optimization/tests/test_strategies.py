@@ -515,6 +515,17 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
         "activated_preferences_after" in record
         for record in final.metadata["mid_decomp_iterations"]
     )
+    assert all(
+        record["remaining_variable_count"]
+        == record["activated_preferences_before"]
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+    assert all(
+        record["transport_variable_count"]
+        == final.metadata["mid_decomp_total_preference_count"]
+        - record["activated_preferences_before"]
+        for record in final.metadata["mid_decomp_iterations"]
+    )
     assert (
         final.metadata["mid_decomp_budget_policy"]
         == "linearly_increasing_with_carry_forward"
