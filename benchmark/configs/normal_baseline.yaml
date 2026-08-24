@@ -51,5 +51,5 @@ visualization:
 
 matching:
   enabled: true
-  config: choice-zone-only-for-benchmark
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
   compute_stage_assignments: false
