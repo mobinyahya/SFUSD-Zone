@@ -175,6 +175,6 @@ def _add_math_programming_initial_hint(problem, solver: Solver, hints: str) -> N
         return
     if problem.hint is not None:
         return
-    initial = initial_solution(problem, hints)
+    initial = initial_solution(problem, hints, solver_options=solver.options)
     if initial is not None:
         problem.hint = initial.assignment

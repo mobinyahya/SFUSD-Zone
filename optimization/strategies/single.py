@@ -53,6 +53,6 @@ def _add_math_programming_initial_hint(problem, solver: Solver, options: dict) -
     if problem.hint is not None:
         return
     hints = options.get("hints", solver.options.get("hints", "voronoi"))
-    initial = initial_solution(problem, hints)
+    initial = initial_solution(problem, hints, solver_options=solver.options)
     if initial is not None:
         problem.hint = initial.assignment

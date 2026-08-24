@@ -21,7 +21,7 @@ from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
-_STRATEGIES = {"single", "recursive", "iterative_choice", "mid"}
+_STRATEGIES = {"single", "recursive", "iterative_choice", "mid", "mid_decomp"}
 
 
 def _legacy_data_config() -> dict[str, Any]:
@@ -48,6 +48,7 @@ class OptimizationConfig:
     carry_over_compute: bool = False
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     hints: str = "voronoi"
+    feasible_hint_time_limit: float = 60.0
     save_solver_logs: bool = False
     save_solver_progress: bool = False
     secondary_objective: bool = False
@@ -144,11 +145,11 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
-        if self.strategy == "mid":
+        if self.strategy in {"mid", "mid_decomp"}:
             if self.solver != "cp_bool":
-                raise ValueError("mid requires solver='cp_bool'.")
+                raise ValueError(f"{self.strategy} requires solver='cp_bool'.")
             if self.program_population != "All":
-                raise ValueError("mid requires program_population='All'.")
+                raise ValueError(f"{self.strategy} requires program_population='All'.")
             optimization_vintage = self._data_scenario.filter(
                 "optimization", "geography_vintage"
             )
@@ -157,7 +158,7 @@ class OptimizationConfig:
             )
             if optimization_vintage != assignment_vintage:
                 raise ValueError(
-                    "mid requires matching optimization and assignment "
+                    f"{self.strategy} requires matching optimization and assignment "
                     "geography_vintage values."
                 )
         if (
@@ -176,8 +177,19 @@ class OptimizationConfig:
             or self.centroid_neighbor_radius < 0
         ):
             raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-        if self.hints not in {"voronoi", "none"}:
-            raise ValueError("hints must be one of: voronoi, none.")
+        if self.hints not in {"feasible", "voronoi", "none"}:
+            raise ValueError("hints must be one of: feasible, voronoi, none.")
+        if isinstance(self.feasible_hint_time_limit, bool):
+            raise ValueError("feasible_hint_time_limit must be positive.")
+        try:
+            self.feasible_hint_time_limit = float(self.feasible_hint_time_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("feasible_hint_time_limit must be positive.") from exc
+        if (
+            not math.isfinite(self.feasible_hint_time_limit)
+            or self.feasible_hint_time_limit <= 0
+        ):
+            raise ValueError("feasible_hint_time_limit must be positive.")
         if self.recom_iterations < 0 and not self.solve_time_limits:
             raise ValueError(
                 "solve_time_limits must include a value when recom_iterations is negative."
@@ -240,9 +252,7 @@ class OptimizationConfig:
 
     @property
     def outside_district_students(self) -> str:
-        return self._data_scenario.filter(
-            "optimization", "outside_district_students"
-        )
+        return self._data_scenario.filter("optimization", "outside_district_students")
 
     @property
     def frl_estimate(self) -> str | None:
@@ -287,6 +297,7 @@ class OptimizationConfig:
             "symmetry_level": self.symmetry_level,
             "cp_sat_search_strategy": self.cp_sat_search_strategy,
             "hints": self.hints,
+            "feasible_hint_time_limit": self.feasible_hint_time_limit,
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "secondary_objective": self.secondary_objective,
@@ -311,6 +322,7 @@ class OptimizationConfig:
             enumerated_solutions=self.enumerated_solutions,
             seed=self.seed,
             hints=self.hints,
+            feasible_hint_time_limit=self.feasible_hint_time_limit,
             looseness=self.looseness,
             boundary_radius=self.boundary_radius,
             boundary_prop=self.boundary_prop,

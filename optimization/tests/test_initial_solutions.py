@@ -14,6 +14,25 @@ def test_voronoi_initial_solution_returns_valid_hint():
     _check_candidate_assignment(problem, result.assignment)
 
 
+def test_feasible_initial_solution_satisfies_zoning_model():
+    problem = make_grid_problem(3, 3, boundary_prop=0.5)
+
+    result = initial_solution(
+        problem,
+        "feasible",
+        solver_options={"feasible_hint_time_limit": 10, "seed": 3},
+    )
+
+    assert result is not None
+    assert result.metadata["hints"] == "feasible"
+    assert result.metadata["hint_solver"] == "cp_bool"
+    _check_candidate_assignment(problem, result.assignment)
+    assert all(
+        len({node for node, zone in result.assignment.items() if zone == z}) > 0
+        for z in range(problem.Z)
+    )
+
+
 def test_initial_solution_none_returns_no_hint():
     problem = make_grid_problem(3, 3)
 
@@ -38,6 +57,18 @@ def test_initial_solution_reports_empty_candidate_zones():
     assert "max_distance=0.5 excludes all 2 centroids" in message
     assert "Nearest centroid is zone 0 at node 0 (1.000 miles away)" in message
     assert "Increase max_distance" in message
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), True, "bad"])
+def test_feasible_initial_solution_rejects_invalid_time_limit(value):
+    problem = make_grid_problem(3, 3)
+
+    with pytest.raises(ValueError, match="feasible_hint_time_limit"):
+        initial_solution(
+            problem,
+            "feasible",
+            solver_options={"feasible_hint_time_limit": value},
+        )
 
 
 def _check_candidate_assignment(problem, assignment):

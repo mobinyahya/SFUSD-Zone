@@ -336,6 +336,79 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
     )
 
 
+def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
+    """Remove alternatives that cannot receive positive assignment mass."""
+
+    programs = {
+        program.program_id: program
+        for program in market.programs
+        if program.capacity > 0
+    }
+    possible_access: dict[tuple[int, int], bool] = {}
+    grouped: dict[tuple, list] = {}
+    referenced_programs = set()
+
+    for student_type in market.types:
+        kept = []
+        for rank, program_id in enumerate(student_type.programs):
+            program = programs.get(program_id)
+            if program is None:
+                continue
+            if not program.citywide:
+                access_key = (student_type.node, program.school_node)
+                if access_key not in possible_access:
+                    possible_access[access_key] = bool(
+                        problem.candidate_zones(student_type.node)
+                        & problem.candidate_zones(program.school_node)
+                    )
+                if not possible_access[access_key]:
+                    continue
+            kept.append(rank)
+            referenced_programs.add(program_id)
+
+        program_ids = tuple(student_type.programs[rank] for rank in kept)
+        priorities = tuple(student_type.priorities[rank] for rank in kept)
+        key = (student_type.node, program_ids, priorities)
+        if key not in grouped:
+            grouped[key] = [
+                0,
+                [0.0] * len(kept),
+                [0] * len(kept),
+            ]
+        aggregate = grouped[key]
+        aggregate[0] += student_type.count
+        for target_rank, source_rank in enumerate(kept):
+            aggregate[1][target_rank] += student_type.utility_sums[source_rank]
+            aggregate[2][target_rank] += student_type.scaled_utility_sums[source_rank]
+
+    types = tuple(
+        MidType(
+            node=node,
+            count=values[0],
+            programs=program_ids,
+            priorities=priorities,
+            utility_sums=tuple(values[1]),
+            scaled_utility_sums=tuple(values[2]),
+        )
+        for (node, program_ids, priorities), values in sorted(grouped.items())
+    )
+    return MidMarket(
+        programs=tuple(
+            program
+            for program in market.programs
+            if program.program_id in referenced_programs
+        ),
+        types=types,
+        student_count=market.student_count,
+        outside_only_student_count=sum(
+            student_type.count for student_type in types if not student_type.programs
+        ),
+        utility_student_count=market.utility_student_count,
+        utility_handling=market.utility_handling,
+        utility_scale=market.utility_scale,
+    )
+
+
 def _assignment_market(optimization_config):
     root = Path(__file__).resolve().parents[2]
     with (root / "assignment/configs/base_config.yaml").open(

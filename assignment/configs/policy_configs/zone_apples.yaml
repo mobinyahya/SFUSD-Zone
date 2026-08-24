@@ -1,0 +1,32 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: true
+guard-rails: -1
+non_designation_boost: 0
+
+
+
+policies:
+- 18zone_2
+# will be replaced
+
+
+priority-weights:
+  ctip: 8
+  sibling: 16
+  zone: 4
+  #These should have 
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+
+sibling-access: true
+zone-building-blocks: block_group
+designate: false
+ties-options:
+- MTB

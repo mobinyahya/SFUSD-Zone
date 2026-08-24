@@ -32,7 +32,11 @@ class MidStrategy(Strategy):
         problem.overage = -1.0
         problem.shortage = -1.0
         problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
-        hint = initial_solution(problem, self.options.get("hints", "voronoi"))
+        hint = initial_solution(
+            problem,
+            self.options.get("hints", "voronoi"),
+            solver_options=solver.options,
+        )
         if hint is not None:
             problem.hint = hint.assignment
 

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from optimization.data import contiguity
-from optimization.data.initial_solutions import normalize_hints
+from optimization.data.initial_solutions import initial_solution, normalize_hints
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.balance import (
@@ -871,9 +871,19 @@ class _ReComSolverBase(Solver):
         else:
             method = normalize_hints(self.options.get("hints", "voronoi"))
             if method == "none":
-                raise _HintError("ReCom solvers require a provided or Voronoi hint.")
-            hint = self._voronoi_hint(context)
-            hint_metadata = {"hints": "voronoi", "hint_source": "generated"}
+                raise _HintError("ReCom solvers require a provided or generated hint.")
+            if method == "feasible":
+                generated = initial_solution(
+                    problem,
+                    method,
+                    solver_options=self.options,
+                )
+                assert generated is not None
+                hint = generated.assignment
+                hint_metadata = {**generated.metadata, "hint_source": "generated"}
+            else:
+                hint = self._voronoi_hint(context)
+                hint_metadata = {"hints": "voronoi", "hint_source": "generated"}
 
         assignment = context.validate_hint(hint)
         max_iterations, deadline = self._limits(start)

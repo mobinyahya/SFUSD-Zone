@@ -14,13 +14,20 @@ from optimization.solvers import get_solver
 from optimization.strategies import get_strategy
 from optimization.strategies import iterative_choice as iterative_choice_module
 from optimization.strategies import mid as mid_module
+from optimization.strategies import mid_decomp as mid_decomp_module
 from optimization.strategies import single as single_module
 from optimization.strategies.base import available_strategies
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
 
 
 def test_only_supported_strategies_are_registered():
-    assert available_strategies() == ["iterative_choice", "mid", "recursive", "single"]
+    assert available_strategies() == [
+        "iterative_choice",
+        "mid",
+        "mid_decomp",
+        "recursive",
+        "single",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -90,7 +97,7 @@ def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     monkeypatch.setattr(
         single_module,
         "initial_solution",
-        lambda problem_arg, hints: InitialSolution(
+        lambda problem_arg, hints, **kwargs: InitialSolution(
             assignment=hint,
             metadata={"hints": hints},
         ),
@@ -377,11 +384,32 @@ def test_config_validates_and_passes_mid_options():
     assert strategy.options["mid_utility_handling"] == "exponentiate"
 
 
-def test_config_rejects_incompatible_mid_solver_and_population():
+def test_config_passes_feasible_hint_options():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        hints="feasible",
+        feasible_hint_time_limit=12,
+    )
+
+    assert config.make_solver().options["feasible_hint_time_limit"] == 12
+    assert config.make_strategy().options["feasible_hint_time_limit"] == 12
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), True, "bad"])
+def test_config_rejects_invalid_feasible_hint_time_limit(value):
+    with pytest.raises(ValueError, match="feasible_hint_time_limit"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            feasible_hint_time_limit=value,
+        )
+
+
+@pytest.mark.parametrize("strategy", ["mid", "mid_decomp"])
+def test_config_rejects_incompatible_mid_solver_and_population(strategy):
     with pytest.raises(ValueError, match="solver='cp_bool'"):
-        OptimizationConfig(levels=["BlockGroup_0"], strategy="mid")
+        OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy)
     with pytest.raises(ValueError, match="program_population='All'"):
-        OptimizationConfig(levels=["BlockGroup_0"], strategy="mid", solver="cp_bool")
+        OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy, solver="cp_bool")
 
 
 @pytest.mark.parametrize("value", [0, -1, 1.5, True])
@@ -414,7 +442,7 @@ def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeyp
             )
 
     monkeypatch.setattr(mid_module, "build_mid_market", lambda *args: "market")
-    monkeypatch.setattr(mid_module, "initial_solution", lambda *args: None)
+    monkeypatch.setattr(mid_module, "initial_solution", lambda *args, **kwargs: None)
     monkeypatch.setattr(mid_module, "MidCpSatSolver", CapturingMidSolver)
     strategy = get_strategy(
         "mid",
@@ -436,15 +464,60 @@ def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeyp
     assert captured["problem"].boundary_prop == 0.25
 
 
+def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
+    from optimization.data.mid import MidMarket, MidProgram, MidType
+
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    market = MidMarket(
+        programs=(
+            MidProgram("A", 100, 1, False, 0),
+            MidProgram("B", 200, 1, False, 3),
+        ),
+        types=(
+            MidType(1, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),
+            MidType(2, 1, ("B", "A"), (0, 0), (2.0, 1.0), (200, 100)),
+        ),
+        student_count=2,
+        outside_only_student_count=0,
+        utility_student_count=2,
+        utility_handling="omit_nonpositive",
+    )
+    monkeypatch.setattr(mid_decomp_module, "build_mid_market", lambda *args: market)
+    monkeypatch.setattr(
+        mid_decomp_module, "initial_solution", lambda *args, **kwargs: None
+    )
+    solver = get_solver("cp_bool", solve_time_limit=10, workers=1)
+    strategy = get_strategy(
+        "mid_decomp",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[10],
+        gap_limits=[0],
+        max_iterations=4,
+        mid_lottery_scale=20,
+    )
+
+    solutions = strategy.run(dataset, solver)
+    final = solutions[-1]
+
+    assert final.objective == 4.0
+    assert final.assignment == {0: 0, 1: 0, 2: 1, 3: 1}
+    assert final.metadata["formulation"] == "mid_generated_utility_decomposition"
+    assert final.metadata["mid_decomp_iteration_count"] >= 1
+    assert final.metadata["mid_decomp_global_lower_bound"] == 4.0
+    assert final.metadata["mid_decomp_global_upper_bound"] >= 4.0
+    assert final.metadata["mid_decomp_incumbent_least_cutoffs"] == {"A": 0, "B": 0}
+    assert final.metadata["mid_continuum_welfare"] == 4.0
+
+
 def test_config_rejects_non_boolean_citywide_scenario_filter():
     with pytest.raises(ValueError, match="include_citywide"):
         OptimizationConfig(
             levels=["BlockGroup_0"],
             data={
                 "scenario": "legacy",
-                "overrides": {
-                    "filters": {"optimization": {"include_citywide": 1}}
-                },
+                "overrides": {"filters": {"optimization": {"include_citywide": 1}}},
             },
         )
 

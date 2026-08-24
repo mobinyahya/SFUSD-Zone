@@ -17,9 +17,18 @@ class MidOracleResult:
     remaining_masses: tuple[tuple[int | float, ...], ...]
     outside_mass: float
     welfare: float
+    fixed_point_value: int | float
     fixed_point_welfare: float
+    type_fixed_point_values: tuple[int | float, ...]
     stable: bool
     minimal: bool
+
+
+@dataclass(frozen=True)
+class MidSeparation:
+    overloaded_programs: tuple[str, ...]
+    overload_type_indices: tuple[int, ...]
+    utility_gap_type_indices: tuple[int, ...]
 
 
 def finite_grid_oracle(
@@ -149,6 +158,62 @@ def evaluate_cutoffs(
     return _evaluate(market, zoning, cutoffs, lottery_scale)
 
 
+def separate_mid_types(
+    market: MidMarket,
+    result: MidOracleResult,
+    activated_type_indices: set[int] | frozenset[int],
+    lottery_scale: int,
+) -> MidSeparation:
+    """Return inactive types needed to separate one generated-master result."""
+    if len(result.assignment_masses) != len(market.types):
+        raise ValueError("MID cutoff result does not match the market types.")
+    active = frozenset(activated_type_indices)
+    if any(
+        isinstance(type_index, bool) or not isinstance(type_index, int)
+        for type_index in active
+    ):
+        raise ValueError("Activated MID type indices must be integers.")
+    invalid = active - set(range(len(market.types)))
+    if invalid:
+        raise ValueError(f"Unknown activated MID type indices: {sorted(invalid)}.")
+
+    overloaded = tuple(
+        program.program_id
+        for program in market.programs
+        if result.demand_masses[program.program_id] > program.capacity * lottery_scale
+    )
+    inactive = set(range(len(market.types))) - active
+    overload_types = set()
+    if overloaded:
+        overloaded_set = set(overloaded)
+        for type_index in inactive:
+            student_type = market.types[type_index]
+            masses = result.assignment_masses[type_index]
+            if any(
+                program_id in overloaded_set and masses[rank] > 0
+                for rank, program_id in enumerate(student_type.programs)
+            ):
+                overload_types.add(type_index)
+
+    utility_gap_types = set()
+    if not overloaded:
+        for type_index in inactive:
+            student_type = market.types[type_index]
+            optimistic = (
+                lottery_scale * student_type.scaled_utility_sums[0]
+                if student_type.programs
+                else 0
+            )
+            if optimistic > result.type_fixed_point_values[type_index]:
+                utility_gap_types.add(type_index)
+
+    return MidSeparation(
+        overloaded_programs=overloaded,
+        overload_type_indices=tuple(sorted(overload_types)),
+        utility_gap_type_indices=tuple(sorted(utility_gap_types)),
+    )
+
+
 def _evaluate(
     market: MidMarket,
     zoning: dict[int, int],
@@ -178,12 +243,13 @@ def _evaluate(
     assignment_rows = []
     remaining_rows = []
     welfare_terms = []
-    fixed_point_terms = []
+    type_fixed_point_values = []
     outside_mass_units = 0
     for student_type in market.types:
         remaining = lottery_scale
         assignments = []
         remainders = []
+        type_fixed_point_terms = []
         for rank, (program_id, priority) in enumerate(
             zip(student_type.programs, student_type.priorities)
         ):
@@ -200,19 +266,27 @@ def _evaluate(
             remainders.append(next_remaining)
             demand_masses[program_id] += student_type.count * mass
             welfare_terms.append(student_type.utility_sums[rank] * mass)
-            fixed_point_terms.append(student_type.scaled_utility_sums[rank] * mass)
+            type_fixed_point_terms.append(student_type.scaled_utility_sums[rank] * mass)
             remaining = next_remaining
         outside_mass_units += student_type.count * remaining
         assignment_rows.append(tuple(assignments))
         remaining_rows.append(tuple(remainders))
+        type_fixed_point_values.append(
+            sum(type_fixed_point_terms)
+            if integral_grid
+            else math.fsum(type_fixed_point_terms)
+        )
 
     demands = {
         program_id: mass / lottery_scale for program_id, mass in demand_masses.items()
     }
     welfare = math.fsum(welfare_terms) / lottery_scale
-    fixed_point_welfare = math.fsum(fixed_point_terms) / (
-        lottery_scale * market.utility_scale
+    fixed_point_value = (
+        sum(type_fixed_point_values)
+        if integral_grid
+        else math.fsum(type_fixed_point_values)
     )
+    fixed_point_welfare = fixed_point_value / (lottery_scale * market.utility_scale)
     outside_mass = outside_mass_units / lottery_scale
     if integral_grid:
         stable = all(
@@ -239,7 +313,9 @@ def _evaluate(
         remaining_masses=tuple(remaining_rows),
         outside_mass=outside_mass,
         welfare=welfare,
+        fixed_point_value=fixed_point_value,
         fixed_point_welfare=fixed_point_welfare,
+        type_fixed_point_values=tuple(type_fixed_point_values),
         stable=stable,
         minimal=False,
     )

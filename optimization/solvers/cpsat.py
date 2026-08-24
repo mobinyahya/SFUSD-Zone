@@ -216,6 +216,7 @@ class _CpSatSolver(Solver):
         initial = initial_solution(
             problem,
             self.options.get("hints"),
+            solver_options=self.options,
         )
         return initial.assignment if initial is not None else None
 
@@ -303,6 +304,11 @@ class _CpSatSolver(Solver):
         assert isinstance(solution, ZoneSolution)
         return solution
 
+    def find_feasible_solution(self, problem: ZoneProblem) -> ZoneSolution:
+        solution = self._solve(problem, feasibility_only=True)
+        assert isinstance(solution, ZoneSolution)
+        return solution
+
     def enumerate_solutions(
         self, problem: ZoneProblem, limit: int
     ) -> list[ZoneSolution]:
@@ -315,7 +321,11 @@ class _CpSatSolver(Solver):
         return solutions
 
     def _solve(
-        self, problem: ZoneProblem, *, solution_limit: int | None = None
+        self,
+        problem: ZoneProblem,
+        *,
+        solution_limit: int | None = None,
+        feasibility_only: bool = False,
     ) -> ZoneSolution | list[ZoneSolution]:
         self._centroid_neighbor_radius()
         m = cp_model.CpModel()
@@ -323,7 +333,7 @@ class _CpSatSolver(Solver):
         self._add_core_constraints(m, problem, x, y)
         progress = None
         objective_scale = 1.0
-        if solution_limit is None:
+        if solution_limit is None and not feasibility_only:
             maximize, objective_scale = self._add_model_objective(m, problem, x, y)
             progress = self._new_solver_progress_tracker(
                 problem,
@@ -394,7 +404,8 @@ class _CpSatSolver(Solver):
         objective = None
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignment = self._extract_assignment(solver, problem, x, y)
-            objective = solver.ObjectiveValue() / objective_scale
+            if not feasibility_only:
+                objective = solver.ObjectiveValue() / objective_scale
 
         metadata = {
             "solver": self.name,

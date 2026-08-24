@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
 
-from optimization.data.mid import MidMarket
+from optimization.data.mid import MidMarket, preprocess_mid_market
 from optimization.mid_oracle import (
     continuum_oracle,
     evaluate_cutoffs,
@@ -17,7 +16,6 @@ from optimization.mid_oracle import (
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.cpsat import (
-    CP_SAT_SCALE,
     CpBoolSolver,
     _AssignmentVars,
     _ZoneVars,
@@ -29,9 +27,13 @@ class _MidVariables:
     cutoffs: dict[str, cp_model.IntVar]
     thresholds: dict[tuple[str, int], cp_model.IntVar]
     access: dict[tuple[int, int], cp_model.IntVar]
+    access_joint: dict[tuple[int, int, int], cp_model.IntVar]
     effective: dict[tuple[int, str, int], cp_model.IntVar]
     remaining: tuple[tuple[cp_model.IntVar, ...], ...]
     objective: cp_model.IntVar
+    objective_bound: int
+    optimistic_objective_constant: int
+    activated_type_indices: frozenset[int]
     access_pair_count: int
 
 
@@ -44,6 +46,8 @@ class MidCpSatSolver(CpBoolSolver):
         lottery_scale: int,
         *,
         preprocessing_seconds: float = 0.0,
+        activated_type_indices: set[int] | frozenset[int] | None = None,
+        preprocessed: bool = False,
         **options,
     ) -> None:
         super().__init__(**options)
@@ -53,9 +57,16 @@ class MidCpSatSolver(CpBoolSolver):
             or lottery_scale <= 0
         ):
             raise ValueError("MID lottery scale must be a positive integer.")
+        self.source_market = market
         self.market = market
         self.lottery_scale = lottery_scale
         self.preprocessing_seconds = preprocessing_seconds
+        self.activated_type_indices = (
+            None
+            if activated_type_indices is None
+            else frozenset(activated_type_indices)
+        )
+        self.preprocessed = preprocessed
         self._mid_variables: _MidVariables | None = None
 
     def _add_model_objective(
@@ -65,8 +76,13 @@ class MidCpSatSolver(CpBoolSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> tuple[bool, float]:
+        self.market = (
+            self.source_market
+            if self.preprocessed
+            else preprocess_mid_market(self.source_market, problem)
+        )
         self._mid_variables = self._add_mid_model(model, problem, x)
-        return True, float(self.lottery_scale * CP_SAT_SCALE)
+        return True, float(self.lottery_scale * self.market.utility_scale)
 
     def _add_mid_model(
         self,
@@ -75,6 +91,20 @@ class MidCpSatSolver(CpBoolSolver):
         x: _AssignmentVars,
     ) -> _MidVariables:
         scale = self.lottery_scale
+        if self.activated_type_indices is None:
+            activated_type_indices = frozenset(range(len(self.market.types)))
+        else:
+            activated_type_indices = self.activated_type_indices
+            if any(
+                isinstance(type_index, bool) or not isinstance(type_index, int)
+                for type_index in activated_type_indices
+            ):
+                raise ValueError("Activated MID type indices must be integers.")
+            invalid = activated_type_indices - set(range(len(self.market.types)))
+            if invalid:
+                raise ValueError(
+                    f"Unknown activated MID type indices: {sorted(invalid)}."
+                )
         program_by_id = self.market.program_by_id
         program_number = {
             program.program_id: index
@@ -132,6 +162,7 @@ class MidCpSatSolver(CpBoolSolver):
             if not program_by_id[program_id].citywide
         }
         access = {}
+        access_joint = {}
         fixed_access = {}
         for student_node, school_node in sorted(required_access):
             if student_node == school_node:
@@ -155,6 +186,7 @@ class MidCpSatSolver(CpBoolSolver):
                     [x[(zone, student_node)], x[(zone, school_node)]],
                 )
                 joint.append(both)
+                access_joint[(student_node, school_node, zone)] = both
             model.Add(same_zone == sum(joint))
             access[(student_node, school_node)] = same_zone
 
@@ -197,6 +229,9 @@ class MidCpSatSolver(CpBoolSolver):
         objective_terms = []
         remaining_rows = []
         for type_index, student_type in enumerate(self.market.types):
+            if type_index not in activated_type_indices:
+                remaining_rows.append(())
+                continue
             previous = scale
             row = []
             for rank, (program_id, priority) in enumerate(
@@ -220,26 +255,36 @@ class MidCpSatSolver(CpBoolSolver):
             remaining_rows.append(tuple(row))
 
         for program in self.market.programs:
-            model.Add(
-                sum(capacity_terms[program.program_id]) <= scale * program.capacity
-            )
+            terms = capacity_terms[program.program_id]
+            if terms:
+                model.Add(sum(terms) <= scale * program.capacity)
 
         objective_bound = scale * sum(
-            sum(student_type.scaled_utility_sums) for student_type in self.market.types
+            max(student_type.scaled_utility_sums, default=0)
+            for student_type in self.market.types
         )
         if objective_bound > integer_limit:
             raise ValueError("MID fixed-point objective exceeds CP-SAT integer limits.")
+        optimistic_objective_constant = scale * sum(
+            student_type.scaled_utility_sums[0]
+            for type_index, student_type in enumerate(self.market.types)
+            if type_index not in activated_type_indices and student_type.programs
+        )
         objective = model.NewIntVar(0, objective_bound, "mid_total_welfare")
-        model.Add(objective == sum(objective_terms))
+        model.Add(objective == optimistic_objective_constant + sum(objective_terms))
         model.Maximize(objective)
 
         variables = _MidVariables(
             cutoffs=cutoffs,
             thresholds=thresholds,
             access=access,
+            access_joint=access_joint,
             effective=effective,
             remaining=tuple(remaining_rows),
             objective=objective,
+            objective_bound=objective_bound,
+            optimistic_objective_constant=optimistic_objective_constant,
+            activated_type_indices=activated_type_indices,
             access_pair_count=len(required_access),
         )
         self._add_mid_hints(model, problem, variables)
@@ -254,11 +299,74 @@ class MidCpSatSolver(CpBoolSolver):
         if not problem.hint or set(problem.hint) != set(problem.nodes):
             return
         hint = finite_grid_oracle(self.market, problem.hint, self.lottery_scale)
+        cutoffs = {key: int(round(value)) for key, value in hint.cutoffs.items()}
         for program_id, variable in variables.cutoffs.items():
-            model.AddHint(variable, round(hint.cutoffs[program_id]))
+            model.AddHint(variable, cutoffs[program_id])
+        for (program_id, priority), variable in variables.thresholds.items():
+            model.AddHint(
+                variable,
+                max(cutoffs[program_id] - priority * self.lottery_scale, 0),
+            )
+        for (student_node, school_node), variable in variables.access.items():
+            model.AddHint(
+                variable,
+                int(problem.hint[student_node] == problem.hint[school_node]),
+            )
+        for (
+            student_node,
+            school_node,
+            zone,
+        ), variable in variables.access_joint.items():
+            model.AddHint(
+                variable,
+                int(
+                    problem.hint[student_node] == zone
+                    and problem.hint[school_node] == zone
+                ),
+            )
+        programs = self.market.program_by_id
+        for (
+            student_node,
+            program_id,
+            priority,
+        ), variable in variables.effective.items():
+            program = programs[program_id]
+            accessible = program.citywide or (
+                problem.hint[student_node] == problem.hint[program.school_node]
+            )
+            threshold = max(
+                cutoffs[program_id] - priority * self.lottery_scale,
+                0,
+            )
+            model.AddHint(variable, threshold if accessible else self.lottery_scale)
         for row, values in zip(variables.remaining, hint.remaining_masses):
             for variable, value in zip(row, values):
-                model.AddHint(variable, round(value))
+                model.AddHint(variable, int(round(value)))
+        raw_objective = variables.optimistic_objective_constant
+        for type_index, (student_type, values) in enumerate(
+            zip(self.market.types, hint.remaining_masses)
+        ):
+            if type_index not in variables.activated_type_indices:
+                continue
+            previous = self.lottery_scale
+            for utility, value in zip(student_type.scaled_utility_sums, values):
+                remaining = int(round(value))
+                raw_objective += utility * (previous - remaining)
+                previous = remaining
+        model.AddHint(variables.objective, raw_objective)
+
+    def _add_hints(
+        self,
+        model: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        y: _ZoneVars,
+    ) -> None:
+        super()._add_hints(model, problem, x, y)
+        if not problem.hint or set(problem.hint) != set(problem.nodes):
+            return
+        for (u, v), variable in self._boundary_limit_vars.items():
+            model.AddHint(variable, int(problem.hint[u] != problem.hint[v]))
 
     def _additional_solution_metadata(
         self, solver: cp_model.CpSolver, model: cp_model.CpModel, status: int
@@ -267,10 +375,14 @@ class MidCpSatSolver(CpBoolSolver):
         if variables is None:
             return {}
         metadata: dict[str, object] = {
-            "formulation": "mid_finite_grid",
+            "formulation": (
+                "mid_finite_grid"
+                if self.activated_type_indices is None
+                else "mid_generated_utility_decomposition"
+            ),
             "objective_kind": "mid_program_welfare",
             "mid_lottery_scale": self.lottery_scale,
-            "mid_utility_scale": CP_SAT_SCALE,
+            "mid_utility_scale": self.market.utility_scale,
             "mid_utility_handling": self.market.utility_handling,
             "mid_student_count": self.market.student_count,
             "mid_utility_student_count": self.market.utility_student_count,
@@ -296,17 +408,34 @@ class MidCpSatSolver(CpBoolSolver):
             "mid_remaining_variable_count": sum(
                 len(row) for row in variables.remaining
             ),
+            "mid_objective_upper_bound": variables.objective_bound,
+            "mid_optimistic_objective_constant": (
+                variables.optimistic_objective_constant
+            ),
+            "mid_activated_type_count": len(variables.activated_type_indices),
+            "mid_inactive_type_count": (
+                len(self.market.types) - len(variables.activated_type_indices)
+            ),
             "mid_model_variable_count": len(model.Proto().variables),
             "mid_model_constraint_count": len(model.Proto().constraints),
+            "mid_model_hint_count": len(model.Proto().solution_hint.vars),
             "mid_preprocessing_seconds": self.preprocessing_seconds,
             "aggregate_capacity_overage_disabled": True,
             "aggregate_capacity_shortage_disabled": True,
         }
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             raw_objective = int(solver.Value(variables.objective))
+            raw_bound = float(solver.BestObjectiveBound())
             metadata["mid_raw_solver_objective"] = raw_objective
+            metadata["mid_master_candidate_objective"] = raw_objective / (
+                self.lottery_scale * self.market.utility_scale
+            )
             metadata["mid_solver_fixed_point_welfare"] = raw_objective / (
-                self.lottery_scale * CP_SAT_SCALE
+                self.lottery_scale * self.market.utility_scale
+            )
+            metadata["mid_master_raw_best_objective_bound"] = raw_bound
+            metadata["mid_master_best_objective_bound"] = raw_bound / (
+                self.lottery_scale * self.market.utility_scale
             )
             metadata["mid_solver_cutoffs"] = {
                 program_id: int(solver.Value(variable))
@@ -317,6 +446,8 @@ class MidCpSatSolver(CpBoolSolver):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         solution = super().solve(problem)
         solution.metadata["objective_kind"] = "mid_program_welfare"
+        if self.activated_type_indices is not None:
+            return solution
         if not solution.feasible:
             return solution
 
@@ -340,6 +471,7 @@ class MidCpSatSolver(CpBoolSolver):
                 "mid_solver_market_fixed_point_welfare": solver_market.fixed_point_welfare,
                 "mid_solver_market_stable": solver_market.stable,
                 "mid_finite_grid_welfare": finite.welfare,
+                "mid_finite_grid_fixed_point_value": finite.fixed_point_value,
                 "mid_finite_grid_fixed_point_welfare": finite.fixed_point_welfare,
                 "mid_finite_grid_cutoffs": {
                     key: int(round(value)) for key, value in finite.cutoffs.items()
@@ -361,11 +493,9 @@ class MidCpSatSolver(CpBoolSolver):
                 "mid_oracle_seconds": oracle_seconds,
             }
         )
-        if not math.isclose(
-            solver_market.fixed_point_welfare,
-            solution.metadata["mid_solver_fixed_point_welfare"],
-            rel_tol=0,
-            abs_tol=1e-8,
+        if (
+            solver_market.fixed_point_value
+            != solution.metadata["mid_raw_solver_objective"]
         ):
             raise RuntimeError("MID solver objective does not match cutoff evaluation.")
         return solution

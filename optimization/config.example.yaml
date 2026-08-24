@@ -7,7 +7,7 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'             # single | recursive | iterative_choice | mid
+strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 
 # --- optimization parameters ---
@@ -22,7 +22,8 @@ centroid_neighbor_radius: 0
 solve_time_limits: [45, 45]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level
 gap_limits: [0, 0]
-hints: voronoi                # voronoi | none
+hints: voronoi                # feasible | voronoi | none
+feasible_hint_time_limit: 60  # seconds for the objective-free zoning hint solve
 save_solver_logs: false       # write solver logs under output/solver_logs
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 secondary_objective: false    # cp_bool/mip: use alternative boundary objective formulation
@@ -42,14 +43,14 @@ short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # recursive: graph-hop width around projected borders
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
-boundary_prop: -1             # single/iterative_choice/mid: 0..1; negative disables
-max_iterations: 5             # iterative_choice
+boundary_prop: -1             # single/iterative_choice/mid/mid_decomp: 0..1; negative disables
+max_iterations: 5             # iterative_choice/mid_decomp
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
-mid_lottery_scale: 20         # mid: integer continuum-mass grid
-mid_utility_handling: omit_nonpositive  # mid: omit_nonpositive | exponentiate
+mid_lottery_scale: 20         # mid/mid_decomp: integer continuum-mass grid
+mid_utility_handling: omit_nonpositive  # mid/mid_decomp: omit_nonpositive | exponentiate
 
 # --- data ingestion ---
 data:

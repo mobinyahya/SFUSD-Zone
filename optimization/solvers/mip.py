@@ -443,5 +443,6 @@ class MipSolver(Solver):
         initial = initial_solution(
             problem,
             self.options.get("hints"),
+            solver_options=self.options,
         )
         return initial.assignment if initial is not None else None

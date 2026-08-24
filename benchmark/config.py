@@ -344,6 +344,8 @@ def optimization_config_hash(
         semantic.pop("weight_edges")
     if semantic.get("enumerated_solutions", -1) <= 0:
         semantic.pop("enumerated_solutions", None)
+    if semantic.get("hints") != "feasible":
+        semantic.pop("feasible_hint_time_limit", None)
     if source_manifest is None:
         source_manifest = _benchmark_source_manifest(resolved)
     return stable_hash(
