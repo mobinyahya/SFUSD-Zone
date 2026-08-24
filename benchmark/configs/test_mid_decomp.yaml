@@ -53,5 +53,5 @@ visualization:
 
 matching:
   enabled: true
-  config: ../../assignment/configs/8-18-real-pref-zone-only.yaml
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
   compute_stage_assignments: false
