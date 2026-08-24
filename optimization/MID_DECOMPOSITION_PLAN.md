@@ -8,10 +8,12 @@ subproblem. Utility maximization provides the same cutoff-selection pressure as
 the former monolithic MID formulation.
 
 The current CP-SAT model with lottery scale `L` optimizes a finite-grid
-approximation. Increasing `L` can improve that approximation, but no finite `L`
-certifies the continuum optimum. The exact structural continuum model has
-continuous cutoff and mass variables plus binary zoning and piecewise-linear
-selectors, so the generated master must be a MIP.
+approximation. Increasing `L` can improve that approximation, but an arbitrary
+finite `L` does not generally certify the continuum optimum. A particular grid
+is exact only if a separate argument shows that it contains every relevant
+continuum breakpoint. The exact structural continuum model has continuous
+cutoff and mass variables plus binary zoning and piecewise-linear selectors, so
+the generated master must be a MIP.
 
 The decomposition below is exact for the represented continuum market. It
 terminates at a globally optimal zoning when generated masters are solved to
@@ -106,9 +108,11 @@ then:
 B[s](p^k[-s]) <= B[s](p[-s]) <= p[s],
 ```
 
-so the iteration remains below every feasible vector and converges to `p*(x)`.
-On the finite grid this terminates finitely; in the continuum the monotone limit
-gives the least fixed point under the continuous piecewise-linear demand map.
+so the iteration remains below every feasible vector. Use a fair schedule, such
+as cyclically updating every overloaded program. On the finite grid this
+terminates finitely. In the continuum, the demand map is continuous and
+piecewise linear, making the least-response map continuous from below. The
+monotone iterates therefore converge to the least fixed point `p*(x)`.
 
 Lowering any program cutoff can only move lottery mass from a lower-ranked
 program or the outside option to that program. Under the objective-order
@@ -203,35 +207,38 @@ continuum objective or its optimality bounds.
 
 ## Generated Master
 
-Let `A` be the activated compressed types. The master includes the exact
-continuum recurrence and demand only for `g in A`. For each inactive type use
-the valid optimistic bound:
+Let `k[g]` be the number of exact activated ranks for type `g`. Ranks below
+`k[g]` use the exact recurrence. Replace the remaining tail by optimistic
+transportation masses `z[g,r]`:
 
 ```text
-U_bar[g] = H[g,0]
+sum(z[g,r] for r >= k[g]) <= R[g,k[g]-1]
+z[g,r] <= a[g,r](x)
+z[g,r] >= 0.
 ```
 
-and use zero for a type with no alternatives. The generated master is:
+Use remaining mass one when `k[g] = 0`. The generated master is:
 
 ```text
 maximize
-    sum(H[g,r] * d[g,r] for g in A and all r)
-    + sum(U_bar[g] for g not in A)
+    sum(H[g,r] * d[g,r] for r < k[g])
+    + sum(H[g,r] * z[g,r] for r >= k[g])
 
 subject to
     x in Omega
     shared continuous cutoffs, thresholds, and access constraints
-    exact recurrence for g in A
-    sum(active demand at s) <= q[s] for every s.
+    exact recurrence through rank k[g] - 1
+    sum(exact prefix demand at s + transportation tail demand at s) <= q[s]
+        for every s.
 ```
 
 This is a valid maximization relaxation:
 
-- Removing inactive demand relaxes every capacity row.
-- `sum(r, H[g,r] * d[g,r]) <= H[g,0]` because assigned mass is at most one and
-  utility is nonincreasing down the preference list.
+- The true tail assignment masses satisfy the transportation rows.
+- Transportation preserves access, remaining mass, unit demand, and globally
+  shared program capacity while relaxing only cutoff consistency within tails.
 - Every complete feasible solution projects to a feasible generated-master
-  solution with weakly larger master objective.
+  solution with the same objective, so the master optimum is weakly larger.
 
 Consequently:
 
@@ -239,7 +246,10 @@ Consequently:
 OPT(full continuum MID) <= OPT(master(A)).
 ```
 
-Activating every type reproduces the full exact continuum MIP.
+Increasing `k[g]` by one replaces one optimistic tail rank with its exact
+recurrence. Activating every preference rank reproduces the full exact
+continuum MIP. In the CP-SAT implementation, `z[g,r]` is integer in `[0,L]`, so
+the same argument is exact for the configured finite lottery grid.
 
 ## Decomposition Algorithm
 
@@ -248,7 +258,7 @@ Maintain:
 ```text
 LB = utility of the best complete continuum-feasible solution
 UB = smallest certified generated-master upper bound
-A  = activated types.
+k  = active prefix length for every type.
 ```
 
 ### Initialization
@@ -261,7 +271,7 @@ A  = activated types.
 5. For the hinted zoning, solve the fixed-zoning continuum welfare subproblem by
    maximizing utility with all types and exact recurrences. Use it as the first
    incumbent and `LB`.
-6. Start with no activated types or a deterministic seed set.
+6. Start with zero-length prefixes or deterministic seed prefixes.
 
 The fixed-zoning subproblem uses utility objective pressure. It does not
 minimize cutoff magnitudes. The current monotone continuum oracle may provide a
@@ -269,7 +279,7 @@ warm start, but its tolerance-based result is not the source of a global proof.
 
 ### Master Iteration
 
-1. Build the exact continuum master for the current `A`.
+1. Build the exact-prefix continuum master for the current `k`.
 2. Warm-start zoning, cutoffs, access, and active recurrence variables from the
    best incumbent.
 3. Solve the master to global optimality in exact mode.
@@ -290,19 +300,22 @@ Only the proven master optimum or a valid solver objective bound may update
 At master candidate `(x_bar, p_bar)`:
 
 1. Compute complete demand and actual utility contributions for every type.
-2. If a program is overloaded, activate every inactive type with positive
-   demand at that program.
-3. If complete demand is feasible, activate every inactive type satisfying:
+2. For each overloaded program, sort omitted positive demand contributions from
+   largest to smallest. Select the minimum-cardinality prefix cover whose exact
+   demand, together with already exact demand, exceeds capacity. Activate each
+   selected type through its offending rank.
+3. If complete demand is feasible, compare each type's transportation utility
+   with its actual cutoff utility. For each positive gap, activate through the
+   first tail rank where transportation and actual assignment mass differ.
 
 ```text
-U_bar[g] > actual_utility[g](x_bar, p_bar).
+transport_utility[g] > actual_utility[g](x_bar, p_bar).
 ```
 
-The active capacity row already satisfies capacity. Restoring all omitted
-demand at an overloaded program therefore makes the current candidate
-infeasible. Utility-gap activation does not remove the candidate from the
-feasible region; it removes optimistic objective value at that point. Both are
-valid refinements.
+The selected exact prefix demand exceeds residual capacity independently of how
+the remaining transportation variables are reassigned, so overload separation
+removes the current cutoff candidate. Utility-gap activation removes a specific
+optimistic tail assignment. Both are valid refinements.
 
 ### Termination And Certificate
 
@@ -311,11 +324,14 @@ Stop with a global-optimality certificate only when one of these holds:
 ```text
 UB <= LB                                      in common objective units
 no separator exists at a globally optimal master candidate
-all types are active and the full master is globally solved.
+all preference ranks are active and the full master is globally solved.
 ```
 
-For the no-separator case, complete demand is feasible and every inactive type
-attains its upper bound. Hence the candidate has equal master and full utility:
+For the no-separator case, complete demand is feasible and no type has a
+positive transportation-utility gap. The actual tail masses are feasible for
+the transportation relaxation, so the optimal master cannot be below their
+total utility. Since no type's transportation utility is above its actual
+utility, the totals are equal:
 
 ```text
 W_full(candidate) = W_master(candidate)
@@ -326,24 +342,34 @@ W_full(candidate) = W_master(candidate)
 
 so all inequalities are equalities and the zoning is globally optimal.
 
-Whenever separation is required, at least one inactive type is activated.
-There are at most `|G|` activation rounds and at most `|G| + 1` master solves,
-including the solve after the final activation. Thus the method finitely reduces
-to the full exact continuum MIP in the worst case.
+Whenever separation is required, at least one prefix strictly increases. Since
+there are finitely many preference incidences, the method finitely reduces to
+the full exact continuum MIP in the worst case.
 
-A positive absolute or relative gap proves only tolerance-optimality. A time or
-iteration limit proves nothing beyond the reported `LB` and `UB`; return the
-best incumbent with status `FEASIBLE`, not `OPTIMAL`. If `max_iterations` is
-used only for generation, reaching it should activate all remaining types and
-start the final full solve rather than claim convergence.
+A positive absolute or relative gap proves only tolerance-optimality. Solver
+status alone is insufficient when a positive gap limit is configured; exact
+status requires bound closure. A time or iteration limit proves nothing beyond
+the reported `LB` and `UB`; return the best incumbent with status `FEASIBLE`,
+not `OPTIMAL`. If `max_iterations` is used only for generation, reaching it
+should activate all remaining preference ranks and start the final full solve
+rather than claim convergence.
 
 ## Large-Market Interpretation
 
 The continuum model is the result target. Replicate every type count and every
-program capacity by market size `K`, draw independent continuous uniform
-lotteries, and normalize demand and welfare by `K`. Under the standard no-atom
-lottery and cutoff-regularity assumptions, realized DA demand and welfare
-converge to the deterministic recurrence above as `K` grows.
+program capacity by market size `K`. Draw one continuous uniform lottery per
+applicant, shared by that applicant across programs and independent across
+applicants. Independent applicant-program lotteries would not produce the
+`min` recurrence. Normalize demand and welfare by `K`.
+
+The finite-market interpretation additionally assumes that applicant-proposing
+DA selects the applicant-optimal cutoff outcome and that its normalized least
+cutoffs converge to the continuum least cutoff. A no-atom lottery, proportional
+capacity scaling, and uniqueness or the usual cutoff regularity are sufficient
+conditions to impose for this use. Under those assumptions, realized DA demand
+and welfare converge to the deterministic recurrence above as `K` grows. The
+continuum MIP remains a well-defined optimization model even when this
+finite-market convergence is not invoked.
 
 The finite-grid CP-SAT model is not this limit. For example, three identical
 applicants competing for one seat require continuum cutoff `p = 2/3` and fill
@@ -356,18 +382,35 @@ their objective or bound to certify the continuum solve.
 
 ## Numerical Meaning Of Optimality
 
-The mathematical guarantee assumes exact rational coefficients and exact MIP
-solves. Gurobi represents the loaded utility coefficients in floating point and
-uses feasibility and integrality tolerances. Production metadata must therefore
-distinguish:
+The mathematical guarantee assumes exact rational coefficients, exact
+separation, and exact MIP solves. Gurobi represents the loaded utility
+coefficients in floating point and uses feasibility and integrality tolerances.
+An ordinary production solve can therefore claim solver-certified global
+optimality for the represented floating-point model, not an exact-arithmetic
+proof. Production metadata must distinguish:
 
-- Mathematical global optimality of the represented formulation.
+- Exact mathematical optimality, only after rational representation and exact
+  post-validation.
 - Solver-reported optimality within configured numerical tolerances.
 - Tolerance-optimal or time-limited feasible results.
 
 Use the same raw continuum utility coefficients for master objectives,
 fixed-zoning incumbents, bounds, and gap calculations. Never compare a
 finite-grid fixed-point value with a continuum MIP bound.
+
+For a numerical certificate, validate every incumbent capacity row
+conservatively, round solver upper bounds outward, and use separation tolerances
+no looser than the solver's feasibility tolerances. Do not certify
+`no_separation` if a capacity or utility-gap comparison is numerically
+ambiguous. Exact mathematical status requires recomputing feasibility,
+separation, and bound closure with rational arithmetic.
+
+The current `optimization/strategies/mid_decomp.py` implementation is a CP-SAT
+finite-grid decomposition. It can certify only its fixed-point finite-grid
+objective, subject to safe integer bound handling. It is not an implementation
+of this continuum plan. `ZoneSolution.objective` must use the certified
+fixed-point welfare; unrounded finite-grid welfare remains separate diagnostic
+metadata because the two objectives can rank zonings differently.
 
 ## Implementation Changes
 
@@ -377,11 +420,12 @@ finite-grid fixed-point value with a continuum MIP bound.
    add a dedicated `MidMipSolver` and remove the finite-grid solver from the
    `mid` strategy path.
 2. Reuse `add_gurobi_zoning_geography()` for the canonical zoning constraints.
-3. Accept an activated type-index set.
+3. Accept active prefix lengths by type.
 4. Create shared continuous cutoffs and clipped priority thresholds.
 5. Create access indicators from the complete preprocessed market.
-6. Add exact continuous recurrences and capacity terms only for active types.
-7. Add inactive optimistic utility as an objective constant.
+6. Add exact continuous recurrences through each active prefix.
+7. Add access- and capacity-constrained transportation variables for every
+   inactive tail.
 8. Expose candidate cutoffs, candidate objective, `ObjBound`, status, and model
    sizes without converting to fixed-point units.
 9. Restrict hints to variables present in the generated master.
@@ -399,7 +443,7 @@ finite-grid fixed-point value with a continuum MIP bound.
 ### `optimization/strategies/mid.py`
 
 1. Require the MIP solver path rather than `cp_bool` for continuum MID.
-2. Own the activated set, incumbent, global bounds, and iteration metadata.
+2. Own the active prefixes, incumbent, global bounds, and iteration metadata.
 3. Generate and globally solve continuum masters.
 4. Run complete separation and the fixed-zoning welfare subproblem after each
    candidate.
@@ -421,7 +465,7 @@ Record at least:
 
 - Formulation name identifying continuum generated MID utility.
 - Master and fixed-zoning solver statuses.
-- Iteration count and activated/total type counts.
+- Iteration count and activated/total type and preference counts.
 - Overload and utility-gap activations.
 - Candidate objective and certified master upper bound by iteration.
 - Continuum `LB`, `UB`, absolute gap, and relative gap.
@@ -448,14 +492,15 @@ Add focused synthetic coverage for:
    cutoff objective.
 5. Rejection of a type whose utility coefficients increase down its preference
    list.
-6. Overload separation cutting off the current candidate.
-7. Utility-gap separation lowering optimistic objective value.
+6. Minimum-cardinality overload prefix separation cutting off the current
+   candidate.
+7. Utility-gap separation activating the first differing tail rank.
 8. Every certified master bound remaining above the exhaustive continuum
    optimum.
 9. Every complete incumbent remaining below or equal to that optimum.
 10. No-separation at an optimal master certifying the exhaustive optimum.
-11. Full activation reproducing the direct continuum MIP.
-12. Restricted and citywide programs sharing global capacity rows.
+11. Full prefix activation reproducing the direct continuum MIP.
+12. Transportation tails respecting unit mass, access, and shared capacity.
 13. Same-node access, impossible overlap, and variable same-zone access.
 14. Time-limit exhaustion returning `FEASIBLE` with a residual gap.
 15. Continuum and finite-grid objectives never being mixed in bounds.

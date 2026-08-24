@@ -13,11 +13,14 @@ from optimization.mid_oracle import (
     continuum_oracle,
     evaluate_cutoffs,
     finite_grid_oracle,
-    separate_mid_types,
+    separate_mid_prefixes,
 )
 from optimization.solution import ZoneSolution
 from optimization.solvers.mid import MidCpSatSolver
 from optimization.strategies.base import Strategy, register
+
+
+_BUDGET_POLICY = "linearly_increasing_with_carry_forward"
 
 
 @register("mid_decomp")
@@ -77,7 +80,7 @@ class MidDecompositionStrategy(Strategy):
 
         started = time.perf_counter()
         deadline = started + time_limit
-        active: set[int] = set()
+        active: dict[int, int] = {}
         stages: list[ZoneSolution] = []
         iteration_records = []
         incumbent: ZoneSolution | None = None
@@ -117,25 +120,31 @@ class MidDecompositionStrategy(Strategy):
             if remaining_seconds <= 0:
                 termination_reason = "time_limit"
                 break
+            master_time_limit = _master_time_limit(
+                remaining_seconds,
+                iteration,
+                max_iterations,
+            )
 
             if incumbent is not None:
                 problem.hint = incumbent.assignment
             master_options = {
                 **base_options,
-                "solve_time_limit": remaining_seconds,
+                "solve_time_limit": master_time_limit,
                 "relative_gap_limit": relative_tolerance,
             }
             master = MidCpSatSolver(
                 market,
                 lottery_scale,
                 preprocessing_seconds=preprocessing_seconds,
-                activated_type_indices=active,
+                active_prefix_lengths=active,
                 preprocessed=True,
                 **master_options,
             )
             master._solve_count = iteration
             master._progress_count = iteration
-            active_before = len(active)
+            active_types_before = len(active)
+            active_preferences_before = sum(active.values())
             master_start = time.perf_counter()
             solution = master.solve(problem)
             iteration_master_seconds = time.perf_counter() - master_start
@@ -143,7 +152,11 @@ class MidDecompositionStrategy(Strategy):
             solution.metadata.update(
                 {
                     "mid_decomp_iteration": iteration,
-                    "mid_decomp_active_types_before": active_before,
+                    "mid_decomp_active_types_before": active_types_before,
+                    "mid_decomp_active_preferences_before": (
+                        active_preferences_before
+                    ),
+                    "mid_decomp_master_time_limit_seconds": master_time_limit,
                 }
             )
 
@@ -153,8 +166,11 @@ class MidDecompositionStrategy(Strategy):
                     {
                         "iteration": iteration,
                         "status": solution.status,
-                        "activated_types_before": active_before,
+                        "activated_types_before": active_types_before,
                         "activated_types_after": len(active),
+                        "activated_preferences_before": active_preferences_before,
+                        "activated_preferences_after": sum(active.values()),
+                        "master_time_limit_seconds": master_time_limit,
                         "master_seconds": iteration_master_seconds,
                     }
                 )
@@ -163,7 +179,10 @@ class MidDecompositionStrategy(Strategy):
 
             raw_objective = int(solution.metadata["mid_raw_solver_objective"])
             raw_bound = float(solution.metadata["mid_master_raw_best_objective_bound"])
-            certified_bound = max(raw_objective, math.ceil(raw_bound))
+            certified_bound = _certified_integer_upper_bound(
+                raw_bound,
+                raw_objective,
+            )
             upper_bound_value = (
                 certified_bound
                 if upper_bound_value is None
@@ -194,18 +213,26 @@ class MidDecompositionStrategy(Strategy):
                 incumbent_value = finite_value
                 incumbent_iteration = iteration
 
-            separation = separate_mid_types(
+            if master.master_assignment_masses is None:
+                raise RuntimeError("MID master did not expose transportation masses.")
+            separation = separate_mid_prefixes(
                 market,
                 candidate,
                 active,
+                master.master_assignment_masses,
                 lottery_scale,
             )
-            overload_types = set(separation.overload_type_indices)
-            utility_gap_types = set(separation.utility_gap_type_indices)
-            newly_active = overload_types | utility_gap_types
+            overload_prefixes = dict(separation.overload_prefixes)
+            utility_gap_prefixes = dict(separation.utility_gap_prefixes)
+            updates = dict(overload_prefixes)
+            for type_index, prefix_length in utility_gap_prefixes.items():
+                updates[type_index] = max(updates.get(type_index, 0), prefix_length)
+            for type_index, prefix_length in updates.items():
+                active[type_index] = max(active.get(type_index, 0), prefix_length)
+            activated_preferences = sum(active.values()) - active_preferences_before
+            newly_active = activated_preferences > 0
             if separation.overloaded_programs and not newly_active:
                 raise RuntimeError("MID overload separation made no progress.")
-            active.update(newly_active)
 
             lower_bound, upper_bound, absolute_gap, relative_gap = _bounds(
                 incumbent_value,
@@ -215,11 +242,16 @@ class MidDecompositionStrategy(Strategy):
             record = {
                 "iteration": iteration,
                 "status": solution.status,
-                "activated_types_before": active_before,
+                "activated_types_before": active_types_before,
                 "activated_types_after": len(active),
+                "activated_preferences_before": active_preferences_before,
+                "activated_preferences_after": sum(active.values()),
                 "overloaded_programs": list(separation.overloaded_programs),
-                "overload_activated_type_indices": sorted(overload_types),
-                "utility_gap_activated_type_indices": sorted(utility_gap_types),
+                "overload_activated_prefixes": sorted(overload_prefixes.items()),
+                "utility_gap_activated_prefixes": sorted(
+                    utility_gap_prefixes.items()
+                ),
+                "newly_activated_preference_count": activated_preferences,
                 "master_raw_objective": raw_objective,
                 "master_candidate_objective": raw_objective / objective_scale,
                 "master_raw_best_objective_bound": raw_bound,
@@ -232,6 +264,7 @@ class MidDecompositionStrategy(Strategy):
                 "absolute_gap": absolute_gap,
                 "relative_gap": relative_gap,
                 "candidate_cutoffs": dict(cutoffs),
+                "master_time_limit_seconds": master_time_limit,
                 "master_seconds": iteration_master_seconds,
                 "oracle_seconds": iteration_oracle_seconds,
             }
@@ -239,8 +272,12 @@ class MidDecompositionStrategy(Strategy):
             solution.metadata.update(
                 {
                     "mid_decomp_active_types_after": len(active),
-                    "mid_decomp_overload_activated_count": len(overload_types),
-                    "mid_decomp_utility_gap_activated_count": len(utility_gap_types),
+                    "mid_decomp_active_preferences_after": sum(active.values()),
+                    "mid_decomp_master_time_limit_seconds": master_time_limit,
+                    "mid_decomp_overload_activated_count": len(overload_prefixes),
+                    "mid_decomp_utility_gap_activated_count": len(
+                        utility_gap_prefixes
+                    ),
                     "mid_decomp_candidate_cutoffs": dict(cutoffs),
                     "mid_decomp_global_lower_bound": lower_bound,
                     "mid_decomp_global_upper_bound": upper_bound,
@@ -250,10 +287,10 @@ class MidDecompositionStrategy(Strategy):
             )
             stages.append(solution)
 
-            if solution.status == "OPTIMAL" and not newly_active:
+            if certified_bound == raw_objective and not newly_active:
                 termination_reason = (
-                    "all_types_active"
-                    if len(active) == len(market.types)
+                    "all_preferences_active"
+                    if sum(active.values()) == market.preference_count
                     else "no_separation"
                 )
                 break
@@ -267,9 +304,6 @@ class MidDecompositionStrategy(Strategy):
                 break
             if time.perf_counter() >= deadline:
                 termination_reason = "time_limit"
-                break
-            if not newly_active:
-                termination_reason = "no_separation_nonoptimal_master"
                 break
 
         if incumbent is None or incumbent_result is None or incumbent_value is None:
@@ -298,6 +332,7 @@ class MidDecompositionStrategy(Strategy):
                 upper_bound_value=upper_bound_value,
                 objective_scale=objective_scale,
                 termination_reason=termination_reason,
+                total_budget_seconds=time_limit,
                 preprocessing_seconds=preprocessing_seconds,
                 master_seconds=master_seconds,
                 oracle_seconds=oracle_seconds,
@@ -318,6 +353,7 @@ class MidDecompositionStrategy(Strategy):
             termination_reason
             in {
                 "all_types_active",
+                "all_preferences_active",
                 "no_separation",
             }
             or absolute_gap == 0
@@ -350,6 +386,7 @@ class MidDecompositionStrategy(Strategy):
             upper_bound_value=upper_bound_value,
             objective_scale=objective_scale,
             termination_reason=termination_reason,
+            total_budget_seconds=time_limit,
             preprocessing_seconds=preprocessing_seconds,
             master_seconds=master_seconds,
             oracle_seconds=oracle_seconds,
@@ -359,6 +396,26 @@ class MidDecompositionStrategy(Strategy):
 
 def _final_value(values, default) -> float:
     return float(values[-1] if values else default)
+
+
+def _certified_integer_upper_bound(raw_bound: float, objective: int) -> int:
+    if not math.isfinite(raw_bound):
+        raise RuntimeError("MID master returned a non-finite objective bound.")
+    if abs(raw_bound) < 2**53:
+        bound = math.ceil(raw_bound)
+    else:
+        bound = math.ceil(math.nextafter(raw_bound, math.inf))
+    return max(objective, bound)
+
+
+def _master_time_limit(
+    remaining_seconds: float,
+    iteration: int,
+    max_iterations: int,
+) -> float:
+    current_weight = iteration + 1
+    remaining_weight = sum(range(current_weight, max_iterations + 1))
+    return remaining_seconds * current_weight / remaining_weight
 
 
 def _bounds(
@@ -397,7 +454,7 @@ def _add_finite_metadata(
     *,
     candidate: MidOracleResult | None = None,
 ) -> None:
-    solution.objective = finite.welfare
+    solution.objective = finite.fixed_point_welfare
     solution.metadata.update(
         {
             "mid_finite_grid_welfare": finite.welfare,
@@ -447,7 +504,7 @@ def _add_summary_metadata(
     solution: ZoneSolution,
     *,
     market,
-    active: set[int],
+    active: dict[int, int],
     records: list[dict],
     incumbent_iteration: int | None,
     incumbent_result: MidOracleResult | None,
@@ -455,6 +512,7 @@ def _add_summary_metadata(
     upper_bound_value: int | None,
     objective_scale: int,
     termination_reason: str,
+    total_budget_seconds: float,
     preprocessing_seconds: float,
     master_seconds: float,
     oracle_seconds: float,
@@ -499,13 +557,23 @@ def _add_summary_metadata(
             ),
             "mid_decomp_iteration_count": len(records),
             "mid_decomp_activated_type_count": len(active),
+            "mid_decomp_fully_activated_type_count": sum(
+                active.get(type_index, 0) == len(student_type.programs)
+                for type_index, student_type in enumerate(market.types)
+            ),
             "mid_decomp_total_type_count": len(market.types),
+            "mid_decomp_activated_preference_count": sum(active.values()),
+            "mid_decomp_total_preference_count": market.preference_count,
+            "mid_decomp_active_prefix_lengths": {
+                str(type_index): prefix_length
+                for type_index, prefix_length in sorted(active.items())
+            },
             "mid_decomp_overload_activated_count": sum(
-                len(record.get("overload_activated_type_indices", ()))
+                len(record.get("overload_activated_prefixes", ()))
                 for record in records
             ),
             "mid_decomp_utility_gap_activated_count": sum(
-                len(record.get("utility_gap_activated_type_indices", ()))
+                len(record.get("utility_gap_activated_prefixes", ()))
                 for record in records
             ),
             "mid_decomp_iterations": records,
@@ -515,6 +583,8 @@ def _add_summary_metadata(
             "mid_decomp_relative_gap": relative_gap,
             "mid_decomp_best_incumbent_iteration": incumbent_iteration,
             "mid_decomp_termination_reason": termination_reason,
+            "mid_decomp_total_budget_seconds": total_budget_seconds,
+            "mid_decomp_budget_policy": _BUDGET_POLICY,
             "mid_decomp_total_master_seconds": master_seconds,
             "mid_decomp_total_oracle_seconds": oracle_seconds,
             "mid_preprocessing_seconds": preprocessing_seconds,

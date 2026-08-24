@@ -30,10 +30,10 @@ class _MidVariables:
     access_joint: dict[tuple[int, int, int], cp_model.IntVar]
     effective: dict[tuple[int, str, int], cp_model.IntVar]
     remaining: tuple[tuple[cp_model.IntVar, ...], ...]
+    transport: tuple[tuple[tuple[int, cp_model.IntVar], ...], ...]
     objective: cp_model.IntVar
     objective_bound: int
-    optimistic_objective_constant: int
-    activated_type_indices: frozenset[int]
+    active_prefix_lengths: tuple[int, ...]
     access_pair_count: int
 
 
@@ -46,7 +46,7 @@ class MidCpSatSolver(CpBoolSolver):
         lottery_scale: int,
         *,
         preprocessing_seconds: float = 0.0,
-        activated_type_indices: set[int] | frozenset[int] | None = None,
+        active_prefix_lengths: dict[int, int] | None = None,
         preprocessed: bool = False,
         **options,
     ) -> None:
@@ -61,13 +61,12 @@ class MidCpSatSolver(CpBoolSolver):
         self.market = market
         self.lottery_scale = lottery_scale
         self.preprocessing_seconds = preprocessing_seconds
-        self.activated_type_indices = (
-            None
-            if activated_type_indices is None
-            else frozenset(activated_type_indices)
+        self.active_prefix_lengths = (
+            None if active_prefix_lengths is None else dict(active_prefix_lengths)
         )
         self.preprocessed = preprocessed
         self._mid_variables: _MidVariables | None = None
+        self.master_assignment_masses: tuple[tuple[int, ...], ...] | None = None
 
     def _add_model_objective(
         self,
@@ -91,20 +90,7 @@ class MidCpSatSolver(CpBoolSolver):
         x: _AssignmentVars,
     ) -> _MidVariables:
         scale = self.lottery_scale
-        if self.activated_type_indices is None:
-            activated_type_indices = frozenset(range(len(self.market.types)))
-        else:
-            activated_type_indices = self.activated_type_indices
-            if any(
-                isinstance(type_index, bool) or not isinstance(type_index, int)
-                for type_index in activated_type_indices
-            ):
-                raise ValueError("Activated MID type indices must be integers.")
-            invalid = activated_type_indices - set(range(len(self.market.types)))
-            if invalid:
-                raise ValueError(
-                    f"Unknown activated MID type indices: {sorted(invalid)}."
-                )
+        active_prefix_lengths = self._validated_prefix_lengths()
         program_by_id = self.market.program_by_id
         program_number = {
             program.program_id: index
@@ -123,10 +109,16 @@ class MidCpSatSolver(CpBoolSolver):
             program_id: (max(priorities) + 1) * scale if priorities else 0
             for program_id, priorities in observed_priorities.items()
         }
-        integer_limit = (2**63 - 1) // 2
+        cp_integer_limit = 2**63 - 1
+        integer_limit = cp_integer_limit // 2
+        max_tail_mass_activity = scale * max(
+            (len(student_type.programs) for student_type in self.market.types),
+            default=0,
+        )
         if (
             max(upper_bounds.values(), default=0) > integer_limit
             or self.market.student_count * scale > integer_limit
+            or max_tail_mass_activity > integer_limit
             or max(
                 (program.capacity * scale for program in self.market.programs),
                 default=0,
@@ -228,14 +220,16 @@ class MidCpSatSolver(CpBoolSolver):
         }
         objective_terms = []
         remaining_rows = []
+        transport_rows = []
         for type_index, student_type in enumerate(self.market.types):
-            if type_index not in activated_type_indices:
-                remaining_rows.append(())
-                continue
+            prefix_length = active_prefix_lengths[type_index]
             previous = scale
             row = []
             for rank, (program_id, priority) in enumerate(
-                zip(student_type.programs, student_type.priorities)
+                zip(
+                    student_type.programs[:prefix_length],
+                    student_type.priorities[:prefix_length],
+                )
             ):
                 remaining = model.NewIntVar(
                     0, scale, f"mid_remaining_{type_index}_{rank}"
@@ -254,6 +248,25 @@ class MidCpSatSolver(CpBoolSolver):
                 previous = remaining
             remaining_rows.append(tuple(row))
 
+            tail = []
+            for rank in range(prefix_length, len(student_type.programs)):
+                program_id = student_type.programs[rank]
+                program = program_by_id[program_id]
+                access_key = (student_type.node, program.school_node)
+                if not program.citywide and fixed_access.get(access_key) is False:
+                    continue
+                mass = model.NewIntVar(
+                    0, scale, f"mid_transport_{type_index}_{rank}"
+                )
+                if not program.citywide and access_key in access:
+                    model.Add(mass <= scale * access[access_key])
+                capacity_terms[program_id].append(student_type.count * mass)
+                objective_terms.append(student_type.scaled_utility_sums[rank] * mass)
+                tail.append((rank, mass))
+            if tail:
+                model.Add(sum(variable for _, variable in tail) <= previous)
+            transport_rows.append(tuple(tail))
+
         for program in self.market.programs:
             terms = capacity_terms[program.program_id]
             if terms:
@@ -265,13 +278,16 @@ class MidCpSatSolver(CpBoolSolver):
         )
         if objective_bound > integer_limit:
             raise ValueError("MID fixed-point objective exceeds CP-SAT integer limits.")
-        optimistic_objective_constant = scale * sum(
-            student_type.scaled_utility_sums[0]
-            for type_index, student_type in enumerate(self.market.types)
-            if type_index not in activated_type_indices and student_type.programs
+        objective_expression_bound = scale * sum(
+            sum(student_type.scaled_utility_sums)
+            for student_type in self.market.types
         )
+        if objective_bound + objective_expression_bound > cp_integer_limit:
+            raise ValueError(
+                "MID objective expression exceeds CP-SAT integer limits."
+            )
         objective = model.NewIntVar(0, objective_bound, "mid_total_welfare")
-        model.Add(objective == optimistic_objective_constant + sum(objective_terms))
+        model.Add(objective == sum(objective_terms))
         model.Maximize(objective)
 
         variables = _MidVariables(
@@ -281,14 +297,33 @@ class MidCpSatSolver(CpBoolSolver):
             access_joint=access_joint,
             effective=effective,
             remaining=tuple(remaining_rows),
+            transport=tuple(transport_rows),
             objective=objective,
             objective_bound=objective_bound,
-            optimistic_objective_constant=optimistic_objective_constant,
-            activated_type_indices=activated_type_indices,
+            active_prefix_lengths=active_prefix_lengths,
             access_pair_count=len(required_access),
         )
         self._add_mid_hints(model, problem, variables)
         return variables
+
+    def _validated_prefix_lengths(self) -> tuple[int, ...]:
+        if self.active_prefix_lengths is None:
+            return tuple(len(student_type.programs) for student_type in self.market.types)
+        for type_index, prefix_length in self.active_prefix_lengths.items():
+            if isinstance(type_index, bool) or not isinstance(type_index, int):
+                raise ValueError("MID active-prefix type indices must be integers.")
+            if type_index < 0 or type_index >= len(self.market.types):
+                raise ValueError(f"Unknown MID type index: {type_index}.")
+            if isinstance(prefix_length, bool) or not isinstance(prefix_length, int):
+                raise ValueError("MID active-prefix lengths must be integers.")
+            if not 0 <= prefix_length <= len(self.market.types[type_index].programs):
+                raise ValueError(
+                    f"Invalid MID prefix length {prefix_length} for type {type_index}."
+                )
+        return tuple(
+            self.active_prefix_lengths.get(type_index, 0)
+            for type_index in range(len(self.market.types))
+        )
 
     def _add_mid_hints(
         self,
@@ -342,17 +377,27 @@ class MidCpSatSolver(CpBoolSolver):
         for row, values in zip(variables.remaining, hint.remaining_masses):
             for variable, value in zip(row, values):
                 model.AddHint(variable, int(round(value)))
-        raw_objective = variables.optimistic_objective_constant
+        for tail, values in zip(variables.transport, hint.assignment_masses):
+            for rank, variable in tail:
+                model.AddHint(variable, int(round(values[rank])))
+        raw_objective = 0
         for type_index, (student_type, values) in enumerate(
             zip(self.market.types, hint.remaining_masses)
         ):
-            if type_index not in variables.activated_type_indices:
-                continue
             previous = self.lottery_scale
-            for utility, value in zip(student_type.scaled_utility_sums, values):
+            prefix_length = variables.active_prefix_lengths[type_index]
+            for utility, value in zip(
+                student_type.scaled_utility_sums[:prefix_length],
+                values[:prefix_length],
+            ):
                 remaining = int(round(value))
                 raw_objective += utility * (previous - remaining)
                 previous = remaining
+            raw_objective += sum(
+                student_type.scaled_utility_sums[rank]
+                * int(round(hint.assignment_masses[type_index][rank]))
+                for rank, _ in variables.transport[type_index]
+            )
         model.AddHint(variables.objective, raw_objective)
 
     def _add_hints(
@@ -374,10 +419,20 @@ class MidCpSatSolver(CpBoolSolver):
         variables = self._mid_variables
         if variables is None:
             return {}
+        activated_type_count = sum(
+            prefix_length > 0 for prefix_length in variables.active_prefix_lengths
+        )
+        fully_activated_type_count = sum(
+            prefix_length == len(student_type.programs)
+            for prefix_length, student_type in zip(
+                variables.active_prefix_lengths, self.market.types
+            )
+        )
+        activated_preference_count = sum(variables.active_prefix_lengths)
         metadata: dict[str, object] = {
             "formulation": (
                 "mid_finite_grid"
-                if self.activated_type_indices is None
+                if self.active_prefix_lengths is None
                 else "mid_generated_utility_decomposition"
             ),
             "objective_kind": "mid_program_welfare",
@@ -408,14 +463,20 @@ class MidCpSatSolver(CpBoolSolver):
             "mid_remaining_variable_count": sum(
                 len(row) for row in variables.remaining
             ),
+            "mid_transport_variable_count": sum(
+                len(row) for row in variables.transport
+            ),
             "mid_objective_upper_bound": variables.objective_bound,
-            "mid_optimistic_objective_constant": (
-                variables.optimistic_objective_constant
-            ),
-            "mid_activated_type_count": len(variables.activated_type_indices),
+            "mid_activated_type_count": activated_type_count,
+            "mid_fully_activated_type_count": fully_activated_type_count,
             "mid_inactive_type_count": (
-                len(self.market.types) - len(variables.activated_type_indices)
+                len(self.market.types) - fully_activated_type_count
             ),
+            "mid_activated_preference_count": activated_preference_count,
+            "mid_inactive_preference_count": (
+                self.market.preference_count - activated_preference_count
+            ),
+            "mid_active_prefix_lengths": list(variables.active_prefix_lengths),
             "mid_model_variable_count": len(model.Proto().variables),
             "mid_model_constraint_count": len(model.Proto().constraints),
             "mid_model_hint_count": len(model.Proto().solution_hint.vars),
@@ -441,12 +502,24 @@ class MidCpSatSolver(CpBoolSolver):
                 program_id: int(solver.Value(variable))
                 for program_id, variable in variables.cutoffs.items()
             }
+            rows = []
+            for type_index, student_type in enumerate(self.market.types):
+                masses = [0] * len(student_type.programs)
+                previous = self.lottery_scale
+                for rank, variable in enumerate(variables.remaining[type_index]):
+                    remaining = int(solver.Value(variable))
+                    masses[rank] = previous - remaining
+                    previous = remaining
+                for rank, variable in variables.transport[type_index]:
+                    masses[rank] = int(solver.Value(variable))
+                rows.append(tuple(masses))
+            self.master_assignment_masses = tuple(rows)
         return metadata
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         solution = super().solve(problem)
         solution.metadata["objective_kind"] = "mid_program_welfare"
-        if self.activated_type_indices is not None:
+        if self.active_prefix_lengths is not None:
             return solution
         if not solution.feasible:
             return solution
@@ -464,7 +537,7 @@ class MidCpSatSolver(CpBoolSolver):
             solver_cutoffs,
             self.lottery_scale,
         )
-        solution.objective = finite.welfare
+        solution.objective = finite.fixed_point_welfare
         solution.metadata.update(
             {
                 "mid_solver_market_welfare": solver_market.welfare,

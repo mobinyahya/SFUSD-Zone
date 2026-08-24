@@ -27,8 +27,8 @@ class MidOracleResult:
 @dataclass(frozen=True)
 class MidSeparation:
     overloaded_programs: tuple[str, ...]
-    overload_type_indices: tuple[int, ...]
-    utility_gap_type_indices: tuple[int, ...]
+    overload_prefixes: tuple[tuple[int, int], ...]
+    utility_gap_prefixes: tuple[tuple[int, int], ...]
 
 
 def finite_grid_oracle(
@@ -158,59 +158,123 @@ def evaluate_cutoffs(
     return _evaluate(market, zoning, cutoffs, lottery_scale)
 
 
-def separate_mid_types(
+def separate_mid_prefixes(
     market: MidMarket,
     result: MidOracleResult,
-    activated_type_indices: set[int] | frozenset[int],
+    active_prefix_lengths: dict[int, int],
+    master_assignment_masses: tuple[tuple[int, ...], ...],
     lottery_scale: int,
 ) -> MidSeparation:
-    """Return inactive types needed to separate one generated-master result."""
+    """Return exact preference prefixes needed to refine one master result."""
     if len(result.assignment_masses) != len(market.types):
         raise ValueError("MID cutoff result does not match the market types.")
-    active = frozenset(activated_type_indices)
-    if any(
-        isinstance(type_index, bool) or not isinstance(type_index, int)
-        for type_index in active
-    ):
-        raise ValueError("Activated MID type indices must be integers.")
-    invalid = active - set(range(len(market.types)))
-    if invalid:
-        raise ValueError(f"Unknown activated MID type indices: {sorted(invalid)}.")
+    if len(master_assignment_masses) != len(market.types):
+        raise ValueError("MID master masses do not match the market types.")
+    prefixes = _validated_prefix_lengths(market, active_prefix_lengths)
+    for student_type, masses in zip(market.types, master_assignment_masses):
+        if len(masses) != len(student_type.programs):
+            raise ValueError("MID master masses do not match type preferences.")
 
     overloaded = tuple(
         program.program_id
         for program in market.programs
         if result.demand_masses[program.program_id] > program.capacity * lottery_scale
     )
-    inactive = set(range(len(market.types))) - active
-    overload_types = set()
+    overload_targets: dict[int, int] = {}
     if overloaded:
-        overloaded_set = set(overloaded)
-        for type_index in inactive:
-            student_type = market.types[type_index]
-            masses = result.assignment_masses[type_index]
-            if any(
-                program_id in overloaded_set and masses[rank] > 0
-                for rank, program_id in enumerate(student_type.programs)
-            ):
-                overload_types.add(type_index)
+        capacities = {program.program_id: program.capacity for program in market.programs}
+        for program_id in overloaded:
+            active_demand = 0
+            candidates = []
+            for type_index, student_type in enumerate(market.types):
+                for rank, ranked_program in enumerate(student_type.programs):
+                    if ranked_program != program_id:
+                        continue
+                    contribution = (
+                        student_type.count
+                        * int(result.assignment_masses[type_index][rank])
+                    )
+                    if rank < prefixes[type_index]:
+                        active_demand += contribution
+                    elif contribution > 0:
+                        candidates.append((contribution, type_index, rank))
+                    break
 
-    utility_gap_types = set()
-    if not overloaded:
-        for type_index in inactive:
-            student_type = market.types[type_index]
-            optimistic = (
-                lottery_scale * student_type.scaled_utility_sums[0]
-                if student_type.programs
-                else 0
+            selected_demand = sum(
+                contribution
+                for contribution, type_index, rank in candidates
+                if overload_targets.get(type_index, prefixes[type_index]) > rank
             )
-            if optimistic > result.type_fixed_point_values[type_index]:
-                utility_gap_types.add(type_index)
+            capacity_mass = capacities[program_id] * lottery_scale
+            for contribution, type_index, rank in sorted(
+                candidates,
+                key=lambda item: (-item[0], item[1], item[2]),
+            ):
+                if active_demand + selected_demand > capacity_mass:
+                    break
+                if overload_targets.get(type_index, prefixes[type_index]) > rank:
+                    continue
+                overload_targets[type_index] = rank + 1
+                selected_demand += contribution
+            if active_demand + selected_demand <= capacity_mass:
+                raise RuntimeError(
+                    f"MID overload separation could not cover program {program_id}."
+                )
+
+    utility_targets: dict[int, int] = {}
+    if not overloaded:
+        for type_index, student_type in enumerate(market.types):
+            prefix_length = prefixes[type_index]
+            if prefix_length == len(student_type.programs):
+                continue
+            master_masses = master_assignment_masses[type_index]
+            master_value = sum(
+                utility * mass
+                for utility, mass in zip(
+                    student_type.scaled_utility_sums,
+                    master_masses,
+                )
+            )
+            if master_value <= result.type_fixed_point_values[type_index]:
+                continue
+            actual_masses = result.assignment_masses[type_index]
+            target_rank = next(
+                (
+                    rank
+                    for rank in range(prefix_length, len(student_type.programs))
+                    if master_masses[rank] != actual_masses[rank]
+                ),
+                None,
+            )
+            if target_rank is None:
+                raise RuntimeError("MID utility-gap separation made no progress.")
+            utility_targets[type_index] = target_rank + 1
 
     return MidSeparation(
         overloaded_programs=overloaded,
-        overload_type_indices=tuple(sorted(overload_types)),
-        utility_gap_type_indices=tuple(sorted(utility_gap_types)),
+        overload_prefixes=tuple(sorted(overload_targets.items())),
+        utility_gap_prefixes=tuple(sorted(utility_targets.items())),
+    )
+
+
+def _validated_prefix_lengths(
+    market: MidMarket,
+    active_prefix_lengths: dict[int, int],
+) -> tuple[int, ...]:
+    for type_index, prefix_length in active_prefix_lengths.items():
+        if isinstance(type_index, bool) or not isinstance(type_index, int):
+            raise ValueError("MID active-prefix type indices must be integers.")
+        if type_index < 0 or type_index >= len(market.types):
+            raise ValueError(f"Unknown MID type index: {type_index}.")
+        if isinstance(prefix_length, bool) or not isinstance(prefix_length, int):
+            raise ValueError("MID active-prefix lengths must be integers.")
+        if not 0 <= prefix_length <= len(market.types[type_index].programs):
+            raise ValueError(
+                f"Invalid MID prefix length {prefix_length} for type {type_index}."
+            )
+    return tuple(
+        active_prefix_lengths.get(type_index, 0)
+        for type_index in range(len(market.types))
     )
 
 

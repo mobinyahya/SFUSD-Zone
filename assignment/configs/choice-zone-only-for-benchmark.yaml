@@ -1,6 +1,9 @@
 data:
   scenario: assignment-generated-zones-2324
-  overrides: {}
+  overrides:
+    filters:
+      assignment:
+        special_programs: exclude_any_special
 iterations:
   end: 25
   start: 0

@@ -509,6 +509,32 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch):
     assert final.metadata["mid_decomp_global_upper_bound"] >= 4.0
     assert final.metadata["mid_decomp_incumbent_least_cutoffs"] == {"A": 0, "B": 0}
     assert final.metadata["mid_continuum_welfare"] == 4.0
+    assert final.metadata["mid_decomp_total_preference_count"] == 4
+    assert final.metadata["mid_decomp_activated_preference_count"] <= 4
+    assert all(
+        "activated_preferences_after" in record
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+    assert (
+        final.metadata["mid_decomp_budget_policy"]
+        == "linearly_increasing_with_carry_forward"
+    )
+    assert final.metadata["mid_decomp_total_budget_seconds"] == 10
+    assert all(
+        record["master_time_limit_seconds"] > 0
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+
+
+def test_mid_decomp_splits_remaining_budget_across_iterations():
+    assert mid_decomp_module._master_time_limit(60, 0, 3) == pytest.approx(10)
+    assert mid_decomp_module._master_time_limit(50, 1, 3) == pytest.approx(20)
+    assert mid_decomp_module._master_time_limit(30, 2, 3) == pytest.approx(30)
+
+
+def test_mid_decomp_rounds_large_cp_sat_bounds_outward():
+    assert mid_decomp_module._certified_integer_upper_bound(4000.0, 3000) == 4000
+    assert mid_decomp_module._certified_integer_upper_bound(float(2**53), 0) > 2**53
 
 
 def test_config_rejects_non_boolean_citywide_scenario_filter():

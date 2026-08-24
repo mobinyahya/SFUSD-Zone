@@ -122,6 +122,24 @@ class MidMarket:
                 for utility in student_type.scaled_utility_sums
             ):
                 raise ValueError("MID scaled utility sums must be positive integers.")
+            if any(
+                first < second
+                for first, second in zip(
+                    student_type.utility_sums,
+                    student_type.utility_sums[1:],
+                )
+            ):
+                raise ValueError("MID utility sums must be non-increasing by rank.")
+            if any(
+                first < second
+                for first, second in zip(
+                    student_type.scaled_utility_sums,
+                    student_type.scaled_utility_sums[1:],
+                )
+            ):
+                raise ValueError(
+                    "MID scaled utility sums must be non-increasing by rank."
+                )
         if sum(student_type.count for student_type in self.types) != self.student_count:
             raise ValueError("MID type counts must sum to the student count.")
 
