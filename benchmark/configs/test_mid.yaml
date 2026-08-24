@@ -9,7 +9,7 @@ optimization_defaults:
     overrides: {}
   save_solver_logs: false
   save_solver_progress: false
-  max_distance: 3
+  max_distance: 3.1
   boundary_prop: 0.18
   hints: voronoi
   racial_dev: -1
