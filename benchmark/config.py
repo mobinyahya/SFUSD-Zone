@@ -42,6 +42,7 @@ MNL_ASSIGNMENT_FILTERS = (
     "student_population",
     "rounds",
     "special_programs",
+    "capacity_profile",
     "capacity_scenario",
     "include_mission_bay",
     "geography_vintage",
@@ -250,7 +251,7 @@ class SimulationSweep:
         explicit_tasks = self.tasks or [{}]
         tasks: list[BenchmarkTask] = []
         scenarios: dict[str, DataScenario] = {}
-        source_manifests: dict[tuple[str, str, str], dict[str, Any]] = {}
+        source_manifests: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         for sweep_values, task_values in product(overrides, explicit_tasks):
             config_data = dict(self.optimization_defaults)
             config_data.update(sweep_values)
@@ -263,7 +264,12 @@ class SimulationSweep:
             )
             scenarios.setdefault(data_key, config.data_scenario)
             config_dict = optimization_config_to_dict(config)
-            manifest_key = (data_key, config.choice_model, config.capacity_scenario)
+            manifest_key = (
+                data_key,
+                config.strategy,
+                config.choice_model,
+                config.capacity_scenario,
+            )
             source_manifest = source_manifests.get(manifest_key)
             if source_manifest is None:
                 source_manifest = _benchmark_source_manifest(config)
@@ -366,7 +372,8 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     ):
         roles.append("optimization.capacity")
     filter_groups = ["optimization"]
-    if config.choice_model == "mnl":
+    matching_strategy = config.strategy in {"mid", "mid_decomp", "saa"}
+    if config.choice_model == "mnl" or matching_strategy:
         roles.extend(
             role
             for role in (
@@ -383,13 +390,35 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         ):
             roles.append("assignment.capacity")
         filter_groups.append("assignment")
+    if matching_strategy:
+        roles.extend(
+            role
+            for role in (
+                "assignment.programs",
+                "assignment.schools",
+                "assignment.school_coordinates",
+                "assignment.program_codes",
+                "assignment.ctip",
+            )
+            if _scenario_has_role(scenario, role)
+        )
 
-    manifest = scenario.source_manifest(roles)
+    manifest = scenario.source_manifest(dict.fromkeys(roles))
     manifest["filters"] = {"optimization": json_ready(scenario.filters["optimization"])}
     if "assignment" in filter_groups:
         manifest["filters"]["assignment"] = {
             key: json_ready(scenario.filters["assignment"][key])
             for key in MNL_ASSIGNMENT_FILTERS
+        }
+    if matching_strategy:
+        root = Path(__file__).resolve().parents[1]
+        policy_files = (
+            root / "assignment/configs/base_config.yaml",
+            root / "assignment/configs/policy_configs/status_quo.yaml",
+        )
+        manifest["matching_policy"] = {
+            str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in policy_files
         }
     return manifest
 

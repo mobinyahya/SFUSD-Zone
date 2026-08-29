@@ -21,7 +21,14 @@ from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
-_STRATEGIES = {"single", "recursive", "iterative_choice", "mid", "mid_decomp"}
+_STRATEGIES = {
+    "single",
+    "recursive",
+    "iterative_choice",
+    "mid",
+    "mid_decomp",
+    "saa",
+}
 
 
 def _legacy_data_config() -> dict[str, Any]:
@@ -75,6 +82,8 @@ class OptimizationConfig:
     mid_lottery_scale: int = 20
     mid_utility_handling: str = "omit_nonpositive"
     mid_transport_bounds: bool = True
+    saa_num_seeds: int = 5
+    saa_tie_breaking_method: str = "MTB"
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
@@ -146,8 +155,10 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
-        if self.strategy in {"mid", "mid_decomp"}:
-            if self.solver != "cp_bool":
+        if self.strategy in {"mid", "mid_decomp", "saa"}:
+            if self.strategy == "saa" and self.solver not in {"cp_bool", "mip"}:
+                raise ValueError("saa requires solver='cp_bool' or solver='mip'.")
+            if self.strategy != "saa" and self.solver != "cp_bool":
                 raise ValueError(f"{self.strategy} requires solver='cp_bool'.")
             if self.program_population != "All":
                 raise ValueError(f"{self.strategy} requires program_population='All'.")
@@ -174,6 +185,34 @@ class OptimizationConfig:
             )
         if not isinstance(self.mid_transport_bounds, bool):
             raise ValueError("mid_transport_bounds must be a Boolean.")
+        if (
+            isinstance(self.saa_num_seeds, bool)
+            or not isinstance(self.saa_num_seeds, int)
+            or self.saa_num_seeds <= 0
+        ):
+            raise ValueError("saa_num_seeds must be a positive integer.")
+        if not isinstance(self.saa_tie_breaking_method, str):
+            raise ValueError("saa_tie_breaking_method must be one of: MTB, STB.")
+        self.saa_tie_breaking_method = self.saa_tie_breaking_method.upper()
+        if self.saa_tie_breaking_method not in {"MTB", "STB"}:
+            raise ValueError("saa_tie_breaking_method must be one of: MTB, STB.")
+        if self.strategy == "saa":
+            if (
+                isinstance(self.max_iterations, bool)
+                or not isinstance(self.max_iterations, int)
+                or self.max_iterations <= 0
+            ):
+                raise ValueError("max_iterations must be a positive integer for saa.")
+            if isinstance(self.tolerance, bool):
+                raise ValueError("tolerance must be finite and non-negative for saa.")
+            try:
+                self.tolerance = float(self.tolerance)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "tolerance must be finite and non-negative for saa."
+                ) from exc
+            if not math.isfinite(self.tolerance) or self.tolerance < 0:
+                raise ValueError("tolerance must be finite and non-negative for saa.")
         if (
             isinstance(self.centroid_neighbor_radius, bool)
             or not isinstance(self.centroid_neighbor_radius, int)
@@ -338,4 +377,6 @@ class OptimizationConfig:
             mid_lottery_scale=self.mid_lottery_scale,
             mid_utility_handling=self.mid_utility_handling,
             mid_transport_bounds=self.mid_transport_bounds,
+            saa_num_seeds=self.saa_num_seeds,
+            saa_tie_breaking_method=self.saa_tie_breaking_method,
         )

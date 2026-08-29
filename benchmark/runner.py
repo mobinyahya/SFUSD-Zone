@@ -431,7 +431,10 @@ def stage_names_for(
     solutions: Sequence[ZoneSolution], config: OptimizationConfig | dict[str, Any]
 ) -> list[str]:
     strategy = _config_value(config, "strategy", "")
-    prefix = "iteration" if "iterative" in str(strategy).lower() else "stage"
+    normalized = str(strategy).lower()
+    prefix = (
+        "iteration" if "iterative" in normalized or normalized == "saa" else "stage"
+    )
     return [
         f"{prefix}_{idx:02d}_{solution.level.name}"
         for idx, solution in enumerate(solutions)

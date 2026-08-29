@@ -7,8 +7,9 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
-strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp
+strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp | saa
 # cp_single_zone requires a centroids_type containing exactly one school ID.
+# saa requires solver: cp_bool or mip.
 
 # --- optimization parameters ---
 frl_dev: 0.3
@@ -43,15 +44,17 @@ short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---
 boundary_radius: 2            # recursive: graph-hop width around projected borders
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
-boundary_prop: -1             # single/iterative_choice/mid/mid_decomp: 0..1; negative disables
-max_iterations: 5             # iterative_choice/mid_decomp
+boundary_prop: -1             # single/iterative_choice/mid/mid_decomp/saa: 0..1; negative disables
+max_iterations: 5             # iterative_choice/mid_decomp/saa
 choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 mid_lottery_scale: 20         # mid/mid_decomp: integer continuum-mass grid
-mid_utility_handling: omit_nonpositive  # mid/mid_decomp: omit_nonpositive | exponentiate
+mid_utility_handling: omit_nonpositive  # mid/mid_decomp/saa: omit_nonpositive | exponentiate
 mid_transport_bounds: true    # mid_decomp: constrain inactive tails by access and capacity
+saa_num_seeds: 5              # saa: sampled strict-priority lotteries
+saa_tie_breaking_method: MTB  # saa: MTB | STB
 
 # --- data ingestion ---
 data:
@@ -64,7 +67,7 @@ data:
         student_population: enrolled  # applicant | enrolled; selects annual registry sources
         rounds: all                    # or an explicit list supported by every year
         special_programs: include     # include | exclude_only_special | exclude_any_special
-        program_population: GE        # GE | All | another selected program code; mid requires All
+        program_population: GE        # GE | All | another selected program code; mid/saa require All
         capacity_scenario: programs    # programs | A | B | C | D
         include_k8: false
         include_citywide: false

@@ -73,6 +73,15 @@ def process_solution_assignments(
             }
         )
 
+    if matching.compute_stage_assignments and config.strategy == "saa":
+        level = config.levels[-1]
+        for index in range(len(solutions), config.max_iterations + 1):
+            target = root / "stages" / f"iteration_{index:02d}_{level}"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / SKIP_MARKER_FILENAME).write_text(
+                "optimization stage not produced\n", encoding="utf-8"
+            )
+
     return targets
 
 

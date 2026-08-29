@@ -248,6 +248,43 @@ def test_solution_processing_prepares_root_and_stage_targets(tmp_path):
     assert (tmp_path / "stages/stage_00_BlockGroup_0/assignment_zones.csv").is_file()
 
 
+def test_saa_assignment_targets_mark_unproduced_iterations(tmp_path):
+    problem = make_grid_problem(2, 2, program_population="All")
+    solution = ZoneSolution(
+        problem=problem,
+        assignment={0: 0, 1: 0, 2: 1, 3: 1},
+        status="OPTIMAL",
+    )
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="mip",
+        strategy="saa",
+        max_iterations=3,
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    process_solution_assignments(
+        [solution],
+        solution,
+        [{"path": "stages/iteration_00_BlockGroup_0", "index": 0}],
+        str(tmp_path),
+        config,
+        MatchingRunConfig(
+            enabled=True,
+            config=str(ASSIGNMENT_CONFIG),
+            compute_stage_assignments=True,
+        ),
+    )
+
+    for index in range(1, 4):
+        assert (
+            tmp_path / f"stages/iteration_{index:02d}_BlockGroup_0/.assignment-skipped"
+        ).is_file()
+
+
 def test_generated_assignment_slurm_plan_uses_eight_jobs(tmp_path):
     target = tmp_path / "run"
     plan, _ = build_generated_zone_slurm_plan(

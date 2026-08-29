@@ -52,7 +52,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     solutions = strategy.run(dataset, solver)
 
-    stage_prefix = "iteration" if "iterative" in config.strategy else "stage"
+    stage_prefix = (
+        "iteration"
+        if "iterative" in config.strategy or config.strategy == "saa"
+        else "stage"
+    )
     for index, sol in enumerate(solutions):
         stage_dir = os.path.join(
             args.output,

@@ -171,7 +171,7 @@ class MetricsContext:
 
     def _is_iterative_run(self) -> bool:
         strategy = str(self.config.get("strategy", "")).lower()
-        if "iterative" in strategy:
+        if "iterative" in strategy or strategy == "saa":
             return True
         if strategy:
             return False

@@ -547,13 +547,21 @@ def _assignment_targets(
         folders = [("root", Path(task.output_dir))]
         if matching.compute_stage_assignments:
             strategy = str(task.config["strategy"])
-            prefix = "iteration" if "iterative" in strategy.lower() else "stage"
+            normalized = strategy.lower()
+            prefix = (
+                "iteration"
+                if "iterative" in normalized or normalized == "saa"
+                else "stage"
+            )
+            levels = task.config["levels"]
+            if normalized == "saa":
+                levels = [levels[-1]] * (int(task.config["max_iterations"]) + 1)
             folders.extend(
                 (
                     f"stage-{index}",
                     Path(task.output_dir) / "stages" / f"{prefix}_{index:02d}_{level}",
                 )
-                for index, level in enumerate(task.config["levels"])
+                for index, level in enumerate(levels)
             )
         for suffix, folder in folders:
             targets.append(

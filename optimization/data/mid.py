@@ -152,6 +152,14 @@ class MidMarket:
         return sum(len(student_type.programs) for student_type in self.types)
 
 
+@dataclass(frozen=True)
+class MidStudentMarket:
+    programs: tuple[MidProgram, ...]
+    students: tuple[MidStudent, ...]
+    utility_student_count: int
+    utility_handling: str
+
+
 class _StaticZones:
     def __init__(self) -> None:
         self._zone_priority_matrix = None
@@ -161,8 +169,10 @@ class _StaticZones:
         return self._zone_priority_matrix
 
 
-def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
-    """Load the assignment cohort and compress it into MID market types."""
+def build_mid_student_market(
+    problem: ZoneProblem, optimization_config
+) -> MidStudentMarket:
+    """Load the assignment cohort before MID type compression."""
     handling = optimization_config.mid_utility_handling
     if handling not in MID_UTILITY_HANDLING:
         raise ValueError(f"Unknown MID utility handling {handling!r}.")
@@ -172,7 +182,9 @@ def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
     policies = priority_config["policies"]
     ctip_options = priority_config["ctip-options"]
     if len(policies) != 1 or len(ctip_options) != 1:
-        raise ValueError("MID requires one status-quo policy and CTIP option.")
+        raise ValueError(
+            "Matching welfare requires one status-quo policy and CTIP option."
+        )
     priorities = PriorityGenerator(assignment_market).get_base_policy_priorities(
         policies[0],
         ctip_options[0],
@@ -223,7 +235,6 @@ def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
     program_indices = assignment_market.programs.indices
     students = []
     utility_students = 0
-    outside_only = 0
     for student_id, row in students_frame.iterrows():
         area = _area_key(row[area_column])
         node = area_to_node.get(area)
@@ -251,17 +262,28 @@ def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
             student = make_mid_student(
                 node, available_programs, values, tiers, handling
             )
-        if not student.programs:
-            outside_only += 1
         students.append(student)
 
-    return MidMarket(
+    return MidStudentMarket(
         programs=tuple(programs),
-        types=compress_mid_students(students),
-        student_count=len(students),
-        outside_only_student_count=outside_only,
+        students=tuple(students),
         utility_student_count=utility_students,
         utility_handling=handling,
+    )
+
+
+def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
+    """Load the assignment cohort and compress it into MID market types."""
+    student_market = build_mid_student_market(problem, optimization_config)
+    return MidMarket(
+        programs=student_market.programs,
+        types=compress_mid_students(student_market.students),
+        student_count=len(student_market.students),
+        outside_only_student_count=sum(
+            not student.programs for student in student_market.students
+        ),
+        utility_student_count=student_market.utility_student_count,
+        utility_handling=student_market.utility_handling,
     )
 
 

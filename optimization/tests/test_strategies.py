@@ -26,6 +26,7 @@ def test_only_supported_strategies_are_registered():
         "mid",
         "mid_decomp",
         "recursive",
+        "saa",
         "single",
     ]
 
@@ -384,6 +385,45 @@ def test_config_validates_and_passes_mid_options():
     assert strategy.options["mid_lottery_scale"] == 40
     assert strategy.options["mid_utility_handling"] == "exponentiate"
     assert strategy.options["mid_transport_bounds"] is False
+
+
+@pytest.mark.parametrize("solver", ["cp_bool", "mip"])
+def test_config_validates_and_passes_saa_options(solver):
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver=solver,
+        strategy="saa",
+        max_iterations=7,
+        mid_utility_handling="exponentiate",
+        saa_num_seeds=9,
+        saa_tie_breaking_method="stb",
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["max_iterations"] == 7
+    assert strategy.options["mid_utility_handling"] == "exponentiate"
+    assert strategy.options["saa_num_seeds"] == 9
+    assert strategy.options["saa_tie_breaking_method"] == "STB"
+
+
+def test_config_rejects_incompatible_saa_solver():
+    with pytest.raises(ValueError, match="solver='cp_bool' or solver='mip'"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="cp_int",
+            strategy="saa",
+            data={
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"program_population": "All"}}
+                },
+            },
+        )
 
 
 def test_config_passes_feasible_hint_options():

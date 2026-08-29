@@ -28,6 +28,7 @@ from benchmark.runner import (
 from benchmark.slurm import (
     MAX_SLURM_JOBS,
     SlurmPlan,
+    _assignment_targets,
     _build_parser,
     _plan_allocations,
     create_plan,
@@ -114,6 +115,44 @@ def test_submission_script_queues_eight_dependent_assignment_jobs(tmp_path):
     scripts = assignment_plan_path.parent / "scripts"
     assert len(list(scripts.glob("*.sh"))) == 9
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+
+
+def test_saa_slurm_plan_covers_every_possible_iteration(tmp_path):
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="mip",
+        strategy="saa",
+        max_iterations=3,
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+    task = BenchmarkTask(
+        task_id="saa-task",
+        config_hash="hash",
+        config=optimization_config_to_dict(config),
+        output_dir=str(tmp_path / "run"),
+        capacity_slots=1,
+    )
+
+    targets = _assignment_targets(
+        [task],
+        MatchingRunConfig(
+            enabled=True,
+            config="assignment.yaml",
+            compute_stage_assignments=True,
+        ),
+    )
+
+    assert [target["id"] for target in targets] == [
+        "saa-task-root",
+        "saa-task-stage-0",
+        "saa-task-stage-1",
+        "saa-task-stage-2",
+        "saa-task-stage-3",
+    ]
+    assert "iteration_03_BlockGroup_0" in targets[-1]["zone_file"]
 
 
 def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):

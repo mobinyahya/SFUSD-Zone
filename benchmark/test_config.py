@@ -5,10 +5,12 @@ import yaml
 
 from benchmark.config import (
     SimulationSweep,
+    _benchmark_source_manifest,
     config_snapshot,
     optimization_config_from_dict,
     optimization_config_hash,
 )
+from optimization.config import OptimizationConfig
 
 
 def _write_custom_sweep(tmp_path: Path, location: str = "optimization_defaults"):
@@ -174,6 +176,25 @@ def test_task_identity_ignores_unconsumed_assignment_sources(tmp_path):
     second = sweep.generate_tasks()[0]
 
     assert first.config_hash == second.config_hash
+
+
+def test_saa_manifest_hashes_matching_policy_files():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="mip",
+        strategy="saa",
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    manifest = _benchmark_source_manifest(config)
+
+    assert set(manifest["matching_policy"]) == {
+        "assignment/configs/base_config.yaml",
+        "assignment/configs/policy_configs/status_quo.yaml",
+    }
 
 
 def test_visualization_config_anchors_shared_artifact_dir(tmp_path):
