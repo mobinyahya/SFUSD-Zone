@@ -85,6 +85,52 @@ metrics:
     assert sweep.metrics.compute_stage_metrics is True
 
 
+def test_sweep_yaml_expands_list_values_in_tasks(tmp_path):
+    config_path = tmp_path / "sweep_tasks.yaml"
+    config_path.write_text(
+        f"""
+name: task_expansion_sweep
+mode: run
+
+optimization_defaults:
+  centroids_type: '6-zone-9'
+  levels: ['Block_0']
+  workers: 1
+  seed: 42
+  solve_time_limits: [60]
+
+sweep:
+  centroids_type: ['6-zone-9', '8-zone-22']
+
+tasks:
+  - solver: 'cp_bool'
+    workers: 8
+    seed: 42
+  - solver: 'recom'
+    workers: 1
+    seed: [0, 1, 2]
+
+execution:
+  output_dir: '{tmp_path / "out"}'
+""",
+        encoding="utf-8",
+    )
+
+    tasks = SimulationSweep.from_yaml(str(config_path)).generate_tasks()
+
+    # 2 centroids * (1 cp_bool + 3 recom) = 8 tasks
+    assert len(tasks) == 8
+    cp_bool_tasks = [t for t in tasks if t.config["solver"] == "cp_bool"]
+    recom_tasks = [t for t in tasks if t.config["solver"] == "recom"]
+    assert len(cp_bool_tasks) == 2
+    assert len(recom_tasks) == 6
+    assert all(t.config["workers"] == 8 for t in cp_bool_tasks)
+    assert all(t.config["seed"] == 42 for t in cp_bool_tasks)
+    assert all(t.config["workers"] == 1 for t in recom_tasks)
+    assert {t.config["seed"] for t in recom_tasks} == {0, 1, 2}
+    assert len({t.config_hash for t in tasks}) == 8
+
+
 def test_single_zone_sweep_generates_scalar_optimization_values():
     config_path = Path(__file__).parent / "configs" / "sweep.test-one.yaml"
 

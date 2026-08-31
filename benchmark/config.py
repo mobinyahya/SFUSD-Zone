@@ -227,7 +227,7 @@ class SimulationSweep:
                 raise ValueError(f"tasks[{idx}] must be a mapping.")
             _validate_optimization_keys(task, f"tasks[{idx}]")
             task = dict(task)
-            _anchor_section_data(task, config_path.parent)
+            _anchor_section_data(task, config_path.parent, sweep_values=True)
             tasks.append(task)
 
         return cls(
@@ -248,7 +248,10 @@ class SimulationSweep:
 
     def generate_tasks(self) -> list[BenchmarkTask]:
         overrides = list(_sweep_overrides(self.sweep)) or [{}]
-        explicit_tasks = self.tasks or [{}]
+        explicit_tasks: list[dict[str, Any]] = []
+        for task in self.tasks or [{}]:
+            expanded = list(_sweep_overrides(task))
+            explicit_tasks.extend(expanded if expanded else [task])
         tasks: list[BenchmarkTask] = []
         scenarios: dict[str, DataScenario] = {}
         source_manifests: dict[tuple[str, str, str, str], dict[str, Any]] = {}

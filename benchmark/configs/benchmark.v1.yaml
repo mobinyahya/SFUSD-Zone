@@ -34,16 +34,24 @@ sweep:
 tasks:
   - solver: 'cp_bool'
   - solver: 'recom'
+    workers: 1
+    seed: [0, 1, 2, 3, 4, 5, 6, 7]
   - solver: 'relaxed_recom'
+    workers: 1
+    seed: [0, 1, 2, 3, 4, 5, 6, 7]
   - solver: 'short_bursts'
+    workers: 1
     short_bursts_method: relaxed_recom
+    seed: [0, 1, 2, 3, 4, 5, 6, 7]
   - solver: 'short_bursts'
+    workers: 1
     short_bursts_method: recom
+    seed: [0, 1, 2, 3, 4, 5, 6, 7]
 
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_2'
   skip_existing: true
   rerun_failed: true
   sequential: false
