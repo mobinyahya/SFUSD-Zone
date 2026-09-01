@@ -276,3 +276,34 @@ def test_from_yaml_anchors_data_paths_and_preserves_them_in_snapshot(tmp_path):
     assert config.data_scenario.source("optimization.students").path == Path(
         source["path"]
     )
+
+
+def test_max_distance_defaults_and_parsing():
+    default_config = OptimizationConfig(levels=["BlockGroup_0"])
+    assert default_config.max_distance == float("inf")
+
+    cfg_float = OptimizationConfig(levels=["BlockGroup_0"], max_distance=3.1)
+    assert cfg_float.max_distance == 3.1
+    assert isinstance(cfg_float.max_distance, float)
+
+    cfg_int = OptimizationConfig(levels=["BlockGroup_0"], max_distance=5)
+    assert cfg_int.max_distance == 5.0
+    assert isinstance(cfg_int.max_distance, float)
+
+    cfg_auto = OptimizationConfig(levels=["BlockGroup_0"], max_distance="auto")
+    assert cfg_auto.max_distance == "auto"
+
+    cfg_auto_upper = OptimizationConfig(levels=["BlockGroup_0"], max_distance=" AUTO ")
+    assert cfg_auto_upper.max_distance == "auto"
+
+    cfg_str_float = OptimizationConfig(levels=["BlockGroup_0"], max_distance="4.25")
+    assert cfg_str_float.max_distance == 4.25
+
+
+@pytest.mark.parametrize("invalid", [-1, -0.1, True, False, "invalid", "none", "", float("nan")])
+def test_max_distance_validation_rejects_invalid(invalid):
+    with pytest.raises(
+        ValueError, match="max_distance must be a non-negative float, 'inf', or 'auto'."
+    ):
+        OptimizationConfig(levels=["BlockGroup_0"], max_distance=invalid)
+

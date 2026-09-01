@@ -9,7 +9,7 @@ optimization_defaults:
     overrides: {}
   save_solver_logs: true
   save_solver_progress: false
-  max_distance: 3.1
+  max_distance: auto
 
   racial_dev: -1
   overage: 0.2
@@ -18,21 +18,23 @@ optimization_defaults:
   # boundary_prop: 0.18
   hints: voronoi
   strategy: 'single'
-  solve_time_limits: [600]
   # boundary_radius: 1
   gap_limits: [0]
   workers: 8
   centroid_neighbor_radius: 0
   recom_iterations: -1
   seed: 42
+  short_bursts_method: relaxed_recom
   # cp_sat_search_strategy: distance_to_centroid
 
 sweep:
   centroids_type: ['6-zone-9', '8-zone-22', '10-zone-3',  '13-zone-6', '18-zone-1']
-  levels: ['Block_0']
+  levels: ['Block_0', 'Block_1', 'Block_2']
+  solve_time_limits: [600, 1800]
 
 tasks:
   - solver: 'cp_bool'
+  # mip should be here 
   - solver: 'recom'
     workers: 1
     seed: [0, 1, 2, 3, 4, 5, 6, 7]
@@ -41,17 +43,12 @@ tasks:
     seed: [0, 1, 2, 3, 4, 5, 6, 7]
   - solver: 'short_bursts'
     workers: 1
-    short_bursts_method: relaxed_recom
-    seed: [0, 1, 2, 3, 4, 5, 6, 7]
-  - solver: 'short_bursts'
-    workers: 1
-    short_bursts_method: recom
     seed: [0, 1, 2, 3, 4, 5, 6, 7]
 
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_2'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_3'
   skip_existing: true
   rerun_failed: true
   sequential: false

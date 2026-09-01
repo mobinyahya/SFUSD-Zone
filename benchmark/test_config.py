@@ -231,3 +231,29 @@ def test_visualization_config_rejects_unknown_stage_mode(tmp_path):
 
     with pytest.raises(ValueError, match="visualization.stages"):
         SimulationSweep.from_yaml(str(config_path))
+
+
+def test_simulation_sweep_supports_auto_max_distance(tmp_path):
+    config_path = tmp_path / "sweep.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "optimization_defaults": {
+                    "levels": ["BlockGroup_0"],
+                    "max_distance": "auto",
+                },
+                "sweep": {"solver": ["cp_int", "cp_bool"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    assert sweep.optimization_defaults["max_distance"] == "auto"
+    tasks = sweep.generate_tasks()
+    assert len(tasks) == 2
+    for task in tasks:
+        assert task.config["max_distance"] == "auto"
+        opt_cfg = task.optimization_config()
+        assert opt_cfg.max_distance == "auto"
+

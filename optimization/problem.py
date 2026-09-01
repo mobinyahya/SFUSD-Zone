@@ -11,6 +11,7 @@ by hand outside the data layer.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -72,8 +73,10 @@ class ZoneProblem:
         A negative value disables its corresponding bound.
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
-        that centroid's zone. Nodes marked ``max_distance_exempt`` are candidates
-        for every zone regardless of distance.
+        that centroid's zone. Can also be set to ``"auto"`` to automatically
+        use the maximum distance to the closest centroid across all geography
+        units. Nodes marked ``max_distance_exempt`` are candidates for every zone
+        regardless of distance.
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
@@ -104,7 +107,7 @@ class ZoneProblem:
     racial_dev: float = 0.3
     overage: float = 0.8
     shortage: float = 0.2
-    max_distance: float = float("inf")
+    max_distance: float | str = float("inf")
     boundary_prop: float = -1.0
     weight_edges: bool = False
 
@@ -128,6 +131,28 @@ class ZoneProblem:
             )
         if not isinstance(self.weight_edges, bool):
             raise ValueError("weight_edges must be a Boolean.")
+        if isinstance(self.max_distance, str) and self.max_distance.strip().lower() == "auto":
+            if self.centroids and self.G.number_of_nodes() > 0:
+                self.max_distance = float(
+                    max(
+                        min(self.distance(centroid, node) for centroid in self.centroids)
+                        for node in self.G.nodes()
+                    )
+                )
+            else:
+                self.max_distance = 0.0
+        elif isinstance(self.max_distance, bool) or not isinstance(
+            self.max_distance, (int, float)
+        ):
+            raise ValueError(
+                "max_distance must be a non-negative float, 'inf', or 'auto'."
+            )
+        else:
+            self.max_distance = float(self.max_distance)
+            if math.isnan(self.max_distance) or self.max_distance < 0:
+                raise ValueError(
+                    "max_distance must be a non-negative float, 'inf', or 'auto'."
+                )
 
     # ------------------------------------------------------------------ #
     # basic dimensions

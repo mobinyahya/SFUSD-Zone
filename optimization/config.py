@@ -49,7 +49,7 @@ class OptimizationConfig:
     overage: float = 0.8
     shortage: float = 0.2
     looseness: float = 1.0
-    max_distance: float = float("inf")
+    max_distance: float | str = float("inf")
     centroid_neighbor_radius: int = 0
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
@@ -142,6 +142,31 @@ class OptimizationConfig:
             ) from exc
         if math.isnan(self.boundary_prop) or self.boundary_prop > 1:
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
+        if isinstance(self.max_distance, str):
+            if self.max_distance.strip().lower() == "auto":
+                self.max_distance = "auto"
+            else:
+                try:
+                    val = float(self.max_distance)
+                    if math.isnan(val) or val < 0:
+                        raise ValueError
+                    self.max_distance = val
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "max_distance must be a non-negative float, 'inf', or 'auto'."
+                    ) from exc
+        elif isinstance(self.max_distance, bool) or not isinstance(
+            self.max_distance, (int, float)
+        ):
+            raise ValueError(
+                "max_distance must be a non-negative float, 'inf', or 'auto'."
+            )
+        else:
+            self.max_distance = float(self.max_distance)
+            if math.isnan(self.max_distance) or self.max_distance < 0:
+                raise ValueError(
+                    "max_distance must be a non-negative float, 'inf', or 'auto'."
+                )
         # Resolve the strict scenario-backed selectors eagerly.
         self.years
         self.grades

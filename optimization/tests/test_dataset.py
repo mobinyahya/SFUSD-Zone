@@ -278,3 +278,34 @@ def test_problem_for_accepts_explicit_centroid_school_ids(tmp_path, monkeypatch)
     assert problem.centroids == [1]
     assert problem.centroid_school_ids == [200]
     assert problem.weight_edges is True
+
+
+def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
+    G = nx.path_graph(3)
+    G.graph["distance_dict"] = {
+        0: {0: 0.0, 1: 2.5, 2: 7.5},
+        2: {0: 7.5, 1: 5.0, 2: 0.0},
+    }
+    for node, school_id in enumerate((100, None, 200)):
+        G.nodes[node].update(
+            {
+                "school_ids": [school_id] if school_id else [],
+                "num_schools": 1 if school_id else 0,
+                "area_id": 1000 + node,
+            }
+        )
+    dataset = Dataset(_config(tmp_path, max_distance="auto"))
+    dataset._graphs["Block_0"] = G
+    monkeypatch.setattr(
+        dataset._closer_neighbor_store,
+        "attach_to_graph",
+        lambda level, graph: None,
+    )
+
+    problem = dataset.problem_for("Block_0", centroid_school_ids=[100, 200])
+
+    assert problem.centroids == [0, 2]
+    assert problem.max_distance == 2.5
+    assert problem.candidate_zones(1) == {0}
+
+
