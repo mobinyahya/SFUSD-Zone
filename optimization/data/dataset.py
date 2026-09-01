@@ -55,9 +55,7 @@ class Dataset:
         self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
         self._closer_neighbor_store = closer_neighbors.CloserNeighborArtifactStore(
             self.data,
-            geometry_loader=lambda unit: loaders.load_census_shapefile(
-                unit, self.data
-            ),
+            geometry_loader=lambda unit: loaders.load_census_shapefile(unit, self.data),
             school_loader=lambda: loaders.load_school_coordinates(self.data),
         )
 
@@ -106,9 +104,7 @@ class Dataset:
     def closer_neighbors_for(self, level) -> dict[int, dict[int, frozenset[int]]]:
         """Load and attach the shared geometry relation for ``level``."""
         level = LevelSpec.parse(level)
-        data = self._closer_neighbor_store.attach_to_graph(
-            level, self.graph_for(level)
-        )
+        data = self._closer_neighbor_store.attach_to_graph(level, self.graph_for(level))
         return data.closer_neighbors
 
     # ------------------------------------------------------------------ #

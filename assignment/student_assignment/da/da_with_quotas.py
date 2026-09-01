@@ -101,10 +101,7 @@ class DaWithCapSplit:
                 if school >= 0:  # if a real school
                     priority = self.StudentPrts[i, school]
                     reserveSchool = False
-                    if (
-                        self.seats_by_zone[int(self.student_zones[i]), school]
-                        == 0
-                    ):
+                    if self.seats_by_zone[int(self.student_zones[i]), school] == 0:
                         # if self.schoolsToReserve[school] == 0:  #if the school is not a program we want reserve
                         iClass = 0
 
@@ -112,8 +109,7 @@ class DaWithCapSplit:
                         iClass = int(self.student_zones[i])
                         reserveSchool = True
                     if (
-                        len(self.SchoolMatches[school])
-                        < self.SchoolCaps[school]
+                        len(self.SchoolMatches[school]) < self.SchoolCaps[school]
                     ):  # if the school has seats
                         # if i == 0:
                         #   print('aaa',i, priority, school)
@@ -141,44 +137,30 @@ class DaWithCapSplit:
                                 ) = self._leastPriorityStudent(
                                     i, iClass, school, priority
                                 )
-                                if (
-                                    i != rejectedstudent
-                                    and self.SchoolCaps[school] > 0
-                                ):
+                                if i != rejectedstudent and self.SchoolCaps[school] > 0:
                                     # print(self.SchoolMatches[school])
                                     # print('a',i,iClass, rejectedstudent, classtoReject)
                                     # print('b',self.seats_by_zone[iClass,school])
                                     # print('c',self.seats_by_zone[classtoReject,school])
-                                    self.SchoolMatches[school].remove(
-                                        rejectedstudent
-                                    )
+                                    self.SchoolMatches[school].remove(rejectedstudent)
                                     self.StudentMatched[rejectedstudent] = 0
                                     if (
-                                        StudentProposal[rejectedstudent]
-                                        == self.L
+                                        StudentProposal[rejectedstudent] == self.L
                                         or self.StudPrefs[
                                             rejectedstudent,
-                                            int(
-                                                StudentProposal[rejectedstudent]
-                                            ),
+                                            int(StudentProposal[rejectedstudent]),
                                         ]
                                         == 0
                                     ):
-                                        self.StudentMatched[
-                                            rejectedstudent
-                                        ] = -1
+                                        self.StudentMatched[rejectedstudent] = -1
                                     # print(StudPrefs)
                                     else:
-                                        StillUmatchedStudents.add(
-                                            rejectedstudent
-                                        )
+                                        StillUmatchedStudents.add(rejectedstudent)
                                     self.SchoolMatches[school].add(i)
                                     self.StudentMatched[i] = 1
 
                                     if classtoReject != iClass:
-                                        self.assignedPerClass[
-                                            school, iClass
-                                        ] += 1
+                                        self.assignedPerClass[school, iClass] += 1
                                         self.assignedPerClass[
                                             school, classtoReject
                                         ] -= 1
@@ -213,10 +195,8 @@ class DaWithCapSplit:
 
                     else:  # if we need to reject someone (no more seats)
                         # print(i, iClass, school, priority)
-                        rejectedstudent, classtoReject = (
-                            self._leastPriorityStudent(
-                                i, iClass, school, priority
-                            )
+                        rejectedstudent, classtoReject = self._leastPriorityStudent(
+                            i, iClass, school, priority
                         )
                         # print('kk',i, rejectedstudent,classtoReject)
                         if i != rejectedstudent and self.SchoolCaps[school] > 0:
@@ -240,9 +220,7 @@ class DaWithCapSplit:
 
                             if classtoReject != iClass:
                                 self.assignedPerClass[school, iClass] += 1
-                                self.assignedPerClass[
-                                    school, classtoReject
-                                ] -= 1
+                                self.assignedPerClass[school, classtoReject] -= 1
 
                             # Updates the lowest priority student
                             self._UpdatePriorities(
@@ -262,15 +240,10 @@ class DaWithCapSplit:
 
                 z = int(StudentProposal[i])
                 if self.StudentMatched[i] == 0:
-                    if (
-                        StudentProposal[i] == self.L
-                        or self.StudPrefs[i, z] == 0
-                    ):
+                    if StudentProposal[i] == self.L or self.StudPrefs[i, z] == 0:
                         self.StudentMatched[i] = -1
 
-        self.StudentMatch = np.zeros(
-            [self.n]
-        )  # Student's match is 0 if unmatched
+        self.StudentMatch = np.zeros([self.n])  # Student's match is 0 if unmatched
         for j in range(0, self.s):
             for student in self.SchoolMatches[j]:
                 self.StudentMatch[student] = j + 1
@@ -281,9 +254,7 @@ class DaWithCapSplit:
     def _leastPriorityStudent(self, i, iClass, school, priority):
         # return the rejected student
 
-        reserveSchool = (
-            self.seats_by_zone[int(self.student_zones[i]), school] > 0
-        )
+        reserveSchool = self.seats_by_zone[int(self.student_zones[i]), school] > 0
         # print('GGGGGGGGGGG',reserveSchool, i, int(self.student_zones[i]), iClass, self.seats_by_zone[int(self.student_zones[i]),school])
         # print('llla', i, iClass, school, priority)
         if not reserveSchool:  # self.schoolsToReserve[school] == 0:
@@ -298,16 +269,12 @@ class DaWithCapSplit:
             #  print('lllc', i, iClass, school, priority)
             return i, iClass
         else:
-            classToReject = self._classToReject(
-                school, i, iClass, reserveSchool
-            )
+            classToReject = self._classToReject(school, i, iClass, reserveSchool)
             if iClass != classToReject:
                 # print('xx',int(self.LowestPriority[school, classToReject, 0]), classToReject, school, self.LowestPriority[school, classToReject, 1])
                 # print(self.SchoolCaps[school], self.assignedPerClass[school,0])
                 # print('llld', i, iClass, classToReject, school, priority)
-                return int(
-                    self.LowestPriority[school, classToReject, 0]
-                ), classToReject
+                return int(self.LowestPriority[school, classToReject, 0]), classToReject
             if priority < self.LowestPriority[school, classToReject, 0]:
                 # print(priority, i, self.LowestPriority[school, classToReject, 0], self.LowestPriority[school, classToReject, 1])
                 # print('bb',i,classToReject)
@@ -319,9 +286,7 @@ class DaWithCapSplit:
             #       print('ttt',i,iClass,school, priority)
             #       print('ppp',int(self.LowestPriority[school, classToReject, 0]))
             # print('llle', i, iClass, classToReject, school, priority)
-            return int(
-                self.LowestPriority[school, classToReject, 0]
-            ), classToReject
+            return int(self.LowestPriority[school, classToReject, 0]), classToReject
 
     def _classToReject(self, school, i, iClass, reserveSchool=False):
         rejectClass = 0
@@ -337,10 +302,7 @@ class DaWithCapSplit:
                 self.seats_by_zone[j, school] > 0
                 and self.assignedPerClass[school, j] > 0
             ):
-                tmpX = (
-                    self.assignedPerClass[school, j]
-                    - self.seats_by_zone[j, school]
-                )
+                tmpX = self.assignedPerClass[school, j] - self.seats_by_zone[j, school]
                 if tmpX > tmp:
                     tmp = tmpX
                     rejectClass = j
@@ -352,9 +314,7 @@ class DaWithCapSplit:
     def _UpdatePriorities(
         self, i, iClass, priority, rejectedStudent, classToReject, school
     ):
-        reserveSchool = (
-            self.seats_by_zone[int(self.student_zones[i]), school] > 0
-        )
+        reserveSchool = self.seats_by_zone[int(self.student_zones[i]), school] > 0
         if not reserveSchool:
             iClass = 0
             classToReject = 0
@@ -371,9 +331,9 @@ class DaWithCapSplit:
                         < self.LowestPriority[school, iClass, 1]
                     ):
                         self.LowestPriority[school, iClass, 0] = teststudent
-                        self.LowestPriority[school, iClass, 1] = (
-                            self.StudentPrts[teststudent, school]
-                        )
+                        self.LowestPriority[school, iClass, 1] = self.StudentPrts[
+                            teststudent, school
+                        ]
             return
 
         if not reserveSchool:
@@ -396,9 +356,9 @@ class DaWithCapSplit:
                     and teststudent != rejectedStudent
                 ):
                     self.LowestPriority[school, classToReject, 0] = teststudent
-                    self.LowestPriority[school, classToReject, 1] = (
-                        self.StudentPrts[teststudent, school]
-                    )
+                    self.LowestPriority[school, classToReject, 1] = self.StudentPrts[
+                        teststudent, school
+                    ]
                     tmp = self.LowestPriority[school, classToReject, 1]
 
     def isFeasible(self, student, school, StudentPrts):

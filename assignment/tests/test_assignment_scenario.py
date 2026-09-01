@@ -46,8 +46,7 @@ _CONSOLIDATED_RUN_ESTIMATES = {
         "estimates_2324.csv"
     ),
     "new_run_03_11.yaml": (
-        "/tmp/sfusd-choice/local_outputs/models/t7_2223_k1_base/"
-        "estimates_2324.csv"
+        "/tmp/sfusd-choice/local_outputs/models/t7_2223_k1_base/estimates_2324.csv"
     ),
     "new_run_ge_split.yaml": (
         "/tmp/sfusd-choice/local_outputs/models/t7_2223_k1_base_gesplit/"
@@ -80,9 +79,7 @@ def test_consolidated_run_source_maps_match_shared_data_semantics(
 
     assert data["scenario"] == "assignment-generated-zones-2324"
     assert data["overrides"].get("roots", {}) == {}
-    assert set(data["overrides"].get("sources", {})) <= {
-        "assignment.estimate"
-    }
+    assert set(data["overrides"].get("sources", {})) <= {"assignment.estimate"}
 
     scenario = load_scenario(data, environ={})
     semantic_maps = {
@@ -95,15 +92,13 @@ def test_consolidated_run_source_maps_match_shared_data_semantics(
         }
         for role in ("assignment.zones", "assignment.citywide_zones")
     }
-    encoded = json.dumps(
-        semantic_maps, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    encoded = json.dumps(semantic_maps, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
 
     assert len(semantic_maps["assignment.zones"]) == 292
     assert len(semantic_maps["assignment.citywide_zones"]) == 1
-    assert hashlib.sha256(encoded).hexdigest() == (
-        _SHARED_SOURCE_MAP_SHA256
-    )
+    assert hashlib.sha256(encoded).hexdigest() == (_SHARED_SOURCE_MAP_SHA256)
     assert scenario.source("assignment.estimate").path == Path(expected_estimate)
     assert scenario.source("assignment.students").catalog_id == (
         "assignment.students.2324"
@@ -352,9 +347,14 @@ def test_distance_cache_metadata_never_serializes_student_identities(tmp_path):
 
     assert stat.S_IMODE(namespace.path.stat().st_mode) == 0o770
     assert stat.S_IMODE(namespace.manifest_path.stat().st_mode) == 0o660
-    assert stat.S_IMODE(
-        namespace.payload_path(market.students.DISTANCE_CACHE_PAYLOAD).stat().st_mode
-    ) == 0o660
+    assert (
+        stat.S_IMODE(
+            namespace.payload_path(market.students.DISTANCE_CACHE_PAYLOAD)
+            .stat()
+            .st_mode
+        )
+        == 0o660
+    )
 
 
 def test_saved_public_config_round_trips_after_cwd_change(tmp_path, monkeypatch):
@@ -369,9 +369,7 @@ def test_saved_public_config_round_trips_after_cwd_change(tmp_path, monkeypatch)
     declaring_path.write_text("# declaring path\n", encoding="utf-8")
 
     MarketGenerator(
-        configurator=Configerator.from_config(
-            config, declaring_path=declaring_path
-        ),
+        configurator=Configerator.from_config(config, declaring_path=declaring_path),
         assignment_path=str(tmp_path / "output"),
     )
     snapshot_path = tmp_path / "output" / "config.json"
@@ -494,9 +492,7 @@ def _write_round_gap_sources(tmp_path):
         }
         for round_label, ranked_schools in choices.items():
             row[f"r{round_label}_ranked_idschool"] = str(ranked_schools)
-            row[f"r{round_label}_programs"] = str(
-                ["GE"] * len(ranked_schools)
-            )
+            row[f"r{round_label}_programs"] = str(["GE"] * len(ranked_schools))
             row[f"r{round_label}_randomnumber"] = str(
                 [round_label / 10] * len(ranked_schools)
             )
@@ -530,9 +526,7 @@ def _write_round_gap_sources(tmp_path):
 
 def test_nonconsecutive_rounds_use_selected_preferences_and_lotteries(tmp_path):
     sources = _write_round_gap_sources(tmp_path)
-    market = SchoolChoiceMarket(
-        config=_config(tmp_path, sources, rounds=[1, 2, 4])
-    )
+    market = SchoolChoiceMarket(config=_config(tmp_path, sources, rounds=[1, 2, 4]))
 
     assert market.students.student_data.index.tolist() == [1, 2]
     assert market.students.student_data.index.is_unique
@@ -840,10 +834,14 @@ def test_evaluator_uses_mission_bay_normalized_student_tables(
     assert row["sibling"] == expected_schools
     assert row["aaprek"] + row["prek"] == expected_schools
     assert row["currentlpsibling"] == expected_lp_siblings
-    expected_cohorts = ["regular"] if not include_mission_bay else [
-        "CL;mission",
-        "regular",
-    ]
+    expected_cohorts = (
+        ["regular"]
+        if not include_mission_bay
+        else [
+            "CL;mission",
+            "regular",
+        ]
+    )
     assert row["r1_cohortstring"] == expected_cohorts
 
     market = SchoolChoiceMarket(config=config)
@@ -854,8 +852,7 @@ def test_evaluator_uses_mission_bay_normalized_student_tables(
         if int(program_id.split("-", 1)[0]) in expected_schools
     }
     actual_sibling_programs = {
-        market.programs.codes[index + 1]
-        for index in sibling.nonzero()[0]
+        market.programs.codes[index + 1] for index in sibling.nonzero()[0]
     }
     assert actual_sibling_programs == expected_sibling_programs
 
@@ -867,19 +864,15 @@ def test_evaluator_uses_mission_bay_normalized_student_tables(
         market.programs.indices
     )[0]
     assert {
-        market.programs.codes[index + 1]
-        for index in language_sibling.nonzero()[0]
+        market.programs.codes[index + 1] for index in language_sibling.nonzero()[0]
     } == set(expected_lp_siblings)
 
     language_pathway = market.students.language_pathway_priority_kg(
         market.programs.indices
     )[0]
     expected_pathway = (
-        set()
-        if not include_mission_bay
-        else {f"{expected_schools[0]}-GE-KG"}
+        set() if not include_mission_bay else {f"{expected_schools[0]}-GE-KG"}
     )
     assert {
-        market.programs.codes[index + 1]
-        for index in language_pathway.nonzero()[0]
+        market.programs.codes[index + 1] for index in language_pathway.nonzero()[0]
     } == expected_pathway

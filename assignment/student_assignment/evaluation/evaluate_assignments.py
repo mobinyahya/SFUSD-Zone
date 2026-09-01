@@ -21,9 +21,10 @@ class EvaluateAssignments:
         assignment = pd.read_csv(path)
         if "studentno" not in assignment:
             raise ValueError(f"Assignment is missing studentno: {path}")
-        if assignment["studentno"].isna().any() or assignment[
-            "studentno"
-        ].duplicated().any():
+        if (
+            assignment["studentno"].isna().any()
+            or assignment["studentno"].duplicated().any()
+        ):
             raise ValueError(f"Assignment has invalid studentno values: {path}")
         return assignment.set_index("studentno")
 

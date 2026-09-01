@@ -84,12 +84,13 @@ def test_reconfigure_replaces_zone_dependent_state():
     market.reconfigure(config, "assignments")
 
     assert market.external_config != config
-    assert config["data"]["overrides"]["sources"]["assignment.zones"][
+    assert (
+        config["data"]["overrides"]["sources"]["assignment.zones"]["policy"]["path"]
+        == "zones.csv"
+    )
+    assert market.external_config["data"]["overrides"]["sources"]["assignment.zones"][
         "policy"
-    ]["path"] == "zones.csv"
-    assert market.external_config["data"]["overrides"]["sources"][
-        "assignment.zones"
-    ]["policy"]["path"].endswith("zones.csv")
+    ]["path"].endswith("zones.csv")
     assert market.config is not config
     assert market.config["paths"]["zone-files"]["policy"].endswith("zones.csv")
     assert market.configurator.config is not market.config
@@ -99,6 +100,4 @@ def test_reconfigure_replaces_zone_dependent_state():
     assert market.preference_generator.market is market
     assert market._guardrail_setup_cache == {}
     assert market._active_policy_cache_context is None
-    market._set_up_save_folder.assert_called_once_with(
-        "assignments", write_config=True
-    )
+    market._set_up_save_folder.assert_called_once_with("assignments", write_config=True)

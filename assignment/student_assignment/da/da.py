@@ -31,9 +31,7 @@ class School:
             return -np.inf
 
         if self._current_min_priority() != self.lowest_priority_match[1]:
-            raise ValueError(
-                "Priority storage and lowest priority match do not match"
-            )
+            raise ValueError("Priority storage and lowest priority match do not match")
 
         return self.lowest_priority_match[1]
 
@@ -42,16 +40,13 @@ class School:
             return -np.inf, None
 
         if self._current_min_priority() != self.lowest_priority_match[1]:
-            raise ValueError(
-                "Priority storage and lowest priority match do not match"
-            )
+            raise ValueError("Priority storage and lowest priority match do not match")
 
         return self.lowest_priority_match[1], self.lowest_priority_match[0]
 
     def _current_min_priority(self):
         while (
-            self._priority_heap
-            and self._priority_heap[0] not in self.priority_storage
+            self._priority_heap and self._priority_heap[0] not in self.priority_storage
         ):
             heapq.heappop(self._priority_heap)
         return self._priority_heap[0]
@@ -172,9 +167,7 @@ class DeferredAcceptance:
         studentno2idx=None,
         program_indicies=None,
     ):
-        self.schools = [
-            School(i, capacity) for i, capacity in enumerate(school_caps)
-        ]
+        self.schools = [School(i, capacity) for i, capacity in enumerate(school_caps)]
         self.students = [
             Student(student_pref, student_priority)
             for (student_pref, student_priority) in zip_longest(
@@ -210,10 +203,7 @@ class DeferredAcceptance:
                 if school.is_full():
                     school_lowest_priority = school.give_lowest_priority()
 
-                    if (
-                        priority < school_lowest_priority
-                        or not school.has_capacity()
-                    ):
+                    if priority < school_lowest_priority or not school.has_capacity():
                         continue
 
                     else:
@@ -222,9 +212,7 @@ class DeferredAcceptance:
                         unmatched_students.add(student_to_remove)
 
                         student.set_match(school_index)
-                        school.add_match(
-                            i, student.priorities[int(school_index)]
-                        )
+                        school.add_match(i, student.priorities[int(school_index)])
                         unmatched_students.discard(i)
 
                 else:

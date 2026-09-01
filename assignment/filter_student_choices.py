@@ -37,10 +37,7 @@ def haversine(
     lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
     dlon = lon2 - lon1
-    a = (
-        np.sin(dlat / 2) ** 2
-        + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
-    )
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
     c = 2 * np.arcsin(np.sqrt(a))
     return R * c
 
@@ -62,9 +59,7 @@ def _parse_choice_list(value: Any, row_index: Any, column: str) -> list:
     """Parse one choice-list cell and report malformed values precisely."""
     if isinstance(value, list):
         return value
-    if value is None or (
-        isinstance(value, (float, np.floating)) and np.isnan(value)
-    ):
+    if value is None or (isinstance(value, (float, np.floating)) and np.isnan(value)):
         return []
     if isinstance(value, str):
         if not value.strip():
@@ -170,8 +165,7 @@ def filter_student_choices(
 
         def filter_row(row: pd.Series, student_pos: int) -> dict[str, str]:
             lists = {
-                col: _parse_choice_list(row[col], row.name, col)
-                for col in present_cols
+                col: _parse_choice_list(row[col], row.name, col) for col in present_cols
             }
             school_list = lists[school_col]
             program_list = lists[program_col]
@@ -211,8 +205,7 @@ def filter_student_choices(
                 keep = [
                     i
                     for i, sid in enumerate(school_list)
-                    if _school_id_key(sid) in top_school_ids
-                    or program_list[i] != "GE"
+                    if _school_id_key(sid) in top_school_ids or program_list[i] != "GE"
                 ]
 
             else:
@@ -239,9 +232,7 @@ def filter_student_choices(
     return df_students
 
 
-def load_estimates(
-    file_path: str, number_of_programs: int = 10
-) -> pd.DataFrame:
+def load_estimates(file_path: str, number_of_programs: int = 10) -> pd.DataFrame:
     """Load estimate data from a CSV file into a DataFrame.
 
     Args:
@@ -292,9 +283,7 @@ def load_estimates(
     df["r1_listed_ranks"] = df["selected_programs"].apply(
         lambda programs: str(list(range(1, len(programs) + 1)))
     )
-    df["grade"] = df["selected_programs"].apply(
-        lambda x: [i.split("-")[2] for i in x]
-    )
+    df["grade"] = df["selected_programs"].apply(lambda x: [i.split("-")[2] for i in x])
     # df grade is the first element of the list since all choices are for the same grade
     df["grade"] = df["grade"].apply(lambda x: str(x[0]) if len(x) > 0 else "")
 
@@ -360,9 +349,7 @@ def main(cfg: DictConfig) -> None:
     df_students = pd.read_csv(students_csv)
     # Ensure KG only as per original logic often seen
     if "grade" in df_students.columns:
-        df_students = df_students[df_students["grade"] == "KG"].reset_index(
-            drop=True
-        )
+        df_students = df_students[df_students["grade"] == "KG"].reset_index(drop=True)
 
     df_schools = pd.read_csv(schools_csv)
 

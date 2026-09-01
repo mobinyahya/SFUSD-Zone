@@ -112,9 +112,7 @@ def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(tmp_path)
 
 
 @pytest.mark.parametrize("method", ["max", "logsum"])
-def test_mnl_block_impacts_match_direct_add_remove_deltas(
-    tmp_path, method
-):
+def test_mnl_block_impacts_match_direct_add_remove_deltas(tmp_path, method):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     pd.DataFrame(

@@ -89,12 +89,8 @@ def test_default_graph_root_uses_v13_shared_cache_namespace():
 
 
 def test_graph_cache_key_ignores_cache_root(tmp_path):
-    first = OptimizationConfig(
-        levels=["Block_0"], data=_data(tmp_path / "cache-one")
-    )
-    second = OptimizationConfig(
-        levels=["Block_0"], data=_data(tmp_path / "cache-two")
-    )
+    first = OptimizationConfig(levels=["Block_0"], data=_data(tmp_path / "cache-one"))
+    second = OptimizationConfig(levels=["Block_0"], data=_data(tmp_path / "cache-two"))
 
     first_dataset = Dataset(first)
     second_dataset = Dataset(second)
@@ -307,6 +303,3 @@ def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
     assert problem.centroids == [0, 2]
     assert problem.max_distance == 3.0
     assert problem.candidate_zones(1) == {0}
-
-
-

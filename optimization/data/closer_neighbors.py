@@ -209,12 +209,16 @@ class CloserNeighborArtifactStore:
         required = {"school_id", "lat", "lon"}
         missing = required - set(schools.columns)
         if missing:
-            raise ValueError(f"School coordinates are missing columns: {sorted(missing)}.")
+            raise ValueError(
+                f"School coordinates are missing columns: {sorted(missing)}."
+            )
         schools = schools.dropna(subset=sorted(required)).copy()
         schools["school_id"] = schools["school_id"].astype(int)
         if schools["school_id"].duplicated().any():
             duplicates = sorted(
-                schools.loc[schools["school_id"].duplicated(False), "school_id"].unique()
+                schools.loc[
+                    schools["school_id"].duplicated(False), "school_id"
+                ].unique()
             )
             raise ValueError(f"Duplicate school coordinates for IDs: {duplicates}.")
         geometry = gpd.GeoDataFrame(
@@ -275,8 +279,7 @@ class CloserNeighborArtifactStore:
                 payload = None
         if (
             not isinstance(payload, dict)
-            or payload.get("schema_version")
-            != CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION
+            or payload.get("schema_version") != CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION
             or payload.get("level") != level.name
             or not isinstance(payload.get("variants"), dict)
         ):
@@ -298,9 +301,10 @@ class CloserNeighborArtifactStore:
     ) -> CloserNeighborData | None:
         if not isinstance(variant, dict):
             return None
-        if variant.get("graph_fingerprint") != graph_fingerprint or variant.get(
-            "source_fingerprint"
-        ) != source_fingerprint:
+        if (
+            variant.get("graph_fingerprint") != graph_fingerprint
+            or variant.get("source_fingerprint") != source_fingerprint
+        ):
             return None
         try:
             school_ids = tuple(int(school_id) for school_id in variant["school_ids"])

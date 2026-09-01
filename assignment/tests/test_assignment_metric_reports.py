@@ -258,10 +258,13 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         + students["idschoolattendance"].nunique()
     )
     assert len(prepare_calls) == expected_contexts
-    assert sum(
-        call_kwargs.get("include_program_report_stats", False)
-        for _, call_kwargs in prepare_calls
-    ) == 1
+    assert (
+        sum(
+            call_kwargs.get("include_program_report_stats", False)
+            for _, call_kwargs in prepare_calls
+        )
+        == 1
+    )
 
     prepare_calls.clear()
     citywide_only = evaluator.eval_aggregate_metric_reports(
@@ -604,9 +607,9 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert program_y["mean_travel_dist_assigned"] == 8
     assert program_y["mean_travel_dist_designated"] == 7
     assert program_y["percent_designated"] == 0.5
-    assert program_y[
-        ["frl_assigned", "frl_designated", "frl_non_designated"]
-    ].eq(0).all()
+    assert (
+        program_y[["frl_assigned", "frl_designated", "frl_non_designated"]].eq(0).all()
+    )
     assert program_y["program_utilization"] == 0.5
     assert program_y["overage"] == 0
     assert program_y["underage"] == 0.5
@@ -637,20 +640,22 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert zero_capacity_program["frl_assigned"] == pytest.approx(0.4)
     assert zero_capacity_program["frl_designated"] == pytest.approx(0.4)
     assert pd.isna(zero_capacity_program["frl_non_designated"])
-    assert zero_capacity_program[
-        ["program_utilization", "overage", "underage"]
-    ].isna().all()
-    assert zero_capacity_program[["prop_top_1", "prop_top_2", "prop_top_3"]].eq(
-        0
-    ).all()
+    assert (
+        zero_capacity_program[["program_utilization", "overage", "underage"]]
+        .isna()
+        .all()
+    )
+    assert zero_capacity_program[["prop_top_1", "prop_top_2", "prop_top_3"]].eq(0).all()
     assert zero_capacity_program["designated_decline_to_state_students"] == 1
 
     unassigned_program = by_program.loc["202-V-KG"]
     assert unassigned_program["assigned"] == 0
     assert unassigned_program["designated"] == 0
-    assert unassigned_program[
-        ["frl_assigned", "frl_designated", "frl_non_designated"]
-    ].isna().all()
+    assert (
+        unassigned_program[["frl_assigned", "frl_designated", "frl_non_designated"]]
+        .isna()
+        .all()
+    )
     assert unassigned_program[demographic_columns].eq(0).all()
     assert (
         unassigned_program[
@@ -870,9 +875,7 @@ def test_program_report_requires_complete_school_metadata(tmp_path, case, messag
 
 def test_full_evaluator_can_replace_assignments_without_reloading_sources(tmp_path):
     students, assignments, program_path, school_path = _minimal_full_inputs(tmp_path)
-    evaluator = _make_full_evaluator(
-        students, assignments, program_path, school_path
-    )
+    evaluator = _make_full_evaluator(students, assignments, program_path, school_path)
     updated_assignments = assignments.copy()
     updated_assignments.loc[
         0,

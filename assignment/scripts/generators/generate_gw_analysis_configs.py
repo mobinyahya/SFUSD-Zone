@@ -128,9 +128,7 @@ def make_run_entry(
     year_int = year_str_to_int(year_str)
     folder = f"./{DATA_ROOT}/{exp}/{year_str}/{policy}"
     student = str(STUDENT_FILTER / f"student_{year_str}_filtered.csv")
-    program = str(
-        PROGRAM_FILTER / f"programs_without_specialprogs_{year_str}.csv"
-    )
+    program = str(PROGRAM_FILTER / f"programs_without_specialprogs_{year_str}.csv")
     label = f"{label_prefix}{policy}" if label_prefix else policy
     return {
         "label": label,

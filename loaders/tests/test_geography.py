@@ -201,9 +201,7 @@ def test_outside_district_student_policy(
         style="student",
     )
 
-    filtered = filter_outside_district_students(
-        normalized, scenario, "assignment"
-    )
+    filtered = filter_outside_district_students(normalized, scenario, "assignment")
 
     assert filtered["studentno"].tolist() == expected_students
     assert filtered.attrs["source_rows"] == expected_source_rows

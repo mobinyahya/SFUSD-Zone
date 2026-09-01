@@ -40,8 +40,7 @@ class DistanceChoiceModel(ChoiceModel):
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> float:
         return sum(
-            self._zone_utility(problem, node, zone)
-            for node, zone in assignment.items()
+            self._zone_utility(problem, node, zone) for node, zone in assignment.items()
         )
 
     def evaluate_with_cuts(

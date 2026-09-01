@@ -81,9 +81,7 @@ def main() -> None:
         description="Compare two assignment files and count students with "
         "the same assignment."
     )
-    parser.add_argument(
-        "file1", type=str, help="Path to the first assignment CSV file"
-    )
+    parser.add_argument("file1", type=str, help="Path to the first assignment CSV file")
     parser.add_argument(
         "file2", type=str, help="Path to the second assignment CSV file"
     )
@@ -119,9 +117,7 @@ def main() -> None:
     print(f"Students only in file 2: {len(df2) - num_common}")
     print(f"\nStudents with SAME assignment: {num_same}")
     print(f"Students with DIFFERENT assignment: {num_common - num_same}")
-    print(
-        f"\nPercentage with same assignment: {100 * num_same / num_common:.2f}%"
-    )
+    print(f"\nPercentage with same assignment: {100 * num_same / num_common:.2f}%")
     print("=" * 60)
 
     # Save detailed comparison if requested

@@ -484,9 +484,7 @@ def test_generated_zones_scenario_uses_supported_registry_bundle():
         "/soalnas/share/data/school_choice/Data/assignment/zones_2020/"
         "18-zone-1_2_BG_2020.csv"
     )
-    assert zones[
-        "Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020"
-    ].path == (
+    assert zones["Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020"].path == (
         Path(
             "/soalnas/share/data/school_choice/Data/assignment/zones_2020/"
             "Zones_4_FRL_Dev_0.10_Objective_1060.0_4-zone-5_2020.csv"
@@ -659,8 +657,7 @@ def test_named_frl_estimate_requires_matching_census_vintage():
         "student_frl.updated_2526"
     )
     assert scenario.source("assignment.frl_estimate").path == (
-        scenario.roots["data"] / "Data/student_frl"
-        / "updated_frl_blocks_2526.csv"
+        scenario.roots["data"] / "Data/student_frl" / "updated_frl_blocks_2526.csv"
     )
 
     default = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
@@ -757,9 +754,7 @@ def test_scenario_filter_groups_must_define_every_selector(tmp_path):
     )
 
     with pytest.raises(ValueError, match="is missing filters"):
-        load_scenario(
-            {"scenario": str(scenario_path), "overrides": {}}, environ={}
-        )
+        load_scenario({"scenario": str(scenario_path), "overrides": {}}, environ={})
 
 
 @pytest.mark.parametrize("population", ["applicant", "enrolled"])

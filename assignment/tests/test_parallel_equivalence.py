@@ -61,8 +61,7 @@ def make_minimal_config(
     all_subs = config.get("subconfigs", [])
     if len(all_subs) < n_subconfigs:
         raise ValueError(
-            f"Config only has {len(all_subs)} subconfigs, "
-            f"requested {n_subconfigs}."
+            f"Config only has {len(all_subs)} subconfigs, requested {n_subconfigs}."
         )
 
     config["subconfigs"] = all_subs[:n_subconfigs]
@@ -77,9 +76,7 @@ def make_minimal_config(
     return tmp.name
 
 
-def run_simulation(
-    config_path: str, workers: int
-) -> subprocess.CompletedProcess:
+def run_simulation(config_path: str, workers: int) -> subprocess.CompletedProcess:
     """Invoke run_custom_config.py as a subprocess.
 
     Args:

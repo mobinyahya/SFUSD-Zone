@@ -255,9 +255,7 @@ def process_directory(
 
         try:
             print(f"Processing: {file_path}")
-            process_single_pickle(
-                file_path, csv_path, building_blocks, verbose=False
-            )
+            process_single_pickle(file_path, csv_path, building_blocks, verbose=False)
             generated_files.append(csv_path)
         except Exception as exc:
             print(f"  Skipping {file_path}: {exc}")

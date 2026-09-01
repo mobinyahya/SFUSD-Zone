@@ -36,9 +36,11 @@ def main():
         # For nested dicts, be careful.
         config = yaml.safe_load(yaml.dump(base_config))  # Deep copy/clean slate
 
-        assignment_filters = config["data"]["overrides"].setdefault(
-            "filters", {}
-        ).setdefault("assignment", {})
+        assignment_filters = (
+            config["data"]["overrides"]
+            .setdefault("filters", {})
+            .setdefault("assignment", {})
+        )
         assignment_filters.update(
             {
                 "year": year_str,
@@ -88,9 +90,7 @@ def main():
         sources["assignment.school_coordinates"] = dict(school_source)
 
         # Output Folder
-        output_folder = (
-            f"./local-data/local-runs/status_quo_runs/run_{year_str}/"
-        )
+        output_folder = f"./local-data/local-runs/status_quo_runs/run_{year_str}/"
         config["paths"]["assignment-folder"] = output_folder
 
         # Subconfigs - Only Status Quo

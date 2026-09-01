@@ -28,9 +28,7 @@ def _base_geometry():
 
 
 def _schools():
-    return pd.DataFrame(
-        {"school_id": [100], "lat": [37.750], "lon": [-122.500]}
-    )
+    return pd.DataFrame({"school_id": [100], "lat": [37.750], "lon": [-122.500]})
 
 
 def _graph():
@@ -77,9 +75,7 @@ def test_geometry_uses_closest_polygon_points_not_neighbor_centroids(
     assert data.closer_neighbors[0][100] == frozenset({1})
 
 
-def test_aggregated_level_dissolves_all_member_geometries(
-    tmp_path, scenario_factory
-):
+def test_aggregated_level_dissolves_all_member_geometries(tmp_path, scenario_factory):
     G = nx.path_graph(2)
     G.nodes[0]["block_ids"] = [10, 12]
     G.nodes[1]["block_ids"] = [11]
@@ -218,9 +214,10 @@ def test_source_bytes_are_part_of_closer_neighbor_variant_identity(
     with second.cache_path("Block_0").open("rb") as file:
         payload = pickle.load(file)
     assert len(payload["variants"]) == 2
-    assert len(
-        {variant["source_fingerprint"] for variant in payload["variants"].values()}
-    ) == 2
+    assert (
+        len({variant["source_fingerprint"] for variant in payload["variants"].values()})
+        == 2
+    )
 
 
 def test_crosswalk_bytes_are_part_of_closer_neighbor_variant_identity(
@@ -247,9 +244,10 @@ def test_crosswalk_bytes_are_part_of_closer_neighbor_variant_identity(
     with second.cache_path("Block_0").open("rb") as file:
         payload = pickle.load(file)
     assert len(payload["variants"]) == 2
-    assert len(
-        {variant["source_fingerprint"] for variant in payload["variants"].values()}
-    ) == 2
+    assert (
+        len({variant["source_fingerprint"] for variant in payload["variants"].values()})
+        == 2
+    )
 
 
 @pytest.mark.parametrize(

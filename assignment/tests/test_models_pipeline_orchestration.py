@@ -37,17 +37,17 @@ def _write_settings(
     settings = tmp_path / "settings.env"
     settings.write_text(
         f''': "${{PYTHON_CMD:={sys.executable}}}"
-SFUSD_MODELS_DIR="{paths['models']}"
-STUDENT_DIR="{paths['students']}"
-PROGRAM_DIR="{paths['programs']}"
-SCHOOL_DATA_DIR="{paths['schools']}"
-SFUSD_DATA_DIR="{tmp_path / 'sfusd'}"
-ZONES_DIR="{paths['zones']}"
-RUNS_ROOT="{paths['runs']}"
-CFG_DIR="{paths['configs']}"
-ANALYSIS_CFG="{paths['analysis']}"
-OUTPUT_DIR="{paths['output']}"
-LOG_DIR="{paths['logs']}"
+SFUSD_MODELS_DIR="{paths["models"]}"
+STUDENT_DIR="{paths["students"]}"
+PROGRAM_DIR="{paths["programs"]}"
+SCHOOL_DATA_DIR="{paths["schools"]}"
+SFUSD_DATA_DIR="{tmp_path / "sfusd"}"
+ZONES_DIR="{paths["zones"]}"
+RUNS_ROOT="{paths["runs"]}"
+CFG_DIR="{paths["configs"]}"
+ANALYSIS_CFG="{paths["analysis"]}"
+OUTPUT_DIR="{paths["output"]}"
+LOG_DIR="{paths["logs"]}"
 ANALYSIS_NEW_CTIP_PATH=""
 GRADE="KG"
 RANDOM_SEED="2023"
@@ -89,33 +89,23 @@ def _run(settings: Path, *args: str, env: dict[str, str] | None = None):
 
 
 def test_skip_existing_requires_every_expected_iteration(tmp_path):
-    settings, paths = _write_settings(
-        tmp_path, test_specs=["2223:22:is"], iter_end=2
-    )
+    settings, paths = _write_settings(tmp_path, test_specs=["2223:22:is"], iter_end=2)
     run_dir = paths["runs"] / "status_quo_real_2223" / "status_quo_real"
     run_dir.mkdir(parents=True)
     (run_dir / "unrelated.txt").write_text("partial")
 
-    incomplete = _run(
-        settings, "--no-generate", "--no-analyze", "--skip-existing"
-    )
+    incomplete = _run(settings, "--no-generate", "--no-analyze", "--skip-existing")
     assert incomplete.returncode != 0
     assert "simulation config(s) are missing" in incomplete.stdout
 
-    _assignment_files(
-        paths["runs"], "status_quo_real_2223", "status_quo_real", [0]
-    )
+    _assignment_files(paths["runs"], "status_quo_real_2223", "status_quo_real", [0])
     still_incomplete = _run(
         settings, "--no-generate", "--no-analyze", "--skip-existing"
     )
     assert still_incomplete.returncode != 0
 
-    _assignment_files(
-        paths["runs"], "status_quo_real_2223", "status_quo_real", [1]
-    )
-    complete = _run(
-        settings, "--no-generate", "--no-analyze", "--skip-existing"
-    )
+    _assignment_files(paths["runs"], "status_quo_real_2223", "status_quo_real", [1])
+    complete = _run(settings, "--no-generate", "--no-analyze", "--skip-existing")
     assert complete.returncode == 0, complete.stderr or complete.stdout
     assert "SKIP (already done): status_quo_real_2223" in complete.stdout
 
@@ -129,9 +119,7 @@ def test_simulation_failures_keep_labels_after_skips_and_respect_bound(tmp_path)
         variants=variants,
         workers=2,
     )
-    _assignment_files(
-        paths["runs"], "status_quo_real_2223", "status_quo_real", [0]
-    )
+    _assignment_files(paths["runs"], "status_quo_real_2223", "status_quo_real", [0])
 
     labels = [
         "fake_2223_k1_suffix_2223_bad",
@@ -147,7 +135,7 @@ def test_simulation_failures_keep_labels_after_skips_and_respect_bound(tmp_path)
     observations = tmp_path / "observations.txt"
     runner = tmp_path / "fake_runner.py"
     runner.write_text(
-        '''import os
+        """import os
 import pathlib
 import sys
 import time
@@ -168,7 +156,7 @@ try:
     (output_dir / "assignment_iteration0.csv").write_text("studentno\\n")
 finally:
     marker.unlink(missing_ok=True)
-'''
+"""
     )
     env = os.environ.copy()
     env.update(

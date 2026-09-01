@@ -26,9 +26,7 @@ class IterativeChoiceStrategy(Strategy):
         target = levels[-1]
         max_iterations = int(self.options.get("max_iterations", 5))
         tolerance = float(self.options.get("tolerance", 1e-6))
-        apply_hints = (
-            normalize_hints(self.options.get("hints", "voronoi")) != "none"
-        )
+        apply_hints = normalize_hints(self.options.get("hints", "voronoi")) != "none"
         scale = float(self.options.get("choice_utility_scale", 100.0))
         use_choice_utility_hints = bool(self.options.get("choice_utility_hints", False))
         model = get_configured_choice_model(self.options, dataset.data)

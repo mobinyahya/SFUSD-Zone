@@ -34,9 +34,7 @@ class PriorityGenerator:
             self.market.config.get("zone-building-blocks"),
         )
 
-    def _make_policy_priorities_cache_key(
-        self, ctip: dict | str | int, policy: str
-    ):
+    def _make_policy_priorities_cache_key(self, ctip: dict | str | int, policy: str):
         return (
             self._zone_context_key,
             repr(ctip),
@@ -182,9 +180,7 @@ class PriorityGenerator:
         """
         return 1000 * np.where(first_round_of_participation == 0, 1, 0)
 
-    def _merge_no_rounds(
-        self, first_round_of_participation: np.ndarray
-    ) -> np.ndarray:
+    def _merge_no_rounds(self, first_round_of_participation: np.ndarray) -> np.ndarray:
         """Create round priorities for merging no rounds.
 
         Args:
@@ -206,9 +202,7 @@ class PriorityGenerator:
         """
         return np.zeros([self.market.n])
 
-    def _set_policy_priorities(
-        self, ctip: dict | str, policy: str
-    ) -> np.ndarray:
+    def _set_policy_priorities(self, ctip: dict | str, policy: str) -> np.ndarray:
         """Set numerical values for students' priorities depending on priority_weights
         Parameters: priorityweights : dictionary mapping each of {'ctip','sibling','zone'} to a numeric weight.
         """
@@ -264,20 +258,12 @@ class PriorityGenerator:
                 ]
 
                 if distance_boost:
-                    low_income_distances = (
-                        self.market.students.distance_data.copy()
-                    )
-                    high_income_distances = (
-                        self.market.students.distance_data.copy()
-                    )
+                    low_income_distances = self.market.students.distance_data.copy()
+                    high_income_distances = self.market.students.distance_data.copy()
 
                     # Get income threshold from config, default to 95292
-                    income_threshold = distance_boost.get(
-                        "income_threshold", 95292
-                    )
-                    low_income_boost = distance_boost.get(
-                        "low_income_boost", 0.2
-                    )
+                    income_threshold = distance_boost.get("income_threshold", 95292)
+                    low_income_boost = distance_boost.get("low_income_boost", 0.2)
 
                     # Get index of students above and below the threshold
                     low_income_index = self.market.students.student_data[
@@ -291,12 +277,8 @@ class PriorityGenerator:
                     ].index
 
                     all_student_index = self.market.students.student_data.index
-                    low_income_pos = all_student_index.get_indexer(
-                        low_income_index
-                    )
-                    high_income_pos = all_student_index.get_indexer(
-                        high_income_index
-                    )
+                    low_income_pos = all_student_index.get_indexer(low_income_index)
+                    high_income_pos = all_student_index.get_indexer(high_income_index)
 
                     # Sort distances based on students and programs order
                     low_income_distances = low_income_distances.loc[
@@ -307,12 +289,8 @@ class PriorityGenerator:
                     ]
 
                     # Ensure program ordering is consistent
-                    low_income_distances = low_income_distances[
-                        prog_list
-                    ].to_numpy()
-                    high_income_distances = high_income_distances[
-                        prog_list
-                    ].to_numpy()
+                    low_income_distances = low_income_distances[prog_list].to_numpy()
+                    high_income_distances = high_income_distances[prog_list].to_numpy()
 
                     low_income_priority = self._get_distance_priority(
                         low_income_distances, boost=low_income_boost
@@ -322,12 +300,8 @@ class PriorityGenerator:
                     )
 
                     full_priority_matrix = np.zeros_like(priorities)
-                    full_priority_matrix[low_income_pos, :] = (
-                        low_income_priority
-                    )
-                    full_priority_matrix[high_income_pos, :] = (
-                        high_income_priority
-                    )
+                    full_priority_matrix[low_income_pos, :] = low_income_priority
+                    full_priority_matrix[high_income_pos, :] = high_income_priority
 
                     priorities += v * full_priority_matrix
                 else:
@@ -525,9 +499,9 @@ class PriorityGenerator:
         elif "D" in str(ctip):
             classes_matrix = self._set_diversity_category_priority(ctip)
         elif ctip == 5:
-            CTIPtypes = np.array(
-                self.market.students.student_data["CTIPtype"]
-            ).reshape((self.market.n, 1))
+            CTIPtypes = np.array(self.market.students.student_data["CTIPtype"]).reshape(
+                (self.market.n, 1)
+            )
             classes_matrix = 5 * np.ones(
                 (self.market.n, self.market.num_programs)
             ) - np.matmul(CTIPtypes, np.ones([1, self.market.num_programs]))
@@ -581,9 +555,7 @@ class PriorityGenerator:
             )
             thresholds = np.percentile(index_col, percentages)
         elif "thresholds" in ctip:
-            thresholds = ctip[
-                "thresholds"
-            ]  # expect lower index => more disadvantaged
+            thresholds = ctip["thresholds"]  # expect lower index => more disadvantaged
         else:
             raise ValueError(
                 "Neither 'num_categories' nor 'thresholds' defined for diversity tiebreaker."
@@ -622,8 +594,7 @@ class PriorityGenerator:
             weights["sibling"] * sibling + weights["ctip"] * ctip, brown_ms_mask
         )
         priorities[:, brown_ms_index] += (
-            weights["bayview-to-brown"]
-            * self.market.students.bayview_to_brown_ms
+            weights["bayview-to-brown"] * self.market.students.bayview_to_brown_ms
         )
         priorities[:, brown_ms_index] += (
             weights["zip-94124"] * self.market.students.zip_94124
@@ -651,9 +622,7 @@ class PriorityGenerator:
                 handled by this priority class
         """
         lp_mask = np.zeros(self.market.num_programs)
-        lp_indices = [
-            x - 1 for x in self.market.programs.language_program_indices()
-        ]
+        lp_indices = [x - 1 for x in self.market.programs.language_program_indices()]
         lp_mask[lp_indices] = 1
         priorities = np.multiply(
             weights["sibling"] * sibling
@@ -714,9 +683,7 @@ class PriorityGenerator:
         """
         remaining_programs = np.ones(self.market.num_programs) - program_mask
         unmasked = (
-            weights["sibling"] * sibling
-            + weights["msf"] * msf
-            + weights["ctip"] * ctip
+            weights["sibling"] * sibling + weights["msf"] * msf + weights["ctip"] * ctip
         )
         priorities = np.multiply(unmasked, remaining_programs)
         return priorities
@@ -891,9 +858,7 @@ class PriorityGenerator:
             np.ndarray: (num students) by (num programs) array with multiple tiebreaking lottery numbers
         """
         if len(self._mtb_matrix) == 0:
-            self._mtb_matrix = np.random.rand(
-                self.market.n, self.market.num_programs
-            )
+            self._mtb_matrix = np.random.rand(self.market.n, self.market.num_programs)
         return self._mtb_matrix
 
     def reset_stb_mtb_lottery(self):
@@ -968,7 +933,9 @@ class PriorityGenerator:
             program_ids = np.array([x for x in program_ids if x != 0])
             if len(program_ids):
                 if np.any((program_ids < 1) | (program_ids > self.market.num_programs)):
-                    raise ValueError("Historical preferences contain invalid program IDs.")
+                    raise ValueError(
+                        "Historical preferences contain invalid program IDs."
+                    )
                 try:
                     designation_number = float(d_val)
                 except (TypeError, ValueError) as exc:
@@ -990,9 +957,10 @@ class PriorityGenerator:
                     raise ValueError(
                         "Historical lottery numbers must be numeric."
                     ) from exc
-                if parsed_numbers.shape != (len(program_ids),) or not np.isfinite(
-                    parsed_numbers
-                ).all():
+                if (
+                    parsed_numbers.shape != (len(program_ids),)
+                    or not np.isfinite(parsed_numbers).all()
+                ):
                     raise ValueError(
                         "Historical lottery numbers must align with ranked programs."
                     )
@@ -1013,9 +981,7 @@ class PriorityGenerator:
         )
         student_data = self.market.students.student_data
         if "selected_randomnumber" not in student_data:
-            raise ValueError(
-                "Historical STB lottery requires selected_randomnumber."
-            )
+            raise ValueError("Historical STB lottery requires selected_randomnumber.")
         numbers = []
         for value in student_data.selected_randomnumber:
             if not isinstance(value, (list, tuple, np.ndarray)):
@@ -1034,9 +1000,7 @@ class PriorityGenerator:
                     "Historical selected lottery numbers must be numeric."
                 ) from exc
             if not np.isfinite(number):
-                raise ValueError(
-                    "Historical selected lottery numbers must be finite."
-                )
+                raise ValueError("Historical selected lottery numbers must be finite.")
             numbers.append(number)
         return np.asarray(numbers)[:, np.newaxis] * np.ones(
             [1, self.market.num_programs]
@@ -1055,9 +1019,7 @@ class PriorityGenerator:
         valid_programs = np.logical_and(
             program_idxs >= 0, program_idxs < self.market.num_programs
         )
-        not_designation[
-            student_idxs[valid_programs], program_idxs[valid_programs]
-        ] = 1
+        not_designation[student_idxs[valid_programs], program_idxs[valid_programs]] = 1
         return not_designation
 
     def set_policy_specific_priorities(
@@ -1096,9 +1058,7 @@ class PriorityGenerator:
         round_priorities = self._set_rounds_merged(policy.rounds_merged)
         priorities = self._set_policy_priorities(policy.ctip, policy.name)
         not_designation_mask = self._set_not_designation_priority(preferences)
-        non_designation_boost = self.market.config.get(
-            "non_designation_boost", 100
-        )
+        non_designation_boost = self.market.config.get("non_designation_boost", 100)
         final = (
             round_priorities
             + np.multiply(priorities, not_designation_mask)
@@ -1125,9 +1085,7 @@ class PriorityGenerator:
         round_priorities = self._set_rounds_merged(policy.rounds_merged)
         priorities = self._set_policy_priorities(policy.ctip, policy.name)
         not_designation_mask = self._set_not_designation_priority(preferences)
-        non_designation_boost = self.market.config.get(
-            "non_designation_boost", 100
-        )
+        non_designation_boost = self.market.config.get("non_designation_boost", 100)
         final = (
             round_priorities
             + np.multiply(priorities, not_designation_mask)

@@ -348,9 +348,7 @@ class CacheNamespace:
             current.chmod(0o770)
 
     def _atomic_write(self, path: Path, payload: bytes) -> None:
-        temporary = path.with_name(
-            f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-        )
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
         try:
             with temporary.open("xb") as stream:
                 if self._restricted:

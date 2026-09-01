@@ -68,9 +68,7 @@ def identify_targeted_students(
 
     if method == "ctip_x_ethnicity":
         ctip_vals = student_data["ctip1"].fillna(0).astype(int).to_numpy()
-        ethnicity_vals = student_data["resolved_ethnicity"].map(
-            _normalize_ethnicity
-        )
+        ethnicity_vals = student_data["resolved_ethnicity"].map(_normalize_ethnicity)
         is_ctip = ctip_vals == 1
         is_targeted_ethn = ethnicity_vals.isin(_TARGETED_ETHNICITIES).to_numpy()
         targeted = is_ctip & is_targeted_ethn
@@ -435,12 +433,8 @@ def _subgroup_row(
         "n_eligible": n_eligible,
         "n_augmented": n_augmented,
         "total_programs_added": total_added,
-        "avg_programs_added": (
-            total_added / n_augmented if n_augmented > 0 else 0.0
-        ),
-        "pct_augmented": (
-            100.0 * n_augmented / n_total if n_total > 0 else 0.0
-        ),
+        "avg_programs_added": (total_added / n_augmented if n_augmented > 0 else 0.0),
+        "pct_augmented": (100.0 * n_augmented / n_total if n_total > 0 else 0.0),
         "avg_list_before": (
             float(original_lengths[in_sub].mean()) if n_total > 0 else 0.0
         ),

@@ -182,7 +182,9 @@ def separate_mid_prefixes(
     )
     overload_targets: dict[int, int] = {}
     if overloaded:
-        capacities = {program.program_id: program.capacity for program in market.programs}
+        capacities = {
+            program.program_id: program.capacity for program in market.programs
+        }
         for program_id in overloaded:
             active_demand = 0
             candidates = []
@@ -190,9 +192,8 @@ def separate_mid_prefixes(
                 for rank, ranked_program in enumerate(student_type.programs):
                     if ranked_program != program_id:
                         continue
-                    contribution = (
-                        student_type.count
-                        * int(result.assignment_masses[type_index][rank])
+                    contribution = student_type.count * int(
+                        result.assignment_masses[type_index][rank]
                     )
                     if rank < prefixes[type_index]:
                         active_demand += contribution

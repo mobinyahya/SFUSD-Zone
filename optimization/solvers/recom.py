@@ -221,9 +221,7 @@ class _ReComContext:
         self.edges = tuple(
             (self.node_to_pos[u], self.node_to_pos[v]) for u, v in graph_edges
         )
-        self.edge_weights = tuple(
-            problem.boundary_weight(u, v) for u, v in graph_edges
-        )
+        self.edge_weights = tuple(problem.boundary_weight(u, v) for u, v in graph_edges)
         incident: list[list[int]] = [[] for _ in self.nodes]
         for edge_id, (u, v) in enumerate(self.edges):
             incident[u].append(edge_id)

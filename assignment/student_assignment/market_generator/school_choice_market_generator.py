@@ -90,9 +90,7 @@ class MarketGenerator(SchoolChoiceMarket):
         self._aggregate_metric_evaluator = None
         self._reset_aggregate_metric_reports()
 
-    def _set_up_save_folder(
-        self, assignment_path: str, *, write_config: bool = True
-    ):
+    def _set_up_save_folder(self, assignment_path: str, *, write_config: bool = True):
         """Create folder for saving assignments.
 
         Args:
@@ -103,9 +101,7 @@ class MarketGenerator(SchoolChoiceMarket):
             if assignment_path is None
             else assignment_path
         )
-        self.output_assignment_path = pathlib.Path(
-            output_assignment_path
-        ).expanduser()
+        self.output_assignment_path = pathlib.Path(output_assignment_path).expanduser()
         self.output_assignment_path.mkdir(parents=True, exist_ok=True)
 
         if write_config:
@@ -266,8 +262,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 self._get_reserve_options(), self._get_restrict_options()
             ):
                 restriction_changed = (
-                    self.config.get("restrict-zone")
-                    != restrict_option["restrict-zone"]
+                    self.config.get("restrict-zone") != restrict_option["restrict-zone"]
                     or self.config.get("citywide-or-lp", [])
                     != restrict_option["citywide-or-lp"]
                 )
@@ -716,9 +711,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         schemas = {tuple(frame.columns) for frame in frames}
         if len(schemas) != 1:
-            raise ValueError(
-                f"{report_name} metric frames have inconsistent columns."
-            )
+            raise ValueError(f"{report_name} metric frames have inconsistent columns.")
         entity_columns = [
             column
             for column in cls.AGGREGATE_METRIC_GROUPS[report_name]
@@ -741,8 +734,10 @@ class MarketGenerator(SchoolChoiceMarket):
                         f"{report_name} metrics must contain one row per config."
                     )
                 continue
-            entities = frame[entity_columns].astype(object).mask(
-                frame[entity_columns].isna(), None
+            entities = (
+                frame[entity_columns]
+                .astype(object)
+                .mask(frame[entity_columns].isna(), None)
             )
             entity_keys = set(entities.itertuples(index=False, name=None))
             if expected_entities is None:
@@ -822,9 +817,7 @@ class MarketGenerator(SchoolChoiceMarket):
                     )
                 frame = frame.reset_index(drop=True)
             else:
-                frame = pd.DataFrame(
-                    columns=cls.AGGREGATE_METRIC_GROUPS[report_name]
-                )
+                frame = pd.DataFrame(columns=cls.AGGREGATE_METRIC_GROUPS[report_name])
             combined[report_name] = frame
         return combined
 
@@ -863,9 +856,7 @@ class MarketGenerator(SchoolChoiceMarket):
                     f"{subconfig_name!r}."
                 )
         if report.duplicated(group_columns).any():
-            raise ValueError(
-                f"{report_name} metrics contain duplicate grouping keys."
-            )
+            raise ValueError(f"{report_name} metrics contain duplicate grouping keys.")
 
     @classmethod
     def _ordered_report_names(cls, report_names):
@@ -875,7 +866,9 @@ class MarketGenerator(SchoolChoiceMarket):
         unknown = sorted(set(report_names) - set(cls.AGGREGATE_METRIC_FILES))
         if unknown:
             raise ValueError(f"Unknown aggregate metric reports: {unknown}.")
-        return tuple(name for name in cls.AGGREGATE_METRIC_FILES if name in report_names)
+        return tuple(
+            name for name in cls.AGGREGATE_METRIC_FILES if name in report_names
+        )
 
     @staticmethod
     def _file_sha256(path):
@@ -1147,7 +1140,9 @@ class MarketGenerator(SchoolChoiceMarket):
             raise ValueError("Expected metrics fragments contain duplicate subconfigs.")
         fragment_root = pathlib.Path(fragment_root).expanduser()
         if not fragment_root.is_dir():
-            raise FileNotFoundError(f"Metrics fragment directory is missing: {fragment_root}")
+            raise FileNotFoundError(
+                f"Metrics fragment directory is missing: {fragment_root}"
+            )
         expected_ids = {cls.metric_fragment_id(name) for name in subconfig_names}
         actual_entries = {path.name for path in fragment_root.iterdir()}
         if actual_entries != expected_ids:
@@ -1292,13 +1287,9 @@ class MarketGenerator(SchoolChoiceMarket):
                 reserve_options, restrict_options
             ):
                 self.config["guard-rails"] = reserve_option["guard-rails"]
-                self.config["reserve-settings"] = reserve_option[
-                    "reserve-settings"
-                ]
+                self.config["reserve-settings"] = reserve_option["reserve-settings"]
                 self.config["restrict-zone"] = restrict_option["restrict-zone"]
-                self.config["citywide-or-lp"] = restrict_option[
-                    "citywide-or-lp"
-                ]
+                self.config["citywide-or-lp"] = restrict_option["citywide-or-lp"]
 
                 # Reset zone and seed so that the order of policy does not matter.
                 np.random.seed(self.config["random-seed"])
@@ -1311,9 +1302,7 @@ class MarketGenerator(SchoolChoiceMarket):
                     self.config["iterations"]["start"],
                     self.config["iterations"]["end"],
                 ):
-                    yield from self._run_single_iteration_of_policy(
-                        iteration, policy
-                    )
+                    yield from self._run_single_iteration_of_policy(iteration, policy)
 
     def _get_reserve_options(self):
         """Get a list of guard rails and reserve setting options from policy configs.
@@ -1383,9 +1372,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 iteration,
                 rows_to_keep=self.students.only_keep_rows,
                 cols_to_keep=self.programs.only_keep_cols,
-                gumbel_scale=self.config["utility-model"].get(
-                    "gumbel-scale", 1.0
-                ),
+                gumbel_scale=self.config["utility-model"].get("gumbel-scale", 1.0),
             )  # re-draw preferences
 
             save_path = self.config["utility-model"].get("save-path")
@@ -1415,14 +1402,10 @@ class MarketGenerator(SchoolChoiceMarket):
                 iteration=None,
                 rows_to_keep=self.students.only_keep_rows,
                 cols_to_keep=self.programs.only_keep_cols,
-                gumbel_scale=self.config["utility-model"].get(
-                    "gumbel-scale", 1.0
-                ),
+                gumbel_scale=self.config["utility-model"].get("gumbel-scale", 1.0),
             )  # re-draw preferences
 
-        prefs = self.preference_generator.initialize_real_preferences(
-            designate=False
-        )
+        prefs = self.preference_generator.initialize_real_preferences(designate=False)
         match, in_zone_rank = self._get_real_match(prefs)
         cutoffs = np.zeros([self.num_programs])
         return self._save_assignment(
@@ -1551,9 +1534,7 @@ class MarketGenerator(SchoolChoiceMarket):
         for student_idx in np.flatnonzero(match == 0):
             studentno = self.students.idx2studentno[student_idx]
             attendance_area = attendance_areas.get(studentno, 0)
-            program_idx = self.programs.indices.get(
-                f"{attendance_area}-GE-{grade}"
-            )
+            program_idx = self.programs.indices.get(f"{attendance_area}-GE-{grade}")
             if program_idx is None:
                 continue
 
@@ -1562,9 +1543,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
             match[student_idx] = program_idx
             enrollment[program_idx] += 1
-            preference_ranks = np.flatnonzero(
-                prefs[student_idx] == program_idx
-            )
+            preference_ranks = np.flatnonzero(prefs[student_idx] == program_idx)
             in_zone_rank[student_idx] = (
                 preference_ranks[0] + 1
                 if preference_ranks.size
@@ -1618,9 +1597,7 @@ class MarketGenerator(SchoolChoiceMarket):
             if rnd_name in df.columns:
                 df["final_program"] = df["final_program"].fillna(df[rnd_name])
 
-    def _get_real_match(
-        self, preferences: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def _get_real_match(self, preferences: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Read the real match from the student data file (DA is not run).
 
         Args:
@@ -1642,9 +1619,7 @@ class MarketGenerator(SchoolChoiceMarket):
             axis=1,
         )
         assignment["programno"] = assignment.programcodes.apply(
-            lambda x: (
-                self.programs.index(x) if x in self.programs.indices else 0
-            )
+            lambda x: self.programs.index(x) if x in self.programs.indices else 0
         )
         match = assignment.programno.to_numpy()
 
@@ -1656,9 +1631,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 ranks[i] = np.where(preferences[i, :] == match[i])[0][0] + 1
             else:  # designated
                 ranks[i] = self.preference_generator.pref_length[i] + 1
-        ranks[ranks == 0] = (
-            self.preference_generator.pref_length[ranks == 0] + 1
-        )
+        ranks[ranks == 0] = self.preference_generator.pref_length[ranks == 0] + 1
         ranks = np.clip(
             ranks, a_min=None, a_max=self.preference_generator.pref_length + 1
         )
@@ -1710,8 +1683,10 @@ class MarketGenerator(SchoolChoiceMarket):
             matches,
         )
         rank_by_student = pd.Series(source_ranks, index=student_ids)
-        return assignment_df["studentno"].map(rank_by_student).set_axis(
-            assignment_df.index
+        return (
+            assignment_df["studentno"]
+            .map(rank_by_student)
+            .set_axis(assignment_df.index)
         )
 
     def _generate_assignment(
@@ -1776,9 +1751,7 @@ class MarketGenerator(SchoolChoiceMarket):
             reserve_settings=self.config["reserve-settings"],
             strictGuards=self.config["guard-rails"],
         )
-        cutoffs = np.zeros(
-            [len(match)]
-        )  # TODO: calculate cutoffs in reserve setting
+        cutoffs = np.zeros([len(match)])  # TODO: calculate cutoffs in reserve setting
         match, rank, overage_seats = self._overscribe_attendance_area(
             preferences, match, rank
         )
@@ -1817,9 +1790,10 @@ class MarketGenerator(SchoolChoiceMarket):
                 f"Reusable assignment {assignment_path} is missing columns: "
                 f"{sorted(missing_columns)}"
             )
-        if assignment_df["studentno"].isna().any() or assignment_df[
-            "studentno"
-        ].duplicated().any():
+        if (
+            assignment_df["studentno"].isna().any()
+            or assignment_df["studentno"].duplicated().any()
+        ):
             raise ValueError(
                 f"Reusable assignment {assignment_path} has missing or duplicate "
                 "studentno values"
@@ -1835,9 +1809,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 f"students; missing: {missing_ids}; extra: {extra_ids}"
             )
 
-        program_numbers = pd.to_numeric(
-            assignment_df["programno"], errors="coerce"
-        )
+        program_numbers = pd.to_numeric(assignment_df["programno"], errors="coerce")
         valid_program_numbers = {0, *self.programs.codes.keys()}
         invalid_programs = (
             program_numbers.isna()
@@ -1858,7 +1830,9 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         actual_codes = program_codes[assigned]
         invalid_codes = actual_codes.isna() | actual_codes.ne(expected_codes)
-        unassigned_with_code = (~assigned) & program_codes.notna() & program_codes.ne("")
+        unassigned_with_code = (
+            (~assigned) & program_codes.notna() & program_codes.ne("")
+        )
         if invalid_codes.any() or unassigned_with_code.any():
             raise ValueError(
                 f"Reusable assignment {assignment_path} has programcodes that do "
@@ -1888,13 +1862,9 @@ class MarketGenerator(SchoolChoiceMarket):
                     f"does not match policy {policy_data.name!r}"
                 )
 
-        designation = pd.to_numeric(
-            assignment_df["designation"], errors="coerce"
-        )
+        designation = pd.to_numeric(assignment_df["designation"], errors="coerce")
         if (
-            designation.isna()
-            | ~np.isfinite(designation)
-            | ~designation.isin([0, 1])
+            designation.isna() | ~np.isfinite(designation) | ~designation.isin([0, 1])
         ).any() or ((~assigned) & designation.eq(1)).any():
             raise ValueError(
                 f"Reusable assignment {assignment_path} has invalid designation values"
@@ -2074,11 +2044,7 @@ class MarketGenerator(SchoolChoiceMarket):
             str: unique name for assignment file
         """
         if policy_data.name == "real_match":
-            gr = (
-                ""
-                if self.config["grade"] == "KG"
-                else f"{self.config['grade']}_"
-            )
+            gr = "" if self.config["grade"] == "KG" else f"{self.config['grade']}_"
             return f"Assignment_{gr}real_match.csv"
 
         restrict = self.config["restrict-zone"]
@@ -2095,11 +2061,7 @@ class MarketGenerator(SchoolChoiceMarket):
         )
         zone_policy = policy_data.name if policy_data.name != "Con1" else "aa"
         ctip = policy_data.ctip
-        ctip = (
-            "noCtip"
-            if ctip == 0
-            else ("newETB" if ctip == "new_ctip" else ctip)
-        )
+        ctip = "noCtip" if ctip == 0 else ("newETB" if ctip == "new_ctip" else ctip)
         ctip = "ctip1" if ctip == 1 else ctip
         sibling = "sibling" in self.config["priority-weights"]
         sibling = "yes" if sibling else "no"

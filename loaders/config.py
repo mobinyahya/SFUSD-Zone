@@ -804,9 +804,7 @@ def _validate_geographies(value: Any, files: Mapping[str, Any]) -> None:
         _unknown_keys(bundle, _GEOGRAPHY_KEYS, f"geographies.{vintage}")
         missing = sorted(required - set(bundle))
         if missing:
-            raise ValueError(
-                f"Base geographies.{vintage} is missing keys: {missing}."
-            )
+            raise ValueError(f"Base geographies.{vintage} is missing keys: {missing}.")
         for key in ("blocks", "blockgroups", "tracts", "crosswalk"):
             if key in bundle:
                 _validate_catalog_reference(

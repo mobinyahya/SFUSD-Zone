@@ -167,9 +167,7 @@ def generate_programs_with_area2programs(
     programs_obj = Programs(TEMP_FILE_NAME, "", {"grade": GRADE})
 
     if return_indices:
-        return programs_obj, {
-            program_ids[i]: i for i in range(len(program_ids))
-        }
+        return programs_obj, {program_ids[i]: i for i in range(len(program_ids))}
     return programs_obj
 
 
@@ -235,9 +233,7 @@ def test_create_zone_dictionary(aa_config):
         ("1\n\n2\n", "row 2 is empty"),
     ],
 )
-def test_invalid_zone_definitions_are_fatal(
-    tmp_path, aa_config, contents, message
-):
+def test_invalid_zone_definitions_are_fatal(tmp_path, aa_config, contents, message):
     zone_file = tmp_path / "zones.csv"
     zone_file.write_text(contents)
     zones = Zones(aa_config, pd.DataFrame(), None, None)
@@ -366,9 +362,7 @@ def test_set_zone_aa_dict_2zones(random_area2zone_zone_list, aa_config):
         data={"attendance_area": [x for row in zone_list for x in row]}
     )
 
-    area_rand_programs_list = generate_area2program(
-        zone_list, use_random=True, count=2
-    )
+    area_rand_programs_list = generate_area2program(zone_list, use_random=True, count=2)
     area2programs = generate_area2program(zone_list, use_random=False)
     programs = generate_programs_with_area2programs(
         area_rand_programs_list + [area2programs]
@@ -382,9 +376,7 @@ def test_set_zone_aa_dict_2zones(random_area2zone_zone_list, aa_config):
     z.area2zone = area2zone
     z.set_area_id2prog_list_dict(lp_zone_path_list=TEMP_FILE_NAMES)
 
-    expected_lp_area2programs = merge_area2programs_dict(
-        area_rand_programs_list
-    )
+    expected_lp_area2programs = merge_area2programs_dict(area_rand_programs_list)
     check_equal_dicts(z.lp_area_id2prog_list, expected_lp_area2programs)
 
     expected_area2programs = merge_area2programs_dict(
@@ -404,9 +396,7 @@ def test_get_area2school_id_block_groups(bg_config):
     schools_per_bg = 10
     block_groups = [int(6e10 + i // schools_per_bg) for i in range(num_schools)]
     school_ids = np.arange(100, 100 + num_schools)
-    bg_schools = pd.DataFrame(
-        data={"BlockGroup": block_groups}, index=school_ids
-    )
+    bg_schools = pd.DataFrame(data={"BlockGroup": block_groups}, index=school_ids)
 
     z = Zones(bg_config, bg_schools, None, None)
 
@@ -443,9 +433,7 @@ def test_get_area2school_id_attendance_areas(aa_config):
     assert expected_school_id2area == actual_school_id2area
 
 
-def test_programs_for_area_id_home_based(
-    home_based_config, random_area2zone_zone_list
-):
+def test_programs_for_area_id_home_based(home_based_config, random_area2zone_zone_list):
     """
     Test the programs_for_area_id function to get a num_programs length
     indicator vector for an area indicating program eligibility. The vector
@@ -502,11 +490,9 @@ def test_zone_eligibility_does_not_mutate_zone_priority(aa_config):
         SimpleNamespace(num_programs=3),
         students,
     )
-    zones.programs_for_area_id = (
-        lambda _aa, _bg, _block, studentno: base_priority[
-            students.studentno2idx[studentno]
-        ].copy()
-    )
+    zones.programs_for_area_id = lambda _aa, _bg, _block, studentno: base_priority[
+        students.studentno2idx[studentno]
+    ].copy()
 
     priority = zones.zone_priority_matrix
     eligibility = zones.zone_eligibility_matrix

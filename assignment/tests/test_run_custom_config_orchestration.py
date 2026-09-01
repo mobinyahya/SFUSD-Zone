@@ -22,12 +22,8 @@ def test_worker_does_not_write_root_config_or_non_owned_utility(monkeypatch, tmp
     seen = []
 
     class FakeMarketGenerator:
-        def __init__(
-            self, *, config, write_config, write_aggregate_metrics
-        ):
-            seen.append(
-                (copy.deepcopy(config), write_config, write_aggregate_metrics)
-            )
+        def __init__(self, *, config, write_config, write_aggregate_metrics):
+            seen.append((copy.deepcopy(config), write_config, write_aggregate_metrics))
 
         def reconfigure(self, config, *, write_config):
             seen.append((copy.deepcopy(config), write_config, False))
@@ -210,7 +206,5 @@ def test_parallel_combines_worker_metric_reports_once(monkeypatch, tmp_path):
         config_path=str(config_path), sample=None, frac=None, workers=2
     )
 
-    combine.assert_called_once_with(
-        [worker_reports["first"], worker_reports["second"]]
-    )
+    combine.assert_called_once_with([worker_reports["first"], worker_reports["second"]])
     write.assert_called_once_with(str(output_dir), combined_reports)

@@ -18,9 +18,7 @@ from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
 
 
-_SYNTHETIC_DATA = load_scenario(
-    {"scenario": "legacy", "overrides": {}}, environ={}
-)
+_SYNTHETIC_DATA = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
 
 
 def _attach_closer_neighbors(G: nx.Graph) -> None:

@@ -249,7 +249,9 @@ class MatchEvaluator:
     def update_assignments(self, assignments):
         """Replace assignment-dependent data without reloading source tables."""
         if self._mode != "full":
-            raise ValueError("update_assignments requires a full MatchEvaluator instance")
+            raise ValueError(
+                "update_assignments requires a full MatchEvaluator instance"
+            )
 
         self.student_data = self._base_student_data.copy()
         self.assignments = assignments.copy()
@@ -387,9 +389,7 @@ class MatchEvaluator:
             filter_group="assignment",
         )
         schools = school_metadata.drop(columns=["lat", "lon"], errors="ignore").merge(
-            school_locations[["school_id", "lat", "lon"]].drop_duplicates(
-                "school_id"
-            ),
+            school_locations[["school_id", "lat", "lon"]].drop_duplicates("school_id"),
             on="school_id",
             how="left",
         )
@@ -727,8 +727,10 @@ class MatchEvaluator:
         )
         ranks = ranks_for_matches(rank_matrix, matches)
         rank_by_student = pd.Series(ranks, index=self.student_data["studentno"])
-        return self.assignments["studentno"].map(rank_by_student).set_axis(
-            self.assignments.index
+        return (
+            self.assignments["studentno"]
+            .map(rank_by_student)
+            .set_axis(self.assignments.index)
         )
 
     @staticmethod
@@ -824,13 +826,9 @@ class MatchEvaluator:
             raise ValueError("Assignments contain invalid programno values.")
         self.assignments["programno"] = programno.astype(int)
 
-        designation = pd.to_numeric(
-            self.assignments["designation"], errors="coerce"
-        )
+        designation = pd.to_numeric(self.assignments["designation"], errors="coerce")
         invalid_designation = (
-            designation.isna()
-            | ~np.isfinite(designation)
-            | ~designation.isin([0, 1])
+            designation.isna() | ~np.isfinite(designation) | ~designation.isin([0, 1])
         )
         if invalid_designation.any():
             raise ValueError("Assignments contain invalid designation values.")
@@ -986,9 +984,7 @@ class MatchEvaluator:
             ).mean(),
             **self._utility_metrics(student_data),
         }
-        choice_outcomes = self._top_choice_outcomes(
-            assigned_students, "rank", [1, 3]
-        )
+        choice_outcomes = self._top_choice_outcomes(assigned_students, "rank", [1, 3])
         mechanism_outcomes = self._top_choice_outcomes(
             assigned_students, "mechanism_rank", [1, 3]
         )
@@ -1119,9 +1115,9 @@ class MatchEvaluator:
 
     @classmethod
     def metric_top_choice(cls, assigned_students, threshold):
-        return cls._top_choice_outcomes(
-            assigned_students, "rank", [threshold]
-        )[threshold].value
+        return cls._top_choice_outcomes(assigned_students, "rank", [threshold])[
+            threshold
+        ].value
 
     @staticmethod
     def _top_choice_outcomes(students, rank_column, thresholds):
@@ -1599,7 +1595,10 @@ class MatchEvaluator:
             student_data["programcodes"].to_numpy()[aapi_mask]
         )
         return np.fromiter(
-            (program_aapi_counts.get(program_id, 0) for program_id in self._ge_program_ids),
+            (
+                program_aapi_counts.get(program_id, 0)
+                for program_id in self._ge_program_ids
+            ),
             dtype=int,
             count=len(self._ge_program_ids),
         )
@@ -2313,18 +2312,14 @@ class MatchEvaluator:
             rows.append(
                 {
                     output_column: area,
-                    **self._eval_assignment_full_from_aggregates(
-                        aggregates
-                    ).to_dict(),
+                    **self._eval_assignment_full_from_aggregates(aggregates).to_dict(),
                 }
             )
         if rows:
             return pd.DataFrame(rows)
         if metric_columns is None:
             metric_columns = self.eval_assignment_full().index.tolist()
-        return pd.DataFrame(
-            columns=[output_column, *metric_columns]
-        )
+        return pd.DataFrame(columns=[output_column, *metric_columns])
 
     def eval_assignment_metrics_by_zip_code(self):
         """Return the complete full report for each student ZIP code."""
@@ -2358,9 +2353,7 @@ class MatchEvaluator:
             }
         ).reset_index(drop=True)
 
-    def eval_aggregate_metric_reports(
-        self, config_name, *, include_local_metrics=True
-    ):
+    def eval_aggregate_metric_reports(self, config_name, *, include_local_metrics=True):
         """Return citywide and, when requested, local reports for one assignment."""
         if self._distance_cache is None:
             raise ValueError(
@@ -2559,9 +2552,7 @@ class MatchEvaluator:
         ethnic_total_norm = ethnic_total / ethnic_total.sum()
 
         # District entropy
-        district_entropy = np.sum(
-            ethnic_total_norm * np.log(1.0 / ethnic_total_norm)
-        )
+        district_entropy = np.sum(ethnic_total_norm * np.log(1.0 / ethnic_total_norm))
         if district_entropy == 0:
             return 0.0
 
@@ -2586,16 +2577,12 @@ class MatchEvaluator:
         include_program_report_stats=False,
     ):
         assigned_students = student_data[student_data["programno"] > 0]
-        designated_students = assigned_students[
-            assigned_students["designation"] != 0
-        ]
+        designated_students = assigned_students[assigned_students["designation"] != 0]
         non_designated_students = assigned_students[
             assigned_students["designation"] == 0
         ]
         ethnicity = assigned_students["ethnicity"]
-        income = pd.to_numeric(
-            assigned_students["median_hh_income"], errors="coerce"
-        )
+        income = pd.to_numeric(assigned_students["median_hh_income"], errors="coerce")
 
         student_groups = {
             "All Assigned": assigned_students,
@@ -2649,9 +2636,7 @@ class MatchEvaluator:
                 rank=("rank", "mean"),
             )
 
-        non_designated_school_stats = assignment_school_stats(
-            non_designated_students
-        )
+        non_designated_school_stats = assignment_school_stats(non_designated_students)
 
         def program_report_stats(students):
             source = students[
@@ -2742,9 +2727,7 @@ class MatchEvaluator:
             school_stats=school_stats,
             non_designated_school_stats=non_designated_school_stats,
             program_report_stats=assignment_program_report_stats,
-            non_designated_program_report_stats=(
-                non_designated_program_report_stats
-            ),
+            non_designated_program_report_stats=(non_designated_program_report_stats),
             designated_program_report_stats=designated_program_report_stats,
             school_frl_context=school_frl_context,
             non_designated_school_frl_context=non_designated_school_frl_context,
@@ -2809,9 +2792,7 @@ class MatchEvaluator:
 
         metrics.update(self._full_proximity_metrics(student_data, assigned_students))
         school_frl_context = aggregates.school_frl_context
-        non_designated_school_frl_context = (
-            aggregates.non_designated_school_frl_context
-        )
+        non_designated_school_frl_context = aggregates.non_designated_school_frl_context
 
         # DIVERSITY METRICS
         metrics[
@@ -3257,9 +3238,7 @@ class MatchEvaluator:
         schools_avg_frl_rel = school_frl_probs[
             school_frl_probs > district_frl_prob
         ].index
-        all_student_top_choice_outcomes = (
-            aggregates.all_student_top_choice_outcomes
-        )
+        all_student_top_choice_outcomes = aggregates.all_student_top_choice_outcomes
         for rank, outcome in all_student_top_choice_outcomes.items():
             self._record_choice_outcome(
                 metrics,
@@ -3406,31 +3385,29 @@ class MatchEvaluator:
                         f"Top {rank} in-zone choice Non-Designated ({group})",
                         non_designated_mechanism_outcomes[rank],
                     )
-                metrics[f"Mean Choice Non-Designated ({group})"] = (
-                    non_designated_group["rank"].mean()
-                )
+                metrics[f"Mean Choice Non-Designated ({group})"] = non_designated_group[
+                    "rank"
+                ].mean()
                 metrics[f"Median Choice Non-Designated ({group})"] = (
                     non_designated_group["rank"].median()
                 )
-                metrics[f"Distance Av Non-Designated ({group})"] = (
-                    non_designated_group["assignment_dist"].mean()
-                )
+                metrics[f"Distance Av Non-Designated ({group})"] = non_designated_group[
+                    "assignment_dist"
+                ].mean()
                 metrics[f"Distance Median Non-Designated ({group})"] = (
                     non_designated_group["assignment_dist"].median()
                 )
-                metrics[f"Distance < 0.5 Non-Designated ({group})"] = (
-                    self._array_mean(
-                        distance_values[non_designated_mask] < 0.5
-                    )
+                metrics[f"Distance < 0.5 Non-Designated ({group})"] = self._array_mean(
+                    distance_values[non_designated_mask] < 0.5
                 )
-                metrics[f"Distance > 3 Non-Designated ({group})"] = (
-                    self._array_mean(distance_values[non_designated_mask] > 3)
+                metrics[f"Distance > 3 Non-Designated ({group})"] = self._array_mean(
+                    distance_values[non_designated_mask] > 3
                 )
 
             # Evaluate for all groups, append together as distances.
             distance_over_3 = distance_values > 3
-            metrics[f"Prop Distance > 3 and designated ({group})"] = (
-                self._array_mean(distance_over_3 & designated_mask)
+            metrics[f"Prop Distance > 3 and designated ({group})"] = self._array_mean(
+                distance_over_3 & designated_mask
             )
             metrics[f"Prop Distance > 3 and Top 3 choice, non-designated ({group})"] = (
                 self._array_mean(
@@ -3441,8 +3418,8 @@ class MatchEvaluator:
                 self._array_mean(distance_over_3 & non_designated_mask)
             )
 
-            metrics[f"Prop Distance > 3 and Rank>=5 ({group})"] = (
-                self._array_mean(distance_over_3 & (rank_values >= 5))
+            metrics[f"Prop Distance > 3 and Rank>=5 ({group})"] = self._array_mean(
+                distance_over_3 & (rank_values >= 5)
             )
             metrics[f"Prop Distance > 3 and in-zone Rank>=5 ({group})"] = (
                 self._array_mean(distance_over_3 & (in_zone_rank_values >= 5))
@@ -3456,16 +3433,14 @@ class MatchEvaluator:
             )
             metrics[
                 f"Prop Distance > 3 and in-zone Rank>=5 Non-Designated ({group})"
-            ] = (
-                self._array_mean(
-                    distance_over_3[non_designated_mask]
-                    & (in_zone_rank_values[non_designated_mask] >= 5)
-                )
+            ] = self._array_mean(
+                distance_over_3[non_designated_mask]
+                & (in_zone_rank_values[non_designated_mask] >= 5)
             )
 
             # --- Prop Distance > 3 and Rank>=4 ---
-            metrics[f"Prop Distance > 3 and Rank>=4 ({group})"] = (
-                self._array_mean(distance_over_3 & (rank_values >= 4))
+            metrics[f"Prop Distance > 3 and Rank>=4 ({group})"] = self._array_mean(
+                distance_over_3 & (rank_values >= 4)
             )
             metrics[f"Prop Distance > 3 and Rank>=4 Non-Designated ({group})"] = (
                 self._array_mean(
@@ -3488,11 +3463,8 @@ class MatchEvaluator:
             # Prop Distance > 3 and (in-zone Rank>=5 or designated)
             metrics[
                 f"Prop Distance > 3 and (in-zone Rank>=5 or designated) ({group})"
-            ] = (
-                self._array_mean(
-                    distance_over_3
-                    & ((in_zone_rank_values >= 5) | designated_mask)
-                )
+            ] = self._array_mean(
+                distance_over_3 & ((in_zone_rank_values >= 5) | designated_mask)
             )
 
             # --- Variance metrics ---
@@ -3597,9 +3569,7 @@ class MatchEvaluator:
                     )
 
                 type_col = (
-                    "program_type"
-                    if "program_type" in programs.columns
-                    else "type"
+                    "program_type" if "program_type" in programs.columns else "type"
                 )
                 if type_col in programs.columns:
                     program_types = programs[type_col].to_numpy()

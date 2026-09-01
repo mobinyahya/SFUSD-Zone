@@ -256,4 +256,3 @@ def test_simulation_sweep_supports_auto_max_distance(tmp_path):
         assert task.config["max_distance"] == "auto"
         opt_cfg = task.optimization_config()
         assert opt_cfg.max_distance == "auto"
-

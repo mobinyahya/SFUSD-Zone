@@ -300,10 +300,11 @@ def test_max_distance_defaults_and_parsing():
     assert cfg_str_float.max_distance == 4.25
 
 
-@pytest.mark.parametrize("invalid", [-1, -0.1, True, False, "invalid", "none", "", float("nan")])
+@pytest.mark.parametrize(
+    "invalid", [-1, -0.1, True, False, "invalid", "none", "", float("nan")]
+)
 def test_max_distance_validation_rejects_invalid(invalid):
     with pytest.raises(
         ValueError, match="max_distance must be a non-negative float, 'inf', or 'auto'."
     ):
         OptimizationConfig(levels=["BlockGroup_0"], max_distance=invalid)
-

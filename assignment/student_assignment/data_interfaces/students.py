@@ -127,9 +127,7 @@ class Students:
             if isinstance(self.student_data_file, pd.DataFrame)
             else pd.read_csv(self.student_data_file, low_memory=False)
         )
-        self._source_row_count = int(
-            st_df.attrs.get("source_row_count", len(st_df))
-        )
+        self._source_row_count = int(st_df.attrs.get("source_row_count", len(st_df)))
         source_rows = np.asarray(
             st_df.attrs.get("source_rows", np.arange(len(st_df))), dtype=int
         )
@@ -168,8 +166,7 @@ class Students:
         missing = sorted(required - set(st_df.columns))
         if missing:
             raise ValueError(
-                "Student data is not loader-normalized; missing columns: "
-                f"{missing}."
+                f"Student data is not loader-normalized; missing columns: {missing}."
             )
         if not self.round_labels:
             raise ValueError("Student data contains no selected preference rounds.")
@@ -204,7 +201,9 @@ class Students:
 
     def _str_to_list(self, value):
         """Return a loader-normalized school list."""
-        if value is None or (not isinstance(value, (list, tuple, np.ndarray)) and pd.isna(value)):
+        if value is None or (
+            not isinstance(value, (list, tuple, np.ndarray)) and pd.isna(value)
+        ):
             return []
         if not isinstance(value, (list, tuple, np.ndarray)):
             raise ValueError(
@@ -215,12 +214,12 @@ class Students:
     @staticmethod
     def _programs_to_list(value):
         """Return a loader-normalized program or aligned-metadata list."""
-        if value is None or (not isinstance(value, (list, tuple, np.ndarray)) and pd.isna(value)):
+        if value is None or (
+            not isinstance(value, (list, tuple, np.ndarray)) and pd.isna(value)
+        ):
             return []
         if not isinstance(value, (list, tuple, np.ndarray)):
-            raise ValueError(
-                f"Expected a loader-normalized list, got {value!r}."
-            )
+            raise ValueError(f"Expected a loader-normalized list, got {value!r}.")
         return list(value)
 
     def _validate_ranked_programs(self) -> None:
@@ -521,9 +520,9 @@ class Students:
     @property
     def first_round(self):
         """Zero-based chronological ordinal of first participation."""
-        return self.student_data[
-            "first_participating_round_ordinal"
-        ].to_numpy(dtype=int)
+        return self.student_data["first_participating_round_ordinal"].to_numpy(
+            dtype=int
+        )
 
     @property
     def first_participating_round(self):
@@ -544,12 +543,7 @@ class Students:
         """Return an array of length n containing 1 when the student has CTIP1
         priority, 0 otherwise (0 for missing data as well).
         """
-        vec = (
-            self.student_data["ctip1"]
-            .fillna(value=0)
-            .astype("int64")
-            .to_numpy()
-        )
+        vec = self.student_data["ctip1"].fillna(value=0).astype("int64").to_numpy()
         return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
 
     @property
@@ -559,15 +553,10 @@ class Students:
         """
         new_ctip_path = self.config["paths"]["new-ctip-path"]
         new_ctip = np.load(new_ctip_path)
-        self.student_data["new_ctip1"] = self.student_data[
-            "census_block"
-        ].apply(lambda x: 1 if x in new_ctip else 0)
-        vec = (
-            self.student_data["new_ctip1"]
-            .fillna(value=0)
-            .astype("int64")
-            .to_numpy()
+        self.student_data["new_ctip1"] = self.student_data["census_block"].apply(
+            lambda x: 1 if x in new_ctip else 0
         )
+        vec = self.student_data["new_ctip1"].fillna(value=0).astype("int64").to_numpy()
         return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
 
     @property
@@ -605,20 +594,12 @@ class Students:
         """Return a pd.Series of length n containing the attendance area of each
         student (0 if missing), index is the student number.
         """
-        return (
-            self.student_data["idschoolattendance"]
-            .fillna(value=0)
-            .astype("int64")
-        )
+        return self.student_data["idschoolattendance"].fillna(value=0).astype("int64")
 
     @property
     def enrolled(self):
         """Return a pd.Series of enrolled or not."""
-        df = (
-            self.student_data["enrolled_idschool"]
-            .fillna(value=0)
-            .astype("int64")
-        )
+        df = self.student_data["enrolled_idschool"].fillna(value=0).astype("int64")
         # df = df[df > 0] = 1
         return df
 
@@ -684,10 +665,7 @@ class Students:
             )
             if prek_id:
                 program_idx = (
-                    self.programs.index(
-                        f"{prek_id[0]}-GE-{self.config['grade']}"
-                    )
-                    - 1
+                    self.programs.index(f"{prek_id[0]}-GE-{self.config['grade']}") - 1
                 )
                 st_idx = self.studentno2idx[studentno]
                 prek[st_idx, program_idx] = 1
@@ -699,9 +677,7 @@ class Students:
         for i, pw in enumerate(self.student_data.previous_pathway):
             program_types = LANGUAGE_PATHWAY_PRIORITIES.get(pw, [])
             indices = [
-                y - 1
-                for x in program_types
-                for y in program_type2indexes.get(x, [])
+                y - 1 for x in program_types for y in program_type2indexes.get(x, [])
             ]
             language_pathway[i, indices] = 1
         return language_pathway
@@ -709,9 +685,7 @@ class Students:
     def language_pathway_priority_kg(self, program_id2index):
         language_pathway = np.zeros((self.n, self.num_programs), dtype=int)
         for studentno, row in self.student_data.iterrows():
-            cohort_values = self._programs_to_list(
-                row.get("selected_cohortstring", [])
-            )
+            cohort_values = self._programs_to_list(row.get("selected_cohortstring", []))
             for idx, cohort in enumerate(cohort_values):
                 if "CL;" not in cohort:
                     continue
@@ -785,16 +759,12 @@ class Students:
         # all_eligible = {"GE"}
 
         def combine(row):
-            if any(
-                program in SPECIAL_PROGRAMS
-                for program in row["selected_programs"]
-            ):
+            if any(program in SPECIAL_PROGRAMS for program in row["selected_programs"]):
                 return list(SPECIAL_PROGRAMS)
             else:
                 if row[homelang] in homelang2prog:  # add home language programs
                     both = set(
-                        homelang2prog[row[homelang]]
-                        + list(row["program_types"])
+                        homelang2prog[row[homelang]] + list(row["program_types"])
                     ).union(all_eligible)
                 else:  # otherwise just add program types they ranked and programs everyone is eligible for
                     both = set(row["program_types"]).union(all_eligible)
@@ -803,9 +773,7 @@ class Students:
                         both.update(v)
                 return list(both - {""})
 
-        self.student_data["qualified"] = self.student_data.apply(
-            combine, axis=1
-        )
+        self.student_data["qualified"] = self.student_data.apply(combine, axis=1)
 
         self.qualified_program_dict = dict(
             zip(self.student_data.index.values, self.student_data["qualified"])
@@ -817,14 +785,10 @@ class Students:
         CTIPtypes = np.ones(
             [self.n]
         )  # CTIPtypes[i] is CTIP status of student i, from 1 to 5, 1 being highest priority
-        block_data = pd.read_excel(
-            self.block_data_file, sheet_name="block database"
-        )
+        block_data = pd.read_excel(self.block_data_file, sheet_name="block database")
         block_data_list = list(block_data["Block"])
         for i in range(self.n):
-            if (
-                self.student_data["census_block"].iloc[i] > -1
-            ):  # eliminates NaN values
+            if self.student_data["census_block"].iloc[i] > -1:  # eliminates NaN values
                 census_block = int(self.student_data["census_block"].iloc[i])
                 if census_block in block_data_list:
                     row = block_data_list.index(census_block)
@@ -857,6 +821,6 @@ class Students:
         thresh33, thresh66 = np.percentile(
             self.student_data["SES_score"].dropna(), [33, 66]
         )
-        self.student_data["SES_category"] = self.student_data[
-            "SES_score"
-        ].apply(lambda x: 1 if x < thresh33 else (2 if x < thresh66 else 3))
+        self.student_data["SES_category"] = self.student_data["SES_score"].apply(
+            lambda x: 1 if x < thresh33 else (2 if x < thresh66 else 3)
+        )

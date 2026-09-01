@@ -128,10 +128,7 @@ def test_generated_non_kg_grade_remains_a_string(tmp_path):
     config_path = tmp_path / "configs" / f"{EXPECTED_RUN_LABELS[0]}.yaml"
     with config_path.open() as config_file:
         config = yaml.safe_load(config_file)
-    assert (
-        config["data"]["overrides"]["filters"]["assignment"]["grades"]
-        == ["06"]
-    )
+    assert config["data"]["overrides"]["filters"]["assignment"]["grades"] == ["06"]
 
 
 def test_full_pipeline_tiny(tmp_path):
@@ -187,10 +184,14 @@ def test_full_pipeline_tiny(tmp_path):
             check_names=False,
         )
         unassigned = assignment_df["programno"].eq(0)
-        assert assignment_df.loc[
-            unassigned,
-            ["rank", "submitted_rank", "utility_rank", "mechanism_rank"],
-        ].isna().all(axis=None)
+        assert (
+            assignment_df.loc[
+                unassigned,
+                ["rank", "submitted_rank", "utility_rank", "mechanism_rank"],
+            ]
+            .isna()
+            .all(axis=None)
+        )
 
     # Utility-model runs save their drawn utility matrix.
     for label in UTILITY_RUN_LABELS:

@@ -64,9 +64,7 @@ def resolve_variables(item: object, root_config: dict) -> object:
             key = match.group(1)
             if key in root_config:
                 return str(root_config[key])
-            warnings.warn(
-                f"Could not resolve variable ${{{key}}}", stacklevel=2
-            )
+            warnings.warn(f"Could not resolve variable ${{{key}}}", stacklevel=2)
             return match.group(0)
 
         return pattern.sub(replace, item)
@@ -199,8 +197,7 @@ class AugmentedMarketGenerator(MarketGenerator):
         dist_df = self.students.distance_data
         # Reorder columns to match programno ordering
         program_ids_ordered = [
-            self.programs.codes[i + 1]
-            for i in range(self.programs.num_programs)
+            self.programs.codes[i + 1] for i in range(self.programs.num_programs)
         ]
         dist_aligned = dist_df.reindex(columns=program_ids_ordered).fillna(9999)
         # Reindex rows to match student order

@@ -105,9 +105,7 @@ def test_contiguity_supports_do_not_fall_back_for_geometry_local_minimum():
         2: {100: frozenset()},
     }
 
-    supports = contiguity.contiguity_supports(
-        G, [0], [100], lambda node: {0}
-    )
+    supports = contiguity.contiguity_supports(G, [0], [100], lambda node: {0})
 
     assert supports[(2, 0)] == []
 

@@ -93,9 +93,7 @@ class Zones:
                 f"'block_group', 'block', 'tract', or 'home_based'. "
             )
 
-    def _create_zone(
-        self, zone_file: str, concept: int = None
-    ) -> tuple[dict, list]:
+    def _create_zone(self, zone_file: str, concept: int = None) -> tuple[dict, list]:
         """Create list of areas in each zone and dictionary of area to zone id.
 
         Args:
@@ -106,10 +104,7 @@ class Zones:
             area_id2zone_id (dict): dictionary mapping an area_id to the zone_id that the area is a part of
             zone_lists (list): a list of sets containing the area_id's in each zone
         """
-        if (
-            self.config["zone-building-blocks"] == "home_based"
-            and concept is None
-        ):
+        if self.config["zone-building-blocks"] == "home_based" and concept is None:
             with open(zone_file) as f:
                 student2programs = json.load(f)
             return student2programs, []
@@ -192,16 +187,12 @@ class Zones:
                         f"Supplemental zone file {zone_path} must contain a map."
                     )
                 for k, v in aaDict_new.items():
-                    lp_area_id2prog_list[k] = (
-                        lp_area_id2prog_list.get(k, []) + v
-                    )
+                    lp_area_id2prog_list[k] = lp_area_id2prog_list.get(k, []) + v
 
         if lp_zone_dict_list is not None:
             for aaDict_new in lp_zone_dict_list:
                 for k, v in aaDict_new.items():
-                    lp_area_id2prog_list[k] = (
-                        lp_area_id2prog_list.get(k, []) + v
-                    )
+                    lp_area_id2prog_list[k] = lp_area_id2prog_list.get(k, []) + v
 
         # Convert language program zones (attendance area) to match the zone
         # building blocks, by changing the keys of lp_area_id2prog_list to
@@ -213,9 +204,7 @@ class Zones:
         if lp_same_as_ge:
             sch2pr_idx = self.programs.school_to_indices
             for area_id, prog_list in self.area_id2ge_program_id.items():
-                program_idxs = [
-                    y for x in prog_list for y in sch2pr_idx[int(x[:3])]
-                ]
+                program_idxs = [y for x in prog_list for y in sch2pr_idx[int(x[:3])]]
                 lp_area_id2prog_list[area_id] = [
                     self.programs.codes[x] for x in program_idxs
                 ]
@@ -374,9 +363,7 @@ class Zones:
             for area in list(zone2area_list[zone_id]):
                 if area in self.area2school_id:
                     school_list_of_lists.append(self.area2school_id[area])
-            school_list = [
-                x for sublist in school_list_of_lists for x in sublist
-            ]
+            school_list = [x for sublist in school_list_of_lists for x in sublist]
             area_id2program_id[area_id] = [
                 f"{school_id}-GE-{self._normalize_grade(self.config['grade'])}"
                 for school_id in school_list
@@ -388,9 +375,7 @@ class Zones:
     def add_remaining_schools_to_all_zones(self):
         """Add any program not in any zone (area_id2prog_list) to all zones."""
         programs_in_zones = {
-            prog
-            for prog_list in self.area_id2prog_list.values()
-            for prog in prog_list
+            prog for prog_list in self.area_id2prog_list.values() for prog in prog_list
         }  # set of all programs
         for program in list(set(self.programs.indices) - programs_in_zones):
             for area_id in self.area_id2prog_list:
@@ -554,14 +539,14 @@ class Zones:
                 if self.config["zone-building-blocks"] == "tract"
                 else None
             )
-            self._zone_priority_matrix[
-                self.students.studentno2idx[studentno], :
-            ] = self.programs_for_area_id(
-                row.idschoolattendance,
-                row.census_blockgroup,
-                row.census_block,
-                studentno,
-                **({"tract": tract} if tract is not None else {}),
+            self._zone_priority_matrix[self.students.studentno2idx[studentno], :] = (
+                self.programs_for_area_id(
+                    row.idschoolattendance,
+                    row.census_blockgroup,
+                    row.census_block,
+                    studentno,
+                    **({"tract": tract} if tract is not None else {}),
+                )
             )
         return self._zone_priority_matrix
 

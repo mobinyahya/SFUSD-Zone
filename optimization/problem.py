@@ -131,12 +131,17 @@ class ZoneProblem:
             )
         if not isinstance(self.weight_edges, bool):
             raise ValueError("weight_edges must be a Boolean.")
-        if isinstance(self.max_distance, str) and self.max_distance.strip().lower() == "auto":
+        if (
+            isinstance(self.max_distance, str)
+            and self.max_distance.strip().lower() == "auto"
+        ):
             if self.centroids and self.G.number_of_nodes() > 0:
                 self.max_distance = float(
                     1.2
                     * max(
-                        min(self.distance(centroid, node) for centroid in self.centroids)
+                        min(
+                            self.distance(centroid, node) for centroid in self.centroids
+                        )
                         for node in self.G.nodes()
                     )
                 )
@@ -187,19 +192,11 @@ class ZoneProblem:
 
     @property
     def student_attribute(self) -> str:
-        return (
-            "ge_students"
-            if self.program_population == "GE"
-            else "all_prog_students"
-        )
+        return "ge_students" if self.program_population == "GE" else "all_prog_students"
 
     @property
     def capacity_attribute(self) -> str:
-        return (
-            "ge_capacity"
-            if self.program_population == "GE"
-            else "all_prog_capacity"
-        )
+        return "ge_capacity" if self.program_population == "GE" else "all_prog_capacity"
 
     def frl(self, node: int) -> float:
         return float(self.G.nodes[node]["FRL"])

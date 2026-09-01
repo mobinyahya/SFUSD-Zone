@@ -127,9 +127,7 @@ def load_geography_crosswalk(
             f"{duplicates[:5].tolist()}."
         )
     if selected_geography_vintage(scenario, group) == "2020":
-        expected_bg = (
-            result["Block"].astype(str).str.zfill(15).str[:12].astype("int64")
-        )
+        expected_bg = result["Block"].astype(str).str.zfill(15).str[:12].astype("int64")
         expected_tract = (
             result["Block"].astype(str).str.zfill(15).str[:11].astype("int64")
         )
@@ -158,7 +156,9 @@ def _validate_geometry(
         raise ValueError(f"{source_label} contains empty geometries.")
     invalid = ~geometry.geometry.is_valid
     if invalid.any():
-        geometry.loc[invalid, "geometry"] = geometry.loc[invalid, "geometry"].make_valid()
+        geometry.loc[invalid, "geometry"] = geometry.loc[
+            invalid, "geometry"
+        ].make_valid()
     if (~geometry.geometry.is_valid).any():
         raise ValueError(f"{source_label} contains invalid geometries.")
 
@@ -226,7 +226,9 @@ def match_points_to_census(
     required = {latitude_column, longitude_column}
     missing = required - set(frame.columns)
     if missing:
-        raise ValueError(f"Point data is missing coordinate columns: {sorted(missing)}.")
+        raise ValueError(
+            f"Point data is missing coordinate columns: {sorted(missing)}."
+        )
     latitude = pd.to_numeric(frame[latitude_column], errors="coerce")
     longitude = pd.to_numeric(frame[longitude_column], errors="coerce")
     requested = (
@@ -240,7 +242,10 @@ def match_points_to_census(
         & longitude.between(-180, 180, inclusive="both")
     )
     result = pd.DataFrame(
-        {unit: pd.Series(pd.NA, index=frame.index, dtype="Int64") for unit in GEOGRAPHY_UNITS}
+        {
+            unit: pd.Series(pd.NA, index=frame.index, dtype="Int64")
+            for unit in GEOGRAPHY_UNITS
+        }
     )
     if not valid.any():
         return result
@@ -268,7 +273,9 @@ def match_points_to_census(
     )
 
     matches = matches[["row_position", "Block"]]
-    matches = matches.merge(block_parents, left_on="Block", right_index=True, validate="m:1")
+    matches = matches.merge(
+        block_parents, left_on="Block", right_index=True, validate="m:1"
+    )
     matched_rows = matches["row_position"].astype(int).to_numpy()
     for unit in GEOGRAPHY_UNITS:
         result.iloc[matched_rows, result.columns.get_loc(unit)] = (

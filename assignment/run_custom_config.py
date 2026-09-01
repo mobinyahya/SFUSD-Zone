@@ -220,11 +220,7 @@ def generate(config_path, sample, frac, workers):
 
     subconfigs_list = custom_config.get("subconfigs", [])
     duplicate_subconfigs = sorted(
-        {
-            name
-            for name in subconfigs_list
-            if subconfigs_list.count(name) > 1
-        }
+        {name for name in subconfigs_list if subconfigs_list.count(name) > 1}
     )
     if duplicate_subconfigs:
         raise ValueError(

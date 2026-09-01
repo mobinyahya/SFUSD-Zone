@@ -80,10 +80,7 @@ def compute_student_demographics(df_students: pd.DataFrame) -> pd.Series:
     df_enrolled = df_students[df_students["enrolled_idschool"].notna()]
 
     ethnicity_counts = (
-        df_enrolled["resolved_ethnicity"]
-        .fillna("Unknown")
-        .value_counts()
-        .sort_index()
+        df_enrolled["resolved_ethnicity"].fillna("Unknown").value_counts().sort_index()
     )
     total_students = ethnicity_counts.sum()
     ethnicity_counts["Total Students"] = total_students
@@ -168,9 +165,7 @@ def plot_totals(
         output_path: Path to save the PNG file.
         ylabel: Label for the Y-axis.
     """
-    total_cols = [
-        c for c in df.columns if "Total" in str(c) or "total" in str(c)
-    ]
+    total_cols = [c for c in df.columns if "Total" in str(c) or "total" in str(c)]
     if not total_cols:
         return
 
@@ -178,9 +173,7 @@ def plot_totals(
     plt.figure(figsize=(10, 6))
 
     palette = get_color_palette(len(total_cols))
-    sns.lineplot(
-        data=df[total_cols], markers=True, dashes=False, palette=palette
-    )
+    sns.lineplot(data=df[total_cols], markers=True, dashes=False, palette=palette)
 
     plt.title(title)
     plt.xlabel("Year/Run")
@@ -215,9 +208,7 @@ def plot_capacity_difference(
 
     # Categorical difference plot (exclude Totals)
     categorical_cols = [
-        c
-        for c in common_cols
-        if "Total" not in str(c) and "total" not in str(c)
+        c for c in common_cols if "Total" not in str(c) and "total" not in str(c)
     ]
     if categorical_cols:
         palette = get_color_palette(len(categorical_cols))
@@ -231,9 +222,7 @@ def plot_capacity_difference(
         plt.title("Capacity Difference Trends (R1 - R2) by Category")
         plt.xlabel("Year/Run")
         plt.ylabel("Difference (Seats)")
-        plt.legend(
-            title="Categories", bbox_to_anchor=(1.05, 1), loc="upper left"
-        )
+        plt.legend(title="Categories", bbox_to_anchor=(1.05, 1), loc="upper left")
         plt.xticks(rotation=45)
         save_figure(output_path)
         print(f"Capacity difference plot saved to {output_path}")
@@ -294,9 +283,7 @@ def plot_r1_r2_comparison(
 
 def main() -> None:
     """Main entry point for demographics Excel export."""
-    parser = argparse.ArgumentParser(
-        description="Export demographic summary to Excel"
-    )
+    parser = argparse.ArgumentParser(description="Export demographic summary to Excel")
     parser.add_argument(
         "--config",
         type=str,
@@ -346,12 +333,8 @@ def main() -> None:
     df_program_seats_raw = pd.DataFrame(program_seats).fillna(0).astype(int)
 
     # Split into R1 and R2
-    df_r1 = df_program_seats_raw.xs("capacity", level=1, axis=1).sort_index(
-        axis=1
-    )
-    df_r2 = df_program_seats_raw.xs("r2_capacity", level=1, axis=1).sort_index(
-        axis=1
-    )
+    df_r1 = df_program_seats_raw.xs("capacity", level=1, axis=1).sort_index(axis=1)
+    df_r2 = df_program_seats_raw.xs("r2_capacity", level=1, axis=1).sort_index(axis=1)
 
     # Write to Excel or CSV
     excel_path = output_dir / "demographics_summary.xlsx"
@@ -410,14 +393,10 @@ def main() -> None:
     )
 
     # Plot R1 vs R2 comparison
-    plot_r1_r2_comparison(
-        df_r1, df_r2, output_dir / "capacity_comparison_r1_r2.png"
-    )
+    plot_r1_r2_comparison(df_r1, df_r2, output_dir / "capacity_comparison_r1_r2.png")
 
     # Plot R1 - R2 difference
-    plot_capacity_difference(
-        df_r1, df_r2, output_dir / "capacity_difference_r1_r2.png"
-    )
+    plot_capacity_difference(df_r1, df_r2, output_dir / "capacity_difference_r1_r2.png")
 
 
 if __name__ == "__main__":

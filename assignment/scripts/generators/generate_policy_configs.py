@@ -202,9 +202,7 @@ def generate_all_policy_configs(
             write_policy_config(config, output_path)
             generated_files.append(output_path)
 
-    print(
-        f"Generated {len(generated_files)} policy config files in {output_dir}"
-    )
+    print(f"Generated {len(generated_files)} policy config files in {output_dir}")
     return generated_files
 
 
@@ -310,8 +308,7 @@ def main():
     # Optionally update base config or list subconfigs
     if args.list_subconfigs or args.update_base_config:
         update_base_config_subconfigs(
-            base_config_path=args.update_base_config
-            or Path("configs/all_zones.yaml"),
+            base_config_path=args.update_base_config or Path("configs/all_zones.yaml"),
             generated_configs=generated_files,
             output_path=args.update_base_config,
         )

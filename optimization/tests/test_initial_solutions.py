@@ -91,6 +91,3 @@ def test_grid_problem_auto_max_distance():
     # Every node has at least one candidate zone
     for node in problem.G.nodes():
         assert len(problem.candidate_zones(node)) >= 1
-
-
-

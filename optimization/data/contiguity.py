@@ -87,9 +87,7 @@ def contiguity_supports(
     candidate_zones,
 ) -> dict[tuple[int, int], list[int]]:
     """Closer supports that can continue monotonically toward the school."""
-    closer = closer_supports(
-        G, centroids, centroid_school_ids, candidate_zones
-    )
+    closer = closer_supports(G, centroids, centroid_school_ids, candidate_zones)
 
     supports: dict[tuple[int, int], list[int]] = {}
     for key, closer_nodes in closer.items():
@@ -267,9 +265,7 @@ def relax_unsupported_candidates(
     for zone, sources in unsupported.items():
         school_id = int(centroid_school_ids[zone])
         stack = [
-            neighbor
-            for source in sources
-            for neighbor in relation[source][school_id]
+            neighbor for source in sources for neighbor in relation[source][school_id]
         ]
         seen = set(sources)
         while stack:

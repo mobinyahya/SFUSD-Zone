@@ -288,9 +288,7 @@ def test_programmatic_config_uses_cwd_when_no_declaring_path(tmp_path, monkeypat
 
     data = configurator.config["data"]
     assert data["scenario"] == str((tmp_path / "scenario.yaml").resolve())
-    assert data["overrides"]["roots"]["cache"] == str(
-        (tmp_path / "cache").resolve()
-    )
+    assert data["overrides"]["roots"]["cache"] == str((tmp_path / "cache").resolve())
     assert data["overrides"]["sources"]["assignment.students"]["path"] == str(
         (tmp_path / "students.csv").resolve()
     )
@@ -298,9 +296,7 @@ def test_programmatic_config_uses_cwd_when_no_declaring_path(tmp_path, monkeypat
 
 def test_assignment_execution_requires_exactly_one_grade():
     config = _valid_config()
-    config["data"]["overrides"] = {
-        "filters": {"assignment": {"grades": ["KG", "01"]}}
-    }
+    config["data"]["overrides"] = {"filters": {"assignment": {"grades": ["KG", "01"]}}}
 
     with pytest.raises(ValueError, match="exactly one grade"):
         Configerator.from_config(config)

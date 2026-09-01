@@ -76,9 +76,7 @@ def assignment_source_identity(data_scenario) -> str:
         "assignment_filters": _plain(data_scenario.filters["assignment"]),
         "sources": data_scenario.source_manifest(roles),
     }
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -118,9 +116,7 @@ class SchoolChoiceMarket:
         self._materialize_config(self.configurator.config)
         self._validate_config(self.config)
 
-        np.random.seed(
-            self.config["random-seed"]
-        )  # set again for each subconfig
+        np.random.seed(self.config["random-seed"])  # set again for each subconfig
         self._initialize_market_data()
         self._initialize_utility_model()
 
@@ -248,9 +244,7 @@ class SchoolChoiceMarket:
             student_data_file=student_data,
             programs=self.programs,
             school_data_file=school_locations,
-            block_data_file=self.data_scenario.source(
-                "assignment.block_data"
-            ).path,
+            block_data_file=self.data_scenario.source("assignment.block_data").path,
             config=self.config,
             data_scenario=self.data_scenario,
         )
@@ -312,10 +306,6 @@ class SchoolChoiceMarket:
                     f"Citywide zone {zone_name} is not configured under "
                     "data.overrides.sources.assignment.citywide_zones."
                 )
-            paths.append(
-                pathlib.Path(
-                    supplemental_zones[zone_name]
-                ).expanduser()
-            )
+            paths.append(pathlib.Path(supplemental_zones[zone_name]).expanduser())
 
         return paths

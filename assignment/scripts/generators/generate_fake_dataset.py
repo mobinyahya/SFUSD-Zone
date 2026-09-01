@@ -156,9 +156,7 @@ def _make_schools(rng: np.random.Generator) -> pd.DataFrame:
         {
             "school_id": SCHOOL_IDS,
             "school_name": [f"Fake School {sid}" for sid in SCHOOL_IDS],
-            "school_name_long": [
-                f"Fake Elementary School {sid}" for sid in SCHOOL_IDS
-            ],
+            "school_name_long": [f"Fake Elementary School {sid}" for sid in SCHOOL_IDS],
             "lat": latitudes,
             "lon": longitudes,
             "zip": rng.integers(94102, 94135, num_schools),
@@ -257,9 +255,7 @@ def _rank_programs_for_student(
 
     if lang_type is not None and rng.random() < 0.8:
         lang_programs = program_df[program_df["program_type"] == lang_type]
-        lang_pick = lang_programs.sample(
-            n=1, random_state=int(rng.integers(0, 2**31))
-        )
+        lang_pick = lang_programs.sample(n=1, random_state=int(rng.integers(0, 2**31)))
         # Put the language program first; drop the last GE to keep length.
         schools = lang_pick["school_id"].tolist() + schools[:-1]
         types = lang_pick["program_type"].tolist() + types[:-1]
@@ -298,9 +294,7 @@ def _make_students(
         random_numbers = rng.uniform(0, 1, num_ranked).round(8).tolist()
 
         median_income = int(rng.integers(40_000, 200_000))
-        sibling = (
-            f"[{int(rng.choice(SCHOOL_IDS))}]" if rng.random() < 0.1 else "[]"
-        )
+        sibling = f"[{int(rng.choice(SCHOOL_IDS))}]" if rng.random() < 0.1 else "[]"
 
         rows.append(
             {
@@ -316,10 +310,8 @@ def _make_students(
                 "bayview_to_brown_ms": 0,
                 "r1_designation_randomnumber": float(rng.uniform(0, 1)),
                 "requestprogramdesignation": int(rng.random() < 0.1),
-                "latitude": float(home["lat"])
-                + float(rng.uniform(-0.008, 0.008)),
-                "longitude": float(home["lon"])
-                + float(rng.uniform(-0.008, 0.008)),
+                "latitude": float(home["lat"]) + float(rng.uniform(-0.008, 0.008)),
+                "longitude": float(home["lon"]) + float(rng.uniform(-0.008, 0.008)),
                 "previous_pathway": "",
                 "msf": np.nan,
                 "r2_ranked_idschool": "[]",
@@ -400,10 +392,7 @@ def _make_estimates(
     estimates_df.insert(
         0,
         "studentno",
-        [
-            f"{FAKE_YEAR_PREFIX}-{studentno}"
-            for studentno in students_df["studentno"]
-        ],
+        [f"{FAKE_YEAR_PREFIX}-{studentno}" for studentno in students_df["studentno"]],
     )
     return estimates_df
 
@@ -420,9 +409,7 @@ def _make_zone_rows(num_zones: int = 3) -> list[list[int]]:
     return [SCHOOL_IDS[i::num_zones] for i in range(num_zones)]
 
 
-def generate_dataset(
-    out_dir: Path, num_students: int, seed: int = 20260609
-) -> None:
+def generate_dataset(out_dir: Path, num_students: int, seed: int = 20260609) -> None:
     """Generate and save the full fake dataset.
 
     Args:
@@ -445,9 +432,7 @@ def generate_dataset(
         directory.mkdir(parents=True, exist_ok=True)
 
     students_path = out_dir / f"student_{FAKE_YEAR_PREFIX}_filtered.csv"
-    programs_path = (
-        out_dir / f"programs_without_specialprogs_{FAKE_YEAR_PREFIX}.csv"
-    )
+    programs_path = out_dir / f"programs_without_specialprogs_{FAKE_YEAR_PREFIX}.csv"
     schools_path = cleaned_dir / f"schools_rehauled_{FAKE_YEAR_PREFIX}.csv"
     estimates_path = model_dir / f"estimates_{FAKE_YEAR_PREFIX}.csv"
     zones_path = zones_dir / "concept1zones.csv"
@@ -469,9 +454,7 @@ def generate_dataset(
 
 def main() -> None:
     """CLI entry point."""
-    logging.basicConfig(
-        level=logging.INFO, format="[%(levelname)s] %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     parser = argparse.ArgumentParser(
         description="Generate a fully-fake test dataset (year 2223)."
     )
@@ -484,9 +467,7 @@ def main() -> None:
     parser.add_argument(
         "--num-students", type=int, default=200, help="Number of fake students"
     )
-    parser.add_argument(
-        "--seed", type=int, default=20260609, help="Random seed"
-    )
+    parser.add_argument("--seed", type=int, default=20260609, help="Random seed")
     args = parser.parse_args()
     generate_dataset(args.out_dir, args.num_students, args.seed)
 

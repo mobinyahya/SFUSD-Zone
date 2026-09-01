@@ -58,9 +58,7 @@ def _scenario(tmp_path, scenario_factory):
     return scenario, cache_root, crosswalk_path
 
 
-def test_geometry_artifact_is_manifest_validated_and_cached(
-    tmp_path, scenario_factory
-):
+def test_geometry_artifact_is_manifest_validated_and_cached(tmp_path, scenario_factory):
     calls = 0
 
     def loader(unit):
@@ -91,9 +89,7 @@ def test_geometry_artifact_is_manifest_validated_and_cached(
     assert len(geometry2) == 4
 
 
-def test_geometry_cache_changes_when_crosswalk_bytes_change(
-    tmp_path, scenario_factory
-):
+def test_geometry_cache_changes_when_crosswalk_bytes_change(tmp_path, scenario_factory):
     calls = 0
 
     def loader(unit):
@@ -155,9 +151,9 @@ def test_corrupt_geometry_payload_is_rebuilt(tmp_path, scenario_factory):
 
     solution = _solution()
     scenario, _, _ = _scenario(tmp_path, scenario_factory)
-    _, path = VisualizationArtifactStore(
-        scenario, geometry_loader=loader
-    ).geometry_for(solution.level, solution.problem.G)
+    _, path = VisualizationArtifactStore(scenario, geometry_loader=loader).geometry_for(
+        solution.level, solution.problem.G
+    )
     path.write_bytes(b"not a pickle")
 
     geometry, rebuilt_path = VisualizationArtifactStore(
@@ -169,9 +165,7 @@ def test_corrupt_geometry_payload_is_rebuilt(tmp_path, scenario_factory):
     assert len(geometry) == 4
 
 
-def test_visualize_all_stages_writes_distinct_png_artifacts(
-    tmp_path, scenario_factory
-):
+def test_visualize_all_stages_writes_distinct_png_artifacts(tmp_path, scenario_factory):
     output_dir = tmp_path / "optimization_output"
     scenario, cache_root, _ = _scenario(tmp_path, scenario_factory)
     solutions = [

@@ -48,9 +48,7 @@ def _student_scenario(
     cleaned.mkdir(parents=True, exist_ok=True)
     prefix = "enrolled" if student_population == "enrolled" else "student"
     student_path = cleaned / f"{prefix}_2122.csv"
-    (frame if frame is not None else _student_frame()).to_csv(
-        student_path, index=False
-    )
+    (frame if frame is not None else _student_frame()).to_csv(student_path, index=False)
     filters = {
         "years": ["2122"],
         "grades": ["KG"],

@@ -414,9 +414,7 @@ def main() -> None:
 
         run_meta[label] = (len(csv_files), is_single_file)
         anchored_data = (
-            anchor_data_config(run_data, config_dir)
-            if run_data is not None
-            else None
+            anchor_data_config(run_data, config_dir) if run_data is not None else None
         )
         for csv_path in csv_files:
             if anchored_data is not None:

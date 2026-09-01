@@ -99,17 +99,14 @@ def compute_max_distance(
     """
     # Get valid coordinates only
     valid_students = df_students[
-        df_students[student_lat_col].notna()
-        & df_students[student_lon_col].notna()
+        df_students[student_lat_col].notna() & df_students[student_lon_col].notna()
     ]
     valid_schools = df_schools[
         df_schools[school_lat_col].notna() & df_schools[school_lon_col].notna()
     ]
 
     if valid_students.empty or valid_schools.empty:
-        raise ValueError(
-            "No valid coordinates found in student or school data."
-        )
+        raise ValueError("No valid coordinates found in student or school data.")
 
     # Get bounding box corners for students and schools
     student_lat_min = valid_students[student_lat_col].min()
@@ -167,9 +164,9 @@ def build_school_coordinate_lookup(
     Returns:
         Tuple of (lat_lookup, lon_lookup) Series indexed by school_id.
     """
-    school_coords = df_schools.drop_duplicates(
-        subset=[school_id_col]
-    ).set_index(school_id_col)
+    school_coords = df_schools.drop_duplicates(subset=[school_id_col]).set_index(
+        school_id_col
+    )
     lat_lookup = school_coords[school_lat_col]
     lon_lookup = school_coords[school_lon_col]
     return lat_lookup, lon_lookup
@@ -315,9 +312,7 @@ def recompute_lottery_numbers(
     )
     # Parse ranked schools column if it's string-encoded
     parsed_schools = df_result[ranked_schools_col].apply(
-        lambda x: (
-            parse_string_list(x) if isinstance(x, str) else (x if x else [])
-        )
+        lambda x: parse_string_list(x) if isinstance(x, str) else (x if x else [])
     )
     # Compute new lottery numbers using vectorized apply
     df_result[lottery_col] = [
@@ -359,9 +354,7 @@ def main(
     """
     print(f"Loading student data from: {student_file}")
     df_students = pd.read_csv(student_file)
-    df_students = df_students[df_students["grade"] == "KG"].reset_index(
-        drop=True
-    )
+    df_students = df_students[df_students["grade"] == "KG"].reset_index(drop=True)
 
     print(f"Loading school data from: {school_file}")
     df_schools = pd.read_csv(school_file)

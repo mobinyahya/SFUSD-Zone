@@ -408,10 +408,7 @@ def _list_value(value, column: str) -> list:
 def _validated_ranks(values: list, column: str) -> list[int]:
     numeric = pd.to_numeric(pd.Series(values, dtype=object), errors="coerce")
     invalid = (
-        numeric.isna()
-        | ~np.isfinite(numeric)
-        | (numeric <= 0)
-        | (numeric % 1 != 0)
+        numeric.isna() | ~np.isfinite(numeric) | (numeric <= 0) | (numeric % 1 != 0)
     )
     if invalid.any():
         raise ValueError(f"{column} contains invalid preference ranks.")

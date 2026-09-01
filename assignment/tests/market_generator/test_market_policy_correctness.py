@@ -178,9 +178,7 @@ def _assignment_saving_market(
             {"101-GE-KG": [1.0, 2.0]},
             index=pd.Index([1, 2], name="studentno"),
         ),
-        selected_preference_rank_matrix=Mock(
-            return_value=np.array([[1.0], [1.0]])
-        ),
+        selected_preference_rank_matrix=Mock(return_value=np.array([[1.0], [1.0]])),
     )
     market.programs = SimpleNamespace(
         codes={0: np.nan, 1: "101-GE-KG"},
@@ -227,9 +225,7 @@ def _aggregate_reports(config_name, value, sibling_value=None):
                 "metric": [value],
             }
         ),
-        "citywide": pd.DataFrame(
-            {"config_name": [config_name], "metric": [value]}
-        ),
+        "citywide": pd.DataFrame({"config_name": [config_name], "metric": [value]}),
     }
 
 
@@ -370,9 +366,7 @@ def test_incomplete_assignment_run_is_regenerated(tmp_path):
 
     assert len(assignments) == 2
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(
-        Policy("zones", 0, 0, "STB"), 0
-    ).exists()
+    assert not market._assignment_save_path(Policy("zones", 0, 0, "STB"), 0).exists()
 
 
 def test_invalid_complete_assignment_run_is_rejected(tmp_path):
@@ -405,9 +399,7 @@ def test_assignment_reuse_can_be_disabled(tmp_path):
     list(market.create_iterations_generator())
 
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(
-        Policy("zones", 0, 0, "STB"), 0
-    ).exists()
+    assert not market._assignment_save_path(Policy("zones", 0, 0, "STB"), 0).exists()
 
 
 def test_assignment_reuse_rejects_rank_basis_from_different_policy_mode(tmp_path):
@@ -563,9 +555,7 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
     )
 
 
-def test_failed_metrics_export_preserves_written_assignment(
-    tmp_path, monkeypatch
-):
+def test_failed_metrics_export_preserves_written_assignment(tmp_path, monkeypatch):
     market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
     save_path = tmp_path / "assignments/status_quo/policy/policy_iteration0.csv"
     save_path.parent.mkdir(parents=True)
@@ -626,9 +616,7 @@ def test_combined_metric_writer_can_create_only_citywide_csv(tmp_path):
     )
 
     output_dir = tmp_path / "aggregate_metrics"
-    assert {path.name for path in output_dir.iterdir()} == {
-        "metrics_citywide.csv"
-    }
+    assert {path.name for path in output_dir.iterdir()} == {"metrics_citywide.csv"}
 
 
 def test_combined_metric_writer_expands_home_directory(tmp_path, monkeypatch):
@@ -646,9 +634,7 @@ def test_combined_metric_writer_expands_home_directory(tmp_path, monkeypatch):
 
 def test_empty_geography_report_keeps_metric_headers():
     empty_zip = pd.DataFrame(columns=["config_name", "zip_code", "metric"])
-    averaged = MarketGenerator._average_aggregate_metric_frames(
-        "zip_code", [empty_zip]
-    )
+    averaged = MarketGenerator._average_aggregate_metric_frames("zip_code", [empty_zip])
     combined = MarketGenerator.combine_aggregate_metric_reports(
         [
             {
@@ -818,9 +804,7 @@ def test_unknown_tiebreakers_and_missing_lottery_iteration_are_fatal():
 def test_policy_priorities_forward_the_lottery_iteration():
     market = SimpleNamespace(n=1, num_programs=1, config={})
     generator = PriorityGenerator(market)
-    generator.get_priorities_without_lottery = Mock(
-        return_value=np.zeros((1, 1))
-    )
+    generator.get_priorities_without_lottery = Mock(return_value=np.zeros((1, 1)))
     generator._set_tiebreaker = Mock(return_value=np.zeros((1, 1)))
 
     generator.set_policy_specific_priorities(

@@ -50,9 +50,9 @@ def _node_base_ids(G: nx.Graph, node: int) -> list[int]:
 def _load_block_to_blockgroup(data: DataScenario | None = None) -> dict[int, int]:
     """Load the selected geographic Block-to-BlockGroup relationship."""
     scenario = data or load_scenario({"scenario": "legacy", "overrides": {}})
-    crosswalk = read_csv(
-        scenario, "optimization.crosswalk", low_memory=False
-    ).dropna(subset=["Block", "BlockGroup"])
+    crosswalk = read_csv(scenario, "optimization.crosswalk", low_memory=False).dropna(
+        subset=["Block", "BlockGroup"]
+    )
     return {
         int(row.Block): int(row.BlockGroup)
         for row in crosswalk[["Block", "BlockGroup"]].itertuples(index=False)
@@ -62,9 +62,9 @@ def _load_block_to_blockgroup(data: DataScenario | None = None) -> dict[int, int
 def _load_block_to_tract(data: DataScenario | None = None) -> dict[int, int]:
     """Load the Block-to-Tract relationship from the selected crosswalk."""
     scenario = data or load_scenario({"scenario": "legacy", "overrides": {}})
-    crosswalk = read_csv(
-        scenario, "optimization.crosswalk", low_memory=False
-    ).dropna(subset=["Block", "Tract"])
+    crosswalk = read_csv(scenario, "optimization.crosswalk", low_memory=False).dropna(
+        subset=["Block", "Tract"]
+    )
     return {
         int(row.Block): int(row.Tract)
         for row in crosswalk[["Block", "Tract"]].itertuples(index=False)
@@ -85,9 +85,7 @@ class LevelConverter:
             dict(block_to_blockgroup) if block_to_blockgroup is not None else None
         )
         self.data = data
-        self._b2tract = (
-            dict(block_to_tract) if block_to_tract is not None else None
-        )
+        self._b2tract = dict(block_to_tract) if block_to_tract is not None else None
         self._bg2blocks: dict[int, list[int]] | None = None
         self._tract2blocks: dict[int, list[int]] | None = None
 
@@ -149,7 +147,9 @@ class LevelConverter:
         """Convert an already portable finest-area assignment to ``dst_G``."""
         src_level = LevelSpec.parse(src_level)
         dst_level = LevelSpec.parse(dst_level)
-        area = {int(area_id): int(zone) for area_id, zone in src_area_assignment.items()}
+        area = {
+            int(area_id): int(zone) for area_id, zone in src_area_assignment.items()
+        }
         lookup = self._zone_lookup(area, src_level.unit, dst_level.unit)
 
         result: dict[int, int] = {}
@@ -191,7 +191,9 @@ class LevelConverter:
                 for block in target_to_blocks(target_id)
                 if (source_id := block_to_source(block)) is not None
             }
-            votes = Counter(area[source_id] for source_id in source_ids if source_id in area)
+            votes = Counter(
+                area[source_id] for source_id in source_ids if source_id in area
+            )
             return votes.most_common(1)[0][0] if votes else None
 
         return lookup

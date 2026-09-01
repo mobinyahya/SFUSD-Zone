@@ -54,9 +54,7 @@ class PreferenceGenerator:
             prefs = self._drop_preferences_below_attendance_area(prefs)
         if designate:
             eligible = self._get_eligibility()
-            prefs = self._add_designation_programs_to_preferences(
-                prefs, eligible
-            )
+            prefs = self._add_designation_programs_to_preferences(prefs, eligible)
         if remove_non_aa_or_citywide:
             prefs = self._remove_non_aa_or_citywide_programs(prefs)
         if cache_context is not None:
@@ -93,9 +91,7 @@ class PreferenceGenerator:
         self.pref_length = pref_lengths
         return combined_prefs
 
-    def _drop_preferences_below_attendance_area(
-        self, prefs: np.ndarray
-    ) -> np.ndarray:
+    def _drop_preferences_below_attendance_area(self, prefs: np.ndarray) -> np.ndarray:
         """Drop programs ranked after each student's attendance-area GE program."""
         truncated_prefs = prefs.copy()
         pref_lengths = np.count_nonzero(truncated_prefs, axis=1)
@@ -110,9 +106,7 @@ class PreferenceGenerator:
             if program_idx is None:
                 continue
 
-            aa_ranks = np.flatnonzero(
-                truncated_prefs[student_idx] == program_idx
-            )
+            aa_ranks = np.flatnonzero(truncated_prefs[student_idx] == program_idx)
             if not aa_ranks.size:
                 continue
 
@@ -181,13 +175,8 @@ class PreferenceGenerator:
             "designation-ordering-type", "in_zone"
         )
         cache_key = (self._cache_context(), designation_ordering_type)
-        if (
-            cache_key[0] is not None
-            and cache_key in self._designation_ordering_cache
-        ):
-            self._designation_ordering = self._designation_ordering_cache[
-                cache_key
-            ]
+        if cache_key[0] is not None and cache_key in self._designation_ordering_cache:
+            self._designation_ordering = self._designation_ordering_cache[cache_key]
             return
 
         distances = self.market.students.distance_data
@@ -211,20 +200,14 @@ class PreferenceGenerator:
         def _get_student_designation_ordering(studentno):
             # language programs if student requested language program designation
             if self.market.students.language_designation[studentno] or (
-                self.market.config["utility-model"].get(
-                    "designate-lp-for-all", False
-                )
+                self.market.config["utility-model"].get("designate-lp-for-all", False)
                 and self.market.config["utility-model"]["enable"]
             ):
                 o_designated = set(lp_sorted_distances.loc[studentno])
                 types = set(
-                    self.market.students.student_data.loc[
-                        studentno
-                    ].program_types
+                    self.market.students.student_data.loc[studentno].program_types
                 )
-                designated = [
-                    x for x in o_designated if x.split("-")[1] in types
-                ]
+                designated = [x for x in o_designated if x.split("-")[1] in types]
             else:
                 designated = []
 
@@ -239,24 +222,16 @@ class PreferenceGenerator:
 
             program_to_index = self.market.programs.indices
 
-            ge_eligible = list(
-                ge_sorted_distances.loc[studentno]
-            )  # Sorted GE programs
-            lp_eligible = list(
-                lp_sorted_distances.loc[studentno]
-            )  # Sorted LP programs
+            ge_eligible = list(ge_sorted_distances.loc[studentno])  # Sorted GE programs
+            lp_eligible = list(lp_sorted_distances.loc[studentno])  # Sorted LP programs
 
             designated = []
 
-            types = set(
-                self.market.students.student_data.loc[studentno].program_types
-            )
+            types = set(self.market.students.student_data.loc[studentno].program_types)
 
             # 1s mean the student qualifies for program, meaning
             if self.market.students.language_designation[studentno] or (
-                self.market.config["utility-model"].get(
-                    "designate-lp-for-all", False
-                )
+                self.market.config["utility-model"].get("designate-lp-for-all", False)
                 and self.market.config["utility-model"]["enable"]
             ):
                 lp_eligible_ones = [
@@ -278,9 +253,7 @@ class PreferenceGenerator:
 
             # zeros are out inelligible, IE allows students to choose out of zone designation schools
             if self.market.students.language_designation[studentno] or (
-                self.market.config["utility-model"].get(
-                    "designate-lp-for-all", False
-                )
+                self.market.config["utility-model"].get("designate-lp-for-all", False)
                 and self.market.config["utility-model"]["enable"]
             ):
                 lp_eligible_zeros = [
@@ -316,9 +289,8 @@ class PreferenceGenerator:
             for studentno in self.market.students.studentno2idx.keys()
         }
         if cache_key[0] is not None:
-            self._designation_ordering_cache[cache_key] = (
-                self._designation_ordering
-            )
+            self._designation_ordering_cache[cache_key] = self._designation_ordering
+
     def _add_designation_programs_to_preferences(
         self, prefs: np.ndarray, eligible: np.ndarray
     ) -> np.ndarray:
@@ -343,9 +315,7 @@ class PreferenceGenerator:
             ranked = list(
                 dict.fromkeys(int(program) for program in prefs[i] if program != 0)
             )
-            pref_lengths[i] = sum(
-                bool(eligible[i, program - 1]) for program in ranked
-            )
+            pref_lengths[i] = sum(bool(eligible[i, program - 1]) for program in ranked)
             combined = list(
                 dict.fromkeys(ranked + self._designation_ordering[studentno])
             )
@@ -406,9 +376,7 @@ class PreferenceGenerator:
             filtered_preferences[student_idx, : len(allowed_prefs)] = allowed_prefs
         return filtered_preferences
 
-    def _truncate_utility_model_preferences(
-        self, eligible: np.ndarray
-    ) -> np.ndarray:
+    def _truncate_utility_model_preferences(self, eligible: np.ndarray) -> np.ndarray:
         """Truncate utility model preferences to the list length specified in the config.
 
         Args:
@@ -434,14 +402,10 @@ class PreferenceGenerator:
             num_progs = int(min(num_eligible[i], num_ranked_array[i]))
             if truncate_at_aa:
                 # Truncate program at AA GE program
-                cur_student_aa = students_aa[
-                    self.market.students.idx2studentno[i]
-                ]
+                cur_student_aa = students_aa[self.market.students.idx2studentno[i]]
                 cur_aa_program_id = f"{cur_student_aa}-GE-{grade}"
                 program_idx = self.market.programs.indices[cur_aa_program_id]
-                program_idx = np.argwhere(
-                    student_prefs == program_idx
-                ).flatten()[0]
+                program_idx = np.argwhere(student_prefs == program_idx).flatten()[0]
                 # Truncate at program_idx + 1 to include AA GE program.
                 num_progs = min(num_progs, program_idx + 1)
 
@@ -469,24 +433,16 @@ class PreferenceGenerator:
         elif length == "real_length_x2":
             num_ranked_array = 2 * np.array(student_data["num_ranked"])
         elif length == "0.8*round(real_length)":
-            num_ranked_array = np.round(
-                0.8 * np.array(student_data["num_ranked"])
-            )
+            num_ranked_array = np.round(0.8 * np.array(student_data["num_ranked"]))
             num_ranked_array = np.maximum(3, num_ranked_array)
         elif length == "0.7*round(real_length)":
-            num_ranked_array = np.round(
-                0.7 * np.array(student_data["num_ranked"])
-            )
+            num_ranked_array = np.round(0.7 * np.array(student_data["num_ranked"]))
             num_ranked_array = np.maximum(3, num_ranked_array)
         elif length == "0.6*round(real_length)":
-            num_ranked_array = np.round(
-                0.6 * np.array(student_data["num_ranked"])
-            )
+            num_ranked_array = np.round(0.6 * np.array(student_data["num_ranked"]))
             num_ranked_array = np.maximum(3, num_ranked_array)
         elif length == "0.5*round(real_length)":
-            num_ranked_array = np.ceil(
-                0.5 * np.array(student_data["num_ranked"])
-            )
+            num_ranked_array = np.ceil(0.5 * np.array(student_data["num_ranked"]))
         elif length == "real_length_+3":
             num_ranked_array = student_data["num_ranked"].to_numpy() + 3
         # If option is a number, all students list option number of programs
@@ -511,9 +467,7 @@ class PreferenceGenerator:
 
             for i in range(num_students):
                 ctip = student_data.ctip1.iloc[i]
-                num_ranked_array[i] = (
-                    ctip1_length if ctip == 1 else ctip0_length
-                )
+                num_ranked_array[i] = ctip1_length if ctip == 1 else ctip0_length
 
         elif length == "length_by_frl":
             num_ranked_array = np.zeros(num_students)
@@ -525,15 +479,13 @@ class PreferenceGenerator:
 
             for i in range(num_students):
                 frl_score = student_data["FRL Score"].iloc[i]
-                num_ranked_array[i] = (
-                    frl1_length if frl_score >= 0.5 else frl0_length
-                )
+                num_ranked_array[i] = frl1_length if frl_score >= 0.5 else frl0_length
 
         elif length == "length_by_income":
             num_ranked_array = np.zeros(num_students)
-            high_income = student_data[
-                student_data["median_hh_income"] >= 95292
-            ]["num_ranked"]
+            high_income = student_data[student_data["median_hh_income"] >= 95292][
+                "num_ranked"
+            ]
             high_income_length = high_income.sum() / high_income.count()
 
             low_income = student_data[student_data["median_hh_income"] < 95292][
@@ -565,10 +517,7 @@ class PreferenceGenerator:
                 the student is eligible for that program.
         """
         cache_context = self._cache_context()
-        if (
-            cache_context is not None
-            and cache_context in self._eligibility_cache
-        ):
+        if cache_context is not None and cache_context in self._eligibility_cache:
             return self._eligibility_cache[cache_context]
 
         program_eligibility = self._get_program_type_eligibility_matrix()
@@ -607,9 +556,7 @@ class PreferenceGenerator:
         if self.market.config.get("drop_below_aa", False):
             prefs = self._drop_preferences_below_attendance_area(prefs)
         if self.market.config["designate"]:
-            prefs = self._add_designation_programs_to_preferences(
-                prefs, eligible
-            )
+            prefs = self._add_designation_programs_to_preferences(prefs, eligible)
         if remove_non_aa_or_citywide:
             prefs = self._remove_non_aa_or_citywide_programs(
                 prefs, aa_or_citywide_eligible

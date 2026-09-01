@@ -21,9 +21,7 @@ class Schools:
         ]
         self.school_df = self._calc_attendance_area(init_df)
 
-    def _calc_attendance_area(
-        self, school_data: pd.DataFrame
-    ) -> pd.DataFrame():
+    def _calc_attendance_area(self, school_data: pd.DataFrame) -> pd.DataFrame():
         """Add a column mapping from each school to attendance area.
 
         Contains own id if an attendance area school; else 0 if citywide school.
@@ -51,6 +49,4 @@ class Schools:
         Returns:
             list: list of citywide schools
         """
-        return self.school_df[
-            self.school_df.category == "Citywide"
-        ].index.to_list()
+        return self.school_df[self.school_df.category == "Citywide"].index.to_list()

@@ -14,16 +14,14 @@ def _student_frame(data):
     ranked_programs = []
     listed_ranks = []
     for _, row in frame.iterrows():
-        school = pd.to_numeric(
-            pd.Series([row["r1_idschool"]]), errors="coerce"
-        ).iloc[0]
+        school = pd.to_numeric(pd.Series([row["r1_idschool"]]), errors="coerce").iloc[0]
         program = row["r1_programcode"]
         if pd.notna(school) and school > 0 and pd.notna(program):
             ranked_schools.append([int(school)])
             ranked_programs.append([str(program)])
-            rank = pd.to_numeric(
-                pd.Series([row.get("r1_rank")]), errors="coerce"
-            ).iloc[0]
+            rank = pd.to_numeric(pd.Series([row.get("r1_rank")]), errors="coerce").iloc[
+                0
+            ]
             listed_ranks.append(
                 [int(rank)]
                 if pd.notna(rank) and rank > 0 and float(rank).is_integer()
@@ -55,9 +53,7 @@ def test_extract_real_assignment_reconstructs_submitted_rank():
     assert assignments["studentno"].tolist() == [1, 2]
     assert assignments["programno"].tolist() == [1, 0]
     assert assignments["programcodes"].tolist() == ["101-GE-KG", ""]
-    assert assignments["assignment_schema_version"].eq(
-        ASSIGNMENT_SCHEMA_VERSION
-    ).all()
+    assert assignments["assignment_schema_version"].eq(ASSIGNMENT_SCHEMA_VERSION).all()
     assert assignments["rank_basis"].eq("listed").all()
     assert assignments.loc[0, "rank"] == 1
     assert pd.isna(assignments.loc[1, "rank"])

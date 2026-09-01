@@ -388,9 +388,7 @@ def normalize_student_records(
     grades = tuple(scenario.filter(group, "grades"))
     normalized_grades = frame["grade"].map(normalize_grade)
     grade_mask = normalized_grades.isin(grades)
-    frame, source_rows = _filter_student_rows(
-        frame, source_rows, grade_mask
-    )
+    frame, source_rows = _filter_student_rows(frame, source_rows, grade_mask)
     frame["grade"] = normalized_grades.loc[frame.index]
     _validate_student_identities(frame)
 
@@ -516,9 +514,7 @@ def normalize_student_records(
             frame[column] = pd.Series(values, index=frame.index, dtype=object)
 
     if special_mode == "exclude_any_special":
-        frame, source_rows = _filter_student_rows(
-            frame, source_rows, ~any_special
-        )
+        frame, source_rows = _filter_student_rows(frame, source_rows, ~any_special)
 
     for column in _SCHOOL_LIST_COLUMNS:
         if column not in frame.columns:
@@ -592,9 +588,7 @@ def normalize_student_records(
     participating = pd.Series(False, index=frame.index)
     for round_number in rounds:
         participating |= frame[f"r{round_number}_ranked_idschool"].map(bool)
-    frame, source_rows = _filter_student_rows(
-        frame, source_rows, participating
-    )
+    frame, source_rows = _filter_student_rows(frame, source_rows, participating)
 
     first_rounds: list[int] = []
     first_ordinals: list[int] = []
@@ -732,8 +726,7 @@ def _role_geography_vintage(scenario: DataScenario, role: str) -> str | None:
     }
     if len(vintages) > 1:
         raise ValueError(
-            f"Source role {role!r} mixes Census geography vintages: "
-            f"{sorted(vintages)}."
+            f"Source role {role!r} mixes Census geography vintages: {sorted(vintages)}."
         )
     return next(iter(vintages), None)
 
@@ -868,9 +861,7 @@ def apply_capacity_scenario(
                 f"Capacity scenario {scenario_name!r} has no rows for selected "
                 f"grades {sorted(selected_grades)}."
             )
-        result["_capacity_grade"] = _program_grades(
-            result, "Selected program data"
-        )
+        result["_capacity_grade"] = _program_grades(result, "Selected program data")
         keys.append("_capacity_grade")
 
     overrides["_source_school_id"] = pd.to_numeric(

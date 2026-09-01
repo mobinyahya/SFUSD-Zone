@@ -46,9 +46,7 @@ def _load_block_edge_override_file(path: Path) -> set[tuple[int, int]]:
                 f"Manual Block edge {index} in {path} must have two GEOIDs."
             )
         if any(isinstance(value, bool) for value in row):
-            raise ValueError(
-                f"Manual Block edge {index} in {path} contains a Boolean."
-            )
+            raise ValueError(f"Manual Block edge {index} in {path} contains a Boolean.")
         try:
             first, second = (int(value) for value in row)
         except (TypeError, ValueError) as exc:
@@ -56,18 +54,16 @@ def _load_block_edge_override_file(path: Path) -> set[tuple[int, int]]:
                 f"Manual Block edge {index} in {path} has invalid GEOIDs."
             ) from exc
         if first == second:
-            raise ValueError(
-                f"Manual Block edge {index} in {path} is a self-edge."
-            )
+            raise ValueError(f"Manual Block edge {index} in {path} is a self-edge.")
         edges.add(tuple(sorted((first, second))))
     return edges
 
 
 def block_edge_override_fingerprint(path: str | Path | None = None) -> str:
     """Return a content fingerprint for normalized manual Block edges."""
-    encoded = json.dumps(
-        load_block_edge_overrides(path), separators=(",", ":")
-    ).encode("utf-8")
+    encoded = json.dumps(load_block_edge_overrides(path), separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()[:12]
 
 

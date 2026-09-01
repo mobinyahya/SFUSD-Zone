@@ -11,13 +11,7 @@ class Student_with_class(Student):
         self.iClass = iClass
 
     def __repr__(self) -> str:
-        return (
-            super().__repr__()
-            + "\n"
-            + "Class index: "
-            + str(self.iClass)
-            + "\n"
-        )
+        return super().__repr__() + "\n" + "Class index: " + str(self.iClass) + "\n"
 
 
 class School_with_class:
@@ -34,9 +28,7 @@ class School_with_class:
         self.assignedPerClass = np.zeros(len(frac_reserve_class))
         has_reserves = any(fraction > 0 for fraction in frac_reserve_class)
         self.virtual_school = (
-            School(-1, 0)
-            if strictGuards and has_reserves
-            else School(-1, capacity)
+            School(-1, 0) if strictGuards and has_reserves else School(-1, capacity)
         )
 
     def matches(self):
@@ -67,9 +59,7 @@ class DeferredAcceptance_with_GuardRails:
         self.fracs, self.caps = frac_reserve_class, school_caps
         self.schools = [
             School_with_class(i, capacity, frac, strictGuards)
-            for i, (capacity, frac) in enumerate(
-                zip(school_caps, frac_reserve_class)
-            )
+            for i, (capacity, frac) in enumerate(zip(school_caps, frac_reserve_class))
         ]
         self.students = [
             Student_with_class(student_pref, student_priority, idxClass)
@@ -115,8 +105,7 @@ class DeferredAcceptance_with_GuardRails:
                         unmatched_students.add(student_to_remove)
 
                 elif (
-                    school.school_by_classes[iClass].give_lowest_priority()
-                    < priority
+                    school.school_by_classes[iClass].give_lowest_priority() < priority
                     and school.school_by_classes[iClass].has_capacity()
                 ):
                     student.set_match(school_index)

@@ -130,9 +130,7 @@ def test_language_pathway_priorities(config):
     Test getting language pathway priorities matrix based on students'
     previous pathway.
     """
-    _, school_ids, lp_schools, _ = generate_random_program_school_files(
-        return_lp=True
-    )
+    _, school_ids, lp_schools, _ = generate_random_program_school_files(return_lp=True)
     prev_lp = generate_random_student_file(school_ids, lp_schools)[2]
     students = get_students(config)
     # The column masked by the priority function should be depend on the
@@ -244,22 +242,22 @@ def _minimal_student_inputs(tmp_path, student_rows):
             "r2_capacity": [10],
         }
     ).to_csv(program_file, index=False)
-    pd.DataFrame(
-        {"school_id": [101], "lat": [37.75], "lon": [-122.45]}
-    ).to_csv(school_file, index=False)
+    pd.DataFrame({"school_id": [101], "lat": [37.75], "lon": [-122.45]}).to_csv(
+        school_file, index=False
+    )
     student_frame = pd.DataFrame(student_rows)
     student_frame["grade"] = "06"
-    student_frame["r1_ranked_idschool"] = student_frame[
-        "r1_ranked_idschool"
-    ].map(parse_ranked_schools)
+    student_frame["r1_ranked_idschool"] = student_frame["r1_ranked_idschool"].map(
+        parse_ranked_schools
+    )
     student_frame["r1_programs"] = student_frame["r1_programs"].map(
         parse_ranked_programs
     )
     student_frame["first_participating_round"] = 1
     student_frame["first_participating_round_ordinal"] = 0
-    student_frame["selected_ranked_idschool"] = student_frame[
-        "r1_ranked_idschool"
-    ].map(list)
+    student_frame["selected_ranked_idschool"] = student_frame["r1_ranked_idschool"].map(
+        list
+    )
     student_frame["selected_programs"] = student_frame["r1_programs"].map(list)
     student_frame.attrs["source_rows"] = list(range(len(student_frame)))
     student_frame.attrs["source_row_count"] = len(student_frame)
@@ -281,9 +279,7 @@ def _student_row(studentno=1, schools="[101]", programs="['GE']"):
 
 
 def test_normalized_preferences_are_used_without_reparsing(tmp_path):
-    inputs = _minimal_student_inputs(
-        tmp_path, [_student_row(schools="[101, ]")]
-    )
+    inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[101, ]")])
 
     students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
@@ -296,9 +292,9 @@ def test_normalized_preferences_are_used_without_reparsing(tmp_path):
 def test_old_distance_cache_files_are_ignored(tmp_path):
     inputs = _minimal_student_inputs(tmp_path, [_student_row()])
     cache_file = tmp_path / "student_program_distances_06_2122.csv"
-    pd.DataFrame(
-        {"studentno": [999], "101-GE-06": [1.0]}
-    ).to_csv(cache_file, index=False)
+    pd.DataFrame({"studentno": [999], "101-GE-06": [1.0]}).to_csv(
+        cache_file, index=False
+    )
 
     students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
@@ -307,27 +303,21 @@ def test_old_distance_cache_files_are_ignored(tmp_path):
 
 
 def test_unknown_ranked_program_is_fatal(tmp_path):
-    inputs = _minimal_student_inputs(
-        tmp_path, [_student_row(schools="[999]")]
-    )
+    inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[999]")])
 
     with pytest.raises(ValueError, match="unknown program IDs.*999-GE-06"):
         Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
 
 def test_ranked_school_program_lengths_must_match(tmp_path):
-    inputs = _minimal_student_inputs(
-        tmp_path, [_student_row(schools="[101, 102]")]
-    )
+    inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[101, 102]")])
 
     with pytest.raises(ValueError, match="2 ranked schools but 1 ranked programs"):
         Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
 
 
 def test_duplicate_student_identities_are_fatal(tmp_path):
-    inputs = _minimal_student_inputs(
-        tmp_path, [_student_row(), _student_row()]
-    )
+    inputs = _minimal_student_inputs(tmp_path, [_student_row(), _student_row()])
 
     with pytest.raises(ValueError, match="duplicate studentno"):
         Students(inputs[0], inputs[2], inputs[1], None, inputs[3])

@@ -25,9 +25,7 @@ SF_ZIPCODES = list(range(94102, 94135)) + [94158]
 
 TEMP_STUDENT_FILE = f"{CLEANED_FOLDER_PATH}student_{YEAR_PREFIX}.csv"
 TEMP_PROGRAMS_FILE = CLEANED_FOLDER_PATH + "programs_{}" + f"_{YEAR_PREFIX}.csv"
-TEMP_SCHOOL_FILE = (
-    CLEANED_FOLDER_PATH + "schools_rehauled_{}" + f"_{YEAR_PREFIX}.csv"
-)
+TEMP_SCHOOL_FILE = CLEANED_FOLDER_PATH + "schools_rehauled_{}" + f"_{YEAR_PREFIX}.csv"
 
 
 def configure_synthetic_assignment_data(config, grade, cache_root):
@@ -193,17 +191,13 @@ def generate_random_student_file(
         siblings
         if siblings
         else [
-            np.random.choice(
-                school_ids, np.random.choice([0, 1, 2], p=[0.8, 0.1, 0.1])
-            )
+            np.random.choice(school_ids, np.random.choice([0, 1, 2], p=[0.8, 0.1, 0.1]))
             for _ in range(num_students + 1)
         ]
     )
     # Find the schools of siblings that have language programs.
     lp_schools = set(lp_schools) if len(lp_schools) else set()
-    lp_sibling_schools = [
-        list(set(x).intersection(lp_schools)) for x in siblings
-    ]
+    lp_sibling_schools = [list(set(x).intersection(lp_schools)) for x in siblings]
     currentlpsiblings = [
         [f"{y}-{LP_TYPE}-{grade}" for y in x] for x in lp_sibling_schools
     ]
@@ -217,28 +211,21 @@ def generate_random_student_file(
     # programs. Keep serialized-list CSV cells for the shared loader parser.
     n_rows = num_students + 1
     ranked_lists = [
-        list(
-            np.random.choice(school_ids, np.random.randint(1, 5), replace=False)
-        )
+        list(np.random.choice(school_ids, np.random.randint(1, 5), replace=False))
         for _ in range(n_rows)
     ]
     r1_ranked_idschool = [
-        "[{}]".format(",".join(str(int(s)) for s in lst))
-        for lst in ranked_lists
+        "[{}]".format(",".join(str(int(s)) for s in lst)) for lst in ranked_lists
     ]
     r1_programs = [str(["GE" for _ in lst]) for lst in ranked_lists]
     student_df = pd.DataFrame(
         data={
             "studentno": np.arange(num_students + 1),
             "ctip1": ctips,
-            "sibling": [
-                "[{}]".format(",".join([str(y) for y in x])) for x in siblings
-            ],
+            "sibling": ["[{}]".format(",".join([str(y) for y in x])) for x in siblings],
             "currentlpsibling": currentlpsiblings,
             "previous_pathway": [LP_TYPE if x == 1 else None for x in prev_lp],
-            "msf": msf
-            if msf
-            else np.random.choice(school_ids, num_students + 1),
+            "msf": msf if msf else np.random.choice(school_ids, num_students + 1),
             "bayview_to_brown_ms": priority_1_0,
             "bayview_to_all_ms": priority_1_0,
             "brown_ms_to_hs": priority_1_0,
@@ -332,9 +319,7 @@ def generate_random_program_school_files(
         data={
             "programno": np.arange(1, len(program_ids) + 1),
             "program_id": program_ids,
-            "school_id": list(school_ids)
-            + list(lp_schools)
-            + list(spe_ed_schools),
+            "school_id": list(school_ids) + list(lp_schools) + list(spe_ed_schools),
             "program_type": program_types,
             # Add r1_assigned to avoid KeyError when initializing programs object.
             "r1_assigned": [10 for _ in range(len(program_ids))],
@@ -356,11 +341,7 @@ def generate_random_program_school_files(
         school_ids,
     )
     if return_lp:
-        lp_mask = (
-            [0] * num_schools
-            + [1] * len(lp_schools)
-            + [0] * len(spe_ed_schools)
-        )
+        lp_mask = [0] * num_schools + [1] * len(lp_schools) + [0] * len(spe_ed_schools)
         out += (
             lp_schools,
             np.array(lp_mask),

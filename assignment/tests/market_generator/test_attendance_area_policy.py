@@ -476,9 +476,7 @@ def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
         indices={"101-GE-KG": 1, "200-GE-KG": 2, "102-GE-KG": 3},
         capacity=np.array([0, 1, 1]),
     )
-    market.preference_generator = SimpleNamespace(
-        pref_length=np.array([2, 2, 1])
-    )
+    market.preference_generator = SimpleNamespace(pref_length=np.array([2, 2, 1]))
 
     match, rank, overage_seats = market._overscribe_attendance_area(
         np.array([[2, 1, 0], [2, 3, 0], [2, 0, 0]]),

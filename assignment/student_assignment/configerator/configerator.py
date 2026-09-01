@@ -111,16 +111,14 @@ class Configerator:
 
             data = config.get("data")
             if not isinstance(data, dict):
-                raise ValueError("Assignment configuration must define a valid data map.")
+                raise ValueError(
+                    "Assignment configuration must define a valid data map."
+                )
 
             subconfigs = config.get("subconfigs", [])
             if isinstance(subconfigs, list):
                 duplicate_subconfigs = sorted(
-                    {
-                        name
-                        for name in subconfigs
-                        if subconfigs.count(name) > 1
-                    }
+                    {name for name in subconfigs if subconfigs.count(name) > 1}
                 )
                 if duplicate_subconfigs:
                     raise ValueError(
@@ -141,9 +139,7 @@ class Configerator:
                 )
             iterations = config["iterations"]
             if iterations["start"] < 0 or iterations["end"] <= iterations["start"]:
-                raise ValueError(
-                    "Assignment iterations must satisfy 0 <= start < end."
-                )
+                raise ValueError("Assignment iterations must satisfy 0 <= start < end.")
             scenario = load_scenario(data)
             year = scenario.filter("assignment", "year")
             if not isinstance(year, str) or len(year) != 4 or not year.isdigit():
@@ -180,9 +176,7 @@ class Configerator:
                 # Load base config
                 base_config = self._load_yaml(f"{CONFIGS_DIR}{BASE_CONFIG_NAME}")
                 # Local and cluster path files now contain output paths only.
-                path_config = self._load_yaml(
-                    f"{CONFIGS_DIR}{LOCAL_PATH_CONFIG_NAME}"
-                )
+                path_config = self._load_yaml(f"{CONFIGS_DIR}{LOCAL_PATH_CONFIG_NAME}")
                 base_config.update(path_config)
                 # Write atomically: parallel simulations (e.g. the pipeline
                 # script launches every run at once) all auto-create the same
@@ -195,9 +189,7 @@ class Configerator:
                     yaml.safe_dump(base_config, file, default_flow_style=False)
                 os.replace(tmp_path, self._path)
 
-            self._config = self._anchor_config(
-                self._load_yaml(self._path), self._path
-            )
+            self._config = self._anchor_config(self._load_yaml(self._path), self._path)
             self._original_config = copy.deepcopy(self._config)
 
         def _load_subconfig(self, name):
@@ -285,9 +277,7 @@ class Configerator:
         ``declaring_path`` should be the YAML file that declared the mapping.
         If omitted, relative data paths use the current working directory.
         """
-        return cls.__Singleton_Configerator(
-            config, declaring_path=declaring_path
-        )
+        return cls.__Singleton_Configerator(config, declaring_path=declaring_path)
 
     @classmethod
     def from_path(cls, path):

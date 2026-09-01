@@ -72,8 +72,8 @@ def test_get_brown_ms_priorities(config):
     """
     # brown middle school has the program code: "858-GE-06".
     brown_ms_index, school_ids = generate_random_program_school_files(858)
-    special_zipcode_inds, bayview_to_brown_inds, _, _ = (
-        generate_random_student_file(school_ids)
+    special_zipcode_inds, bayview_to_brown_inds, _, _ = generate_random_student_file(
+        school_ids
     )
 
     priority_generator = get_priority_generator(config)
@@ -126,14 +126,10 @@ def test_get_sixth_grade_language_program_priorities(config):
 
     lp_program_inds = np.argwhere(np.array(lp_mask) == 1).flatten()
     expected = (
-        weights["sibling"] * sibling
-        + weights["msf"] * msf
-        + weights["ctip"] * ctip
+        weights["sibling"] * sibling + weights["msf"] * msf + weights["ctip"] * ctip
     )
     expected = expected[:, lp_program_inds]
-    expected += np.repeat(
-        [prev_lp * weights["lp"]], len(lp_program_inds), axis=0
-    ).T
+    expected += np.repeat([prev_lp * weights["lp"]], len(lp_program_inds), axis=0).T
 
     school_to_prog = {lp_schools[i]: i for i in range(len(lp_schools))}
     for i, sibling_lps in enumerate(lp_sibling_schools):
@@ -157,13 +153,10 @@ def test_bayview_student_priorities(config):
     weights = {
         "bayview-to-all": 4,
     }
-    actual, program_mask = priority_generator._get_bayview_student_priorities(
-        weights
-    )
+    actual, program_mask = priority_generator._get_bayview_student_priorities(weights)
 
     assert (
-        np.unique(actual[bayview_to_all_ms_inds, :])
-        == [weights["bayview-to-all"]]
+        np.unique(actual[bayview_to_all_ms_inds, :]) == [weights["bayview-to-all"]]
     ).all()
     assert np.equal(
         program_mask, np.zeros(priority_generator.market.num_programs)
@@ -196,22 +189,16 @@ def test_get_remaining_ms_priorities(config):
     assert (np.unique(actual) == [0]).all()
 
     # Random choice of masked programs.
-    program_mask = np.random.choice(
-        [0, 1], priority_generator.market.num_programs
-    )
+    program_mask = np.random.choice([0, 1], priority_generator.market.num_programs)
     all_priority = (
-        weights["sibling"] * sibling
-        + weights["msf"] * msf
-        + weights["ctip"] * ctip
+        weights["sibling"] * sibling + weights["msf"] * msf + weights["ctip"] * ctip
     )
     actual = priority_generator._get_remaining_ms_priorities(
         weights, sibling, msf, ctip, program_mask
     )
     for i in np.argwhere(program_mask == 0).flatten():
         assert (actual[:, i] == all_priority[:, i]).all()
-    other_cols = np.delete(
-        actual, np.argwhere(program_mask == 0).flatten(), axis=1
-    )
+    other_cols = np.delete(actual, np.argwhere(program_mask == 0).flatten(), axis=1)
     assert (np.unique(other_cols) == [0]).all()
 
 
@@ -263,13 +250,9 @@ def test_sixth_grade_priorities(config):
     weights = config["priority-weights"]["language-programs"]
     lp_program_inds = np.argwhere(lp_mask == 1).flatten()
     lp_expected = (
-        weights["sibling"] * sibling
-        + weights["msf"] * msf
-        + weights["ctip"] * ctip
+        weights["sibling"] * sibling + weights["msf"] * msf + weights["ctip"] * ctip
     )[:, lp_program_inds]
-    lp_expected += np.repeat(
-        [prev_lp * weights["lp"]], len(lp_program_inds), axis=0
-    ).T
+    lp_expected += np.repeat([prev_lp * weights["lp"]], len(lp_program_inds), axis=0).T
     school_to_prog = {lp_schools[i]: i for i in range(len(lp_schools))}
     for i, sibling_lps in enumerate(lp_sibling_schools):
         for sibling_lp in sibling_lps:
@@ -279,9 +262,7 @@ def test_sixth_grade_priorities(config):
     # Remaining columns.
     weights = config["priority-weights"]["remaining"]
     all_remaining = (
-        weights["sibling"] * sibling
-        + weights["msf"] * msf
-        + weights["ctip"] * ctip
+        weights["sibling"] * sibling + weights["msf"] * msf + weights["ctip"] * ctip
     )
     for i in np.argwhere(program_mask == 0).flatten():
         expected[:, i] += all_remaining[:, i]
@@ -359,9 +340,7 @@ def test_ninth_grade_priorities(config_ninth):
     # Language programs.
     lp_program_inds = np.argwhere(lp_mask == 1).flatten()
     lp_expected = np.zeros(expected[:, lp_program_inds].shape)
-    lp_expected += np.repeat(
-        [prev_lp * weights["lp"]], len(lp_program_inds), axis=0
-    ).T
+    lp_expected += np.repeat([prev_lp * weights["lp"]], len(lp_program_inds), axis=0).T
     school_to_prog = {lp_schools[i]: i for i in range(len(lp_schools))}
     for i, sibling_lps in enumerate(lp_sib_sch):
         for sibling_lp in sibling_lps:
