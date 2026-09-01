@@ -614,6 +614,7 @@ def _job_script(
         f"export {name}={shlex.quote(value)}"
         for name, value in THREAD_ENVIRONMENT.items()
     )
+    lines.append('export GRB_LICENSE_FILE="$HOME/gurobi.lic"')
     lines.append(f"exec {shlex.join(command)}")
     return "\n".join(lines) + "\n"
 
@@ -676,6 +677,7 @@ def write_slurm_scripts(
     submit_lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
+        'export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
         f"cd {shlex.quote(str(workspace_root))}",
     ]
     submit_lines.append(f'exec {shlex.join(submit_command)} "$@"')

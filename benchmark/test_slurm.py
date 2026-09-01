@@ -71,6 +71,7 @@ def test_submission_script_has_required_directives(tmp_path):
     assert "--dependency" not in script
     assert "worker-allocation" in script
     assert "--allocation-index" in script
+    assert "GRB_LICENSE_FILE" in script
     assert "srun" not in script
     assert "--cpus-per-task=99" not in script
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)

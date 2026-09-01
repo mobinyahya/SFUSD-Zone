@@ -233,7 +233,12 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
 
     _validate_plan(plan)
     allocations = _plan_allocations(plan)
-    lines = ["#!/usr/bin/env bash", "set -euo pipefail", ""]
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        "",
+    ]
     for index, _allocation in enumerate(allocations):
         command = _sbatch_options(plan, plan_path, index)
         variable = f"benchmark_job_{index}"
@@ -603,19 +608,22 @@ def _sbatch_options(
     sbatch: str = "sbatch",
 ) -> list[str]:
     allocation = _allocation_at(plan, index)
-    worker_command = shlex.join(
-        [
-            "uv",
-            "run",
-            "python",
-            "-m",
-            "benchmark.slurm",
-            "worker-allocation",
-            "--plan",
-            str(plan_path),
-            "--allocation-index",
-            str(index),
-        ]
+    worker_command = (
+        'export GRB_LICENSE_FILE="$HOME/gurobi.lic" && '
+        + shlex.join(
+            [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "benchmark.slurm",
+                "worker-allocation",
+                "--plan",
+                str(plan_path),
+                "--allocation-index",
+                str(index),
+            ]
+        )
     )
     log_prefix = _log_dir(plan) / f"{index:02d}-benchmark-%j"
     return [

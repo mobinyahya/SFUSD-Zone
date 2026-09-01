@@ -32,13 +32,14 @@ sweep:
                     '13-zone-6', '13-zone-7',
                     '18-zone-1', '18-zone-7']
   levels: [['Block_3', 'Block_2'], ['Block_2', 'Block_1'], ['Block_2', 'Block_0']]
-  seed: [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
 tasks:
   - solver: 'cp_bool'
     solve_time_limits: [[600], [1800]]
 
-  # hyptothetically where MIP would go
+  - solver: 'mip'
+    solve_time_limits: [[600], [1800]]
 
   - solver: 'recom'
     workers: 1
@@ -52,11 +53,15 @@ tasks:
     workers: 1
     solve_time_limits: [[600], [1800]]
 
+  # where we will put "adaptive short bursts recom"
+
   - solver: 'cp_bool'
     strategy: 'recursive'
     solve_time_limits: [[450, 150], [1350, 450]]
 
-  # hyptothetically where mip recursive would go
+  - solver: 'mip'
+    strategy: 'recursive'
+    solve_time_limits: [[450, 150], [1350, 450]]
 
 execution:
   output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_5'
