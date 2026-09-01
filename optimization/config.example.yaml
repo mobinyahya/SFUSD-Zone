@@ -16,7 +16,7 @@ frl_dev: 0.3
 racial_dev: 0.3
 overage: 0.8                     # negative disables maximum seats/student bound
 shortage: 0.2                    # negative disables minimum seats/student bound
-max_distance: 5                  # miles, or 'auto' (maximum distance to closest centroid)
+max_distance: 5                  # miles, or 'auto' (1.2x maximum distance to closest centroid)
 # CP/MIP: force each centroid's graph-hop neighborhood into its zone.
 # cp_single_zone additionally excludes other schools' graph-hop neighborhoods.
 centroid_neighbor_radius: 0

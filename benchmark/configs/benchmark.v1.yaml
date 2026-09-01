@@ -29,8 +29,8 @@ optimization_defaults:
 
 sweep:
   centroids_type: ['6-zone-9', '8-zone-22', '10-zone-3',  '13-zone-6', '18-zone-1']
-  levels: ['Block_0', 'Block_1', 'Block_2']
-  solve_time_limits: [600, 1800]
+  levels: [['Block_2'], ['Block_1'], ['Block_0']]
+  solve_time_limits: [[600], [1800]]
 
 tasks:
   - solver: 'cp_bool'
@@ -48,7 +48,7 @@ tasks:
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_3'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_4'
   skip_existing: true
   rerun_failed: true
   sequential: false

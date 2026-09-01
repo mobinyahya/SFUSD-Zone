@@ -74,9 +74,9 @@ class ZoneProblem:
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
         that centroid's zone. Can also be set to ``"auto"`` to automatically
-        use the maximum distance to the closest centroid across all geography
-        units. Nodes marked ``max_distance_exempt`` are candidates for every zone
-        regardless of distance.
+        use 1.2x the maximum distance to the closest centroid across all
+        geography units. Nodes marked ``max_distance_exempt`` are candidates
+        for every zone regardless of distance.
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
@@ -134,7 +134,8 @@ class ZoneProblem:
         if isinstance(self.max_distance, str) and self.max_distance.strip().lower() == "auto":
             if self.centroids and self.G.number_of_nodes() > 0:
                 self.max_distance = float(
-                    max(
+                    1.2
+                    * max(
                         min(self.distance(centroid, node) for centroid in self.centroids)
                         for node in self.G.nodes()
                     )
