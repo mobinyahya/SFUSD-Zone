@@ -6,7 +6,7 @@ centroids_type: '6-zone-9'
 # Levels are coarse -> fine. One entry = single-shot; several = recursive.
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
-solver: 'cp_int'               # cp_int | cp_bool | cp_single_zone | mip | recom | relaxed_recom | short_bursts
+solver: 'cp_bool'               # cp_bool | cp_int | cp_single_zone | mip | recom | relaxed_recom | short_bursts | adaptive_short_bursts
 strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp | saa
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # saa requires solver: cp_bool or mip.

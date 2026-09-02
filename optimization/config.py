@@ -70,6 +70,8 @@ class OptimizationConfig:
     recom_iterations: int = 1000
     short_bursts_length: int = 25
     short_bursts_method: str = "recom"
+    adaptive_short_bursts_lr: float = 0.1
+    adaptive_short_bursts_temperature: float = 1.0
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0
@@ -267,6 +269,10 @@ class OptimizationConfig:
             raise ValueError(
                 "short_bursts_method must be one of: recom, relaxed_recom."
             )
+        if self.adaptive_short_bursts_lr <= 0:
+            raise ValueError("adaptive_short_bursts_lr must be positive.")
+        if self.adaptive_short_bursts_temperature <= 0:
+            raise ValueError("adaptive_short_bursts_temperature must be positive.")
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings
@@ -372,6 +378,8 @@ class OptimizationConfig:
             "recom_iterations": self.recom_iterations,
             "short_bursts_length": self.short_bursts_length,
             "short_bursts_method": self.short_bursts_method,
+            "adaptive_short_bursts_lr": self.adaptive_short_bursts_lr,
+            "adaptive_short_bursts_temperature": self.adaptive_short_bursts_temperature,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir

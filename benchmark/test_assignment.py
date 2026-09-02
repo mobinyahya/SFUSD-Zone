@@ -79,7 +79,7 @@ def test_resolver_injects_generated_zones_after_every_policy(tmp_path):
         assert config["subconfigs"] == []
         assert config["policies"] == [GENERATED_ZONE_POLICY]
         assert config["zone-building-blocks"] == "block_group"
-        assert config["reuse_assignments"] is False
+        assert config["reuse_assignments"] is True
         assert config["data"]["overrides"]["sources"]["assignment.zones"][
             GENERATED_ZONE_POLICY
         ] == str(zone_file.resolve())

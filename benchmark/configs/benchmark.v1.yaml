@@ -53,7 +53,9 @@ tasks:
     workers: 1
     solve_time_limits: [[600], [1800]]
 
-  # where we will put "adaptive short bursts recom"
+  - solver: 'adaptive_short_bursts'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
 
   - solver: 'cp_bool'
     strategy: 'recursive'

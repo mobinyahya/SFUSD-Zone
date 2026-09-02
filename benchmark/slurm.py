@@ -18,6 +18,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from benchmark.config import (
     BenchmarkTask,
+    ExecutionConfig,
     MatchingRunConfig,
     MetricsRunConfig,
     SimulationSweep,
@@ -27,9 +28,13 @@ from benchmark.config import (
 )
 from benchmark.results import aggregate_results
 from benchmark.runner import (
+    MANIFEST_FILENAME,
+    RESULT_FILENAME,
     TaskResult,
+    _valid_existing_result,
     evaluate_optimization_task,
     run_optimization_phase,
+    valid_existing_result,
     write_json,
 )
 
@@ -67,6 +72,7 @@ class SlurmPlan:
     visualization: VisualizationRunConfig = VisualizationRunConfig()
     matching: MatchingRunConfig = MatchingRunConfig()
     assignment_plan_path: str | None = None
+    execution: ExecutionConfig = ExecutionConfig()
     schema_version: int = PLAN_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -82,6 +88,7 @@ class SlurmPlan:
                 "visualization": asdict(self.visualization),
                 "matching": asdict(self.matching),
                 "assignment_plan_path": self.assignment_plan_path,
+                "execution": asdict(self.execution),
                 "tasks": [asdict(task) for task in self.tasks],
             }
         )
@@ -120,6 +127,7 @@ class SlurmPlan:
                 if value.get("assignment_plan_path")
                 else None
             ),
+            execution=ExecutionConfig.from_dict(value.get("execution")),
         )
         _validate_plan(plan)
         return plan
@@ -151,10 +159,20 @@ def create_plan(config_path: str) -> SlurmPlan:
     sweep = SimulationSweep.from_yaml(str(source_config))
     _validate_sweep(sweep)
     output_root = Path(sweep.execution.output_dir).expanduser().resolve()
-    tasks = [
+    all_tasks = [
         replace(task, output_dir=str(Path(task.output_dir).expanduser().resolve()))
         for task in sweep.generate_tasks()
     ]
+    if not all_tasks:
+        raise ValueError("Slurm benchmark plan contains no tasks.")
+    if sweep.execution.skip_existing:
+        tasks = [
+            task
+            for task in all_tasks
+            if not _valid_existing_result(task, sweep.execution)
+        ]
+    else:
+        tasks = all_tasks
     assignment_plan_path = None
     if sweep.matching.enabled:
         from assignment.run_custom_config import load_custom_config
@@ -170,7 +188,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         metrics_jobs = MAX_DOWNSTREAM_METRICS_JOBS if metrics_enabled else 0
         _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
             sweep.matching.config,
-            _assignment_targets(tasks, sweep.matching),
+            _assignment_targets(all_tasks, sweep.matching),
             assignment_folder=output_root / "assignments",
             plan_dir=output_root / SLURM_DIRNAME / "assignment",
             max_assignment_jobs=assignment_jobs,
@@ -189,6 +207,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         visualization=sweep.visualization,
         matching=sweep.matching,
         assignment_plan_path=assignment_plan_path,
+        execution=sweep.execution,
     )
     _validate_plan(plan)
     return plan
@@ -261,6 +280,8 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
             command.extend(["--upstream-job-id", f'"${{benchmark_job_{index}}}"'])
         lines.append(" ".join(command))
         lines.append("")
+    elif not allocations:
+        lines.append('printf "%s\\n" "All benchmark tasks completed; no jobs to submit."')
     return "\n".join(lines)
 
 
@@ -318,7 +339,17 @@ def submit_plan(
     return submitted
 
 
-def _run_optimization_task(task: BenchmarkTask) -> TaskResult:
+def _run_optimization_task(
+    task: BenchmarkTask,
+    execution: ExecutionConfig | None = None,
+) -> TaskResult:
+    if execution and execution.skip_existing and _valid_existing_result(task, execution):
+        return TaskResult(
+            task_id=task.task_id,
+            output_dir=task.output_dir,
+            status="SKIPPED",
+            skipped=True,
+        )
     return run_optimization_phase(task)
 
 
@@ -328,7 +359,15 @@ def _run_evaluation_task(
     compute_stage_metrics: bool,
     matching: MatchingRunConfig,
     visualization: VisualizationRunConfig,
+    execution: ExecutionConfig | None = None,
 ) -> TaskResult:
+    if execution and execution.skip_existing and _valid_existing_result(task, execution):
+        return TaskResult(
+            task_id=task.task_id,
+            output_dir=task.output_dir,
+            status="SKIPPED",
+            skipped=True,
+        )
     return evaluate_optimization_task(
         task,
         strict_metrics=strict_metrics,
@@ -353,7 +392,11 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
             max_workers=allocation.cpus // allocation.task_cpus
         ) as executor:
             futures = {
-                executor.submit(_run_optimization_task, _task_at(plan, index)): index
+                executor.submit(
+                    _run_optimization_task,
+                    _task_at(plan, index),
+                    plan.execution,
+                ): index
                 for index in allocation.task_indices
             }
             for future in as_completed(futures):
@@ -375,6 +418,7 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
                     plan.metrics.compute_stage_metrics,
                     plan.matching,
                     plan.visualization,
+                    plan.execution,
                 ): index
                 for index in allocation.task_indices
             }
@@ -418,7 +462,11 @@ def _validate_plan(plan: SlurmPlan) -> None:
         raise ValueError("Slurm plan output_root must be absolute.")
     if not Path(plan.project_root).is_absolute():
         raise ValueError("Slurm plan project_root must be absolute.")
-    if not plan.tasks:
+    if (
+        not plan.tasks
+        and not plan.assignment_plan_path
+        and not (plan.execution and plan.execution.skip_existing)
+    ):
         raise ValueError("Slurm benchmark plan contains no tasks.")
     if (
         plan.visualization.artifact_dir
@@ -477,6 +525,8 @@ def _split_indices(indices: list[int], count: int) -> list[tuple[int, ...]]:
 
 
 def _plan_allocations(plan: SlurmPlan) -> list[SlurmAllocation]:
+    if not plan.tasks:
+        return []
     groups: dict[int, list[int]] = defaultdict(list)
     for index, task in enumerate(plan.tasks):
         groups[_optimization_cpus(task)].append(index)
@@ -814,11 +864,27 @@ def main(argv: list[str] | None = None) -> int:
                     f"across {len(assignment_plan['jobs'])} Slurm jobs"
                 )
             if args.command == "submit":
-                submitted = submit_plan(plan, plan_path, sbatch=args.sbatch)
-                for job in submitted:
-                    print(
-                        f"allocation {job.allocation_index}: {job.phase}={job.job_id}"
+                if not plan.tasks and not plan.assignment_plan_path:
+                    print("All benchmark tasks already completed; no jobs submitted.")
+                    aggregate_results(
+                        plan.output_root,
+                        summary_csv=plan.metrics.summary_csv,
+                        stages_csv=plan.metrics.stages_csv,
                     )
+                    return 0
+                submitted = submit_plan(plan, plan_path, sbatch=args.sbatch)
+                if not submitted:
+                    print("All benchmark tasks already completed; no jobs submitted.")
+                    aggregate_results(
+                        plan.output_root,
+                        summary_csv=plan.metrics.summary_csv,
+                        stages_csv=plan.metrics.stages_csv,
+                    )
+                else:
+                    for job in submitted:
+                        print(
+                            f"allocation {job.allocation_index}: {job.phase}={job.job_id}"
+                        )
             return 0
         if args.command == "worker-allocation":
             return run_benchmark_worker(args.plan, args.allocation_index)

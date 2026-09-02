@@ -15,6 +15,7 @@ from optimization.config import OptimizationConfig
 from optimization.solution import ZoneSolution, graph_fingerprint
 from benchmark.config import (
     BenchmarkTask,
+    ExecutionConfig,
     MatchingRunConfig,
     VisualizationRunConfig,
     config_snapshot,
@@ -27,6 +28,30 @@ from metrics import MetricsCalculator
 SCHEMA_VERSION = 1
 MANIFEST_FILENAME = "benchmark_manifest.json"
 RESULT_FILENAME = "result.json"
+
+
+def valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:
+    """Check if task output contains a valid completed manifest and result."""
+    manifest_path = os.path.join(os.path.expanduser(task.output_dir), MANIFEST_FILENAME)
+    result_path = os.path.join(os.path.expanduser(task.output_dir), RESULT_FILENAME)
+    if not os.path.exists(manifest_path) or not os.path.exists(result_path):
+        return False
+    try:
+        manifest = load_manifest(task.output_dir)
+    except Exception:
+        return False
+    if manifest.get("config_hash") != task.config_hash:
+        return False
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        return False
+    if manifest.get("phase") == "optimization":
+        return False
+    if manifest.get("status") == "ERROR" and execution.rerun_failed:
+        return False
+    return True
+
+
+_valid_existing_result = valid_existing_result
 
 
 @dataclass(frozen=True)

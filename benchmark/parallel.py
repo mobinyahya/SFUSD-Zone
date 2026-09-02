@@ -19,8 +19,10 @@ from benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
     TaskResult,
+    _valid_existing_result,
     load_manifest,
     run_optimization_task,
+    valid_existing_result,
 )
 
 
@@ -224,26 +226,6 @@ def _worker_run_task(
         compute_stage_metrics=compute_stage_metrics,
         visualization=visualization,
     )
-
-
-def _valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:
-    manifest_path = os.path.join(os.path.expanduser(task.output_dir), MANIFEST_FILENAME)
-    result_path = os.path.join(os.path.expanduser(task.output_dir), RESULT_FILENAME)
-    if not os.path.exists(manifest_path) or not os.path.exists(result_path):
-        return False
-    try:
-        manifest = load_manifest(task.output_dir)
-    except Exception:
-        return False
-    if manifest.get("config_hash") != task.config_hash:
-        return False
-    if manifest.get("schema_version") != 1:
-        return False
-    if manifest.get("phase") == "optimization":
-        return False
-    if manifest.get("status") == "ERROR" and execution.rerun_failed:
-        return False
-    return True
 
 
 def _first_task_that_fits(

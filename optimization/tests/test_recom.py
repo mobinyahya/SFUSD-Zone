@@ -14,6 +14,7 @@ from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
 from optimization.solvers.recom import (
+    _AdamOptimizer,
     _CutCandidate,
     _DynamicMaxNormalizer,
     _ReComContext,
@@ -22,7 +23,7 @@ from optimization.solvers.recom import (
 )
 from optimization.tests.synthetic import make_grid_problem, make_solver_contract_problem
 
-RECOM_SOLVERS = ("recom", "relaxed_recom", "short_bursts")
+RECOM_SOLVERS = ("recom", "relaxed_recom", "short_bursts", "adaptive_short_bursts")
 
 
 def test_recom_solvers_are_registered() -> None:
@@ -425,3 +426,151 @@ def _assert_valid_recom_solution(problem, solution) -> None:
         weight_edges=problem.weight_edges,
     )
     assert solution.is_contiguous()
+
+
+def test_adaptive_short_bursts_alias_registration() -> None:
+    assert "adaptive_short_bursts" in available_solvers()
+    assert "adapative_short_bursts" in available_solvers()
+    s1 = get_solver("adaptive_short_bursts")
+    s2 = get_solver("adapative_short_bursts")
+    assert type(s1) is type(s2)
+
+
+def test_config_passes_adaptive_short_bursts_options() -> None:
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="adaptive_short_bursts",
+        recom_iterations=100,
+        short_bursts_length=10,
+        adaptive_short_bursts_lr=0.05,
+        adaptive_short_bursts_temperature=2.0,
+    )
+    solver = config.make_solver()
+    assert solver.options["adaptive_short_bursts_lr"] == 0.05
+    assert solver.options["adaptive_short_bursts_temperature"] == 2.0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("adaptive_short_bursts_lr", 0.0),
+        ("adaptive_short_bursts_lr", -0.1),
+        ("adaptive_short_bursts_temperature", 0.0),
+        ("adaptive_short_bursts_temperature", -1.0),
+    ],
+)
+def test_config_rejects_invalid_adaptive_short_bursts_options(
+    field: str, value: float
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="adaptive_short_bursts",
+            **{field: value},
+        )
+
+
+def test_normalized_fractional_violations_scaled_by_100() -> None:
+    problem = make_grid_problem(2, 2, shortage=0.0, overage=0.0)
+    problem.G.nodes[0]["ge_students"] = 100.0
+    context_unnorm = _ReComContext(problem, normalize_fractional=False)
+    context_norm = _ReComContext(problem, normalize_fractional=True)
+
+    state_unnorm = context_unnorm.build_state([0, 0, 1, 1])
+    state_norm = context_norm.build_state([0, 0, 1, 1])
+
+    # In zone 0, students = 101, capacity = 2, shortage bound requires 101 seats
+    # Unnorm capacity shortage violation = 99.0
+    # Norm capacity shortage percentage violation = (99 / 101) * 100.0
+    unnorm_cap = state_unnorm.zone_violations[0][0]
+    norm_cap = state_norm.zone_violations[0][0]
+    assert unnorm_cap == pytest.approx(99.0)
+    assert norm_cap == pytest.approx((99.0 / 101.0) * 100.0)
+
+    # School count violation should be scaled as percentage of target schools (times 100)
+    if context_norm.average_schools > 0:
+        scale_schools = 100.0 / context_norm.average_schools
+        assert state_norm.zone_violations[0][-1] == pytest.approx(
+            state_unnorm.zone_violations[0][-1] * scale_schools
+        )
+        assert state_norm.zone_violations[0][-2] == pytest.approx(
+            state_unnorm.zone_violations[0][-2] * scale_schools
+        )
+
+
+def test_feasible_results_have_zero_violation() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
+    context_norm = _ReComContext(problem, normalize_fractional=True)
+    state = context_norm.build_state([0, 0, 1, 1])
+    assert state.feasible
+    for v in state.violations:
+        assert v == pytest.approx(0.0)
+
+
+def test_adam_optimizer_updates_eta_on_violations() -> None:
+    adam = _AdamOptimizer(size=2, lr=0.1, initial_eta=1.0)
+    assert adam.eta == [1.0, 1.0]
+
+    # With zero gradient, eta remains 1.0
+    eta_zero = adam.step((0.0, 0.0))
+    assert eta_zero[0] == pytest.approx(1.0)
+    assert eta_zero[1] == pytest.approx(1.0)
+
+    # With positive violation (gradient > 0), eta increases
+    eta_updated = adam.step((4.0, 0.0))
+    assert eta_updated[0] > 1.0
+    assert eta_updated[1] == pytest.approx(1.0)
+
+
+def test_adaptive_cut_probabilities_softmax() -> None:
+    c1 = _CutCandidate(
+        tin=0,
+        size=1,
+        subtree_to_a=True,
+        stats_a=_ZoneStats(1, 1.0, (1.0,), 1.0, 0),
+        stats_b=_ZoneStats(1, 1.0, (1.0,), 1.0, 0),
+        violations_a=(0.0,),
+        violations_b=(0.0,),
+        global_violations=(0.0,),
+        boundary_cost=10,
+    )
+    c2 = _CutCandidate(
+        tin=1,
+        size=1,
+        subtree_to_a=False,
+        stats_a=_ZoneStats(1, 1.0, (1.0,), 1.0, 0),
+        stats_b=_ZoneStats(1, 1.0, (1.0,), 1.0, 0),
+        violations_a=(5.0,),
+        violations_b=(5.0,),
+        global_violations=(10.0,),
+        boundary_cost=20,
+    )
+    problem = make_grid_problem(2, 2)
+    context = _ReComContext(problem)
+    kernel = _ReComKernel(context, random.Random(42), deadline=None)
+
+    probs = kernel._adaptive_probabilities([c1, c2], weights=(1.0,), temperature=1.0)
+    assert len(probs) == 2
+    assert probs[0] > probs[1]
+    assert sum(probs) == pytest.approx(1.0)
+
+
+def test_adaptive_short_bursts_end_to_end_solve() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
+    solver = get_solver(
+        "adaptive_short_bursts",
+        recom_iterations=20,
+        short_bursts_length=5,
+        adam_lr=0.1,
+        softmax_temperature=1.0,
+        seed=123,
+    )
+    solution = solver.solve(problem)
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["cut_selector"] == "adaptive_lagrangian"
+    assert solution.metadata["short_bursts_length"] == 5
+    assert len(solution.metadata["final_weights"]) > 0
+    assert len(solution.metadata["final_eta"]) > 0
+    for w in solution.metadata["final_weights"]:
+        assert w >= 1.0
+    _assert_valid_recom_solution(problem, solution)

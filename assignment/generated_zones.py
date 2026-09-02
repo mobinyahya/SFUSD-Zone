@@ -256,7 +256,7 @@ def _inject_generated_zone(
     sources.setdefault("assignment.zones", {})[GENERATED_ZONE_POLICY] = str(zone_file)
     config["policies"] = [GENERATED_ZONE_POLICY]
     config["zone-building-blocks"] = zone_building_blocks
-    config["reuse_assignments"] = False
+    config["reuse_assignments"] = config.get("reuse_assignments", True)
 
 
 def _run_resolved_config(config: dict):

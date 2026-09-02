@@ -1025,3 +1025,119 @@ def test_metrics_only_fails_before_evaluation_when_input_is_missing(tmp_path):
     market._reset_aggregate_metric_reports.assert_not_called()
     market._record_assignment_metric_reports.assert_not_called()
     market._run_single_iteration_of_policy.assert_not_called()
+
+
+def test_assignment_batches_skips_completed_iterations_when_reuse_true(tmp_path):
+    subconfig_dir = tmp_path / "subconfig-1"
+    subconfig_dir.mkdir(parents=True)
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+
+    plan = {
+        "assignment_folder": str(tmp_path),
+        "subconfigs": [
+            {
+                "name": "subconfig-1",
+                "config": {
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 3},
+                    "reuse_assignments": True,
+                },
+            }
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": "subconfig-1",
+                "include_real_match": False,
+                "write_utility_output": False,
+            }
+        ],
+    }
+
+    batches = assignment_slurm._assignment_batches(
+        plan, {"task_indices": [0], "cpus": 2}
+    )
+    # Iteration 0 is complete, so only iterations 1 and 2 should be scheduled
+    scheduled_iterations = [it for _, iterations in batches for it in iterations]
+    assert scheduled_iterations == [1, 2]
+
+
+def test_assignment_batches_does_not_skip_when_reuse_false(tmp_path):
+    subconfig_dir = tmp_path / "subconfig-1"
+    subconfig_dir.mkdir(parents=True)
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+
+    plan = {
+        "assignment_folder": str(tmp_path),
+        "subconfigs": [
+            {
+                "name": "subconfig-1",
+                "config": {
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 3},
+                    "reuse_assignments": False,
+                },
+            }
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": "subconfig-1",
+                "include_real_match": False,
+                "write_utility_output": False,
+            }
+        ],
+    }
+
+    batches = assignment_slurm._assignment_batches(
+        plan, {"task_indices": [0], "cpus": 2}
+    )
+    scheduled_iterations = [it for _, iterations in batches for it in iterations]
+    assert scheduled_iterations == [0, 1, 2]
+
+
+def test_run_cached_assignment_batch_returns_empty_when_all_iterations_done(tmp_path, monkeypatch):
+    subconfig_dir = tmp_path / "subconfig-1"
+    subconfig_dir.mkdir(parents=True)
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+    (subconfig_dir / "policy_variant_iteration1.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+
+    worker_plan = {
+        "assignment_folder": str(tmp_path),
+        "subconfigs": [
+            {
+                "name": "subconfig-1",
+                "config": {
+                    "policies": ["zones"],
+                    "iterations": {"start": 0, "end": 2},
+                    "reuse_assignments": True,
+                },
+            }
+        ],
+        "assignment_tasks": [
+            {
+                "subconfig": "subconfig-1",
+                "include_real_match": False,
+                "write_utility_output": False,
+            }
+        ],
+    }
+    monkeypatch.setattr(assignment_slurm, "_WORKER_PLAN", worker_plan)
+
+    def fail_market(*args, **kwargs):
+        pytest.fail("Market should not be initialized when iterations are done!")
+
+    monkeypatch.setattr(assignment_slurm, "_market_for_subconfig", fail_market)
+
+    result = assignment_slurm._run_cached_assignment_batch(0, [0, 1])
+    assert result == []
+
+
+def test_inject_generated_zone_preserves_reuse_assignments(tmp_path):
+    from assignment.generated_zones import _inject_generated_zone
+
+    config1 = {"reuse_assignments": True}
+    _inject_generated_zone(config1, tmp_path / "zone.csv", "block")
+    assert config1["reuse_assignments"] is True
+
+    config2 = {"reuse_assignments": False}
+    _inject_generated_zone(config2, tmp_path / "zone.csv", "block")
+    assert config2["reuse_assignments"] is False

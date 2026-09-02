@@ -202,8 +202,11 @@ class _DynamicMaxNormalizer:
 class _ReComContext:
     """Problem data converted to array-backed structures for hot loops."""
 
-    def __init__(self, problem: ZoneProblem) -> None:
+    def __init__(
+        self, problem: ZoneProblem, *, normalize_fractional: bool = False
+    ) -> None:
         self.problem = problem
+        self.normalize_fractional = normalize_fractional
         self.nodes = tuple(problem.nodes)
         self.node_to_pos = {node: idx for idx, node in enumerate(self.nodes)}
         self.zone_count = problem.Z
@@ -253,9 +256,10 @@ class _ReComContext:
 
         total_schools = sum(self.schools)
         if total_schools > 0:
-            average = total_schools / self.zone_count
-            self.school_bounds = (max(0.0, average - 1.0), average + 1.0)
+            self.average_schools = total_schools / self.zone_count
+            self.school_bounds = (max(0.0, self.average_schools - 1.0), self.average_schools + 1.0)
         else:
+            self.average_schools = 0.0
             self.school_bounds = None
 
         all_zones = frozenset(range(self.zone_count))
@@ -287,13 +291,28 @@ class _ReComContext:
         violations: list[float] = []
         for value, row in zip(stats.values, self.balance_rows, strict=True):
             if row.sense == "lower":
-                violations.append(max(0.0, row.ratio * stats.students - value))
+                raw_diff = row.ratio * stats.students - value
             else:
-                violations.append(max(0.0, value - row.ratio * stats.students))
+                raw_diff = value - row.ratio * stats.students
+
+            if self.normalize_fractional:
+                if stats.students > 0:
+                    violations.append(max(0.0, (raw_diff / stats.students) * 100.0))
+                else:
+                    violations.append(0.0 if value == 0 else 100.0)
+            else:
+                violations.append(max(0.0, raw_diff))
+
         if self.school_bounds is not None:
             lower, upper = self.school_bounds
-            violations.append(max(0.0, lower - stats.schools))
-            violations.append(max(0.0, stats.schools - upper))
+            diff_lower = max(0.0, lower - stats.schools)
+            diff_upper = max(0.0, stats.schools - upper)
+            if self.normalize_fractional and self.average_schools > _EPS:
+                violations.append((diff_lower / self.average_schools) * 100.0)
+                violations.append((diff_upper / self.average_schools) * 100.0)
+            else:
+                violations.append(diff_lower)
+                violations.append(diff_upper)
         return tuple(violations)
 
     def build_state(self, assignment: list[int]) -> _State:
@@ -431,7 +450,14 @@ class _ReComKernel:
         self.deadline = deadline
         self._deadline_checks = 0
 
-    def propose(self, state: _State, selector: str) -> _Move:
+    def propose(
+        self,
+        state: _State,
+        selector: str,
+        *,
+        lagrangian_weights: tuple[float, ...] | None = None,
+        temperature: float = 1.0,
+    ) -> _Move:
         adjacent_pairs = sorted(
             pair for pair, count in state.boundary_pairs.items() if count > 0
         )
@@ -462,6 +488,17 @@ class _ReComKernel:
         elif selector == "relaxed":
             probabilities = self._relaxed_probabilities(pool)
             selected = self.rng.choices(pool, weights=probabilities, k=1)[0]
+        elif selector == "adaptive":
+            if lagrangian_weights is None:
+                raise ValueError(
+                    "lagrangian_weights must be supplied for adaptive selector."
+                )
+            probabilities = self._adaptive_probabilities(
+                candidates,
+                weights=lagrangian_weights,
+                temperature=temperature,
+            )
+            selected = self.rng.choices(candidates, weights=probabilities, k=1)[0]
         else:  # pragma: no cover - guarded by config/class callers
             raise ValueError(f"Unknown ReCom cut selector {selector!r}.")
 
@@ -852,6 +889,44 @@ class _ReComKernel:
         }
         return metrics
 
+    def _adaptive_probabilities(
+        self,
+        candidates: list[_CutCandidate],
+        weights: tuple[float, ...],
+        temperature: float = 1.0,
+    ) -> list[float]:
+        temp = max(_EPS, float(temperature))
+        log_weights = [
+            -(
+                float(c.boundary_cost)
+                + sum(w * (v ** 2) for w, v in zip(weights, c.global_violations))
+            )
+            / temp
+            for c in candidates
+        ]
+        positive_infinity = [
+            idx for idx, value in enumerate(log_weights) if value == float("inf")
+        ]
+        if positive_infinity:
+            probability = 1.0 / len(positive_infinity)
+            return [
+                probability if idx in positive_infinity else 0.0
+                for idx in range(len(candidates))
+            ]
+
+        finite = [val for val in log_weights if math.isfinite(val)]
+        if not finite:
+            return [1.0 / len(candidates)] * len(candidates)
+        maximum = max(finite)
+        unnorm_weights = [
+            math.exp(val - maximum) if math.isfinite(val) else 0.0
+            for val in log_weights
+        ]
+        total = sum(unnorm_weights)
+        if not math.isfinite(total) or total <= 0:
+            return [1.0 / len(candidates)] * len(candidates)
+        return [w / total for w in unnorm_weights]
+
     def _check_deadline(self) -> None:
         if self.deadline is None:
             return
@@ -860,9 +935,53 @@ class _ReComKernel:
             raise _DeadlineReached
 
 
+class _AdamOptimizer:
+    """Standard Adam optimizer for dual variable ascent on eta."""
+
+    def __init__(
+        self,
+        size: int,
+        lr: float = 0.1,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
+        eps: float = 1e-8,
+        initial_eta: float = 1.0,
+    ) -> None:
+        self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.eps = eps
+        self.eta = [float(initial_eta)] * size
+        self.m = [0.0] * size
+        self.v = [0.0] * size
+        self.t = 0
+
+    def step(self, grads: tuple[float, ...]) -> tuple[float, ...]:
+        self.t += 1
+        b1, b2 = self.beta1, self.beta2
+        lr, eps = self.lr, self.eps
+        bias_corr1 = 1.0 - (b1 ** self.t)
+        bias_corr2 = 1.0 - (b2 ** self.t)
+        for idx, g in enumerate(grads):
+            self.m[idx] = b1 * self.m[idx] + (1.0 - b1) * g
+            self.v[idx] = b2 * self.v[idx] + (1.0 - b2) * (g * g)
+            m_hat = self.m[idx] / bias_corr1
+            v_hat = self.v[idx] / bias_corr2
+            self.eta[idx] = max(
+                0.0, self.eta[idx] + lr * m_hat / (math.sqrt(v_hat) + eps)
+            )
+        return tuple(self.eta)
+
+
 class _ReComSolverBase(Solver):
-    def _initialize(self, problem: ZoneProblem, start: float) -> _Setup:
-        context = _ReComContext(problem)
+    def _initialize(
+        self,
+        problem: ZoneProblem,
+        start: float,
+        *,
+        normalize_fractional: bool = False,
+    ) -> _Setup:
+        context = _ReComContext(problem, normalize_fractional=normalize_fractional)
         if problem.hint is not None:
             hint = problem.hint
             hint_metadata = {"hints": "provided", "hint_source": "problem_hint"}
@@ -1186,6 +1305,184 @@ class ShortBurstsSolver(_ReComSolverBase):
             "cut_selector": selector,
             "tree_sampler": "wilson_uniform",
             "tree_count_approximation": "exp_cycle_rank",
+        }
+        return self._result(problem, context, start, best_feasible, metadata)
+
+
+@register("adaptive_short_bursts")
+@register("adapative_short_bursts")
+class AdaptiveShortBurstsSolver(_ReComSolverBase):
+    """Adaptive Lagrangian ReCom walks with short-burst restarts and Adam-tuned dual multipliers."""
+
+    def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        self._check_choice_objective(problem, self.name)
+        start = time.monotonic()
+        try:
+            setup = self._initialize(problem, start, normalize_fractional=True)
+        except _HintError as exc:
+            return self._error_solution(problem, start, str(exc))
+
+        burst_length = int(self.options.get("short_bursts_length", 25))
+        if burst_length <= 0:
+            raise ValueError("short_bursts_length must be positive.")
+
+        adam_lr = float(
+            self.options.get(
+                "adam_lr", self.options.get("adaptive_short_bursts_lr", 0.1)
+            )
+        )
+        adam_beta1 = float(self.options.get("adam_beta1", 0.9))
+        adam_beta2 = float(self.options.get("adam_beta2", 0.999))
+        adam_eps = float(self.options.get("adam_eps", 1e-8))
+        initial_eta = float(self.options.get("initial_eta", 1.0))
+        temperature = float(
+            self.options.get(
+                "softmax_temperature",
+                self.options.get("adaptive_short_bursts_temperature", 1.0),
+            )
+        )
+
+        context = setup.context
+        current = setup.state
+        kernel = _ReComKernel(context, setup.rng, setup.deadline)
+        normalizer = _DynamicMaxNormalizer(context.violation_count)
+        adam = _AdamOptimizer(
+            size=context.violation_count,
+            lr=adam_lr,
+            beta1=adam_beta1,
+            beta2=adam_beta2,
+            eps=adam_eps,
+            initial_eta=initial_eta,
+        )
+
+        initial = self._snapshot(current)
+        normalizer.observe(initial.violations)
+        best_feasible = initial if initial.feasible else None
+        time_to_first_feasible = 0.0 if initial.feasible else None
+        stop_on_feasible = bool(self.options.get("stop_on_feasible", False))
+        verbose = bool(self.options.get("verbose", False))
+        if stop_on_feasible and best_feasible is not None:
+            stop_reason = "initial_feasible"
+
+        # Start each constraint violation having a weight of 1
+        weights = [1.0] * context.violation_count
+        eta = [initial_eta] * context.violation_count
+
+        attempted = 0
+        accepted = 0
+        proposal_failures = 0
+        completed_bursts = 0
+        selected_improvements = 0
+        stop_reason = "iteration_limit" if not (stop_on_feasible and best_feasible is not None) else "initial_feasible"
+
+        while (
+            not (stop_on_feasible and best_feasible is not None)
+            and self._budget_available(attempted, setup.max_iterations, setup.deadline)
+        ):
+            base = self._snapshot(current)
+            walk = current.clone()
+            samples: list[_Snapshot] = []
+            remaining = burst_length
+            if setup.max_iterations is not None:
+                remaining = min(remaining, setup.max_iterations - attempted)
+
+            deadline_reached = False
+            no_adjacent_pairs = False
+            for _ in range(remaining):
+                if not self._budget_available(
+                    attempted, setup.max_iterations, setup.deadline
+                ):
+                    deadline_reached = True
+                    break
+                attempted += 1
+                try:
+                    move = kernel.propose(
+                        walk,
+                        "adaptive",
+                        lagrangian_weights=tuple(weights),
+                        temperature=temperature,
+                    )
+                except _DeadlineReached:
+                    deadline_reached = True
+                    break
+                except _NoProposal as exc:
+                    proposal_failures += 1
+                    if exc.reason == "no_adjacent_zone_pairs":
+                        no_adjacent_pairs = True
+                        break
+                    continue
+
+                kernel.apply(walk, move)
+                accepted += 1
+                snapshot = self._snapshot(walk)
+                normalizer.observe(snapshot.violations)
+                samples.append(snapshot)
+                if self._better_feasible(snapshot, best_feasible):
+                    if time_to_first_feasible is None and snapshot.feasible:
+                        time_to_first_feasible = time.monotonic() - start
+                    best_feasible = snapshot
+                    if stop_on_feasible:
+                        break
+
+            if stop_on_feasible and best_feasible is not None:
+                stop_reason = "feasible_found"
+                break
+
+            # Evaluate best candidate in the burst using current short bursts method
+            selected = base
+            for sample in samples:
+                if _burst_better(sample, selected, normalizer):
+                    selected = sample
+            if _burst_better(selected, base, normalizer):
+                current = context.build_state(list(selected.assignment))
+                selected_improvements += 1
+
+            # Update eta using Adam and update constraint weights: objective + eta * violation^2
+            obj = float(selected.boundary_cost)
+            grads = tuple(v ** 2 for v in selected.violations)
+            eta = list(adam.step(grads))
+            weights = [
+                max(1.0, obj + e * (v ** 2))
+                for e, v in zip(eta, selected.violations)
+            ]
+
+            if deadline_reached:
+                stop_reason = "time_limit"
+                break
+            if no_adjacent_pairs:
+                stop_reason = "no_adjacent_zone_pairs"
+                break
+            completed_bursts += 1
+            if verbose and (completed_bursts % 5 == 0 or best_feasible is not None):
+                elapsed_s = time.monotonic() - start
+                feas = best_feasible is not None
+                obj_s = f"{best_feasible.boundary_cost}" if feas else "None"
+                print(
+                    f"[Burst {completed_bursts}] elapsed={elapsed_s:.1f}s, attempted={attempted}, "
+                    f"feasible={feas}, best_obj={obj_s}, total_violation={sum(selected.violations):.2f}",
+                    flush=True,
+                )
+
+        if setup.deadline is not None and time.monotonic() >= setup.deadline:
+            stop_reason = "time_limit"
+
+        metadata = {
+            **setup.hint_metadata,
+            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "attempted_moves": attempted,
+            "accepted_moves": accepted,
+            "rejected_moves": 0,
+            "proposal_failures": proposal_failures,
+            "completed_bursts": completed_bursts,
+            "selected_burst_improvements": selected_improvements,
+            "short_bursts_length": burst_length,
+            "cut_selector": "adaptive_lagrangian",
+            "tree_sampler": "wilson_uniform",
+            "final_weights": tuple(float(w) for w in weights),
+            "final_eta": tuple(float(e) for e in eta),
+            "stop_reason": stop_reason,
+            "initial_feasible": initial.feasible,
+            "time_to_first_feasible": time_to_first_feasible,
         }
         return self._result(problem, context, start, best_feasible, metadata)
 

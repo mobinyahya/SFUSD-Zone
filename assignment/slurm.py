@@ -262,6 +262,7 @@ def build_slurm_plan(
     plan_dir: str | pathlib.Path | None = None,
     sample: str | None = None,
     frac: str | None = None,
+    skip_existing: bool = True,
     max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
     max_metrics_jobs: int = MAX_METRICS_JOBS,
 ) -> tuple[dict, pathlib.Path]:
@@ -274,6 +275,8 @@ def build_slurm_plan(
         assignment_folder=assignment_folder,
         absolute_assignment_folder=True,
     )
+    if not skip_existing:
+        config["reuse_assignments"] = False
     configurator = Configerator.from_config(config)
     subconfig_names = list(configurator.config.get("subconfigs", []))
     if not subconfig_names:
@@ -308,6 +311,8 @@ def build_slurm_plan(
         configurator.load_subconfig_by_name(name)
         subconfig = copy.deepcopy(configurator.config)
         subconfig["subconfigs"] = []
+        if not skip_existing:
+            subconfig["reuse_assignments"] = False
         subconfig["paths"]["assignment-folder"] = str(output_path)
         resolved_subconfigs.append({"name": name, "config": subconfig})
 
@@ -826,6 +831,26 @@ def _entry_is_skipped(entry: dict) -> bool:
     return bool(marker and pathlib.Path(marker).is_file())
 
 
+def _is_iteration_assignment_done(
+    entry: dict, assignment_folder: str | pathlib.Path, iteration: int
+) -> bool:
+    subconfig_dir = pathlib.Path(assignment_folder) / entry["name"]
+    if not subconfig_dir.is_dir():
+        return False
+    matches = list(subconfig_dir.glob(f"**/*_iteration{iteration}.csv"))
+    return bool(matches and any(m.is_file() and m.stat().st_size > 0 for m in matches))
+
+
+def _is_real_match_assignment_done(
+    entry: dict, assignment_folder: str | pathlib.Path
+) -> bool:
+    subconfig_dir = pathlib.Path(assignment_folder) / entry["name"]
+    if not subconfig_dir.is_dir():
+        return False
+    matches = list(subconfig_dir.glob("**/*real_match.csv"))
+    return bool(matches and any(m.is_file() and m.stat().st_size > 0 for m in matches))
+
+
 def _create_market(plan: dict, subconfig_name: str):
     from .student_assignment.market_generator.school_choice_market_generator import (
         MarketGenerator,
@@ -874,21 +899,51 @@ def _run_cached_assignment_batch(
     if _entry_is_skipped(entry):
         return []
 
-    first_iteration = _assignment_iterations(entry["config"])[0]
-    errors = []
+    config = entry["config"]
+    reuse = config.get("reuse_assignments", True)
+    assignment_folder = entry.get("assignment_folder") or (
+        _WORKER_PLAN.get("assignment_folder") if _WORKER_PLAN else None
+    )
+
+    first_iteration = _assignment_iterations(config)[0]
+    need_real_match = task["include_real_match"]
+    if (
+        reuse
+        and assignment_folder
+        and need_real_match
+        and _is_real_match_assignment_done(entry, assignment_folder)
+    ):
+        need_real_match = False
+
+    pending_iterations = []
     for iteration in iterations:
+        if (
+            reuse
+            and assignment_folder
+            and _is_iteration_assignment_done(entry, assignment_folder, iteration)
+        ):
+            continue
+        pending_iterations.append(iteration)
+
+    if not pending_iterations and not need_real_match:
+        return []
+
+    errors = []
+    for iteration in pending_iterations:
         try:
             market = _market_for_subconfig(_WORKER_PLAN, task["subconfig"])
             market.simulate_target(
                 entry["name"],
                 iteration,
                 include_real_match=(
-                    task["include_real_match"] and iteration == first_iteration
+                    need_real_match and iteration == first_iteration
                 ),
                 write_utility_output=(
                     task["write_utility_output"] and iteration == first_iteration
                 ),
             )
+            if need_real_match and iteration == first_iteration:
+                need_real_match = False
         except Exception as exc:
             errors.append((iteration, f"{type(exc).__name__}: {exc}"))
             _WORKER_MARKET_GENERATOR = None
@@ -901,7 +956,28 @@ def _assignment_batches(plan: dict, job: dict) -> list[tuple[int, list[int]]]:
     for task_index in job["task_indices"]:
         task = plan["assignment_tasks"][task_index]
         entry = _subconfig_entry(plan, task["subconfig"])
-        work.append((task_index, _assignment_iterations(entry["config"])))
+        if _entry_is_skipped(entry):
+            continue
+        all_iterations = _assignment_iterations(entry["config"])
+        reuse = entry["config"].get("reuse_assignments", True)
+        assignment_folder = entry.get("assignment_folder") or plan.get("assignment_folder")
+        if reuse and assignment_folder:
+            needed_iterations = [
+                it for it in all_iterations
+                if not _is_iteration_assignment_done(entry, assignment_folder, it)
+            ]
+            need_real = task["include_real_match"] and not _is_real_match_assignment_done(entry, assignment_folder)
+            if not needed_iterations and not need_real:
+                continue
+            if not needed_iterations and need_real:
+                needed_iterations = [all_iterations[0]]
+            iterations = needed_iterations
+        else:
+            iterations = all_iterations
+        work.append((task_index, iterations))
+
+    if not work:
+        return []
 
     batch_counts = [1] * len(work)
     target_batches = min(job["cpus"], sum(len(iterations) for _, iterations in work))
@@ -932,6 +1008,8 @@ def _assignment_batches(plan: dict, job: dict) -> list[tuple[int, list[int]]]:
 
 def _run_assignment_job(plan: dict, plan_path: pathlib.Path, job: dict) -> bool:
     batches = _assignment_batches(plan, job)
+    if not batches:
+        return False
     failed = False
     with ProcessPoolExecutor(
         max_workers=job["cpus"],
@@ -1173,6 +1251,11 @@ def run_job_worker(plan_path: str | pathlib.Path, job_id: str) -> int:
 def _plan_options(function):
     options = [
         click.option(
+            "--skip-existing/--no-skip-existing",
+            default=True,
+            help="Reuse existing completed assignments (default: True).",
+        ),
+        click.option(
             "--frac", default=None, help="Override the config's frac variable."
         ),
         click.option(
@@ -1208,7 +1291,9 @@ def cli() -> None:
 
 @cli.command("generate")
 @_plan_options
-def generate_command(config_path, assignment_folder, plan_dir, sample, frac) -> None:
+def generate_command(
+    config_path, assignment_folder, plan_dir, sample, frac, skip_existing
+) -> None:
     """Resolve a config and generate scripts without calling Slurm."""
     plan, plan_path = build_slurm_plan(
         config_path,
@@ -1216,6 +1301,7 @@ def generate_command(config_path, assignment_folder, plan_dir, sample, frac) -> 
         plan_dir=plan_dir,
         sample=sample,
         frac=frac,
+        skip_existing=skip_existing,
     )
     submit_path = write_slurm_scripts(plan_path)
     click.echo(
@@ -1229,7 +1315,9 @@ def generate_command(config_path, assignment_folder, plan_dir, sample, frac) -> 
 
 @cli.command("submit")
 @_plan_options
-def submit_command(config_path, assignment_folder, plan_dir, sample, frac) -> None:
+def submit_command(
+    config_path, assignment_folder, plan_dir, sample, frac, skip_existing
+) -> None:
     """Generate a plan and explicitly submit it with sbatch."""
     _plan, plan_path = build_slurm_plan(
         config_path,
@@ -1237,6 +1325,7 @@ def submit_command(config_path, assignment_folder, plan_dir, sample, frac) -> No
         plan_dir=plan_dir,
         sample=sample,
         frac=frac,
+        skip_existing=skip_existing,
     )
     submit_path = write_slurm_scripts(plan_path)
     submission_path = submit_slurm_plan(plan_path, script_dir=submit_path.parent)

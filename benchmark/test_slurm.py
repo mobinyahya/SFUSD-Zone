@@ -37,6 +37,7 @@ from benchmark.slurm import (
     submission_script,
     submit_plan,
     write_plan,
+    write_submission_script,
 )
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
@@ -619,3 +620,158 @@ def _assignment():
         7: 1,
         8: 1,
     }
+
+
+def test_create_plan_skips_existing_results(tmp_path, monkeypatch):
+    task1 = BenchmarkTask(
+        task_id="task-1",
+        config_hash="hash1",
+        config={"workers": 4},
+        output_dir=str(tmp_path / "task1"),
+        capacity_slots=4,
+    )
+    task2 = BenchmarkTask(
+        task_id="task-2",
+        config_hash="hash2",
+        config={"workers": 4},
+        output_dir=str(tmp_path / "task2"),
+        capacity_slots=4,
+    )
+
+    (tmp_path / "task1").mkdir(parents=True)
+    manifest1 = {
+        "schema_version": 1,
+        "config_hash": "hash1",
+        "phase": "complete",
+        "status": "FEASIBLE",
+    }
+    with open(tmp_path / "task1" / "benchmark_manifest.json", "w") as f:
+        json.dump(manifest1, f)
+    with open(tmp_path / "task1" / "result.json", "w") as f:
+        json.dump({"status": "FEASIBLE"}, f)
+
+    sweep = SimulationSweep(
+        name="test-skip",
+        mode="run",
+        execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=True),
+    )
+    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1, task2])
+
+    plan = create_plan(str(tmp_path / "sweep.yaml"))
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].task_id == "task-2"
+
+
+def test_create_plan_retains_all_tasks_when_skip_existing_false(tmp_path, monkeypatch):
+    task1 = BenchmarkTask(
+        task_id="task-1",
+        config_hash="hash1",
+        config={"workers": 4},
+        output_dir=str(tmp_path / "task1"),
+        capacity_slots=4,
+    )
+
+    (tmp_path / "task1").mkdir(parents=True)
+    manifest1 = {
+        "schema_version": 1,
+        "config_hash": "hash1",
+        "phase": "complete",
+        "status": "FEASIBLE",
+    }
+    with open(tmp_path / "task1" / "benchmark_manifest.json", "w") as f:
+        json.dump(manifest1, f)
+    with open(tmp_path / "task1" / "result.json", "w") as f:
+        json.dump({"status": "FEASIBLE"}, f)
+
+    sweep = SimulationSweep(
+        name="test-no-skip",
+        mode="run",
+        execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=False),
+    )
+    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1])
+
+    plan = create_plan(str(tmp_path / "sweep.yaml"))
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].task_id == "task-1"
+
+
+def test_create_plan_all_skipped_handles_zero_allocations(tmp_path, monkeypatch):
+    task1 = BenchmarkTask(
+        task_id="task-1",
+        config_hash="hash1",
+        config={"workers": 4},
+        output_dir=str(tmp_path / "task1"),
+        capacity_slots=4,
+    )
+
+    (tmp_path / "task1").mkdir(parents=True)
+    manifest1 = {
+        "schema_version": 1,
+        "config_hash": "hash1",
+        "phase": "complete",
+        "status": "FEASIBLE",
+    }
+    with open(tmp_path / "task1" / "benchmark_manifest.json", "w") as f:
+        json.dump(manifest1, f)
+    with open(tmp_path / "task1" / "result.json", "w") as f:
+        json.dump({"status": "FEASIBLE"}, f)
+
+    sweep = SimulationSweep(
+        name="test-all-skipped",
+        mode="run",
+        execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=True),
+    )
+    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1])
+
+    plan = create_plan(str(tmp_path / "sweep.yaml"))
+    assert len(plan.tasks) == 0
+    plan_path = write_plan(plan)
+    script_path = write_submission_script(plan, plan_path)
+    assert script_path.is_file()
+    assert "no jobs to submit" in script_path.read_text(encoding="utf-8")
+
+
+def test_run_benchmark_worker_skips_when_valid_existing_result(tmp_path, monkeypatch):
+    task = BenchmarkTask(
+        task_id="task-1",
+        config_hash="hash1",
+        config={"workers": 4},
+        output_dir=str(tmp_path / "task1"),
+        capacity_slots=4,
+    )
+    (tmp_path / "task1").mkdir(parents=True)
+    manifest1 = {
+        "schema_version": 1,
+        "config_hash": "hash1",
+        "phase": "complete",
+        "status": "FEASIBLE",
+    }
+    with open(tmp_path / "task1" / "benchmark_manifest.json", "w") as f:
+        json.dump(manifest1, f)
+    with open(tmp_path / "task1" / "result.json", "w") as f:
+        json.dump({"status": "FEASIBLE"}, f)
+
+    plan = SlurmPlan(
+        name="test-worker-skip",
+        created_at="2026-08-17T00:00:00+00:00",
+        source_config=str(tmp_path / "sweep.yaml"),
+        project_root=str(tmp_path),
+        output_root=str(tmp_path),
+        metrics=MetricsRunConfig(),
+        tasks=[task],
+        execution=ExecutionConfig(skip_existing=True),
+    )
+    plan_path = write_plan(plan)
+
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "4")
+
+    def fail_opt(t, execution=None):
+        pytest.fail("Optimization phase should have been skipped!")
+
+    monkeypatch.setattr("benchmark.slurm.run_optimization_phase", fail_opt)
+
+    exit_code = run_benchmark_worker(str(plan_path), allocation_index=0)
+    assert exit_code == 0
