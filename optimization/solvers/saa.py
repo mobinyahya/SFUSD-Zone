@@ -65,124 +65,125 @@ class SaaMipSolver(Solver):
         self.preprocessing_seconds = preprocessing_seconds
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
-        model = gp.Model("saa_zoning_master")
-        log_path = self._next_solver_log_path(problem)
-        if log_path:
-            model.Params.OutputFlag = 1
-            model.Params.LogToConsole = 0
-            model.Params.LogFile = log_path
-        else:
-            model.Params.OutputFlag = int(self.options.get("verbose", 0))
-        model.Params.TimeLimit = float(self.options.get("solve_time_limit", 60.0))
-        model.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
-        model.Params.Seed = int(self.options.get("seed", 42))
-        if "workers" in self.options:
-            model.Params.Threads = int(self.options["workers"])
+        with gp.Env() as env:
+            with gp.Model("saa_zoning_master", env=env) as model:
+                log_path = self._next_solver_log_path(problem)
+                if log_path:
+                    model.Params.OutputFlag = 1
+                    model.Params.LogToConsole = 0
+                    model.Params.LogFile = log_path
+                else:
+                    model.Params.OutputFlag = int(self.options.get("verbose", 0))
+                model.Params.TimeLimit = float(self.options.get("solve_time_limit", 60.0))
+                model.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
+                model.Params.Seed = int(self.options.get("seed", 42))
+                if "workers" in self.options:
+                    model.Params.Threads = int(self.options["workers"])
 
-        zoning = add_gurobi_zoning_geography(
-            model,
-            problem,
-            centroid_neighbor_radius=int(
-                self.options.get("centroid_neighbor_radius", 0)
-            ),
-        )
-        access, access_joint, fixed_access = _add_mip_access_variables(
-            model, self.market, problem, zoning
-        )
-        upper_bound = self.market.welfare_upper_bound
-        eta = {
-            sample_index: model.addVar(
-                lb=0.0,
-                ub=upper_bound,
-                vtype=GRB.CONTINUOUS,
-                name=f"saa_eta_{sample_index}",
-            )
-            for sample_index in range(len(self.samples))
-        }
-        for cut_index, cut in enumerate(self.cuts):
-            expression = cut.constant + gp.quicksum(
-                coefficient * access[pair] for pair, coefficient in cut.coefficients
-            )
-            model.addConstr(
-                eta[cut.sample_index] <= expression,
-                name=f"saa_cut_{cut.sample_index}_{cut_index}",
-            )
-        model.setObjective(gp.quicksum(eta.values()) / len(self.samples), GRB.MAXIMIZE)
-        _add_mip_hints(problem, zoning, access, access_joint)
+                zoning = add_gurobi_zoning_geography(
+                    model,
+                    problem,
+                    centroid_neighbor_radius=int(
+                        self.options.get("centroid_neighbor_radius", 0)
+                    ),
+                )
+                access, access_joint, fixed_access = _add_mip_access_variables(
+                    model, self.market, problem, zoning
+                )
+                upper_bound = self.market.welfare_upper_bound
+                eta = {
+                    sample_index: model.addVar(
+                        lb=0.0,
+                        ub=upper_bound,
+                        vtype=GRB.CONTINUOUS,
+                        name=f"saa_eta_{sample_index}",
+                    )
+                    for sample_index in range(len(self.samples))
+                }
+                for cut_index, cut in enumerate(self.cuts):
+                    expression = cut.constant + gp.quicksum(
+                        coefficient * access[pair] for pair, coefficient in cut.coefficients
+                    )
+                    model.addConstr(
+                        eta[cut.sample_index] <= expression,
+                        name=f"saa_cut_{cut.sample_index}_{cut_index}",
+                    )
+                model.setObjective(gp.quicksum(eta.values()) / len(self.samples), GRB.MAXIMIZE)
+                _add_mip_hints(problem, zoning, access, access_joint)
 
-        progress = self._new_solver_progress_tracker(problem, maximize=True)
-        start = time.time()
-        if progress is None:
-            model.optimize()
-        else:
-            variables, node_slices = _mip_progress_capture_data(problem, zoning)
+                progress = self._new_solver_progress_tracker(problem, maximize=True)
+                start = time.time()
+                if progress is None:
+                    model.optimize()
+                else:
+                    variables, node_slices = _mip_progress_capture_data(problem, zoning)
 
-            def progress_callback(callback_model, where):
-                if where != GRB.Callback.MIPSOL:
-                    return
-                objective = callback_model.cbGet(GRB.Callback.MIPSOL_OBJ)
-                if not progress.is_improvement(objective):
-                    return
-                values = callback_model.cbGetSolution(variables)
-                assignment = []
-                for offset, count, zones in node_slices:
-                    selected = zones[0]
-                    best_value = values[offset]
-                    for index in range(1, count):
-                        value = values[offset + index]
-                        if value > best_value:
-                            selected = zones[index]
-                            best_value = value
-                    assignment.append(selected)
-                progress.add(objective, time.time() - start, tuple(assignment))
+                    def progress_callback(callback_model, where):
+                        if where != GRB.Callback.MIPSOL:
+                            return
+                        objective = callback_model.cbGet(GRB.Callback.MIPSOL_OBJ)
+                        if not progress.is_improvement(objective):
+                            return
+                        values = callback_model.cbGetSolution(variables)
+                        assignment = []
+                        for offset, count, zones in node_slices:
+                            selected = zones[0]
+                            best_value = values[offset]
+                            for index in range(1, count):
+                                value = values[offset + index]
+                                if value > best_value:
+                                    selected = zones[index]
+                                    best_value = value
+                            assignment.append(selected)
+                        progress.add(objective, time.time() - start, tuple(assignment))
 
-            model.optimize(progress_callback)
-        wall_time = time.time() - start
-        if model.Status == GRB.OPTIMAL:
-            status = "OPTIMAL"
-        elif model.SolCount > 0:
-            status = "FEASIBLE"
-        elif model.Status == GRB.INFEASIBLE:
-            status = "INFEASIBLE"
-        else:
-            status = "UNKNOWN"
+                    model.optimize(progress_callback)
+                wall_time = time.time() - start
+                if model.Status == GRB.OPTIMAL:
+                    status = "OPTIMAL"
+                elif model.SolCount > 0:
+                    status = "FEASIBLE"
+                elif model.Status == GRB.INFEASIBLE:
+                    status = "INFEASIBLE"
+                else:
+                    status = "UNKNOWN"
 
-        assignment = {}
-        objective = None
-        best_bound = None
-        if model.SolCount > 0:
-            objective = float(model.ObjVal)
-            best_bound = float(model.ObjBound)
-            for node in problem.nodes:
-                for zone in problem.candidate_zones(node):
-                    if zoning[(zone, node)].X > 0.5:
-                        assignment[node] = zone
-                        break
-        return ZoneSolution(
-            problem=problem,
-            assignment=assignment,
-            status=status,
-            objective=objective,
-            wall_time=wall_time,
-            metadata={
-                "solver": self.name,
-                "formulation": "saa_stable_matching_outer_approximation",
-                "objective_kind": "saa_expected_welfare_upper_bound",
-                "saa_master_backend": "mip",
-                "saa_num_seeds": len(self.samples),
-                "saa_cut_count": len(self.cuts),
-                "saa_master_best_bound": best_bound,
-                "saa_access_pair_count": len(access) + len(fixed_access),
-                "saa_access_indicator_count": len(access),
-                "saa_access_joint_count": len(access_joint),
-                "saa_preprocessing_seconds": self.preprocessing_seconds,
-                "aggregate_capacity_overage_disabled": True,
-                "aggregate_capacity_shortage_disabled": True,
-                **self._solver_log_metadata(log_path),
-                **self._solver_progress_metadata(progress),
-            },
-            solver_progress=list(progress.entries) if progress is not None else [],
-        )
+                assignment = {}
+                objective = None
+                best_bound = None
+                if model.SolCount > 0:
+                    objective = float(model.ObjVal)
+                    best_bound = float(model.ObjBound)
+                    for node in problem.nodes:
+                        for zone in problem.candidate_zones(node):
+                            if zoning[(zone, node)].X > 0.5:
+                                assignment[node] = zone
+                                break
+                return ZoneSolution(
+                    problem=problem,
+                    assignment=assignment,
+                    status=status,
+                    objective=objective,
+                    wall_time=wall_time,
+                    metadata={
+                        "solver": self.name,
+                        "formulation": "saa_stable_matching_outer_approximation",
+                        "objective_kind": "saa_expected_welfare_upper_bound",
+                        "saa_master_backend": "mip",
+                        "saa_num_seeds": len(self.samples),
+                        "saa_cut_count": len(self.cuts),
+                        "saa_master_best_bound": best_bound,
+                        "saa_access_pair_count": len(access) + len(fixed_access),
+                        "saa_access_indicator_count": len(access),
+                        "saa_access_joint_count": len(access_joint),
+                        "saa_preprocessing_seconds": self.preprocessing_seconds,
+                        "aggregate_capacity_overage_disabled": True,
+                        "aggregate_capacity_shortage_disabled": True,
+                        **self._solver_log_metadata(log_path),
+                        **self._solver_progress_metadata(progress),
+                    },
+                    solver_progress=list(progress.entries) if progress is not None else [],
+                )
 
 
 class SaaCpSatSolver(CpBoolSolver):

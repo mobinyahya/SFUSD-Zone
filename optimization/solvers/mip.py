@@ -49,97 +49,98 @@ def add_gurobi_zoning_geography(
 class MipSolver(Solver):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         self._centroid_neighbor_radius()
-        m = gp.Model("zoning")
-        log_path = self._next_solver_log_path(problem)
-        if log_path:
-            m.Params.OutputFlag = 1
-            m.Params.LogToConsole = 0
-            m.Params.LogFile = log_path
-        else:
-            m.Params.OutputFlag = int(self.options.get("verbose", 0))
-        m.Params.TimeLimit = float(self.options.get("solve_time_limit", 60))
-        m.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
-        m.Params.Seed = int(self.options.get("seed", 42))
-        if "workers" in self.options:
-            m.Params.Threads = int(self.options["workers"])
+        with gp.Env() as env:
+            with gp.Model("zoning", env=env) as m:
+                log_path = self._next_solver_log_path(problem)
+                if log_path:
+                    m.Params.OutputFlag = 1
+                    m.Params.LogToConsole = 0
+                    m.Params.LogFile = log_path
+                else:
+                    m.Params.OutputFlag = int(self.options.get("verbose", 0))
+                m.Params.TimeLimit = float(self.options.get("solve_time_limit", 60))
+                m.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
+                m.Params.Seed = int(self.options.get("seed", 42))
+                if "workers" in self.options:
+                    m.Params.Threads = int(self.options["workers"])
 
-        x = self._build_assignment_vars(m, problem)
-        self._add_core_constraints(m, problem, x)
+                x = self._build_assignment_vars(m, problem)
+                self._add_core_constraints(m, problem, x)
 
-        if problem.choice_objective is None:
-            self._add_boundary_objective(m, problem, x)
-            progress = self._new_solver_progress_tracker(problem, maximize=False)
-        else:
-            self._add_choice_objective(m, problem, x)
-            progress = self._new_solver_progress_tracker(problem, maximize=True)
+                if problem.choice_objective is None:
+                    self._add_boundary_objective(m, problem, x)
+                    progress = self._new_solver_progress_tracker(problem, maximize=False)
+                else:
+                    self._add_choice_objective(m, problem, x)
+                    progress = self._new_solver_progress_tracker(problem, maximize=True)
 
-        self._add_hints(problem, x)
+                self._add_hints(problem, x)
 
-        start = time.time()
-        if progress is None:
-            m.optimize()
-        else:
-            capture_data = self._progress_capture_data(problem, x)
+                start = time.time()
+                if progress is None:
+                    m.optimize()
+                else:
+                    capture_data = self._progress_capture_data(problem, x)
 
-            def progress_callback(model, where):
-                if where == GRB.Callback.MIPSOL:
-                    self._capture_progress(
-                        model,
-                        progress,
-                        capture_data,
-                        start,
+                    def progress_callback(model, where):
+                        if where == GRB.Callback.MIPSOL:
+                            self._capture_progress(
+                                model,
+                                progress,
+                                capture_data,
+                                start,
+                            )
+
+                    m.optimize(progress_callback)
+                wall = time.time() - start
+
+                if m.Status == GRB.OPTIMAL:
+                    status = "OPTIMAL"
+                elif m.SolCount > 0:
+                    status = "FEASIBLE"
+                elif m.Status == GRB.INFEASIBLE:
+                    status = "INFEASIBLE"
+                else:
+                    status = "UNKNOWN"
+
+                assignment = {}
+                objective = None
+                if m.SolCount > 0:
+                    for i in problem.nodes:
+                        for z in problem.candidate_zones(i):
+                            if x[(z, i)].X > 0.5:
+                                assignment[i] = z
+                                break
+                    objective = m.ObjVal
+
+                metadata = {
+                    "solver": self.name,
+                    **self._solver_log_metadata(log_path),
+                    **self._solver_progress_metadata(progress),
+                }
+                if problem.choice_objective is not None:
+                    metadata.update(
+                        {
+                            "objective_kind": "choice_utility",
+                            "choice_cuts": len(problem.choice_objective.cuts),
+                        }
                     )
-
-            m.optimize(progress_callback)
-        wall = time.time() - start
-
-        if m.Status == GRB.OPTIMAL:
-            status = "OPTIMAL"
-        elif m.SolCount > 0:
-            status = "FEASIBLE"
-        elif m.Status == GRB.INFEASIBLE:
-            status = "INFEASIBLE"
-        else:
-            status = "UNKNOWN"
-
-        assignment = {}
-        objective = None
-        if m.SolCount > 0:
-            for i in problem.nodes:
-                for z in problem.candidate_zones(i):
-                    if x[(z, i)].X > 0.5:
-                        assignment[i] = z
-                        break
-            objective = m.ObjVal
-
-        metadata = {
-            "solver": self.name,
-            **self._solver_log_metadata(log_path),
-            **self._solver_progress_metadata(progress),
-        }
-        if problem.choice_objective is not None:
-            metadata.update(
-                {
-                    "objective_kind": "choice_utility",
-                    "choice_cuts": len(problem.choice_objective.cuts),
-                }
-            )
-        elif problem.weight_edges:
-            metadata.update(
-                {
-                    "objective_kind": "weighted_boundary_length",
-                    "objective_unit": "meter",
-                }
-            )
-        return ZoneSolution(
-            problem=problem,
-            assignment=assignment,
-            status=status,
-            objective=objective,
-            wall_time=wall,
-            metadata=metadata,
-            solver_progress=list(progress.entries) if progress is not None else [],
-        )
+                elif problem.weight_edges:
+                    metadata.update(
+                        {
+                            "objective_kind": "weighted_boundary_length",
+                            "objective_unit": "meter",
+                        }
+                    )
+                return ZoneSolution(
+                    problem=problem,
+                    assignment=assignment,
+                    status=status,
+                    objective=objective,
+                    wall_time=wall,
+                    metadata=metadata,
+                    solver_progress=list(progress.entries) if progress is not None else [],
+                )
 
     def _progress_capture_data(
         self, problem: ZoneProblem, x: _AssignmentVars

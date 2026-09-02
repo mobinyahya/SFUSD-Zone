@@ -89,7 +89,7 @@ def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     submit_path = write_slurm_scripts(plan_path)
     submit_script = submit_path.read_text()
     assert "submit-plan" in submit_script
-    assert 'export GRB_LICENSE_FILE="$HOME/gurobi.lic"' in submit_script
+    assert "gurobi_licenses/gurobi.lic" in submit_script
     assert "sbatch" not in submit_script
     assert len(list(submit_path.parent.glob("assignment-*.sh"))) == 12
     assert len(list(submit_path.parent.glob("metrics-*.sh"))) == 8
@@ -122,7 +122,7 @@ def test_submission_persists_ids_wires_dependencies_and_cancels_on_failure(
     assert "#SBATCH --ntasks=1" in worker_script
     assert "#SBATCH --cpus-per-task=1" in worker_script
     assert "export OMP_NUM_THREADS=1" in worker_script
-    assert 'export GRB_LICENSE_FILE="$HOME/gurobi.lic"' in worker_script
+    assert "gurobi_licenses/gurobi.lic" in worker_script
     assert "job-worker" in worker_script
     assert "--job-id assignment-0" in worker_script
     assert "submit-plan" in submit_script

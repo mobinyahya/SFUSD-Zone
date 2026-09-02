@@ -236,7 +236,13 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        'export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
+        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
+        'else',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        'fi',
         "",
     ]
     for index, _allocation in enumerate(allocations):
@@ -608,8 +614,15 @@ def _sbatch_options(
     sbatch: str = "sbatch",
 ) -> list[str]:
     allocation = _allocation_at(plan, index)
+    license_setup = (
+        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then '
+        'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"; '
+        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then '
+        'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"; '
+        'else export GRB_LICENSE_FILE="$HOME/gurobi.lic"; fi && '
+    )
     worker_command = (
-        'export GRB_LICENSE_FILE="$HOME/gurobi.lic" && '
+        license_setup
         + shlex.join(
             [
                 "uv",

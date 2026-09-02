@@ -614,7 +614,15 @@ def _job_script(
         f"export {name}={shlex.quote(value)}"
         for name, value in THREAD_ENVIRONMENT.items()
     )
-    lines.append('export GRB_LICENSE_FILE="$HOME/gurobi.lic"')
+    lines.extend([
+        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
+        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
+        'else',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        'fi',
+    ])
     lines.append(f"exec {shlex.join(command)}")
     return "\n".join(lines) + "\n"
 
@@ -677,7 +685,13 @@ def write_slurm_scripts(
     submit_lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        'export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
+        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
+        'else',
+        '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+        'fi',
         f"cd {shlex.quote(str(workspace_root))}",
     ]
     submit_lines.append(f'exec {shlex.join(submit_command)} "$@"')
