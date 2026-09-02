@@ -35,6 +35,7 @@ from benchmark.runner import (
     evaluate_optimization_task,
     run_optimization_phase,
     valid_existing_result,
+    valid_optimization_result,
     write_json,
 )
 
@@ -343,7 +344,7 @@ def _run_optimization_task(
     task: BenchmarkTask,
     execution: ExecutionConfig | None = None,
 ) -> TaskResult:
-    if execution and execution.skip_existing and _valid_existing_result(task, execution):
+    if execution and execution.skip_existing and valid_optimization_result(task, execution):
         return TaskResult(
             task_id=task.task_id,
             output_dir=task.output_dir,
