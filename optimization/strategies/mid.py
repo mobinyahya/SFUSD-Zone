@@ -48,6 +48,12 @@ class MidStrategy(Strategy):
             self.options.get("mid_lottery_scale", 20),
             preprocessing_seconds=preprocessing_seconds,
             transport_bounds=self.options.get("mid_transport_bounds", True),
+            complementary_slackness=self.options.get(
+                "mid_complementary_slackness", False
+            ),
+            complementary_slackness_slack=self.options.get(
+                "mid_complementary_slackness_slack", "auto"
+            ),
             **solver.options,
         )
         return [mid_solver.solve(problem)]

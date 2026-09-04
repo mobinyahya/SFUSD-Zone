@@ -13,10 +13,12 @@ optimization_defaults:
   boundary_prop: 0.18
   hints: feasible
   feasible_hint_time_limit: 60
+
   racial_dev: -1
   overage: -1
   shortage: -1
   frl_dev: 0.15
+
   strategy: 'mid'
   levels: ['Block_2']
   solve_time_limits: [28800]

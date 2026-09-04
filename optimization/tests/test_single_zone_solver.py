@@ -248,6 +248,5 @@ def test_single_zone_metrics_use_district_frl_and_outside_schools():
 def _metrics_config():
     return {
         "strategy": "single",
-        "choice_model": "distance",
         "data": {"scenario": "legacy", "overrides": {}},
     }

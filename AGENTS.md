@@ -167,10 +167,12 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `racial_dev` | `0.3` | Max racial/ethnic deviation |
 | `solver` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
 | `levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
-| `solve_time_limits` | `[30, 30]` | Seconds per recursive level |
+| `solve_time_limits` | `[30, 30]` | Seconds per recursive level; iterative strategies use the last entry as one total run budget |
+| `budget_accounting` | `wall_clock` | What that budget pays for: `wall_clock` (everything) or `solver_time` (iterative solves only) |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `capacity_scenario` | `programs` | Program-table capacities, or an explicit scenario overlay |
-| `hints` | `voronoi` | Warm-start method: `voronoi` or `none` |
+| `hints` | `voronoi` | Warm-start method: `feasible`, `voronoi`, or `none` |
 | `seed` | `42` | Solver seed |
 
 Graph cache path: `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
+Feasible-hint cache path: `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v1/<sha256>/`, keyed by the feasibility model plus the hint search settings (seed included).

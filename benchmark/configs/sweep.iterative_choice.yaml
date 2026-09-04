@@ -25,7 +25,6 @@ optimization_defaults:
   max_iterations: 15
   tolerance: 0
 
-  choice_model: 'mnl'
   choice_utility_scale: 100.0
   choice_utility_hints: true
   solver: 'cp_bool'

@@ -18,9 +18,7 @@ from optimization.mid_oracle import (
 from optimization.solution import ZoneSolution
 from optimization.solvers.mid import MidCpSatSolver
 from optimization.strategies.base import Strategy, register
-
-
-_BUDGET_POLICY = "linearly_increasing_with_carry_forward"
+from optimization.strategies.budget import Budget, make_budget
 
 
 @register("mid_decomp")
@@ -39,6 +37,13 @@ class MidDecompositionStrategy(Strategy):
             raise ValueError("mid_decomp max_iterations must be positive.")
         if not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError("mid_decomp tolerance must be non-negative.")
+
+        budget, relative_tolerance = make_budget(
+            self.options,
+            solver.options,
+            max_iterations,
+            label="mid_decomp",
+        )
 
         levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         problem = dataset.problem_for(levels[-1])
@@ -65,24 +70,16 @@ class MidDecompositionStrategy(Strategy):
         transport_bounds = self.options.get("mid_transport_bounds", True)
         if not isinstance(transport_bounds, bool):
             raise ValueError("mid_decomp mid_transport_bounds must be a Boolean.")
-        objective_scale = lottery_scale * market.utility_scale
-        time_limit = _final_value(
-            self.options.get("solve_time_limits"),
-            solver.options.get("solve_time_limit", 60.0),
-        )
-        relative_tolerance = _final_value(
-            self.options.get("gap_limits"),
-            solver.options.get("relative_gap_limit", 0.0),
-        )
-        if time_limit < 0 or not math.isfinite(time_limit):
+        complementary_slackness = self.options.get("mid_complementary_slackness", False)
+        if not isinstance(complementary_slackness, bool):
             raise ValueError(
-                "mid_decomp solve time limit must be finite and non-negative."
+                "mid_decomp mid_complementary_slackness must be a Boolean."
             )
-        if relative_tolerance < 0 or not math.isfinite(relative_tolerance):
-            raise ValueError("mid_decomp relative gap limit must be non-negative.")
+        complementary_slackness_slack = self.options.get(
+            "mid_complementary_slackness_slack", "auto"
+        )
+        objective_scale = lottery_scale * market.utility_scale
 
-        started = time.perf_counter()
-        deadline = started + time_limit
         active: dict[int, int] = {}
         stages: list[ZoneSolution] = []
         iteration_records = []
@@ -91,12 +88,13 @@ class MidDecompositionStrategy(Strategy):
         incumbent_value: int | None = None
         incumbent_iteration: int | None = None
         upper_bound_value: int | None = None
-        master_seconds = 0.0
         oracle_seconds = 0.0
+        warm_cutoffs: dict[str, int] | None = None
 
         if hint is not None and hint.metadata.get("hints") == "feasible":
             oracle_start = time.perf_counter()
             finite = finite_grid_oracle(market, hint.assignment, lottery_scale)
+            warm_cutoffs = dict(finite.cutoffs)
             oracle_seconds += time.perf_counter() - oracle_start
             incumbent = ZoneSolution(
                 problem=problem,
@@ -119,21 +117,16 @@ class MidDecompositionStrategy(Strategy):
         termination_reason = "iteration_limit"
         base_options = dict(solver.options)
         for iteration in range(max_iterations):
-            remaining_seconds = deadline - time.perf_counter()
-            if remaining_seconds <= 0:
+            if budget.exhausted():
                 termination_reason = "time_limit"
                 break
-            master_time_limit = _master_time_limit(
-                remaining_seconds,
-                iteration,
-                max_iterations,
-            )
+            iteration_time_limit = budget.iteration_limit(iteration)
 
             if incumbent is not None:
                 problem.hint = incumbent.assignment
             master_options = {
                 **base_options,
-                "solve_time_limit": master_time_limit,
+                "solve_time_limit": iteration_time_limit,
                 "relative_gap_limit": relative_tolerance,
             }
             master = MidCpSatSolver(
@@ -142,6 +135,8 @@ class MidDecompositionStrategy(Strategy):
                 preprocessing_seconds=preprocessing_seconds,
                 active_prefix_lengths=active,
                 transport_bounds=transport_bounds,
+                complementary_slackness=complementary_slackness,
+                complementary_slackness_slack=complementary_slackness_slack,
                 preprocessed=True,
                 **master_options,
             )
@@ -152,13 +147,13 @@ class MidDecompositionStrategy(Strategy):
             master_start = time.perf_counter()
             solution = master.solve(problem)
             iteration_master_seconds = time.perf_counter() - master_start
-            master_seconds += iteration_master_seconds
+            budget.charge(iteration_master_seconds)
             solution.metadata.update(
                 {
                     "mid_decomp_iteration": iteration,
                     "mid_decomp_active_types_before": active_types_before,
                     "mid_decomp_active_preferences_before": (active_preferences_before),
-                    "mid_decomp_master_time_limit_seconds": master_time_limit,
+                    "mid_decomp_master_time_limit_seconds": iteration_time_limit,
                 }
             )
 
@@ -172,7 +167,7 @@ class MidDecompositionStrategy(Strategy):
                         "activated_types_after": len(active),
                         "activated_preferences_before": active_preferences_before,
                         "activated_preferences_after": sum(active.values()),
-                        "master_time_limit_seconds": master_time_limit,
+                        "master_time_limit_seconds": iteration_time_limit,
                         "master_seconds": iteration_master_seconds,
                     }
                 )
@@ -203,7 +198,9 @@ class MidDecompositionStrategy(Strategy):
                 market,
                 solution.assignment,
                 lottery_scale,
+                warm_cutoffs=warm_cutoffs,
             )
+            warm_cutoffs = dict(finite.cutoffs)
             iteration_oracle_seconds = time.perf_counter() - oracle_start
             oracle_seconds += iteration_oracle_seconds
             _add_finite_metadata(solution, finite, candidate=candidate)
@@ -279,7 +276,7 @@ class MidDecompositionStrategy(Strategy):
                 "effective_threshold_count": solution.metadata[
                     "mid_effective_threshold_count"
                 ],
-                "master_time_limit_seconds": master_time_limit,
+                "master_time_limit_seconds": iteration_time_limit,
                 "master_seconds": iteration_master_seconds,
                 "oracle_seconds": iteration_oracle_seconds,
             }
@@ -288,7 +285,7 @@ class MidDecompositionStrategy(Strategy):
                 {
                     "mid_decomp_active_types_after": len(active),
                     "mid_decomp_active_preferences_after": sum(active.values()),
-                    "mid_decomp_master_time_limit_seconds": master_time_limit,
+                    "mid_decomp_master_time_limit_seconds": iteration_time_limit,
                     "mid_decomp_overload_activated_count": len(overload_prefixes),
                     "mid_decomp_utility_gap_activated_count": len(utility_gap_prefixes),
                     "mid_decomp_candidate_cutoffs": dict(cutoffs),
@@ -315,7 +312,7 @@ class MidDecompositionStrategy(Strategy):
             ):
                 termination_reason = "bound_gap"
                 break
-            if time.perf_counter() >= deadline:
+            if budget.exhausted():
                 termination_reason = "time_limit"
                 break
 
@@ -346,10 +343,11 @@ class MidDecompositionStrategy(Strategy):
                 objective_scale=objective_scale,
                 termination_reason=termination_reason,
                 transport_bounds=transport_bounds,
-                total_budget_seconds=time_limit,
+                budget=budget,
                 preprocessing_seconds=preprocessing_seconds,
-                master_seconds=master_seconds,
                 oracle_seconds=oracle_seconds,
+                complementary_slackness=complementary_slackness,
+                complementary_slackness_slack=complementary_slackness_slack,
             )
             return stages
 
@@ -401,16 +399,13 @@ class MidDecompositionStrategy(Strategy):
             objective_scale=objective_scale,
             termination_reason=termination_reason,
             transport_bounds=transport_bounds,
-            total_budget_seconds=time_limit,
+            budget=budget,
             preprocessing_seconds=preprocessing_seconds,
-            master_seconds=master_seconds,
             oracle_seconds=oracle_seconds,
+            complementary_slackness=complementary_slackness,
+            complementary_slackness_slack=complementary_slackness_slack,
         )
         return stages
-
-
-def _final_value(values, default) -> float:
-    return float(values[-1] if values else default)
 
 
 def _certified_integer_upper_bound(raw_bound: float, objective: int) -> int:
@@ -421,16 +416,6 @@ def _certified_integer_upper_bound(raw_bound: float, objective: int) -> int:
     else:
         bound = math.ceil(math.nextafter(raw_bound, math.inf))
     return max(objective, bound)
-
-
-def _master_time_limit(
-    remaining_seconds: float,
-    iteration: int,
-    max_iterations: int,
-) -> float:
-    current_weight = iteration + 1
-    remaining_weight = sum(range(current_weight, max_iterations + 1))
-    return remaining_seconds * current_weight / remaining_weight
 
 
 def _bounds(
@@ -528,10 +513,11 @@ def _add_summary_metadata(
     objective_scale: int,
     termination_reason: str,
     transport_bounds: bool,
-    total_budget_seconds: float,
+    budget: Budget,
     preprocessing_seconds: float,
-    master_seconds: float,
     oracle_seconds: float,
+    complementary_slackness: bool = False,
+    complementary_slackness_slack: float | str = "auto",
 ) -> None:
     lower, upper, absolute_gap, relative_gap = _bounds(
         incumbent_value,
@@ -547,6 +533,8 @@ def _add_summary_metadata(
             "mid_utility_scale": market.utility_scale,
             "mid_utility_handling": market.utility_handling,
             "mid_transport_bounds": transport_bounds,
+            "mid_complementary_slackness": complementary_slackness,
+            "mid_complementary_slackness_slack": complementary_slackness_slack,
             "mid_student_count": market.student_count,
             "mid_utility_student_count": market.utility_student_count,
             "mid_outside_only_student_count": market.outside_only_student_count,
@@ -599,9 +587,7 @@ def _add_summary_metadata(
             "mid_decomp_relative_gap": relative_gap,
             "mid_decomp_best_incumbent_iteration": incumbent_iteration,
             "mid_decomp_termination_reason": termination_reason,
-            "mid_decomp_total_budget_seconds": total_budget_seconds,
-            "mid_decomp_budget_policy": _BUDGET_POLICY,
-            "mid_decomp_total_master_seconds": master_seconds,
+            **budget.metadata("mid_decomp"),
             "mid_decomp_total_oracle_seconds": oracle_seconds,
             "mid_preprocessing_seconds": preprocessing_seconds,
             "aggregate_capacity_overage_disabled": True,

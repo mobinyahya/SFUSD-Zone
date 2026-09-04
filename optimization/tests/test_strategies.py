@@ -1,6 +1,7 @@
 """Strategy tests using a FakeDataset (no SFUSD data required)."""
 
 import random
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from optimization.problem import DuplicateCentroidError
 from optimization.solution import ZoneSolution
 from optimization.solvers import get_solver
 from optimization.strategies import get_strategy
+from optimization.strategies import budget
 from optimization.strategies import iterative_choice as iterative_choice_module
 from optimization.strategies import mid as mid_module
 from optimization.strategies import mid_decomp as mid_decomp_module
@@ -27,6 +29,7 @@ def test_only_supported_strategies_are_registered():
         "mid_decomp",
         "recursive",
         "saa",
+        "short_bursts_choice",
         "single",
     ]
 
@@ -329,15 +332,20 @@ def test_recursive_anchors_centroids_in_projected_hint():
     assert refined.candidate_zones(problem.centroids[1]) == {1}
 
 
-def test_iterative_choice_strategy_terminates():
+def test_iterative_choice_strategy_terminates(monkeypatch):
     problem = make_grid_problem(3, 3)
     dataset = FakeDataset(problem)
     solver = get_solver("cp_int", solve_time_limit=10, workers=1)
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
     strat = get_strategy(
         "iterative_choice",
         levels=["BlockGroup_0"],
         max_iterations=3,
-        choice_model="distance",
         boundary_prop=0.5,
     )
 
@@ -466,6 +474,45 @@ def test_config_rejects_invalid_mid_transport_bounds(value):
         OptimizationConfig(levels=["BlockGroup_0"], mid_transport_bounds=value)
 
 
+@pytest.mark.parametrize("value", [0, 1, None, "false"])
+def test_config_rejects_invalid_mid_complementary_slackness(value):
+    with pytest.raises(ValueError, match="mid_complementary_slackness"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_complementary_slackness=value)
+
+
+@pytest.mark.parametrize("value", [-1, -0.5, True, "bad", "bad%", "-5%"])
+def test_config_rejects_invalid_mid_complementary_slackness_slack(value):
+    with pytest.raises(ValueError, match="mid_complementary_slackness_slack"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"], mid_complementary_slackness_slack=value
+        )
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("auto", "auto"),
+        ("AUTO", "auto"),
+        ("5%", "5%"),
+        ("10.5%", "10.5%"),
+        (0, 0.0),
+        (1.5, 1.5),
+        ("2.0", 2.0),
+    ],
+)
+def test_config_accepts_valid_mid_complementary_slackness_slack(value, expected):
+    cfg = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        mid_complementary_slackness=True,
+        mid_complementary_slackness_slack=value,
+    )
+    assert cfg.mid_complementary_slackness_slack == expected
+    assert cfg.make_solver().options["mid_complementary_slackness"] is True
+    assert cfg.make_solver().options["mid_complementary_slackness_slack"] == expected
+    assert cfg.make_strategy().options["mid_complementary_slackness"] is True
+    assert cfg.make_strategy().options["mid_complementary_slackness_slack"] == expected
+
+
 def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeypatch):
     problem = make_grid_problem(2, 2, program_population="All")
     dataset = FakeDataset(problem)
@@ -587,6 +634,7 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bo
         == "linearly_increasing_with_carry_forward"
     )
     assert final.metadata["mid_decomp_total_budget_seconds"] == 10
+    assert final.metadata["mid_decomp_budget_accounting"] == "wall_clock"
     assert all(
         record["master_time_limit_seconds"] > 0
         for record in final.metadata["mid_decomp_iterations"]
@@ -594,9 +642,9 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bo
 
 
 def test_mid_decomp_splits_remaining_budget_across_iterations():
-    assert mid_decomp_module._master_time_limit(60, 0, 3) == pytest.approx(10)
-    assert mid_decomp_module._master_time_limit(50, 1, 3) == pytest.approx(20)
-    assert mid_decomp_module._master_time_limit(30, 2, 3) == pytest.approx(30)
+    assert budget.master_time_limit(60, 0, 3) == pytest.approx(10)
+    assert budget.master_time_limit(50, 1, 3) == pytest.approx(20)
+    assert budget.master_time_limit(30, 2, 3) == pytest.approx(30)
 
 
 def test_mid_decomp_rounds_large_cp_sat_bounds_outward():
@@ -628,6 +676,160 @@ def test_config_accepts_boundary_prop_and_disabled_values(value):
     assert config.boundary_prop == float(value)
 
 
+def test_iterative_choice_splits_one_budget_across_iterations(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {"solve_time_limit": 5.0, "relative_gap_limit": 0.5}
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[60.0],
+        gap_limits=[0.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+    final = solutions[-1]
+
+    # One 60s budget for the whole run: iteration 0 claims 1/(1+2+3) of it, and
+    # because this solver returns instantly the unused time carries forward, so
+    # iteration 1 claims 2/(2+3) of the whole budget and iteration 2 all of it.
+    assert solver.solve_time_limits[0] == pytest.approx(10.0, rel=1e-2)
+    assert solver.solve_time_limits[1] == pytest.approx(24.0, rel=1e-2)
+    assert solver.solve_time_limits[2] == pytest.approx(60.0, rel=1e-2)
+    assert solver.options["relative_gap_limit"] == 0.0
+    assert final.metadata["choice_total_budget_seconds"] == 60.0
+    assert (
+        final.metadata["choice_budget_policy"]
+        == "linearly_increasing_with_carry_forward"
+    )
+    assert final.metadata["choice_iteration_count"] == 3
+    assert final.metadata["choice_termination_reason"] == "iteration_limit"
+    assert final.metadata["choice_total_master_seconds"] >= 0.0
+    assert final.metadata["choice_total_evaluation_seconds"] >= 0.0
+    assert [
+        solution.metadata["choice_master_time_limit_seconds"] for solution in solutions
+    ] == solver.solve_time_limits
+
+
+def test_iterative_choice_stops_when_budget_is_exhausted(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {"solve_time_limit": 0.0}
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[0.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solutions == []
+    assert solver.calls == 0
+
+
+def test_wall_clock_budget_pays_for_every_kind_of_work():
+    wall_clock = budget.Budget(60.0, 3)
+
+    # Charging solves does not matter: only elapsed real time does.
+    wall_clock.charge(30.0)
+
+    assert wall_clock.remaining_seconds == pytest.approx(60.0, abs=1.0)
+    assert not wall_clock.exhausted()
+    assert wall_clock.metadata("choice")["choice_budget_accounting"] == "wall_clock"
+    assert budget.Budget(0.0, 3).exhausted()
+
+
+def test_solver_time_budget_only_pays_for_charged_solves():
+    solver_time = budget.Budget(60.0, 3, "solver_time")
+
+    assert solver_time.iteration_limit(0) == pytest.approx(10.0)
+
+    solver_time.charge(10.0)
+
+    assert solver_time.remaining_seconds == pytest.approx(50.0)
+    assert solver_time.iteration_limit(1) == pytest.approx(20.0)
+
+    solver_time.charge(50.0)
+
+    assert solver_time.exhausted()
+
+
+def test_budget_rejects_unknown_accounting():
+    with pytest.raises(ValueError, match="budget_accounting"):
+        budget.Budget(60.0, 3, "cpu_time", label="saa")
+
+
+@pytest.mark.parametrize("accounting", ["wall_clock", "solver_time"])
+def test_config_passes_budget_accounting_to_strategy(accounting):
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="iterative_choice",
+        budget_accounting=accounting,
+    )
+
+    assert config.make_strategy().options["budget_accounting"] == accounting
+
+
+def test_config_rejects_unknown_budget_accounting():
+    with pytest.raises(ValueError, match="budget_accounting"):
+        OptimizationConfig(levels=["BlockGroup_0"], budget_accounting="cpu_time")
+
+
+@pytest.mark.parametrize(
+    ("accounting", "expected_iterations"),
+    [("wall_clock", 2), ("solver_time", 3)],
+)
+def test_solver_time_accounting_excludes_choice_model_evaluation(
+    monkeypatch, accounting, expected_iterations
+):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {}
+    # Evaluating the choice model costs more than the whole budget, so
+    # wall_clock runs out of time while solver_time never charges for it.
+    model = SleepingRealUtilityModel(0.15)
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[0.2],
+        budget_accounting=accounting,
+    )
+
+    solutions = strat.run(dataset, solver)
+    final = solutions[-1]
+
+    assert final.metadata["choice_budget_accounting"] == accounting
+    if accounting == "solver_time":
+        assert len(solutions) == expected_iterations
+        assert final.metadata["choice_termination_reason"] == "iteration_limit"
+    else:
+        assert len(solutions) <= expected_iterations
+        assert final.metadata["choice_termination_reason"] == "time_limit"
+
+
 def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
     problem = make_grid_problem(2, 2)
     dataset = FakeDataset(problem)
@@ -635,14 +837,13 @@ def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
     model = HintCutModel()
     monkeypatch.setattr(
         iterative_choice_module,
-        "get_configured_choice_model",
-        lambda options, data: model,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
     )
     strat = get_strategy(
         "iterative_choice",
         levels=["BlockGroup_0"],
         max_iterations=1,
-        choice_model="mnl",
         choice_utility_hints=True,
     )
 
@@ -660,14 +861,13 @@ def test_iterative_choice_stops_on_absolute_model_objective_change(monkeypatch):
     model = DecreasingRealUtilityModel()
     monkeypatch.setattr(
         iterative_choice_module,
-        "get_configured_choice_model",
-        lambda options, data: model,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
     )
     strat = get_strategy(
         "iterative_choice",
         levels=["BlockGroup_0"],
         max_iterations=5,
-        choice_model="distance",
         tolerance=0.25,
     )
 
@@ -688,10 +888,13 @@ class ObjectiveSequenceSolver:
     def __init__(self, objectives):
         self.objectives = list(objectives)
         self.calls = 0
+        self.options = {}
+        self.solve_time_limits = []
 
     def solve(self, problem):
         objective = self.objectives[self.calls]
         self.calls += 1
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
         assignment = {0: 0, 1: 0, 2: 1, 3: 1}
         return ZoneSolution(
             problem=problem,
@@ -769,17 +972,25 @@ class DecreasingRealUtilityModel:
     def evaluate_with_cuts(self, problem, assignment):
         utility = 100.0 - self.calls
         self.calls += 1
-        cuts = tuple(
-            ChoiceCut(node=node, zone=zone, constant=0.0)
-            for node in problem.nodes
-            for zone in problem.candidate_zones(node)
-        )
+        cuts = tuple(ChoiceCut(node=node, constant=0.0) for node in problem.nodes)
         return ChoiceEvaluation(utility=utility, cuts=cuts)
+
+
+class SleepingRealUtilityModel(DecreasingRealUtilityModel):
+    """Choice model whose evaluation dominates the run's wall-clock time."""
+
+    def __init__(self, evaluation_seconds):
+        super().__init__()
+        self.evaluation_seconds = evaluation_seconds
+
+    def evaluate_with_cuts(self, problem, assignment):
+        time.sleep(self.evaluation_seconds)
+        return super().evaluate_with_cuts(problem, assignment)
 
 
 class HintCutModel:
     def __init__(self):
-        self.hint_cuts = (ChoiceCut(node=0, zone=0, constant=1.0),)
+        self.hint_cuts = (ChoiceCut(node=0, constant=1.0),)
 
     def utility_bounds(self, problem):
         return -1_000.0, 1_000.0

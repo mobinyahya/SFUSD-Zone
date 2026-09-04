@@ -134,6 +134,8 @@ def _stage_rows(
             "level": stage.get("level"),
             "status": stage.get("status"),
             "objective": stage.get("objective"),
+            "mid_welfare": metadata.get("mid_welfare"),
+            "saa_welfare": metadata.get("saa_welfare"),
             "cut_edges": metrics_stage.get("cut_edges"),
             "normalized_cut_edges": metrics_stage.get("normalized_cut_edges"),
             "fractional_cut_edges": metrics_stage.get("fractional_cut_edges"),

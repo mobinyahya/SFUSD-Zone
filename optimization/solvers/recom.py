@@ -17,7 +17,7 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Callable, Mapping
 
 from optimization.data import contiguity
 from optimization.data.initial_solutions import initial_solution, normalize_hints
@@ -180,6 +180,22 @@ class _Setup:
     hint_metadata: dict[str, object]
 
 
+@dataclass(frozen=True)
+class _BurstSamples:
+    samples: tuple[_Snapshot, ...]
+    attempted: int
+    accepted: int
+    rejected: int
+    proposal_failures: int
+    stop_reason: str | None
+
+
+ShortBurstBatchScorer = Callable[
+    [tuple[Mapping[int, int], ...], Mapping[int, int] | None],
+    tuple[float, ...],
+]
+
+
 class _DynamicMaxNormalizer:
     """Running max linearization for short-burst constraint penalties."""
 
@@ -257,7 +273,10 @@ class _ReComContext:
         total_schools = sum(self.schools)
         if total_schools > 0:
             self.average_schools = total_schools / self.zone_count
-            self.school_bounds = (max(0.0, self.average_schools - 1.0), self.average_schools + 1.0)
+            self.school_bounds = (
+                max(0.0, self.average_schools - 1.0),
+                self.average_schools + 1.0,
+            )
         else:
             self.average_schools = 0.0
             self.school_bounds = None
@@ -899,7 +918,7 @@ class _ReComKernel:
         log_weights = [
             -(
                 float(c.boundary_cost)
-                + sum(w * (v ** 2) for w, v in zip(weights, c.global_violations))
+                + sum(w * (v**2) for w, v in zip(weights, c.global_violations))
             )
             / temp
             for c in candidates
@@ -960,8 +979,8 @@ class _AdamOptimizer:
         self.t += 1
         b1, b2 = self.beta1, self.beta2
         lr, eps = self.lr, self.eps
-        bias_corr1 = 1.0 - (b1 ** self.t)
-        bias_corr2 = 1.0 - (b2 ** self.t)
+        bias_corr1 = 1.0 - (b1**self.t)
+        bias_corr2 = 1.0 - (b2**self.t)
         for idx, g in enumerate(grads):
             self.m[idx] = b1 * self.m[idx] + (1.0 - b1) * g
             self.v[idx] = b2 * self.v[idx] + (1.0 - b2) * (g * g)
@@ -1050,6 +1069,63 @@ class _ReComSolverBase(Solver):
             assignment=tuple(state.assignment),
             violations=tuple(state.violations),
             boundary_cost=state.boundary_cost,
+        )
+
+    def _sample_burst(
+        self,
+        setup: _Setup,
+        current: _State,
+        kernel: _ReComKernel,
+        *,
+        selector: str,
+        burst_length: int,
+        attempted: int,
+        reject_infeasible: bool,
+    ) -> _BurstSamples:
+        walk = current.clone()
+        samples: list[_Snapshot] = []
+        accepted = 0
+        rejected = 0
+        proposal_failures = 0
+        stop_reason = None
+        remaining = burst_length
+        if setup.max_iterations is not None:
+            remaining = min(remaining, setup.max_iterations - attempted)
+
+        for _ in range(remaining):
+            if not self._budget_available(
+                attempted, setup.max_iterations, setup.deadline
+            ):
+                stop_reason = "time_limit"
+                break
+            attempted += 1
+            try:
+                move = kernel.propose(walk, selector)
+            except _DeadlineReached:
+                stop_reason = "time_limit"
+                break
+            except _NoProposal as exc:
+                proposal_failures += 1
+                if exc.reason == "no_adjacent_zone_pairs":
+                    stop_reason = exc.reason
+                    break
+                continue
+
+            if reject_infeasible and not move.globally_feasible:
+                rejected += 1
+                continue
+
+            kernel.apply(walk, move)
+            accepted += 1
+            samples.append(self._snapshot(walk))
+
+        return _BurstSamples(
+            samples=tuple(samples),
+            attempted=attempted,
+            accepted=accepted,
+            rejected=rejected,
+            proposal_failures=proposal_failures,
+            stop_reason=stop_reason,
         )
 
     def _error_solution(
@@ -1197,6 +1273,18 @@ class RelaxedReComSolver(ReComSolver):
 class ShortBurstsSolver(_ReComSolverBase):
     """Unrejected ReCom walks with deterministic short-burst restarts."""
 
+    def _options(self) -> tuple[str, str, int]:
+        method = str(self.options.get("short_bursts_method", "recom"))
+        if method not in {"recom", "relaxed_recom"}:
+            raise ValueError(
+                "short_bursts_method must be one of: recom, relaxed_recom."
+            )
+        burst_length = int(self.options.get("short_bursts_length", 25))
+        if burst_length <= 0:
+            raise ValueError("short_bursts_length must be positive.")
+        selector = "uniform" if method == "recom" else "relaxed"
+        return method, selector, burst_length
+
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         self._check_choice_objective(problem, self.name)
         start = time.monotonic()
@@ -1205,15 +1293,7 @@ class ShortBurstsSolver(_ReComSolverBase):
         except _HintError as exc:
             return self._error_solution(problem, start, str(exc))
 
-        method = str(self.options.get("short_bursts_method", "recom"))
-        if method not in {"recom", "relaxed_recom"}:
-            raise ValueError(
-                "short_bursts_method must be one of: recom, relaxed_recom."
-            )
-        selector = "uniform" if method == "recom" else "relaxed"
-        burst_length = int(self.options.get("short_bursts_length", 25))
-        if burst_length <= 0:
-            raise ValueError("short_bursts_length must be positive.")
+        method, selector, burst_length = self._options()
 
         context = setup.context
         current = setup.state
@@ -1231,54 +1311,33 @@ class ShortBurstsSolver(_ReComSolverBase):
 
         while self._budget_available(attempted, setup.max_iterations, setup.deadline):
             base = self._snapshot(current)
-            walk = current.clone()
-            samples: list[_Snapshot] = []
-            remaining = burst_length
-            if setup.max_iterations is not None:
-                remaining = min(remaining, setup.max_iterations - attempted)
-
-            deadline_reached = False
-            no_adjacent_pairs = False
-            for _ in range(remaining):
-                if not self._budget_available(
-                    attempted, setup.max_iterations, setup.deadline
-                ):
-                    deadline_reached = True
-                    break
-                attempted += 1
-                try:
-                    move = kernel.propose(walk, selector)
-                except _DeadlineReached:
-                    deadline_reached = True
-                    break
-                except _NoProposal as exc:
-                    proposal_failures += 1
-                    if exc.reason == "no_adjacent_zone_pairs":
-                        no_adjacent_pairs = True
-                        break
-                    continue
-
-                kernel.apply(walk, move)
-                accepted += 1
-                snapshot = self._snapshot(walk)
+            burst = self._sample_burst(
+                setup,
+                current,
+                kernel,
+                selector=selector,
+                burst_length=burst_length,
+                attempted=attempted,
+                reject_infeasible=False,
+            )
+            attempted = burst.attempted
+            accepted += burst.accepted
+            proposal_failures += burst.proposal_failures
+            for snapshot in burst.samples:
                 normalizer.observe(snapshot.violations)
-                samples.append(snapshot)
                 if self._better_feasible(snapshot, best_feasible):
                     best_feasible = snapshot
 
             selected = base
-            for sample in samples:
+            for sample in burst.samples:
                 if _burst_better(sample, selected, normalizer):
                     selected = sample
             if _burst_better(selected, base, normalizer):
                 current = context.build_state(list(selected.assignment))
                 selected_improvements += 1
 
-            if deadline_reached:
-                stop_reason = "time_limit"
-                break
-            if no_adjacent_pairs:
-                stop_reason = "no_adjacent_zone_pairs"
+            if burst.stop_reason is not None:
+                stop_reason = burst.stop_reason
                 break
             completed_bursts += 1
 
@@ -1307,6 +1366,141 @@ class ShortBurstsSolver(_ReComSolverBase):
             "tree_count_approximation": "exp_cycle_rank",
         }
         return self._result(problem, context, start, best_feasible, metadata)
+
+    def solve_with_scorer(
+        self,
+        problem: ZoneProblem,
+        scorer: ShortBurstBatchScorer,
+        *,
+        objective_kind: str,
+    ) -> ZoneSolution:
+        """Run feasible short bursts and select each restart using ``scorer``."""
+
+        self._check_choice_objective(problem, self.name)
+        start = time.monotonic()
+        try:
+            setup = self._initialize(problem, start)
+        except _HintError as exc:
+            return self._error_solution(problem, start, str(exc))
+
+        initial = self._snapshot(setup.state)
+        if not initial.feasible:
+            return self._error_solution(
+                problem,
+                start,
+                f"{self.name} requires a feasible initial solution for scored bursts.",
+            )
+
+        method, selector, burst_length = self._options()
+        reject_infeasible = method == "recom"
+        context = setup.context
+        current = setup.state
+        kernel = _ReComKernel(context, setup.rng, setup.deadline)
+        initial_assignment = context.assignment_dict(initial.assignment)
+        initial_score = scorer((initial_assignment,), None)[0]
+        best_feasible = initial
+        best_score = initial_score
+        current_score = initial_score
+        attempted = 0
+        accepted = 0
+        rejected = 0
+        proposal_failures = 0
+        completed_bursts = 0
+        selected_improvements = 0
+        stop_reason = "iteration_limit"
+
+        while self._budget_available(attempted, setup.max_iterations, setup.deadline):
+            base = self._snapshot(current)
+            base_assignment = context.assignment_dict(base.assignment)
+            burst = self._sample_burst(
+                setup,
+                current,
+                kernel,
+                selector=selector,
+                burst_length=burst_length,
+                attempted=attempted,
+                reject_infeasible=reject_infeasible,
+            )
+            attempted = burst.attempted
+            accepted += burst.accepted
+            rejected += burst.rejected
+            proposal_failures += burst.proposal_failures
+
+            feasible_samples = tuple(
+                sample for sample in burst.samples if sample.feasible
+            )
+            unique_samples = tuple(dict.fromkeys(feasible_samples))
+            assignments = tuple(
+                context.assignment_dict(sample.assignment) for sample in unique_samples
+            )
+            scores = scorer(assignments, base_assignment) if assignments else ()
+            if len(scores) != len(unique_samples):
+                raise ValueError(
+                    "Short-burst scorer returned the wrong number of scores."
+                )
+
+            selected = base
+            selected_score = current_score
+            for sample, score in zip(unique_samples, scores, strict=True):
+                if not math.isfinite(score):
+                    raise ValueError("Short-burst scorer returned a non-finite score.")
+                if score > selected_score:
+                    selected = sample
+                    selected_score = score
+
+            if selected_score > current_score:
+                current = context.build_state(list(selected.assignment))
+                current_score = selected_score
+                selected_improvements += 1
+                if selected_score > best_score:
+                    best_feasible = selected
+                    best_score = selected_score
+
+            if self.options.get("save_solver_progress") or self.options.get("verbose"):
+                print(
+                    f"[Burst {completed_bursts + 1}] elapsed: "
+                    f"{time.monotonic() - start:.1f}s, base: {current_score:.2f}, "
+                    f"selected: {selected_score:.2f}, best: {best_score:.2f}, "
+                    f"improvements: {selected_improvements}",
+                    flush=True,
+                )
+
+            if burst.stop_reason is not None:
+                stop_reason = burst.stop_reason
+                break
+            completed_bursts += 1
+
+        if setup.deadline is not None and time.monotonic() >= setup.deadline:
+            stop_reason = "time_limit"
+        metadata = {
+            **setup.hint_metadata,
+            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "attempted_moves": attempted,
+            "accepted_moves": accepted,
+            "rejected_moves": rejected,
+            "proposal_failures": proposal_failures,
+            "completed_bursts": completed_bursts,
+            "selected_burst_improvements": selected_improvements,
+            "short_bursts_length": burst_length,
+            "short_bursts_method": method,
+            "short_bursts_score": objective_kind,
+            "stop_reason": stop_reason,
+            "initial_feasible": True,
+            "initial_score": initial_score,
+            "final_score": best_score,
+            "cut_selector": selector,
+            "tree_sampler": "wilson_uniform",
+            "tree_count_approximation": "exp_cycle_rank",
+            "objective_kind": objective_kind,
+        }
+        return ZoneSolution(
+            problem=problem,
+            assignment=context.assignment_dict(best_feasible.assignment),
+            status="FEASIBLE",
+            objective=float(best_score),
+            wall_time=time.monotonic() - start,
+            metadata={"solver": self.name, **metadata},
+        )
 
 
 @register("adaptive_short_bursts")
@@ -1373,12 +1567,15 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         proposal_failures = 0
         completed_bursts = 0
         selected_improvements = 0
-        stop_reason = "iteration_limit" if not (stop_on_feasible and best_feasible is not None) else "initial_feasible"
+        stop_reason = (
+            "iteration_limit"
+            if not (stop_on_feasible and best_feasible is not None)
+            else "initial_feasible"
+        )
 
-        while (
-            not (stop_on_feasible and best_feasible is not None)
-            and self._budget_available(attempted, setup.max_iterations, setup.deadline)
-        ):
+        while not (
+            stop_on_feasible and best_feasible is not None
+        ) and self._budget_available(attempted, setup.max_iterations, setup.deadline):
             base = self._snapshot(current)
             walk = current.clone()
             samples: list[_Snapshot] = []
@@ -1439,11 +1636,10 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
 
             # Update eta using Adam and update constraint weights: objective + eta * violation^2
             obj = float(selected.boundary_cost)
-            grads = tuple(v ** 2 for v in selected.violations)
+            grads = tuple(v**2 for v in selected.violations)
             eta = list(adam.step(grads))
             weights = [
-                max(1.0, obj + e * (v ** 2))
-                for e, v in zip(eta, selected.violations)
+                max(1.0, obj + e * (v**2)) for e, v in zip(eta, selected.violations)
             ]
 
             if deadline_reached:

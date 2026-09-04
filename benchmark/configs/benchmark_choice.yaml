@@ -1,0 +1,91 @@
+# Optimization-native benchmark sweep.
+
+name: sfusd_8_21
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: true
+  save_solver_progress: true
+  max_distance: auto
+  boundary_prop: 0.18
+  hints: feasible
+  budget_accounting: solver_time
+  feasible_hint_time_limit: 60
+
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  frl_dev: 0.15
+  gap_limits: [0]
+  mid_utility_handling: omit_nonpositive
+  saa_num_seeds: 15
+  saa_tie_breaking_method: STB
+  linearization_level: 1
+
+  choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
+  choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
+  choice_utility_hints: true   # iterative_choice: seed initial MNL cuts from nearest schools
+  mid_lottery_scale: 100         # mid/mid_decomp: integer continuum-mass grid
+  mid_transport_bounds: false   
+  mid_complementary_slackness_slack: 'auto' 
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9',
+                    '10-zone-3', '10-zone-9',
+                    '13-zone-6', '13-zone-7']
+  levels: [['Block_2'], ['Block_1']]
+
+tasks:
+  - solver: 'cp_bool'
+    strategy: [iterative_choice, saa]
+    workers: 16
+    max_iterations: [10, 15, 20]
+    seed: [1]
+    solve_time_limits: [[3600], [7200]]
+  
+  - solver: 'cp_bool'
+    strategy: [mid, mid_decomp]
+    linearization_level: 0
+    mid_complementary_slackness: [true, false]
+    workers: 16
+    seed: [1]
+    solve_time_limits: [[3600], [7200]]
+
+  - solver: 'mip'
+    strategy: [iterative_choice, saa]
+    workers: 16
+    max_iterations: [10, 15, 20]
+    seed: [1]
+    solve_time_limits: [[3600], [7200]]
+
+  - solver: 'short_bursts'
+    strategy: ['short_bursts_choice']
+    workers: 1
+    seed: [1, 2, 3, 4, 5, 6, 7, 8]
+    solve_time_limits: [[900]]
+
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final  # final | all
+
+
+matching:
+  enabled: false
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
+  compute_stage_assignments: false

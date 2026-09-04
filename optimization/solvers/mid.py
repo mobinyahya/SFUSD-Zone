@@ -7,9 +7,11 @@ from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
 
-from optimization.data.mid import MidMarket, preprocess_mid_market
+from optimization.data.mid import MidMarket, MidProgram, preprocess_mid_market
+from optimization.mid_options import normalize_complementary_slackness_slack
 from optimization.mid_oracle import (
     continuum_oracle,
+    cutoff_upper_bounds,
     evaluate_cutoffs,
     finite_grid_oracle,
 )
@@ -40,6 +42,12 @@ class _MidVariables:
 class MidCpSatSolver(CpBoolSolver):
     """Extend `cp_bool` with program cutoffs and assignment welfare."""
 
+    #: Add the valid inequality that tightens the linear relaxation of the
+    #: `min` recurrence.  Only ever turn this off to measure its effect: with
+    #: `x` fixed it takes the relaxation from +38.6% to +0.8% on the real
+    #: Block_2 market, and it never changes the integral feasible set.
+    tighten_min_recurrence = True
+
     def __init__(
         self,
         market: MidMarket,
@@ -48,6 +56,8 @@ class MidCpSatSolver(CpBoolSolver):
         preprocessing_seconds: float = 0.0,
         active_prefix_lengths: dict[int, int] | None = None,
         transport_bounds: bool = True,
+        complementary_slackness: bool = False,
+        complementary_slackness_slack: float | str = "auto",
         preprocessed: bool = False,
         **options,
     ) -> None:
@@ -68,6 +78,23 @@ class MidCpSatSolver(CpBoolSolver):
         if not isinstance(transport_bounds, bool):
             raise ValueError("MID transport_bounds must be a Boolean.")
         self.transport_bounds = transport_bounds
+        cs = complementary_slackness or bool(
+            options.get("mid_complementary_slackness", False)
+        )
+        if not isinstance(cs, bool):
+            raise ValueError("MID complementary_slackness must be a Boolean.")
+        self.complementary_slackness = cs
+
+        slack = complementary_slackness_slack
+        if (
+            slack == "auto"
+            and "mid_complementary_slackness_slack" in options
+            and options["mid_complementary_slackness_slack"] is not None
+        ):
+            slack = options["mid_complementary_slackness_slack"]
+        self.complementary_slackness_slack = normalize_complementary_slackness_slack(
+            slack
+        )
         self.preprocessed = preprocessed
         self._mid_variables: _MidVariables | None = None
         self.master_assignment_masses: tuple[tuple[int, ...], ...] | None = None
@@ -118,10 +145,16 @@ class MidCpSatSolver(CpBoolSolver):
             ):
                 active_priorities[program_id].add(priority)
 
-        upper_bounds = {
-            program_id: (max(priorities) + 1) * scale if priorities else 0
-            for program_id, priorities in observed_priorities.items()
-        }
+        # Tail transport flows are bounded by their own acceptance mass, so they
+        # need thresholds for the ranks outside the exact prefix too.
+        threshold_priorities = (
+            observed_priorities if self.transport_bounds else active_priorities
+        )
+
+        # Capacity-aware cutoff bounds: a program that can never be
+        # over-demanded has an identically zero cutoff, which fixes the variable
+        # outright.  See `cutoff_upper_bounds` for the validity argument.
+        upper_bounds = cutoff_upper_bounds(self.market, scale)
         cp_integer_limit = 2**63 - 1
         integer_limit = cp_integer_limit // 2
         max_tail_mass_activity = scale * max(
@@ -146,18 +179,38 @@ class MidCpSatSolver(CpBoolSolver):
             for program_id in program_by_id
         }
         thresholds = {}
-        for program_id, priorities in active_priorities.items():
+        for program_id, priorities in threshold_priorities.items():
             upper = upper_bounds[program_id]
             for priority in sorted(priorities):
+                # A rejected lottery mass is a probability: clamp it to the
+                # lottery interval, as `t = min(1, max(P - rho, 0))` in the
+                # paper.  Equivalent to the unclamped form because every use is
+                # under `min(remaining, .)` with `remaining <= scale`, but it
+                # keeps the domain at `scale` instead of `(rho_max + 1) * scale`
+                # and licenses the tail acceptance bound below.
+                offset = priority * scale
+                reach = max(0, upper - offset)
                 threshold = model.NewIntVar(
                     0,
-                    upper,
+                    min(scale, reach),
                     f"mid_threshold_{program_number[program_id]}_{priority}",
                 )
-                model.AddMaxEquality(
-                    threshold,
-                    [cutoffs[program_id] - priority * scale, 0],
-                )
+                if reach <= scale:
+                    model.AddMaxEquality(
+                        threshold,
+                        [cutoffs[program_id] - offset, 0],
+                    )
+                else:
+                    unclamped = model.NewIntVar(
+                        0,
+                        reach,
+                        f"mid_threshold_raw_{program_number[program_id]}_{priority}",
+                    )
+                    model.AddMaxEquality(
+                        unclamped,
+                        [cutoffs[program_id] - offset, 0],
+                    )
+                    model.AddMinEquality(threshold, [unclamped, scale])
                 thresholds[(program_id, priority)] = threshold
 
         required_access = {
@@ -224,7 +277,7 @@ class MidCpSatSolver(CpBoolSolver):
                     continue
                 value = model.NewIntVar(
                     0,
-                    max(scale, upper_bounds[program_id]),
+                    scale,
                     f"mid_effective_{student_type.node}_"
                     f"{program_number[program_id]}_{priority}",
                 )
@@ -253,13 +306,19 @@ class MidCpSatSolver(CpBoolSolver):
                 remaining = model.NewIntVar(
                     0, scale, f"mid_remaining_{type_index}_{rank}"
                 )
-                model.AddMinEquality(
-                    remaining,
-                    [
-                        previous,
-                        effective_value[(student_type.node, program_id, priority)],
-                    ],
-                )
+                rank_effective = effective_value[
+                    (student_type.node, program_id, priority)
+                ]
+                model.AddMinEquality(remaining, [previous, rank_effective])
+                # `min` is concave, so the linear relaxation of AddMinEquality is
+                # only `R <= R_prev` and `R <= e`, which lets the LP push R below
+                # the true minimum and manufacture mass at high-utility ranks.
+                # For a, b in [0, scale], min(a, b) = a + b - max(a, b) >=
+                # a + b - scale, i.e. d_r <= scale - e_r: you cannot take more
+                # mass at rank r than your acceptance chance there.  Valid only
+                # because thresholds are clamped to the lottery interval above.
+                if self.tighten_min_recurrence:
+                    model.Add(remaining >= previous + rank_effective - scale)
                 mass = previous - remaining
                 capacity_terms[program_id].append(student_type.count * mass)
                 objective_terms.append(student_type.scaled_utility_sums[rank] * mass)
@@ -280,6 +339,15 @@ class MidCpSatSolver(CpBoolSolver):
                     )
                     if not program.citywide and access_key in access:
                         model.Add(mass <= scale * access[access_key])
+                    # The true mass at rank r is
+                    #   d = max(0, R_{r-1} - e_r) <= scale - e_r <= scale - t,
+                    # since R_{r-1} <= scale and e_r is either the threshold t or
+                    # scale.  Without this the tail ignores cutoffs entirely and
+                    # the master reports an unclearable market.
+                    model.Add(
+                        mass + thresholds[(program_id, student_type.priorities[rank])]
+                        <= scale
+                    )
                     capacity_terms[program_id].append(student_type.count * mass)
                     objective_terms.append(
                         student_type.scaled_utility_sums[rank] * mass
@@ -297,6 +365,11 @@ class MidCpSatSolver(CpBoolSolver):
             terms = capacity_terms[program.program_id]
             if terms:
                 model.Add(sum(terms) <= scale * program.capacity)
+
+        if self.complementary_slackness:
+            self._add_complementary_slackness_constraints(
+                model, problem, cutoffs, capacity_terms, program_number
+            )
 
         objective_bound = scale * sum(
             max(student_type.scaled_utility_sums, default=0)
@@ -350,6 +423,61 @@ class MidCpSatSolver(CpBoolSolver):
             for type_index in range(len(self.market.types))
         )
 
+    def _compute_scaled_slack(
+        self,
+        program: MidProgram,
+        problem: ZoneProblem,
+        scaled_capacity: int,
+    ) -> int:
+        slack_setting = self.complementary_slackness_slack
+        if slack_setting == "auto":
+            relevant_count = 0
+            for student_type in self.market.types:
+                if program.program_id not in student_type.programs:
+                    continue
+                if not program.citywide:
+                    if student_type.node != program.school_node and not (
+                        problem.candidate_zones(student_type.node)
+                        & problem.candidate_zones(program.school_node)
+                    ):
+                        continue
+                relevant_count += student_type.count
+            return min(scaled_capacity, self.lottery_scale * max(1, relevant_count))
+        if isinstance(slack_setting, str) and slack_setting.endswith("%"):
+            pct = float(slack_setting[:-1])
+            return min(scaled_capacity, round((pct / 100.0) * scaled_capacity))
+        seats = float(slack_setting)
+        return min(scaled_capacity, round(seats * self.lottery_scale))
+
+    def _add_complementary_slackness_constraints(
+        self,
+        model: cp_model.CpModel,
+        problem: ZoneProblem,
+        cutoffs: dict[str, cp_model.IntVar],
+        capacity_terms: dict[str, list],
+        program_number: dict[str, int],
+    ) -> None:
+        scale = self.lottery_scale
+        for program in self.market.programs:
+            if program.capacity <= 0:
+                continue
+            scaled_capacity = scale * program.capacity
+            scaled_slack = self._compute_scaled_slack(program, problem, scaled_capacity)
+            threshold = max(0, scaled_capacity - scaled_slack)
+            if threshold <= 0:
+                continue
+            cutoff_var = cutoffs[program.program_id]
+            is_pos = model.NewBoolVar(
+                f"mid_cs_pos_{program_number[program.program_id]}"
+            )
+            model.Add(cutoff_var >= 1).OnlyEnforceIf(is_pos)
+            model.Add(cutoff_var == 0).OnlyEnforceIf(is_pos.Not())
+            terms = capacity_terms[program.program_id]
+            if terms:
+                model.Add(sum(terms) >= threshold).OnlyEnforceIf(is_pos)
+            else:
+                model.Add(is_pos == 0)
+
     def _add_mid_hints(
         self,
         model: cp_model.CpModel,
@@ -365,7 +493,10 @@ class MidCpSatSolver(CpBoolSolver):
         for (program_id, priority), variable in variables.thresholds.items():
             model.AddHint(
                 variable,
-                max(cutoffs[program_id] - priority * self.lottery_scale, 0),
+                min(
+                    self.lottery_scale,
+                    max(cutoffs[program_id] - priority * self.lottery_scale, 0),
+                ),
             )
         for (student_node, school_node), variable in variables.access.items():
             model.AddHint(
@@ -394,9 +525,9 @@ class MidCpSatSolver(CpBoolSolver):
             accessible = program.citywide or (
                 problem.hint[student_node] == problem.hint[program.school_node]
             )
-            threshold = max(
-                cutoffs[program_id] - priority * self.lottery_scale,
-                0,
+            threshold = min(
+                self.lottery_scale,
+                max(cutoffs[program_id] - priority * self.lottery_scale, 0),
             )
             model.AddHint(variable, threshold if accessible else self.lottery_scale)
         for row, values in zip(variables.remaining, hint.remaining_masses):
@@ -469,6 +600,8 @@ class MidCpSatSolver(CpBoolSolver):
             "mid_utility_scale": self.market.utility_scale,
             "mid_utility_handling": self.market.utility_handling,
             "mid_transport_bounds": self.transport_bounds,
+            "mid_complementary_slackness": self.complementary_slackness,
+            "mid_complementary_slackness_slack": self.complementary_slackness_slack,
             "mid_student_count": self.market.student_count,
             "mid_utility_student_count": self.market.utility_student_count,
             "mid_outside_only_student_count": self.market.outside_only_student_count,

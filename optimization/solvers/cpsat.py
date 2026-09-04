@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import time
+from typing import Any
 
 import networkx as nx
 from ortools.sat.python import cp_model
@@ -419,6 +420,10 @@ class _CpSatSolver(Solver):
                     "choice_cuts": len(problem.choice_objective.cuts),
                 }
             )
+            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                metadata["choice_best_bound"] = (
+                    solver.BestObjectiveBound() / objective_scale
+                )
         elif problem.weight_edges:
             metadata.update(
                 {
@@ -672,49 +677,135 @@ class _CpSatSolver(Solver):
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError("choice_utility_scale must be a positive finite value.")
 
-        lb = _scaled(choice.lower_bound, scale)
-        ub = _scaled(choice.upper_bound, scale)
+        lb = _scaled_floor(choice.lower_bound, scale)
+        ub = _scaled_ceil(choice.upper_bound, scale)
         if lb > ub:
             raise ValueError("Choice utility lower_bound exceeds upper_bound.")
 
-        utilities = {
-            node: m.NewIntVar(lb, ub, f"choice_u_{node}") for node in problem.nodes
-        }
-        for cut in choice.cuts:
-            self._add_choice_cut(m, x, utilities, cut, scale)
+        if choice.total_lower_bound is not None:
+            total_lb = _scaled_floor(choice.total_lower_bound, scale)
+        else:
+            total_lb = lb * len(problem.nodes)
 
-        total_lb = lb * len(problem.nodes)
-        total_ub = ub * len(problem.nodes)
+        if choice.total_upper_bound is not None:
+            total_ub = _scaled_ceil(choice.total_upper_bound, scale)
+        else:
+            total_ub = ub * len(problem.nodes)
+
+        if total_lb > total_ub:
+            raise ValueError("Choice utility lower_bound exceeds upper_bound.")
+
         total = m.NewIntVar(total_lb, total_ub, "choice_total_utility")
-        m.Add(total == sum(utilities.values()))
+
+        utilities: dict[int, cp_model.IntVar] = {}
+        if not choice.aggregate_cuts:
+            utilities = {
+                node: m.NewIntVar(lb, ub, f"choice_u_{node}") for node in problem.nodes
+            }
+            m.Add(total == sum(utilities.values()))
+
+        access_vars: dict[tuple[int, int], Any] = {}
+        access_joints: dict[tuple[int, int, int], Any] = {}
+        for cut in choice.cuts:
+            self._add_choice_cut(
+                m, problem, x, utilities, total, access_vars, access_joints, cut, scale
+            )
+
         m.Maximize(total)
+
+    def _get_or_create_access_var(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+        student_node: int,
+        school_node: int,
+    ) -> Any:
+        if student_node == school_node:
+            return 1
+        pair = (min(student_node, school_node), max(student_node, school_node))
+        if pair in access_vars:
+            return access_vars[pair]
+
+        u, v = pair
+        common_zones = sorted(problem.candidate_zones(u) & problem.candidate_zones(v))
+        if not common_zones:
+            access_vars[pair] = 0
+            return 0
+
+        same_zone = m.NewBoolVar(f"choice_access_{u}_{v}")
+        joints = []
+        for zone in common_zones:
+            joint_key = (u, v, zone)
+            if joint_key in access_joints:
+                both = access_joints[joint_key]
+            else:
+                both = m.NewBoolVar(f"choice_access_joint_{u}_{v}_{zone}")
+                x_u = x[(zone, u)]
+                x_v = x[(zone, v)]
+                m.AddImplication(both, x_u)
+                m.AddImplication(both, x_v)
+                m.AddBoolOr([x_u.Not(), x_v.Not(), both])
+                access_joints[joint_key] = both
+            joints.append(both)
+
+        for both in joints:
+            m.AddImplication(both, same_zone)
+        m.AddBoolOr([same_zone.Not(), *joints])
+
+        access_vars[pair] = same_zone
+        return same_zone
 
     def _add_choice_cut(
         self,
         m: cp_model.CpModel,
+        problem: ZoneProblem,
         x: _AssignmentVars,
         utilities: dict[int, cp_model.IntVar],
+        total: cp_model.IntVar,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
         cut: ChoiceCut,
         scale: float,
     ) -> None:
-        indicator = x.get((cut.zone, cut.node))
-        if indicator is None or cut.node not in utilities:
-            return
         terms = []
         coeffs = []
+        const = cut.constant
+        anchor = dict(cut.anchor_access)
+        scaled_constant = 0.0
         for term in cut.terms:
-            var = x.get((term.zone, term.node))
-            if var is None:
+            student = term.student_node if term.student_node is not None else cut.node
+            if student is None:
                 continue
-            coeff = _scaled(term.coefficient, scale)
-            if coeff == 0:
-                continue
-            terms.append(var)
-            coeffs.append(coeff)
-        expr = _scaled(cut.constant, scale)
+            school = term.node
+            var = self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, student, school
+            )
+            if isinstance(var, (int, float)):
+                if var == 1:
+                    const += term.coefficient
+            else:
+                raw_coefficient = term.coefficient * scale
+                if anchor.get((student, school), 0):
+                    coeff = math.floor(raw_coefficient)
+                    scaled_constant += raw_coefficient - coeff
+                else:
+                    coeff = math.ceil(raw_coefficient)
+                if coeff != 0:
+                    terms.append(var)
+                    coeffs.append(coeff)
+
+        scaled_constant += const * scale
+        expr = math.ceil(scaled_constant)
         if terms:
             expr += cp_model.LinearExpr.WeightedSum(terms, coeffs)
-        m.Add(utilities[cut.node] <= expr).OnlyEnforceIf(indicator)
+
+        if cut.node is None or cut.node not in utilities:
+            m.Add(total <= expr)
+        else:
+            m.Add(utilities[cut.node] <= expr)
 
 
 @register("cp_bool")
@@ -1048,6 +1139,18 @@ def _scaled(value: float, scale: float) -> int:
     if not math.isfinite(float(value)):
         raise ValueError(f"Choice objective contains non-finite value: {value!r}")
     return int(round(float(value) * scale))
+
+
+def _scaled_floor(value: float, scale: float) -> int:
+    if not math.isfinite(float(value)):
+        raise ValueError(f"Choice objective contains non-finite value: {value!r}")
+    return math.floor(float(value) * scale)
+
+
+def _scaled_ceil(value: float, scale: float) -> int:
+    if not math.isfinite(float(value)):
+        raise ValueError(f"Choice objective contains non-finite value: {value!r}")
+    return math.ceil(float(value) * scale)
 
 
 def _normalized_cp_sat_search_strategy(value: object) -> str | None:

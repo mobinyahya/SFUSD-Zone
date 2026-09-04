@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Mapping
 
 from choice.mnl import MNLZoningUtility
 from choice.objective import ChoiceCut, ChoiceEvaluation
@@ -31,48 +30,6 @@ class ChoiceModel(ABC):
 
     def choice_utility_hint_cuts(self, problem: ZoneProblem) -> tuple[ChoiceCut, ...]:
         return ()
-
-
-class DistanceChoiceModel(ChoiceModel):
-    """Student-weighted negative distance to the assigned centroid."""
-
-    def preassignment_utility(
-        self, problem: ZoneProblem, assignment: dict[int, int]
-    ) -> float:
-        return sum(
-            self._zone_utility(problem, node, zone) for node, zone in assignment.items()
-        )
-
-    def evaluate_with_cuts(
-        self, problem: ZoneProblem, assignment: dict[int, int]
-    ) -> ChoiceEvaluation:
-        utility = self.preassignment_utility(problem, assignment)
-        cuts: list[ChoiceCut] = []
-        for node in problem.nodes:
-            for zone in problem.candidate_zones(node):
-                cuts.append(
-                    ChoiceCut(
-                        node=node,
-                        zone=zone,
-                        constant=self._zone_utility(problem, node, zone),
-                    )
-                )
-        return ChoiceEvaluation(utility=utility, cuts=tuple(cuts))
-
-    def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
-        values = [
-            self._zone_utility(problem, node, zone)
-            for node in problem.nodes
-            for zone in problem.candidate_zones(node)
-        ]
-        if not values:
-            return (-1.0, 1.0)
-        return (min(values) - 1.0, max(values) + 1.0)
-
-    @staticmethod
-    def _zone_utility(problem: ZoneProblem, node: int, zone: int) -> float:
-        centroid = problem.centroids[zone]
-        return -problem.students(node) * problem.distance(centroid, node)
 
 
 class MNLChoiceModel(ChoiceModel):
@@ -113,30 +70,11 @@ class MNLChoiceModel(ChoiceModel):
         return self.evaluator.choice_utility_hint_cuts(problem)
 
 
-_MODELS = {
-    "distance": DistanceChoiceModel,
-    "mnl": MNLChoiceModel,
-}
+def build_mnl_choice_model(
+    data: DataScenario,
+    *,
+    method: str = "logsum",
+) -> MNLChoiceModel:
+    """Build the sole supported zoning choice model."""
 
-
-def get_choice_model(name: str, **options) -> ChoiceModel:
-    if name not in _MODELS:
-        raise ValueError(
-            f"Unknown choice model {name!r}. Available: {sorted(_MODELS)}."
-        )
-    return _MODELS[name](**options)
-
-
-def get_configured_choice_model(
-    options: Mapping[str, Any], data: DataScenario
-) -> ChoiceModel:
-    """Build the choice model described by optimization config options."""
-
-    name = str(options.get("choice_model", "mnl"))
-    if name == "mnl":
-        return get_choice_model(
-            name,
-            data=data,
-            method=str(options.get("choice_model_method", "logsum")),
-        )
-    return get_choice_model(name)
+    return MNLChoiceModel(data=data, method=method)

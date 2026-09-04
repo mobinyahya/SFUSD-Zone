@@ -7,7 +7,7 @@ centroids_type: '6-zone-9'
 # Switch granularity here; no manual file edits needed.
 levels: ['Block_1']
 solver: 'cp_bool'               # cp_bool | cp_int | cp_single_zone | mip | recom | relaxed_recom | short_bursts | adaptive_short_bursts
-strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp | saa
+strategy: 'single'             # single | recursive | iterative_choice | mid | mid_decomp | saa | short_bursts_choice
 # cp_single_zone requires a centroids_type containing exactly one school ID.
 # saa requires solver: cp_bool or mip.
 
@@ -22,9 +22,17 @@ max_distance: 5                  # miles, or 'auto' (1.2x maximum distance to cl
 centroid_neighbor_radius: 0
 solve_time_limits: [45, 45]   # one per level
 carry_over_compute: false     # recursive: add unused level time to the next level
+# iterative_choice/mid_decomp/saa/short_bursts_choice read the last entry as one
+# total run budget instead of a per-solve limit; each iteration claims a linearly
+# increasing share of what is left, so unused time carries forward.
+budget_accounting: wall_clock  # wall_clock | solver_time
+# wall_clock: the budget pays for everything the strategy does (problem building,
+# market preprocessing, warm starts, solves, oracle/choice-model evaluation).
+# solver_time: only the iterative solves are charged, so loading and evaluation
+# are free and the budget measures the search itself.
 gap_limits: [0, 0]
 hints: voronoi                # feasible | voronoi | none
-feasible_hint_time_limit: 60  # seconds for the objective-free zoning hint solve
+feasible_hint_time_limit: 60  # seconds for the objective-free zoning hint solve (cached per problem+seed)
 save_solver_logs: false       # write solver logs under output/solver_logs
 save_solver_progress: false   # save improving incumbents under output/solver_progress after the run
 secondary_objective: false    # cp_bool/mip: use alternative boundary objective formulation
@@ -46,13 +54,14 @@ boundary_radius: 2            # recursive: graph-hop width around projected bord
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage
 boundary_prop: -1             # single/iterative_choice/mid/mid_decomp/saa: 0..1; negative disables
 max_iterations: 5             # iterative_choice/mid_decomp/saa
-choice_model: 'mnl'           # iterative choice and preassignment metric: distance | mnl
 choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
 choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
 choice_utility_hints: false   # iterative_choice: seed initial MNL cuts from nearest schools
 mid_lottery_scale: 20         # mid/mid_decomp: integer continuum-mass grid
 mid_utility_handling: omit_nonpositive  # mid/mid_decomp/saa: omit_nonpositive | exponentiate
 mid_transport_bounds: true    # mid_decomp: constrain inactive tails by access and capacity
+mid_complementary_slackness: false  # mid/mid_decomp: force cutoffs to 0 when demand < capacity - slack
+mid_complementary_slackness_slack: 'auto'  # mid/mid_decomp: capacity slack: auto | float seats | percentage (e.g. '5%')
 saa_num_seeds: 5              # saa: sampled strict-priority lotteries
 saa_tie_breaking_method: MTB  # saa: MTB | STB
 

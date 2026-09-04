@@ -28,13 +28,10 @@ from benchmark.config import (
 )
 from benchmark.results import aggregate_results
 from benchmark.runner import (
-    MANIFEST_FILENAME,
-    RESULT_FILENAME,
     TaskResult,
     _valid_existing_result,
     evaluate_optimization_task,
     run_optimization_phase,
-    valid_existing_result,
     valid_optimization_result,
     write_json,
 )
@@ -260,9 +257,9 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
         '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
         'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
         '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
-        'else',
+        "else",
         '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
-        'fi',
+        "fi",
         "",
     ]
     for index, _allocation in enumerate(allocations):
@@ -282,7 +279,9 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
         lines.append(" ".join(command))
         lines.append("")
     elif not allocations:
-        lines.append('printf "%s\\n" "All benchmark tasks completed; no jobs to submit."')
+        lines.append(
+            'printf "%s\\n" "All benchmark tasks completed; no jobs to submit."'
+        )
     return "\n".join(lines)
 
 
@@ -344,7 +343,11 @@ def _run_optimization_task(
     task: BenchmarkTask,
     execution: ExecutionConfig | None = None,
 ) -> TaskResult:
-    if execution and execution.skip_existing and valid_optimization_result(task, execution):
+    if (
+        execution
+        and execution.skip_existing
+        and valid_optimization_result(task, execution)
+    ):
         return TaskResult(
             task_id=task.task_id,
             output_dir=task.output_dir,
@@ -362,7 +365,11 @@ def _run_evaluation_task(
     visualization: VisualizationRunConfig,
     execution: ExecutionConfig | None = None,
 ) -> TaskResult:
-    if execution and execution.skip_existing and _valid_existing_result(task, execution):
+    if (
+        execution
+        and execution.skip_existing
+        and _valid_existing_result(task, execution)
+    ):
         return TaskResult(
             task_id=task.task_id,
             output_dir=task.output_dir,
@@ -672,22 +679,19 @@ def _sbatch_options(
         'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"; '
         'else export GRB_LICENSE_FILE="$HOME/gurobi.lic"; fi && '
     )
-    worker_command = (
-        license_setup
-        + shlex.join(
-            [
-                "uv",
-                "run",
-                "python",
-                "-m",
-                "benchmark.slurm",
-                "worker-allocation",
-                "--plan",
-                str(plan_path),
-                "--allocation-index",
-                str(index),
-            ]
-        )
+    worker_command = license_setup + shlex.join(
+        [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "benchmark.slurm",
+            "worker-allocation",
+            "--plan",
+            str(plan_path),
+            "--allocation-index",
+            str(index),
+        ]
     )
     log_prefix = _log_dir(plan) / f"{index:02d}-benchmark-%j"
     return [

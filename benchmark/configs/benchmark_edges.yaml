@@ -8,7 +8,7 @@ optimization_defaults:
     scenario: summer-26-zoning
     overrides: {}
   save_solver_logs: true
-  save_solver_progress: false
+  save_solver_progress: true
   max_distance: auto
 
   racial_dev: -1
@@ -23,7 +23,6 @@ optimization_defaults:
   recom_iterations: -1
   boundary_radius: 1
   short_bursts_method: relaxed_recom
-  # cp_sat_search_strategy: distance_to_centroid
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9',
@@ -32,41 +31,41 @@ sweep:
                     '13-zone-6', '13-zone-7',
                     '18-zone-1', '18-zone-7']
   levels: [['Block_3', 'Block_2'], ['Block_2', 'Block_1'], ['Block_2', 'Block_0']]
-  seed: [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  seed: [1, 2, 3, 4, 5]
 
 tasks:
-  # - solver: 'cp_bool'
-  #   solve_time_limits: [[600], [1800]]
+  - solver: 'cp_bool'
+    solve_time_limits: [[600], [1800]]
 
   - solver: 'mip'
     solve_time_limits: [[600], [1800]]
 
-  # - solver: 'recom'
-  #   workers: 1
-  #   solve_time_limits: [[600], [1800]]
+  - solver: 'recom'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
 
-  # - solver: 'relaxed_recom'
-  #   workers: 1
-  #   solve_time_limits: [[600], [1800]]
+  - solver: 'relaxed_recom'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
 
-  # - solver: 'short_bursts'
-  #   workers: 1
-  #   solve_time_limits: [[600], [1800]]
+  - solver: 'short_bursts'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
 
   - solver: 'adaptive_short_bursts'
     workers: 1
     solve_time_limits: [[600], [1800]]
 
-  # - solver: 'cp_bool'
-  #   strategy: 'recursive'
-  #   solve_time_limits: [[450, 150], [1350, 450]]
+  - solver: 'cp_bool'
+    strategy: 'recursive'
+    solve_time_limits: [[450, 150], [1350, 450]]
 
   - solver: 'mip'
     strategy: 'recursive'
     solve_time_limits: [[450, 150], [1350, 450]]
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_5'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_6'
   skip_existing: true
   rerun_failed: true
   sequential: false

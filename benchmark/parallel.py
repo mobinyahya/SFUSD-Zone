@@ -16,13 +16,9 @@ from benchmark.config import (
     VisualizationRunConfig,
 )
 from benchmark.runner import (
-    MANIFEST_FILENAME,
-    RESULT_FILENAME,
     TaskResult,
     _valid_existing_result,
-    load_manifest,
     run_optimization_task,
-    valid_existing_result,
 )
 
 

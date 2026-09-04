@@ -179,15 +179,15 @@ class MNLZoningUtility:
                     coeffs[school_node] = coeffs.get(school_node, 0.0) + grad
 
             constant = finite_or(constant)
-            for zone in problem.candidate_zones(node):
-                terms = tuple(
-                    ChoiceTerm(coef, zone, school_node)
-                    for school_node, coef in coeffs.items()
-                    if zone in problem.candidate_zones(school_node)
+            terms = tuple(
+                ChoiceTerm(coefficient=coef, node=school_node)
+                for school_node, coef in sorted(coeffs.items())
+                if coef
+                and bool(
+                    problem.candidate_zones(node) & problem.candidate_zones(school_node)
                 )
-                cuts.append(
-                    ChoiceCut(node=node, zone=zone, constant=constant, terms=terms)
-                )
+            )
+            cuts.append(ChoiceCut(node=node, constant=constant, terms=terms))
         return tuple(cuts)
 
     def _preassignment_utility(
@@ -434,15 +434,29 @@ class MNLZoningUtility:
                 if grad:
                     coeffs[school_node] = coeffs.get(school_node, 0.0) + grad
 
-            for zone in problem.candidate_zones(node):
-                terms = tuple(
-                    ChoiceTerm(coef, zone, school_node)
-                    for school_node, coef in coeffs.items()
-                    if zone in problem.candidate_zones(school_node)
+            terms = tuple(
+                ChoiceTerm(coefficient=coef, node=school_node)
+                for school_node, coef in sorted(coeffs.items())
+                if coef
+                and bool(
+                    problem.candidate_zones(node) & problem.candidate_zones(school_node)
                 )
-                cuts.append(
-                    ChoiceCut(node=node, zone=zone, constant=constant, terms=terms)
+            )
+            anchor_access = tuple(
+                (
+                    (node, term.node),
+                    int(assignment.get(node) == assignment.get(term.node)),
                 )
+                for term in terms
+            )
+            cuts.append(
+                ChoiceCut(
+                    node=node,
+                    constant=constant,
+                    terms=terms,
+                    anchor_access=anchor_access,
+                )
+            )
         return cuts
 
 

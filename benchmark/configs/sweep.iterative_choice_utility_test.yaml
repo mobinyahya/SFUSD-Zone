@@ -22,7 +22,6 @@ optimization_defaults:
   max_iterations: 50
   tolerance: 0
 
-  choice_model: 'mnl'
   choice_model_method: 'logsum'
   choice_utility_scale: 100.0
 

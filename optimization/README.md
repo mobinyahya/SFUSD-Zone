@@ -20,8 +20,8 @@ runner.
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
-| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `mip`, `recom`, `relaxed_recom`, `short_bursts`, `adaptive_short_bursts` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice` | subclass `Strategy`, `@register("name")` |
+| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom`, `relaxed_recom`, `short_bursts`, `adaptive_short_bursts` | subclass `Solver`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `short_bursts_choice` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary
@@ -53,6 +53,13 @@ independently.
 - **Shared graph cache.** Parameter-specific graph namespaces are stored below
   `/soalnas/share/data/school_choice/Data/caches/graphs/v11` by default. The cache key
   includes scenario filters, exact source contents, and the partition policy.
+- **Cached feasible hints.** `hints: feasible` runs an objective-free CP-SAT
+  solve for a warm start. Results are stored below
+  `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v1` and keyed by a
+  fingerprint of the feasibility model (candidate zones, balance inputs,
+  closer-neighbor supports, edges, fixed nodes) plus the hint search settings,
+  including `seed` and `feasible_hint_time_limit`. Cached assignments are
+  re-validated against the problem before use.
 
 ## Running
 
@@ -141,5 +148,4 @@ school/distance/adjacency files) on the shared non-local data paths.
 
 ## Status / follow-ups
 
-- `MNLChoiceModel` needs the estimate/demographics CSVs wired in;
-  `DistanceChoiceModel` is the data-free default.
+- `MNLChoiceModel` evaluates welfare and builds choice cuts using student choice data.

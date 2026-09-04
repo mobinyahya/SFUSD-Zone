@@ -270,7 +270,6 @@ class SimulationSweep:
             manifest_key = (
                 data_key,
                 config.strategy,
-                config.choice_model,
                 config.capacity_scenario,
             )
             source_manifest = source_manifests.get(manifest_key)
@@ -375,24 +374,28 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     ):
         roles.append("optimization.capacity")
     filter_groups = ["optimization"]
-    matching_strategy = config.strategy in {"mid", "mid_decomp", "saa"}
-    if config.choice_model == "mnl" or matching_strategy:
-        roles.extend(
-            role
-            for role in (
-                "assignment.students",
-                "assignment.frl_estimate",
-                "assignment.geography.blocks",
-                "assignment.geography.crosswalk",
-                "choice.estimate",
-            )
-            if _scenario_has_role(scenario, role)
+    matching_strategy = config.strategy in {
+        "mid",
+        "mid_decomp",
+        "saa",
+        "short_bursts_choice",
+    }
+    roles.extend(
+        role
+        for role in (
+            "assignment.students",
+            "assignment.frl_estimate",
+            "assignment.geography.blocks",
+            "assignment.geography.crosswalk",
+            "choice.estimate",
         )
-        if scenario.filter("assignment", "capacity_scenario") != "programs" and (
-            _scenario_has_role(scenario, "assignment.capacity")
-        ):
-            roles.append("assignment.capacity")
-        filter_groups.append("assignment")
+        if _scenario_has_role(scenario, role)
+    )
+    if scenario.filter("assignment", "capacity_scenario") != "programs" and (
+        _scenario_has_role(scenario, "assignment.capacity")
+    ):
+        roles.append("assignment.capacity")
+    filter_groups.append("assignment")
     if matching_strategy:
         roles.extend(
             role

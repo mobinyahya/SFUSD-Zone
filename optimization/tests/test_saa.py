@@ -20,8 +20,6 @@ from optimization.saa_oracle import (
 )
 from optimization.solvers import get_solver
 from optimization.solution import ZoneSolution
-from optimization.solvers.cpsat import CP_SAT_SCALE
-from optimization.solvers.saa import scaled_saa_cut
 from optimization.strategies import get_strategy
 from optimization.strategies import saa as saa_module
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
@@ -135,7 +133,9 @@ def test_saa_positive_tolerance_does_not_claim_exact_optimality(monkeypatch):
     dataset.config = SimpleNamespace(program_population="All")
     monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
     monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
-    monkeypatch.setattr(saa_module, "SaaMipSolver", _BoundedMaster)
+    monkeypatch.setattr(
+        saa_module, "get_solver", lambda *args, **kwargs: _BoundedMaster()
+    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -160,7 +160,9 @@ def test_saa_rounding_gap_does_not_claim_exact_optimality(monkeypatch):
     dataset.config = SimpleNamespace(program_population="All")
     monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
     monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
-    monkeypatch.setattr(saa_module, "SaaMipSolver", _NearBoundMaster)
+    monkeypatch.setattr(
+        saa_module, "get_solver", lambda *args, **kwargs: _NearBoundMaster()
+    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -192,7 +194,9 @@ def test_saa_preserves_feasible_hint_when_master_has_no_solution(monkeypatch):
             metadata={"hints": "feasible", "hint_solver": "cp_bool"},
         ),
     )
-    monkeypatch.setattr(saa_module, "SaaMipSolver", _UnknownMaster)
+    monkeypatch.setattr(
+        saa_module, "get_solver", lambda *args, **kwargs: _UnknownMaster()
+    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -224,35 +228,6 @@ def test_config_rejects_invalid_saa_tie_breaking_method(value):
         OptimizationConfig(levels=["BlockGroup_0"], saa_tie_breaking_method=value)
 
 
-def test_cp_sat_cut_rounding_is_valid_and_anchor_tight():
-    first = (1, 2)
-    second = (3, 4)
-    cut = SaaCut(
-        sample_index=0,
-        constant=0.1234567,
-        coefficients=((first, 0.3333333), (second, -0.2222222)),
-        anchor_access=((first, 1), (second, 0)),
-    )
-
-    constant, coefficients = scaled_saa_cut(cut, CP_SAT_SCALE)
-    scaled_coefficients = dict(coefficients)
-    for first_value in (0, 1):
-        for second_value in (0, 1):
-            access = {first: first_value, second: second_value}
-            scaled_value = (
-                constant
-                + scaled_coefficients[first] * first_value
-                + scaled_coefficients[second] * second_value
-            ) / CP_SAT_SCALE
-            assert scaled_value >= cut.value(access) - 1e-12
-
-    anchor = dict(cut.anchor_access)
-    scaled_anchor = (
-        constant + sum(coefficient * anchor[pair] for pair, coefficient in coefficients)
-    ) / CP_SAT_SCALE
-    assert scaled_anchor - cut.value(anchor) <= 1 / CP_SAT_SCALE + 1e-12
-
-
 def _market() -> SaaMarket:
     return SaaMarket(
         programs=(
@@ -280,8 +255,8 @@ class _LowWelfareOracle:
 
 
 class _BoundedMaster:
-    def __init__(self, market, samples, cuts, **options):
-        pass
+    def __init__(self, *args, **kwargs):
+        self._solve_count = 0
 
     def solve(self, problem):
         return ZoneSolution(
@@ -295,8 +270,8 @@ class _BoundedMaster:
 
 
 class _UnknownMaster:
-    def __init__(self, market, samples, cuts, **options):
-        pass
+    def __init__(self, *args, **kwargs):
+        self._solve_count = 0
 
     def solve(self, problem):
         return ZoneSolution(

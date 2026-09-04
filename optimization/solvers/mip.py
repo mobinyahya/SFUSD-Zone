@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import time
+from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
@@ -69,7 +70,9 @@ class MipSolver(Solver):
 
                 if problem.choice_objective is None:
                     self._add_boundary_objective(m, problem, x)
-                    progress = self._new_solver_progress_tracker(problem, maximize=False)
+                    progress = self._new_solver_progress_tracker(
+                        problem, maximize=False
+                    )
                 else:
                     self._add_choice_objective(m, problem, x)
                     progress = self._new_solver_progress_tracker(problem, maximize=True)
@@ -125,6 +128,8 @@ class MipSolver(Solver):
                             "choice_cuts": len(problem.choice_objective.cuts),
                         }
                     )
+                    if m.SolCount > 0:
+                        metadata["choice_best_bound"] = float(m.ObjBound)
                 elif problem.weight_edges:
                     metadata.update(
                         {
@@ -139,7 +144,9 @@ class MipSolver(Solver):
                     objective=objective,
                     wall_time=wall,
                     metadata=metadata,
-                    solver_progress=list(progress.entries) if progress is not None else [],
+                    solver_progress=list(progress.entries)
+                    if progress is not None
+                    else [],
                 )
 
     def _progress_capture_data(
@@ -390,43 +397,125 @@ class MipSolver(Solver):
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
         choice = problem.choice_objective
-        utilities = {
-            node: m.addVar(
-                lb=choice.lower_bound,
-                ub=choice.upper_bound,
-                vtype=GRB.CONTINUOUS,
-                name=f"choice_u_{node}",
-            )
-            for node in problem.nodes
-        }
-        for cut in choice.cuts:
-            self._add_choice_cut(m, x, utilities, cut)
-
+        total_lb = (
+            float(choice.total_lower_bound)
+            if choice.total_lower_bound is not None
+            else choice.lower_bound * len(problem.nodes)
+        )
+        total_ub = (
+            float(choice.total_upper_bound)
+            if choice.total_upper_bound is not None
+            else choice.upper_bound * len(problem.nodes)
+        )
         total = m.addVar(
-            lb=choice.lower_bound * len(problem.nodes),
-            ub=choice.upper_bound * len(problem.nodes),
+            lb=total_lb,
+            ub=total_ub,
             vtype=GRB.CONTINUOUS,
             name="choice_total_utility",
         )
-        m.addConstr(total == gp.quicksum(utilities.values()))
+        utilities: dict[int, gp.Var] = {}
+        if not choice.aggregate_cuts:
+            utilities = {
+                node: m.addVar(
+                    lb=choice.lower_bound,
+                    ub=choice.upper_bound,
+                    vtype=GRB.CONTINUOUS,
+                    name=f"choice_u_{node}",
+                )
+                for node in problem.nodes
+            }
+            m.addConstr(total == gp.quicksum(utilities.values()))
+
+        access_vars: dict[tuple[int, int], Any] = {}
+        access_joints: dict[tuple[int, int, int], Any] = {}
+        for cut in choice.cuts:
+            self._add_choice_cut(
+                m, problem, x, utilities, total, access_vars, access_joints, cut
+            )
+
         m.setObjective(total, GRB.MAXIMIZE)
+
+    def _get_or_create_access_var(
+        self,
+        m: gp.Model,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+        student_node: int,
+        school_node: int,
+    ) -> Any:
+        if student_node == school_node:
+            return 1
+        pair = (min(student_node, school_node), max(student_node, school_node))
+        if pair in access_vars:
+            return access_vars[pair]
+
+        u, v = pair
+        common_zones = sorted(problem.candidate_zones(u) & problem.candidate_zones(v))
+        if not common_zones:
+            access_vars[pair] = 0
+            return 0
+
+        same_zone = m.addVar(
+            vtype=GRB.BINARY,
+            name=f"choice_access_{u}_{v}",
+        )
+        joints = []
+        for zone in common_zones:
+            joint_key = (u, v, zone)
+            if joint_key in access_joints:
+                both = access_joints[joint_key]
+            else:
+                both = m.addVar(
+                    vtype=GRB.BINARY,
+                    name=f"choice_access_joint_{u}_{v}_{zone}",
+                )
+                m.addConstr(both <= x[(zone, u)])
+                m.addConstr(both <= x[(zone, v)])
+                m.addConstr(both >= x[(zone, u)] + x[(zone, v)] - 1)
+                access_joints[joint_key] = both
+            joints.append(both)
+
+        m.addConstr(same_zone == gp.quicksum(joints))
+        access_vars[pair] = same_zone
+        return same_zone
 
     def _add_choice_cut(
         self,
         m: gp.Model,
+        problem: ZoneProblem,
         x: _AssignmentVars,
         utilities: dict[int, gp.Var],
+        total: gp.Var,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
         cut: ChoiceCut,
     ) -> None:
-        indicator = x.get((cut.zone, cut.node))
-        if indicator is None or cut.node not in utilities:
-            return
-        expr = cut.constant + gp.quicksum(
-            term.coefficient * x[(term.zone, term.node)]
-            for term in cut.terms
-            if (term.zone, term.node) in x
-        )
-        m.addGenConstrIndicator(indicator, True, utilities[cut.node] <= expr)
+        const = cut.constant
+        linear_terms = []
+        for term in cut.terms:
+            student = term.student_node if term.student_node is not None else cut.node
+            if student is None:
+                continue
+            school = term.node
+            var = self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, student, school
+            )
+            if isinstance(var, (int, float)):
+                if var == 1:
+                    const += term.coefficient
+            else:
+                linear_terms.append(term.coefficient * var)
+
+        expr = const
+        if linear_terms:
+            expr += gp.quicksum(linear_terms)
+
+        if cut.node is None or cut.node not in utilities:
+            m.addConstr(total <= expr)
+        else:
+            m.addConstr(utilities[cut.node] <= expr)
 
     def _add_hints(self, problem: ZoneProblem, x: _AssignmentVars) -> None:
         hint = self._hint_assignment(problem)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from choice.models import get_configured_choice_model
+from choice.models import build_mnl_choice_model
 from Config.metrics_config import MetricColumns
 from loaders import load_scenario
 from metrics.base import MetricOutput, MetricsContext
@@ -14,24 +14,18 @@ def compute(context: MetricsContext) -> MetricOutput:
 
     data_config = context.config.get("data")
     if data_config is None:
-        if "choice_model" in context.config:
-            raise ValueError(
-                "Choice metrics require a strict data scenario configuration."
-            )
         return MetricOutput()
 
-    model = get_configured_choice_model(
-        context.config, load_scenario(data_config)
+    method = str(context.config.get("choice_model_method", "logsum"))
+    model = build_mnl_choice_model(
+        load_scenario(data_config),
+        method=method,
     )
     utility = model.preassignment_utility(context.problem, context.assignment)
     run = {
         "choice_preassignment_utility": {
-            "model": str(context.config.get("choice_model", "mnl")),
-            "method": (
-                str(context.config.get("choice_model_method", "logsum"))
-                if str(context.config.get("choice_model", "mnl")) == "mnl"
-                else None
-            ),
+            "model": "mnl",
+            "method": method,
             "utility": utility,
         }
     }

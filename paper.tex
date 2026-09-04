@@ -1,0 +1,555 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{dsfont} % Add this to your preamble
+\usepackage{hyperref} % for hyperlinks
+
+\usepackage[showdeletions]{color-edits}
+%\usepackage[suppress]{color-edits}
+\addauthor{il}{blue}
+\addauthor{kc}{red}
+
+\title{optimization section v2}
+\author{kumarc}
+\date{July 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Main Idea}
+We have a few interesting and novel parts of our paper. The majority of our methods are very comparable to existing methods in the political redistricting literature. The key difference between the school zoning and the political redistricting problem is that \begin{enumerate}
+    \item the school district constraints are far more restrictive and even finding feasible solutions can be difficult, whereas for political redistricting it is more about proving optimality / generating a large number of solutions
+    \item we are able to fix centroids without excessive precomputation since we care less about optimality and schools serve as logical centroid locations.
+\end{enumerate} 
+Multi-level, MCMC, and MIP strategies have already been applied in the political redistricting literature. We offer a few key insights:
+\begin{enumerate}
+    \item We apply political redistricting methods to school rezoning.
+    \item We concretely (albeit almost exclusively empirically) show that CP is better than MIP at this problem, with strong implications for the political redistricting literature.
+    \item We show that ReCom and relaxed ReCom can not effectively solve the school zoning problem (though short bursts and adaptive short bursts find significant success).
+    \item We provide a concrete multi-level strategy that is highly effective under tight constraints and allows us to have improved results; other multi-level strategies in the literature are likely to result in infeasible solutions.
+    \item We introduce a way to optimize for submodular choice set utility functions via logic-based Benders decomposition and show how it can be used as a heuristic for improving school choice outcomes.
+    \item We formulate market-clearing equilibrium (MID) and Sample Average Approximation (SAA) cutting-plane models to directly optimize utilitarian welfare over student budget sets.
+\end{enumerate}
+
+Many of these ideas can (and arguably should be) used in the political redistricting literature.
+
+\section{Base Solvers}
+We represent a school district as an undirected, connected graph $G = (V, E)$, where each vertex $v \in V$ corresponds to a distinct geographic unit (e.g., a census block or block group) and each edge $e = \{u, v\} \in E$ indicates that two units are spatially adjacent. We seek to partition the graph into exactly $k$ zones, denoted  $$\mathcal{P} = \{Z_1, Z_2, \dots, Z_k\}$$ which must satisfy:
+\begin{enumerate}
+    \item $\bigcup_{i=1}^k Z_i = V$
+    \item $Z_i \cap Z_j = \emptyset \qquad \forall i \neq j$
+    \item $Z_i \neq \emptyset \qquad \forall i \in [k]$
+\end{enumerate}
+
+We define the structural requirements of a valid school zoning partition $\mathcal{P}$ based on $G$, centroids $C$, number of zones $k$, and balance parameters $\delta$.
+
+\subsection{Boundary Compactness (Objective Function)}
+To ensure that zones are geographically compact and pass the visual ``eye test'' for stakeholders, we evaluate the quality of a partition by its boundary size. The boundary of a partition $\mathcal{P}$, denoted $\partial \mathcal{P}$, is the set of all edges cut by the partition:
+$$\partial \mathcal{P} = \left\{\{u,v\} \in E \mid u \in Z_i, v \in Z_j, i \neq j\right\}$$
+Our fundamental objective is to find a partition that minimizes the total number of cut edges, $|\partial \mathcal{P}|$ (or, more generally, the total boundary length $\sum_{\{u,v\} \in \partial \mathcal{P}} w_{u,v}$ where $w_{u,v} \ge 0$ is the shared geographic boundary length).
+
+\subsection{Constraints}
+\subsubsection{Centroid and Anchor Alignment}
+To reduce symmetry in our later formulations, each zone $Z_i$ is anchored by a designated centroid vertex $c_i \in V$, where $C = \{c_1, c_2, \ldots, c_k \}$. Schools serve as the natural geographic anchors for these centroids. A valid partition must structurally align each zone with exactly one unique centroid:
+$$c_i \in Z_i \qquad \forall i \in [k]$$
+
+\subsubsection{School Balance}
+Let $S$ denote the total set of schools in the district. Also let $s(v) \in \mathbb{Z}_{\geq 0}$ denote the number of schools in a vertex $v\in V$. Note that this can potentially be greater than 1 for coarse graphs. Then we have $S(Z_i) = \sum_{v \in Z_i} s(v)$ for some zone $i \in [k]$. To prevent resource and choice imbalances, the total number of schools allocated to any given zone must be distributed as evenly as possible across the district:
+$$\left\lfloor \frac{|S|}{k} \right\rfloor \leq S(Z_i) \leq \left\lceil \frac{|S|}{k} \right\rceil \qquad \forall Z_i \in \mathcal{P}$$
+
+\subsubsection{Zone Contiguity}
+A zone cannot be split into geographically isolated pockets. Topologically, this requires that the induced subgraph of each zone must form a single connected component:
+$$\text{The induced subgraph } G[Z_i] \text{ is connected } \forall Z_i \in \mathcal{P}$$
+
+\subsubsection{Capacity and Enrollment Tolerances}
+Each vertex $v \in V$ carries an associated estimated student population $n_v \in \mathbb{R}_{\geq 0}$ and a school seat capacity $c_v \in \mathbb{Z}_{\geq 0}$ (where $c_v > 0$ only if $v \in S$). For any zone $Z_i$, we define its total student enrollment as $N(Z_i) = \sum_{v \in Z_i} n_v$ and its total operational capacity as $C(Z_i) = \sum_{v \in Z_i} c_v$.
+
+To protect schools from severe over-enrollment or under-utilization, the ratio of total seats to total students within any zone must fall within specified lower shortage tolerances ($\delta^{-}$) and upper overage tolerances ($\delta^{+}$):
+$$(1-\delta^{-}) \leq \frac{C(Z_i)}{N(Z_i)} \leq (1+\delta^{+}) \qquad \forall Z_i \in \mathcal{P}$$
+
+\subsubsection{Demographic Diversity and Socioeconomic Balance}
+Let $f_v \in \mathbb{R}_{\geq 0}$ denote the estimated count of students qualifying for Free and Reduced Lunch (FRL) programs at vertex $v$. The district-wide FRL proportion is a fixed constant calculated as:
+$$F = \frac{\sum_{v \in V} f_v}{\sum_{v \in V} n_v}$$
+To counteract socioeconomic isolation, the localized FRL proportion of any individual zone $Z_i$ must deviate from the global target $F$ by no more than an allowable variance threshold $\delta_F \in \mathbb{R}_{>0}$:
+$$\left| \frac{\sum_{v \in Z_i} f_v}{N(Z_i)} - F \right| \leq \delta_F \qquad \forall Z_i \in \mathcal{P}$$
+
+Let $\mathcal{I}$ represent the set of all valid input configurations for a problem with $(G, C, k, \delta)$ and $\mathcal{P}$ be the space of all possible partitions. Define the feasible set $\Omega(G, C, k, \delta) \subseteq \mathcal{P}$ as the subset of partitions that satisfy all constraints given the input $(G, C, k, \delta)$.
+
+We define the function $B: \mathcal{I} \to \mathcal{P} \cup \{\perp\}$ to map input configurations to a partition or the bottom element (representing infeasibility) as follows:
+
+\begin{equation}
+B(G, C, k, \delta) = 
+\begin{cases} 
+\arg\min_{\mathcal{P} \in \Omega(G, C, k, \delta)} |\partial \mathcal{P}| & \text{if } \Omega(G, C, k, \delta) \neq \emptyset \\
+\perp & \text{if } \Omega(G, C, k, \delta) = \emptyset 
+\end{cases}
+\end{equation}
+Where $\perp$ denotes an infeasible input. Ties between solutions with identical cut edges are broken arbitrarily. All solvers will define various implementations of this base solver structure. 
+
+\subsection{Math Programming}
+
+To solve this problem we will employ constraint programming (CP), a technique related to Mixed Integer Programming (MIP). CP differs from MIP in that it relies on boolean logic, domain reduction, and clause learning to efficiently prune search spaces, excelling in problems where combinatorial constraints impose severe barriers to finding feasible solutions. As we demonstrate empirically, CP-SAT significantly outperforms MIP backends on this problem, largely due to the combinatorial difficulty of satisfying the contiguity and balance constraints simultaneously. Notably, CP-SAT requires integer coefficients, so we employ integer scaling factors to encode constraints that involve fractional values.
+
+We formulate the base model using binary assignment variables $x_{v,z} \in \{0, 1\}$, indicating whether geographic vertex $v \in V$ is assigned to zone $z \in [k]$, and cut boundary variables $b_{i,j} \in \{0, 1\}$ for each edge $(i,j) \in E$:
+
+\begin{align}
+\min_{x, b} \quad & \sum_{(i,j)\in E} b_{i,j} \label{cp:obj} \\
+\textrm{s.t.} \quad & \sum_{z \in [k]} x_{v,z} = 1 && \forall v \in V \label{cp:assignment} \\
+& x_{c(z), z} = 1 && \forall z \in [k] \label{cp:centroid} \\
+& x_{v,z} = 1 \implies \bigvee_{u \in \text{cn}(v, c(z))} x_{u,z} && \forall z \in [k], v \in V \setminus \{c(z)\} \label{cp:contiguity} \\
+& \left\lfloor \frac{|S|}{k} \right\rfloor \leq \sum_{v \in V} s(v) x_{v,z} \leq \left\lceil \frac{|S|}{k} \right\rceil && \forall z \in [k] \label{cp:schools} \\
+& (1-\delta^{-}) N(Z_z) \leq C(Z_z) \leq (1+\delta^{+}) N(Z_z) && \forall z \in [k] \label{cp:capacity} \\
+& (F-\delta_F) N(Z_z) \leq \sum_{v \in V} f_v x_{v,z} \leq (F+\delta_F) N(Z_z) && \forall z \in [k] \label{cp:frl} \\
+& (x_{i,z} \land \neg x_{j,z}) \lor (x_{j,z} \land \neg x_{i,z}) \implies b_{i,j} = 1 && \forall (i,j) \in E, z \in [k] \label{cp:cut} \\
+& x_{v,z} \in \{0, 1\} && \forall v \in V, z \in [k] \label{cp:x_domain} \\
+& b_{i,j} \in \{0, 1\} && \forall (i,j) \in E \label{cp:b_domain}
+\end{align}
+
+Each inequality directly realizes one of the structural requirements introduced in Section 2.2:
+\begin{itemize}
+    \item \textbf{Objective \eqref{cp:obj}:} Minimizes the total number of cut edges across all zone boundaries.
+    \item \textbf{Unique Assignment \eqref{cp:assignment}:} Enforces that every geographic unit $v \in V$ is assigned to exactly one zone $z \in [k]$.
+    \item \textbf{Centroid Anchoring \eqref{cp:centroid}:} Fixes each designated zone centroid $c(z)$ to zone $z$, eliminating zone permutation symmetries.
+    \item \textbf{Zone Contiguity \eqref{cp:contiguity}:} Enforces graph connectedness through a rooted closer-neighbor condition based on the formulation of Shirabe (2005) and Validi et al. (2022). For each vertex $v \neq c(z)$ and zone $z$, let $\text{cn}(v, c(z))$ denote the set of adjacent neighbors that are strictly closer to centroid $c(z)$ in spatial geometry:
+    $$\text{cn}(v, c(z)) = \{u \in N(v) \mid \text{dist}(u, c(z)) < \text{dist}(v, c(z))\}$$
+    Constraint \eqref{cp:contiguity} stipulates that if vertex $v$ joins zone $z$, at least one neighbor $u \in \text{cn}(v, c(z))$ must also join zone $z$. Because distances to $c(z)$ strictly decrease along this chain, this constraint induces a cycle-free directed path from every assigned vertex back to the centroid $c(z)$, ensuring that the induced subgraph $G[Z_z]$ is connected.
+    \item \textbf{School Count Balance \eqref{cp:schools}:} Distributes the $|S|$ schools evenly among all $k$ zones, restricting zone $z$'s school count between $\lfloor |S|/k \rfloor$ and $\lceil |S|/k \rceil$.
+    \item \textbf{Capacity Tolerances \eqref{cp:capacity}:} Ensures that the aggregate seat capacity within zone $z$ remains within lower shortage tolerance $\delta^-$ and upper overage tolerance $\delta^+$ of the resident student population.
+    \item \textbf{Socioeconomic Balance \eqref{cp:frl}:} Bounds zone $z$'s Free and Reduced Lunch (FRL) proportion within a maximum deviation $\delta_F$ from the district-wide mean $F$. (The corresponding multi-group racial and ethnic diversity balance constraints follow an analogous form and are detailed in the Appendix).
+    \item \textbf{Cut Edge Implication \eqref{cp:cut}:} Enforces that $b_{i,j} = 1$ via Boolean half-reification whenever endpoints $i$ and $j$ of edge $(i,j) \in E$ are assigned to different zones (i.e., if vertex $i$ joins zone $z$ but $j$ does not, or vice versa).
+\end{itemize}
+
+Equivalently, CP-SAT receives these constraints in zero-right-hand-side form. Because CP-SAT requires integer coefficients, each inequality is scaled by a large integer multiplier $M$ (typically $M = 10^4$) and its coefficients are rounded conservatively before being added to the model. For example, the lower FRL constraint is written as:
+\begin{equation*}
+\sum_{v\in V}
+\lfloor M \cdot \left(f_v-(F-\delta_F)n_v\right) \rfloor \cdot x_{v,z}
+\geq 0 \qquad \forall z \in [k]
+\end{equation*}
+where the floor function preserves conservative bounding without weakening the feasibility guarantees.
+
+\subsection{MCMC Models}
+In the political redistricting literature, Markov Chain Monte Carlo (MCMC) methods—most prominently Recombination (ReCom)—are widely used to sample vast ensembles of contiguous districts. In political redistricting, the primary constraint is typically equal population balance (a single scalar target). In contrast, school rezoning introduces a substantially more restrictive constraint manifold defined by capacity bounds, tight demographic diversity bounds, and exact discrete school count allocations.
+
+\subsubsection{ReCom Proposal Kernel}
+All ReCom-family variants share a common combinatorial transition kernel operating on partition $\mathcal{P}_t = \{Z_1, \dots, Z_k\}$ of graph $G = (V, E)$:
+\begin{enumerate}
+    \item \textbf{Adjacent Zone Pair Selection:} Let $\mathcal{A}(\mathcal{P}_t)$ denote the set of pairs of zones sharing at least one boundary edge:
+    \begin{equation}
+    \mathcal{A}(\mathcal{P}_t) = \left\{(a, b) \mid 1 \le a < b \le k, \; \exists (u, v) \in E \text{ with } u \in Z_a, v \in Z_b\right\}
+    \end{equation}
+    A pair $(a, b)$ is drawn uniformly at random from $\mathcal{A}(\mathcal{P}_t)$.
+    \item \textbf{Uniform Spanning Tree Sampling:} Form the merged region $U = Z_a \cup Z_b$. Because $Z_a$ and $Z_b$ are individually contiguous and share boundary edges, the induced subgraph $G[U]$ is connected. A spanning tree $T = (U, E(T))$ is sampled uniformly from the set $\mathcal{T}(G[U])$ of all spanning trees of $G[U]$ via Wilson's loop-erased random walk algorithm (Wilson, 1996), ensuring that each tree is drawn with exact probability $1 / |\mathcal{T}(G[U])|$.
+    \item \textbf{Spanning Tree Cuts and Zone Contiguity:} Tree $T$ is rooted at an arbitrary root vertex $r \in U$. Each non-root vertex $u \in U \setminus \{r\}$ and its directed edge to its parent $(u, \text{parent}(u)) \in E(T)$ uniquely defines a tree bisection into subtree $T_u$ and complement $U \setminus T_u$. Because $T$ spans $G[U]$, the induced subgraphs $G[T_u]$ and $G[U \setminus T_u]$ are connected by construction, guaranteeing topological contiguity without post-hoc connectivity checks.
+    \item \textbf{Candidate Reassignments:} Each subtree cut yields two candidate assignments:
+    \begin{align}
+    \text{Orientation 1:} \quad Z_a' &= T_u, & Z_b' &= U \setminus T_u \\
+    \text{Orientation 2:} \quad Z_a' &= U \setminus T_u, & Z_b' &= T_u
+    \end{align}
+    Orientations that violate designated centroid anchoring ($c_a \notin Z_a'$ or $c_b \notin Z_b'$) or explicit vertex candidate restrictions are pruned, producing a legal candidate cut pool $\mathcal{C}$.
+    \item \textbf{Fast Additive Evaluation:} Vertex attributes (students $n_v$, capacity $c_v$, schools $s(v)$, and demographic counts $f_v$) are additive set functions. Subtree statistics for each candidate cut $c \in \mathcal{C}$ are evaluated in a single post-order traversal over $T$, e.g., $N(T_u) = n_u + \sum_{w \in \text{children}(u)} N(T_w)$ and $N(U \setminus T_u) = N(U) - N(T_u)$. The updated boundary cost is computed from non-tree edge crossings via lowest common ancestor prefix sums:
+    \begin{equation}
+    |\partial \mathcal{P}_c| = |\partial \mathcal{P}_t| - |\partial(Z_a, Z_b)| + |\partial(Z_a^{(c)}, Z_b^{(c)})|
+    \end{equation}
+\end{enumerate}
+
+\subsubsection{Standard ReCom}
+Standard ReCom (DeFord et al., 2021) evaluates candidate proposals under a hard feasibility filter:
+\begin{enumerate}
+    \item \textbf{Initial Seeding:} Because no valid baseline map exists for school rezoning, the chain is initialized via a Voronoi diagram anchored at designated school centroids $C = \{c_1, \dots, c_k\}$, where each vertex $v$ is assigned to its geographically nearest centroid: $z^{(0)}(v) = \arg\min_{z \in [k]} \text{dist}(v, c_z)$. Disconnected components are reallocated to adjacent zones maintaining centroid paths, producing an initial contiguous partition $\mathcal{P}_0$. In general, $\mathcal{P}_0 \notin \Omega(G, C, k, \delta)$.
+    \item \textbf{Proposal and Rejection:} Let $\mathcal{C}_{\text{feas}} = \{c \in \mathcal{C} \mid \mathcal{P}_c \in \Omega(G, C, k, \delta)\}$ be the set of candidate cuts where both prospective zones satisfy all capacity, school count, and demographic constraints. If $\mathcal{C}_{\text{feas}} \neq \emptyset$, a candidate cut is drawn uniformly: $c \sim \text{Uniform}(\mathcal{C}_{\text{feas}})$; otherwise, $c \sim \text{Uniform}(\mathcal{C})$. The transition is accepted if and only if the prospective partition is globally feasible:
+    \begin{equation}
+    \mathcal{P}_{t+1} = \begin{cases}
+    \mathcal{P}_c & \text{if } \mathcal{P}_c \in \Omega(G, C, k, \delta) \\
+    \mathcal{P}_t & \text{if } \mathcal{P}_c \notin \Omega(G, C, k, \delta)
+    \end{cases}
+    \end{equation}
+\end{enumerate}
+\textbf{Theoretical Bottleneck on School Rezoning:} In political redistricting, baseline legislative plans start within the feasible manifold $\Omega$, and the only primary constraint is equal population. In school rezoning, $\Omega$ is the simultaneous intersection of $m \ge 6k$ discrete constraints (exact school counts $\lfloor |S|/k \rfloor \le S(Z) \le \lceil |S|/k \rceil$, tight capacity bounds, and FRL balance). Because constraints are enforced post-cut, the probability that a uniform spanning tree cut simultaneously satisfies all bounds is vanishingly small: $P(c \in \mathcal{C}_{\text{feas}}) \approx 0$. As a result, standard ReCom rejects virtually all moves and remains trapped at $\mathcal{P}_0$.
+
+\subsubsection{Relaxed ReCom}
+To navigate through infeasible space and bypass zero acceptance, Relaxed ReCom eliminates the hard rejection step ($P_{\text{accept}} = 1$) and samples candidate cuts from a biased categorical distribution that steers the chain toward feasibility and geometric compactness.
+
+For each candidate cut $c \in \mathcal{C}$ producing prospective zones $Z_a^{(c)}$ and $Z_b^{(c)}$, we compute the unnormalized scoring function $\mu(c)$:
+\begin{equation}
+\ln \mu(c) = \theta_{\text{trees}} \left( \text{cr}(Z_a^{(c)}) + \text{cr}(Z_b^{(c)}) \right) + \sum_{\kappa \in \mathcal{K}} \theta_\kappa \left( \ln \kappa(Z_a^{(c)}) + \ln \kappa(Z_b^{(c)}) \right)
+\end{equation}
+where:
+\begin{itemize}
+    \item $\text{cr}(Z) = \max(0, |E[Z]| - |V(Z)| + 1)$ is the cycle rank (cyclomatic number) of the induced subgraph $G[Z]$. By Kirchhoff's Matrix Tree Theorem, the number of spanning trees $|\mathcal{T}(G[Z])|$ scales exponentially with the cycle rank: $|\mathcal{T}(G[Z])| \approx \exp(\text{cr}(Z))$. Weighting by $\theta_{\text{trees}} = 1$ penalizes stringy, bottlenecked boundaries and favors internally dense, compact subgraphs.
+    \item $\mathcal{K}$ is the set of balance metrics evaluated on each prospective zone:
+    \begin{enumerate}
+        \item Node count: $\kappa_{\text{nodes}}(Z) = |V(Z)|$, with weight $\theta_{\text{nodes}} = 1$
+        \item Student enrollment: $\kappa_{\text{students}}(Z) = N(Z)$, with weight $\theta_{\text{students}} = 1$
+        \item Seat capacity: $\kappa_{\text{seats}}(Z) = C(Z)$, with weight $\theta_{\text{seats}} = 1$
+        \item Socioeconomic need: $\kappa_{\text{frl}}(Z) = F(Z)$, with weight $\theta_{\text{frl}} = 3$
+        \item School count: $\kappa_{\text{sch}}(Z) = S(Z)$, with large weight $\theta_{\text{sch}} = 45$ to heavily penalize school count disparities
+        \item Relative capacity mismatch: $\kappa_{\text{shortage\%}}(Z) = \max\left( \frac{|N(Z) - C(Z)|}{\max(N(Z), \epsilon)}, \epsilon \right)$ with weight $\theta_{\text{shortage\%}} = 10$ and $\epsilon = 10^{-12}$.
+    \end{enumerate}
+\end{itemize}
+Candidate cut $c$ is drawn from the categorical distribution:
+\begin{equation}
+P(c) = \frac{\mu(c)}{\sum_{c' \in \mathcal{C}} \mu(c')}
+\end{equation}
+The selected move is accepted unconditionally ($\mathcal{P}_{t+1} \leftarrow \mathcal{P}_c$). While Relaxed ReCom traverses infeasible states freely, unconstrained random walks with static weights drift over long trajectories and frequently fail to settle into the narrow intersection of all feasibility constraints.
+
+\subsubsection{Short Bursts}
+Building upon the Short Bursts framework (Cannon et al., 2020), we replace the unbounded random walk with repeated localized search bursts of fixed length $L$ (typically $L = 25$). Starting from an incumbent partition $\mathcal{P}^{(b)}$ at burst iteration $b$, the chain executes $L$ unconstrained transitions using the ReCom or Relaxed ReCom proposal kernel, generating a trajectory of visited states $\mathcal{S}^{(b)} = \{\mathcal{P}_1, \dots, \mathcal{P}_L\}$.
+
+To compare intermediate partitions across heterogeneous constraints with disparate numerical scales (e.g., student counts $\sim 10^3$, school counts $\sim 10^0$, demographic proportions $\sim 10^{-1}$), we track the running maximum observed violation for each constraint $j \in [m]$ across all visited states up to step $\tau$:
+\begin{equation}
+M_j^{(\tau)} = \max_{0 \le t \le \tau} v_j(\mathcal{P}_t)
+\end{equation}
+where $v_j(\mathcal{P}) = \sum_{z=1}^k v_j(Z_z) \ge 0$ is the total linear violation slack for constraint $j$. The dynamically normalized violation penalty is defined as:
+\begin{equation}
+\Phi(\mathcal{P}) = \sum_{j: M_j^{(\tau)} > 0} \frac{v_j(\mathcal{P})}{M_j^{(\tau)}}
+\end{equation}
+Partitions are evaluated under a strict lexicographic Pareto ordering $\prec$ that prioritizes feasibility before optimizing boundary compactness:
+\begin{equation}
+\mathcal{P} \prec \mathcal{Q} \iff \begin{cases}
+\mathcal{P} \in \Omega \quad \text{and} \quad \mathcal{Q} \notin \Omega \\
+\mathcal{P}, \mathcal{Q} \in \Omega \quad \text{and} \quad |\partial \mathcal{P}| < |\partial \mathcal{Q}| \\
+\mathcal{P}, \mathcal{Q} \notin \Omega \quad \text{and} \quad \Phi(\mathcal{P}) < \Phi(\mathcal{Q}) - \epsilon_{\text{tol}}
+\end{cases}
+\end{equation}
+with tolerance $\epsilon_{\text{tol}} = 10^{-6}$. At the conclusion of burst $b$, the best visited state is identified:
+\begin{equation}
+\mathcal{P}^* = \arg\min_{\mathcal{P} \in \mathcal{S}^{(b)}} \mathcal{P} \quad \text{under } \prec
+\end{equation}
+If $\mathcal{P}^* \prec \mathcal{P}^{(b)}$, the improvement is accepted as the new incumbent: $\mathcal{P}^{(b+1)} \leftarrow \mathcal{P}^*$; otherwise, the chain resets to the incumbent: $\mathcal{P}^{(b+1)} \leftarrow \mathcal{P}^{(b)}$. This ratcheting mechanism allows the chain to explore infeasible configurations locally while guaranteeing that the search never drifts permanently into worse regions.
+
+\subsubsection{Adaptive Short Bursts}
+Although Short Bursts guides the search restarts, proposal generation within each burst remains unguided. When certain constraints (such as school count balance) are far more rigid than others, random tree bisections rarely decrease multiple violations simultaneously. We address this by formulating Adaptive Short Bursts, which dynamically couples an augmented Lagrangian proposal distribution with Adam dual multiplier ascent.
+
+\paragraph{Percentage-Normalized Constraint Violations:} Constraint residuals are converted into fractional percentage deviations:
+\begin{equation}
+\widetilde{v}_{\text{cap}}(Z) = \frac{v_{\text{cap}}(Z)}{N(Z)} \times 100\%, \quad \widetilde{v}_{\text{sch}}(Z) = \frac{v_{\text{sch}}(Z)}{\bar{S}} \times 100\%
+\end{equation}
+where $\bar{S} = |S|/k$ is the target average school count per zone.
+
+\paragraph{Augmented Lagrangian Energy Formulation:} Let $\boldsymbol{\eta} = (\eta_1, \dots, \eta_m) \in \mathbb{R}_+^m$ denote dual penalty multipliers, initialized to $\eta_j^{(0)} = 1.0$. For each candidate cut $c \in \mathcal{C}$ yielding prospective partition $\mathcal{P}_c$, we define the candidate energy function:
+\begin{equation}
+E(c; \mathbf{w}) = |\partial \mathcal{P}_c| + \sum_{j=1}^m w_j \cdot \widetilde{v}_j(\mathcal{P}_c)^2
+\end{equation}
+where penalty weights $w_j$ are dynamically coupled to the incumbent partition's cut boundary cost:
+\begin{equation}
+w_j = \max\left(1.0, \; |\partial \mathcal{P}^{(b)}| + \eta_j \cdot \widetilde{v}_j(\mathcal{P}^{(b)})^2\right)
+\end{equation}
+
+\paragraph{Softmax Proposal Distribution:} Within each burst, candidate cuts are sampled from a Boltzmann distribution parameterized by temperature $T > 0$ (default $T = 1.0$):
+\begin{equation}
+P(c) = \frac{\exp\left( - \frac{E(c; \mathbf{w})}{T} \right)}{\sum_{c' \in \mathcal{C}} \exp\left( - \frac{E(c'; \mathbf{w})}{T} \right)}
+\end{equation}
+This exponentially suppresses candidate cuts that worsen heavily penalized violations, actively steering spanning tree bisections toward the feasible boundary.
+
+\paragraph{Adam Dual Ascent Across Bursts:} At the end of burst $b$, after selecting the best partition $\mathcal{P}^*$ via the lexicographic ordering $\prec$, the dual ascent subgradient is computed from the squared violations of $\mathcal{P}^*$:
+\begin{equation}
+g_j^{(b)} = \widetilde{v}_j(\mathcal{P}^*)^2 \qquad \forall j \in [m]
+\end{equation}
+The dual multipliers $\boldsymbol{\eta}$ are updated using projected Adam optimization:
+\begin{align}
+\mathbf{m}_b &= \beta_1 \mathbf{m}_{b-1} + (1 - \beta_1) \mathbf{g}^{(b)} \\
+\mathbf{u}_b &= \beta_2 \mathbf{u}_{b-1} + (1 - \beta_2) (\mathbf{g}^{(b)} \odot \mathbf{g}^{(b)}) \\
+\widehat{\mathbf{m}}_b &= \frac{\mathbf{m}_b}{1 - \beta_1^b}, \qquad \widehat{\mathbf{u}}_b = \frac{\mathbf{u}_b}{1 - \beta_2^b} \\
+\eta_j^{(b+1)} &= \max\left(0.0, \; \eta_j^{(b)} + \gamma \frac{\widehat{m}_{j, b}}{\sqrt{\widehat{u}_{j, b}} + \epsilon_{\text{Adam}}}\right)
+\end{align}
+with learning rate $\gamma = 0.1$, moment decay rates $\beta_1 = 0.9, \beta_2 = 0.999$, and $\epsilon_{\text{Adam}} = 10^{-8}$. The updated multipliers $\boldsymbol{\eta}^{(b+1)}$ and incumbent $\mathcal{P}^{(b+1)}$ then determine the proposal weights $\mathbf{w}$ for the subsequent burst.
+
+\paragraph{Closed-Loop Feedback Dynamics:} If a constraint $j$ remains persistently violated across bursts ($\widetilde{v}_j > 0$), its gradient $g_j > 0$ inflates $\eta_j$ and $w_j$, exponentially suppressing candidate cuts that fail to satisfy constraint $j$. When constraint $j$ is satisfied ($\widetilde{v}_j = 0$), $g_j = 0$, allowing the second moment to decay and stabilizing $\eta_j$. Once all constraints reach feasibility ($\widetilde{\mathbf{v}} = \mathbf{0}$), the energy collapses to $E(c; \mathbf{w}) = |\partial \mathcal{P}_c|$, and the Boltzmann distribution purely drives cut boundary minimization.
+
+\section{Hierarchical Graph Contraction}
+
+The computational complexity of the zoning problem scales rapidly with the number of vertices $|V|$ and zones $k$. Informally, the discrete search space contains $k^{|V|}$ possible assignments. Solving this directly at the census block level (thousands of nodes) is often computationally intractable. To resolve this, we develop a principled graph contraction hierarchy that creates arbitrary-fidelity coarsened graphs.
+
+Let our base graph be $G_0 = (V_0, E_0)$. We construct a contracted graph $G_1 = (V_1, E_1)$ with $|V_1| = k_1 < |V_0|$ vertices that preserves the topological and spatial structure of $G_0$. Formally, $G_1$ is a valid contraction of $G_0$ under a surjective mapping $\phi_1: V_0 \to V_1$ if:
+\begin{description}
+    \item[Connectivity:] For every vertex $u \in V_1$, the induced preimage subgraph $G_0[\phi_1^{-1}(u)]$ is connected.
+    \item[Adjacency:] For any two distinct vertices $u, v \in V_1$, an edge exists in $G_1$ if and only if their preimages are adjacent in $G_0$:
+    \[
+    (u, v) \in E_1 \iff \exists x \in \phi_1^{-1}(u), y \in \phi_1^{-1}(v) \text{ such that } (x, y) \in E_0
+    \]
+\end{description}
+
+We compute this partitioning using KaHIP (Sanders and Schulz, 2013). Crucially, we do not contract school vertices. Let $S \subset V_0$ denote the set of vertices containing schools. When constructing any coarse graph $G_{\ell+1}$ from $G_\ell$, every school node $s \in S$ is held out as an indivisible singleton vertex ($V_{\ell+1}^{\text{school}} = S$). KaHIP partitions only the remaining non-school geographic units $V_\ell \setminus S$ into $k_{\ell+1} - |S|$ contiguous blocks. Coarse edges between aggregated residential blocks and school singletons are derived from crossing base edges: $(u, s) \in E_{\ell+1} \iff \exists x \in \phi^{-1}(u) \text{ such that } (x, s) \in E_\ell$.
+
+Preserving school nodes as singletons is essential for three reasons:
+\begin{enumerate}
+    \item \textbf{School count exactness:} It ensures $s(v) = 1$ for each school node and $s(v) = 0$ for all non-school aggregates, enabling exact enforcement of the school balance constraint $\lfloor |S|/k \rfloor \le S(Z_i) \le \lceil |S|/k \rceil$ at any graph hierarchy level. If schools were merged into aggregate blocks, multiple schools could be bundled into a single coarse vertex, potentially rendering the school balance constraint infeasible.
+    \item \textbf{Centroid anchor preservation:} Distinct school singletons ensure that designated zone centroids $c_i \in S$ remain individually assignable and are never co-contracted into the same coarse vertex.
+    \item \textbf{Capacity localization:} School seat capacities $c_s$ remain precisely associated with their geographic points, preserving spatial accuracy in capacity-to-student balance.
+\end{enumerate}
+
+\section{Strategies}
+\subsection{Multilevel Strategy}
+While coarsened graphs can be solved independently, their primary utility lies in a multi-level optimization strategy. Specifically, we solve the zoning problem hierarchically across a sequence of levels $G_n, G_{n-1}, \dots, G_0$, from coarsest to finest. 
+
+At each transition from level $i$ to level $i-1$, the coarser partition $\mathcal{P}_i$ is projected onto the finer graph $G_{i-1}$ using the contraction mapping $\phi_i$. Vertices situated deeply within the interior of a projected zone—whose graph distance to the zone boundary exceeds a specified radius $r$—have their assignments fixed to that zone. Only vertices near the boundary (within distance $r$) are treated as candidate decision variables in the finer optimization solve. The projected partition also provides a high-quality warm-start hint. This restricts the decision space at fine levels exclusively to boundary refinement, yielding substantial computational speedups.
+
+\begin{algorithm}
+\caption{Multilevel Strategy}
+\begin{algorithmic}[1]
+\Require Sequence of graphs $G_n, G_{n-1}, \dots, G_0$ from coarsest to finest, base solver $B$, parameters $\delta$, boundary relaxation radius $r$.
+\Procedure{Multilevel}{$\{G_i\}_{i=n}^0, B, \delta, r$}
+    \State $\mathcal{P}_n \gets B(G_n, C, k, \delta)$ \Comment{Solve coarsest level globally}
+    \For{$i \leftarrow n-1$ down to $0$}
+        \State $\tilde{\mathcal{P}}_i \gets \text{Project}(\mathcal{P}_{i+1}, G_i)$ \Comment{Project partition via contraction map}
+        \State $V^{\text{bound}} \gets \{u \in V_i \mid \exists v \in N(u) \text{ s.t. } \tilde{\mathcal{P}}_i(u) \neq \tilde{\mathcal{P}}_i(v)\}$
+        \State $\mathcal{B}_r \gets \{v \in V_i \mid \text{dist}_{G_i}(v, V^{\text{bound}}) \le r\}$ \Comment{Boundary neighborhood}
+        \State Set candidate zones $\mathcal{C}(v) \gets \{\tilde{\mathcal{P}}_i(v)\}$ for all $v \in V_i \setminus \mathcal{B}_r$ \Comment{Fix interior}
+        \State Set candidate zones $\mathcal{C}(v) \gets [k]$ for all $v \in \mathcal{B}_r$ \Comment{Relax boundary}
+        \State $\mathcal{P}_i \gets B(G_i, C, k, \delta \mid \text{hint}=\tilde{\mathcal{P}}_i, \text{candidates}=\mathcal{C})$
+    \EndFor
+    \State \Return $\mathcal{P}_0$
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+This approach yields two major practical advantages:
+\begin{enumerate}
+    \item We find higher-quality, more compact solutions within the same time limit compared to solving fine graphs from scratch.
+    \item We reliably discover feasible solutions at the census block level in parameter regimes where monolithic fine-level solvers fail completely.
+\end{enumerate}
+
+\section{Choice Set Optimization}
+Instead of solely evaluating zoning by geometric compactness, we now consider the academic welfare that a zone configuration delivers to families. Under a zoned choice system, a family residing in vertex $v$ gains access to the set of schools assigned to that zone, $S' \subseteq S$. We wish to optimize the expected utility that families derive from their available choice set.
+
+Under a standard Multinomial Logit (MNL) discrete choice model (McFadden, 1974), each student derives utility $U_{i,s} = V_s + \varepsilon_{i,s}$ from school $s$, where $V_s$ is the deterministic mean utility and $\varepsilon_{i,s} \stackrel{\text{i.i.d.}}{\sim} \text{Gumbel}(0, 1)$ represents an idiosyncratic taste shock following a standard Type I Extreme Value distribution. The expected maximum utility of choice set $S'$ is given by the log-sum-exp formula:
+\begin{equation}
+U(S') = \mathbb{E} \left[ \max_{s \in S'} (V_s + \varepsilon_{i,s}) \right] = \ln \left( \sum_{s \in S'} e^{V_s} \right) + \gamma
+\end{equation}
+where $\gamma \approx 0.5772$ is the Euler-Mascheroni constant.
+
+\subsection{Gain Bound}
+Because the log-sum-exp function is submodular, the marginal gain from adding an additional school $s \in S \setminus S'$ exhibits diminishing marginal returns: for any $S' \subset T \subseteq S$,
+\begin{equation}\label{eq:upper-bound}
+\Delta^+_{s, S'} = U(S' \cup \{s\}) - U(S') \geq U(T \cup \{s\}) - U(T)
+\end{equation}
+
+We sum these bounds to establish an upper bound on the gain from adding an arbitrary subset of schools $G = \{s_1, \dots, s_{n_{\text{gain}}}\} \subseteq S \setminus S'$. Construct the intermediate sequence $S_0 = S'$ and $S_j = S_{j-1} \cup \{s_j\}$ for $j = 1, \dots, n_{\text{gain}}$, terminating at $S_{n_{\text{gain}}} = S' \cup G$. Using a telescoping sum and submodularity ($S' \subseteq S_{j-1}$), we have:
+\begin{equation} \label{eq:total-gain-bound}
+\begin{aligned}
+U(S' \cup G) - U(S') &= \sum_{j=1}^{n_{\text{gain}}} \left( U(S_j) - U(S_{j-1}) \right) \\
+&\leq \sum_{j=1}^{n_{\text{gain}}} \left( U(S' \cup \{s_j\}) - U(S') \right) = \sum_{s \in G} \Delta^+_{s, S'}
+\end{aligned}
+\end{equation}
+
+\subsection{Loss Bound}
+Similarly, we establish a lower bound on the utility lost from removing a school $s \in S'$. Submodularity implies that the loss incurred by removing $s$ from the complete district set $S$ is smaller than the loss from removing it from any smaller subset $S' \subseteq S$:
+\begin{equation}\label{eq:loss-bound}
+\Delta_s^- = U(S) - U(S \setminus \{s\}) \leq U(S') - U(S' \setminus \{s\})
+\end{equation}
+Crucially, $\Delta_s^-$ depends only on the global set $S$ and provides a uniform lower bound for any choice set $S'$.
+
+For an arbitrary subset of lost schools $L = \{s_1, \dots, s_{n_{\text{loss}}}\} \subseteq S'$, construct the sequence $S_0 = S'$ and $S_j = S_{j-1} \setminus \{s_j\}$ ending at $S_{n_{\text{loss}}} = S' \setminus L$. Telescoping gives:
+\begin{equation} \label{eq:total-loss-bound}
+\begin{aligned}
+U(S') - U(S' \setminus L) &= \sum_{j=1}^{n_{\text{loss}}} \left( U(S_{j-1}) - U(S_j) \right) \geq \sum_{s \in L} \Delta_s^- \\
+U(S' \setminus L) &\leq U(S') - \sum_{s \in L} \Delta_s^-
+\end{aligned}
+\end{equation}
+
+\subsection{Combined Upper Bound}
+Combining the gain and loss bounds, we obtain an outer linear approximation for the utility of any arbitrary alternative choice set $\tilde{S} \subseteq S$ evaluated from baseline $S'$. Let $G = \tilde{S} \setminus S'$ be the gained schools and $L = S' \setminus \tilde{S}$ be the lost schools:
+\begin{equation} \label{eq:total-bound}
+U(\tilde{S}) \leq U(S') + \sum_{s \in \tilde{S} \setminus S'} \Delta_{s, S'}^+ - \sum_{s \in S' \setminus \tilde{S}} \Delta_s^-
+\end{equation}
+
+\subsection{Logic-Based Benders Decomposition}
+To maximize total student utility while maintaining compactness, we reformulate cut edge minimization as a budget constraint:
+$$\sum_{(i,j)\in E} b_{i,j} \leq \delta_{\text{cut}} |E|$$
+where $\delta_{\text{cut}} \in (0, 1)$ sets the maximum allowable cut edge proportion.
+
+Let $a_{v, l(s)} \in \{0, 1\}$ indicate whether vertex $v$ and school location $l(s)$ are assigned to the same zone:
+\begin{equation}\label{eq:access_def}
+a_{v, l(s)} \iff \bigvee_{z \in [k]} (x_{v,z} \land x_{l(s),z})
+\end{equation}
+which is linearized via McCormick envelopes in MIP or boolean operators in CP-SAT.
+
+We introduce auxiliary decision variables $\hat{U}_v \in \mathbb{R}$ representing the total expected choice set utility of residents at vertex $v \in V$, and solve the resulting problem via logic-based Benders decomposition:
+
+\begin{description}
+    \item[Master Problem:] Maximize $\sum_{v \in V} \hat{U}_v$ subject to the base structural constraints \eqref{cp:assignment}--\eqref{cp:frl}, the compactness budget, access definitions \eqref{eq:access_def}, and accumulated Benders cuts. In iteration 0, $\hat{U}_v$ is unbounded from above, yielding an initial feasible partition $\mathcal{P}^0 = (x^0, z^0)$.
+    \item[Subproblem:] At iteration $t$, given zoning partition $z^t$, evaluate the exact choice set available at each vertex $v$, $S_v^t = \{s \in S \mid z^t(l(s)) = z^t(v)\}$, and compute true utility $U_v(S_v^t)$ alongside marginal gains $\Delta_{t,s,v}^+ = U_v(S_v^t \cup \{s\}) - U_v(S_v^t)$ and global losses $\Delta_{s,v}^- = U_v(S) - U_v(S \setminus \{s\})$.
+    \item[Benders Optimality Cuts:] Add unconditional linear outer approximation cuts to the master problem:
+    \begin{equation}\label{eq:benders_cut}
+    \hat{U}_v \leq U_v(S_v^t) + \sum_{s \in S \setminus S_v^t} \Delta_{t,s,v}^+ a_{v, l(s)} - \sum_{s \in S_v^t} \Delta_{s,v}^- (1 - a_{v, l(s)}) \qquad \forall v \in V
+    \end{equation}
+    Alternatively, cuts may be aggregated across all vertices into a single total utility bound:
+    \begin{equation}\label{eq:benders_cut_agg}
+    \sum_{v \in V} \hat{U}_v \leq \sum_{v \in V} \left( U_v(S_v^t) + \sum_{s \in S \setminus S_v^t} \Delta_{t,s,v}^+ a_{v, l(s)} - \sum_{s \in S_v^t} \Delta_{s,v}^- (1 - a_{v, l(s)}) \right)
+    \end{equation}
+\end{description}
+
+\noindent\textbf{Theorem 1 (Finite Convergence and Optimality).} \textit{The logic-based Benders decomposition terminates in a finite number of iterations at a globally optimal zone partition $\mathcal{P}^*$.}
+
+\textit{Proof.} Let $\mathcal{X}$ denote the finite set of feasible binary zone assignment vectors $x \in \{0, 1\}^{|V| \times k}$ satisfying the base constraints. 
+First, by inequality \eqref{eq:total-bound}, every generated Benders cut \eqref{eq:benders_cut} is a valid global upper bound: for any $x \in \mathcal{X}$, the master variable satisfies $\hat{U}_v(x) \geq U_v(S_v(x))$ for all $v$.
+Second, the cut is exact at the evaluated point $x^t$: setting $x = x^t$, we have $a_{v, l(s)} = 0$ for all $s \notin S_v^t$ and $(1 - a_{v, l(s)}) = 0$ for all $s \in S_v^t$, which collapses the right-hand side of \eqref{eq:benders_cut} exactly to $U_v(S_v^t)$. Thus $\hat{U}_v(x^t) = U_v(S_v^t)$.
+Finally, because $\mathcal{X}$ is finite, the master problem cannot generate infinitely many distinct solutions. When the master problem produces an incumbent partition $x^{t+1}$ whose objective matches its true subproblem evaluation, we have:
+$$\sum_{v \in V} U_v(S_v(x^{t+1})) = \sum_{v \in V} \hat{U}_v(x^{t+1}) \geq \sum_{v \in V} \hat{U}_v(x) \geq \sum_{v \in V} U_v(S_v(x)) \qquad \forall x \in \mathcal{X}$$
+proving that $x^{t+1}$ is a global maximum. $\blacksquare$
+
+\section{Budget Set Optimization}
+Choice set optimization maximizes the expected utility of the options accessible to a family. However, in over-subscribed urban school districts, access does not guarantee enrollment: admission is governed by centralized market clearing under school priority tiers and lottery tiebreakers. We now formulate budget set optimization to maximize total utilitarian welfare under actual admissions.
+
+\subsection{Market-Clearing Cutoff (MID) Optimization}
+We represent student demand through compressed applicant types $g \in \mathcal{G}$, where $n_g$ is the number of students of type $g$. Each type $g$ is characterized by a resident node $v(g)$, an ordered preference list of programs $(s(g,1), s(g,2), \dots, s(g,R_g))$, corresponding priority tiers $\rho(g,r) \in \mathbb{Z}_{\ge 0}$, and utilities $u(g,r)$ satisfying $u(g,1) \geq u(g,2) \geq \dots \geq u(g,R_g) > 0$.
+
+Each program $s \in \mathcal{S}$ has capacity $q_s$ and is assigned a continuous market-clearing cutoff $P_s \in \mathbb{R}_{\geq 0}$. Let $\omega \in [0, 1]$ denote an applicant's single uniform lottery number. An applicant in priority tier $\rho$ qualifies for program $s$ if and only if $\rho + \omega \geq P_s$, or equivalently $\omega \geq P_s - \rho$. The rejected lottery mass is therefore:
+\begin{equation}
+t_{s, \rho} = \min\left(1, \max(P_s - \rho, 0)\right)
+\end{equation}
+
+For choice $r$ of type $g$, access depends on the zoning assignment $x$. Let $a_{g, s} \in \{0, 1\}$ indicate whether program $s$ is accessible to type $g$ ($a_{g,s} = 1$ if citywide or located in type $g$'s assigned zone). The effective rejected mass is:
+\begin{equation}
+e_{g,r} = 
+\begin{cases}
+t_{s(g,r), \rho(g,r)} & \text{if } a_{g, s(g,r)} = 1 \\
+1 & \text{if } a_{g, s(g,r)} = 0
+\end{cases}
+\end{equation}
+
+An applicant enrolls at choice $r$ if and only if they are rejected from all preferred choices $1, \dots, r-1$ and qualify at choice $r$. Let $R_{g,r}$ denote the remaining lottery mass rejected by choices $1, \dots, r$. Assignment follows the recurrence relation:
+\begin{equation}\label{eq:mid_recurrence}
+R_{g,0} = 1, \qquad R_{g,r} = \min\left(R_{g,r-1}, e_{g,r}\right) \quad \forall r \in [R_g]
+\end{equation}
+The assigned student mass at choice $r$ is then:
+\begin{equation}
+d_{g,r} = R_{g,r-1} - R_{g,r} = \max\left(0, R_{g,r-1} - e_{g,r}\right)
+\end{equation}
+
+\noindent\textbf{Proposition 1 (Recurrence Correctness).} \textit{The mass recurrence \eqref{eq:mid_recurrence} exactly matches the lottery admission interval.}
+
+\textit{Proof.} Under uniform lottery tiebreaker $\omega \in [0, 1]$, applicant $g$ is rejected by alternative $k$ if and only if $\omega < e_{g,k}$. Consequently, $g$ is rejected by all top $r$ alternatives if and only if $\omega < \min_{k=1}^r e_{g,k}$. Defining $R_{g,r} = \min_{k=1}^r e_{g,k}$, we have $R_{g,0} = 1$ and:
+$$R_{g,r} = \min_{k=1}^r e_{g,k} = \min\left( \min_{k=1}^{r-1} e_{g,k}, e_{g,r} \right) = \min\left(R_{g,r-1}, e_{g,r}\right)$$
+The measure of the set of lottery numbers where applicant $g$ is rejected by choices $1, \dots, r-1$ ($\omega < R_{g,r-1}$) but accepted at choice $r$ ($\omega \geq e_{g,r}$) is the interval length $[\min(R_{g,r-1}, e_{g,r}), R_{g,r-1}]$, which is precisely $R_{g,r-1} - \min(R_{g,r-1}, e_{g,r}) = R_{g,r-1} - R_{g,r}$. $\blacksquare$
+
+Total program demand cannot exceed seat capacity:
+\begin{equation}
+D_s(x, P) = \sum_{g \in \mathcal{G}} \sum_{r : s(g,r) = s} n_g d_{g,r} \leq q_s \qquad \forall s \in \mathcal{S}
+\end{equation}
+The MID optimization problem maximizes total utilitarian welfare:
+\begin{equation}
+\max_{x \in \Omega, P \ge 0} \sum_{g \in \mathcal{G}} \sum_{r=1}^{R_g} n_g u(g,r) d_{g,r} \quad \text{s.t.} \quad D_s(x, P) \leq q_s \quad \forall s \in \mathcal{S}
+\end{equation}
+
+\noindent\textbf{MID Continuum Decomposition:} 
+The full MID problem couples discrete zoning $x \in \Omega$ with the exact recurrence $R_{g,r} = \min(R_{g,r-1}, e_{g,r})$ across all applicant types and preference ranks. To solve this efficiently, we decompose the problem by maintaining an active prefix vector $\mathbf{k} = (k_g)_{g \in \mathcal{G}}$ with $k_g \in \{0, \dots, R_g\}$.
+
+For each type $g$, alternatives are partitioned into an exact active prefix ($r < k_g$) and a relaxed tail ($r \geq k_g$). The tail is replaced by an optimistic transportation flow $z_{g,r} \ge 0$:
+\begin{equation}
+\sum_{r = k_g}^{R_g} z_{g,r} \leq R_{g, k_g-1}, \qquad 0 \leq z_{g,r} \leq a_{g,r}(x) \qquad \forall g \in \mathcal{G}, r \geq k_g
+\end{equation}
+The master problem maximizes the combined welfare over zoning $x \in \Omega$, cutoffs $P \ge 0$, prefix recurrence variables, and tail flows:
+\begin{equation}\label{eq:mid_master}
+\begin{aligned}
+\max_{x, P, R, z} \quad & \sum_{g \in \mathcal{G}} n_g \left( \sum_{r < k_g} u(g,r) (R_{g,r-1} - R_{g,r}) + \sum_{r \geq k_g} u(g,r) z_{g,r} \right) \\
+\text{s.t.} \quad & x \in \Omega(G, C, k, \delta) \\
+& R_{g,r} = \min(R_{g,r-1}, e_{g,r}) && \forall g \in \mathcal{G}, r < k_g \\
+& \sum_{r \geq k_g} z_{g,r} \leq R_{g, k_g-1}, \quad 0 \leq z_{g,r} \leq a_{g,r}(x) && \forall g \in \mathcal{G}, r \geq k_g \\
+& \sum_{g, r < k_g : s(g,r)=s} n_g d_{g,r} + \sum_{g, r \geq k_g : s(g,r)=s} n_g z_{g,r} \leq q_s && \forall s \in \mathcal{S}
+\end{aligned}
+\end{equation}
+
+\noindent\textbf{Proposition 3 (Valid Relaxation).} \textit{The master problem \eqref{eq:mid_master} is a valid relaxation of the full MID problem, satisfying $\text{OPT}(\text{Full MID}) \leq \text{OPT}(\text{Master}(\mathbf{k}))$.}
+
+\textit{Proof.} Under any feasible solution to the full MID problem, true tail assignments $d_{g,r} \ge 0$ satisfy $\sum_{r \geq k_g} d_{g,r} = R_{g, k_g-1} - R_{g, R_g} \leq R_{g, k_g-1}$, obey geographic access $d_{g,r} \leq a_{g,r}(x)$, and clear program capacity. Because the master problem relaxes cutoff consistency within tails, the true solution is feasible in the master with identical objective value. $\blacksquare$
+
+\noindent\textbf{Separation and Optimality:}
+Given master candidate $(\bar{x}, \bar{P})$, true demand $D_s(\bar{x}, \bar{P})$ and assigned masses $d_{g,r}(\bar{x}, \bar{P})$ are evaluated using the complete recurrence:
+\begin{enumerate}
+    \item \textbf{Overload Separation:} If $D_s(\bar{x}, \bar{P}) > q_s$ for any program $s$, we identify a minimal subset of contributing types whose prefix exact demand violates capacity, and increment $k_g$ through the offending rank, cutting off the candidate.
+    \item \textbf{Utility-Gap Separation:} If capacity is feasible but $\sum_{r \ge k_g} u(g,r) \bar{z}_{g,r} > \sum_{r \ge k_g} u(g,r) d_{g,r}(\bar{x}, \bar{P})$ for some type $g$, we increment $k_g$ through the first tail rank where $\bar{z}_{g,r} \neq d_{g,r}(\bar{x}, \bar{P})$.
+\end{enumerate}
+When no separation is possible, complete demand is feasible and true utility equals master utility, proving that candidate $\bar{x}$ is a globally optimal zoning.
+
+\subsection{Sample Average Approximation (SAA)}
+Under strict lottery tiebreakers, student assignment is equivalent to stable matching. Under SAA, we draw independent tie-breaking seeds $\psi \in \Psi$, yielding strict priority orderings $\succ_s^\psi$ and student preferences $\succ_i^\psi$.
+
+For a fixed sample $\psi$, the fractional stable matching polytope with access variables $a_{i,s} \in \{0, 1\}$ is characterized using comb inequalities (Baïou and Balinski, 2000):
+\begin{align}
+\max_{D} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s} D_{i,s} \label{saa:primal_obj} \\
+\textrm{s.t.} \quad & \sum_{s \in \mathcal{S}} D_{i,s} = 1 && \forall i \in \mathcal{I} \label{saa:assignment} \\
+& \sum_{i \in \mathcal{I}} D_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{saa:capacity} \\
+& D_{i,s} \leq a_{i,s} && \forall i \in \mathcal{I}, s \in \mathcal{S} \label{saa:access} \\
+& \sum_{i' \succ_s^\psi i} D_{i', s} + \sum_{s' \succeq_i^\psi s} D_{i, s'} + \sum_{k \in K_{-i}} \sum_{s' \succ_k^\psi s} D_{k, s'} \geq q_s a_{i,s} \label{saa:comb} \\
+& \qquad \qquad \qquad \qquad \forall i \in \mathcal{I}, s \in \mathcal{S}, K \subseteq \mathcal{I}, |K|=q_s, i \in K \nonumber \\
+& D_{i,s} \geq 0 && \forall i, s \label{saa:domain}
+\end{align}
+
+\noindent\textbf{Proposition 2 (Comb Inequality Stability).} \textit{Constraints \eqref{saa:comb} guarantee that every extreme point is an integral stable matching.}
+
+\textit{Proof.} Suppose $a_{i,s} = 1$ and student $i$ is not assigned to school $s$ or any strictly preferred school, so $\sum_{s' \succeq_i^\psi s} D_{i, s'} = 0$. For $(i, s)$ not to form a blocking pair, all $q_s$ seats of school $s$ must be allocated to students strictly preferred to $i$. In inequality \eqref{saa:comb}, the shaft $\sum_{i' \succ_s^\psi i} D_{i', s}$ captures seats assigned to students preferred by $s$. For any other student $k \in K_{-i}$, either $k$ attends a strictly preferred school (contributing to $\sum_{s' \succ_k^\psi s} D_{k, s'}$), or $k$ competes for $s$. The comb constraint enforces that the sum across shaft and teeth is at least $q_s$, preventing fractional or integer blocking coalitions. Under seat-cloning (replicating school $s$ into $q_s$ unit-capacity slots), this reduces to the classical integral stable marriage polytope of Vande Vate (1989) and Rothblum (1992). $\blacksquare$
+
+\noindent\textbf{Dual Outer Approximation and Geographic Aggregation:}
+By LP duality, the dual solution $(y^{1,\psi, r}, y^{2,\psi, r}, y^{3,\psi, r}, y^{4,\psi, r})$ computed at iteration $r$ under seed $\psi$ gives a valid global upper bound on assignment utility for any choice of student-program access indicators:
+\begin{equation}
+\eta_\psi \leq \kappa^{(r, \psi)} + \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} \beta_{i,s}^{(r, \psi)} a_{i,s}
+\end{equation}
+where $\kappa^{(r, \psi)} = \sum_{i \in \mathcal{I}} y_i^{1,\psi, r} + \sum_{s \in \mathcal{S}} q_s y_s^{2,\psi, r}$ is the baseline dual welfare intercept, and $\beta_{i,s}^{(r, \psi)} = y_{i,s}^{3,\psi, r} + q_s y_{i,s}^{4,\psi, r} \ge 0$ denotes the marginal dual value of granting student $i$ access to program $s$.
+
+Because school zoning access is determined entirely by geographic residence, an applicant $i$ residing at vertex $v(i) \in V$ has access to program $s$ located at school vertex $l(s) \in V$ if and only if $v(i)$ and $l(s)$ are co-zoned. That is, $a_{i,s} \equiv a_{v(i), l(s)}$ for all non-citywide programs (with $a_{i,s} = 1$ identically for citywide programs or when $v(i) = l(s)$). 
+
+Partitioning students by home vertex $\mathcal{I}_v = \{i \in \mathcal{I} \mid v(i) = v\}$ and programs by school vertex $\mathcal{S}_u = \{s \in \mathcal{S} \mid l(s) = u\}$, the student-level dual terms sum to aggregate vertex-pair coefficients:
+\begin{equation}
+\Gamma_{v, u}^{(r, \psi)} = \sum_{i \in \mathcal{I}_v} \sum_{\substack{s \in \mathcal{S}_u \\ s \text{ non-citywide}}} \beta_{i,s}^{(r, \psi)} \qquad \forall v \in V, u \in S, v \neq u
+\end{equation}
+Fixed access terms (citywide programs and students residing at a school vertex) are absorbed directly into the intercept:
+\begin{equation}
+\tilde{\kappa}^{(r, \psi)} = \kappa^{(r, \psi)} + \sum_{i \in \mathcal{I}} \sum_{\substack{s \in \mathcal{S} \\ s \text{ citywide} \lor v(i) = l(s)}} \beta_{i,s}^{(r, \psi)}
+\end{equation}
+
+Furthermore, rather than introducing separate epigraph variables $\eta_\psi$ for each sampled lottery seed $\psi \in \Psi$, the master problem optimizes a single expected welfare variable $\eta \in \mathbb{R}$. Averaging across all $|\Psi|$ samples at iteration $r$ yields a single aggregated Benders cut:
+\begin{equation}\label{eq:saa_agg_cut}
+\eta \leq \bar{\kappa}^{(r)} + \sum_{v \in V} \sum_{u \in S} \bar{\Gamma}_{v, u}^{(r)} a_{v, u}
+\end{equation}
+where:
+\begin{equation}
+\bar{\kappa}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \tilde{\kappa}^{(r, \psi)}, \qquad \bar{\Gamma}_{v, u}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \Gamma_{v, u}^{(r, \psi)}
+\end{equation}
+
+The SAA master problem then optimizes expected welfare over the zoning partition:
+\begin{align}
+\max_{x, a, \eta} \quad & \eta \label{saa:master_obj} \\
+\textrm{s.t.} \quad & x \in \Omega(G, C, k, \delta) \label{saa:master_omega} \\
+& \eta \leq \bar{\kappa}^{(r)} + \sum_{v \in V} \sum_{u \in S} \bar{\Gamma}_{v, u}^{(r)} a_{v, u} && \forall r = 1, \dots, R \label{saa:master_cut} \\
+& a_{v, u} \iff \bigvee_{z \in [k]} (x_{v, z} \land x_{u, z}) && \forall (v, u) \in \mathcal{A}^* \label{saa:master_access} \\
+& 0 \leq \eta \leq \text{Welfare}_{\max} \label{saa:master_bounds} \\
+& a_{v, u} \in \{0, 1\} && \forall (v, u) \in \mathcal{A}^* \label{saa:master_domain}
+\end{align}
+where $\mathcal{A}^* = \{(v, u) \in V \times S \mid \exists r, \bar{\Gamma}_{v, u}^{(r)} \neq 0\}$ denotes the sparse set of active vertex-school pairs with non-zero marginal dual value, and $\text{Welfare}_{\max} = \sum_{i \in \mathcal{I}} u_{i, 1}$ provides a global a priori upper bound.
+
+\noindent\textbf{Computational Advantages of Aggregation:}
+This formulation confers three major advantages:
+\begin{enumerate}
+    \item \textbf{Dimensionality Reduction:} Rather than tracking $|\mathcal{I}| \times |\mathcal{S}| \approx 4.5 \times 10^5$ student-level access indicators across $|\Psi|$ epigraph bounds, the master model instantiates binary access variables $a_{v, u}$ only on-demand for pairs $(v, u)$ with positive dual welfare values $\bar{\Gamma}_{v, u}^{(r)} > 0$.
+    \item \textbf{Exact Equivalence:} Because geographic access $a_{i,s} \equiv a_{v(i), l(s)}$ is strictly identical for all students at vertex $v$, the algebraic aggregation of dual coefficients preserves exact LP outer-approximation guarantees with zero approximation error.
+    \item \textbf{Unified Base Solver Architecture:} Because the cut \eqref{eq:saa_agg_cut} shares the identical access variable structure $a_{v, u}$ as the choice set objective \eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models.
+\end{enumerate}
+
+\appendix
+\section{Extended Demographic Diversity Constraints}
+In addition to socioeconomic (FRL) balance, the optimization framework supports multi-group racial and ethnic demographic balance across an arbitrary set of tracked groups $\mathcal{E}$.
+
+Let $r_{v,e} \ge 0$ denote the count of students of ethnicity $e \in \mathcal{E}$ residing in vertex $v \in V$. The district-wide proportion of group $e$ is:
+\begin{equation}
+R_e = \frac{\sum_{v \in V} r_{v,e}}{\sum_{v \in V} n_v}
+\end{equation}
+For each group $e \in \mathcal{E}$ and each zone $Z_i \in \mathcal{P}$, the localized proportion must not deviate from $R_e$ by more than tolerance $\delta_R \in \mathbb{R}_{>0}$:
+\begin{equation}
+\left| \frac{\sum_{v \in Z_i} r_{v,e}}{N(Z_i)} - R_e \right| \leq \delta_R \qquad \forall e \in \mathcal{E}, \forall Z_i \in \mathcal{P}
+\end{equation}
+
+In the CP-SAT and MIP formulations, this is linearized into upper and lower integer bounds:
+\begin{align}
+\sum_{v \in V} \lfloor M \cdot (r_{v,e} - (R_e - \delta_R) n_v) \rfloor \cdot x_{v,z} &\geq 0 \qquad \forall e \in \mathcal{E}, \forall z \in [k] \\
+\sum_{v \in V} \lceil M \cdot (r_{v,e} - (R_e + \delta_R) n_v) \rceil \cdot x_{v,z} &\leq 0 \qquad \forall e \in \mathcal{E}, \forall z \in [k]
+\end{align}
+which are added seamlessly alongside the base FRL constraints without altering the core solver mechanics.
+
+\end{document}

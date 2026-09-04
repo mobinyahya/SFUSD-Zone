@@ -20,6 +20,7 @@ from optimization.strategies import (  # noqa: E402,F401
     mid,
     mid_decomp,
     saa,
+    short_bursts_choice,
 )
 
 __all__ = ["Strategy", "get_strategy", "register"]

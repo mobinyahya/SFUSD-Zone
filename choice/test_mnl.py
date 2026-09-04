@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from choice import mnl
-from choice.models import MNLChoiceModel, get_configured_choice_model
+from choice.models import MNLChoiceModel, build_mnl_choice_model
 from loaders import load_scenario
 from optimization.tests.synthetic import make_grid_problem
 
@@ -104,7 +104,7 @@ def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(tmp_path)
 
     cuts = evaluator.choice_utility_hint_cuts(problem)
 
-    cut = next(cut for cut in cuts if cut.node == 1 and cut.zone == 0)
+    cut = next(cut for cut in cuts if cut.node == 1)
     coeffs = {term.node: term.coefficient for term in cut.terms}
     assert cut.constant == pytest.approx(2.0)
     assert set(coeffs) == {1}
@@ -199,11 +199,11 @@ def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, method):
     )
 
     evaluated = evaluator.evaluate_with_cuts(problem, incumbent)
-    cut = next(cut for cut in evaluated.cuts if cut.node == 1 and cut.zone == 1)
+    cut = next(cut for cut in evaluated.cuts if cut.node == 1)
     rhs = cut.constant + sum(
         term.coefficient
         for term in cut.terms
-        if alternative.get(term.node) == term.zone
+        if alternative.get(cut.node) == alternative.get(term.node)
     )
     true_utility = _node_utility(evaluator, problem, alternative, node=1)
 
@@ -211,14 +211,14 @@ def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, method):
     assert rhs == pytest.approx(true_utility)
 
 
-def test_configured_choice_model_defaults_to_mnl(tmp_path):
+def test_build_mnl_choice_model_returns_mnl(tmp_path):
     utility_path = tmp_path / "utility.csv"
     student_path = tmp_path / "students.csv"
     utility_path.write_text("studentno\n", encoding="utf-8")
     student_path.write_text("studentno\n", encoding="utf-8")
 
     assert isinstance(
-        get_configured_choice_model({}, _scenario(utility_path, student_path)),
+        build_mnl_choice_model(_scenario(utility_path, student_path)),
         MNLChoiceModel,
     )
 

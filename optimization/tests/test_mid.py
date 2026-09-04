@@ -604,7 +604,9 @@ def test_mid_generated_models_replace_tail_rows_without_accumulation():
             + metadata["mid_transport_variable_count"]
             == 3
         )
-        assert metadata["mid_threshold_count"] == prefix_length
+        # Transport tails are capped by their own acceptance mass, so a
+        # threshold exists for every referenced rank regardless of the prefix.
+        assert metadata["mid_threshold_count"] == 3
         assert metadata["mid_effective_threshold_count"] == 0
         stats.append(
             (
@@ -613,12 +615,12 @@ def test_mid_generated_models_replace_tail_rows_without_accumulation():
             )
         )
 
-    normalized_variables = [
-        variable_count - prefix_length
-        for prefix_length, (variable_count, _) in enumerate(stats)
-    ]
-    assert len(set(normalized_variables)) == 1
-    assert [constraints - stats[0][1] for _, constraints in stats] == [0, 2, 4, 5]
+    # Activating one more exact rank swaps a transport row for a recurrence row
+    # and reuses the rank's existing threshold, so the variables do not grow.
+    # Each activated rank adds its own min-tightening inequality, and the full
+    # prefix drops the tail's total-mass constraint.
+    assert len({variable_count for variable_count, _ in stats}) == 1
+    assert [constraints - stats[0][1] for _, constraints in stats] == [0, 1, 2, 2]
 
     rebuilt = MidCpSatSolver(
         market,
@@ -785,3 +787,273 @@ def test_mid_market_builds_for_summer_26_zoning():
     assert market.outside_only_student_count >= 72
     assert len(market.programs) == 130
     assert sum(student_type.count for student_type in market.types) == 3953
+
+
+def test_finite_grid_oracle_warm_cutoffs_decrease():
+    market = MidMarket(
+        programs=(
+            MidProgram("A", 100, 1, False, 0),
+            MidProgram("B", 200, 1, False, 1),
+        ),
+        types=(
+            MidType(0, 2, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),
+            MidType(1, 2, ("B", "A"), (0, 0), (2.0, 1.0), (200, 100)),
+        ),
+        student_count=4,
+        outside_only_student_count=0,
+        utility_student_count=4,
+        utility_handling="omit_nonpositive",
+    )
+    zoning = {0: 0, 1: 1}
+    # Standard solution from zero
+    result_cold = finite_grid_oracle(market, zoning, 20)
+
+    # Warm-start with intentionally inflated cutoffs: must correctly decrease to minimal
+    inflated = {"A": 20, "B": 20}
+    result_warm = finite_grid_oracle(market, zoning, 20, warm_cutoffs=inflated)
+
+    assert result_warm.cutoffs == result_cold.cutoffs
+    assert result_warm.welfare == result_cold.welfare
+    assert result_warm.minimal is True
+
+    # Test without minimality check
+    result_fast = finite_grid_oracle(
+        market, zoning, 20, check_minimality=False, warm_cutoffs=inflated
+    )
+    assert result_fast.cutoffs == result_cold.cutoffs
+    assert result_fast.welfare == result_cold.welfare
+
+
+def test_mid_strict_complementary_slackness_causes_artificial_infeasibility():
+    problem = make_grid_problem(2, 2, program_population="All", overage=-1, shortage=-1)
+    market = MidMarket(
+        programs=(MidProgram("A", 100, 3, True, None),),
+        types=(
+            MidType(1, 3, ("A",), (0,), (1.0,), (100,)),
+            MidType(2, 4, ("A",), (0,), (1.0,), (100,)),
+        ),
+        student_count=7,
+        outside_only_student_count=0,
+        utility_student_count=7,
+        utility_handling="omit_nonpositive",
+    )
+    # Strict CS (slack=0): capacity is 60. Demand at cutoff 12 is 56 < 60, at cutoff 11 is 63 > 60.
+    # No integer cutoff can achieve demand == 60, so strict CS is INFEASIBLE.
+    solution = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack=0.0,
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert solution.status == "INFEASIBLE"
+
+
+def test_mid_slacked_complementary_slackness_resolves_infeasibility():
+    problem = make_grid_problem(2, 2, program_population="All", overage=-1, shortage=-1)
+    market = MidMarket(
+        programs=(MidProgram("A", 100, 3, True, None),),
+        types=(
+            MidType(1, 3, ("A",), (0,), (1.0,), (100,)),
+            MidType(2, 4, ("A",), (0,), (1.0,), (100,)),
+        ),
+        student_count=7,
+        outside_only_student_count=0,
+        utility_student_count=7,
+        utility_handling="omit_nonpositive",
+    )
+    # Auto slack derives the type jump bound and resolves artificial infeasibility
+    sol_auto = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack="auto",
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert sol_auto.status == "OPTIMAL"
+    assert sol_auto.metadata["mid_solver_cutoffs"]["A"] == 12
+    assert sol_auto.metadata["mid_finite_grid_demands"]["A"] == 2.8
+    assert sol_auto.metadata["mid_complementary_slackness"] is True
+    assert sol_auto.metadata["mid_complementary_slackness_slack"] == "auto"
+
+    # Numeric seat slack (1.0 seat = 20 scaled units) also resolves it
+    sol_seats = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack=1.0,
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert sol_seats.status == "OPTIMAL"
+    assert sol_seats.metadata["mid_solver_cutoffs"]["A"] == 12
+
+    # Percentage slack (10% of 60 = 6 units) also resolves it
+    sol_pct = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack="10%",
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert sol_pct.status == "OPTIMAL"
+    assert sol_pct.metadata["mid_solver_cutoffs"]["A"] == 12
+
+
+def test_mid_complementary_slackness_forces_undersubscribed_cutoffs_to_zero():
+    problem = make_grid_problem(2, 2, program_population="All", overage=-1, shortage=-1)
+    market = MidMarket(
+        programs=(
+            MidProgram("under", 100, 10, True, None),
+            MidProgram("over", 200, 2, True, None),
+        ),
+        types=(
+            # 3 students want 'under' first (capacity 10, so undersubscribed)
+            MidType(1, 3, ("under",), (0,), (1.0,), (100,)),
+            # 5 students want 'over' (capacity 2, so oversubscribed)
+            MidType(2, 5, ("over",), (0,), (1.0,), (100,)),
+        ),
+        student_count=8,
+        outside_only_student_count=0,
+        utility_student_count=8,
+        utility_handling="omit_nonpositive",
+    )
+    solution = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack="auto",
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.metadata["mid_solver_cutoffs"]["under"] == 0
+    assert solution.metadata["mid_solver_cutoffs"]["over"] > 0
+
+
+def test_mid_complementary_slackness_forces_zero_demand_cutoff_to_zero():
+    problem = make_grid_problem(2, 2, program_population="All", overage=-1, shortage=-1)
+    market = MidMarket(
+        programs=(
+            MidProgram("A", 100, 5, True, None),
+            MidProgram("second", 200, 5, True, None),
+        ),
+        types=(
+            # All students get into A, so zero demand reaches 'second'
+            MidType(1, 4, ("A", "second"), (0, 0), (2.0, 1.0), (200, 100)),
+        ),
+        student_count=4,
+        outside_only_student_count=0,
+        utility_student_count=4,
+        utility_handling="omit_nonpositive",
+    )
+    solution = MidCpSatSolver(
+        market,
+        20,
+        complementary_slackness=True,
+        complementary_slackness_slack="auto",
+        solve_time_limit=10,
+        workers=1,
+    ).solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.metadata["mid_solver_cutoffs"]["second"] == 0
+    assert solution.metadata["mid_solver_cutoffs"]["A"] == 0
+
+
+def test_mid_solver_rejects_invalid_slack():
+    market = MidMarket(
+        programs=(MidProgram("A", 100, 5, True, None),),
+        types=(MidType(1, 1, ("A",), (0,), (1.0,), (100,)),),
+        student_count=1,
+        outside_only_student_count=0,
+        utility_student_count=1,
+        utility_handling="omit_nonpositive",
+    )
+    with pytest.raises(ValueError, match="complementary_slackness"):
+        MidCpSatSolver(market, 20, complementary_slackness="yes")
+    with pytest.raises(ValueError, match="slack"):
+        MidCpSatSolver(
+            market, 20, complementary_slackness=True, complementary_slackness_slack=True
+        )
+    with pytest.raises(ValueError, match="slack"):
+        MidCpSatSolver(
+            market, 20, complementary_slackness=True, complementary_slackness_slack=-1
+        )
+    with pytest.raises(ValueError, match="slack"):
+        MidCpSatSolver(
+            market,
+            20,
+            complementary_slackness=True,
+            complementary_slackness_slack="invalid",
+        )
+
+
+def test_mid_real_data_feasible_hint_complementary_slackness():
+    """Real SFUSD dataset test with feasible hint and complementary slackness."""
+    from pathlib import Path
+    from optimization.config import OptimizationConfig
+    from optimization.data.dataset import Dataset
+    from optimization.data.initial_solutions import initial_solution
+    from optimization.data.mid import build_mid_market
+    from optimization.levels import LevelSpec
+
+    level = "Block_3"
+    config = OptimizationConfig(
+        data={"scenario": "summer-26-zoning", "overrides": {}},
+        centroids_type="6-zone-9",
+        levels=[level],
+        solver="cp_bool",
+        strategy="mid",
+        hints="feasible",
+        feasible_hint_time_limit=30,
+        mid_lottery_scale=10,
+        mid_complementary_slackness=True,
+        mid_complementary_slackness_slack="auto",
+        frl_dev=0.5,
+        racial_dev=-1,
+        overage=-1,
+        shortage=-1,
+        workers=4,
+        seed=0,
+    )
+    dataset = Dataset(config)
+    graph_path = Path(dataset._graph_path(LevelSpec.parse(level)))
+    if not graph_path.exists():
+        pytest.skip(f"Cached graph for {level} not available at {graph_path}")
+
+    problem = dataset.problem_for(level)
+    problem.overage = -1.0
+    problem.shortage = -1.0
+    hint = initial_solution(
+        problem, "feasible", solver_options=config.make_solver().options
+    )
+    assert hint is not None
+    problem.hint = hint.assignment
+
+    market = build_mid_market(problem, dataset.config)
+    solver = MidCpSatSolver(
+        market,
+        10,
+        complementary_slackness=True,
+        complementary_slackness_slack="auto",
+        solve_time_limit=15,
+        workers=4,
+    )
+    solution = solver.solve(problem)
+
+    assert solution.feasible is True
+    assert solution.metadata["mid_complementary_slackness"] is True
+    assert solution.metadata["mid_complementary_slackness_slack"] == "auto"
+    cutoffs = solution.metadata["mid_solver_cutoffs"]
+    zero_count = sum(1 for v in cutoffs.values() if v == 0)
+    # In SFUSD real market, majority of programs are undersubscribed and forced to 0
+    assert zero_count > len(cutoffs) // 2

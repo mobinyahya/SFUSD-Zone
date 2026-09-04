@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import gurobipy as gp
 from gurobipy import GRB
 
+from choice.objective import ChoiceCut, ChoiceTerm
 from optimization.data.mid import MidProgram
 from optimization.data.saa import SaaMarket, SaaSample
 from optimization.problem import ZoneProblem
@@ -20,15 +21,69 @@ _OUTSIDE = "__saa_outside__"
 
 @dataclass(frozen=True)
 class SaaCut:
-    sample_index: int
-    constant: float
-    coefficients: tuple[tuple[AccessPair, float], ...]
+    sample_index: int | None = None
+    constant: float = 0.0
+    coefficients: tuple[tuple[AccessPair, float], ...] = ()
     anchor_access: tuple[tuple[AccessPair, int], ...] = ()
 
     def value(self, access: dict[AccessPair, int]) -> float:
         return self.constant + sum(
             coefficient * access[pair] for pair, coefficient in self.coefficients
         )
+
+    def to_choice_cut(self) -> ChoiceCut:
+        terms = tuple(
+            ChoiceTerm(
+                coefficient=coeff,
+                node=school_node,
+                student_node=student_node,
+            )
+            for (student_node, school_node), coeff in self.coefficients
+            if abs(coeff) > 1e-12
+        )
+        return ChoiceCut(
+            constant=self.constant,
+            terms=terms,
+            anchor_access=self.anchor_access,
+        )
+
+
+def aggregate_saa_cuts(cuts: tuple[SaaCut, ...] | list[SaaCut]) -> SaaCut:
+    """Aggregate cuts across multiple sample scenarios into a single average cut."""
+    if not cuts:
+        raise ValueError("Cannot aggregate empty cuts.")
+    if len(cuts) == 1:
+        cut = cuts[0]
+        return SaaCut(
+            sample_index=None,
+            constant=cut.constant,
+            coefficients=cut.coefficients,
+            anchor_access=cut.anchor_access,
+        )
+    num_cuts = len(cuts)
+    constant = sum(cut.constant for cut in cuts) / num_cuts
+    coeff_map: dict[AccessPair, float] = {}
+    for cut in cuts:
+        for pair, coeff in cut.coefficients:
+            coeff_map[pair] = coeff_map.get(pair, 0.0) + coeff / num_cuts
+
+    coefficients = tuple(
+        (pair, coeff) for pair, coeff in sorted(coeff_map.items()) if abs(coeff) > 1e-12
+    )
+    anchor: dict[AccessPair, int] = {}
+    for cut in cuts:
+        for pair, value in cut.anchor_access:
+            previous = anchor.setdefault(pair, value)
+            if previous != value:
+                raise ValueError("Cannot aggregate cuts from different access anchors.")
+    coefficient_pairs = {pair for pair, _ in coefficients}
+    anchor_access = tuple((pair, anchor[pair]) for pair in sorted(coefficient_pairs))
+    return SaaCut(
+        sample_index=None,
+        constant=constant,
+        coefficients=coefficients,
+        anchor_access=anchor_access,
+    )
 
 
 @dataclass(frozen=True)

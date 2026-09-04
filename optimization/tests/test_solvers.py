@@ -6,8 +6,7 @@ import os
 import pytest
 from ortools.sat.python import cp_model
 
-from choice.models import DistanceChoiceModel
-from choice.objective import ChoiceObjective
+from choice.objective import ChoiceCut, ChoiceObjective, ChoiceTerm
 from optimization.config import OptimizationConfig
 from optimization.data import contiguity
 from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
@@ -365,30 +364,61 @@ def test_cpsat_solver_saves_progress(tmp_path):
         assert {int(node) for node in assignment} == set(problem.nodes)
 
 
-@pytest.mark.parametrize("name", ["cp_int", "cp_bool"])
-def test_cpsat_solvers_support_choice_objective(name):
+@pytest.mark.parametrize(
+    "name", [n for n in ["cp_int", "cp_bool", "mip"] if n in available_solvers()]
+)
+@pytest.mark.parametrize("aggregate", [False, True])
+def test_solvers_agree_on_exact_choice_objective(name, aggregate):
     problem = make_grid_problem(3, 3)
-    model = DistanceChoiceModel()
-    evaluation = model.evaluate_with_cuts(
-        problem,
-        {node: min(problem.candidate_zones(node)) for node in problem.nodes},
-    )
-    lower, upper = model.utility_bounds(problem)
+    if aggregate:
+        cuts = (
+            ChoiceCut(
+                node=None,
+                constant=10.0,
+                terms=(ChoiceTerm(coefficient=20.0, node=1, student_node=0),),
+            ),
+        )
+    else:
+        cuts = tuple(
+            ChoiceCut(
+                node=node,
+                constant=5.0,
+                terms=(
+                    ChoiceTerm(coefficient=10.0, node=(node + 1) % len(problem.nodes)),
+                ),
+            )
+            for node in problem.nodes
+        )
     problem.choice_objective = ChoiceObjective(
-        cuts=evaluation.cuts,
-        lower_bound=lower,
-        upper_bound=upper,
+        cuts=cuts,
+        lower_bound=-100.0,
+        upper_bound=100.0,
         scale=100,
+        aggregate_cuts=aggregate,
     )
 
-    solution = get_solver(name, solve_time_limit=10, workers=1).solve(problem)
+    solution = get_solver(name, solve_time_limit=30, workers=1).solve(problem)
 
-    assert solution.status in ("OPTIMAL", "FEASIBLE")
+    assert solution.status == "OPTIMAL"
     assert_valid_solution(problem, solution, check_boundary_objective=False)
     assert solution.metadata["objective_kind"] == "choice_utility"
-    assert solution.objective == pytest.approx(
-        model.evaluate(problem, solution.assignment), abs=0.05
+
+    node_count = len(problem.nodes)
+    co_zoned = sum(
+        1
+        for node in problem.nodes
+        if solution.assignment[node] == solution.assignment[(node + 1) % node_count]
     )
+    if aggregate:
+        # One total-utility cut: 10 + 20 * a[0, 1], maximized by co-zoning 0 and 1.
+        assert solution.assignment[0] == solution.assignment[1]
+        assert solution.objective == pytest.approx(30.0)
+    else:
+        # Per-node cut n: u[n] <= 5 + 10 * a[n, n+1 mod 9]. Two zones must cut the
+        # 9-node cycle an even number of times, so at most 7 pairs co-zone:
+        # 7 * 15 + 2 * 5 == 115.
+        assert co_zoned == 7
+        assert solution.objective == pytest.approx(115.0)
 
 
 def test_explicit_candidates_cannot_unassign_centroids():

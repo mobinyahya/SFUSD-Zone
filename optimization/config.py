@@ -19,6 +19,8 @@ import yaml
 
 from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
+from optimization.mid_options import normalize_complementary_slackness_slack
+from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 
 
 _STRATEGIES = {
@@ -28,6 +30,7 @@ _STRATEGIES = {
     "mid",
     "mid_decomp",
     "saa",
+    "short_bursts_choice",
 }
 
 
@@ -53,6 +56,7 @@ class OptimizationConfig:
     centroid_neighbor_radius: int = 0
     solve_time_limits: list[float] = field(default_factory=lambda: [60.0])
     carry_over_compute: bool = False
+    budget_accounting: str = "wall_clock"
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     hints: str = "voronoi"
     feasible_hint_time_limit: float = 60.0
@@ -76,7 +80,6 @@ class OptimizationConfig:
     boundary_radius: int = 1
     boundary_prop: float = -1.0
     max_iterations: int = 5
-    choice_model: str = "mnl"
     choice_model_method: str = "logsum"
     choice_utility_scale: float = 100.0
     choice_utility_hints: bool = False
@@ -84,6 +87,8 @@ class OptimizationConfig:
     mid_lottery_scale: int = 20
     mid_utility_handling: str = "omit_nonpositive"
     mid_transport_bounds: bool = True
+    mid_complementary_slackness: bool = False
+    mid_complementary_slackness_slack: float | str = "auto"
     saa_num_seeds: int = 5
     saa_tie_breaking_method: str = "MTB"
 
@@ -212,6 +217,13 @@ class OptimizationConfig:
             )
         if not isinstance(self.mid_transport_bounds, bool):
             raise ValueError("mid_transport_bounds must be a Boolean.")
+        if not isinstance(self.mid_complementary_slackness, bool):
+            raise ValueError("mid_complementary_slackness must be a Boolean.")
+        self.mid_complementary_slackness_slack = (
+            normalize_complementary_slackness_slack(
+                self.mid_complementary_slackness_slack
+            )
+        )
         if (
             isinstance(self.saa_num_seeds, bool)
             or not isinstance(self.saa_num_seeds, int)
@@ -246,6 +258,11 @@ class OptimizationConfig:
             or self.centroid_neighbor_radius < 0
         ):
             raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+        if self.budget_accounting not in BUDGET_ACCOUNTING_MODES:
+            raise ValueError(
+                "budget_accounting must be one of: "
+                f"{', '.join(BUDGET_ACCOUNTING_MODES)}."
+            )
         if self.hints not in {"feasible", "voronoi", "none"}:
             raise ValueError("hints must be one of: feasible, voronoi, none.")
         if isinstance(self.feasible_hint_time_limit, bool):
@@ -380,6 +397,11 @@ class OptimizationConfig:
             "short_bursts_method": self.short_bursts_method,
             "adaptive_short_bursts_lr": self.adaptive_short_bursts_lr,
             "adaptive_short_bursts_temperature": self.adaptive_short_bursts_temperature,
+            "mid_lottery_scale": self.mid_lottery_scale,
+            "mid_utility_handling": self.mid_utility_handling,
+            "mid_transport_bounds": self.mid_transport_bounds,
+            "mid_complementary_slackness": self.mid_complementary_slackness,
+            "mid_complementary_slackness_slack": self.mid_complementary_slackness_slack,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir
@@ -393,6 +415,7 @@ class OptimizationConfig:
             levels=self.levels,
             solve_time_limits=self.solve_time_limits,
             carry_over_compute=self.carry_over_compute,
+            budget_accounting=self.budget_accounting,
             gap_limits=self.gap_limits,
             enumerated_solutions=self.enumerated_solutions,
             seed=self.seed,
@@ -402,7 +425,6 @@ class OptimizationConfig:
             boundary_radius=self.boundary_radius,
             boundary_prop=self.boundary_prop,
             max_iterations=self.max_iterations,
-            choice_model=self.choice_model,
             choice_model_method=self.choice_model_method,
             choice_utility_scale=self.choice_utility_scale,
             choice_utility_hints=self.choice_utility_hints,
@@ -410,6 +432,8 @@ class OptimizationConfig:
             mid_lottery_scale=self.mid_lottery_scale,
             mid_utility_handling=self.mid_utility_handling,
             mid_transport_bounds=self.mid_transport_bounds,
+            mid_complementary_slackness=self.mid_complementary_slackness,
+            mid_complementary_slackness_slack=self.mid_complementary_slackness_slack,
             saa_num_seeds=self.saa_num_seeds,
             saa_tie_breaking_method=self.saa_tie_breaking_method,
         )

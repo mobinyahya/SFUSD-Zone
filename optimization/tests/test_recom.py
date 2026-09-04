@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 
 import networkx as nx
 import pytest
@@ -574,3 +575,49 @@ def test_adaptive_short_bursts_end_to_end_solve() -> None:
     for w in solution.metadata["final_weights"]:
         assert w >= 1.0
     _assert_valid_recom_solution(problem, solution)
+
+
+class _SlowScorer:
+    """Records when each scoring batch runs so overrun can be measured."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+        self.call_times: list[float] = []
+
+    def __call__(self, assignments, base_assignment):
+        self.call_times.append(time.monotonic())
+        time.sleep(self.delay)
+        return tuple(float(len(assignment)) for assignment in assignments)
+
+
+def test_scored_bursts_overrun_the_deadline_by_at_most_one_batch() -> None:
+    """Scoring is synchronous, so one batch may straddle the deadline - only one."""
+
+    problem = make_grid_problem(2, 2, frl_dev=1.0, hint={0: 0, 1: 0, 2: 1, 3: 1})
+    time_limit = 0.2
+    scorer = _SlowScorer(delay=0.15)
+    solver = get_solver(
+        "short_bursts",
+        solve_time_limit=time_limit,
+        workers=1,
+        recom_iterations=-1,
+        short_bursts_length=2,
+        seed=7,
+    )
+
+    started = time.monotonic()
+    solution = solver.solve_with_scorer(problem, scorer, objective_kind="test_score")
+    deadline = started + time_limit
+
+    elapsed = time.monotonic() - started
+
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["stop_reason"] == "time_limit"
+    # Several batches must actually run, or the bound below is vacuous.
+    assert len(scorer.call_times) >= 2, scorer.call_times
+    # At most one batch may *start* at or after the deadline.
+    late_batches = [t for t in scorer.call_times if t >= deadline]
+    assert len(late_batches) <= 1, scorer.call_times
+    # So the overrun stays bounded by a single batch rather than growing with
+    # the number of remaining iterations.
+    assert elapsed <= time_limit + scorer.delay + 0.5, elapsed

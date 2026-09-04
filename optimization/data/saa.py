@@ -8,9 +8,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from optimization.data.mid import (
+    MidMarket,
     MidProgram,
     MidStudent,
     build_mid_student_market,
+    compress_mid_students,
 )
 from optimization.problem import ZoneProblem
 
@@ -77,6 +79,20 @@ def build_saa_market(problem: ZoneProblem, optimization_config) -> SaaMarket:
             utility_handling=source.utility_handling,
         ),
         problem,
+    )
+
+
+def saa_market_to_mid_market(market: SaaMarket) -> MidMarket:
+    """Convert an SAA market into a compressed MID market."""
+    return MidMarket(
+        programs=market.programs,
+        types=compress_mid_students(market.students),
+        student_count=len(market.students),
+        outside_only_student_count=sum(
+            not student.programs for student in market.students
+        ),
+        utility_student_count=market.utility_student_count,
+        utility_handling=market.utility_handling,
     )
 
 

@@ -1,7 +1,14 @@
 import math
 import pytest
 
-from optimization.data.initial_solutions import initial_solution
+from optimization.config import OptimizationConfig
+from optimization.data.initial_solutions import (
+    FEASIBLE_HINT_PAYLOAD,
+    _feasible_hint_namespace,
+    feasibility_fingerprint,
+    initial_solution,
+)
+from optimization.solvers import cpsat
 from optimization.tests.synthetic import make_grid_problem
 
 
@@ -91,3 +98,103 @@ def test_grid_problem_auto_max_distance():
     # Every node has at least one candidate zone
     for node in problem.G.nodes():
         assert len(problem.candidate_zones(node)) >= 1
+
+
+def _cache_config(tmp_path):
+    return OptimizationConfig(
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "cache")}},
+        }
+    )
+
+
+def _cached_grid_problem(tmp_path, **overrides):
+    return make_grid_problem(
+        3,
+        3,
+        boundary_prop=0.5,
+        optimization_config=_cache_config(tmp_path),
+        **overrides,
+    )
+
+
+def test_feasible_hint_cache_reuses_the_stored_assignment(tmp_path, monkeypatch):
+    options = {"feasible_hint_time_limit": 10, "seed": 3}
+    first = initial_solution(
+        _cached_grid_problem(tmp_path), "feasible", solver_options=options
+    )
+    assert first.metadata["hint_cache"] == "miss"
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("A cached feasible hint must not be re-solved.")
+
+    monkeypatch.setattr(cpsat, "CpBoolSolver", refuse)
+    second = initial_solution(
+        _cached_grid_problem(tmp_path), "feasible", solver_options=options
+    )
+
+    assert second.metadata["hint_cache"] == "hit"
+    assert second.metadata["hint_cache_key"] == first.metadata["hint_cache_key"]
+    assert second.metadata["hint_solver_status"] == first.metadata["hint_solver_status"]
+    assert second.assignment == first.assignment
+
+
+def test_feasible_hint_cache_key_includes_the_seed(tmp_path):
+    problem = _cached_grid_problem(tmp_path)
+
+    first = initial_solution(
+        problem,
+        "feasible",
+        solver_options={"feasible_hint_time_limit": 10, "seed": 3},
+    )
+    other_seed = initial_solution(
+        problem,
+        "feasible",
+        solver_options={"feasible_hint_time_limit": 10, "seed": 4},
+    )
+
+    assert other_seed.metadata["hint_cache"] == "miss"
+    assert other_seed.metadata["hint_cache_key"] != first.metadata["hint_cache_key"]
+
+
+def test_feasible_hint_cache_is_skipped_without_a_scenario():
+    result = initial_solution(
+        make_grid_problem(3, 3, boundary_prop=0.5),
+        "feasible",
+        solver_options={"feasible_hint_time_limit": 10, "seed": 3},
+    )
+
+    assert "hint_cache" not in result.metadata
+
+
+def test_feasibility_fingerprint_tracks_constraints_and_data():
+    problem = make_grid_problem(3, 3, boundary_prop=0.5)
+    baseline = feasibility_fingerprint(problem)
+
+    assert feasibility_fingerprint(make_grid_problem(3, 3, boundary_prop=0.5)) == (
+        baseline
+    )
+    assert feasibility_fingerprint(make_grid_problem(3, 3, boundary_prop=0.4)) != (
+        baseline
+    )
+
+    changed_data = make_grid_problem(3, 3, boundary_prop=0.5)
+    changed_data.G.nodes[4]["ge_students"] = 2.0
+    assert feasibility_fingerprint(changed_data) != baseline
+
+
+def test_feasible_hint_cache_ignores_an_invalid_cached_assignment(tmp_path):
+    options = {"feasible_hint_time_limit": 10, "seed": 3}
+    problem = _cached_grid_problem(tmp_path)
+    initial_solution(problem, "feasible", solver_options=options)
+
+    namespace = _feasible_hint_namespace(problem, options, time_limit=10.0)
+    namespace.save_pickle(
+        FEASIBLE_HINT_PAYLOAD,
+        {"assignment": {0: 1}, "status": "FEASIBLE", "wall_time": 0.0},
+    )
+    result = initial_solution(problem, "feasible", solver_options=options)
+
+    assert result.metadata["hint_cache"] == "miss"
+    _check_candidate_assignment(problem, result.assignment)
