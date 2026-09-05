@@ -14,7 +14,7 @@ from optimization.problem import ZoneProblem
 
 HINT_METHODS = {"feasible", "voronoi", "none"}
 
-FEASIBLE_HINT_CACHE_SCHEMA_VERSION = 1
+FEASIBLE_HINT_CACHE_SCHEMA_VERSION = 2
 FEASIBLE_HINT_ARTIFACT = "feasible_hint"
 FEASIBLE_HINT_PAYLOAD = "hint.pickle"
 
@@ -56,15 +56,18 @@ def feasible_initial_solution(
     """Find one zoning-feasible assignment without an optimization objective.
 
     The solve is reused through the shared content-addressed cache, keyed by
-    the feasibility model itself (:func:`feasibility_fingerprint`) plus every
-    CP-SAT search setting that shapes the search, including the seed. Problems
-    built without an originating config carry no scenario and are never cached.
+    the feasibility model itself (:func:`feasibility_fingerprint`) and nothing
+    that only steers the search. Any assignment inside the feasible set is as
+    good a warm start as any other, so the seed, worker count, time limit, and
+    CP-SAT tuning parameters are all excluded from the key: two runs that
+    differ only in how hard they searched share one hint. Problems built
+    without an originating config carry no scenario and are never cached.
     """
 
     options = solver_options or {}
     time_limit = _feasible_hint_time_limit(options)
 
-    namespace = _feasible_hint_namespace(problem, options, time_limit=time_limit)
+    namespace = _feasible_hint_namespace(problem, options)
     if namespace is not None:
         cached = _cached_hint(problem, namespace.load_pickle(FEASIBLE_HINT_PAYLOAD))
         if cached is not None:
@@ -290,8 +293,6 @@ def _feasible_hint_time_limit(options: Mapping[str, object]) -> float:
 def _feasible_hint_namespace(
     problem: ZoneProblem,
     options: Mapping[str, object],
-    *,
-    time_limit: float,
 ) -> CacheNamespace | None:
     """Resolve the cache namespace for one hint solve, or ``None`` if unusable."""
 
@@ -302,16 +303,10 @@ def _feasible_hint_namespace(
         FEASIBLE_HINT_ARTIFACT,
         {
             "problem": feasibility_fingerprint(problem),
-            "hint_solver": "cp_bool",
-            "hint_solver_hints": "voronoi",
-            "feasible_hint_time_limit": time_limit,
-            "seed": int(options.get("seed", 42)),
-            "workers": int(options.get("workers", 8)),
+            # Not a search setting: a positive radius fixes each centroid's
+            # graph-hop neighborhood, shrinking the feasible set the fingerprint
+            # describes, and `_cached_hint` does not re-check that fixing.
             "centroid_neighbor_radius": int(options.get("centroid_neighbor_radius", 0)),
-            "linearization_level": options.get("linearization_level"),
-            "cp_model_probing_level": options.get("cp_model_probing_level"),
-            "symmetry_level": options.get("symmetry_level"),
-            "cp_sat_search_strategy": options.get("cp_sat_search_strategy"),
         },
         schema_version=FEASIBLE_HINT_CACHE_SCHEMA_VERSION,
         # The fingerprint already pins every source-derived model input, so the

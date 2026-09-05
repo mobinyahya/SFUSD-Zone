@@ -13,7 +13,7 @@ optimization_defaults:
   boundary_prop: 0.18
   hints: feasible
   budget_accounting: solver_time
-  feasible_hint_time_limit: 60
+  feasible_hint_time_limit: 600
 
   racial_dev: -1
   overage: -1
@@ -48,7 +48,6 @@ tasks:
   
   - solver: 'cp_bool'
     strategy: [mid, mid_decomp]
-    linearization_level: 0
     mid_complementary_slackness: [true, false]
     workers: 16
     seed: [1]

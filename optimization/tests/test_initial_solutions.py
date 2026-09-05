@@ -140,22 +140,55 @@ def test_feasible_hint_cache_reuses_the_stored_assignment(tmp_path, monkeypatch)
     assert second.assignment == first.assignment
 
 
-def test_feasible_hint_cache_key_includes_the_seed(tmp_path):
-    problem = _cached_grid_problem(tmp_path)
+def test_feasible_hint_cache_key_ignores_search_settings(tmp_path, monkeypatch):
+    """Search effort does not change the feasible set, so it must not fork the key."""
 
+    problem = _cached_grid_problem(tmp_path)
     first = initial_solution(
         problem,
         "feasible",
         solver_options={"feasible_hint_time_limit": 10, "seed": 3},
     )
-    other_seed = initial_solution(
+    assert first.metadata["hint_cache"] == "miss"
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("Search settings must not trigger a second solve.")
+
+    monkeypatch.setattr(cpsat, "CpBoolSolver", refuse)
+    for options in (
+        {"feasible_hint_time_limit": 10, "seed": 4},
+        {"feasible_hint_time_limit": 45, "seed": 3},
+        {"feasible_hint_time_limit": 10, "seed": 3, "workers": 4},
+        {"feasible_hint_time_limit": 10, "seed": 3, "linearization_level": 0},
+        {"feasible_hint_time_limit": 10, "seed": 3, "symmetry_level": 2},
+    ):
+        reused = initial_solution(problem, "feasible", solver_options=options)
+        assert reused.metadata["hint_cache"] == "hit"
+        assert reused.metadata["hint_cache_key"] == first.metadata["hint_cache_key"]
+        assert reused.assignment == first.assignment
+
+
+def test_feasible_hint_cache_key_includes_centroid_neighbor_radius(tmp_path):
+    """A positive radius fixes centroid neighborhoods, so it changes the model."""
+
+    problem = _cached_grid_problem(tmp_path)
+    first = initial_solution(
         problem,
         "feasible",
-        solver_options={"feasible_hint_time_limit": 10, "seed": 4},
+        solver_options={"feasible_hint_time_limit": 10, "seed": 3},
+    )
+    wider = initial_solution(
+        problem,
+        "feasible",
+        solver_options={
+            "feasible_hint_time_limit": 10,
+            "seed": 3,
+            "centroid_neighbor_radius": 1,
+        },
     )
 
-    assert other_seed.metadata["hint_cache"] == "miss"
-    assert other_seed.metadata["hint_cache_key"] != first.metadata["hint_cache_key"]
+    assert wider.metadata["hint_cache"] == "miss"
+    assert wider.metadata["hint_cache_key"] != first.metadata["hint_cache_key"]
 
 
 def test_feasible_hint_cache_is_skipped_without_a_scenario():
@@ -189,7 +222,7 @@ def test_feasible_hint_cache_ignores_an_invalid_cached_assignment(tmp_path):
     problem = _cached_grid_problem(tmp_path)
     initial_solution(problem, "feasible", solver_options=options)
 
-    namespace = _feasible_hint_namespace(problem, options, time_limit=10.0)
+    namespace = _feasible_hint_namespace(problem, options)
     namespace.save_pickle(
         FEASIBLE_HINT_PAYLOAD,
         {"assignment": {0: 1}, "status": "FEASIBLE", "wall_time": 0.0},

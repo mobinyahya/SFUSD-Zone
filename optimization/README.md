@@ -54,11 +54,15 @@ independently.
   `/soalnas/share/data/school_choice/Data/caches/graphs/v11` by default. The cache key
   includes scenario filters, exact source contents, and the partition policy.
 - **Cached feasible hints.** `hints: feasible` runs an objective-free CP-SAT
-  solve for a warm start. Results are stored below
-  `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v1` and keyed by a
-  fingerprint of the feasibility model (candidate zones, balance inputs,
-  closer-neighbor supports, edges, fixed nodes) plus the hint search settings,
-  including `seed` and `feasible_hint_time_limit`. Cached assignments are
+  solve for a warm start, using the shared `workers` setting (default: 8).
+  Results are stored below
+  `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v2` and keyed by a
+  fingerprint of the feasibility model alone (candidate zones, balance inputs,
+  closer-neighbor supports, edges, fixed nodes, plus `centroid_neighbor_radius`,
+  which fixes centroid neighborhoods). Search settings are deliberately not in
+  the key: `seed`, `workers`, `feasible_hint_time_limit`, and the CP-SAT tuning
+  parameters change only how hard the search works, not which assignments are
+  feasible, so every run of one model shares one hint. Cached assignments are
   re-validated against the problem before use.
 
 ## Running
