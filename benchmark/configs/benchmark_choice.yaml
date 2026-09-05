@@ -68,7 +68,7 @@ tasks:
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v1'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v2'
   skip_existing: true
   rerun_failed: true
   sequential: false
