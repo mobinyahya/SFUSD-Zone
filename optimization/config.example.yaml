@@ -46,7 +46,7 @@ workers: 8
 # cp_sat_search_strategy: distance_to_centroid  # default | distance_to_centroid
 enumerated_solutions: -1       # positive: cp_bool/cp_int single strategy, no objective
 # ReCom-only parameters. Negative recom_iterations uses only the solve time limit.
-recom_iterations: 1000
+recom_iterations: -1
 short_bursts_length: 25
 short_bursts_method: recom      # recom | relaxed_recom
 # --- strategy-specific ---

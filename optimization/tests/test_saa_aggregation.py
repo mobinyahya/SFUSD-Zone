@@ -92,15 +92,15 @@ def test_config_rejects_unknown_saa_aggregate_cut_keys():
 
 
 def test_master_time_limit_schedule_distribution():
-    # 3 iterations, remaining = 60s
-    # iter 0: weight 1, remaining weights 1+2+3 = 6 -> 60 * 1/6 = 10s
-    assert master_time_limit(60.0, 0, 3) == pytest.approx(10.0)
+    # Weighted shares remain unchanged when they exceed the 30s floor.
+    # iter 0: weight 1, remaining weights 1+2+3 = 6 -> 600 * 1/6 = 100s
+    assert master_time_limit(600.0, 0, 3) == pytest.approx(100.0)
 
-    # iter 1: remaining = 50s, weight 2, remaining weights 2+3 = 5 -> 50 * 2/5 = 20s
-    assert master_time_limit(50.0, 1, 3) == pytest.approx(20.0)
+    # iter 1: remaining = 500s, weight 2, remaining weights 2+3 = 5 -> 200s
+    assert master_time_limit(500.0, 1, 3) == pytest.approx(200.0)
 
-    # iter 2: remaining = 30s, weight 3, remaining weights 3 = 3 -> 30 * 3/3 = 30s
-    assert master_time_limit(30.0, 2, 3) == pytest.approx(30.0)
+    # iter 2: the last iteration receives the remaining 300s.
+    assert master_time_limit(300.0, 2, 3) == pytest.approx(300.0)
 
 
 @pytest.mark.parametrize("backend", ["cp_bool", "mip"])

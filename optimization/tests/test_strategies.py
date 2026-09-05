@@ -642,9 +642,23 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bo
 
 
 def test_mid_decomp_splits_remaining_budget_across_iterations():
-    assert budget.master_time_limit(60, 0, 3) == pytest.approx(10)
-    assert budget.master_time_limit(50, 1, 3) == pytest.approx(20)
-    assert budget.master_time_limit(30, 2, 3) == pytest.approx(30)
+    assert budget.master_time_limit(600, 0, 3) == pytest.approx(100)
+    assert budget.master_time_limit(500, 1, 3) == pytest.approx(200)
+    assert budget.master_time_limit(300, 2, 3) == pytest.approx(300)
+
+
+@pytest.mark.parametrize(
+    ("remaining", "iteration", "expected"),
+    [
+        (3600.0, 0, 30.0),
+        (3570.0, 1, 3570.0 * 2 / 209),
+        (30.0, 0, 30.0),
+        (12.0, 0, 12.0),
+        (0.0, 0, 0.0),
+    ],
+)
+def test_master_budget_floor_respects_remaining_budget(remaining, iteration, expected):
+    assert budget.master_time_limit(remaining, iteration, 20) == pytest.approx(expected)
 
 
 def test_mid_decomp_rounds_large_cp_sat_bounds_outward():
@@ -698,11 +712,10 @@ def test_iterative_choice_splits_one_budget_across_iterations(monkeypatch):
     solutions = strat.run(dataset, solver)
     final = solutions[-1]
 
-    # One 60s budget for the whole run: iteration 0 claims 1/(1+2+3) of it, and
-    # because this solver returns instantly the unused time carries forward, so
-    # iteration 1 claims 2/(2+3) of the whole budget and iteration 2 all of it.
-    assert solver.solve_time_limits[0] == pytest.approx(10.0, rel=1e-2)
-    assert solver.solve_time_limits[1] == pytest.approx(24.0, rel=1e-2)
+    # The first two weighted shares are below the 30s floor. This solver returns
+    # instantly, so unused time carries forward and the last solve gets all 60s.
+    assert solver.solve_time_limits[0] == pytest.approx(30.0, rel=1e-2)
+    assert solver.solve_time_limits[1] == pytest.approx(30.0, rel=1e-2)
     assert solver.solve_time_limits[2] == pytest.approx(60.0, rel=1e-2)
     assert solver.options["relative_gap_limit"] == 0.0
     assert final.metadata["choice_total_budget_seconds"] == 60.0
@@ -758,12 +771,12 @@ def test_wall_clock_budget_pays_for_every_kind_of_work():
 def test_solver_time_budget_only_pays_for_charged_solves():
     solver_time = budget.Budget(60.0, 3, "solver_time")
 
-    assert solver_time.iteration_limit(0) == pytest.approx(10.0)
+    assert solver_time.iteration_limit(0) == pytest.approx(30.0)
 
     solver_time.charge(10.0)
 
     assert solver_time.remaining_seconds == pytest.approx(50.0)
-    assert solver_time.iteration_limit(1) == pytest.approx(20.0)
+    assert solver_time.iteration_limit(1) == pytest.approx(30.0)
 
     solver_time.charge(50.0)
 

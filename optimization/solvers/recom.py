@@ -1043,7 +1043,7 @@ class _ReComSolverBase(Solver):
         return contiguity.repair(problem.G, assignment, problem.centroids)
 
     def _limits(self, start: float) -> tuple[int | None, float | None]:
-        iterations = int(self.options.get("recom_iterations", 1000))
+        iterations = int(self.options.get("recom_iterations", -1))
         raw_time_limit = self.options.get("solve_time_limit", 60.0)
         time_limit = None if raw_time_limit is None else max(0.0, float(raw_time_limit))
         if iterations < 0 and time_limit is None:
@@ -1247,7 +1247,7 @@ class ReComSolver(_ReComSolverBase):
             stop_reason = "time_limit"
         metadata = {
             **setup.hint_metadata,
-            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "recom_iterations": self.options.get("recom_iterations", -1),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": rejected,
@@ -1345,7 +1345,7 @@ class ShortBurstsSolver(_ReComSolverBase):
             stop_reason = "time_limit"
         metadata = {
             **setup.hint_metadata,
-            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "recom_iterations": self.options.get("recom_iterations", -1),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": 0,
@@ -1474,7 +1474,7 @@ class ShortBurstsSolver(_ReComSolverBase):
             stop_reason = "time_limit"
         metadata = {
             **setup.hint_metadata,
-            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "recom_iterations": self.options.get("recom_iterations", -1),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": rejected,
@@ -1664,7 +1664,7 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
 
         metadata = {
             **setup.hint_metadata,
-            "recom_iterations": self.options.get("recom_iterations", 1000),
+            "recom_iterations": self.options.get("recom_iterations", -1),
             "attempted_moves": attempted,
             "accepted_moves": accepted,
             "rejected_moves": 0,

@@ -71,7 +71,7 @@ class OptimizationConfig:
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
     enumerated_solutions: int = -1
-    recom_iterations: int = 1000
+    recom_iterations: int = -1
     short_bursts_length: int = 25
     short_bursts_method: str = "recom"
     adaptive_short_bursts_lr: float = 0.1

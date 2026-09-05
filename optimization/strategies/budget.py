@@ -3,7 +3,8 @@
 An iterative strategy gets one total budget for the whole run rather than one
 limit per solve. Every iteration re-reads the clock and claims a linearly
 increasing share of what is left, so time an early iteration leaves unused
-carries forward to the later, harder solves.
+carries forward to the later, harder solves. Each allocation has a 30-second
+floor, capped by the remaining total budget.
 
 ``budget_accounting`` chooses what the budget pays for:
 
@@ -25,6 +26,7 @@ import time
 
 BUDGET_POLICY = "linearly_increasing_with_carry_forward"
 BUDGET_ACCOUNTING_MODES = ("wall_clock", "solver_time")
+MIN_MASTER_SECONDS = 30.0
 
 
 def final_value(values, default) -> float:
@@ -131,8 +133,9 @@ def master_time_limit(
     iteration: int,
     max_iterations: int,
 ) -> float:
-    """Share of the remaining budget this iteration's master solve may use."""
+    """Weighted share with a 30-second floor, capped by the remaining budget."""
 
     current_weight = iteration + 1
     remaining_weight = sum(range(current_weight, max_iterations + 1))
-    return remaining_seconds * current_weight / remaining_weight
+    scheduled = remaining_seconds * current_weight / remaining_weight
+    return min(remaining_seconds, max(MIN_MASTER_SECONDS, scheduled))
