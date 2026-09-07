@@ -139,6 +139,59 @@ normalizer sorts selected rounds and retains one row per unique student whose
 filtered choices are nonempty in any selected round. Its authoritative choices
 come from that student's earliest remaining selected round.
 
+## Exact whole-zone Dantzig-Wolfe decomposition
+
+Run `uv run python -m optimization.run optimization/dantzig_wolfe.example.yaml`.
+`strategy: dantzig_wolfe` now runs **branch-and-price** for the existing
+finite-grid MID objective. Each column is a whole connected zone; its cost is
+its exact MID welfare after removing citywide programs. The optimization graph
+must also use `include_citywide: false`, and MID requires
+`program_population: All` with matching geography vintages.
+
+ReCom supplies an optional broad initial pool. Every search node then uses a
+**global mixed-integer pricing model** containing zone membership, connectedness,
+balance constraints, branch fixings, program cutoffs, all preference-prefix
+recurrences, and capacity constraints. Phase-I pricing restores feasibility
+when the current columns cannot form a partition, including when no ReCom seed
+was found. Branching on geographic assignment marginals resolves the integer
+gap. A restricted integer master provides incumbents, never an optimality proof
+by itself. See [the formulation and finite-convergence proof](DANTZIG_WOLFE.md).
+
+`dw_recom_samples` limits distinct seed partitions; zero disables seeding.
+`dw_recom_chains` controls independent random streams, and
+`dw_recom_time_limit` caps seeding (also limited to 25% of the remaining total
+budget). `hints: feasible` is recommended but is not required for correctness.
+A failed bounded hint search falls back to exact Phase I.
+
+The last `solve_time_limits` entry is the total wall-clock budget after strategy
+entry. Set it to `.inf` for an unlimited complete search. `max_iterations` does
+not truncate branch-and-price. There are no heuristic pricing depth or
+candidate limits. Only `budget_accounting: wall_clock` is supported. Individual
+loading, model-building and oracle calls can finish after a deadline.
+
+`OPTIMAL` means the entire search tree is closed to the configured numerical
+`tolerance`, not merely that a collected-column master was solved. On a time
+limit the result is `FEASIBLE` or `UNKNOWN`; metadata retains a valid global
+upper bound and the incumbent gap when available. Numerical stalls are reported
+without an optimality claim. Bounds use ordinary floating-point LP/MIP solver
+arithmetic, not formal exact-arithmetic certificates.
+
+`mid_lottery_scale` defines the guaranteed objective's lottery lattice. Original
+floating-point utility coefficients are retained; `scaled_utility_sums` are not
+substituted. This is the finite-grid MID objective, not continuous-lottery MID
+or sampled SAA. Standard downstream matching metrics can include citywide
+access; the saved DW objective and bound describe the restricted market.
+
+Feasibility follows ReCom's connected, **unanchored** zones: centroids determine
+zone count and seed locations. Implicit centroid anchoring, `max_distance`, and
+`centroid_neighbor_radius` do not constrain columns; explicit candidates and
+fixed assignments do. Shared FRL, racial, aggregate capacity, and school-count
+bounds apply to every column. The example disables aggregate capacity bounds
+explicitly while enforcing program capacities through MID. `boundary_prop`
+is enforced by the master, with half-perimeter coefficients to count each cut
+once. `dw_objective: boundary` is also supported; its internal maximized score
+and upper bound are the negatives of boundary cost and its lower bound.
+
 ## Tests
 
 `tests/` holds data-free unit tests for the level/contiguity/conversion logic:

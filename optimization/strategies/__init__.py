@@ -21,6 +21,7 @@ from optimization.strategies import (  # noqa: E402,F401
     mid_decomp,
     saa,
     short_bursts_choice,
+    dantzig_wolfe,
 )
 
 __all__ = ["Strategy", "get_strategy", "register"]

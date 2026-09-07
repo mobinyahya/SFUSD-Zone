@@ -197,6 +197,21 @@ def test_saa_manifest_hashes_matching_policy_files():
     }
 
 
+@pytest.mark.parametrize("objective", ["mid", "boundary"])
+def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
+    config = OptimizationConfig(
+        strategy="dantzig_wolfe",
+        solver="recom",
+        dw_objective=objective,
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+    manifest = _benchmark_source_manifest(config)
+    assert ("matching_policy" in manifest) == (objective == "mid")
+
+
 def test_visualization_config_anchors_shared_artifact_dir(tmp_path):
     config_path = tmp_path / "configs" / "sweep.yaml"
     config_path.parent.mkdir()

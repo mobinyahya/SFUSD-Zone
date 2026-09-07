@@ -14,6 +14,11 @@ from optimization.problem import ZoneProblem
 
 HINT_METHODS = {"feasible", "voronoi", "none"}
 
+
+class FeasibleHintError(RuntimeError):
+    """The bounded feasibility search found no zoning hint."""
+
+
 FEASIBLE_HINT_CACHE_SCHEMA_VERSION = 2
 FEASIBLE_HINT_ARTIFACT = "feasible_hint"
 FEASIBLE_HINT_PAYLOAD = "hint.pickle"
@@ -99,7 +104,7 @@ def feasible_initial_solution(
     )
     solution = solver.find_feasible_solution(problem)
     if not solution.feasible:
-        raise RuntimeError(
+        raise FeasibleHintError(
             "Could not find a zoning-feasible hint within "
             f"{time_limit:g} seconds (status={solution.status})."
         )

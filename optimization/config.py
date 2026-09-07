@@ -31,6 +31,7 @@ _STRATEGIES = {
     "mid_decomp",
     "saa",
     "short_bursts_choice",
+    "dantzig_wolfe",
 }
 
 
@@ -91,6 +92,10 @@ class OptimizationConfig:
     mid_complementary_slackness_slack: float | str = "auto"
     saa_num_seeds: int = 5
     saa_tie_breaking_method: str = "MTB"
+    dw_objective: str = "mid"
+    dw_recom_samples: int = 500
+    dw_recom_chains: int = 4
+    dw_recom_time_limit: float = 60.0
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
@@ -187,6 +192,47 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
+        if self.dw_objective not in {"mid", "boundary"}:
+            raise ValueError("dw_objective must be mid or boundary.")
+        for name in ("dw_recom_samples", "dw_recom_chains"):
+            value = getattr(self, name)
+            minimum = 0 if name == "dw_recom_samples" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}.")
+        if (
+            isinstance(self.dw_recom_time_limit, bool)
+            or not math.isfinite(self.dw_recom_time_limit)
+            or self.dw_recom_time_limit < 0
+        ):
+            raise ValueError("dw_recom_time_limit must be finite and nonnegative.")
+        if self.strategy == "dantzig_wolfe":
+            if self.solver != "recom":
+                raise ValueError("dantzig_wolfe requires solver='recom'.")
+            if self.include_citywide:
+                raise ValueError("dantzig_wolfe requires include_citywide=false.")
+            if self.budget_accounting != "wall_clock":
+                raise ValueError(
+                    "dantzig_wolfe requires budget_accounting='wall_clock'."
+                )
+            if (
+                isinstance(self.tolerance, bool)
+                or not math.isfinite(self.tolerance)
+                or self.tolerance < 0
+            ):
+                raise ValueError(
+                    "tolerance must be finite and non-negative for dantzig_wolfe."
+                )
+            if self.dw_objective == "mid":
+                if self.program_population != "All":
+                    raise ValueError(
+                        "DW MID welfare requires program_population='All'."
+                    )
+                if self._data_scenario.filter(
+                    "optimization", "geography_vintage"
+                ) != self._data_scenario.filter("assignment", "geography_vintage"):
+                    raise ValueError(
+                        "DW MID welfare requires matching geography_vintage values."
+                    )
         if self.strategy in {"mid", "mid_decomp", "saa"}:
             if self.strategy == "saa" and self.solver not in {"cp_bool", "mip"}:
                 raise ValueError("saa requires solver='cp_bool' or solver='mip'.")
@@ -436,4 +482,8 @@ class OptimizationConfig:
             mid_complementary_slackness_slack=self.mid_complementary_slackness_slack,
             saa_num_seeds=self.saa_num_seeds,
             saa_tie_breaking_method=self.saa_tie_breaking_method,
+            dw_objective=self.dw_objective,
+            dw_recom_samples=self.dw_recom_samples,
+            dw_recom_chains=self.dw_recom_chains,
+            dw_recom_time_limit=self.dw_recom_time_limit,
         )

@@ -271,6 +271,7 @@ class SimulationSweep:
                 data_key,
                 config.strategy,
                 config.capacity_scenario,
+                config.dw_objective,
             )
             source_manifest = source_manifests.get(manifest_key)
             if source_manifest is None:
@@ -379,7 +380,7 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         "mid_decomp",
         "saa",
         "short_bursts_choice",
-    }
+    } or (config.strategy == "dantzig_wolfe" and config.dw_objective == "mid")
     roles.extend(
         role
         for role in (

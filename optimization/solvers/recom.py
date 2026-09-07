@@ -1196,12 +1196,22 @@ class ReComSolver(_ReComSolverBase):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         return self._solve_chain(problem, selector="uniform", reject_infeasible=True)
 
+    def sample_feasible(self, problem: ZoneProblem, visitor) -> ZoneSolution:
+        """Visit the initial and every accepted feasible partition, including
+        non-improving states. Return False from the visitor to stop sampling.
+        The visitor receives a fresh assignment dictionary.
+        """
+        return self._solve_chain(
+            problem, selector="uniform", reject_infeasible=True, visitor=visitor
+        )
+
     def _solve_chain(
         self,
         problem: ZoneProblem,
         *,
         selector: str,
         reject_infeasible: bool,
+        visitor=None,
     ) -> ZoneSolution:
         self._check_choice_objective(problem, self.name)
         start = time.monotonic()
@@ -1220,7 +1230,13 @@ class ReComSolver(_ReComSolverBase):
         proposal_failures = 0
         stop_reason = "iteration_limit"
 
-        while self._budget_available(attempted, setup.max_iterations, setup.deadline):
+        if initial.feasible and visitor is not None:
+            if visitor(setup.context.assignment_dict(initial.assignment)) is False:
+                stop_reason = "visitor_stop"
+
+        while stop_reason != "visitor_stop" and self._budget_available(
+            attempted, setup.max_iterations, setup.deadline
+        ):
             attempted += 1
             try:
                 move = kernel.propose(state, selector)
@@ -1242,6 +1258,10 @@ class ReComSolver(_ReComSolverBase):
             snapshot = self._snapshot(state)
             if self._better_feasible(snapshot, best):
                 best = snapshot
+            if snapshot.feasible and visitor is not None:
+                if visitor(setup.context.assignment_dict(snapshot.assignment)) is False:
+                    stop_reason = "visitor_stop"
+                    break
 
         if setup.deadline is not None and time.monotonic() >= setup.deadline:
             stop_reason = "time_limit"

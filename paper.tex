@@ -552,4 +552,237 @@ In the CP-SAT and MIP formulations, this is linearized into upper and lower inte
 \end{align}
 which are added seamlessly alongside the base FRL constraints without altering the core solver mechanics.
 
+\section{Dantzig--Wolfe Decomposition}
+\label{app:dw_mid}
+The MID objective admits a decomposition whose columns are entire feasible zones when no program offers citywide access. The restriction is substantive: a citywide program couples applicants in different zones through a shared capacity constraint, preventing zone welfare from being evaluated independently. In this appendix we remove citywide schools and their programs from the market and from the school and capacity counts. Applicants remain at their original residential vertices; their preference lists retain the order, utilities and priority tiers of the remaining programs. An applicant with no remaining acceptable program receives the outside option, of utility zero.
+
+We develop the decomposition for the finite-grid MID model at a fixed geographic resolution. Fix an integer lottery scale $L \geq 1$ and restrict each cutoff to $P_s = p_s/L$, where $p_s$ is a nonnegative integer. Consequently, all assignment probabilities are multiples of $1/L$. The result below certifies the optimum of this specified finite-grid model; no approximation claim about the continuous-cutoff optimum is needed.
+
+\subsection{Feasible Zones and Their Welfare}
+For each label $z \in [k]$, let $\mathcal{F}_z$ be the family of all admissible individual zones $A \subseteq V$. Membership requires $A \neq \emptyset$, connectedness of $G[A]$, and the capacity, school-count and demographic inequalities for that zone. These inequalities are local to $A$: for example,
+\begin{align}
+\underline{s} &\leq \sum_{v \in A} s(v) \leq \overline{s}, \label{eq:dw_local_schools} \\
+(1-\delta^-)N(A) &\leq C(A) \leq (1+\delta^+)N(A), \label{eq:dw_local_capacity} \\
+(F-\delta_F)N(A) &\leq \sum_{v \in A} f_v \leq (F+\delta_F)N(A), \label{eq:dw_local_frl} \\
+(R_e-\delta_R)N(A) &\leq \sum_{v \in A} r_{v,e} \leq (R_e+\delta_R)N(A)
+\quad \forall e \in \mathcal{E}. \label{eq:dw_local_racial}
+\end{align}
+Here $\underline{s}$ and $\overline{s}$ are the prescribed school-count bounds, such as those in \eqref{cp:schools}; either aggregate capacity bound may be omitted if it is not imposed. Explicit candidate labels and fixed assignments also enter $\mathcal{F}_z$. If anchors are required, include $c_z \in A$ and exclude every other centroid from $A$. For an unanchored formulation, omit these restrictions. The same decomposition applies to either choice, provided seeding, pricing and the master use the same families $\mathcal{F}_z$. Individual admissibility does not require that $V \setminus A$ itself be an admissible zone.
+
+Let $\mathcal{G}_A = \{g \in \mathcal{G}: v(g) \in A\}$ and $\mathcal{S}_A = \{s \in \mathcal{S}: l(s) \in A\}$. Define $W_L(A)$ as the greatest MID welfare obtainable by these applicants using these programs at lottery scale $L$. To express it on an integer mass scale, write $\widehat{R}_{g,r} = L R_{g,r}$ and $\widehat{d}_{g,r} = L d_{g,r}$. Given access indicators $a_{g,s}$, the complete recurrence is
+\begin{align}
+\widehat{t}_{s,\rho} &= \min\{L,\max\{p_s-L\rho,0\}\}, \label{eq:dw_threshold} \\
+\widehat{e}_{g,r} &= a_{g,s(g,r)}\widehat{t}_{s(g,r),\rho(g,r)}
+                      +(1-a_{g,s(g,r)})L, \label{eq:dw_effective} \\
+\widehat{R}_{g,0} &= L, \qquad
+\widehat{R}_{g,r} = \min\{\widehat{R}_{g,r-1},\widehat{e}_{g,r}\}, \label{eq:dw_recurrence} \\
+\widehat{d}_{g,r} &= \widehat{R}_{g,r-1}-\widehat{R}_{g,r}. \label{eq:dw_mass}
+\end{align}
+For a fixed $A$, set $a_{g,s}=1$ exactly when $g \in \mathcal{G}_A$ and $s \in \mathcal{S}_A$. Using all types and ranks in \eqref{eq:dw_threshold}--\eqref{eq:dw_mass} then gives zero assigned mass to every omitted applicant. The zone value is
+\begin{equation}\label{eq:dw_zone_value}
+\begin{aligned}
+W_L(A) = \max_{p,\widehat{R},\widehat{d}}\quad
+& \frac{1}{L}\sum_{g \in \mathcal{G}} n_g
+       \sum_{r=1}^{R_g} u(g,r)\widehat{d}_{g,r} \\
+\text{s.t.}\quad
+& \eqref{eq:dw_threshold}\text{--}\eqref{eq:dw_mass}, \\
+& \sum_{g \in \mathcal{G}}\sum_{r:s(g,r)=s}
+        n_g\widehat{d}_{g,r} \leq Lq_s
+        \quad \forall s \in \mathcal{S}, \\
+& p_s \in \{0,\ldots,\overline{p}_s\}
+        \quad \forall s \in \mathcal{S},
+\end{aligned}
+\end{equation}
+where $\overline{p}_s=L(1+\max_{g,r:s(g,r)=s}\rho(g,r))$, with an empty maximum taken as zero. This bound permits rejection of every applicant, so \eqref{eq:dw_zone_value} is always feasible. All remaining masses are integers between zero and $L$.
+
+\noindent\textbf{Proposition 7 (Least-Cutoff Zone Value).} \textit{For every admissible zone $A$, the value $W_L(A)$ equals the welfare at its componentwise least capacity-feasible cutoff vector.}
+
+\textit{Proof.} Start with $p=0$. Whenever a program is overloaded, raise only its cutoff to the smallest integer value that clears its capacity, holding the other cutoffs fixed. Demand is nonincreasing in a program's own cutoff, and $\overline{p}_s$ clears it. Each update strictly increases a bounded integer coordinate, so the procedure terminates at a capacity-feasible vector $p^\ast$.
+
+Let $\widetilde{p}$ be any capacity-feasible vector. Initially $p \leq \widetilde{p}$. If this inequality holds before an update of program $s$, then evaluating its demand at $p_s=\widetilde{p}_s$ while keeping all other cutoffs at their current, weakly smaller values yields demand no greater than at $\widetilde{p}$. Indeed, lower cutoffs at earlier choices can only reduce the mass remaining to demand $s$; later choices do not affect its demand. Thus the smallest clearing update satisfies $p_s \leq \widetilde{p}_s$. Induction gives $p^\ast \leq \widetilde{p}$, proving leastness.
+
+Set $u(g,R_g+1)=0$. By \eqref{eq:dw_recurrence}, lower cutoffs weakly decrease every remaining mass. For a nonempty preference list, the type's welfare is
+\begin{equation}\label{eq:dw_welfare_telescoping}
+\frac{n_g}{L}\sum_{r=1}^{R_g}u(g,r)\widehat{d}_{g,r}
+= n_g u(g,1)-\frac{n_g}{L}\sum_{r=1}^{R_g}
+\big(u(g,r)-u(g,r+1)\big)\widehat{R}_{g,r}.
+\end{equation}
+Every coefficient of a remaining mass is nonpositive because utilities are ordered. Hence $p^\ast$ weakly maximizes welfare among all capacity-feasible cutoff vectors. Empty lists contribute zero. $\blacksquare$
+
+\subsection{The Zone-Column Master}
+For $A \subseteq V$, define its half-perimeter by
+\begin{equation}\label{eq:dw_half_perimeter}
+b(A)=\frac{1}{2}\sum_{\substack{\{u,v\}\in E\\ |\{u,v\}\cap A|=1}} w_{u,v}.
+\end{equation}
+With $w_{u,v}=1$ this measures half the number of edges leaving $A$. Let $\overline{b}\geq0$ be an optional district boundary budget. Introduce a binary variable $\lambda_{z,A}$ selecting zone $A$ for label $z$. The master is
+\begin{align}
+\max_{\lambda}\quad
+& \sum_{z\in[k]}\sum_{A\in\mathcal{F}_z}W_L(A)\lambda_{z,A}
+\label{eq:dw_master_obj} \\
+\text{s.t.}\quad
+& \sum_{z\in[k]}\sum_{\substack{A\in\mathcal{F}_z\\v\in A}}\lambda_{z,A}=1
+&& \forall v\in V, \label{eq:dw_master_cover} \\
+& \sum_{A\in\mathcal{F}_z}\lambda_{z,A}=1
+&& \forall z\in[k], \label{eq:dw_master_label} \\
+& \sum_{z\in[k]}\sum_{A\in\mathcal{F}_z}b(A)\lambda_{z,A}\leq\overline{b},
+\label{eq:dw_master_boundary} \\
+& \lambda_{z,A}\in\{0,1\}
+&& \forall z\in[k],\ A\in\mathcal{F}_z. \label{eq:dw_master_binary}
+\end{align}
+If compactness is unrestricted, delete \eqref{eq:dw_master_boundary}.
+
+\noindent\textbf{Proposition 8 (Exact Decomposition).} \textit{The integer master \eqref{eq:dw_master_obj}--\eqref{eq:dw_master_binary} has the same optimal value as finite-grid MID zoning over the prescribed families $\mathcal{F}_z$.}
+
+\textit{Proof.} Constraints \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label} select exactly one nonempty admissible zone per label and cover each vertex exactly once. Thus they define precisely the admissible partitions. For any such partition $\mathcal{P}=(A_1,\ldots,A_k)$, the sets $\mathcal{G}_{A_z}$ partition the applicants and the sets $\mathcal{S}_{A_z}$ partition the programs. No applicant can use a program in another zone, so both the MID recurrence and the program capacity constraints separate across zones. Independent optimizers of \eqref{eq:dw_zone_value} therefore combine into a feasible district allocation, and every district allocation restricts to a feasible allocation in each zone. Consequently,
+\begin{equation}\label{eq:dw_additivity}
+W_L^{\mathrm{MID}}(\mathcal{P})=\sum_{z\in[k]}W_L(A_z).
+\end{equation}
+Finally, each cut edge occurs in exactly two zone perimeters, so $\sum_z b(A_z)$ is precisely the district boundary cost. Both objective and feasibility are preserved. $\blacksquare$
+
+\subsection{Exact Pricing of an Individual Zone}
+Maintain a restricted pool $\mathcal{F}'_z\subseteq\mathcal{F}_z$ and relax \eqref{eq:dw_master_binary} to $\lambda\geq0$. Let $\alpha_v$ and $\gamma_z$ be the unrestricted dual multipliers of \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label}, and let $\mu\geq0$ be the multiplier of \eqref{eq:dw_master_boundary}. The complete dual requires
+\begin{equation}\label{eq:dw_dual_row}
+\sum_{v\in A}\alpha_v+\gamma_z+\mu b(A)\geq W_L(A)
+\qquad \forall z\in[k],\ A\in\mathcal{F}_z.
+\end{equation}
+Its objective is $\sum_v\alpha_v+\sum_z\gamma_z+\mu\overline{b}$. Take $\mu=0$ and omit the budget term when there is no boundary constraint. Pricing for label $z$ maximizes the reduced welfare
+\begin{equation}\label{eq:dw_pricing}
+\max_{A\in\mathcal{F}_z}
+\left\{W_L(A)-\sum_{v\in A}\alpha_v-\gamma_z-\mu b(A)\right\}.
+\end{equation}
+A strictly positive optimum identifies an improving column; nonpositive optima for all labels certify that the restricted LP solves the full LP relaxation.
+
+To solve \eqref{eq:dw_pricing} globally, introduce binary memberships $y_v=\mathds{1}\{v\in A\}$ and optimize them jointly with the cutoff and mass variables in \eqref{eq:dw_zone_value}. Access becomes
+\begin{equation}\label{eq:dw_pricing_access}
+a_{g,s}=y_{v(g)}y_{l(s)},\qquad
+a_{g,s}\leq y_{v(g)},\quad a_{g,s}\leq y_{l(s)},\quad
+a_{g,s}\geq y_{v(g)}+y_{l(s)}-1.
+\end{equation}
+All access variables are binary. If $v(g)=l(s)$, access equals $y_{v(g)}$, so omitted vertices contribute no applicants.
+
+Connectedness has an exact single-commodity flow description. Replace each undirected edge by both arcs, let $m=|V|$, choose a root with binary variables $\xi_v$, and let $\tau_v\geq0$ be the supply injected at vertex $v$. Nonnegative arc flows $\varphi_{uv}$ satisfy
+\begin{align}
+\sum_{v\in V}\xi_v &= 1,\qquad \xi_v\leq y_v
+&& \forall v\in V, \label{eq:dw_flow_root} \\
+0\leq\tau_v &\leq m\xi_v
+&& \forall v\in V, \label{eq:dw_flow_supply} \\
+\tau_v+\sum_{u\in N(v)}(\varphi_{uv}-\varphi_{vu}) &= y_v
+&& \forall v\in V, \label{eq:dw_flow_balance} \\
+0\leq\varphi_{uv} &\leq m y_u,\qquad \varphi_{uv}\leq m y_v
+&& \forall (u,v). \label{eq:dw_flow_capacity}
+\end{align}
+A selected component without the root would have positive total demand and zero net supply, contradicting \eqref{eq:dw_flow_balance}. Conversely, a connected selected set can route one unit to every selected vertex along a rooted spanning tree. Thus the formulation enforces exactly nonempty connectedness. Express \eqref{eq:dw_local_schools}--\eqref{eq:dw_local_racial} by replacing each sum over $A$ with its corresponding membership-weighted sum. Candidate labels and fixed assignments set the appropriate $y_v$ to zero or one.
+
+For each edge, a binary variable $\beta_{uv}=|y_u-y_v|$ is imposed by
+\begin{equation}\label{eq:dw_edge_linearization}
+\begin{aligned}
+\beta_{uv}&\geq y_u-y_v, &\quad \beta_{uv}&\geq y_v-y_u,\\
+\beta_{uv}&\leq y_u+y_v, &\quad \beta_{uv}&\leq 2-y_u-y_v.
+\end{aligned}
+\end{equation}
+The pricing objective is therefore
+\begin{equation}\label{eq:dw_joint_pricing_obj}
+\frac{1}{L}\sum_g n_g\sum_{r=1}^{R_g}u(g,r)\widehat d_{g,r}
+-\sum_v\alpha_v y_v-\gamma_z
+-\frac{\mu}{2}\sum_{\{u,v\}\in E}w_{u,v}\beta_{uv}.
+\end{equation}
+Together with \eqref{eq:dw_threshold}--\eqref{eq:dw_mass}, program capacities and the membership constraints above, this is an exact pricing formulation by Proposition 7. It does not require any simultaneous partition of the complement.
+
+For completeness, each nonlinear expression has a bounded binary linearization. If $a,b\in[0,M]$, impose $h=\min(a,b)$ using a binary $\chi$ and
+\begin{equation}\label{eq:dw_min_linearization}
+0\leq h,\quad h\leq a,\quad h\leq b,\quad
+h\geq a-M\chi,\quad h\geq b-M(1-\chi).
+\end{equation}
+If $a\in[-M,M]$, impose $h=\max(a,0)$ using
+\begin{equation}\label{eq:dw_max_linearization}
+h\geq a,\quad h\geq0,\quad
+h\leq a+M(1-\chi),\quad h\leq M\chi.
+\end{equation}
+Use $M=\overline p_s$ for the threshold operations and $M=L$ for the remaining-mass recurrence. Finally, \eqref{eq:dw_effective} is equivalent to
+\begin{equation}\label{eq:dw_effective_linearization}
+\begin{aligned}
+0\leq\widehat e_{g,r}&\leq L, &
+\widehat e_{g,r}&\geq\widehat t_{s(g,r),\rho(g,r)},\\
+\widehat e_{g,r}&\geq L(1-a_{g,s(g,r)}), &
+\widehat e_{g,r}&\leq\widehat t_{s(g,r),\rho(g,r)}+L(1-a_{g,s(g,r)}).
+\end{aligned}
+\end{equation}
+Cutoff, threshold and mass variables are integer; flow variables may be continuous. These formulations retain every rank of every preference list.
+
+\subsection{Feasibility Pricing and Certified Bounds}
+The initial pool may contain too few zones to form a feasible partition, and branching may remove all currently useful columns. Restricted-master infeasibility alone therefore cannot discard a branch. Introduce nonnegative deficit variables $\zeta_v$ and $\zeta_z$ and solve the Phase-I master
+\begin{equation}\label{eq:dw_phase_one}
+\begin{aligned}
+\max_{\lambda,\zeta}\quad &-\sum_{v\in V}\zeta_v-\sum_{z\in[k]}\zeta_z\\
+\text{s.t.}\quad
+&\sum_z\sum_{\substack{A\in\mathcal F'_z\\v\in A}}\lambda_{z,A}+\zeta_v=1
+\quad \forall v\in V,\\
+&\sum_{A\in\mathcal F'_z}\lambda_{z,A}+\zeta_z=1
+\quad \forall z\in[k],\\
+&\sum_z\sum_{A\in\mathcal F'_z}b(A)\lambda_{z,A}\leq\overline b,
+\qquad \lambda,\zeta\geq0.
+\end{aligned}
+\end{equation}
+The empty pool is feasible by taking every deficit equal to one. Objective zero is equivalent to feasibility of the original LP. Phase-I pricing uses \eqref{eq:dw_pricing} with $W_L(A)$ replaced by zero, but preserves every geographic and branch restriction. A newly generated zone is evaluated by \eqref{eq:dw_zone_value} before it is used for welfare optimization. A negative optimum after complete Phase-I pricing proves that the branch has no feasible partition.
+
+\noindent\textbf{Proposition 9 (Pricing-Corrected Upper Bound).} \textit{Suppose $\overline r_z$ bounds the maximum reduced welfare in \eqref{eq:dw_pricing} from above for each label. Then}
+\begin{equation}\label{eq:dw_corrected_bound}
+\mathrm{UB}=\sum_v\alpha_v+\sum_z\gamma_z+\mu\overline b
+              +\sum_z\max\{0,\overline r_z\}
+\end{equation}
+\textit{is an upper bound on the complete LP and hence on every admissible partition at that branch. The analogous expression bounds the full Phase-I objective when its pricing costs are used.}
+
+\textit{Proof.} Set $\gamma'_z=\gamma_z+\max\{0,\overline r_z\}$. For every $A\in\mathcal F_z$, the reduced-cost bound implies
+$$\sum_{v\in A}\alpha_v+\gamma'_z+\mu b(A)\geq W_L(A).$$
+Thus $(\alpha,\gamma',\mu)$ is feasible for the complete dual, and its objective is \eqref{eq:dw_corrected_bound}. Weak duality proves the claim. In Phase I, deficit columns impose the additional dual conditions $\alpha_v\geq-1$ and $\gamma_z\geq-1$. Increasing $\gamma_z$ preserves them, so the same argument applies with zero original zone costs. $\blacksquare$
+
+The bound remains valid before column generation has converged, provided every $\overline r_z$ is a global upper bound on its pricing problem. In particular, finding no improving zone by a local search supplies no such certificate.
+
+\subsection{Branching and Finite Convergence}
+Exact column generation solves the master LP, whose optimum may still be fractional. Define the geographic assignment marginals
+\begin{equation}\label{eq:dw_marginal}
+\overline x_{v,z}=\sum_{\substack{A\in\mathcal F'_z\\v\in A}}\lambda_{z,A}.
+\end{equation}
+If $0<\overline x_{v,z}<1$, branch into $x_{v,z}=0$ and $x_{v,z}=1$. In the first child, exclude $v$ from every column of label $z$. In the second, require $v$ in every column of label $z$ and exclude it from every other label. Apply each decision both to the stored pool and to all future pricing problems. These operations define branch-specific subfamilies of $\mathcal F_z$ without adding any cross-zone constraint to the pricing problem.
+
+ReCom supplies an optional initialization: sample feasible partitions, retain their constituent zones, and evaluate each distinct labelled membership once. Accepted partitions need not improve the current welfare to contribute useful columns. The column pool can combine zones from different samples. A finite amount of sampling precedes the exact search; neither coverage of the feasible partition space nor a mixing assumption is required for correctness.
+
+\begin{algorithm}[t]
+\caption{Zone-Column Branch-and-Price for Finite-Grid MID}
+\label{alg:dw_mid}
+\begin{algorithmic}[1]
+\Require Graph $G$, families $\mathcal F_z$, lottery scale $L$, optional budget $\overline b$.
+\State Seed pools with finitely many feasible ReCom samples, or leave empty.
+\State Retain the best sampled partition, if any; initialize the root search node.
+\While{an unexplored node remains}
+    \State Select a node; restrict pools and pricing to its branch decisions.
+    \State Solve Phase I by column generation with zero original zone costs.
+    \If{the fully priced Phase-I optimum is negative}
+        \State Discard the node and continue.
+    \EndIf
+    \State Solve the welfare LP; globally price every label using \eqref{eq:dw_pricing}.
+    \State Add positive-reduced-cost columns and repeat until none remain.
+    \State Optionally improve the incumbent using an integer restricted master.
+    \If{the certified node bound does not exceed incumbent welfare}
+        \State Discard the node.
+    \ElsIf{all marginals \eqref{eq:dw_marginal} are integral}
+        \State Recover the partition, update the incumbent, and discard the node.
+    \Else
+        \State Branch on a fractional marginal and retain both children.
+    \EndIf
+\EndWhile
+\State \Return the incumbent, or infeasibility if no partition was found.
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Theorem 3 (Finite Convergence to Optimal MID Welfare).} \textit{Fix a finite graph, a finite lottery scale $L$, and the zone families $\mathcal F_z$. Suppose all restricted LPs and pricing problems are solved globally in exact arithmetic, and generated columns are retained and deduplicated by label and membership. Then Algorithm~\ref{alg:dw_mid} terminates after finitely many steps at a globally optimal finite-grid MID partition, or proves that no feasible partition exists.}
+
+\textit{Proof.} Each family contains at most $2^{|V|}-1$ memberships. At an optimal restricted LP solution, a stored column has nonpositive reduced cost. Therefore every strictly positive priced column is new, and each Phase-I or welfare column-generation loop can add only finitely many columns. When all pricing optima are nonpositive, the restricted dual is feasible for the complete branch-specific master. Strong duality certifies its LP optimum; in Phase I, a negative optimum certifies infeasibility. The pricing models themselves are bounded mixed-integer programs: cutoff and membership variables have finite domains, and the flow variables have finite bounds.
+
+Suppose all marginals \eqref{eq:dw_marginal} are integral. For each label, nonnegative column weights sum to one. A marginal of one forces every positive-weight column to contain that vertex; a marginal of zero excludes it from all such columns. Their memberships therefore coincide. Deduplication leaves one column of weight one per label, yielding an integer partition.
+
+Otherwise, branching on a fractional marginal is disjoint and exhaustive for integer partitions and fixes a previously unfixed binary assignment. Pricing respects all these decisions. Tree depth is therefore at most $k|V|$, and the tree is finite. Infeasibility pruning removes no feasible partition, while Proposition 9 justifies bound pruning. An integer restricted master can improve the incumbent but is never needed to justify a bound. On exhaustion of the tree, no feasible partition has welfare greater than the incumbent; Proposition 8 identifies its value with the global finite-grid MID optimum. If no incumbent exists, every branch was infeasible. $\blacksquare$
+
+The guarantee holds for the fixed graph and lottery scale, without a polynomial bound on computation. If stopped early, incumbent welfare is a lower bound; its maximum with the valid bounds of unresolved nodes is a global upper bound. Closing this gap certifies optimality. ReCom contributes candidate zones, while exact pricing and branching establish the guarantee.
+
 \end{document}
