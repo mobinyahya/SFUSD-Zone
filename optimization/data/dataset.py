@@ -85,11 +85,35 @@ class Dataset:
         if level.depth not in targets:
             raise ValueError(f"No predefined graph size for level {level.name}.")
         parent = self.graph_for(level.finer())
-        return graph_builder.aggregate_level(
+
+        # KaHIP is only reproducible against its own native build, so the first
+        # machine to coarsen a level publishes the membership it found and every
+        # later reader replays it instead of re-partitioning.
+        name = self._partition_payload(level)
+        artifact = self._graph_namespace.load_json(name)
+        partition = (
+            graph_builder.partition_from_portable(parent, artifact)
+            if artifact is not None
+            else None
+        )
+        G = graph_builder.aggregate_level(
             parent,
             targets[level.depth],
             self.ingest.program_population,
+            partition=partition,
         )
+        # Publishing is a determinism aid, not part of producing the graph, so a
+        # coarsening that carries no membership is used as-is rather than failing.
+        membership = G.graph.get("partition")
+        if artifact is None and membership is not None:
+            self._graph_namespace.save_json(
+                name, graph_builder.partition_to_portable(parent, membership)
+            )
+        return G
+
+    @staticmethod
+    def _partition_payload(level: LevelSpec) -> str:
+        return f"partition_{level.name}.json"
 
     def _save(self, level: LevelSpec, G: nx.Graph) -> None:
         self._graph_namespace.save_pickle(level.filename, G)

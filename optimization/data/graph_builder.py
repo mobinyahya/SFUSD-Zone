@@ -24,12 +24,17 @@ _SUM_ATTRS = [
     "FRL",
 ]
 
-GRAPH_CACHE_SCHEMA_VERSION = 13
+# Bumped to 14 when coarse part numbering became canonical (derived from the
+# stable area ids in each part rather than from KaHIP's own labels).
+GRAPH_CACHE_SCHEMA_VERSION = 14
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
 PARTITION_WEIGHT_SCALE = 1000
 PARTITION_MODE = "strong"
+
+# Version of the portable partition artifact written next to each cached graph.
+PARTITION_ARTIFACT_VERSION = 1
 
 
 # ====================================================================== #
@@ -440,12 +445,117 @@ def _partition_non_school_nodes(
     return partition, imbalances
 
 
+def stable_area_ids(parent_G: nx.Graph, node: int) -> list[int]:
+    """Stable identifiers for the base areas behind one parent node.
+
+    Node integers are positional and depend on the partitioner, so they cannot
+    identify a part across machines. The underlying census area ids can.
+    """
+    attrs = parent_G.nodes[node]
+    if "area_id" in attrs:
+        return [int(attrs["area_id"])]
+    return sorted(int(area_id) for area_id in attrs["block_ids"])
+
+
+def canonical_partition(
+    parent_G: nx.Graph, partition: dict[int, int]
+) -> dict[int, int]:
+    """Renumber parts by their smallest stable area id.
+
+    KaHIP labels its parts arbitrarily, so two runs that agree on membership can
+    still disagree on numbering - which would renumber every coarse node. Sorting
+    parts by content makes the numbering a function of the membership alone.
+    """
+    members: dict[int, list[int]] = {}
+    for node, part in partition.items():
+        members.setdefault(int(part), []).append(node)
+    order = sorted(
+        members,
+        key=lambda part: min(
+            area_id for node in members[part] for area_id in stable_area_ids(
+                parent_G, node
+            )
+        ),
+    )
+    relabelled = {old: new for new, old in enumerate(order)}
+    return {node: relabelled[int(part)] for node, part in partition.items()}
+
+
+def partition_to_portable(
+    parent_G: nx.Graph, partition: dict[int, int]
+) -> dict[str, object]:
+    """Serialize a partition as stable area ids, one sorted list per part."""
+    parts: dict[int, list[int]] = {}
+    for node, part in partition.items():
+        parts.setdefault(int(part), []).extend(stable_area_ids(parent_G, node))
+    return {
+        "artifact_version": PARTITION_ARTIFACT_VERSION,
+        "parts": [sorted(parts[part]) for part in sorted(parts)],
+    }
+
+
+def partition_from_portable(
+    parent_G: nx.Graph, artifact: dict[str, object]
+) -> dict[int, int]:
+    """Rebuild a partition over ``parent_G`` from a portable artifact.
+
+    Raises if the artifact does not cover exactly this graph's areas, so a stale
+    or foreign artifact fails loudly instead of yielding a wrong graph.
+    """
+    if artifact.get("artifact_version") != PARTITION_ARTIFACT_VERSION:
+        raise ValueError(
+            "Partition artifact version "
+            f"{artifact.get('artifact_version')!r} is not supported."
+        )
+    part_of_area: dict[int, int] = {}
+    for part, area_ids in enumerate(artifact["parts"]):
+        for area_id in area_ids:
+            area_id = int(area_id)
+            if area_id in part_of_area:
+                raise ValueError(f"Area {area_id} appears in more than one part.")
+            part_of_area[area_id] = part
+
+    partition: dict[int, int] = {}
+    covered: set[int] = set()
+    for node in parent_G:
+        area_ids = stable_area_ids(parent_G, node)
+        parts = {part_of_area.get(area_id) for area_id in area_ids}
+        if None in parts:
+            missing = sorted(a for a in area_ids if a not in part_of_area)
+            raise ValueError(
+                f"Partition artifact is missing area ids {missing[:5]} "
+                f"(node {node})."
+            )
+        if len(parts) != 1:
+            raise ValueError(
+                f"Node {node} spans parts {sorted(parts)}; the artifact was built "
+                "for a different graph hierarchy."
+            )
+        partition[node] = parts.pop()
+        covered.update(area_ids)
+
+    extra = sorted(set(part_of_area) - covered)
+    if extra:
+        raise ValueError(
+            f"Partition artifact covers {len(extra)} area ids absent from the "
+            f"graph, starting at {extra[:5]}."
+        )
+    return partition
+
+
 def aggregate_level(
     parent_G: nx.Graph,
     target_node_count: int,
     program_population: str,
+    *,
+    partition: dict[int, int] | None = None,
 ) -> nx.Graph:
-    """Build one coarse graph from its immediate finer parent graph."""
+    """Build one coarse graph from its immediate finer parent graph.
+
+    Pass ``partition`` to replay a previously computed membership instead of
+    calling KaHIP; the coarse graph is then reproducible on any machine, whatever
+    its native KaHIP build does.
+    """
     school_nodes = sorted(
         node for node, attrs in parent_G.nodes(data=True) if _is_school_node(attrs)
     )
@@ -464,25 +574,32 @@ def aggregate_level(
         )
 
     population_attr = population_attribute(program_population)
-    partition, imbalances = _partition_non_school_nodes(
-        parent_G.subgraph(non_school_nodes).copy(),
-        non_school_target,
-        population_attr,
-    )
-    next_part = max(partition.values(), default=-1) + 1
-    for node in school_nodes:
-        partition[node] = next_part
-        next_part += 1
+    if partition is None:
+        partition, imbalances = _partition_non_school_nodes(
+            parent_G.subgraph(non_school_nodes).copy(),
+            non_school_target,
+            population_attr,
+        )
+        next_part = max(partition.values(), default=-1) + 1
+        for node in school_nodes:
+            partition[node] = next_part
+            next_part += 1
+        replayed = False
+    else:
+        imbalances = []
+        replayed = True
 
+    partition = canonical_partition(parent_G, partition)
     coarse = aggregate(parent_G, partition)
     coarse.graph.update(
         {
-            "partition_backend": "kahip",
+            "partition_backend": "replayed" if replayed else "kahip",
             "partition_mode": PARTITION_MODE,
             "partition_seed": PARTITION_SEED,
             "partition_population_attribute": population_attr,
             "partition_initial_imbalance": PARTITION_INITIAL_IMBALANCE,
             "partition_imbalance": max(imbalances, default=PARTITION_INITIAL_IMBALANCE),
+            "partition_numbering": "canonical_min_area_id",
             "target_node_count": target_node_count,
             "actual_node_count": len(coarse),
             "school_singleton_count": len(school_nodes),

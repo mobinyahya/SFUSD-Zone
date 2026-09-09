@@ -40,12 +40,25 @@ class ChoiceCut:
     constant: float = 0.0
     terms: tuple[ChoiceTerm, ...] = field(default_factory=tuple)
     anchor_access: tuple[tuple[AccessPair, int], ...] = field(default_factory=tuple)
+    # Which epigraph variable this cut bounds. ``None`` bounds the single total,
+    # reproducing a classic single-cut master. Tagging cuts by scenario gives
+    # each scenario its own epigraph, so the master maximises a sum of
+    # per-scenario minima rather than a minimum of averages -- a strictly
+    # tighter relaxation from the same cuts.
+    group: int | None = None
 
     def __post_init__(self) -> None:
         if self.node is not None and (
             isinstance(self.node, bool) or not isinstance(self.node, int)
         ):
             raise ValueError("Choice cut nodes must be integers.")
+        if self.group is not None:
+            if isinstance(self.group, bool) or not isinstance(self.group, int):
+                raise ValueError("Choice cut groups must be integers.")
+            if self.group < 0:
+                raise ValueError("Choice cut groups must be non-negative.")
+            if self.node is not None:
+                raise ValueError("Only aggregate choice cuts can carry a group.")
         if not math.isfinite(self.constant):
             raise ValueError("Choice cut constants must be finite.")
         if not isinstance(self.terms, tuple) or not all(
@@ -100,6 +113,10 @@ class ChoiceObjective:
     aggregate_cuts: bool = False
     total_lower_bound: float | None = None
     total_upper_bound: float | None = None
+    # An extra linear reward on the same-zone indicators, added to the objective
+    # rather than bounding it. Used to price non-anticipativity when a
+    # scenario's zoning is relaxed away from the consensus one.
+    access_terms: tuple[tuple[AccessPair, float], ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not isinstance(self.cuts, tuple) or not all(
@@ -137,6 +154,24 @@ class ChoiceObjective:
             and self.total_lower_bound > self.total_upper_bound
         ):
             raise ValueError("Choice total lower bound exceeds upper bound.")
+
+        seen_pairs: set[AccessPair] = set()
+        for pair, coefficient in self.access_terms:
+            if (
+                not isinstance(pair, tuple)
+                or len(pair) != 2
+                or any(
+                    isinstance(node, bool) or not isinstance(node, int)
+                    for node in pair
+                )
+            ):
+                raise ValueError("Choice access term keys must be integer node pairs.")
+            if not math.isfinite(coefficient):
+                raise ValueError("Choice access term coefficients must be finite.")
+            key = (min(pair), max(pair))
+            if key in seen_pairs:
+                raise ValueError("Choice access term keys must be unique.")
+            seen_pairs.add(key)
 
 
 @dataclass(frozen=True)

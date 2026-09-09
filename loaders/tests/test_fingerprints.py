@@ -171,3 +171,61 @@ def test_normalized_selectors_change_manifests_semantics_and_cache_identity(
         "selectors", schema_version=1, roles="test.input"
     )
     assert first_cache.key != second_cache.key
+
+
+def test_checksum_identity_makes_the_cache_key_independent_of_the_path(
+    tmp_path, scenario_factory
+):
+    """A checksum-only source identifies the same way from any checkout."""
+    content = b"edges:\n  - [1, 2]\n"
+    first_checkout = tmp_path / "checkout-a" / "configs"
+    second_checkout = tmp_path / "checkout-b" / "configs"
+    for directory in (first_checkout, second_checkout):
+        directory.mkdir(parents=True)
+        (directory / "manual_edges.yaml").write_bytes(content)
+
+    def key_for(directory: Path, identity: str) -> str:
+        scenario = scenario_factory(
+            {
+                "test.edges": {
+                    "path": str(directory / "manual_edges.yaml"),
+                    "identity": identity,
+                }
+            },
+            cache_root=tmp_path / "cache",
+        )
+        return (
+            CacheStore(scenario)
+            .namespace("graphs", schema_version=1, roles="test.edges")
+            .key
+        )
+
+    assert key_for(first_checkout, "checksum") == key_for(second_checkout, "checksum")
+    # The default still binds the key to the path, so this is opt-in only.
+    assert key_for(first_checkout, "path_and_checksum") != key_for(
+        second_checkout, "path_and_checksum"
+    )
+
+
+def test_checksum_identity_still_tracks_content(tmp_path, scenario_factory):
+    """Dropping the path must not stop the checksum from driving the key."""
+    source_path = tmp_path / "manual_edges.yaml"
+    source_path.write_bytes(b"edges:\n  - [1, 2]\n")
+    scenario = scenario_factory(
+        {"test.edges": {"path": str(source_path), "identity": "checksum"}}
+    )
+
+    def key() -> str:
+        return (
+            CacheStore(scenario)
+            .namespace("graphs", schema_version=1, roles="test.edges")
+            .key
+        )
+
+    before = key()
+    assert "path" not in scenario.source_manifest("test.edges")["sources"]["test.edges"]
+
+    source_path.write_bytes(b"edges:\n  - [3, 4]\n")
+    os.utime(source_path, None)
+
+    assert key() != before

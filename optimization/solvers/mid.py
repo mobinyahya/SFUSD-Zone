@@ -223,34 +223,38 @@ class MidCpSatSolver(CpBoolSolver):
             )
             if not program_by_id[program_id].citywide
         }
-        access = {}
+        # Share the co-zoning linearization with the choice and SAA models
+        # rather than restating it: the conjunction is Boolean, so the product
+        # `x[z, u] * x[z, v]` is an AND, and `_get_or_create_access_var` already
+        # builds it that way and dedups the pairs a student node and a school
+        # node require in both directions.
+        access_by_pair = {}
         access_joint = {}
-        fixed_access = {}
+        indicators = {}
         for student_node, school_node in sorted(required_access):
-            if student_node == school_node:
-                fixed_access[(student_node, school_node)] = True
-                continue
-            common_zones = sorted(
-                problem.candidate_zones(student_node)
-                & problem.candidate_zones(school_node)
+            indicators[(student_node, school_node)] = self._get_or_create_access_var(
+                model,
+                problem,
+                x,
+                access_by_pair,
+                access_joint,
+                student_node,
+                school_node,
             )
-            if not common_zones:
-                fixed_access[(student_node, school_node)] = False
-                continue
-            same_zone = model.NewBoolVar(f"mid_access_{student_node}_{school_node}")
-            joint = []
-            for zone in common_zones:
-                both = model.NewBoolVar(
-                    f"mid_access_joint_{student_node}_{school_node}_{zone}"
-                )
-                model.AddMultiplicationEquality(
-                    both,
-                    [x[(zone, student_node)], x[(zone, school_node)]],
-                )
-                joint.append(both)
-                access_joint[(student_node, school_node, zone)] = both
-            model.Add(same_zone == sum(joint))
-            access[(student_node, school_node)] = same_zone
+        # The helper keys on `(min, max)` and folds the degenerate pairs into
+        # the constants 1 and 0.  Split those back out: the welfare rows below
+        # branch three ways on accessible / inaccessible / undecided, and only
+        # the undecided pairs carry a variable to hint.
+        access = {
+            pair: variable
+            for pair, variable in access_by_pair.items()
+            if not isinstance(variable, (int, float))
+        }
+        fixed_access = {
+            key: bool(value)
+            for key, value in indicators.items()
+            if isinstance(value, (int, float))
+        }
 
         effective = {}
         effective_value = {}
@@ -281,7 +285,7 @@ class MidCpSatSolver(CpBoolSolver):
                     f"mid_effective_{student_type.node}_"
                     f"{program_number[program_id]}_{priority}",
                 )
-                indicator = access[access_key]
+                indicator = indicators[access_key]
                 model.Add(value == threshold).OnlyEnforceIf(indicator)
                 model.Add(value == scale).OnlyEnforceIf(indicator.Not())
                 effective[key] = value
@@ -337,8 +341,8 @@ class MidCpSatSolver(CpBoolSolver):
                     mass = model.NewIntVar(
                         0, scale, f"mid_transport_{type_index}_{rank}"
                     )
-                    if not program.citywide and access_key in access:
-                        model.Add(mass <= scale * access[access_key])
+                    if not program.citywide and access_key not in fixed_access:
+                        model.Add(mass <= scale * indicators[access_key])
                     # The true mass at rank r is
                     #   d = max(0, R_{r-1} - e_r) <= scale - e_r <= scale - t,
                     # since R_{r-1} <= scale and e_r is either the threshold t or

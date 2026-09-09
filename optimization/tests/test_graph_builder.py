@@ -326,3 +326,101 @@ def test_aggregate_level_rejects_more_school_nodes_than_target():
 
     with pytest.raises(ValueError, match="3 school nodes"):
         graph_builder.aggregate_level(G, 2, "GE")
+
+
+def test_canonical_partition_is_invariant_to_kahip_part_labels():
+    """Relabelling KaHIP's parts must not change the canonical numbering."""
+    G = make_grid_graph(3, 3)
+    partition = {node: (0 if node < 4 else 1) for node in G}
+    relabelled = {node: (7 if part == 0 else 3) for node, part in partition.items()}
+
+    canonical = graph_builder.canonical_partition(G, partition)
+    canonical_relabelled = graph_builder.canonical_partition(G, relabelled)
+
+    assert canonical == canonical_relabelled
+    assert set(canonical.values()) == {0, 1}
+
+
+def test_aggregate_level_node_numbering_survives_part_relabelling(monkeypatch):
+    """The coarse graph is identical when KaHIP labels the same parts differently."""
+
+    def partition_as(labels):
+        def fake_partition(graph, target_partition_count, population_attr):
+            return {
+                node: labels[0] if node in {1, 2, 3} else labels[1]
+                for node in graph.nodes()
+            }, [0.4]
+
+        return fake_partition
+
+    coarse_by_labels = []
+    for labels in [(0, 1), (5, 2)]:
+        monkeypatch.setattr(
+            graph_builder, "_partition_non_school_nodes", partition_as(labels)
+        )
+        coarse = graph_builder.aggregate_level(make_grid_graph(3, 3), 4, "GE")
+        coarse_by_labels.append(
+            {node: sorted(coarse.nodes[node]["block_ids"]) for node in coarse}
+        )
+
+    assert coarse_by_labels[0] == coarse_by_labels[1]
+
+
+def test_portable_partition_round_trips_through_area_ids():
+    G = make_grid_graph(3, 3)
+    partition = graph_builder.canonical_partition(
+        G, {node: (0 if node < 4 else 1) for node in G}
+    )
+
+    artifact = graph_builder.partition_to_portable(G, partition)
+    assert artifact["artifact_version"] == graph_builder.PARTITION_ARTIFACT_VERSION
+
+    assert graph_builder.partition_from_portable(G, artifact) == partition
+
+
+def test_replayed_partition_reproduces_the_coarse_graph(monkeypatch):
+    """Replay must yield the same graph without consulting KaHIP."""
+
+    def fake_partition(graph, target_partition_count, population_attr):
+        return {node: (0 if node in {1, 2, 3} else 1) for node in graph.nodes()}, [0.4]
+
+    monkeypatch.setattr(graph_builder, "_partition_non_school_nodes", fake_partition)
+    built = graph_builder.aggregate_level(make_grid_graph(3, 3), 4, "GE")
+    artifact = graph_builder.partition_to_portable(
+        make_grid_graph(3, 3), built.graph["partition"]
+    )
+
+    def exploding_partition(*args, **kwargs):
+        raise AssertionError("replay must not re-partition")
+
+    monkeypatch.setattr(
+        graph_builder, "_partition_non_school_nodes", exploding_partition
+    )
+    parent = make_grid_graph(3, 3)
+    replayed = graph_builder.aggregate_level(
+        parent,
+        4,
+        "GE",
+        partition=graph_builder.partition_from_portable(parent, artifact),
+    )
+
+    def edge_set(graph):
+        return {tuple(sorted(edge)) for edge in graph.edges()}
+
+    assert built.graph["partition"] == replayed.graph["partition"]
+    assert edge_set(built) == edge_set(replayed)
+    assert replayed.graph["partition_backend"] == "replayed"
+    assert {n: sorted(built.nodes[n]["block_ids"]) for n in built} == {
+        n: sorted(replayed.nodes[n]["block_ids"]) for n in replayed
+    }
+
+
+def test_portable_partition_rejects_a_foreign_artifact():
+    G = make_grid_graph(3, 3)
+    artifact = graph_builder.partition_to_portable(
+        G, {node: (0 if node < 4 else 1) for node in G}
+    )
+    artifact["parts"][0] = artifact["parts"][0][:-1]
+
+    with pytest.raises(ValueError, match="missing area ids"):
+        graph_builder.partition_from_portable(G, artifact)

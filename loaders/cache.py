@@ -247,6 +247,28 @@ class CacheNamespace:
     load_csv = load_dataframe
     save_csv = save_dataframe
 
+    def load_json(self, name: str) -> Any | None:
+        """Load a validated JSON payload, or return ``None`` on any miss."""
+        name = _validate_name(name, "Payload name")
+        with self._lock(shared=True):
+            payload = self._validated_payload(name, "json")
+            if payload is None:
+                return None
+            try:
+                with payload.open("r", encoding="utf-8") as stream:
+                    return json.load(stream)
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                return None
+
+    def save_json(self, name: str, value: Any) -> Path:
+        """Atomically save a JSON payload using the canonical encoding.
+
+        Canonical encoding keeps the payload checksum reproducible across
+        machines, so a shared artifact validates everywhere it is read.
+        """
+        payload = (_canonical_json(value) + "\n").encode("utf-8")
+        return self._save_payload(name, payload, "json")
+
     def manifest(self) -> dict[str, Any] | None:
         """Return the trusted namespace manifest, if it is valid."""
         with self._lock(shared=True):

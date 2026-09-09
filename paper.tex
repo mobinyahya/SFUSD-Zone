@@ -35,6 +35,7 @@ Multi-level, MCMC, and MIP strategies have already been applied in the political
     \item We provide a concrete multi-level strategy that is highly effective under tight constraints and allows us to have improved results; other multi-level strategies in the literature are likely to result in infeasible solutions.
     \item We introduce a way to optimize for submodular choice set utility functions via logic-based Benders decomposition and show how it can be used as a heuristic for improving school choice outcomes.
     \item We formulate market-clearing equilibrium (MID) and Sample Average Approximation (SAA) cutting-plane models to directly optimize utilitarian welfare over student budget sets.
+    \item We derive a congestion-priced upper bound on stable-matching welfare that is a function of the zoning rather than a constant, is valid for every non-negative price vector and every lottery seed, and --- because it separates across applicants --- admits an exact finite closed-form outer approximation requiring no recourse LP. This yields a cutting-plane method with finite convergence to a certified optimum of the bound, and prices the zone-confinement cost that the a priori welfare constants leave unpriced. Replicated over four seeds and two centroid configurations, it improves budget welfare over SAA by about $1\%$ while stopping on its own separation certificate in roughly a tenth of the wall time.
 \end{enumerate}
 
 Many of these ideas can (and arguably should be) used in the political redistricting literature.
@@ -469,29 +470,23 @@ Given master candidate $(\bar{x}, \bar{P})$, true demand $D_s(\bar{x}, \bar{P})$
 When no separation is possible, complete demand is feasible and true utility equals master utility, proving that candidate $\bar{x}$ is a globally optimal zoning.
 
 \subsection{Sample Average Approximation (SAA)}
+\label{sec:saa}
 Under strict lottery tiebreakers, student assignment is equivalent to stable matching. Under SAA, we draw independent tie-breaking seeds $\psi \in \Psi$, yielding strict priority orderings $\succ_s^\psi$ and student preferences $\succ_i^\psi$.
 
-For a fixed sample $\psi$, the fractional stable matching polytope with access variables $a_{i,s} \in \{0, 1\}$ is characterized using comb inequalities (Baïou and Balinski, 2000):
-\begin{align}
-\max_{D} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s} D_{i,s} \label{saa:primal_obj} \\
-\textrm{s.t.} \quad & \sum_{s \in \mathcal{S}} D_{i,s} = 1 && \forall i \in \mathcal{I} \label{saa:assignment} \\
-& \sum_{i \in \mathcal{I}} D_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{saa:capacity} \\
-& D_{i,s} \leq a_{i,s} && \forall i \in \mathcal{I}, s \in \mathcal{S} \label{saa:access} \\
-& \sum_{i' \succ_s^\psi i} D_{i', s} + \sum_{s' \succeq_i^\psi s} D_{i, s'} + \sum_{k \in K_{-i}} \sum_{s' \succ_k^\psi s} D_{k, s'} \geq q_s a_{i,s} \label{saa:comb} \\
-& \qquad \qquad \qquad \qquad \forall i \in \mathcal{I}, s \in \mathcal{S}, K \subseteq \mathcal{I}, |K|=q_s, i \in K \nonumber \\
-& D_{i,s} \geq 0 && \forall i, s \label{saa:domain}
-\end{align}
-
-\noindent\textbf{Proposition 2 (Comb Inequality Stability).} \textit{Constraints \eqref{saa:comb} guarantee that every extreme point is an integral stable matching.}
-
-\textit{Proof.} Suppose $a_{i,s} = 1$ and student $i$ is not assigned to school $s$ or any strictly preferred school, so $\sum_{s' \succeq_i^\psi s} D_{i, s'} = 0$. For $(i, s)$ not to form a blocking pair, all $q_s$ seats of school $s$ must be allocated to students strictly preferred to $i$. In inequality \eqref{saa:comb}, the shaft $\sum_{i' \succ_s^\psi i} D_{i', s}$ captures seats assigned to students preferred by $s$. For any other student $k \in K_{-i}$, either $k$ attends a strictly preferred school (contributing to $\sum_{s' \succ_k^\psi s} D_{k, s'}$), or $k$ competes for $s$. The comb constraint enforces that the sum across shaft and teeth is at least $q_s$, preventing fractional or integer blocking coalitions. Under seat-cloning (replicating school $s$ into $q_s$ unit-capacity slots), this reduces to the classical integral stable marriage polytope of Vande Vate (1989) and Rothblum (1992). $\blacksquare$
+For a fixed sample $\psi$ the recourse problem is the fractional stable-admissions program \eqref{saa:primal_obj}--\eqref{saa:domain}, in which the zoning enters only through the binary access indicators $a_{i,s}$ and stability is imposed by the comb inequalities \eqref{saa:comb} of Baïou and Balinski (2000). Appendix~\ref{app:access_polytope} develops that polytope in full: the shaft-and-tooth characterization of blocking, the validity and completeness of the comb family once the set of acceptable pairs is itself a decision variable, the aggregated one-row-per-pair surrogate \eqref{saa:rothblum} that the implementation loads in its place, the separation routine that generates combs, and the variant in which zoning confers a priority bonus rather than exclusive access. Three facts established there are used below.
+\begin{enumerate}
+    \item Every family in play is valid at every zoning and every seed, so the LP value is an upper bound on sample stable-matching welfare and any cut read off its dual is sound.
+    \item With the full comb family the recourse value equals the welfare of deferred acceptance exactly, so the outer approximation is tangent at the candidate zoning rather than merely valid there.
+    \item With the aggregated surrogate it is not. On $\text{Block}_2$ the surrogate over-reports realized deferred-acceptance welfare by $194.8$ to $251.8$ units across eight saved zonings, mean $225.0$, and the variation across zonings is what can misorder two candidates.
+\end{enumerate}
+The derivation below uses only the first.
 
 \noindent\textbf{Dual Outer Approximation and Geographic Aggregation:}
 By LP duality, the dual solution $(y^{1,\psi, r}, y^{2,\psi, r}, y^{3,\psi, r}, y^{4,\psi, r})$ computed at iteration $r$ under seed $\psi$ gives a valid global upper bound on assignment utility for any choice of student-program access indicators:
 \begin{equation}
 \eta_\psi \leq \kappa^{(r, \psi)} + \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} \beta_{i,s}^{(r, \psi)} a_{i,s}
 \end{equation}
-where $\kappa^{(r, \psi)} = \sum_{i \in \mathcal{I}} y_i^{1,\psi, r} + \sum_{s \in \mathcal{S}} q_s y_s^{2,\psi, r}$ is the baseline dual welfare intercept, and $\beta_{i,s}^{(r, \psi)} = y_{i,s}^{3,\psi, r} + q_s y_{i,s}^{4,\psi, r} \ge 0$ denotes the marginal dual value of granting student $i$ access to program $s$.
+where $\kappa^{(r, \psi)} = \sum_{i \in \mathcal{I}} y_i^{1,\psi, r} + \sum_{s \in \mathcal{S}} q_s y_s^{2,\psi, r}$ is the baseline dual welfare intercept, and $\beta_{i,s}^{(r, \psi)} = y_{i,s}^{3,\psi, r} + q_s y_{i,s}^{4,\psi, r}$ collects the multipliers of the two rows in which $a_{i,s}$ appears, so it reads as the marginal dual value of granting student $i$ access to program $s$; Appendix~\ref{app:ap_consequences} notes that this reading, and the sign that comes with it, are specific to the aggregated relaxation and do not survive the addition of comb rows.
 
 Because school zoning access is determined entirely by geographic residence, an applicant $i$ residing at vertex $v(i) \in V$ has access to program $s$ located at school vertex $l(s) \in V$ if and only if $v(i)$ and $l(s)$ are co-zoned. That is, $a_{i,s} \equiv a_{v(i), l(s)}$ for all non-citywide programs (with $a_{i,s} = 1$ identically for citywide programs or when $v(i) = l(s)$). 
 
@@ -522,7 +517,10 @@ The SAA master problem then optimizes expected welfare over the zoning partition
 & 0 \leq \eta \leq \text{Welfare}_{\max} \label{saa:master_bounds} \\
 & a_{v, u} \in \{0, 1\} && \forall (v, u) \in \mathcal{A}^* \label{saa:master_domain}
 \end{align}
-where $\mathcal{A}^* = \{(v, u) \in V \times S \mid \exists r, \bar{\Gamma}_{v, u}^{(r)} \neq 0\}$ denotes the sparse set of active vertex-school pairs with non-zero marginal dual value, and $\text{Welfare}_{\max} = \sum_{i \in \mathcal{I}} u_{i, 1}$ provides a global a priori upper bound.
+where $\mathcal{A}^* = \{(v, u) \in V \times S \mid \exists r, \bar{\Gamma}_{v, u}^{(r)} \neq 0\}$ denotes the sparse set of active vertex-school pairs with non-zero marginal dual value, and $\text{Welfare}_{\max}$ is a global a priori upper bound developed in Appendix~\ref{app:welfare_bounds}.
+
+\noindent\textbf{A Priori Welfare Bound:}
+The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is nominally just the domain of $\eta$, but it also caps the master's reported dual bound and hence the reported gap. Appendix~\ref{app:transport_bound} develops the two candidates: the first-choice constant $\overline{W}^{\mathrm{FC}}$, which ignores capacity and is therefore loose by the full extent of oversubscription, and the transportation bound $\overline{W}^{\mathrm{TP}}$ of Proposition~4, which respects capacity, remains independent of the zoning, is attained integrally, solves in milliseconds and weakly dominates. We take $\text{Welfare}_{\max} = \overline{W}^{\mathrm{TP}}$; on $\text{Block}_2$ it cuts $598$ to $612$ units off the constant. What neither constant prices is the zone confinement itself, which is the subject of Section~\ref{sec:priced_access}.
 
 \noindent\textbf{Computational Advantages of Aggregation:}
 This formulation confers three major advantages:
@@ -531,6 +529,63 @@ This formulation confers three major advantages:
     \item \textbf{Exact Equivalence:} Because geographic access $a_{i,s} \equiv a_{v(i), l(s)}$ is strictly identical for all students at vertex $v$, the algebraic aggregation of dual coefficients preserves exact LP outer-approximation guarantees with zero approximation error.
     \item \textbf{Unified Base Solver Architecture:} Because the cut \eqref{eq:saa_agg_cut} shares the identical access variable structure $a_{v, u}$ as the choice set objective \eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models.
 \end{enumerate}
+
+\subsection{Congestion-Priced Access}
+\label{sec:priced_access}
+The residual gap left by $\overline{W}^{\mathrm{TP}}$ is the unpriced cost of confining each applicant to the programs co-zoned with their residence. Appendix~\ref{app:priced_access} closes it by replacing the \emph{constant} $\text{Welfare}_{\max}$ with a \emph{function} of the zoning that is still a valid upper bound on stable-matching welfare. Fix a non-negative price $\pi_s$ per seat at program $s$, charge it against utility to obtain the priced value $w_{i,s} = u_{i,s} - \pi_s$, and give each applicant the best priced value they can reach under the zoning, with the outside option available at zero. Summing those per-applicant terms and adding back $\sum_s q_s \pi_s$ gives the bound $\overline{W}^{\mathrm{PA}}(x; \pi)$. It is valid for \emph{every} $\pi \geq 0$ and every seed, so the prices are a free modelling choice rather than a quantity that must be computed correctly; it separates across applicants, so it admits an exact finite closed-form outer description in the master's access variables with no recourse LP at all; and the resulting cutting plane converges finitely to a certified optimum of the bound. On $\text{Block}_2$ it overstates sample-average stable-matching welfare by $249$ to $354$ units against the $3{,}877$ to $4{,}850$ of $\overline{W}^{\mathrm{TP}}$, and by nearly the same amount at zonings produced by five unrelated methods --- the empirical regularity under which maximizing the bound approximates maximizing welfare. Setting $\pi = 0$ isolates what the pricing contributes: the unpriced surrogate converges faster but is indifferent between a program with spare seats and an oversubscribed one, and gave up $1{,}357$ units of realized welfare on one instance at a matched iteration allowance. Proposition~5, Proposition~6 and Theorem~2, the vertex aggregation, the separation rule and the bias decomposition are all in Appendix~\ref{app:priced_access}.
+
+\subsection{Empirical Comparison on Budget Welfare}
+The three budget-set formulations optimize three different surrogates, so they can only be compared on a measure external to all of them. We use the welfare of the discrete MID program, written $W^{\mathrm{MID}}$ and called \emph{budget welfare} below, recomputed for every saved zoning by replaying it through the finite-grid MID oracle at base-block resolution. This is the only quantity computed identically for every strategy: each strategy's own reported objective is its own surrogate --- the sample average for SAA, the priced bound $\overline{W}^{\mathrm{PA}}$ for priced access, the MNL logsum for choice-set optimization --- and comparing those to one another compares different functions. We report neither the logsum nor any strategy's own objective here for that reason.
+
+\noindent\textbf{Design:}
+All arms solve the same $\text{Block}_2$ instance ($|\mathcal{I}| = 3953$, $|\mathcal{S}| = 123$, $k = 6$) under identical structural constraints, with a $3600\,\mathrm{s}$ solver budget, an allowance of $30$ iterations, and $16$ threads, replicated over seeds $1$--$4$ and both centroid configurations: $40$ runs, no failures. Each run contributes the single zoning, out of every zoning it saved, with the highest budget welfare --- not the one its own surrogate selected. That choice is deliberately generous and is applied uniformly; it removes the confound that the strategies disagree about which of their own iterates to return, and it matters, because $12$ of the $39$ scored runs held an iterate better than the one they handed back. Priced access is run at three price multipliers, $\pi = 0$, $\pi^\star$ and $2\pi^\star$, since Proposition 5 leaves the multiplier free.
+
+Mean $W^{\mathrm{MID}}$ and the seed spread, largest minus smallest, over the four seeds:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\hline
+& \multicolumn{2}{c}{6-zone-3} & \multicolumn{2}{c}{6-zone-9} \\
+arm & mean & spread & mean & spread \\
+\hline
+Priced access, $2\pi^\star$ & \textbf{14{,}957.9} & 233.7 & 14{,}706.2 & 269.4 \\
+Priced access, $\pi^\star$  & 14{,}932.7 & 287.5 & \textbf{14{,}714.9} & 311.8 \\
+Priced access, $\pi = 0$    & 14{,}808.4 & 100.6 & 14{,}599.7 & 303.8 \\
+SAA                         & 14{,}777.7 & \textbf{68.4} & 14{,}578.7 & \textbf{92.5} \\
+Choice set                  & 14{,}052.4 & 1{,}476.4 & 14{,}307.0 & 38.9 \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Pairing:}
+The marginal spreads above are not the right yardstick for the differences, because every arm ran the same four seeds and a seed's difficulty is common to all of them. Differencing within a $(\text{centroid}, \text{seed})$ pair removes that shared component. Over the eight pairs, relative to SAA:
+
+\begin{center}
+\begin{tabular}{lrrr}
+\hline
+arm $-$ SAA & pairs won & mean & range \\
+\hline
+Priced access, $2\pi^\star$ & \textbf{7 / 8} & \textbf{$+153.9$} & $-78.7$ \ldots $+249.3$ \\
+Priced access, $\pi^\star$  & 6 / 8 & $+145.6$ & $-32.0$ \ldots $+334.9$ \\
+Priced access, $\pi = 0$    & 5 / 8 & $+25.9$  & $-206.5$ \ldots $+183.9$ \\
+Choice set                  & 0 / 7 & $-465.0$ & $-1{,}590.3$ \ldots $-90.3$ \\
+\hline
+\end{tabular}
+\end{center}
+
+Priced access at $\pi^\star$ or $2\pi^\star$ improves on SAA by roughly $150$ units of budget welfare, about $1\%$, winning six or seven of eight pairs. We state that margin rather than a larger one because single-seed runs at a shorter budget suggested $+300$ to $+400$, and the replication does not support it: the effect is real, consistently signed, and smaller than one seed indicated. It is also not uniform --- one or two pairs go the other way.
+
+Three further comparisons are worth separating from that headline. Pairing $2\pi^\star$ against $\pi^\star$ gives four wins of eight and a mean of $+8.3$, so the two multipliers are indistinguishable here and we make no claim between them. Pairing either against $\pi = 0$ gives $+128.0$ (seven of eight) and $+119.7$ (five of eight), so congestion pricing is worth about $130$ units --- real, but an order of magnitude less than the $1{,}357$ it was worth at a $900\,\mathrm{s}$ budget, because with enough iterations the unpriced surrogate largely catches up. And SAA is the \emph{most stable} arm by a wide margin, with a seed spread of $68$ and $93$ against $234$ to $312$ for priced access: it is beaten on the mean while being the most predictable. Choice-set optimization loses every pair, and its $1{,}476$ spread at 6-zone-3 includes one run that returned no feasible zoning at all within its budget, which is why its count there is three rather than four.
+
+\noindent\textbf{Convergence and cost:}
+The difference in how the two cutting-plane families terminate is larger than the difference in what they find. Across the $24$ priced-access runs, the relative optimism gap between the master's model value and the true value of $\sum_i g_i$ at the same zoning falls from a median of $29.78\%$ at the first iteration to a median of $0.013\%$, and $23$ of the $24$ runs stop because \emph{no cut separates} --- the exact termination certificate of Theorem 2 --- after a median of $10$ iterations and $466\,\mathrm{s}$, never needing the $30$-iteration allowance or the $3600\,\mathrm{s}$ budget. Across the eight SAA runs the same gap falls from $29.23\%$ only to $7.95\%$, and every run exhausts its iteration allowance at $30$ iterations and $4{,}555\,\mathrm{s}$ of wall time. Priced access therefore reaches a certified optimum of its surrogate in roughly a tenth of the wall time SAA spends failing to close its own gap, and the reason is structural rather than incidental: its cuts are closed form, so an iteration costs one master solve, whereas each SAA iteration also pays for $|\Psi| = 15$ recourse LPs.
+
+Two cautions attach to that. First, the certificate is about $\overline{W}^{\mathrm{PA}}$, not about $W^{\mathrm{MID}}$; the run stops because nothing more can be gained on the surrogate, and the remaining distance to the true optimum is bounded by the surrogate's bias rather than by anything the run measures. Second, choice-set optimization also closes its gap, to a median of $0.01\%$, but its surrogate is the MNL logsum, which is neither an upper nor a lower bound on realized welfare, so its gap certifies nothing about the matching; its poor budget welfare despite an almost exactly converged model is the sharpest illustration in this table that converging on the wrong surrogate is not progress.
+
+Compactness does not have to be traded away for this. At 6-zone-3 the priced-access arms return $1{,}128$ to $1{,}136$ cut edges against $1{,}265$ for SAA, so they are simultaneously better on both panels; at 6-zone-9 they range from $1{,}184$ to $1{,}225$ against SAA's $1{,}179$, which is a wash.
+
+\noindent\textbf{Scope:}
+These are four seeds on one instance family at one district size, so the ordering should be read as replicated on this instance rather than established in general, and the $\pm 150$ margin over SAA is small enough that a different instance could plausibly reverse it. What is not marginal, and what we would expect to transfer, is the termination behaviour: a bound that separates across applicants admits an exact finite cut family and therefore a real stopping certificate, whereas a single dual hyperplane per iteration over $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates does not, independently of which zoning either one happens to return.
 
 \appendix
 \section{Extended Demographic Diversity Constraints}
@@ -551,6 +606,459 @@ In the CP-SAT and MIP formulations, this is linearized into upper and lower inte
 \sum_{v \in V} \lceil M \cdot (r_{v,e} - (R_e + \delta_R) n_v) \rceil \cdot x_{v,z} &\leq 0 \qquad \forall e \in \mathcal{E}, \forall z \in [k]
 \end{align}
 which are added seamlessly alongside the base FRL constraints without altering the core solver mechanics.
+
+\section{The Stable-Matching Access Polytope}
+\label{app:access_polytope}
+
+This appendix develops the sample recourse problem of Section~\ref{sec:saa}. Section~\ref{app:ap_market} fixes the market and the shaft--tooth apparatus, Section~\ref{app:ap_combs} states the comb family and proves it valid and complete at a fixed access pattern, Section~\ref{app:ap_variable} extends both to a market whose set of acceptable pairs is itself a decision variable --- the case the zoning master needs --- and Section~\ref{app:ap_sep} gives the separation routine. Section~\ref{app:ap_bonus} then replaces exclusive access by a zone \emph{priority bonus}, which is the status quo the district actually operates: residence raises a family's priority at the programs in its zone without excluding anyone. The same polytope survives once each applicant is split into a zoned and an unzoned copy. Section~\ref{app:ap_bonus_sep} gives the corresponding separation and Section~\ref{app:ap_consequences} records what changes in the master cuts.
+
+\subsection{The Sample Market}
+\label{app:ap_market}
+
+Fix a tie-breaking seed $\psi \in \Psi$. Applicants are $\mathcal{I}$, programs are $\mathcal{S}$, and $\Gamma = \{(i,s) : s \text{ appears on } i\text{'s list}\}$ is the set of acceptable pairs; $|\Gamma| = 12{,}370$ on $\text{Block}_2$ against $|\mathcal{I}| \times |\mathcal{S}| \approx 4.9 \times 10^5$, because ranked lists average $3.13$ entries. Program $s$ has $q_s$ seats and, under seed $\psi$, a strict order $\succ_s^\psi$ over $\{i : (i,s) \in \Gamma\}$ obtained by sorting the priority tier $\rho_{i,s}$ and breaking ties by the lottery draw $\omega_{i,s}^\psi$. Applicant $i$ has a strict order $\succ_i^\psi$ over their list and utilities $u_{i,s}$ consistent with it, so $s \succ_i^\psi s'$ implies $u_{i,s} \ge u_{i,s'}$. We write $\succeq$ for the reflexive closures. Following the proof of Proposition~4, $\mathcal{S}$ contains an outside option $s_0$ with $u_{i,s_0} = 0$, $q_{s_0} = |\mathcal{I}|$, universally acceptable and ranked last by everyone, so $\sum_{s} D_{i,s} = 1$ loses no generality and unassignment is the mass placed on $s_0$.
+
+Zoning enters through the access indicators $a_{i,s} \in \{0,1\}$ of Section~\ref{sec:saa}: $a_{i,s} = 1$ when $s$ is citywide, when $l(s) = v(i)$, or when $v(i)$ and $l(s)$ are co-zoned, and $a_{i,s} = 0$ otherwise. It is convenient to name the market that a given access pattern leaves behind,
+\begin{equation}\label{eq:ap_restricted_market}
+\Gamma(a) = \{(i,s) \in \Gamma : a_{i,s} = 1\},
+\end{equation}
+and to write $n_s(a) = |\{i : (i,s) \in \Gamma(a)\}|$ for the number of applicants who both rank $s$ and may attend it. A pair $(i,s) \in \Gamma(a)$ \emph{blocks} an integral matching $D$ if $i$ prefers $s$ to their assignment and $s$ either has a free seat or has admitted someone below $i$ in $\succ_s^\psi$; $D$ is stable if no pair of $\Gamma(a)$ blocks it.
+
+\subsection{Shafts, Teeth and Combs}
+\label{app:ap_combs}
+
+The description below is that of Baïou and Balinski (2000), in the notation of Sethuraman, Teo and Qian (2006). For $(i,s) \in \Gamma$ define the \emph{shaft} and the \emph{tooth}
+\begin{equation}\label{eq:ap_shaft_tooth}
+S^\psi(s,i) = \{(i',s) \in \Gamma : i' \succeq_s^\psi i\},
+\qquad
+T^\psi(i,s) = \{(i,s') \in \Gamma : s' \succeq_i^\psi s\},
+\end{equation}
+and for any $\hat\Gamma \subseteq \Gamma$ write $D(\hat\Gamma) = \sum_{(i,s) \in \hat\Gamma} D_{i,s}$. The shaft collects the seats of $s$ that go to applicants $s$ likes at least as much as $i$; the tooth collects the outcomes $i$ likes at least as much as $s$. Both are prefixes of an order and are therefore running sums, which is what makes the whole apparatus cheap: the implementation carries one prefix variable per element of $\Gamma$ on each side, $2|\Gamma|$ in total, rather than re-summing.
+
+\noindent\textbf{Lemma 1 (Blocking in shaft--tooth form).} \textit{Let $D$ be an integral matching and $(i,s) \in \Gamma(a)$. Then $(i,s)$ blocks $D$ if and only if}
+\begin{equation}\label{eq:ap_blocking}
+D\big(S^\psi(s,i)\big) \le q_s - 1
+\qquad\text{and}\qquad
+D\big(T^\psi(i,s)\big) = 0 .
+\end{equation}
+
+\textit{Proof.} The second condition says $i$ receives nothing weakly preferred to $s$, which is exactly the applicant half of blocking. For the program half, $D(S^\psi(s,i))$ counts the applicants weakly above $i$ admitted to $s$. If that count is at most $q_s - 1$ then the remaining $q_s - D(S^\psi(s,i)) \ge 1$ seats are either empty or held by applicants strictly below $i$, so $s$ can accept $i$, dropping its worst admit if necessary. Conversely if the count is $q_s$ then $s$ is full with applicants it weakly prefers to $i$ and gains nothing from $i$. Note that $i$ itself is in $S^\psi(s,i)$, so under $D(T^\psi(i,s)) = 0$ the count is unchanged by $i$'s own row. $\blacksquare$
+
+Lemma~1 is what the comb construction linearizes. A single applicant witnesses only one seat, so certifying that all $q_s$ seats are unavailable to $i$ requires $q_s$ witnesses. Fix $(i,s) \in \Gamma$ and a collection $K$ of $q_s - 1$ \emph{teeth bases}, distinct except that the vacant slot may repeat, each drawn from
+\begin{equation}\label{eq:ap_tooth_bases}
+\mathcal{K}^\psi(s,i) = \{k \in \mathcal{I} : (k,s) \in \Gamma, \ k \succ_s^\psi i\} \cup \{\varnothing\},
+\end{equation}
+where $\varnothing$ is a \emph{vacant slot}, explained below. The \emph{comb} based at $(i,s)$ with teeth $K$ is
+\begin{equation}\label{eq:ap_comb_set}
+C^\psi(s,i,K) = S^\psi(s,i) \ \cup \ \big(T^\psi(i,s) \setminus \{(i,s)\}\big) \ \cup \ \bigcup_{k \in K} \big(T^\psi(k,s) \setminus \{(k,s)\}\big),
+\end{equation}
+a shaft with $q_s$ teeth hanging off it, one for the base and one for each element of $K$, with the convention that a vacant slot contributes no pairs to the union and enters only through its credit. Each tooth is stripped of its own $(\cdot,s)$ entry because that entry already lies in the shaft, so nothing is double counted. The comb inequality asserts that a comb carries at least $q_s$ units of mass. Written out, and with access and vacancies priced as derived in Section~\ref{app:ap_variable},
+\begin{align}
+\max_{D} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s} D_{i,s} \label{saa:primal_obj} \\
+\textrm{s.t.} \quad & \sum_{s \in \mathcal{S}} D_{i,s} = 1 && \forall i \in \mathcal{I} \label{saa:assignment} \\
+& \sum_{i \in \mathcal{I}} D_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{saa:capacity} \\
+& D_{i,s} \leq a_{i,s} && \forall (i,s) \in \Gamma \label{saa:access} \\
+& \underbrace{\sum_{i' \succeq_s^\psi i} D_{i', s}}_{\text{shaft}} + \underbrace{\sum_{s' \succ_i^\psi s} D_{i, s'}}_{\text{base tooth}} + \sum_{k \in K} \underbrace{\Big[ \sum_{s' \succ_k^\psi s} D_{k, s'} + \chi_{k,s} \Big]}_{\text{tooth } k} \geq q_s\, a_{i,s} \label{saa:comb} \\
+& \qquad \forall (i,s) \in \Gamma \text{ and all admissible } K \nonumber \\
+& D_{i,s} \geq 0 && \forall (i,s) \in \Gamma \label{saa:domain}
+\end{align}
+where the \emph{tooth credit} is
+\begin{equation}\label{eq:ap_credit}
+\chi_{k,s} = 1 - a_{k,s} \ \ \text{for } k \in \mathcal{I},
+\qquad
+\chi_{\varnothing,s} = 1 .
+\end{equation}
+The credit is the only departure from the fixed-market description, and Section~\ref{app:ap_variable} is where it is earned. For the moment read \eqref{saa:comb} at $a \equiv 1$ and with no vacant slots, where every credit is zero and the inequality is literally $D(C^\psi(s,i,K)) \ge q_s$.
+
+\noindent\textbf{Proposition 2 (Comb Inequality Stability).} \textit{Fix $\psi$ and a binary access pattern $a$. Then the integral points of \eqref{saa:assignment}--\eqref{saa:domain} are exactly the stable matchings of the market $\Gamma(a)$, and the system has no fractional extreme points: its solution set is $\mathrm{conv}\{D : D \text{ stable in } \Gamma(a)\}$.}
+
+\textit{Proof.} Validity and integral exactness are Proposition~10 below, which proves them for all $a$ at once. For the absence of fractional extreme points, take $a \equiv 1$ first and assume $n_s \ge q_s$ for every $s$. Then all credits vanish, \eqref{saa:comb} is the comb inequality $D(C) \ge q_s$, and the claim is the theorem of Baïou and Balinski (2000): the system \eqref{saa:assignment}--\eqref{saa:domain} is the stable admissions polytope. Sethuraman, Teo and Qian (2006) give a short proof by exhibiting, for each fractional point, a decomposition of its mass into $q_s$ unit bins per program such that the level sets $\{$best $q_s$ applicants at height $\alpha\}$ are stable matchings for every $\alpha \in (0,1]$; the point is then the convex combination of those level sets induced by $\alpha$ uniform. The general case is the second half of Proposition~10. $\blacksquare$
+
+The completeness claim has a consequence worth isolating, because it says what the recourse oracle would return if the comb family were loaded in full.
+
+\noindent\textbf{Corollary 1 (The comb-complete recourse value is deferred-acceptance welfare).} \textit{For every zoning $x$ and seed $\psi$, the optimal value of \eqref{saa:primal_obj}--\eqref{saa:domain} equals the utilitarian welfare of the applicant-proposing deferred-acceptance outcome on $\Gamma(a(x))$.}
+
+\textit{Proof.} By Proposition~2 the feasible set is the convex hull of the stable matchings of $\Gamma(a)$, so the optimum is attained at one of them and equals the largest welfare of a stable matching. Deferred acceptance returns the applicant-optimal stable matching: every applicant weakly prefers it to every other stable matching (Gale and Shapley, 1962; Roth and Sotomayor, 1990). Since $u_{i,\cdot}$ is consistent with $\succ_i^\psi$, each applicant's utility is weakly largest there, hence so is the sum. $\blacksquare$
+
+Corollary~1 is the reason the comb family is worth stating even though the implementation does not load it. An oracle carrying it would be tangent to realized welfare at the candidate zoning, so the Benders cut \eqref{eq:saa_agg_cut} would be exact at $x^r$ rather than merely valid, and the incumbent selection problem noted in Section~\ref{sec:saa} would not arise.
+
+\subsection{Access as a Decision Variable}
+\label{app:ap_variable}
+
+The zoning master does not solve one market. It searches over $x$, and each $x$ induces a different set $\Gamma(a(x))$ of acceptable pairs. A description of the stable matchings of a \emph{fixed} market is therefore not enough: the master needs one family of inequalities, written in the variables $(D,a)$, that is valid simultaneously at every binary $a$ and that specialises to the complete description of $\Gamma(a)$ at each one. Two things obstruct the naive attempt of multiplying the right-hand side by $a_{i,s}$ and leaving the comb otherwise alone.
+
+First, a tooth base without access is not a competitor. Let $q_s = 2$ with applicants $1 \succ_s^\psi 2$, both ranking only $s$, and let $a_{1,s} = 0$, $a_{2,s} = 1$. The stable matching of $\Gamma(a)$ assigns $2$ to $s$ and leaves $1$ unassigned, but the uncredited comb based at $(2,s)$ with tooth $1$ reads $D_{1,s} + D_{2,s} + 0 + 0 = 1 < 2 = q_s a_{2,s}$. The row is violated by a genuine stable matching, so the family without credits is not valid.
+
+Second, a program may have fewer than $q_s$ interested applicants with access, in which case there are not $q_s - 1$ genuine competitors above $i$ to serve as teeth and, absent the vacant slot, the base $(i,s)$ carries no usable row --- yet stability has content there, since a program that cannot fill must admit everyone who wants it. Both obstructions are the same phenomenon and both are repaired by \eqref{eq:ap_credit}: an applicant who cannot compete for $s$, whether because they lack access or because they do not exist, is credited a full unit, because for the purpose of $s$'s market they are indistinguishable from an applicant already served better than $s$.
+
+\noindent\textbf{Proposition 10 (Zoning-robust comb inequalities).} \textit{Let $\psi$ be fixed.}
+\begin{enumerate}
+    \item[(i)] \textit{\emph{(Uniform validity.)} Every inequality \eqref{saa:comb} holds at every pair $(D,a)$ with $a \in \{0,1\}^{\Gamma}$ and $D$ an integral stable matching of $\Gamma(a)$.}
+    \item[(ii)] \textit{\emph{(Integral exactness.)} Conversely, if $a$ is binary and $D$ is integral and satisfies \eqref{saa:assignment}--\eqref{saa:domain}, then $D$ is a stable matching of $\Gamma(a)$.}
+    \item[(iii)] \textit{\emph{(Specialisation.)} At each fixed binary $a$, the rows of \eqref{saa:comb} imply Baïou and Balinski's complete description of the market $\Gamma(a)$, padded as required when $n_s(a) < q_s$. Hence the solution set is exactly $\mathrm{conv}\{D : D \text{ stable in } \Gamma(a)\}$, completing Proposition~2.}
+\end{enumerate}
+
+\textit{Proof.} (i) If $a_{i,s} = 0$ the right-hand side is zero and the left-hand side is a sum of non-negative terms. So assume $a_{i,s} = 1$, fix teeth $K$, and write $P = \{i\} \cup K$, a collection of $q_s$ elements, and
+$$b_i = \sum_{s' \succ_i^\psi s} D_{i,s'},
+\qquad
+b_k = \sum_{s' \succ_k^\psi s} D_{k,s'} + \chi_{k,s} \ \ (k \in K),$$
+so that the left-hand side of \eqref{saa:comb} is $D(S^\psi(s,i)) + \sum_{p \in P} b_p$. Suppose it is at most $q_s - 1$. Partition $P$ into
+$$G = \{p \in P : b_p \ge 1\},
+\qquad
+F = \{p \in P \setminus G : D_{p,s} = 1\},
+\qquad
+H = P \setminus (F \cup G).$$
+Every $p \in F$ has $b_p = 0$, hence $\chi_{p,s} = 0$, hence $a_{p,s} = 1$ and $p \succeq_s^\psi i$ --- vacant slots and applicants without access carry a credit and lie in $G$ --- so $(p,s) \in S^\psi(s,i)$ and $D(S^\psi(s,i)) \ge |F|$. Therefore the left-hand side is at least $|F| + |G|$, and since $|F| + |G| + |H| = q_s$ the assumed bound forces $H \neq \emptyset$. Pick $k \in H$. As above $\chi_{k,s} = 0$, so $(k,s) \in \Gamma(a)$ and $k \succeq_s^\psi i$; and $b_k = 0$ with $D_{k,s} = 0$ gives $D(T^\psi(k,s)) = 0$. Finally $k \succeq_s^\psi i$ gives $S^\psi(s,k) \subseteq S^\psi(s,i)$, so
+$$D\big(S^\psi(s,k)\big) \le D\big(S^\psi(s,i)\big) \le q_s - 1 .$$
+By Lemma~1 the pair $(k,s) \in \Gamma(a)$ blocks $D$, contradicting stability.
+
+(ii) Let $a$ be binary and $D$ integral and feasible. Constraints \eqref{saa:assignment}, \eqref{saa:capacity} and \eqref{saa:access} make $D$ a matching of $\Gamma(a)$. Suppose $(i,s) \in \Gamma(a)$ blocked it, so by Lemma~1 $D(T^\psi(i,s)) = 0$ and $D(S^\psi(s,i)) \le q_s - 1$. Let $A = \{k : (k,s) \in \Gamma, \ k \succ_s^\psi i\}$ and, with $b_k$ as in part~(i), let $m_0 = |\{k \in A : b_k = 0\}|$. Choose the teeth greedily, taking the $q_s - 1$ smallest brackets of $\mathcal{K}^\psi(s,i)$; since vacant slots have bracket exactly $1$ and are available without limit,
+$$\sigma := \sum_{k \in K} b_k \le \max\{0, \ q_s - 1 - m_0\} .$$
+The base tooth vanishes because $D(T^\psi(i,s)) = 0$, so the left-hand side of \eqref{saa:comb} is $D(S^\psi(s,i)) + \sigma$. Now $D_{i,s} = 0$, so $D(S^\psi(s,i))$ counts the members of $A$ admitted to $s$; each of those has access and nothing strictly preferred to $s$, hence bracket $0$, hence $D(S^\psi(s,i)) \le m_0$. If $m_0 \ge q_s - 1$ then $\sigma = 0$ and the left-hand side is $D(S^\psi(s,i)) \le q_s - 1$; otherwise it is at most $m_0 + (q_s - 1 - m_0) = q_s - 1$. Either way it falls below $q_s = q_s a_{i,s}$ and this row of \eqref{saa:comb} is violated, contradicting feasibility. So no pair of $\Gamma(a)$ blocks $D$.
+
+(iii) Fix binary $a$. A program with $n_s(a) \ge q_s$ needs no padding, so consider one with $n_s(a) < q_s$ and pad $\Gamma(a)$ with $\varphi_s = q_s - n_s(a)$ phantom applicants whose only acceptable program is $s$ and who occupy the top $\varphi_s$ positions of $\succ_s^\psi$, each with utility zero. In every stable matching of the padded market each phantom is admitted to $s$: were one rejected, $s$ would have to be full, but the admitted set draws from $n_s(a)$ real applicants and $\varphi_s - 1$ other phantoms, at most $q_s - 1$ in all. Real applicants therefore face effective capacity $n_s(a)$, which does not bind, so the stable matchings of the padded market restrict exactly onto those of $\Gamma(a)$ and carry the same welfare. Baïou and Balinski's description applies to the padded market, in which $n_s \ge q_s$ for every program. Eliminate the phantom variables, all of which are fixed at one: a padded comb based at $(i,s)$ using $j$ phantom teeth has left-hand side equal to the real shaft plus $\varphi_s$ --- every phantom lies in the shaft, whether or not it was chosen as a tooth --- plus the base tooth plus the $q_s - 1 - j$ real tooth terms, since a phantom's own tooth is empty. The row of \eqref{saa:comb} with the same real teeth and $j$ vacant slots has the same right-hand side and a left-hand side smaller by $\varphi_s - j \ge 0$, hence implies it. Applicants without access are handled identically, being vacant slots of $\Gamma(a)$ under another name: their credit is $1$ and their shaft contribution is $0$ by \eqref{saa:access}. So every inequality of the complete description is implied, giving solution set $\subseteq \mathrm{conv}$; part~(i) gives $\supseteq$. $\blacksquare$
+
+\noindent\textbf{What the implementation loads.}
+The comb family has up to $\binom{n_s - 1}{q_s - 1}$ rows per base pair and is separated, not enumerated. What \texttt{SaaOracle} loads up front is one aggregated stability row per acceptable pair,
+\begin{equation}\label{saa:rothblum}
+\sum_{i' \succ_s^\psi i} D_{i',s} \;+\; q_s \sum_{s' \succeq_i^\psi s} D_{i,s'} \;\ge\; q_s\, a_{i,s}
+\qquad \forall (i,s) \in \Gamma ,
+\end{equation}
+the many-to-one aggregation of Rothblum's (1992) inequality. It is valid: if $a_{i,s} = 1$ and $i$ receives nothing weakly preferred to $s$ then the second sum is zero and stability forces $q_s$ seats to applicants strictly above $i$, while if $i$ does receive something weakly preferred the second sum is $1$ and alone supplies $q_s$. Being valid, it is implied by the complete description of Proposition~2 and may be added freely. It is also cheap: with the prefix variables of \eqref{eq:ap_shaft_tooth} it is $O(|\Gamma|)$ rows, $12{,}370$ on $\text{Block}_2$, and the $y^{4}$ block of the dual in Section~\ref{sec:saa} is precisely its multiplier vector. Use the \emph{strict} shaft as written; the weak variant is valid too but measurably looser, because it lets $i$'s own mass at $s$ be counted twice.
+
+What \eqref{saa:rothblum} is not is complete, and the reason is visible in the derivation. Summing the per-seat inequalities of a seat-cloned program and bounding $\sum_{j} (q_s - j + 1) D_{i, s^{(j)}}$ by $q_s D_{i,s}$, where $s^{(1)}, \dots, s^{(q_s)}$ are the clones, discards the distinction between one applicant holding a whole seat and several holding fractions of it; the multiplier $q_s$ on the own-preference term is what lets a fractional $D_{i,s}$ pay for a deficit in the shaft. Concretely, let $q_s = 2$ and let applicants $1 \succ_s^\psi 2 \succ_s^\psi 3$ rank only $s$, with $u_{1,s} = u_{2,s} = 1$ and $u_{3,s} = 10$, all access granted. The unique stable matching admits $1$ and $2$, for welfare $2$. The point $D_{1,s} = 1$, $D_{2,s} = D_{3,s} = \tfrac12$ satisfies \eqref{saa:assignment}--\eqref{saa:access}, \eqref{saa:domain} and every row of \eqref{saa:rothblum} --- the three rows read $0 + 2 = 2$, $1 + 1 = 2$ and $\tfrac32 + 1 = \tfrac52$ against $q_s = 2$ --- and has objective $6.5$, more than three times the truth. The comb based at $(2,s)$ with the single tooth $1$ is what removes it: its left-hand side is $D_{1,s} + D_{2,s} = \tfrac32 < 2$.
+
+The gap is not merely theoretical. Because Corollary~1 identifies the comb-complete value with deferred-acceptance welfare, the discrepancy between the surrogate LP value and a deferred-acceptance run measures exactly the slack of \eqref{saa:rothblum}. Over eight saved zonings on $\text{Block}_2$ with $k = 6$ the surrogate over-reports realized deferred-acceptance welfare by $194.8$ to $251.8$ units, mean $225.0$, against a total welfare near $14{,}500$; measured instead against the MID continuum value on the same zonings the over-report is a very stable $194.8$ to $195.0$. The variation of roughly $57$ units \emph{across} zonings is the operationally relevant part, since it is what can reorder two candidates: the cuts stay valid, but a strategy that selects its incumbent by surrogate value can select wrongly by that much. This is why Section~\ref{sec:saa} reports budget welfare from an independent replay rather than from the oracle.
+
+\subsection{Comb Separation Under Access}
+\label{app:ap_sep}
+
+Separation is exact and requires no optimization beyond a sort. Fix a candidate zoning $x^r$, hence a binary $a$, and a fractional $\bar D$ solving the current restricted LP. For $(k,s) \in \Gamma$ let
+\begin{equation}\label{eq:ap_bracket}
+\bar b_{k,s} = \sum_{s' \succ_k^\psi s} \bar D_{k,s'} + (1 - a_{k,s}),
+\end{equation}
+the bracket of \eqref{saa:comb}; all $|\Gamma|$ of these are available as the tooth prefix sums already in the model. Because the teeth enter \eqref{saa:comb} additively and their admissible set $\mathcal{K}^\psi(s,i)$ depends on the base only through $k \succ_s^\psi i$, the most violated comb based at $(i,s)$ is obtained by choosing the $q_s - 1$ smallest brackets above $i$:
+\begin{equation}\label{eq:ap_most_violated}
+\mathrm{viol}(i,s) = q_s a_{i,s} - \Big[ \underbrace{\textstyle\sum_{i' \succeq_s^\psi i} \bar D_{i',s}}_{\text{shaft prefix}} + \sum_{s' \succ_i^\psi s} \bar D_{i,s'} + \underbrace{\min_{\substack{K \subseteq \mathcal{K}^\psi(s,i) \\ |K| = q_s - 1}} \sum_{k \in K} \bar b_{k,s}}_{\sigma(i,s)} \Big],
+\end{equation}
+and vacant slots, whose bracket is $1$, enter this minimum on the same footing as everything else --- they are selected exactly when fewer than $q_s - 1$ applicants above $i$ have a bracket below $1$, which is the case Section~\ref{app:ap_variable} introduced them for. One descent of $\succ_s^\psi$ computes \eqref{eq:ap_most_violated} at every base simultaneously. Carry two accumulators: the shaft, a running sum, and $\sigma$, the sum of a max-heap of size $q_s - 1$ holding the smallest brackets seen so far, initialized with $q_s - 1$ vacant slots. On reaching applicant $i$, first add $\bar D_{i,s}$ to the shaft --- the shaft of \eqref{eq:ap_shaft_tooth} is weak and includes $i$'s own row --- then evaluate \eqref{eq:ap_most_violated}, then push $\bar b_{i,s}$ and pop the maximum, so that on reaching the next applicant the heap holds exactly the teeth strictly above them. Popping the maximum evicts a vacant slot only when a real bracket is smaller, which is why brackets above $1$ --- possible for an applicant who lacks access and is served better than $s$ --- never displace a slot. The cost is $O(|\Gamma| + \sum_s n_s \log q_s)$, dominated by $O(|\Gamma| \log \max_s q_s)$, which on $\text{Block}_2$ is a few hundred thousand operations against an LP re-solve; separation is free relative to the oracle it feeds.
+
+The oracle is then a cutting plane in its own right, nested inside the zoning cutting plane: load \eqref{saa:assignment}--\eqref{saa:access}, \eqref{saa:domain} and \eqref{saa:rothblum}, solve, run the descent above, add every comb with $\mathrm{viol}(i,s) > \epsilon$, and repeat until none is found. Termination is finite because the comb family is finite and no row is added twice, and on exit Proposition~2 gives a value equal to deferred-acceptance welfare by Corollary~1. Two implementation notes. Rows should be added in batches --- all violated bases at once --- since the marginal cost of a row is small next to a re-solve. And the emitted row must record its teeth as \emph{indices}, not as the numeric bracket values that selected them: the row is an inequality in $(D,a)$ valid at every zoning, and re-deriving it from $\bar D$ at the next master iterate would silently produce a different, weaker row.
+
+\subsection{Zoning as a Priority Bonus}
+\label{app:ap_bonus}
+
+Exclusive access is the sharpest form a zone can take, but it is not the form the district operates. In the status quo a family receives a priority \emph{boost} at its attendance-area program and may still apply anywhere; the zone changes who wins a contested seat, not who may enter the contest. This subsection writes the polytope for that policy. The construction is the natural one: every applicant is split into a \emph{zoned} and an \emph{unzoned} copy, the priority structure is written once for each copy, and the zoning decides which copy is real.
+
+\noindent\textbf{Data.} Let $\rho_{i,s} \in \mathbb{Z}_{\ge 0}$ be the base priority score of $i$ at $s$, namely the sum of the configured tier weights --- CTIP, sibling, pre-K, round and the rest --- with the zone term removed; let $\beta \in \mathbb{Z}_{\ge 1}$ be the zone weight, the single policy dial of this subsection; and let $\omega_{i,s}^\psi \in (0,1)$ be the lottery draw under seed $\psi$, with $\omega_{i,s}^\psi \neq \omega_{j,s}^\psi$ whenever $i \neq j$. Single and multiple tie-breaking differ only in whether $\omega_{i,s}^\psi$ depends on $s$, and nothing below uses either. Program $s$ orders applicants by decreasing realized score $\rho_{i,s} + \beta a_{i,s} + \omega_{i,s}^\psi$. Integrality of $\rho$ and $\beta$ is used only to keep realized scores separated and may be replaced by the requirement that $\max_{i,s} \omega^\psi_{i,s}$ be smaller than the least positive gap between distinct values of $\rho_{i,s} + \beta a_{i,s}$.
+
+\noindent\textbf{The bonus indicator.} $a_{i,s} = 1$ when $l(s)$ and $v(i)$ are co-zoned, which includes $l(s) = v(i)$. This is the same quantity as in the access model and the same master variable $a_{v(i), l(s)}$ of \eqref{saa:master_access}, so the zoning side of the problem is untouched: only the recourse changes. Two families of pairs are constant rather than variable and must be fixed as data. The outside option carries no bonus, $a_{i,s_0} \equiv 0$. For a citywide program we take residence in the zone containing it to earn no bonus either, $a_{i,s} \equiv 0$. The access model instead fixes $a_{i,s} = 1$ there, but only to make such programs universally reachable; under a bonus the requirement is merely that the value be constant, since a uniform shift of one program's scores leaves its order unchanged, so either constant serves. Letting $a_{i,s}$ be the co-zoning indicator at citywide programs as well is a different \emph{policy}, not a different convention, and is covered by everything below without modification.
+
+Each applicant carries two \emph{keys} at each program,
+\begin{equation}\label{eq:ap_keys}
+\kappa^{\mathrm{in}}_{i,s} = \rho_{i,s} + \omega_{i,s}^\psi + \beta,
+\qquad
+\kappa^{\mathrm{out}}_{i,s} = \rho_{i,s} + \omega_{i,s}^\psi ,
+\end{equation}
+of which the zoning selects one: the realized score of $i$ at $s$ is $\kappa^{\mathrm{in}}_{i,s}$ if $a_{i,s} = 1$ and $\kappa^{\mathrm{out}}_{i,s}$ otherwise. Both keys are data; the selection is the decision.
+
+\noindent\textbf{Merged key order.} Fix $s$ and let $n_s = |\{i : (i,s) \in \Gamma\}|$. The $2 n_s$ keys \eqref{eq:ap_keys} are pairwise distinct, since equality of any two forces two lottery draws to differ by an integer and hence to coincide. Sort them once into strictly decreasing order and write $\mathrm{pos}_s(i,z) \in \{1, \dots, 2 n_s\}$ for the position of $\kappa^{z}_{i,s}$ and $(i_s(m), z_s(m))$ for the applicant and tier occupying position $m$. Every zoning realizes exactly one key per applicant, so the realized order $\succ_s^{\psi,a}$ is the subsequence of the merged order at the realized positions and, writing $z(\cdot)$ for realized tiers,
+\begin{equation}\label{eq:ap_pos_order}
+k \succ_s^{\psi,a} i
+\quad\Longleftrightarrow\quad
+\mathrm{pos}_s\big(k, z(k)\big) < \mathrm{pos}_s\big(i, z(i)\big).
+\end{equation}
+Programs whose $a_{\cdot,s}$ is constant --- citywide and the outside option --- carry $n_s$ live keys rather than $2 n_s$. Because no pair is ever withdrawn under a bonus, $n_s$ is data: the vacant slots of Section~\ref{app:ap_variable} are needed at exactly the programs with $n_s < q_s$, and there are $\max\{0, q_s - n_s\}$ of them, independent of the zoning.
+
+Split the assignment variables to match:
+\begin{equation}\label{eq:ap_split}
+D_{i,s} = D^{\mathrm{in}}_{i,s} + D^{\mathrm{out}}_{i,s},
+\qquad
+0 \le D^{\mathrm{in}}_{i,s} \le a_{i,s},
+\qquad
+0 \le D^{\mathrm{out}}_{i,s} \le 1 - a_{i,s} .
+\end{equation}
+
+\noindent\textbf{Lemma 2 (Tier split exactness).} \textit{At every binary $a$ and every point satisfying \eqref{eq:ap_split}, $D^{\mathrm{in}}_{i,s} = a_{i,s} D_{i,s}$ and $D^{\mathrm{out}}_{i,s} = (1 - a_{i,s}) D_{i,s}$, with no integrality required of $D$.}
+
+\textit{Proof.} If $a_{i,s} = 1$ the second bound forces $D^{\mathrm{out}}_{i,s} = 0$; if $a_{i,s} = 0$ the first forces $D^{\mathrm{in}}_{i,s} = 0$. $\blacksquare$
+
+Lemma~2 is the whole point of the split. Under a bonus the shaft of a comb is a sum over an index set that \emph{depends on the decision} --- who is above $i$ at $s$ is a function of $a$ --- and such a sum is bilinear in $(a, D)$. The split linearizes it exactly, because the products $a_{i,s} D_{i,s}$ that the bilinear form needs are now variables in their own right. Define, for a base pair $(i,s) \in \Gamma$ and a tier $z \in \{\mathrm{in}, \mathrm{out}\}$, the \emph{tier shaft}
+\begin{equation}\label{eq:ap_tier_shaft}
+\Sigma^{z}_{s,i}
+= \sum_{(i',s) \in \Gamma}
+\Big(
+\mathds{1}\big[\kappa^{\mathrm{in}}_{i',s} \ge \kappa^{z}_{i,s}\big]\, D^{\mathrm{in}}_{i',s}
+\;+\;
+\mathds{1}\big[\kappa^{\mathrm{out}}_{i',s} \ge \kappa^{z}_{i,s}\big]\, D^{\mathrm{out}}_{i',s}
+\Big),
+\end{equation}
+a fixed linear form whose indicators are data: each is evaluated once from \eqref{eq:ap_keys}. Write $\succ_s^{\psi,a}$ for the order the realized scores induce and $S^{\psi,a}(s,i)$ for the shaft \eqref{eq:ap_shaft_tooth} taken under it. By Lemma~2, if $i$'s realized tier is $z$ then $\Sigma^{z}_{s,i} = D(S^{\psi,a}(s,i))$, and the two forms $\Sigma^{\mathrm{in}}_{s,i}$, $\Sigma^{\mathrm{out}}_{s,i}$ together cover both possibilities. The identity is exact and not a relaxation: $\Sigma^{z}_{s,i}$ sums \emph{both} copies of every applicant with a key above position $\mathrm{pos}_s(i,z)$, and Lemma~2 zeroes the copy the zoning did not realize. In particular $\Sigma^{\mathrm{out}}_{s,i}$ contains $D^{\mathrm{in}}_{i,s}$, because $\kappa^{\mathrm{in}}_{i,s} > \kappa^{\mathrm{out}}_{i,s}$; that term vanishes at every zoning where the row's right-hand side is active.
+
+Do not instantiate \eqref{eq:ap_tier_shaft} as written. Each form has $O(n_s)$ nonzeros and there are $2 n_s$ of them per program, which costs $O(\sum_s n_s^2)$ nonzeros. Because the forms are nested prefixes of one order, introduce instead $2 n_s + 1$ prefix variables per program,
+\begin{equation}\label{eq:ap_prefix}
+E_{s,0} = 0,
+\qquad
+E_{s,m} = E_{s,m-1} + D^{z_s(m)}_{i_s(m),\, s}
+\qquad m = 1, \dots, 2 n_s,
+\end{equation}
+so that $E_{s,m}$ is the mass at $s$ held by the first $m$ positions of the merged order, and read the shafts off it:
+\begin{equation}\label{eq:ap_shaft_prefix}
+\Sigma^{z}_{s,i} = E_{s,\, \mathrm{pos}_s(i,z)},
+\qquad\text{and the strict shaft is}\qquad
+E_{s,\, \mathrm{pos}_s(i,z) - 1} .
+\end{equation}
+This is $2|\Gamma|$ extra columns and $2|\Gamma|$ extra rows in total, and it leaves every comb row with $O(q_s)$ nonzeros. Do the same on the applicant side, where the bonus changes nothing: let
+\begin{equation}\label{eq:ap_tooth_prefix}
+t_{i,s} = \sum_{s' \succ_i^\psi s} D_{i,s'},
+\qquad D_{i,s'} = D^{\mathrm{in}}_{i,s'} + D^{\mathrm{out}}_{i,s'},
+\end{equation}
+be the $|\Gamma|$ tooth prefix variables of \eqref{eq:ap_shaft_tooth}. Writing $s^{(1)} \succ_i^\psi \cdots \succ_i^\psi s^{(R_i)}$ for $i$'s list, they are defined by the recursion $t_{i,s^{(1)}} = 0$ and $t_{i, s^{(r)}} = t_{i, s^{(r-1)}} + D_{i, s^{(r-1)}}$, so that $T^\psi(i,s)$ carries mass $t_{i,s} + D_{i,s}$.
+
+That leaves the eligibility of the teeth, which is where the two keys reappear. A candidate tooth base $k$ can stand above $i$ at some zoning only if its zoned key does, so the admissible set is
+\begin{equation}\label{eq:ap_bonus_teeth}
+\mathcal{K}^{z}(s,i) = \big\{ k \neq i : (k,s) \in \Gamma, \ \mathrm{pos}_s(k, \mathrm{in}) < \mathrm{pos}_s(i,z) \big\} \cup \{\varnothing\},
+\end{equation}
+and the credit records whether $k$ stands above $i$ unconditionally or only by virtue of its own bonus --- one integer comparison per tooth:
+\begin{equation}\label{eq:ap_bonus_credit}
+\chi^{z}_{i,k,s} =
+\begin{cases}
+0 & \text{if } \mathrm{pos}_s(k, \mathrm{out}) < \mathrm{pos}_s(i,z) \quad \text{($k$ ahead in either tier),}\\
+1 - a_{k,s} & \text{if } \mathrm{pos}_s(k, \mathrm{out}) > \mathrm{pos}_s(i,z) \quad \text{($k$ ahead only when zoned),}\\
+1 & \text{if } k = \varnothing .
+\end{cases}
+\end{equation}
+Collecting everything, the priority-bonus recourse program for sample $\psi$ is
+\begin{align}
+\max \quad & \sum_{(i,s) \in \Gamma} u_{i,s} \big( D^{\mathrm{in}}_{i,s} + D^{\mathrm{out}}_{i,s} \big) \label{pb:obj} \\
+\textrm{s.t.} \quad
+& \sum_{s : (i,s) \in \Gamma} \big( D^{\mathrm{in}}_{i,s} + D^{\mathrm{out}}_{i,s} \big) = 1 && \forall i \in \mathcal{I} \label{pb:assign} \\
+& \sum_{i : (i,s) \in \Gamma} \big( D^{\mathrm{in}}_{i,s} + D^{\mathrm{out}}_{i,s} \big) \le q_s && \forall s \in \mathcal{S} \label{pb:cap} \\
+& D^{\mathrm{in}}_{i,s} \le a_{i,s}, \qquad D^{\mathrm{out}}_{i,s} \le 1 - a_{i,s} && \forall (i,s) \in \Gamma \label{pb:tier} \\
+& E_{s,0} = 0, \qquad E_{s,m} = E_{s,m-1} + D^{z_s(m)}_{i_s(m),\, s} && \forall s, \ m \le 2 n_s \label{pb:prefix} \\
+& t_{i,s^{(1)}} = 0, \qquad t_{i,s^{(r)}} = t_{i,s^{(r-1)}} + D_{i,s^{(r-1)}} && \forall i, \ 2 \le r \le R_i \label{pb:tooth} \\
+& E_{s,\, \mathrm{pos}_s(i,z)} \;+\; t_{i,s} \;+\; \sum_{k \in K} \big[\, t_{k,s} + \chi^{z}_{i,k,s} \,\big]
+\ \ge\ q_s\, \alpha^{z}_{i,s} && \forall (i,s), z, K \label{eq:ap_bonus_comb} \\
+& D^{\mathrm{in}}_{i,s}, \ D^{\mathrm{out}}_{i,s} \ge 0 && \forall (i,s) \in \Gamma \label{pb:domain}
+\end{align}
+where \eqref{eq:ap_bonus_comb} ranges over $(i,s) \in \Gamma$, both tiers $z$, and every collection $K$ of $q_s - 1$ elements of $\mathcal{K}^{z}(s,i)$ admissible in the sense of Section~\ref{app:ap_combs}, and where
+\begin{equation}\label{eq:ap_alpha}
+\alpha^{\mathrm{in}}_{i,s} = a_{i,s},
+\qquad
+\alpha^{\mathrm{out}}_{i,s} = 1 - a_{i,s}
+\end{equation}
+switch each row on precisely at the zonings where its tier is the realized one. Four points of practice. The access constraint \eqref{saa:access} is gone: under a bonus no pair is ever withdrawn, and the tier bounds \eqref{pb:tier} carry all of the zoning's influence. Those bounds are written as rows rather than as variable bounds for the same reason \eqref{saa:access} is in \texttt{SaaOracle}: their multipliers are what the master cut of Section~\ref{sec:saa} reads. Every left-hand side is written in the prefix variables \eqref{eq:ap_prefix} and \eqref{eq:ap_tooth_prefix}, so a comb row has $q_s + 1$ nonzeros plus the credits, whatever $n_s$ is. And Corollary~1 transfers verbatim, since at a fixed zoning \eqref{pb:obj}--\eqref{pb:domain} is an ordinary stable admissions market: solved comb-complete, its value is the welfare of deferred acceptance run under the bonus-induced priorities.
+
+As a warm start, the aggregated surrogate of \eqref{saa:rothblum} transfers by substituting the strict shaft of \eqref{eq:ap_shaft_prefix},
+\begin{equation}\label{pb:rothblum}
+E_{s,\, \mathrm{pos}_s(i,z) - 1}
+\;+\; q_s \big( t_{i,s} + D_{i,s} \big)
+\;\ge\; q_s\, \alpha^{z}_{i,s}
+\qquad \forall (i,s) \in \Gamma, \ z \in \{\mathrm{in}, \mathrm{out}\},
+\end{equation}
+which is $2|\Gamma|$ rows and is valid because at the active tier it is exactly \eqref{saa:rothblum} for the realized market, the unrealized copies inside the prefix being zero by Lemma~2. Counting columns, $2|\Gamma|$ assignment variables, $2|\Gamma|$ shaft prefixes and $|\Gamma|$ tooth prefixes give $5|\Gamma| = 61{,}850$ on $\text{Block}_2$; counting rows, $|\mathcal{I}| + |\mathcal{S}| + 5|\Gamma| \approx 6.6 \times 10^4$ before a single comb is separated. Lemma~2 fixes one of each variable pair to zero at any binary $a$, so an oracle solved at a fixed candidate loses half the assignment columns in presolve.
+
+\noindent\textbf{Proposition 11 (Priority-bonus polytope).} \textit{Fix $\psi$ and $\beta \ge 1$. The system \eqref{pb:obj}--\eqref{pb:domain} is valid at every binary $a$ simultaneously, its integral points are exactly the stable matchings under the bonus-induced order, and at each fixed binary $a$ its solution set is their convex hull.}
+
+\textit{Proof.} Fix a binary $a$ and let $\succ_s^{\psi,a}$ be the induced strict order. Exactly one tier $z(i)$ has $\alpha^{z}_{i,s} = 1$; rows of the other tier have right-hand side zero and non-negative left-hand side. For the active tier, Lemma~2 gives $\Sigma^{z(i)}_{s,i} = D(S^{\psi,a}(s,i))$, and \eqref{eq:ap_bonus_credit} gives $\chi^{z(i)}_{i,k,s} = 0$ exactly when $k \succ_s^{\psi,a} i$ and $\chi^{z(i)}_{i,k,s} = 1$ otherwise, since a tooth with $\kappa^{\mathrm{out}}_{k,s} < \kappa^{z}_{i,s} \le \kappa^{\mathrm{in}}_{k,s}$ outranks $i$ if and only if $a_{k,s} = 1$. So the active rows are precisely the inequalities \eqref{saa:comb} for the ordinary stable admissions market $(\Gamma, \succ_s^{\psi,a})$ in which every pair is acceptable, and Proposition~10 applies to that market verbatim, with credited and vacant teeth playing the role they played there. $\blacksquare$
+
+Three limits of $\beta$ are worth reading off, because they place the two formulations of this appendix on one axis.
+\begin{enumerate}
+    \item $\beta = 0$. The two keys coincide, so $\Sigma^{\mathrm{in}} = \Sigma^{\mathrm{out}}$ and every credit vanishes, the second branch of \eqref{eq:ap_bonus_credit} becoming vacuous. The two tiered rows at a base then have identical left-hand sides and right-hand sides $q_s a_{i,s}$ and $q_s(1 - a_{i,s})$, so at every binary $a$ they jointly assert only that the left-hand side is at least $q_s$ --- the zoning-free inequality. The zoning has left the formulation entirely, as it should: with no bonus and no access restriction, welfare does not depend on $x$.
+    \item $\beta > \max_{i,s} \rho_{i,s}$, a dominant bonus. Every zoned applicant outranks every unzoned one, so $\succ_s^{\psi,a}$ is the base order restricted to the zone, concatenated with the base order restricted to its complement, and \eqref{eq:ap_tier_shaft} collapses to $\Sigma^{\mathrm{in}}_{s,i} = \sum_{i' \succeq^{0}_s i} D^{\mathrm{in}}_{i',s}$ and $\Sigma^{\mathrm{out}}_{s,i} = \sum_{i'} D^{\mathrm{in}}_{i',s} + \sum_{i' \succeq^{0}_s i} D^{\mathrm{out}}_{i',s}$, where $\succeq^{0}_s$ is the base order: an unzoned applicant is behind the whole zoned block.
+    \item Hard access. Add $D^{\mathrm{out}}_{i,s} = 0$ and $\alpha^{\mathrm{out}}_{i,s} = 0$ for every non-citywide $s$, which declares the unzoned copy \emph{unacceptable} rather than merely low-priority. Then \eqref{eq:ap_split} reduces to $D_{i,s} \le a_{i,s}$, which is \eqref{saa:access}; with a dominant bonus every tooth satisfies $\kappa^{\mathrm{out}}_{k,s} < \kappa^{\mathrm{in}}_{i,s}$, so \eqref{eq:ap_bonus_credit} reduces to $\chi_{k,s} = 1 - a_{k,s}$, which is \eqref{eq:ap_credit}; and \eqref{eq:ap_bonus_comb} becomes \eqref{saa:comb}. The access polytope of Section~\ref{app:ap_combs} is the face of the priority-bonus polytope on which the unzoned copies vanish.
+\end{enumerate}
+
+\subsection{Comb Separation Under a Priority Bonus}
+\label{app:ap_bonus_sep}
+
+At a candidate zoning the separation problem is not merely similar to the one under access, it is the same problem. Once $a$ is fixed, only the tier with $\alpha^{z}_{i,s} = 1$ need be separated, since the other has right-hand side zero, and every credit collapses: for a base $(i,s)$ and a tooth $k$ realized above $i$, either $k$ is realized unzoned, in which case $\mathrm{pos}_s(k,\mathrm{out}) < \mathrm{pos}_s(i,z)$ and \eqref{eq:ap_bonus_credit} gives $0$, or $k$ is realized zoned, in which case both branches give $0$ because $a_{k,s} = 1$. Conversely an admissible tooth that is \emph{not} realized above $i$ has $a_{k,s} = 0$ and credit $1$, so its bracket is at least $1$ and a vacant slot is never worse. The most violated comb may therefore be sought over the realized competitors alone, with base-independent brackets
+\begin{equation}\label{eq:ap_bonus_bracket}
+\bar b_{k,s} = \bar t_{k,s} \quad\text{(the tooth prefix \eqref{eq:ap_tooth_prefix} evaluated at $\bar D$),}
+\end{equation}
+and the descent of Section~\ref{app:ap_sep} applies verbatim: walk the merged order at $s$, skipping the $n_s$ unrealized positions; carry $E_{s,\cdot}$ as the running shaft; carry a max-heap of size $q_s - 1$ over \eqref{eq:ap_bonus_bracket}, seeded with $q_s - 1$ vacant slots. The cost is again $O(|\Gamma| \log \max_s q_s)$.
+
+What changes is the \emph{lifting}. The descent sees one order, but the row it emits has to hold at every zoning, and the two are reconciled by recording the row's combinatorics rather than the order that produced it. Three items must be lifted, and each corresponds to a way the row would otherwise be tight at $x^r$ and invalid elsewhere.
+\begin{itemize}
+    \item \textbf{The base tier.} Record which of $a_{i,s}$ or $1 - a_{i,s}$ is the right-hand side multiplier. A row emitted with the constant $q_s$ would remain in force at zonings that move $i$ to the other tier, where its shaft is the wrong prefix.
+    \item \textbf{The shaft.} Record it as the single prefix variable $E_{s,\, \mathrm{pos}_s(i,z)}$ of \eqref{eq:ap_shaft_prefix}. Expanding the realized prefix into coefficients on the aggregate $D_{i',s}$ would freeze the current order into the row; the prefix formulation removes the temptation, since the shaft is one column reference and the merged order lives in \eqref{pb:prefix} where it belongs.
+    \item \textbf{The tooth credits.} For each selected tooth, compare $\mathrm{pos}_s(k,\mathrm{out})$ against $\mathrm{pos}_s(i,z)$ and store the constant $0$ or the affine term $1 - a_{k,s}$ accordingly. This is the one place where the collapse noted above is a trap rather than a convenience: at the candidate the two are numerically indistinguishable, both evaluating to $0$, so a row that stores the evaluated credit looks correct and is not. Recorded as $0$, a tooth that outranks $i$ only when zoned yields a row violated by legitimate stable matchings at any zoning that unzones $k$ --- the failure mode of the two-applicant example in Section~\ref{app:ap_variable}.
+\end{itemize}
+The practical consequence is that a base pair contributes two row families and that at any one candidate only one of them is separated, so the per-iteration row count is what it was under hard access; both families accumulate over iterations as the master moves applicants between tiers.
+
+\subsection{Consequences for the Master Cuts}
+\label{app:ap_consequences}
+
+Two consequences of this appendix bear on the formulations in the body.
+
+First, the sign of the cut coefficients. The coefficient of $a_{i,s}$ in the dual cut of Section~\ref{sec:saa} collects the multiplier of \eqref{saa:access}, which is non-negative, together with $q_s$ times the multipliers of the stability rows based at $(i,s)$ --- and, once combs are separated, $-1$ times the multiplier of every comb row in which $i$ appears as a \emph{credited tooth}, since $a_{i,s}$ enters those rows through $\chi_{i,s} = 1 - a_{i,s}$ on the left. With only the aggregated rows \eqref{saa:rothblum} loaded, $a_{i,s}$ occurs in exactly one row and on one side, and the aggregate $\bar\Gamma^{(r)}_{v,u}$ inherits a single sign. With combs, or with the tiered rows \eqref{eq:ap_bonus_comb}, it does not. The sparse instantiation of the master must therefore key on $\bar\Gamma^{(r)}_{v,u} \neq 0$, as $\mathcal{A}^*$ in \eqref{saa:master_access} does, and the reading of $\beta^{(r,\psi)}_{i,s}$ as a marginal \emph{value} of access is specific to the aggregated relaxation.
+
+Second, and more consequentially, a priority bonus does not admit the congestion-priced bound developed in Appendix~\ref{app:priced_access}. That construction starts from $T(x)$, the transportation value obtained by keeping the access constraints \eqref{saa:access} and deleting stability. Under a bonus there is no access constraint to keep. Every zoning has $\Gamma(a) = \Gamma$, so $T(x)$ collapses to the constant $\overline{W}^{\mathrm{TP}}$, the bound $\overline{W}^{\mathrm{PA}}(x; \pi)$ stops depending on $x$, and its maximizer is arbitrary. The reason is structural rather than technical. Under hard access the zoning acts on welfare through the \emph{feasible set}, which a transportation relaxation still sees; under a priority bonus it acts on welfare exclusively through \emph{who wins a contested seat}, which lives entirely in the stability constraints. Any relaxation that discards stability discards the whole dependence on the decision. The same argument disposes of the monotonicity that Proposition~6 relies on: granting $i$ the bonus at $s$ weakly helps $i$ and weakly harms every applicant that $i$ thereby overtakes, so welfare is not monotone in $a$ and the threshold family \eqref{eq:pa_threshold_cut} has no counterpart. Of the three budget-set formulations, the comb-based recourse is the only one whose dependence on the zoning is of the right kind to price a priority bonus.
+
+\section{Welfare Bounds for the Budget-Set Masters}
+\label{app:welfare_bounds}
+
+This appendix develops the two upper bounds that the SAA master of Section~\ref{sec:saa} can put in the epigraph domain \eqref{saa:master_bounds}: a zoning-independent constant, and a function of the zoning that prices the cost of confinement. The second is the congestion-priced bound the \texttt{priced\_access} strategy optimizes.
+
+\subsection{The A Priori Transportation Bound}
+\label{app:transport_bound}
+
+The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is merely the domain of the epigraph variable $\eta$, but it carries more weight than that role suggests. The optimality gap reported by the master is measured against its dual bound, and that dual bound is the smaller of $\text{Welfare}_{\max}$ and whatever the accumulated cuts \eqref{saa:master_cut} certify. Until the cuts descend below the constant, the constant \emph{is} the reported gap.
+
+The natural choice, obtained by granting every applicant their top-ranked program,
+\begin{equation}\label{eq:welfare_fc}
+\overline{W}^{\mathrm{FC}} = \sum_{i \in \mathcal{I}} u_{i, 1},
+\end{equation}
+ignores capacity entirely and is therefore loose by the full extent of oversubscription. We replace it with a bound that respects capacity while remaining independent of the zoning.
+
+\noindent\textbf{Proposition 4 (Transportation Bound).} \textit{Let}
+\begin{align}
+\overline{W}^{\mathrm{TP}} = \max_{y} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s}\, y_{i,s} \label{eq:welfare_tp_obj} \\
+\textrm{s.t.} \quad & \sum_{s \in \mathcal{S}} y_{i,s} \leq 1 && \forall i \in \mathcal{I} \label{eq:welfare_tp_assign} \\
+& \sum_{i \in \mathcal{I}} y_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{eq:welfare_tp_cap} \\
+& y_{i,s} \geq 0 && \forall i, s. \label{eq:welfare_tp_domain}
+\end{align}
+\textit{Then for every zoning $x \in \Omega(G, C, k, \delta)$ and every tie-breaking seed $\psi \in \Psi$, the stable-matching welfare $W_\psi(x)$ satisfies}
+\begin{equation}\label{eq:welfare_chain}
+W_\psi(x) \;\leq\; \overline{W}^{\mathrm{TP}} \;\leq\; \overline{W}^{\mathrm{FC}}.
+\end{equation}
+
+\textit{Proof.} Let $D$ be the stable matching induced by $(x, \psi)$, and let $s_0 \in \mathcal{S}$ denote the outside option, with $u_{i, s_0} = 0$ and capacity $q_{s_0} = |\mathcal{I}|$. Take $y_{i,s} = D_{i,s}$ for $s \neq s_0$. Constraint \eqref{eq:welfare_tp_assign} follows from \eqref{saa:assignment} after discarding the mass on $s_0$, constraint \eqref{eq:welfare_tp_cap} is \eqref{saa:capacity}, and \eqref{eq:welfare_tp_domain} is \eqref{saa:domain}; since $u_{i,s_0} = 0$, the objective is unchanged. Hence $y$ is feasible for \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain} and $W_\psi(x) \leq \overline{W}^{\mathrm{TP}}$. Equivalently, \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain} is the sample program \eqref{saa:primal_obj}--\eqref{saa:domain} with the access constraints \eqref{saa:access} and the stability constraints \eqref{saa:comb} and \eqref{saa:rothblum} deleted, so it is a relaxation of every sample, uniformly in $(x, \psi)$. Deleting \eqref{eq:welfare_tp_cap} in turn decouples the students and leaves $\sum_i \max_s u_{i,s} = \overline{W}^{\mathrm{FC}}$, giving the second inequality, strictly whenever some program is oversubscribed at its top-choice demand. $\blacksquare$
+
+Because \eqref{eq:welfare_chain} holds pointwise in $\psi$, it also bounds the sample average, and so $\text{Welfare}_{\max} = \overline{W}^{\mathrm{TP}}$ is a valid domain for $\eta$.
+
+Three properties make this substitution attractive. First, \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain} is a transportation problem, so its polytope is integral and the LP optimum is attained by an integral assignment; no rounding argument is needed. Second, it carries one variable per ranked student-program pair --- $1.24 \times 10^4$ on our instances --- and solves in milliseconds, which is negligible beside a single master solve, so the tightening is free. Third, the substitution is weakly dominant: since the reported bound is $\min\{\text{Welfare}_{\max}, \text{cut bound}\}$ and $\overline{W}^{\mathrm{TP}} \leq \overline{W}^{\mathrm{FC}}$, replacing the constant can never worsen the reported bound.
+
+On the $\text{Block}_2$ instances ($|\mathcal{I}| = 3953$ applicants, $|\mathcal{S}| = 123$ programs, $k = 6$ zones), $\overline{W}^{\mathrm{FC}} = 19{,}311.29$ against $\overline{W}^{\mathrm{TP}} = 18{,}699.31$ for one centroid configuration and $18{,}968.60$ against $18{,}370.41$ for a second, reductions of $611.98$ and $598.19$. The improvement actually realized in the reported bound lies between zero and that reduction, according to how far the cuts have already descended: we observe $573.19$ and $67.76$ respectively, the second case being one in which the cuts had already certified a value close to $\overline{W}^{\mathrm{TP}}$.
+
+We emphasize what this does not address. Neither constant prices the zoning restriction itself: $\overline{W}^{\mathrm{TP}}$ still permits every applicant a globally best available seat, whereas a feasible zoning confines each applicant to the programs co-zoned with their residence, roughly a $1/k$ share of the district. That unpriced restriction, rather than any weakness of the sample programs, accounts for the bulk of the residual gap, and closing it requires a relaxation that reasons about zone membership --- for instance a zone-restricted transportation problem, or an outer approximation written per (applicant, zone) pair rather than per access indicator.
+
+\subsection{Congestion-Priced Access}
+\label{app:priced_access}
+
+The residual gap identified above is the unpriced cost of confinement, and both routes suggested there --- a zone-restricted transportation problem and an outer approximation written per applicant rather than per access indicator --- turn out to be the same construction viewed from two sides. This subsection develops it. The result replaces the \emph{constant} $\text{Welfare}_{\max}$ with a \emph{function} of the zoning that is still a valid upper bound on stable-matching welfare, still separable across applicants, and --- unlike the dual cuts \eqref{eq:saa_agg_cut} --- admits a finite closed-form outer description requiring no recourse LP at all.
+
+\noindent\textbf{Zone-Restricted Transportation Value:}
+Reinstating the access constraints \eqref{saa:access} in the transportation problem of Proposition 4 while still deleting the stability constraints \eqref{saa:comb} and \eqref{saa:rothblum} gives, for each zoning $x$,
+\begin{align}
+T(x) = \max_{y} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s}\, y_{i,s} \label{eq:pa_restricted_obj} \\
+\textrm{s.t.} \quad & \sum_{s \in \mathcal{S}} y_{i,s} \leq 1 && \forall i \in \mathcal{I} \label{eq:pa_restricted_assign} \\
+& \sum_{i \in \mathcal{I}} y_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{eq:pa_restricted_cap} \\
+& 0 \leq y_{i,s} \leq a_{i,s}(x) && \forall i \in \mathcal{I}, s \in \mathcal{S}. \label{eq:pa_restricted_access}
+\end{align}
+By the argument of Proposition 4, $W_\psi(x) \leq T(x) \leq \overline{W}^{\mathrm{TP}}$ for every seed $\psi$, with the second inequality following from $a_{i,s}(x) \leq 1$. The quantity $T(x)$ is the tightest bound obtainable without reasoning about stability, but it is the optimal value of an LP parameterized by $x$; used directly it would reintroduce exactly the per-candidate recourse solve that makes \eqref{eq:saa_agg_cut} expensive, and it would again be summarized by a single dual hyperplane over all $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates. Lagrangian relaxation of the capacity constraints removes both objections at once.
+
+\noindent\textbf{Priced Access Bound:}
+Fix a price vector $\pi \in \mathbb{R}^{|\mathcal{S}|}_{\geq 0}$ and define the \emph{priced value} of program $s$ to applicant $i$ as
+\begin{equation}\label{eq:pa_priced_value}
+w_{i,s} = u_{i,s} - \pi_s .
+\end{equation}
+Let $F_i \subseteq \mathcal{S}$ collect the programs whose access no zoning can revoke --- citywide programs and programs with $l(s) = v(i)$ --- and write
+\begin{equation}\label{eq:pa_student_term}
+g_i(a_{i, \cdot}) = \max\Big\{0, \ \max_{s \in \mathcal{S}} w_{i,s}\, a_{i,s}\Big\}, \qquad
+\phi_i = \max\Big\{0, \ \max_{s \in F_i} w_{i,s}\Big\},
+\end{equation}
+so that $g_i$ is the best priced value an applicant can reach under $a_{i,\cdot}$, the outside option being available at value $0$, and $\phi_i \leq g_i(a_{i,\cdot})$ is the part of it that is guaranteed. The priced-access bound is
+\begin{equation}\label{eq:pa_bound}
+\overline{W}^{\mathrm{PA}}(x; \pi) = \sum_{s \in \mathcal{S}} q_s \pi_s + \sum_{i \in \mathcal{I}} g_i\big(a_{i, \cdot}(x)\big).
+\end{equation}
+
+\noindent\textbf{Proposition 5 (Validity and Dominance).} \textit{For every price vector $\pi \geq 0$, every zoning $x \in \Omega(G, C, k, \delta)$ and every tie-breaking seed $\psi \in \Psi$,}
+\begin{equation}\label{eq:pa_chain}
+W_\psi(x) \;\leq\; T(x) \;\leq\; \overline{W}^{\mathrm{PA}}(x; \pi),
+\qquad\text{and}\qquad
+\min_{\pi \geq 0} \overline{W}^{\mathrm{PA}}(x; \pi) = T(x).
+\end{equation}
+\textit{Moreover, if $\pi^\star$ denotes an optimal dual solution to the capacity constraints \eqref{eq:welfare_tp_cap} of the unrestricted problem, then $\overline{W}^{\mathrm{PA}}(x; \pi^\star) \leq \overline{W}^{\mathrm{TP}}$ for every $x$.}
+
+\textit{Proof.} The first inequality is Proposition 4 with \eqref{saa:access} retained. For the second, relax \eqref{eq:pa_restricted_cap} into the objective with multipliers $\pi \geq 0$; weak duality gives, for any such $\pi$,
+$$T(x) \;\leq\; \sum_{s} q_s \pi_s + \max\Big\{ \textstyle\sum_{i,s} w_{i,s} y_{i,s} \;:\; \sum_s y_{i,s} \leq 1, \ 0 \leq y_{i,s} \leq a_{i,s}(x) \Big\}.$$
+The remaining program has no constraint coupling distinct applicants, so it separates into $|\mathcal{I}|$ independent problems. Each is a maximization of a linear function over $\{y_{i, \cdot} \geq 0 : \sum_s y_{i,s} \leq 1, \ y_{i,s} \leq a_{i,s}\}$, whose optimum places unit mass on a single accessible program of largest priced value when that value is positive, and no mass at all otherwise; its value is therefore exactly $g_i(a_{i, \cdot}(x))$, establishing \eqref{eq:pa_chain}. Since \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access} is a feasible bounded linear program, strong duality applies and the Lagrangian dual attains $T(x)$, giving the stated minimum. Finally, each $g_i$ is nondecreasing in $a_{i, \cdot}$ and $a_{i,s}(x) \leq 1$, so $\overline{W}^{\mathrm{PA}}(x; \pi^\star) \leq \overline{W}^{\mathrm{PA}}(\mathbf{1}; \pi^\star)$; the latter is the Lagrangian dual objective of the unrestricted transportation problem evaluated at its own optimal multipliers, which by strong duality equals $\overline{W}^{\mathrm{TP}}$. $\blacksquare$
+
+Three consequences are worth separating. Validity holds for \emph{every} non-negative $\pi$, so the prices are a free modelling choice rather than a quantity that must be computed correctly; taking $\pi = 0$ recovers the zone-restricted first-choice bound, in which every applicant receives their favourite co-zoned program irrespective of capacity. Dominance means the substitution $\text{Welfare}_{\max} \leftarrow \overline{W}^{\mathrm{PA}}(x; \pi^\star)$ can never weaken the bound of \eqref{saa:master_bounds}, exactly as $\overline{W}^{\mathrm{TP}}$ could not weaken $\overline{W}^{\mathrm{FC}}$. And the price of using a single fixed $\pi$ instead of re-optimizing per candidate is precisely $\overline{W}^{\mathrm{PA}}(x; \pi) - T(x)$, which by the last part of \eqref{eq:pa_chain} vanishes at the restricted problem's own duals; we quantify it below.
+
+\noindent\textbf{Proposition 6 (Exact Threshold Description).} \textit{For each applicant $i$ let}
+$$\Theta_i = \{\phi_i\} \cup \{\, w_{i,s} \;:\; s \in \mathcal{S} \setminus F_i, \ w_{i,s} > \phi_i \,\}.$$
+\textit{Then for every $\tau \geq \phi_i$ and every $a_{i, \cdot} \in \{0,1\}^{|\mathcal{S}|}$,}
+\begin{equation}\label{eq:pa_threshold_cut}
+g_i(a_{i, \cdot}) \;\leq\; \tau + \sum_{\substack{s \in \mathcal{S} \setminus F_i \\ w_{i,s} > \tau}} (w_{i,s} - \tau)\, a_{i,s},
+\end{equation}
+\textit{and the family is exact on the binary cube:}
+\begin{equation}\label{eq:pa_threshold_exact}
+g_i(a_{i, \cdot}) \;=\; \min_{\tau \in \Theta_i} \Bigg[ \tau + \sum_{\substack{s \in \mathcal{S} \setminus F_i \\ w_{i,s} > \tau}} (w_{i,s} - \tau)\, a_{i,s} \Bigg].
+\end{equation}
+
+\textit{Proof.} Write $m = g_i(a_{i, \cdot})$ and let $\tau \geq \phi_i$. If $m \leq \tau$ the right-hand side of \eqref{eq:pa_threshold_cut} is at least $\tau \geq m$. If $m > \tau$ then $m$ is attained by some program $s^\ast$ with $a_{i, s^\ast} = 1$ and $w_{i, s^\ast} = m$; since $m > \tau \geq \phi_i$, the definition of $\phi_i$ forces $s^\ast \notin F_i$, so $s^\ast$ contributes the term $(m - \tau) a_{i, s^\ast} = m - \tau$ and the right-hand side is at least $m$. This proves \eqref{eq:pa_threshold_cut}, hence that the minimum in \eqref{eq:pa_threshold_exact} is at least $m$.
+
+For the reverse, choose $\tau = m$ if $m > \phi_i$ and $\tau = \phi_i$ otherwise; in both cases $\tau \in \Theta_i$, because $m > \phi_i$ implies $m = w_{i, s^\ast}$ for some $s^\ast \in \mathcal{S} \setminus F_i$ as above. Every accessible program satisfies $w_{i,s} \leq m = \tau$ by maximality of $m$, so no surviving term has $a_{i,s} = 1$, the sum vanishes, and the bracket equals $\tau = m$. $\blacksquare$
+
+Proposition 6 is the structural payoff. The function $g_i$ is piecewise linear, concave and monotone in $a_{i, \cdot}$, and \eqref{eq:pa_threshold_exact} exhibits it as the minimum of at most one more affine function than the number of programs $i$ ranks with coefficients available in closed form from the sorted priced values --- no LP, no dual solution, and no dependence on the seed $\psi$. Each inequality \eqref{eq:pa_threshold_cut} touches only applicant $i$'s own access row, which is what makes the family exact rather than merely valid: the cut set describes $g_i$ on the whole cube, whereas the dual cut \eqref{eq:saa_agg_cut} is a single hyperplane tangent at one point of a $|\mathcal{I}| \times |\mathcal{S}|$-dimensional domain. The restriction $\tau \geq \phi_i$ is not cosmetic. A threshold below $\phi_i$ would leave the guaranteed value $\phi_i$ uncovered by any term of \eqref{eq:pa_threshold_cut}, since the programs realizing it lie in $F_i$ and carry no access variable, and the inequality would then cut away welfare the applicant retains under every zoning.
+
+\noindent\textbf{Vertex Aggregation:}
+Because access is geographic, $a_{i,s} \equiv a_{v(i), l(s)}$, so applicants sharing a home vertex share an access row and their inequalities may be summed with no loss --- the same exact aggregation invoked for \eqref{eq:saa_agg_cut}, but applied to a family that is already per-applicant rather than to a dual hyperplane. Introduce per-vertex epigraph variables $\theta_v \in \mathbb{R}$ and, for any assignment of thresholds $\tau_i \geq \phi_i$ to the applicants of $\mathcal{I}_v$, define
+\begin{equation}\label{eq:pa_vertex_coeff}
+c_v(\tau) = \sum_{i \in \mathcal{I}_v} \tau_i,
+\qquad
+\Lambda_{v, u}(\tau) = \sum_{i \in \mathcal{I}_v} \ \sum_{\substack{s \in \mathcal{S}_u \setminus F_i \\ w_{i,s} > \tau_i}} (w_{i,s} - \tau_i).
+\end{equation}
+Summing \eqref{eq:pa_threshold_cut} over $\mathcal{I}_v$ gives the vertex cut
+\begin{equation}\label{eq:pa_vertex_cut}
+\theta_v \;\leq\; c_v(\tau) + \sum_{u \in S} \Lambda_{v, u}(\tau)\, a_{v, u} \qquad \forall v \in V,
+\end{equation}
+valid for every zoning and every admissible $\tau$. A vertex with no resident applicants has $\mathcal{I}_v = \emptyset$, hence $c_v = 0$ and $\Lambda_{v, \cdot} = 0$; together with $\theta_v \geq 0$ this pins $\theta_v = 0$ exactly, which matters because the master instantiates one epigraph variable per vertex and an uncut variable would otherwise be free up to its domain.
+
+Note the exact structural correspondence with the choice-set cut \eqref{eq:benders_cut}: $c_v(\tau)$ plays the role of the incumbent utility $U_v(S_v^t)$ and $\Lambda_{v,u}(\tau)$ the role of the marginal gains $\Delta^+_{t,s,v}$, while the losses $\Delta^-_{s,v}$ are represented not by a separate term but by the choice of a lower threshold. Consequently the same CP-SAT and MIP master solvers serve all three formulations unchanged.
+
+\noindent\textbf{Master Problem and Separation:}
+The priced-access master problem is
+\begin{align}
+\max_{x, a, \theta} \quad & \sum_{v \in V} \theta_v \label{pa:master_obj} \\
+\textrm{s.t.} \quad & x \in \Omega(G, C, k, \delta) \label{pa:master_omega} \\
+& \theta_v \leq c_v(\tau^{(r)}) + \sum_{u \in S} \Lambda_{v, u}(\tau^{(r)})\, a_{v, u} && \forall v \in V, \ r = 1, \dots, R \label{pa:master_cut} \\
+& a_{v, u} \iff \bigvee_{z \in [k]} (x_{v, z} \land x_{u, z}) && \forall (v, u) \in \mathcal{A}^{\mathrm{PA}} \label{pa:master_access} \\
+& 0 \leq \theta_v \leq \textstyle\sum_{i \in \mathcal{I}_v} \max\{0, \max_s w_{i,s}\} && \forall v \in V, \label{pa:master_bounds}
+\end{align}
+where $\mathcal{A}^{\mathrm{PA}} = \{(v, u) \in V \times S \mid \exists r, \Lambda_{v, u}(\tau^{(r)}) \neq 0\}$ is instantiated on demand exactly as $\mathcal{A}^*$ is in \eqref{saa:master_access}. The constant $\sum_s q_s \pi_s$ is added to the objective when its value is read as a welfare bound; being independent of $x$, it does not affect the maximizer. Given a candidate zoning $x^r$, separation requires no optimization: for each applicant, sort the accessible priced values and emit the thresholds
+\begin{equation}\label{eq:pa_levels}
+\tau_i^{(r, \ell)} = \max\Big\{\phi_i, \ \text{the } (\ell+1)\text{-th largest } w_{i,s} \text{ over } \{s : a_{i,s}(x^r) = 1\}\Big\}
+\end{equation}
+for $\ell = 0, \dots, L-1$, taking the outside value $0$ once an applicant's accessible options are exhausted. Level $\ell = 0$ is tight at $x^r$ by the exactness argument of Proposition 6; levels $\ell \geq 1$ price what the applicant loses when their $\ell$ best accessible programs are withdrawn, which is the direction a family generated only at the incumbent cannot see. All $L$ levels are aggregated by \eqref{eq:pa_vertex_coeff} into $L$ cuts per vertex per iteration, at a cost of one pass over the preference lists.
+
+\noindent\textbf{Theorem 2 (Finite Convergence to the Bound).} \textit{Suppose each master problem \eqref{pa:master_obj}--\eqref{pa:master_bounds} is solved to optimality and duplicate cuts are discarded. Then the priced-access cutting-plane algorithm terminates finitely at a zoning $x^\ast$ maximizing $\overline{W}^{\mathrm{PA}}(\cdot\,; \pi)$ over $\Omega(G, C, k, \delta)$, and}
+\begin{equation}\label{eq:pa_certificate}
+\max_{x \in \Omega} \ \frac{1}{|\Psi|} \sum_{\psi \in \Psi} W_\psi(x) \;\leq\; \overline{W}^{\mathrm{PA}}(x^\ast; \pi).
+\end{equation}
+
+\textit{Proof.} By Proposition 6 every cut \eqref{eq:pa_vertex_cut} is valid for all $x \in \Omega$, so the master maximizes an outer approximation of $\sum_v \sum_{i \in \mathcal{I}_v} g_i$ and its optimum weakly exceeds $\max_x \overline{W}^{\mathrm{PA}}(x; \pi) - \sum_s q_s \pi_s$ at every iteration. The threshold set $\Theta_i$ is finite and \eqref{eq:pa_levels} draws from it, so only finitely many distinct cuts \eqref{eq:pa_vertex_cut} exist; discarding duplicates therefore admits finitely many iterations that add a cut. At an iteration adding none, the level-$0$ cuts at $x^r$ are already present, and by exactness they force $\theta_v = \sum_{i \in \mathcal{I}_v} g_i(a_{i, \cdot}(x^r))$; the master objective thus equals the true value of $\sum_i g_i$ at $x^r$ while dominating it everywhere on $\Omega$, so $x^r$ is a maximizer. Inequality \eqref{eq:pa_certificate} follows because Proposition 5 holds pointwise in $\psi$, hence for the sample average, and $x^\ast$ maximizes the dominating function. $\blacksquare$
+
+Two limitations deserve emphasis, since \eqref{eq:pa_certificate} is a statement about the bound and not about the matching. First, $\overline{W}^{\mathrm{PA}}$ strictly exceeds sample-average stable-matching welfare, so its maximizer need not maximize welfare; the algorithm returns a certified optimum of a surrogate, and the usefulness of that optimum rests on the surrogate's bias being close to constant across the zonings the master visits. Second, Theorem 2 presumes exact master solves, whereas a time-limited CP-SAT solve returns an incumbent; under a per-iteration limit the method retains validity of \eqref{eq:pa_certificate} for the cuts generated but forfeits the optimality claim, and terminates on the iteration budget rather than on the absence of separation.
+
+\noindent\textbf{Decomposition of the Bias:}
+Proposition 5 splits the residual optimism into two independently interpretable pieces,
+\begin{equation}\label{eq:pa_bias}
+\underbrace{\overline{W}^{\mathrm{PA}}(x; \pi^\star) - T(x)}_{\text{fixed rather than re-optimized prices}}
+\;+\;
+\underbrace{T(x) - \tfrac{1}{|\Psi|}\textstyle\sum_\psi W_\psi(x)}_{\text{stability discarded}} .
+\end{equation}
+On the $\text{Block}_2$ instance with $k = 6$ zones and $|\Psi| = 15$ seeds, evaluated at the final zonings of five different strategies and with $\pi^\star$ taken from the single unrestricted transportation LP of Proposition 4, which gives $\overline{W}^{\mathrm{TP}} = 18{,}699.31$ for this centroid configuration. Writing $\bar{W}_\Psi(x) = \frac{1}{|\Psi|}\sum_{\psi} W_\psi(x)$ for sample-average stable-matching welfare:
+
+\begin{center}
+\begin{tabular}{lrrrrr}
+\hline
+zoning from & $\overline{W}^{\mathrm{PA}}$ & $T(x)$ & $\bar{W}_\Psi(x)$ & prices & stability \\
+\hline
+SAA               & 15{,}084.29 & 14{,}997.76 & 14{,}822.77 &  86.53 & 175.00 \\
+short bursts      & 14{,}735.40 & 14{,}647.44 & 14{,}486.66 &  87.96 & 160.78 \\
+choice set        & 14{,}635.02 & 14{,}486.79 & 14{,}324.86 & 148.23 & 161.94 \\
+MID decomposition & 14{,}220.26 & 14{,}098.75 & 13{,}884.10 & 121.50 & 214.65 \\
+MID               & 14{,}203.24 & 14{,}011.49 & 13{,}849.74 & 191.75 & 161.75 \\
+\hline
+\end{tabular}
+\end{center}
+
+The last two columns are the two terms of \eqref{eq:pa_bias}. The zoning-independent constant $\overline{W}^{\mathrm{TP}}$ overstates sample-average welfare by $3{,}877$ to $4{,}850$ depending on the zoning evaluated; $\overline{W}^{\mathrm{PA}}$ overstates it by $249$ to $354$, of which $87$ to $192$ is attributable to holding $\pi$ fixed and $161$ to $215$ to discarding stability. Two features of the table matter more than its absolute magnitudes. The bound is valid at every one of the five zonings and at every individual seed, not merely on average, as Proposition 5 requires. And the overstatement is nearly constant across zonings produced by five structurally unrelated methods and spanning almost a thousand units of welfare, which is the empirical condition under which maximizing $\overline{W}^{\mathrm{PA}}$ approximates maximizing welfare --- a regularity we observe rather than a property we can prove, and the reason the limitations noted after Theorem 2 are stated as limitations rather than dismissed.
+
+\noindent\textbf{Role of the Prices:}
+Setting $\pi = 0$ isolates what congestion pricing contributes. The resulting surrogate --- each applicant's favourite co-zoned program, capacity ignored --- is cheaper to optimize and in our runs converges faster, terminating on the absence of separation with a model-versus-realized gap of $0.01\%$; but it converges to a materially worse zoning, because an unpriced surrogate is indifferent between a program with spare seats and an oversubscribed one and is therefore rewarded for concentrating demand on popular schools. Charging $\pi^\star$ recovered $1{,}357$ units of realized welfare relative to $\pi = 0$ on one instance at a matched iteration allowance --- a single-instance observation, but a difference an order of magnitude larger than the bias figures tabulated above. This is the clearest illustration of the gap between Theorem 2 and the objective one actually cares about: the algorithm certifies optimality for whichever surrogate it is given, and the surrogate must be the right one.
 
 \section{Dantzig--Wolfe Decomposition}
 \label{app:dw_mid}
@@ -709,32 +1217,16 @@ Use $M=\overline p_s$ for the threshold operations and $M=L$ for the remaining-m
 \end{equation}
 Cutoff, threshold and mass variables are integer; flow variables may be continuous. These formulations retain every rank of every preference list.
 
-\subsection{Feasibility Pricing and Certified Bounds}
-The initial pool may contain too few zones to form a feasible partition, and branching may remove all currently useful columns. Restricted-master infeasibility alone therefore cannot discard a branch. Introduce nonnegative deficit variables $\zeta_v$ and $\zeta_z$ and solve the Phase-I master
-\begin{equation}\label{eq:dw_phase_one}
-\begin{aligned}
-\max_{\lambda,\zeta}\quad &-\sum_{v\in V}\zeta_v-\sum_{z\in[k]}\zeta_z\\
-\text{s.t.}\quad
-&\sum_z\sum_{\substack{A\in\mathcal F'_z\\v\in A}}\lambda_{z,A}+\zeta_v=1
-\quad \forall v\in V,\\
-&\sum_{A\in\mathcal F'_z}\lambda_{z,A}+\zeta_z=1
-\quad \forall z\in[k],\\
-&\sum_z\sum_{A\in\mathcal F'_z}b(A)\lambda_{z,A}\leq\overline b,
-\qquad \lambda,\zeta\geq0.
-\end{aligned}
-\end{equation}
-The empty pool is feasible by taking every deficit equal to one. Objective zero is equivalent to feasibility of the original LP. Phase-I pricing uses \eqref{eq:dw_pricing} with $W_L(A)$ replaced by zero, but preserves every geographic and branch restriction. A newly generated zone is evaluated by \eqref{eq:dw_zone_value} before it is used for welfare optimization. A negative optimum after complete Phase-I pricing proves that the branch has no feasible partition.
-
 \noindent\textbf{Proposition 9 (Pricing-Corrected Upper Bound).} \textit{Suppose $\overline r_z$ bounds the maximum reduced welfare in \eqref{eq:dw_pricing} from above for each label. Then}
 \begin{equation}\label{eq:dw_corrected_bound}
 \mathrm{UB}=\sum_v\alpha_v+\sum_z\gamma_z+\mu\overline b
               +\sum_z\max\{0,\overline r_z\}
 \end{equation}
-\textit{is an upper bound on the complete LP and hence on every admissible partition at that branch. The analogous expression bounds the full Phase-I objective when its pricing costs are used.}
+\textit{is an upper bound on the complete LP and hence on every admissible partition at that branch.}
 
 \textit{Proof.} Set $\gamma'_z=\gamma_z+\max\{0,\overline r_z\}$. For every $A\in\mathcal F_z$, the reduced-cost bound implies
 $$\sum_{v\in A}\alpha_v+\gamma'_z+\mu b(A)\geq W_L(A).$$
-Thus $(\alpha,\gamma',\mu)$ is feasible for the complete dual, and its objective is \eqref{eq:dw_corrected_bound}. Weak duality proves the claim. In Phase I, deficit columns impose the additional dual conditions $\alpha_v\geq-1$ and $\gamma_z\geq-1$. Increasing $\gamma_z$ preserves them, so the same argument applies with zero original zone costs. $\blacksquare$
+Thus $(\alpha,\gamma',\mu)$ is feasible for the complete dual, and its objective is \eqref{eq:dw_corrected_bound}. Weak duality proves the claim. $\blacksquare$
 
 The bound remains valid before column generation has converged, provided every $\overline r_z$ is a global upper bound on its pricing problem. In particular, finding no improving zone by a local search supplies no such certificate.
 
@@ -756,8 +1248,7 @@ ReCom supplies an optional initialization: sample feasible partitions, retain th
 \State Retain the best sampled partition, if any; initialize the root search node.
 \While{an unexplored node remains}
     \State Select a node; restrict pools and pricing to its branch decisions.
-    \State Solve Phase I by column generation with zero original zone costs.
-    \If{the fully priced Phase-I optimum is negative}
+    \If{the restricted master is infeasible and the branch's columns are exhausted}
         \State Discard the node and continue.
     \EndIf
     \State Solve the welfare LP; globally price every label using \eqref{eq:dw_pricing}.
@@ -777,7 +1268,7 @@ ReCom supplies an optional initialization: sample feasible partitions, retain th
 
 \noindent\textbf{Theorem 3 (Finite Convergence to Optimal MID Welfare).} \textit{Fix a finite graph, a finite lottery scale $L$, and the zone families $\mathcal F_z$. Suppose all restricted LPs and pricing problems are solved globally in exact arithmetic, and generated columns are retained and deduplicated by label and membership. Then Algorithm~\ref{alg:dw_mid} terminates after finitely many steps at a globally optimal finite-grid MID partition, or proves that no feasible partition exists.}
 
-\textit{Proof.} Each family contains at most $2^{|V|}-1$ memberships. At an optimal restricted LP solution, a stored column has nonpositive reduced cost. Therefore every strictly positive priced column is new, and each Phase-I or welfare column-generation loop can add only finitely many columns. When all pricing optima are nonpositive, the restricted dual is feasible for the complete branch-specific master. Strong duality certifies its LP optimum; in Phase I, a negative optimum certifies infeasibility. The pricing models themselves are bounded mixed-integer programs: cutoff and membership variables have finite domains, and the flow variables have finite bounds.
+\textit{Proof.} Each family contains at most $2^{|V|}-1$ memberships. At an optimal restricted LP solution, a stored column has nonpositive reduced cost. Therefore every strictly positive priced column is new, and each column-generation loop can add only finitely many columns. When all pricing optima are nonpositive, the restricted dual is feasible for the complete branch-specific master, and strong duality certifies its LP optimum. A node whose restricted master is still infeasible once its column family is exhausted admits no feasible partition, every admissible zone of that branch having been generated by then. The pricing models themselves are bounded mixed-integer programs: cutoff and membership variables have finite domains, and the flow variables have finite bounds.
 
 Suppose all marginals \eqref{eq:dw_marginal} are integral. For each label, nonnegative column weights sum to one. A marginal of one forces every positive-weight column to contain that vertex; a marginal of zero excludes it from all such columns. Their memberships therefore coincide. Deduplication leaves one column of weight one per label, yielding an integer partition.
 

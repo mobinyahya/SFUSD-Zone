@@ -492,3 +492,116 @@ def test_mip_solver_saves_progress(tmp_path):
         "solver_progress", "solver_00_BlockGroup_0_mip", "progress.jsonl"
     )
     assert (tmp_path / expected_log).exists()
+
+
+@pytest.mark.parametrize(
+    "name", [n for n in ["cp_int", "cp_bool", "mip"] if n in available_solvers()]
+)
+def test_grouped_cuts_are_tighter_than_one_averaged_cut(name):
+    """Averaging scenario cuts inside an iteration loses the per-scenario minima.
+
+    Two scenarios, two iterations, and the binding iteration differs between
+    them. Averaging first gives ``min_t mean_s`` and every average is 27.5;
+    grouping gives ``mean_s min_t``, which sees that each scenario is capped at
+    5. Both bound the truth, but only the grouped model reports the tighter one.
+    """
+    # Constants only, so the bound is independent of the assignment and the
+    # comparison isolates the epigraph structure.
+    grouped = (
+        ChoiceCut(node=None, constant=50.0, group=0),
+        ChoiceCut(node=None, constant=5.0, group=0),
+        ChoiceCut(node=None, constant=5.0, group=1),
+        ChoiceCut(node=None, constant=50.0, group=1),
+    )
+    averaged = (
+        ChoiceCut(node=None, constant=27.5),
+        ChoiceCut(node=None, constant=27.5),
+    )
+
+    def objective_for(cuts):
+        problem = make_grid_problem(3, 3)
+        problem.choice_objective = ChoiceObjective(
+            cuts=cuts,
+            scale=100,
+            aggregate_cuts=True,
+            total_lower_bound=0.0,
+            total_upper_bound=1000.0,
+        )
+        solution = get_solver(name, solve_time_limit=30, workers=1).solve(problem)
+        assert solution.status == "OPTIMAL"
+        return solution.objective
+
+    assert objective_for(averaged) == pytest.approx(27.5)
+    assert objective_for(grouped) == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    "name", [n for n in ["cp_int", "cp_bool", "mip"] if n in available_solvers()]
+)
+def test_access_terms_reward_co_zoning_on_top_of_the_cuts(name):
+    """The Lagrangian term shifts the objective by the priced access indicators."""
+    problem = make_grid_problem(3, 3)
+    problem.choice_objective = ChoiceObjective(
+        cuts=(ChoiceCut(node=None, constant=10.0),),
+        scale=100,
+        aggregate_cuts=True,
+        total_lower_bound=0.0,
+        total_upper_bound=10.0,
+        # Rewarding nodes 0 and 1 for sharing a zone is worth 7 on top of the
+        # cut's 10, and penalising 3 and 4 for sharing one is avoidable.
+        access_terms=(((0, 1), 7.0), ((3, 4), -5.0)),
+    )
+
+    solution = get_solver(name, solve_time_limit=30, workers=1).solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.assignment[0] == solution.assignment[1]
+    assert solution.assignment[3] != solution.assignment[4]
+    assert solution.objective == pytest.approx(17.0)
+
+
+@pytest.mark.parametrize(
+    "name", [n for n in ["cp_int", "cp_bool", "mip"] if n in available_solvers()]
+)
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {},
+        {"choice_access_cardinality": True},
+        {"choice_access_triangle": True},
+        {"choice_access_cardinality": True, "choice_access_triangle": True},
+    ],
+)
+def test_access_inequalities_do_not_change_the_integer_optimum(name, flags):
+    """They tighten the relaxation, so the certified optimum must be identical.
+
+    Nodes 1 and 7 are pinned to different zones, so node 4 can be co-zoned with
+    at most one of them and the cut is worth 10, never 20. Any flag combination
+    that reports something else has cut off a feasible zoning or failed to.
+    """
+    problem = make_grid_problem(3, 3, candidates={1: {0}, 7: {1}})
+    problem.choice_objective = ChoiceObjective(
+        cuts=(
+            ChoiceCut(
+                node=None,
+                constant=0.0,
+                terms=(
+                    ChoiceTerm(coefficient=10.0, node=1, student_node=4),
+                    ChoiceTerm(coefficient=10.0, node=7, student_node=4),
+                ),
+            ),
+        ),
+        scale=100,
+        aggregate_cuts=True,
+        total_lower_bound=0.0,
+        total_upper_bound=100.0,
+    )
+
+    solution = get_solver(
+        name, solve_time_limit=30, workers=1, **flags
+    ).solve(problem)
+
+    assert solution.status == "OPTIMAL"
+    assert solution.objective == pytest.approx(10.0)
+    assert solution.assignment[1] == 0
+    assert solution.assignment[7] == 1

@@ -14,6 +14,12 @@ import gurobipy as gp
 from gurobipy import GRB
 
 from choice.objective import ChoiceCut
+from optimization.access_inequalities import (
+    cardinality_cliques,
+    completion_pairs,
+    pair_key,
+    transitivity_triples,
+)
 from optimization.data import contiguity
 from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
@@ -68,14 +74,8 @@ class MipSolver(Solver):
                 x = self._build_assignment_vars(m, problem)
                 self._add_core_constraints(m, problem, x)
 
-                if problem.choice_objective is None:
-                    self._add_boundary_objective(m, problem, x)
-                    progress = self._new_solver_progress_tracker(
-                        problem, maximize=False
-                    )
-                else:
-                    self._add_choice_objective(m, problem, x)
-                    progress = self._new_solver_progress_tracker(problem, maximize=True)
+                maximize = self._add_model_objective(m, problem, x)
+                progress = self._new_solver_progress_tracker(problem, maximize=maximize)
 
                 self._add_hints(problem, x)
 
@@ -137,6 +137,7 @@ class MipSolver(Solver):
                             "objective_unit": "meter",
                         }
                     )
+                metadata.update(self._additional_solution_metadata(m, status))
                 return ZoneSolution(
                     problem=problem,
                     assignment=assignment,
@@ -338,6 +339,29 @@ class MipSolver(Solver):
     # ------------------------------------------------------------------ #
     # Objective and hints
     # ------------------------------------------------------------------ #
+    def _add_model_objective(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> bool:
+        """Attach the objective, returning whether it is a maximization.
+
+        The single seam a subclass overrides to put its own welfare model on the
+        canonical zoning variables, mirroring
+        :meth:`optimization.solvers.cpsat.CpBoolSolver._add_model_objective`.
+        """
+
+        if problem.choice_objective is None:
+            self._add_boundary_objective(m, problem, x)
+            return False
+        self._add_choice_objective(m, problem, x)
+        return True
+
+    def _additional_solution_metadata(
+        self, m: gp.Model, status: str
+    ) -> dict[str, object]:
+        """Solver-specific metadata, read after ``optimize`` and before disposal."""
+
+        return {}
+
     def _add_boundary_objective(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
@@ -426,14 +450,105 @@ class MipSolver(Solver):
             }
             m.addConstr(total == gp.quicksum(utilities.values()))
 
+        # See the CP-SAT solver for why grouping tightens the relaxation.
+        epigraphs: dict[int, gp.Var] = {}
+        groups = sorted({cut.group for cut in choice.cuts if cut.group is not None})
+        if groups:
+            count = len(groups)
+            epigraphs = {
+                group: m.addVar(
+                    lb=min(0.0, total_lb / count),
+                    ub=total_ub / count,
+                    vtype=GRB.CONTINUOUS,
+                    name=f"choice_total_g{group}",
+                )
+                for group in groups
+            }
+            m.addConstr(total == gp.quicksum(epigraphs.values()))
+
         access_vars: dict[tuple[int, int], Any] = {}
         access_joints: dict[tuple[int, int, int], Any] = {}
         for cut in choice.cuts:
             self._add_choice_cut(
-                m, problem, x, utilities, total, access_vars, access_joints, cut
+                m,
+                problem,
+                x,
+                utilities,
+                epigraphs.get(cut.group, total),
+                access_vars,
+                access_joints,
+                cut,
             )
 
-        m.setObjective(total, GRB.MAXIMIZE)
+        # See the CP-SAT solver: the Lagrangian reward is added to the
+        # objective, and fixed indicators contribute a constant offset.
+        # A fixed indicator comes back as 0 or 1, so the same product covers
+        # both the variable and the constant case.
+        reward = gp.LinExpr(0.0)
+        for pair, coefficient in choice.access_terms:
+            reward += coefficient * self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, pair[0], pair[1]
+            )
+
+        self._add_access_inequalities(
+            m, problem, x, access_vars, access_joints
+        )
+
+        m.setObjective(total + reward, GRB.MAXIMIZE)
+
+    def _add_access_inequalities(
+        self,
+        m: gp.Model,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+    ) -> None:
+        """See the CP-SAT solver for what these inequalities do and why."""
+        want_cardinality = bool(self.options.get("choice_access_cardinality", False))
+        want_triangle = bool(self.options.get("choice_access_triangle", False))
+        if not (want_cardinality or want_triangle):
+            return
+        variable_pairs = [
+            pair
+            for pair, var in access_vars.items()
+            if not isinstance(var, (int, float))
+        ]
+        if not variable_pairs:
+            return
+
+        if want_triangle and bool(self.options.get("choice_access_complete", False)):
+            for first, second in completion_pairs(
+                variable_pairs,
+                problem.candidate_zones,
+                limit=int(self.options.get("choice_access_completion_limit", 20_000)),
+            ):
+                var = self._get_or_create_access_var(
+                    m, problem, x, access_vars, access_joints, first, second
+                )
+                if not isinstance(var, (int, float)):
+                    variable_pairs.append(pair_key(first, second))
+
+        if want_cardinality:
+            for anchor, members in cardinality_cliques(
+                variable_pairs, problem.candidate_zones
+            ):
+                m.addConstr(
+                    gp.quicksum(
+                        access_vars[pair_key(anchor, member)] for member in members
+                    )
+                    <= 1
+                )
+
+        if want_triangle:
+            limit = int(self.options.get("choice_access_triangle_limit", 200_000))
+            for u, v, w in transitivity_triples(variable_pairs, limit=limit):
+                a_uv = access_vars[pair_key(u, v)]
+                a_vw = access_vars[pair_key(v, w)]
+                a_uw = access_vars[pair_key(u, w)]
+                m.addConstr(a_uv + a_vw - a_uw <= 1)
+                m.addConstr(a_uv + a_uw - a_vw <= 1)
+                m.addConstr(a_uw + a_vw - a_uv <= 1)
 
     def _get_or_create_access_var(
         self,

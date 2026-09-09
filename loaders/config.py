@@ -37,7 +37,13 @@ _SOURCE_KEYS = {
     "companions",
     "classification",
     "geography_vintage",
+    "identity",
 }
+# How a source contributes to cache identity. The default records the absolute
+# path alongside the checksum, which ties every derived cache key to one
+# checkout. "checksum" records only the checksum, so a source that ships inside
+# the repository identifies the same way from any checkout.
+_IDENTITY_MODES = {"path_and_checksum", "checksum"}
 _SPECIAL_ROOTS = {"package", "repository"}
 _FILTER_KEYS = {
     "optimization": {
@@ -304,17 +310,26 @@ class ResolvedSource:
     classification: str = "unspecified"
     catalog_id: str | None = None
     geography_vintage: str | None = None
+    identity: str = "path_and_checksum"
 
     def manifest(self) -> dict[str, Any]:
-        """Return paths, presence state, and current content checksums."""
+        """Return paths, presence state, and current content checksums.
+
+        A source declared ``identity: checksum`` omits its path, so the manifest
+        -- and every cache key derived from it -- depends only on the file's
+        contents. Use it for files that ship inside the repository, whose
+        absolute path is an accident of where the checkout lives.
+        """
 
         def file_entry(path: Path) -> dict[str, Any]:
             checksum = _checksum(path)
-            return {
-                "path": str(path),
+            entry = {
                 "status": "present" if checksum is not None else "missing",
                 "sha256": checksum,
             }
+            if self.identity == "path_and_checksum":
+                entry["path"] = str(path)
+            return entry
 
         entry = file_entry(self.path)
         entry.update(
@@ -505,6 +520,9 @@ def _validate_source_ref(value: Any, label: str, *, partial: bool = False) -> No
             raise ValueError(f"Direct source {label}.path must be a path string.")
         if "root" in value and not isinstance(value["root"], str):
             raise ValueError(f"Direct source {label}.root must be a root name.")
+        if "identity" in value and value["identity"] not in _IDENTITY_MODES:
+            expected = ", ".join(sorted(_IDENTITY_MODES))
+            raise ValueError(f"Direct source {label}.identity must be one of {expected}.")
         if "classification" in value and not isinstance(value["classification"], str):
             raise ValueError(f"Direct source {label}.classification must be a string.")
         if "geography_vintage" in value:
@@ -959,6 +977,7 @@ def _resolve_direct_source(
         classification=source.get("classification", "unspecified"),
         catalog_id=catalog_id,
         geography_vintage=source.get("geography_vintage"),
+        identity=source.get("identity", "path_and_checksum"),
     )
 
 

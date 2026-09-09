@@ -28,10 +28,12 @@ def test_only_supported_strategies_are_registered():
         "iterative_choice",
         "mid",
         "mid_decomp",
+        "priced_access",
         "recursive",
         "saa",
         "short_bursts_choice",
         "single",
+        "stable_cutoff",
     ]
 
 
@@ -1014,3 +1016,70 @@ class HintCutModel:
 
     def evaluate_with_cuts(self, problem, assignment):
         return ChoiceEvaluation(utility=1.0, cuts=())
+
+
+def test_priced_access_closes_with_a_replay_of_its_best_zoning():
+    """The harness scores the last solution, so the best one must end up there.
+
+    The master's candidate can regress between iterations; without the replay a
+    worse final zoning would be the one reported and scored.
+    """
+    from optimization.solution import ZoneSolution
+    from optimization.strategies import priced_access as priced_access_module
+
+    problem = make_grid_problem(3, 3)
+    utilities = [10.0, 40.0, 20.0]  # best is the middle iteration
+    calls = {"n": 0}
+
+    class _Model:
+        price_constant = 5.0
+
+        def utility_bounds(self, _problem):
+            return 0.0, 100.0
+
+        def choice_utility_hint_cuts(self, _problem):
+            return ()
+
+        def evaluate_with_cuts(self, _problem, _assignment):
+            index = min(calls["n"], len(utilities) - 1)
+            calls["n"] += 1
+            return ChoiceEvaluation(
+                utility=utilities[index],
+                cuts=(ChoiceCut(node=index, constant=float(index)),),
+            )
+
+    class _Solver:
+        options: dict = {}
+
+        def solve(self, solve_problem):
+            return ZoneSolution(
+                problem=solve_problem,
+                assignment={node: 0 for node in solve_problem.nodes},
+                status="FEASIBLE",
+                objective=100.0 - calls["n"],
+                wall_time=1.0,
+                metadata={},
+            )
+
+    monkey = priced_access_module.build_priced_access_choice_model
+    priced_access_module.build_priced_access_choice_model = (
+        lambda *args, **kwargs: _Model()
+    )
+    try:
+        strategy = get_strategy(
+            "priced_access",
+            levels=["BlockGroup_0"],
+            solve_time_limits=[30],
+            max_iterations=3,
+            hints="none",
+        )
+        dataset = FakeDataset(problem)
+        dataset.config = SimpleNamespace()
+        solutions = strategy.run(dataset, _Solver())
+    finally:
+        priced_access_module.build_priced_access_choice_model = monkey
+
+    final = solutions[-1]
+    assert final.metadata["priced_access_is_replay"] is True
+    assert final.wall_time == 0.0
+    assert final.metadata["choice_utility"] == max(utilities)

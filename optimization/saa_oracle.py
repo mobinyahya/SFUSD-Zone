@@ -31,20 +31,38 @@ class SaaCut:
             coefficient * access[pair] for pair, coefficient in self.coefficients
         )
 
-    def to_choice_cut(self) -> ChoiceCut:
+    def to_choice_cut(
+        self, weight: float = 1.0, group: int | None = None
+    ) -> ChoiceCut:
+        """Convert to a solver-agnostic cut, optionally scaled and grouped.
+
+        ``weight`` scales the whole affine function, which is how a per-scenario
+        cut carries its 1/S share of the sample average; ``group`` selects the
+        epigraph variable it bounds.
+        """
+        kept = {
+            pair: coeff * weight
+            for pair, coeff in self.coefficients
+            if abs(coeff * weight) > 1e-12
+        }
         terms = tuple(
             ChoiceTerm(
                 coefficient=coeff,
                 node=school_node,
                 student_node=student_node,
             )
-            for (student_node, school_node), coeff in self.coefficients
-            if abs(coeff) > 1e-12
+            for (student_node, school_node), coeff in kept.items()
         )
+        # Anchors only steer the rounding of the term they belong to, so an
+        # anchor whose term was filtered out is meaningless -- and a cut is
+        # rejected if it carries one.
         return ChoiceCut(
-            constant=self.constant,
+            constant=self.constant * weight,
             terms=terms,
-            anchor_access=self.anchor_access,
+            anchor_access=tuple(
+                (pair, value) for pair, value in self.anchor_access if pair in kept
+            ),
+            group=group,
         )
 
 

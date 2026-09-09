@@ -77,13 +77,13 @@ def test_graph_cache_path_changes_for_weighted_edges(tmp_path):
     assert "edge_weighting" in weighted._graph_namespace.parameters["partition_policy"]
 
 
-def test_default_graph_root_uses_v13_shared_cache_namespace():
+def test_default_graph_root_uses_v14_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
 
-    assert dataset._graph_namespace.schema_version == 13
+    assert dataset._graph_namespace.schema_version == 14
     assert dataset._graph_namespace.version_dir == Path(
-        "/soalnas/share/data/school_choice/Data/caches/graphs/v13"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v14"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 
@@ -168,6 +168,14 @@ def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypat
     middle = nx.path_graph(3)
     coarse = nx.path_graph(2)
     generated_from = []
+    # Real coarsenings carry area ids and a membership, which the dataset
+    # publishes as the portable partition artifact.
+    for index, node in enumerate(base):
+        base.nodes[node]["area_id"] = 6075000000000 + index
+    middle.graph["partition"] = {0: 0, 1: 1, 2: 1, 3: 2}
+    for index, node in enumerate(middle):
+        middle.nodes[node]["block_ids"] = [6075000000000 + index]
+    coarse.graph["partition"] = {0: 0, 1: 0, 2: 1}
 
     monkeypatch.setattr(loaders, "load_students", lambda cfg: None)
     monkeypatch.setattr(
@@ -175,7 +183,7 @@ def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypat
         lambda cfg, **kwargs: base,
     )
 
-    def fake_aggregate(parent, target, program_population):
+    def fake_aggregate(parent, target, program_population, *, partition=None):
         generated_from.append((parent, target, program_population))
         return middle if parent is base else coarse
 
@@ -204,7 +212,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     assert first.graph_for("Block_0") is graph
     manifest = first._graph_namespace.manifest()
     assert manifest is not None
-    assert manifest["schema_version"] == 13
+    assert manifest["schema_version"] == 14
     assert manifest["payloads"]["Block_0.pickle"]["format"] == "pickle"
 
     monkeypatch.setattr(

@@ -757,6 +757,10 @@ files:
     path: manual_block_edges_2020.yaml
     root: package
     classification: public
+    # Ships inside the repository, so its absolute path is an accident of where
+    # the checkout lives. Identifying it by checksum alone lets a graph cache
+    # built on one machine be reused on another.
+    identity: checksum
 
 geographies:
   "2010":

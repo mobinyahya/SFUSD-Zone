@@ -228,3 +228,60 @@ def test_saa_exhausted_budget_with_feasible_hint_returns_hint_incumbent(monkeypa
     assert final.metadata["saa_selected_incumbent"] is True
     assert final.metadata["saa_termination_reason"] == "time_limit"
     assert final.metadata["mid_discrete_welfare"] is not None
+
+
+@pytest.mark.parametrize("backend", ["cp_bool", "mip"])
+def test_saa_strategy_with_disaggregated_cuts(monkeypatch, backend):
+    """One cut per scenario per iteration, each bounding its own epigraph."""
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
+    monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
+
+    solver = get_solver(backend, solve_time_limit=10, workers=1)
+    strategy = get_strategy(
+        "saa",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[10],
+        gap_limits=[0],
+        hints="none",
+        max_iterations=5,
+        tolerance=1e-8,
+        saa_num_seeds=2,
+        saa_tie_breaking_method="MTB",
+        saa_disaggregate_cuts=True,
+        seed=11,
+    )
+
+    solutions = strategy.run(dataset, solver)
+    final = solutions[-1]
+
+    # Disaggregating changes the master's shape, not the welfare it can reach.
+    assert final.objective == pytest.approx(4.0)
+    assert final.metadata["saa_aggregate_cuts"] is False
+    for stage in solutions[:-1]:
+        assert stage.metadata["saa_cuts_added"] == 2
+        assert stage.metadata["saa_aggregate_cuts"] is False
+
+
+def test_relative_gap_lets_the_outer_loop_certify_a_large_welfare():
+    """An absolute 1e-6 test cannot fire on a welfare of this size.
+
+    The gap the loop compares is ``upper_bound - incumbent``. Scaling the
+    tolerance by the incumbent is what turns "ten significant digits" into a
+    proportional test.
+    """
+    tolerance = 1e-6
+    incumbent = 15_235.87
+    absolute_gap = 0.01
+
+    assert absolute_gap > tolerance
+    assert absolute_gap <= tolerance * max(1.0, abs(incumbent)) * 1e3
+    # The shipped test demands agreement far below any solver's tolerance.
+    assert tolerance * max(1.0, abs(incumbent)) == pytest.approx(0.01523587)
+
+
+def test_saa_welfare_bound_option_is_validated():
+    with pytest.raises(ValueError, match="saa_welfare_bound"):
+        optimization_config_from_dict({"saa_welfare_bound": "wishful"})

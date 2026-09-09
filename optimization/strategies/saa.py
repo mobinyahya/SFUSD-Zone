@@ -19,13 +19,19 @@ from choice.objective import ChoiceObjective
 from optimization.solvers import get_solver
 from optimization.strategies.base import Strategy, register
 from optimization.strategies.budget import Budget, make_budget
+from optimization.welfare_bounds import first_choice_upper_bound, welfare_upper_bound
 
 
-def _market_metadata(backend, samples, tie_breaking_method, market) -> dict:
+def _market_metadata(
+    backend, samples, tie_breaking_method, market, bound_kind, welfare_bound
+) -> dict:
     """Invariant description of the sampled SAA market."""
 
     return {
         "saa_master_backend": backend,
+        "saa_welfare_bound": bound_kind,
+        "saa_welfare_upper_bound": welfare_bound,
+        "saa_first_choice_upper_bound": first_choice_upper_bound(market.students),
         "saa_num_seeds": len(samples),
         "saa_tie_breaking_method": tie_breaking_method,
         "saa_sample_seeds": [sample.seed for sample in samples],
@@ -38,6 +44,24 @@ def _market_metadata(backend, samples, tie_breaking_method, market) -> dict:
         "saa_program_count": len(market.programs),
         "saa_preference_count": market.preference_count,
     }
+
+
+def _append_cuts(cuts: list, results, disaggregate: bool) -> int:
+    """Append this iteration's cuts, returning how many were added.
+
+    Averaging the scenario cuts into one is valid -- the sample objective is
+    itself an average -- but it hands the master a single hyperplane per
+    iteration. Keeping them apart, each scaled by 1/S and tagged with its
+    scenario, gives the same information a tighter shape.
+    """
+    if disaggregate:
+        weight = 1.0 / len(results)
+        for index, result in enumerate(results):
+            cuts.append(result.cut.to_choice_cut(weight=weight, group=index))
+        return len(results)
+    aggregate = aggregate_saa_cuts(tuple(result.cut for result in results))
+    cuts.append(aggregate.to_choice_cut())
+    return 1
 
 
 def _budget_metadata(budget: Budget, recourse_seconds: float) -> dict:
@@ -117,6 +141,11 @@ class SaaStrategy(Strategy):
             )
             for sample_index, sample in enumerate(samples)
         )
+        disaggregate = bool(self.options.get("saa_disaggregate_cuts", False))
+        bound_kind = str(self.options.get("saa_welfare_bound", "transport"))
+        welfare_bound = welfare_upper_bound(
+            bound_kind, market.programs, market.students
+        )
         preprocessing_seconds = time.perf_counter() - start
 
         cuts = []
@@ -129,7 +158,7 @@ class SaaStrategy(Strategy):
         iterations_completed = 0
         apply_hints = normalize_hints(self.options.get("hints", "voronoi")) != "none"
         market_metadata = _market_metadata(
-            backend, samples, tie_breaking_method, market
+            backend, samples, tie_breaking_method, market, bound_kind, welfare_bound
         )
 
         if hint is not None and hint.metadata.get("hints") == "feasible":
@@ -138,9 +167,7 @@ class SaaStrategy(Strategy):
             evaluation_seconds = time.perf_counter() - evaluation_start
             recourse_seconds += evaluation_seconds
             incumbent_welfare = sum(result.welfare for result in results) / len(results)
-            avg_saa_cut = aggregate_saa_cuts(tuple(result.cut for result in results))
-            cuts.append(avg_saa_cut.to_choice_cut())
-            added_cuts = 1
+            added_cuts = _append_cuts(cuts, results, disaggregate)
             incumbent = ZoneSolution(
                 problem=base_problem,
                 assignment=dict(hint.assignment),
@@ -158,7 +185,7 @@ class SaaStrategy(Strategy):
                     "saa_cuts_added": added_cuts,
                     "saa_cuts_total": len(cuts),
                     "saa_recourse_seconds": evaluation_seconds,
-                    "saa_aggregate_cuts": True,
+                    "saa_aggregate_cuts": not disaggregate,
                     **_budget_metadata(budget, recourse_seconds),
                     "aggregate_capacity_overage_disabled": True,
                     "aggregate_capacity_shortage_disabled": True,
@@ -177,7 +204,7 @@ class SaaStrategy(Strategy):
                 scale=utility_scale,
                 aggregate_cuts=True,
                 total_lower_bound=0.0,
-                total_upper_bound=market.welfare_upper_bound,
+                total_upper_bound=welfare_bound,
             )
             problem = dataset.problem_for(
                 target,
@@ -212,7 +239,7 @@ class SaaStrategy(Strategy):
                     "saa_iteration": iteration,
                     **market_metadata,
                     "saa_cuts_before": len(cuts),
-                    "saa_aggregate_cuts": True,
+                    "saa_aggregate_cuts": not disaggregate,
                     **_budget_metadata(budget, recourse_seconds),
                     "saa_master_time_limit": iteration_time_limit,
                     "saa_master_best_bound": master_bound,
@@ -232,9 +259,7 @@ class SaaStrategy(Strategy):
             recourse_seconds += evaluation_seconds
             solution.wall_time = float(solution.wall_time or 0.0) + evaluation_seconds
             welfare = sum(result.welfare for result in results) / len(results)
-            avg_saa_cut = aggregate_saa_cuts(tuple(result.cut for result in results))
-            cuts.append(avg_saa_cut.to_choice_cut())
-            added_cuts = 1
+            added_cuts = _append_cuts(cuts, results, disaggregate)
             if welfare > incumbent_welfare:
                 incumbent = solution
                 incumbent_welfare = welfare
@@ -255,10 +280,13 @@ class SaaStrategy(Strategy):
                     "saa_cuts_total": len(cuts),
                     "saa_recourse_seconds": evaluation_seconds,
                     **_budget_metadata(budget, recourse_seconds),
-                    "saa_aggregate_cuts": True,
+                    "saa_aggregate_cuts": not disaggregate,
                 }
             )
-            if absolute_gap <= tolerance:
+            gap_target = tolerance
+            if self.options.get("saa_relative_gap", False):
+                gap_target = tolerance * max(1.0, abs(incumbent_welfare))
+            if absolute_gap <= gap_target:
                 termination_reason = "bound_gap"
                 break
 
@@ -292,7 +320,7 @@ class SaaStrategy(Strategy):
                     "mid_welfare": None,
                     "mid_discrete_welfare": None,
                     **_budget_metadata(budget, recourse_seconds),
-                    "saa_aggregate_cuts": True,
+                    "saa_aggregate_cuts": not disaggregate,
                 }
             )
             return stages
@@ -360,7 +388,7 @@ class SaaStrategy(Strategy):
                 "saa_certified_optimal": certified,
                 "saa_termination_reason": termination_reason,
                 **_budget_metadata(budget, recourse_seconds),
-                "saa_aggregate_cuts": True,
+                "saa_aggregate_cuts": not disaggregate,
             }
         )
         return stages

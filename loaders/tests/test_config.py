@@ -947,3 +947,23 @@ def test_registry_generated_role_overrides_scenario_invariant_role(tmp_path):
     assert scenario.source("optimization.students").catalog_id == (
         "optimization.students.applicant.2324"
     )
+
+
+def test_only_the_2020_manual_edges_file_identifies_by_checksum_alone():
+    """Checksum-only identity is deliberately narrow.
+
+    Dropping a source's path from the manifest makes every derived cache key
+    ignore where the file lives. That is what we want for the one bundled file
+    whose checkout path was blocking cross-machine graph cache reuse, but it
+    also means two genuinely different files with equal contents would collide,
+    so each additional use needs its own justification.
+    """
+    base = yaml.safe_load(
+        files("loaders").joinpath("configs", "base.yaml").read_text(encoding="utf-8")
+    )
+    checksum_only = sorted(
+        name
+        for name, source in base["files"].items()
+        if isinstance(source, dict) and source.get("identity") == "checksum"
+    )
+    assert checksum_only == ["bundled.manual_edges.2020"]

@@ -21,6 +21,8 @@ from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.mid_options import normalize_complementary_slackness_slack
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
+from choice.models import PRICE_SOURCES
+from optimization.welfare_bounds import WELFARE_BOUNDS
 
 
 _STRATEGIES = {
@@ -31,6 +33,8 @@ _STRATEGIES = {
     "mid_decomp",
     "saa",
     "short_bursts_choice",
+    "priced_access",
+    "stable_cutoff",
     "dantzig_wolfe",
 }
 
@@ -92,6 +96,59 @@ class OptimizationConfig:
     mid_complementary_slackness_slack: float | str = "auto"
     saa_num_seeds: int = 5
     saa_tie_breaking_method: str = "MTB"
+    # Which a-priori constant bounds the master's objective variable.
+    # "transport" respects program capacities and is weakly dominant: the
+    # reported bound is min(constant, what the cuts prove), and the transport
+    # constant is never above the first-choice sum, so it can only help.
+    # See optimization/welfare_bounds.py and Proposition 4 in paper.tex.
+    saa_welfare_bound: str = "transport"
+    # Compare the outer-loop gap against tolerance * |incumbent| rather than
+    # against tolerance outright, which on a welfare of ~15,000 asks for ten
+    # significant digits and can never fire.
+    saa_relative_gap: bool = False
+    # Give each sampled scenario its own epigraph variable in the master
+    # instead of averaging the scenario cuts into one. Strictly tighter
+    # relaxation from the same oracle calls.
+    saa_disaggregate_cuts: bool = False
+    # --- stable_cutoff ------------------------------------------------- #
+    # How many strict priority orders the exact matching model averages over.
+    # Each one costs a full matching block -- 2|Gamma| binaries and O(|Gamma|)
+    # rows -- so this is the single knob that decides whether the model fits.
+    stable_cutoff_num_seeds: int = 3
+    # Non-wastefulness (S1). Unnecessary for exactness: the integral optimum is
+    # the same with and without it. Kept on because it is worth ~100x in time
+    # through presolve. See optimization/solvers/stable_cutoff.py.
+    stable_cutoff_non_wastefulness: bool = True
+    # The aggregate stability row (S2), which implies the per-pair no-blocking
+    # row and tightens the relaxation from +0.91% to +0.73% of realised DA
+    # welfare at a fixed zoning, at one extra prefix variable per pair.
+    stable_cutoff_aggregate_stability: bool = True
+    # Single tie-breaking is the SFUSD lottery's own design, and with a handful
+    # of samples it is also the lower-variance choice.
+    stable_cutoff_tie_breaking_method: str = "STB"
+    # --- priced_access ------------------------------------------------- #
+    # Thresholds each student contributes per evaluation. Level 0 is tight at
+    # the incumbent; deeper levels price what the student loses when their best
+    # accessible options are taken away.
+    priced_access_cut_levels: int = 3
+    # Where the congestion prices come from, and a multiplier on them. Any
+    # non-negative price vector keeps the surrogate a valid upper bound, so the
+    # scale is free to tune: 0 reduces it to best-school-in-zone.
+    priced_access_price_source: str = "transport"
+    priced_access_price_scale: float = 1.0
+    # Valid inequalities on the co-zoning indicators. The LP relaxation of the
+    # access linearization can push many indicators to 1 at once by spreading
+    # the assignment variables fractionally, which makes every cut slack and
+    # leaves the a-priori constant as the only bound. Both families below cut
+    # that off. See optimization/solvers/cpsat.py.
+    choice_access_triangle: bool = False
+    choice_access_cardinality: bool = False
+    choice_access_triangle_limit: int = 200_000
+    # Create the missing (school, school) side of each near-triangle. The cut
+    # pairs are near-bipartite, and a bipartite graph has no triangles, so
+    # without this the transitivity family has almost nothing to bind on.
+    choice_access_complete: bool = False
+    choice_access_completion_limit: int = 20_000
     dw_objective: str = "mid"
     dw_recom_samples: int = 500
     dw_recom_chains: int = 4
@@ -281,6 +338,73 @@ class OptimizationConfig:
         self.saa_tie_breaking_method = self.saa_tie_breaking_method.upper()
         if self.saa_tie_breaking_method not in {"MTB", "STB"}:
             raise ValueError("saa_tie_breaking_method must be one of: MTB, STB.")
+        if self.saa_welfare_bound not in WELFARE_BOUNDS:
+            raise ValueError(
+                f"saa_welfare_bound must be one of: {', '.join(WELFARE_BOUNDS)}."
+            )
+        if not isinstance(self.saa_relative_gap, bool):
+            raise ValueError("saa_relative_gap must be a Boolean.")
+        if not isinstance(self.saa_disaggregate_cuts, bool):
+            raise ValueError("saa_disaggregate_cuts must be a Boolean.")
+        if (
+            isinstance(self.stable_cutoff_num_seeds, bool)
+            or not isinstance(self.stable_cutoff_num_seeds, int)
+            or self.stable_cutoff_num_seeds <= 0
+        ):
+            raise ValueError("stable_cutoff_num_seeds must be a positive integer.")
+        if not isinstance(self.stable_cutoff_non_wastefulness, bool):
+            raise ValueError("stable_cutoff_non_wastefulness must be a Boolean.")
+        if not isinstance(self.stable_cutoff_aggregate_stability, bool):
+            raise ValueError("stable_cutoff_aggregate_stability must be a Boolean.")
+        if not isinstance(self.stable_cutoff_tie_breaking_method, str):
+            raise ValueError(
+                "stable_cutoff_tie_breaking_method must be one of: MTB, STB."
+            )
+        self.stable_cutoff_tie_breaking_method = (
+            self.stable_cutoff_tie_breaking_method.upper()
+        )
+        if self.stable_cutoff_tie_breaking_method not in {"MTB", "STB"}:
+            raise ValueError(
+                "stable_cutoff_tie_breaking_method must be one of: MTB, STB."
+            )
+        if (
+            isinstance(self.priced_access_cut_levels, bool)
+            or not isinstance(self.priced_access_cut_levels, int)
+            or self.priced_access_cut_levels <= 0
+        ):
+            raise ValueError("priced_access_cut_levels must be a positive integer.")
+        if self.priced_access_price_source not in PRICE_SOURCES:
+            raise ValueError(
+                f"priced_access_price_source must be one of {PRICE_SOURCES}."
+            )
+        if (
+            not isinstance(self.priced_access_price_scale, (int, float))
+            or isinstance(self.priced_access_price_scale, bool)
+            or self.priced_access_price_scale < 0.0
+        ):
+            raise ValueError("priced_access_price_scale must be non-negative.")
+        if not isinstance(self.choice_access_triangle, bool):
+            raise ValueError("choice_access_triangle must be a Boolean.")
+        if not isinstance(self.choice_access_cardinality, bool):
+            raise ValueError("choice_access_cardinality must be a Boolean.")
+        if (
+            isinstance(self.choice_access_triangle_limit, bool)
+            or not isinstance(self.choice_access_triangle_limit, int)
+            or self.choice_access_triangle_limit < 0
+        ):
+            raise ValueError(
+                "choice_access_triangle_limit must be a non-negative integer."
+            )
+        if not isinstance(self.choice_access_complete, bool):
+            raise ValueError("choice_access_complete must be a Boolean.")
+        if (
+            isinstance(self.choice_access_completion_limit, bool)
+            or not isinstance(self.choice_access_completion_limit, int)
+            or self.choice_access_completion_limit < 0
+        ):
+            raise ValueError(
+                "choice_access_completion_limit must be a non-negative integer."
+            )
         if self.strategy == "saa":
             if (
                 isinstance(self.max_iterations, bool)
@@ -437,6 +561,11 @@ class OptimizationConfig:
             "save_solver_logs": self.save_solver_logs,
             "save_solver_progress": self.save_solver_progress,
             "secondary_objective": self.secondary_objective,
+            "choice_access_triangle": self.choice_access_triangle,
+            "choice_access_cardinality": self.choice_access_cardinality,
+            "choice_access_triangle_limit": self.choice_access_triangle_limit,
+            "choice_access_complete": self.choice_access_complete,
+            "choice_access_completion_limit": self.choice_access_completion_limit,
             "centroid_neighbor_radius": self.centroid_neighbor_radius,
             "recom_iterations": self.recom_iterations,
             "short_bursts_length": self.short_bursts_length,
@@ -482,6 +611,16 @@ class OptimizationConfig:
             mid_complementary_slackness_slack=self.mid_complementary_slackness_slack,
             saa_num_seeds=self.saa_num_seeds,
             saa_tie_breaking_method=self.saa_tie_breaking_method,
+            saa_welfare_bound=self.saa_welfare_bound,
+            saa_relative_gap=self.saa_relative_gap,
+            saa_disaggregate_cuts=self.saa_disaggregate_cuts,
+            stable_cutoff_num_seeds=self.stable_cutoff_num_seeds,
+            stable_cutoff_non_wastefulness=self.stable_cutoff_non_wastefulness,
+            stable_cutoff_aggregate_stability=self.stable_cutoff_aggregate_stability,
+            stable_cutoff_tie_breaking_method=self.stable_cutoff_tie_breaking_method,
+            priced_access_cut_levels=self.priced_access_cut_levels,
+            priced_access_price_source=self.priced_access_price_source,
+            priced_access_price_scale=self.priced_access_price_scale,
             dw_objective=self.dw_objective,
             dw_recom_samples=self.dw_recom_samples,
             dw_recom_chains=self.dw_recom_chains,

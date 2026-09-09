@@ -55,13 +55,6 @@ tasks:
     seed: [1]
     solve_time_limits: [[1800]]
 
-  - solver: 'mip'
-    strategy: [iterative_choice, saa]
-    workers: 16
-    max_iterations: [15]
-    seed: [1]
-    solve_time_limits: [[1800]]
-
   - solver: 'short_bursts'
     strategy: ['short_bursts_choice']
     workers: 1

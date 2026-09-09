@@ -24,6 +24,12 @@ import networkx as nx
 from ortools.sat.python import cp_model
 
 from choice.objective import ChoiceCut
+from optimization.access_inequalities import (
+    cardinality_cliques,
+    completion_pairs,
+    pair_key,
+    transitivity_triples,
+)
 from optimization.data import contiguity
 from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
@@ -418,6 +424,12 @@ class _CpSatSolver(Solver):
                 {
                     "objective_kind": "choice_utility",
                     "choice_cuts": len(problem.choice_objective.cuts),
+                    **{
+                        f"choice_access_{key}": value
+                        for key, value in getattr(
+                            self, "_access_inequality_counts", {}
+                        ).items()
+                    },
                 }
             )
             if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -704,14 +716,134 @@ class _CpSatSolver(Solver):
             }
             m.Add(total == sum(utilities.values()))
 
+        # Grouped cuts get one epigraph variable each and the total becomes their
+        # sum, so the master sees sum_g min_t cut_gt(x) instead of
+        # min_t sum_g cut_gt(x). The latter is implied by the former, so this can
+        # only tighten the relaxation.
+        epigraphs: dict[int, cp_model.IntVar] = {}
+        groups = sorted({cut.group for cut in choice.cuts if cut.group is not None})
+        if groups:
+            count = len(groups)
+            # Floor the lower bound and ceil the upper one, so the per-group
+            # domain can never clip a value the total could legitimately take.
+            group_lb = min(0, total_lb // count)
+            group_ub = -(-total_ub // count)
+            epigraphs = {
+                group: m.NewIntVar(group_lb, group_ub, f"choice_total_g{group}")
+                for group in groups
+            }
+            m.Add(total == sum(epigraphs.values()))
+
         access_vars: dict[tuple[int, int], Any] = {}
         access_joints: dict[tuple[int, int, int], Any] = {}
         for cut in choice.cuts:
             self._add_choice_cut(
-                m, problem, x, utilities, total, access_vars, access_joints, cut, scale
+                m,
+                problem,
+                x,
+                utilities,
+                epigraphs.get(cut.group, total),
+                access_vars,
+                access_joints,
+                cut,
+                scale,
             )
 
-        m.Maximize(total)
+        # Lagrangian reward on the same-zone indicators. Fixed indicators still
+        # contribute, as a constant offset -- dropping it would shift the bound.
+        reward_vars = []
+        reward_weights = []
+        reward_constant = 0.0
+        for pair, coefficient in choice.access_terms:
+            var = self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, pair[0], pair[1]
+            )
+            if isinstance(var, (int, float)):
+                reward_constant += coefficient * var
+                continue
+            weight = round(coefficient * scale)
+            if weight:
+                reward_vars.append(var)
+                reward_weights.append(weight)
+
+        self._add_access_inequalities(
+            m, problem, x, access_vars, access_joints
+        )
+
+        objective = total + round(reward_constant * scale)
+        if reward_vars:
+            objective += cp_model.LinearExpr.WeightedSum(reward_vars, reward_weights)
+        m.Maximize(objective)
+
+    def _add_access_inequalities(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+    ) -> None:
+        """Tighten the relaxation of the co-zoning indicators.
+
+        Only variables are constrained; a pair the linearization already fixed
+        to a constant carries no slack to remove.
+        """
+        self._access_inequality_counts = {
+            "cardinality": 0,
+            "triangle": 0,
+            "pairs": 0,
+            "completed": 0,
+        }
+        want_cardinality = bool(self.options.get("choice_access_cardinality", False))
+        want_triangle = bool(self.options.get("choice_access_triangle", False))
+        if not (want_cardinality or want_triangle):
+            return
+        variable_pairs = [
+            pair
+            for pair, var in access_vars.items()
+            if not isinstance(var, (int, float))
+        ]
+        self._access_inequality_counts["pairs"] = len(variable_pairs)
+        if not variable_pairs:
+            return
+
+        if want_triangle and bool(self.options.get("choice_access_complete", False)):
+            # Create the missing side of each near-triangle so transitivity has
+            # something to bind on. Each new pair also brings per-zone
+            # conjunction variables, so the limit is a real cost control.
+            created = completion_pairs(
+                variable_pairs,
+                problem.candidate_zones,
+                limit=int(self.options.get("choice_access_completion_limit", 20_000)),
+            )
+            for first, second in created:
+                var = self._get_or_create_access_var(
+                    m, problem, x, access_vars, access_joints, first, second
+                )
+                if not isinstance(var, (int, float)):
+                    variable_pairs.append(pair_key(first, second))
+            self._access_inequality_counts["completed"] = len(created)
+
+        if want_cardinality:
+            for anchor, members in cardinality_cliques(
+                variable_pairs, problem.candidate_zones
+            ):
+                m.Add(
+                    sum(access_vars[pair_key(anchor, member)] for member in members)
+                    <= 1
+                )
+                self._access_inequality_counts["cardinality"] += 1
+
+        if want_triangle:
+            limit = int(self.options.get("choice_access_triangle_limit", 200_000))
+            for u, v, w in transitivity_triples(variable_pairs, limit=limit):
+                self._access_inequality_counts["triangle"] += 1
+                a_uv = access_vars[pair_key(u, v)]
+                a_vw = access_vars[pair_key(v, w)]
+                a_uw = access_vars[pair_key(u, w)]
+                m.Add(a_uv + a_vw - a_uw <= 1)
+                m.Add(a_uv + a_uw - a_vw <= 1)
+                m.Add(a_uw + a_vw - a_uv <= 1)
 
     def _get_or_create_access_var(
         self,
@@ -751,9 +883,12 @@ class _CpSatSolver(Solver):
                 access_joints[joint_key] = both
             joints.append(both)
 
-        for both in joints:
-            m.AddImplication(both, same_zone)
-        m.AddBoolOr([same_zone.Not(), *joints])
+        # A node sits in exactly one zone, so at most one conjunction can
+        # fire and the equality is integrally the same as
+        # `same_zone <=> OR(joints)` -- but it also states `sum(joints) <= 1`
+        # as a linear row instead of leaving it to presolve.  `MipSolver`
+        # linearizes the same way.
+        m.Add(same_zone == sum(joints))
 
         access_vars[pair] = same_zone
         return same_zone
