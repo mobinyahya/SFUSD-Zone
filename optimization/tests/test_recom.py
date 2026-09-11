@@ -732,7 +732,7 @@ def test_adaptive_short_bursts_end_to_end_solve_with_softmax_pairs() -> None:
     _assert_valid_recom_solution(problem, solution)
 
 
-def test_adaptive_short_bursts_defaults_to_uniform_pair_selection() -> None:
+def test_adaptive_short_bursts_defaults_to_the_lagrangian_softmax_pair_draw() -> None:
     problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
     solver = get_solver(
         "adaptive_short_bursts",
@@ -741,7 +741,32 @@ def test_adaptive_short_bursts_defaults_to_uniform_pair_selection() -> None:
         seed=123,
     )
 
+    assert solver.solve(problem).metadata["pair_selector"] == "lagrangian_softmax"
+
+
+def test_adaptive_short_bursts_still_accepts_uniform_pair_selection() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
+    solver = get_solver(
+        "adaptive_short_bursts",
+        recom_iterations=5,
+        short_bursts_length=5,
+        pair_selector="uniform",
+        seed=123,
+    )
+
     assert solver.solve(problem).metadata["pair_selector"] == "uniform"
+
+
+def test_other_recom_solvers_keep_uniform_pair_selection() -> None:
+    """Only the adaptive solver has Lagrangian weights to score zones with."""
+    problem = make_solver_contract_problem()
+    context = _ReComContext(problem)
+    state = context.build_state(context.validate_hint(problem.hint or {}))
+    kernel = _ReComKernel(context, random.Random(0), None)
+
+    move = kernel.propose(state, "uniform")
+
+    assert {move.zone_a, move.zone_b} == {0, 1}
 
 
 def test_adaptive_short_bursts_rejects_an_unknown_pair_selector() -> None:
@@ -760,12 +785,18 @@ def test_config_passes_adaptive_short_bursts_pair_selector() -> None:
         levels=["BlockGroup_0"],
         solver="adaptive_short_bursts",
         recom_iterations=100,
-        adaptive_short_bursts_pair_selector="lagrangian_softmax",
+        adaptive_short_bursts_pair_selector="uniform",
     )
 
     solver = config.make_solver()
 
-    assert solver.options["adaptive_short_bursts_pair_selector"] == "lagrangian_softmax"
+    assert solver.options["adaptive_short_bursts_pair_selector"] == "uniform"
+    assert (
+        OptimizationConfig(levels=["BlockGroup_0"])
+        .make_solver()
+        .options["adaptive_short_bursts_pair_selector"]
+        == "lagrangian_softmax"
+    )
 
 
 def test_config_rejects_invalid_adaptive_short_bursts_pair_selector() -> None:

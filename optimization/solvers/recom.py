@@ -44,7 +44,9 @@ _RELAXED_WEIGHTS = {
 # How ``propose`` picks the two zones it merges: uniformly at random, or by a
 # softmax over each zone's Lagrangian score - its own cut edges, the objective,
 # plus its weighted squared violations - which steers bursts at the zones that
-# currently look worst.
+# currently look worst.  The adaptive solver defaults to the softmax: uniform
+# pair selection did not win a single cell of a 4-to-18 zone sweep over two
+# instances, and needed 4-12x longer to reach feasibility at 6-8 zones.
 _PAIR_SELECTORS = ("uniform", "lagrangian_softmax")
 
 
@@ -1734,7 +1736,9 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         pair_selector = str(
             self.options.get(
                 "pair_selector",
-                self.options.get("adaptive_short_bursts_pair_selector", "uniform"),
+                self.options.get(
+                    "adaptive_short_bursts_pair_selector", "lagrangian_softmax"
+                ),
             )
         )
         if pair_selector not in _PAIR_SELECTORS:

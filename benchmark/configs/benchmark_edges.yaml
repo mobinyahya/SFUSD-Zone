@@ -23,6 +23,7 @@ optimization_defaults:
   recom_iterations: -1
   boundary_radius: 1
   short_bursts_method: relaxed_recom
+  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
@@ -31,7 +32,7 @@ sweep:
                     '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
                     '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8']
   levels: [['Block_3', 'Block_2'], ['Block_2', 'Block_1'], ['Block_2', 'Block_0']]
-  seed: [1]
+  seed: [1] # add more seeds later
 
 tasks:
   - solver: 'cp_bool'

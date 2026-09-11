@@ -144,7 +144,7 @@ All ReCom-family variants share a common combinatorial transition kernel operati
     \begin{equation}
     \mathcal{A}(\mathcal{P}_t) = \left\{(a, b) \mid 1 \le a < b \le k, \; \exists (u, v) \in E \text{ with } u \in Z_a, v \in Z_b\right\}
     \end{equation}
-    A pair $(a, b)$ is drawn uniformly at random from $\mathcal{A}(\mathcal{P}_t)$.
+    A pair $(a, b)$ is drawn uniformly at random from $\mathcal{A}(\mathcal{P}_t)$. Adaptive Short Bursts replaces this uniform draw with the violation-weighted draw of Section~\ref{subsubsec:adaptive-short-bursts}; every other variant uses it as stated.
     \item \textbf{Uniform Spanning Tree Sampling:} Form the merged region $U = Z_a \cup Z_b$. Because $Z_a$ and $Z_b$ are individually contiguous and share boundary edges, the induced subgraph $G[U]$ is connected. A spanning tree $T = (U, E(T))$ is sampled uniformly from the set $\mathcal{T}(G[U])$ of all spanning trees of $G[U]$ via Wilson's loop-erased random walk algorithm (Wilson, 1996), ensuring that each tree is drawn with exact probability $1 / |\mathcal{T}(G[U])|$.
     \item \textbf{Spanning Tree Cuts and Zone Contiguity:} Tree $T$ is rooted at an arbitrary root vertex $r \in U$. Each non-root vertex $u \in U \setminus \{r\}$ and its directed edge to its parent $(u, \text{parent}(u)) \in E(T)$ uniquely defines a tree bisection into subtree $T_u$ and complement $U \setminus T_u$. Because $T$ spans $G[U]$, the induced subgraphs $G[T_u]$ and $G[U \setminus T_u]$ are connected by construction, guaranteeing topological contiguity without post-hoc connectivity checks.
     \item \textbf{Candidate Reassignments:} Each subtree cut yields two candidate assignments:
@@ -224,8 +224,8 @@ with tolerance $\epsilon_{\text{tol}} = 10^{-6}$. At the conclusion of burst $b$
 \end{equation}
 If $\mathcal{P}^* \prec \mathcal{P}^{(b)}$, the improvement is accepted as the new incumbent: $\mathcal{P}^{(b+1)} \leftarrow \mathcal{P}^*$; otherwise, the chain resets to the incumbent: $\mathcal{P}^{(b+1)} \leftarrow \mathcal{P}^{(b)}$. This ratcheting mechanism allows the chain to explore infeasible configurations locally while guaranteeing that the search never drifts permanently into worse regions.
 
-\subsubsection{Adaptive Short Bursts}
-Although Short Bursts guides the search restarts, proposal generation within each burst remains unguided. When certain constraints (such as school count balance) are far more rigid than others, random tree bisections rarely decrease multiple violations simultaneously. We address this by formulating Adaptive Short Bursts, which dynamically couples an augmented Lagrangian proposal distribution with Adam dual multiplier ascent.
+\subsubsection{Adaptive Short Bursts}\label{subsubsec:adaptive-short-bursts}
+Although Short Bursts guides the search restarts, proposal generation within each burst remains unguided. When certain constraints (such as school count balance) are far more rigid than others, random tree bisections rarely decrease multiple violations simultaneously. We address this by formulating Adaptive Short Bursts, which dynamically couples an augmented Lagrangian proposal distribution with Adam dual multiplier ascent. The same Lagrangian energy guides both halves of the proposal: which pair of zones is merged, and which cut of the merged region is taken.
 
 \paragraph{Percentage-Normalized Constraint Violations:} Constraint residuals are converted into fractional percentage deviations:
 \begin{equation}
@@ -245,7 +245,19 @@ where penalty weights $w_j$ are dynamically coupled to the incumbent partition's
 w_j = \max\left(1.0, \; |\partial \mathcal{P}^{(b)}| + \eta_j \cdot \widetilde{v}_j(\mathcal{P}^{(b)})^2\right)
 \end{equation}
 
-\kccomment{it would also be reasonable to choose the zones that are the "most infeasible"}
+\paragraph{Violation-Weighted Zone Pair Selection:} The energy $E(c; \mathbf{w})$ scores candidate cuts only after a zone pair has been merged, while the pair itself is drawn uniformly (Step 1 of the shared kernel). A burst therefore spends most of its proposals rebisecting zones that are already balanced, and the rigid constraints it needs to repair are precisely the ones concentrated in a few zones. We localize the same energy to a single zone. Writing $\partial(Z_a) = \bigcup_{b \neq a} \partial(Z_a, Z_b)$ for the cut edges incident to $Z_a$, define
+\begin{equation}
+E_{\mathrm{zone}}(Z_a; \mathbf{w}) = |\partial(Z_a)| + \sum_{j=1}^m w_j \cdot \widetilde{v}_j(Z_a)^2 ,
+\end{equation}
+which restricts both terms of $E(\cdot; \mathbf{w})$ to $Z_a$: the share of the objective that zone pays in boundary edges, and the violations for which it is individually responsible. The first zone is drawn from the Boltzmann distribution over zones with at least one neighbor,
+\begin{equation}
+P(a) = \frac{\exp\left( + \frac{E_{\mathrm{zone}}(Z_a; \mathbf{w})}{T} \right)}{\sum_{a'} \exp\left( + \frac{E_{\mathrm{zone}}(Z_{a'}; \mathbf{w})}{T} \right)} ,
+\end{equation}
+and its partner uniformly from its neighbors, $P(b \mid a) = 1/|\mathcal{N}(a)|$ with $\mathcal{N}(a) = \{b : (a, b) \in \mathcal{A}(\mathcal{P}_t)\}$. The resulting pair $(a, b)$ enters Step 2 of the kernel unchanged, and the same dual-coupled weights $\mathbf{w}$ and temperature $T$ serve both draws.
+
+The sign of the exponent is reversed relative to cut selection below: cut selection suppresses high-energy candidates, whereas zone selection seeks them, so each burst is spent on the zone currently furthest from feasibility. Summing $E_{\mathrm{zone}}$ over zones double counts every cut pair, but a common scale factor is absorbed by $T$ and does not affect the draw. Greedy selection does not fixate, because per-zone violations are recomputed after every accepted transition: repairing the selected zone promotes a different zone to the top of the distribution. At $T = 1.0$ the weights $w_j$ grow large enough that this draw is effectively $\arg\max$, and on block\_2 at $k = 6$ the selected zone still changed on $58\%$ of consecutive proposals, with all six zones drawn. Biasing the pair draw costs no sampling guarantee, since Relaxed ReCom has already set $P_{\text{accept}} = 1$ and abandoned detailed balance; these chains are optimizers, not samplers.
+
+\kccomment{Empirics for a results table, if we want them: at $120$s with \texttt{stop\_on\_feasible}, violation-weighted pair selection reaches feasibility $4$--$12\times$ faster than the uniform draw at $k = 6, 8$, and $4/5$ vs $1/5$ of seeds at $k = 10$ on both block\_2 and Block\_1. Standardizing $E_{\mathrm{zone}}$ across zones before the softmax makes $T$ scale-free but did not change feasibility rates ($32/60$ either way), so it is not used.}
 
 \paragraph{Softmax Proposal Distribution:} Within each burst, candidate cuts are sampled from a Boltzmann distribution parameterized by temperature $T > 0$ (default $T = 1.0$):
 \begin{equation}
@@ -266,7 +278,7 @@ The dual multipliers $\boldsymbol{\eta}$ are updated using projected Adam optimi
 \end{align}
 with learning rate $\gamma = 0.1$, moment decay rates $\beta_1 = 0.9, \beta_2 = 0.999$, and $\epsilon_{\text{Adam}} = 10^{-8}$. The updated multipliers $\boldsymbol{\eta}^{(b+1)}$ and incumbent $\mathcal{P}^{(b+1)}$ then determine the proposal weights $\mathbf{w}$ for the subsequent burst. \kccomment{Do OR people need any justification for why im using adam? Because neither I, nor anyone else on earth, knows why adam works as well as it does}
 
-\paragraph{Closed-Loop Feedback Dynamics:} If a constraint $j$ remains persistently violated across bursts ($\widetilde{v}_j > 0$), its gradient $g_j > 0$ inflates $\eta_j$ and $w_j$, exponentially suppressing candidate cuts that fail to satisfy constraint $j$. When constraint $j$ is satisfied ($\widetilde{v}_j = 0$), $g_j = 0$, allowing the second moment to decay and stabilizing $\eta_j$. Once all constraints reach feasibility ($\widetilde{\mathbf{v}} = \mathbf{0}$), the energy collapses to $E(c; \mathbf{w}) = |\partial \mathcal{P}_c|$, and the Boltzmann distribution purely drives cut boundary minimization.
+\paragraph{Closed-Loop Feedback Dynamics:} If a constraint $j$ remains persistently violated across bursts ($\widetilde{v}_j > 0$), its gradient $g_j > 0$ inflates $\eta_j$ and $w_j$, exponentially suppressing candidate cuts that fail to satisfy constraint $j$. When constraint $j$ is satisfied ($\widetilde{v}_j = 0$), $g_j = 0$, allowing the second moment to decay and stabilizing $\eta_j$. Once all constraints reach feasibility ($\widetilde{\mathbf{v}} = \mathbf{0}$), the energy collapses to $E(c; \mathbf{w}) = |\partial \mathcal{P}_c|$, and the Boltzmann distribution purely drives cut boundary minimization. Zone selection collapses likewise to $E_{\mathrm{zone}}(Z_a; \mathbf{w}) = |\partial(Z_a)|$, which targets the zone holding the most boundary edges, and hence the one with the most to gain from rebisection.
 
 \section{Hierarchical Graph Contraction}
 

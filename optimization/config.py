@@ -81,7 +81,7 @@ class OptimizationConfig:
     short_bursts_method: str = "recom"
     adaptive_short_bursts_lr: float = 0.1
     adaptive_short_bursts_temperature: float = 1.0
-    adaptive_short_bursts_pair_selector: str = "uniform"
+    adaptive_short_bursts_pair_selector: str = "lagrangian_softmax"
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0

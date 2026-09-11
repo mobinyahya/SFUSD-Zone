@@ -1,6 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1789103559.4617 "/Users/kumar/Desktop/GitHub/SFUSD-Zone/paper.tex" "paper.pdf" "paper" 1789103560.07547 0
-  "/Users/kumar/Desktop/GitHub/SFUSD-Zone/paper.tex" 1789103558.42793 156476 8cfab7b90db8317713d86e2eac811f12 ""
+["pdflatex"] 1789165744.57003 "paper.tex" "paper.pdf" "paper" 1789165745.1483 0
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/tfm/jknappen/ec/tcrm1000.tfm" 1136768653 1536 e07581a4bb3136ece9eeb4c3ffab8233 ""
@@ -129,9 +128,9 @@
   "/usr/local/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1763538668 5467155 19efa205003f9ecad95fbbaa6ff24da1 ""
   "/usr/local/texlive/2025/texmf-var/web2c/pdftex/pdflatex.fmt" 1741450574 3345740 46b66fdb0378f7bf5921b5eabf1762b8 ""
   "/usr/local/texlive/2025/texmf.cnf" 1741450484 577 418a7058ec8e006d8704f60ecd22c938 ""
-  "paper.aux" 1789103560.00935 18079 946573788e6ae5a4ffd0b87e87b04aa5 "pdflatex"
-  "paper.out" 1789103560.01038 8730 609c8bff6a0c123a4b14b1280f21e9e8 "pdflatex"
-  "paper.tex" 1789103558.42793 156476 8cfab7b90db8317713d86e2eac811f12 ""
+  "paper.aux" 1789165745.06656 18310 4fef260d97029faae3ffb8b92e7f714d "pdflatex"
+  "paper.out" 1789165745.06754 8730 609c8bff6a0c123a4b14b1280f21e9e8 "pdflatex"
+  "paper.tex" 1789165743.78063 159832 a14fe4dd541f9f930c14bee78ace61f8 ""
   (generated)
   "paper.aux"
   "paper.log"
