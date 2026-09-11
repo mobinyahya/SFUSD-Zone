@@ -888,6 +888,12 @@ class _CpSatSolver(Solver):
         # `same_zone <=> OR(joints)` -- but it also states `sum(joints) <= 1`
         # as a linear row instead of leaving it to presolve.  `MipSolver`
         # linearizes the same way.
+        #
+        # The Boolean spelling of that same reification is
+        # `AddImplication(both, same_zone)` for each joint plus
+        # `AddBoolOr([same_zone.Not(), *joints])`.  It is logically
+        # equivalent, but it never states the `sum(joints) <= 1` row, so the
+        # linear relaxation is weaker unless presolve rediscovers it.
         m.Add(same_zone == sum(joints))
 
         access_vars[pair] = same_zone
