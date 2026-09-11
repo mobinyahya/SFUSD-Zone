@@ -8,7 +8,7 @@ optimization_defaults:
     scenario: summer-26-zoning
     overrides: {}
   save_solver_logs: true
-  save_solver_progress: true
+  save_solver_progress: false
   max_distance: auto
 
   racial_dev: -1
@@ -25,13 +25,13 @@ optimization_defaults:
   short_bursts_method: relaxed_recom
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9',
-                    '8-zone-22', '8-zone-24',
-                    '10-zone-3', '10-zone-9',
-                    '13-zone-6', '13-zone-7',
-                    '18-zone-1', '18-zone-7']
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
+                    '8-zone-22', '8-zone-24', '8-zone-25', '8-zone-31',
+                    '10-zone-3', '10-zone-9', '10-zone-1', '10-zone-7',
+                    '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
+                    '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8']
   levels: [['Block_3', 'Block_2'], ['Block_2', 'Block_1'], ['Block_2', 'Block_0']]
-  seed: [1, 2, 3, 4, 5]
+  seed: [1]
 
 tasks:
   - solver: 'cp_bool'
@@ -48,10 +48,6 @@ tasks:
     workers: 1
     solve_time_limits: [[600], [1800]]
 
-  - solver: 'short_bursts'
-    workers: 1
-    solve_time_limits: [[600], [1800]]
-
   - solver: 'adaptive_short_bursts'
     workers: 1
     solve_time_limits: [[600], [1800]]
@@ -65,7 +61,7 @@ tasks:
     solve_time_limits: [[450, 150], [1350, 450]]
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_6'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_7'
   skip_existing: true
   rerun_failed: true
   sequential: false

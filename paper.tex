@@ -14,7 +14,7 @@
 \addauthor{il}{blue}
 \addauthor{kc}{red}
 
-\title{optimization section v2}
+\title{optimization section v3}
 \author{kumarc}
 \date{July 2026}
 
@@ -138,7 +138,7 @@ where the floor function preserves conservative bounding without weakening the f
 In the political redistricting literature, Markov Chain Monte Carlo (MCMC) methods—most prominently Recombination (ReCom)—are widely used to sample vast ensembles of contiguous districts. In political redistricting, the primary constraint is typically equal population balance (a single scalar target). In contrast, school rezoning introduces a substantially more restrictive constraint manifold defined by capacity bounds, tight demographic diversity bounds, and exact discrete school count allocations.
 
 \subsubsection{ReCom Proposal Kernel}
-All ReCom-family variants share a common combinatorial transition kernel operating on partition $\mathcal{P}_t = \{Z_1, \dots, Z_k\}$ of graph $G = (V, E)$:
+All ReCom-family variants share a common combinatorial transition kernel operating on partition $\mathcal{P}_t = \{Z_1, \dots, Z_k\}$ of graph $G = (V, E)$: \kccomment{i dont like this section}
 \begin{enumerate}
     \item \textbf{Adjacent Zone Pair Selection:} Let $\mathcal{A}(\mathcal{P}_t)$ denote the set of pairs of zones sharing at least one boundary edge:
     \begin{equation}
@@ -197,10 +197,10 @@ Candidate cut $c$ is drawn from the categorical distribution:
 \begin{equation}
 P(c) = \frac{\mu(c)}{\sum_{c' \in \mathcal{C}} \mu(c')}
 \end{equation}
-The selected move is accepted unconditionally ($\mathcal{P}_{t+1} \leftarrow \mathcal{P}_c$). While Relaxed ReCom traverses infeasible states freely, unconstrained random walks with static weights drift over long trajectories and frequently fail to settle into the narrow intersection of all feasibility constraints.
+The selected move is accepted unconditionally ($\mathcal{P}_{t+1} \leftarrow \mathcal{P}_c$). While Relaxed ReCom traverses infeasible states freely, unconstrained random walks with static weights drift over long trajectories and frequently fail to settle into the narrow intersection of all feasibility constraints. These weights and features were selected via manual tuning. 
 
 \subsubsection{Short Bursts}
-Building upon the Short Bursts framework (Cannon et al., 2020), we replace the unbounded random walk with repeated localized search bursts of fixed length $L$ (typically $L = 25$). Starting from an incumbent partition $\mathcal{P}^{(b)}$ at burst iteration $b$, the chain executes $L$ unconstrained transitions using the ReCom or Relaxed ReCom proposal kernel, generating a trajectory of visited states $\mathcal{S}^{(b)} = \{\mathcal{P}_1, \dots, \mathcal{P}_L\}$.
+Building upon the Short Bursts framework (Cannon et al., 2020), we replace the unbounded random walk with repeated localized search bursts of fixed length $L$ (typically $L = 25$). Starting from an incumbent partition $\mathcal{P}^{(b)}$ at burst iteration $b$, the chain executes $L$ unconstrained transitions using the ReCom or Relaxed ReCom proposal kernel, generating a trajectory of visited states $\mathcal{S}^{(b)} = \{\mathcal{P}_1, \dots, \mathcal{P}_L\}$. If ReCom is used, infeasible states should not be rejected, similar to Relaxed ReCom.
 
 To compare intermediate partitions across heterogeneous constraints with disparate numerical scales (e.g., student counts $\sim 10^3$, school counts $\sim 10^0$, demographic proportions $\sim 10^{-1}$), we track the running maximum observed violation for each constraint $j \in [m]$ across all visited states up to step $\tau$:
 \begin{equation}
@@ -231,9 +231,12 @@ Although Short Bursts guides the search restarts, proposal generation within eac
 \begin{equation}
 \widetilde{v}_{\text{cap}}(Z) = \frac{v_{\text{cap}}(Z)}{N(Z)} \times 100\%, \quad \widetilde{v}_{\text{sch}}(Z) = \frac{v_{\text{sch}}(Z)}{\bar{S}} \times 100\%
 \end{equation}
-where $\bar{S} = |S|/k$ is the target average school count per zone.
+where $\bar{S} = |S|/k$ is the target average school count per zone. This is done so that residuals are usually \kccomment{How do i say this better} greater than 1 unless satisfied so that squaring still has an effect on the district. \kccomment{this also relies on saying that we can decompose constraints with linear penalties }
 
-\paragraph{Augmented Lagrangian Energy Formulation:} Let $\boldsymbol{\eta} = (\eta_1, \dots, \eta_m) \in \mathbb{R}_+^m$ denote dual penalty multipliers, initialized to $\eta_j^{(0)} = 1.0$. For each candidate cut $c \in \mathcal{C}$ yielding prospective partition $\mathcal{P}_c$, we define the candidate energy function:
+
+\paragraph{Augmented Lagrangian Energy Formulation:}\kccomment{most ai naming of all time}
+
+Let $\boldsymbol{\eta} = (\eta_1, \dots, \eta_m) \in \mathbb{R}_+^m$ denote dual penalty multipliers, initialized to $\eta_j^{(0)} = 1.0$. For each candidate cut $c \in \mathcal{C}$ yielding prospective partition $\mathcal{P}_c$, we define the candidate energy function:
 \begin{equation}
 E(c; \mathbf{w}) = |\partial \mathcal{P}_c| + \sum_{j=1}^m w_j \cdot \widetilde{v}_j(\mathcal{P}_c)^2
 \end{equation}
@@ -241,6 +244,8 @@ where penalty weights $w_j$ are dynamically coupled to the incumbent partition's
 \begin{equation}
 w_j = \max\left(1.0, \; |\partial \mathcal{P}^{(b)}| + \eta_j \cdot \widetilde{v}_j(\mathcal{P}^{(b)})^2\right)
 \end{equation}
+
+\kccomment{it would also be reasonable to choose the zones that are the "most infeasible"}
 
 \paragraph{Softmax Proposal Distribution:} Within each burst, candidate cuts are sampled from a Boltzmann distribution parameterized by temperature $T > 0$ (default $T = 1.0$):
 \begin{equation}
@@ -252,14 +257,14 @@ This exponentially suppresses candidate cuts that worsen heavily penalized viola
 \begin{equation}
 g_j^{(b)} = \widetilde{v}_j(\mathcal{P}^*)^2 \qquad \forall j \in [m]
 \end{equation}
-The dual multipliers $\boldsymbol{\eta}$ are updated using projected Adam optimization:
+The dual multipliers $\boldsymbol{\eta}$ are updated using projected Adam optimization: \kccomment{Do i need to explain what adam is?}
 \begin{align}
 \mathbf{m}_b &= \beta_1 \mathbf{m}_{b-1} + (1 - \beta_1) \mathbf{g}^{(b)} \\
 \mathbf{u}_b &= \beta_2 \mathbf{u}_{b-1} + (1 - \beta_2) (\mathbf{g}^{(b)} \odot \mathbf{g}^{(b)}) \\
 \widehat{\mathbf{m}}_b &= \frac{\mathbf{m}_b}{1 - \beta_1^b}, \qquad \widehat{\mathbf{u}}_b = \frac{\mathbf{u}_b}{1 - \beta_2^b} \\
 \eta_j^{(b+1)} &= \max\left(0.0, \; \eta_j^{(b)} + \gamma \frac{\widehat{m}_{j, b}}{\sqrt{\widehat{u}_{j, b}} + \epsilon_{\text{Adam}}}\right)
 \end{align}
-with learning rate $\gamma = 0.1$, moment decay rates $\beta_1 = 0.9, \beta_2 = 0.999$, and $\epsilon_{\text{Adam}} = 10^{-8}$. The updated multipliers $\boldsymbol{\eta}^{(b+1)}$ and incumbent $\mathcal{P}^{(b+1)}$ then determine the proposal weights $\mathbf{w}$ for the subsequent burst.
+with learning rate $\gamma = 0.1$, moment decay rates $\beta_1 = 0.9, \beta_2 = 0.999$, and $\epsilon_{\text{Adam}} = 10^{-8}$. The updated multipliers $\boldsymbol{\eta}^{(b+1)}$ and incumbent $\mathcal{P}^{(b+1)}$ then determine the proposal weights $\mathbf{w}$ for the subsequent burst. \kccomment{Do OR people need any justification for why im using adam? Because neither I, nor anyone else on earth, knows why adam works as well as it does}
 
 \paragraph{Closed-Loop Feedback Dynamics:} If a constraint $j$ remains persistently violated across bursts ($\widetilde{v}_j > 0$), its gradient $g_j > 0$ inflates $\eta_j$ and $w_j$, exponentially suppressing candidate cuts that fail to satisfy constraint $j$. When constraint $j$ is satisfied ($\widetilde{v}_j = 0$), $g_j = 0$, allowing the second moment to decay and stabilizing $\eta_j$. Once all constraints reach feasibility ($\widetilde{\mathbf{v}} = \mathbf{0}$), the energy collapses to $E(c; \mathbf{w}) = |\partial \mathcal{P}_c|$, and the Boltzmann distribution purely drives cut boundary minimization.
 
@@ -317,6 +322,8 @@ This approach yields two major practical advantages:
 \end{enumerate}
 
 \section{Choice Set Optimization}
+
+\kccomment{This should maybe go to the appendix}
 Instead of solely evaluating zoning by geometric compactness, we now consider the academic welfare that a zone configuration delivers to families. Under a zoned choice system, a family residing in vertex $v$ gains access to the set of schools assigned to that zone, $S' \subseteq S$. We wish to optimize the expected utility that families derive from their available choice set.
 
 Under a standard Multinomial Logit (MNL) discrete choice model (McFadden, 1974), each student derives utility $U_{i,s} = V_s + \varepsilon_{i,s}$ from school $s$, where $V_s$ is the deterministic mean utility and $\varepsilon_{i,s} \stackrel{\text{i.i.d.}}{\sim} \text{Gumbel}(0, 1)$ represents an idiosyncratic taste shock following a standard Type I Extreme Value distribution. The expected maximum utility of choice set $S'$ is given by the log-sum-exp formula:
@@ -380,10 +387,10 @@ We introduce auxiliary decision variables $\hat{U}_v \in \mathbb{R}$ representin
     \begin{equation}\label{eq:benders_cut}
     \hat{U}_v \leq U_v(S_v^t) + \sum_{s \in S \setminus S_v^t} \Delta_{t,s,v}^+ a_{v, l(s)} - \sum_{s \in S_v^t} \Delta_{s,v}^- (1 - a_{v, l(s)}) \qquad \forall v \in V
     \end{equation}
-    Alternatively, cuts may be aggregated across all vertices into a single total utility bound:
-    \begin{equation}\label{eq:benders_cut_agg}
-    \sum_{v \in V} \hat{U}_v \leq \sum_{v \in V} \left( U_v(S_v^t) + \sum_{s \in S \setminus S_v^t} \Delta_{t,s,v}^+ a_{v, l(s)} - \sum_{s \in S_v^t} \Delta_{s,v}^- (1 - a_{v, l(s)}) \right)
-    \end{equation}
+    % Alternatively, cuts may be aggregated across all vertices into a single total utility bound:
+    % \begin{equation}\label{eq:benders_cut_agg}
+    % \sum_{v \in V} \hat{U}_v \leq \sum_{v \in V} \left( U_v(S_v^t) + \sum_{s \in S \setminus S_v^t} \Delta_{t,s,v}^+ a_{v, l(s)} - \sum_{s \in S_v^t} \Delta_{s,v}^- (1 - a_{v, l(s)}) \right)
+    % \end{equation}
 \end{description}
 
 \noindent\textbf{Theorem 1 (Finite Convergence and Optimality).} \textit{The logic-based Benders decomposition terminates in a finite number of iterations at a globally optimal zone partition $\mathcal{P}^*$.}
@@ -391,7 +398,7 @@ We introduce auxiliary decision variables $\hat{U}_v \in \mathbb{R}$ representin
 \textit{Proof.} Let $\mathcal{X}$ denote the finite set of feasible binary zone assignment vectors $x \in \{0, 1\}^{|V| \times k}$ satisfying the base constraints. 
 First, by inequality \eqref{eq:total-bound}, every generated Benders cut \eqref{eq:benders_cut} is a valid global upper bound: for any $x \in \mathcal{X}$, the master variable satisfies $\hat{U}_v(x) \geq U_v(S_v(x))$ for all $v$.
 Second, the cut is exact at the evaluated point $x^t$: setting $x = x^t$, we have $a_{v, l(s)} = 0$ for all $s \notin S_v^t$ and $(1 - a_{v, l(s)}) = 0$ for all $s \in S_v^t$, which collapses the right-hand side of \eqref{eq:benders_cut} exactly to $U_v(S_v^t)$. Thus $\hat{U}_v(x^t) = U_v(S_v^t)$.
-Finally, because $\mathcal{X}$ is finite, the master problem cannot generate infinitely many distinct solutions. When the master problem produces an incumbent partition $x^{t+1}$ whose objective matches its true subproblem evaluation, we have:
+Finally, because $\mathcal{X}$ is finite, the master problem cannot generate infinitely many distinct solutions. When the master problem produces an incumbent partition $x^{t+1}$ whose objective matches its true subproblem evaluation, we have: \kccomment{dunno if this is sufficient}
 $$\sum_{v \in V} U_v(S_v(x^{t+1})) = \sum_{v \in V} \hat{U}_v(x^{t+1}) \geq \sum_{v \in V} \hat{U}_v(x) \geq \sum_{v \in V} U_v(S_v(x)) \qquad \forall x \in \mathcal{X}$$
 proving that $x^{t+1}$ is a global maximum. $\blacksquare$
 
@@ -440,6 +447,7 @@ The MID optimization problem maximizes total utilitarian welfare:
 \end{equation}
 
 \noindent\textbf{MID Continuum Decomposition:} 
+\kccomment{this should def go to the appendix}
 The full MID problem couples discrete zoning $x \in \Omega$ with the exact recurrence $R_{g,r} = \min(R_{g,r-1}, e_{g,r})$ across all applicant types and preference ranks. To solve this efficiently, we decompose the problem by maintaining an active prefix vector $\mathbf{k} = (k_g)_{g \in \mathcal{G}}$ with $k_g \in \{0, \dots, R_g\}$.
 
 For each type $g$, alternatives are partitioned into an exact active prefix ($r < k_g$) and a relaxed tail ($r \geq k_g$). The tail is replaced by an optimistic transportation flow $z_{g,r} \ge 0$:
@@ -527,7 +535,7 @@ This formulation confers three major advantages:
 \begin{enumerate}
     \item \textbf{Dimensionality Reduction:} Rather than tracking $|\mathcal{I}| \times |\mathcal{S}| \approx 4.5 \times 10^5$ student-level access indicators across $|\Psi|$ epigraph bounds, the master model instantiates binary access variables $a_{v, u}$ only on-demand for pairs $(v, u)$ with positive dual welfare values $\bar{\Gamma}_{v, u}^{(r)} > 0$.
     \item \textbf{Exact Equivalence:} Because geographic access $a_{i,s} \equiv a_{v(i), l(s)}$ is strictly identical for all students at vertex $v$, the algebraic aggregation of dual coefficients preserves exact LP outer-approximation guarantees with zero approximation error.
-    \item \textbf{Unified Base Solver Architecture:} Because the cut \eqref{eq:saa_agg_cut} shares the identical access variable structure $a_{v, u}$ as the choice set objective \eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models.
+    \item \textbf{Unified Base Solver Architecture:} Because the cut \eqref{eq:saa_agg_cut} shares the identical access variable structure $a_{v, u}$ as the choice set objective \kccomment{hallucinated reference, fix }\eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models.
 \end{enumerate}
 
 \subsection{Congestion-Priced Access}
@@ -667,11 +675,11 @@ where the \emph{tooth credit} is
 \qquad
 \chi_{\varnothing,s} = 1 .
 \end{equation}
-The credit is the only departure from the fixed-market description, and Section~\ref{app:ap_variable} is where it is earned. For the moment read \eqref{saa:comb} at $a \equiv 1$ and with no vacant slots, where every credit is zero and the inequality is literally $D(C^\psi(s,i,K)) \ge q_s$.
+The credit is the only departure from the fixed-market description, and Section~\ref{app:ap_variable} is where it is earned. \kccomment{ai speak} For the moment read \eqref{saa:comb} at $a \equiv 1$ and with no vacant slots, where every credit is zero and the inequality is literally $D(C^\psi(s,i,K)) \ge q_s$.
 
-\noindent\textbf{Proposition 2 (Comb Inequality Stability).} \textit{Fix $\psi$ and a binary access pattern $a$. Then the integral points of \eqref{saa:assignment}--\eqref{saa:domain} are exactly the stable matchings of the market $\Gamma(a)$, and the system has no fractional extreme points: its solution set is $\mathrm{conv}\{D : D \text{ stable in } \Gamma(a)\}$.}
+\noindent\textbf{Proposition 2 (Comb Inequality Stability).} \textit{Fix $\psi$ and a binary access pattern $a$. Then the integral points of \eqref{saa:assignment}--\eqref{saa:domain} are exactly the stable matchings of the market $\Gamma(a)$, and the system has no fractional extreme points: its solution set is $\mathrm{conv}\{D : D \text{ stable in } \Gamma(a)\}$.} 
 
-\textit{Proof.} Validity and integral exactness are Proposition~10 below, which proves them for all $a$ at once. For the absence of fractional extreme points, take $a \equiv 1$ first and assume $n_s \ge q_s$ for every $s$. Then all credits vanish, \eqref{saa:comb} is the comb inequality $D(C) \ge q_s$, and the claim is the theorem of Baïou and Balinski (2000): the system \eqref{saa:assignment}--\eqref{saa:domain} is the stable admissions polytope. Sethuraman, Teo and Qian (2006) give a short proof by exhibiting, for each fractional point, a decomposition of its mass into $q_s$ unit bins per program such that the level sets $\{$best $q_s$ applicants at height $\alpha\}$ are stable matchings for every $\alpha \in (0,1]$; the point is then the convex combination of those level sets induced by $\alpha$ uniform. The general case is the second half of Proposition~10. $\blacksquare$
+\textit{Proof.} Validity and integral exactness are Proposition~10 below, which proves them for all $a$ at once. For the absence of fractional extreme points, take $a \equiv 1$ first and assume $n_s \ge q_s$ for every $s$. Then all credits vanish, \eqref{saa:comb} is the comb inequality $D(C) \ge q_s$, and the claim is the theorem of Baïou and Balinski (2000): the system \eqref{saa:assignment}--\eqref{saa:domain} is the stable admissions polytope. Sethuraman, Teo and Qian (2006) give a short proof by exhibiting, for each fractional point, a decomposition of its mass into $q_s$ unit bins per program such that the level sets $\{$best $q_s$ applicants at height $\alpha\}$ are stable matchings for every $\alpha \in (0,1]$; the point is then the convex combination of those level sets induced by $\alpha$ uniform. The general case is the second half of Proposition~10. $\blacksquare$ \kccomment{i dont get this part}
 
 The completeness claim has a consequence worth isolating, because it says what the recourse oracle would return if the comb family were loaded in full.
 
@@ -709,13 +717,15 @@ F = \{p \in P \setminus G : D_{p,s} = 1\},
 H = P \setminus (F \cup G).$$
 Every $p \in F$ has $b_p = 0$, hence $\chi_{p,s} = 0$, hence $a_{p,s} = 1$ and $p \succeq_s^\psi i$ --- vacant slots and applicants without access carry a credit and lie in $G$ --- so $(p,s) \in S^\psi(s,i)$ and $D(S^\psi(s,i)) \ge |F|$. Therefore the left-hand side is at least $|F| + |G|$, and since $|F| + |G| + |H| = q_s$ the assumed bound forces $H \neq \emptyset$. Pick $k \in H$. As above $\chi_{k,s} = 0$, so $(k,s) \in \Gamma(a)$ and $k \succeq_s^\psi i$; and $b_k = 0$ with $D_{k,s} = 0$ gives $D(T^\psi(k,s)) = 0$. Finally $k \succeq_s^\psi i$ gives $S^\psi(s,k) \subseteq S^\psi(s,i)$, so
 $$D\big(S^\psi(s,k)\big) \le D\big(S^\psi(s,i)\big) \le q_s - 1 .$$
-By Lemma~1 the pair $(k,s) \in \Gamma(a)$ blocks $D$, contradicting stability.
+By Lemma~1 the pair $(k,s) \in \Gamma(a)$ blocks $D$, contradicting stability. \kccomment{i dont understand this section}
 
 (ii) Let $a$ be binary and $D$ integral and feasible. Constraints \eqref{saa:assignment}, \eqref{saa:capacity} and \eqref{saa:access} make $D$ a matching of $\Gamma(a)$. Suppose $(i,s) \in \Gamma(a)$ blocked it, so by Lemma~1 $D(T^\psi(i,s)) = 0$ and $D(S^\psi(s,i)) \le q_s - 1$. Let $A = \{k : (k,s) \in \Gamma, \ k \succ_s^\psi i\}$ and, with $b_k$ as in part~(i), let $m_0 = |\{k \in A : b_k = 0\}|$. Choose the teeth greedily, taking the $q_s - 1$ smallest brackets of $\mathcal{K}^\psi(s,i)$; since vacant slots have bracket exactly $1$ and are available without limit,
 $$\sigma := \sum_{k \in K} b_k \le \max\{0, \ q_s - 1 - m_0\} .$$
 The base tooth vanishes because $D(T^\psi(i,s)) = 0$, so the left-hand side of \eqref{saa:comb} is $D(S^\psi(s,i)) + \sigma$. Now $D_{i,s} = 0$, so $D(S^\psi(s,i))$ counts the members of $A$ admitted to $s$; each of those has access and nothing strictly preferred to $s$, hence bracket $0$, hence $D(S^\psi(s,i)) \le m_0$. If $m_0 \ge q_s - 1$ then $\sigma = 0$ and the left-hand side is $D(S^\psi(s,i)) \le q_s - 1$; otherwise it is at most $m_0 + (q_s - 1 - m_0) = q_s - 1$. Either way it falls below $q_s = q_s a_{i,s}$ and this row of \eqref{saa:comb} is violated, contradicting feasibility. So no pair of $\Gamma(a)$ blocks $D$.
 
 (iii) Fix binary $a$. A program with $n_s(a) \ge q_s$ needs no padding, so consider one with $n_s(a) < q_s$ and pad $\Gamma(a)$ with $\varphi_s = q_s - n_s(a)$ phantom applicants whose only acceptable program is $s$ and who occupy the top $\varphi_s$ positions of $\succ_s^\psi$, each with utility zero. In every stable matching of the padded market each phantom is admitted to $s$: were one rejected, $s$ would have to be full, but the admitted set draws from $n_s(a)$ real applicants and $\varphi_s - 1$ other phantoms, at most $q_s - 1$ in all. Real applicants therefore face effective capacity $n_s(a)$, which does not bind, so the stable matchings of the padded market restrict exactly onto those of $\Gamma(a)$ and carry the same welfare. Baïou and Balinski's description applies to the padded market, in which $n_s \ge q_s$ for every program. Eliminate the phantom variables, all of which are fixed at one: a padded comb based at $(i,s)$ using $j$ phantom teeth has left-hand side equal to the real shaft plus $\varphi_s$ --- every phantom lies in the shaft, whether or not it was chosen as a tooth --- plus the base tooth plus the $q_s - 1 - j$ real tooth terms, since a phantom's own tooth is empty. The row of \eqref{saa:comb} with the same real teeth and $j$ vacant slots has the same right-hand side and a left-hand side smaller by $\varphi_s - j \ge 0$, hence implies it. Applicants without access are handled identically, being vacant slots of $\Gamma(a)$ under another name: their credit is $1$ and their shaft contribution is $0$ by \eqref{saa:access}. So every inequality of the complete description is implied, giving solution set $\subseteq \mathrm{conv}$; part~(i) gives $\supseteq$. $\blacksquare$
+
+\kccomment{everything here is confusing}
 
 \noindent\textbf{What the implementation loads.}
 The comb family has up to $\binom{n_s - 1}{q_s - 1}$ rows per base pair and is separated, not enumerated. What \texttt{SaaOracle} loads up front is one aggregated stability row per acceptable pair,
@@ -725,7 +735,7 @@ The comb family has up to $\binom{n_s - 1}{q_s - 1}$ rows per base pair and is s
 \end{equation}
 the many-to-one aggregation of Rothblum's (1992) inequality. It is valid: if $a_{i,s} = 1$ and $i$ receives nothing weakly preferred to $s$ then the second sum is zero and stability forces $q_s$ seats to applicants strictly above $i$, while if $i$ does receive something weakly preferred the second sum is $1$ and alone supplies $q_s$. Being valid, it is implied by the complete description of Proposition~2 and may be added freely. It is also cheap: with the prefix variables of \eqref{eq:ap_shaft_tooth} it is $O(|\Gamma|)$ rows, $12{,}370$ on $\text{Block}_2$, and the $y^{4}$ block of the dual in Section~\ref{sec:saa} is precisely its multiplier vector. Use the \emph{strict} shaft as written; the weak variant is valid too but measurably looser, because it lets $i$'s own mass at $s$ be counted twice.
 
-What \eqref{saa:rothblum} is not is complete, and the reason is visible in the derivation. Summing the per-seat inequalities of a seat-cloned program and bounding $\sum_{j} (q_s - j + 1) D_{i, s^{(j)}}$ by $q_s D_{i,s}$, where $s^{(1)}, \dots, s^{(q_s)}$ are the clones, discards the distinction between one applicant holding a whole seat and several holding fractions of it; the multiplier $q_s$ on the own-preference term is what lets a fractional $D_{i,s}$ pay for a deficit in the shaft. Concretely, let $q_s = 2$ and let applicants $1 \succ_s^\psi 2 \succ_s^\psi 3$ rank only $s$, with $u_{1,s} = u_{2,s} = 1$ and $u_{3,s} = 10$, all access granted. The unique stable matching admits $1$ and $2$, for welfare $2$. The point $D_{1,s} = 1$, $D_{2,s} = D_{3,s} = \tfrac12$ satisfies \eqref{saa:assignment}--\eqref{saa:access}, \eqref{saa:domain} and every row of \eqref{saa:rothblum} --- the three rows read $0 + 2 = 2$, $1 + 1 = 2$ and $\tfrac32 + 1 = \tfrac52$ against $q_s = 2$ --- and has objective $6.5$, more than three times the truth. The comb based at $(2,s)$ with the single tooth $1$ is what removes it: its left-hand side is $D_{1,s} + D_{2,s} = \tfrac32 < 2$.
+\kccomment{ai speak}What \eqref{saa:rothblum} is not is complete, and the reason is visible in the derivation. Summing the per-seat inequalities of a seat-cloned program and bounding $\sum_{j} (q_s - j + 1) D_{i, s^{(j)}}$ by $q_s D_{i,s}$, where $s^{(1)}, \dots, s^{(q_s)}$ are the clones, discards the distinction between one applicant holding a whole seat and several holding fractions of it; the multiplier $q_s$ on the own-preference term is what lets a fractional $D_{i,s}$ pay for a deficit in the shaft. Concretely, let $q_s = 2$ and let applicants $1 \succ_s^\psi 2 \succ_s^\psi 3$ rank only $s$, with $u_{1,s} = u_{2,s} = 1$ and $u_{3,s} = 10$, all access granted. The unique stable matching admits $1$ and $2$, for welfare $2$. The point $D_{1,s} = 1$, $D_{2,s} = D_{3,s} = \tfrac12$ satisfies \eqref{saa:assignment}--\eqref{saa:access}, \eqref{saa:domain} and every row of \eqref{saa:rothblum} --- the three rows read $0 + 2 = 2$, $1 + 1 = 2$ and $\tfrac32 + 1 = \tfrac52$ against $q_s = 2$ --- and has objective $6.5$, more than three times the truth. The comb based at $(2,s)$ with the single tooth $1$ is what removes it: its left-hand side is $D_{1,s} + D_{2,s} = \tfrac32 < 2$.
 
 The gap is not merely theoretical. Because Corollary~1 identifies the comb-complete value with deferred-acceptance welfare, the discrepancy between the surrogate LP value and a deferred-acceptance run measures exactly the slack of \eqref{saa:rothblum}. Over eight saved zonings on $\text{Block}_2$ with $k = 6$ the surrogate over-reports realized deferred-acceptance welfare by $194.8$ to $251.8$ units, mean $225.0$, against a total welfare near $14{,}500$; measured instead against the MID continuum value on the same zonings the over-report is a very stable $194.8$ to $195.0$. The variation of roughly $57$ units \emph{across} zonings is the operationally relevant part, since it is what can reorder two candidates: the cuts stay valid, but a strategy that selects its incumbent by surrogate value can select wrongly by that much. This is why Section~\ref{sec:saa} reports budget welfare from an independent replay rather than from the oracle.
 
@@ -740,14 +750,14 @@ the bracket of \eqref{saa:comb}; all $|\Gamma|$ of these are available as the to
 \begin{equation}\label{eq:ap_most_violated}
 \mathrm{viol}(i,s) = q_s a_{i,s} - \Big[ \underbrace{\textstyle\sum_{i' \succeq_s^\psi i} \bar D_{i',s}}_{\text{shaft prefix}} + \sum_{s' \succ_i^\psi s} \bar D_{i,s'} + \underbrace{\min_{\substack{K \subseteq \mathcal{K}^\psi(s,i) \\ |K| = q_s - 1}} \sum_{k \in K} \bar b_{k,s}}_{\sigma(i,s)} \Big],
 \end{equation}
-and vacant slots, whose bracket is $1$, enter this minimum on the same footing as everything else --- they are selected exactly when fewer than $q_s - 1$ applicants above $i$ have a bracket below $1$, which is the case Section~\ref{app:ap_variable} introduced them for. One descent of $\succ_s^\psi$ computes \eqref{eq:ap_most_violated} at every base simultaneously. Carry two accumulators: the shaft, a running sum, and $\sigma$, the sum of a max-heap of size $q_s - 1$ holding the smallest brackets seen so far, initialized with $q_s - 1$ vacant slots. On reaching applicant $i$, first add $\bar D_{i,s}$ to the shaft --- the shaft of \eqref{eq:ap_shaft_tooth} is weak and includes $i$'s own row --- then evaluate \eqref{eq:ap_most_violated}, then push $\bar b_{i,s}$ and pop the maximum, so that on reaching the next applicant the heap holds exactly the teeth strictly above them. Popping the maximum evicts a vacant slot only when a real bracket is smaller, which is why brackets above $1$ --- possible for an applicant who lacks access and is served better than $s$ --- never displace a slot. The cost is $O(|\Gamma| + \sum_s n_s \log q_s)$, dominated by $O(|\Gamma| \log \max_s q_s)$, which on $\text{Block}_2$ is a few hundred thousand operations against an LP re-solve; separation is free relative to the oracle it feeds.
+and vacant slots, whose bracket is $1$, enter this minimum on the same footing as everything else --- they are selected exactly when fewer than $q_s - 1$ applicants above $i$ have a bracket below $1$, which is the case Section~\ref{app:ap_variable} introduced them for. One descent of $\succ_s^\psi$ computes \eqref{eq:ap_most_violated} at every base simultaneously. Carry two accumulators: the shaft, a running sum, and $\sigma$, the sum of a max-heap of size $q_s - 1$ holding the smallest brackets seen so far, initialized with $q_s - 1$ vacant slots. On reaching applicant $i$, first add $\bar D_{i,s}$ to the shaft --- the shaft of \eqref{eq:ap_shaft_tooth} is weak and includes $i$'s own row --- then evaluate \eqref{eq:ap_most_violated}, then push $\bar b_{i,s}$ and pop the maximum, so that on reaching the next applicant the heap holds exactly the teeth strictly above them. Popping the maximum evicts a vacant slot only when a real bracket is smaller, which is why brackets above $1$ --- possible for an applicant who lacks access and is served better than $s$ --- never displace a slot. The cost is $O(|\Gamma| + \sum_s n_s \log q_s)$, dominated by $O(|\Gamma| \log \max_s q_s)$, which on $\text{Block}_2$ is a few hundred thousand operations against an LP re-solve; separation is free relative to the oracle it feeds. \kccomment{eh could be more clear}
 
 The oracle is then a cutting plane in its own right, nested inside the zoning cutting plane: load \eqref{saa:assignment}--\eqref{saa:access}, \eqref{saa:domain} and \eqref{saa:rothblum}, solve, run the descent above, add every comb with $\mathrm{viol}(i,s) > \epsilon$, and repeat until none is found. Termination is finite because the comb family is finite and no row is added twice, and on exit Proposition~2 gives a value equal to deferred-acceptance welfare by Corollary~1. Two implementation notes. Rows should be added in batches --- all violated bases at once --- since the marginal cost of a row is small next to a re-solve. And the emitted row must record its teeth as \emph{indices}, not as the numeric bracket values that selected them: the row is an inequality in $(D,a)$ valid at every zoning, and re-deriving it from $\bar D$ at the next master iterate would silently produce a different, weaker row.
 
 \subsection{Zoning as a Priority Bonus}
 \label{app:ap_bonus}
 
-Exclusive access is the sharpest form a zone can take, but it is not the form the district operates. In the status quo a family receives a priority \emph{boost} at its attendance-area program and may still apply anywhere; the zone changes who wins a contested seat, not who may enter the contest. This subsection writes the polytope for that policy. The construction is the natural one: every applicant is split into a \emph{zoned} and an \emph{unzoned} copy, the priority structure is written once for each copy, and the zoning decides which copy is real.
+Exclusive access is the sharpest form a zone can take, but it is not the form the district operates. \kccomment{this is imprecise}In the status quo a family receives a priority \emph{boost} at its attendance-area program and may still apply anywhere; the zone changes who wins a contested seat, not who may enter the contest. This subsection writes the polytope for that policy. The construction is the natural one: every applicant is split into a \emph{zoned} and an \emph{unzoned} copy, the priority structure is written once for each copy, and the zoning decides which copy is real.
 
 \noindent\textbf{Data.} Let $\rho_{i,s} \in \mathbb{Z}_{\ge 0}$ be the base priority score of $i$ at $s$, namely the sum of the configured tier weights --- CTIP, sibling, pre-K, round and the rest --- with the zone term removed; let $\beta \in \mathbb{Z}_{\ge 1}$ be the zone weight, the single policy dial of this subsection; and let $\omega_{i,s}^\psi \in (0,1)$ be the lottery draw under seed $\psi$, with $\omega_{i,s}^\psi \neq \omega_{j,s}^\psi$ whenever $i \neq j$. Single and multiple tie-breaking differ only in whether $\omega_{i,s}^\psi$ depends on $s$, and nothing below uses either. Program $s$ orders applicants by decreasing realized score $\rho_{i,s} + \beta a_{i,s} + \omega_{i,s}^\psi$. Integrality of $\rho$ and $\beta$ is used only to keep realized scores separated and may be replaced by the requirement that $\max_{i,s} \omega^\psi_{i,s}$ be smaller than the least positive gap between distinct values of $\rho_{i,s} + \beta a_{i,s}$.
 

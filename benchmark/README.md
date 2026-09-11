@@ -156,6 +156,28 @@ stages/
 
 Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases for the metrics-selected final solution.
 
+### Objective Trajectories
+
+`save_solver_logs: true` adds one log per solve call under `solver_logs/`, named `solver_<index>_<level>_<solver>.<ext>`. The index increments per solve, so a recursive or iterative strategy produces one log per stage in execution order. Each stage's `solver_log_path` and `solver_log_format` are recorded in `stages.csv`.
+
+| Solver | Format | Contents |
+|---|---|---|
+| `mip` | Gurobi log | Node table: incumbent, best bound, and gap on the display interval plus every new incumbent. |
+| `cp_bool`, `cp_int` | CP-SAT log | `#N` and `#Bound` events with timestamps, plus the response summary (`gap_integral` included). |
+| `recom`, `relaxed_recom`, `short_bursts`, `adaptive_short_bursts` | JSONL | One record per strictly improving state: boundary cost, every individual constraint penalty, and both Lagrangians. |
+
+Heuristic records are improvement-only, ordered by `(not feasible, boundary cost if feasible else unweighted Lagrangian)`. Any feasible state supersedes any infeasible one, so penalties are nonzero only while no feasible partition has been found yet. Penalty units follow the solver: `adaptive_short_bursts` normalizes residuals to a percentage of zone students, the rest report absolute student counts, and each log states which in its `penalty_scale` header field.
+
+`save_solver_progress: true` is a separate, heavier mechanism: `mip` and `cp_bool` only, and it writes two full `zone_dict` files per incumbent alongside `solver_progress/<id>/progress.jsonl`. Prefer the logs when only objective values are needed.
+
+Flatten a whole sweep into one long-format table:
+
+```bash
+python -m benchmark.solver_logs <output_dir> --out solver_progress.csv
+```
+
+`incumbent` and `bound` are the columns comparable across backends (`bound` is empty for the heuristics, which have none); `elapsed_seconds` is measured from the start of each solve.
+
 ## Modes
 
 `run` expands the YAML into tasks, executes optimization, writes artifacts, computes final-solution metrics, and writes aggregate CSVs. Recursive/iterative stage objective and timing metadata are always preserved; expensive per-stage cut-edge/compactness metrics run only when `metrics.compute_stage_metrics: true`.
@@ -174,6 +196,7 @@ Primary objects and functions:
 | `load_solutions` | `runner.py` | Reconstruct `ZoneSolution` stages from saved artifacts. |
 | `run_tasks` | `parallel.py` | Capacity-aware task execution. |
 | `regenerate_metrics` | `regenerate.py` | Metrics-only recomputation. |
+| `collect` | `solver_logs.py` | Parse Gurobi/CP-SAT/heuristic solver logs into one trajectory frame. |
 
 ## Notes
 

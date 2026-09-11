@@ -55,7 +55,9 @@ class Solver(ABC):
             for zone, centroid in enumerate(problem.centroids)
         }
 
-    def _next_solver_log_path(self, problem: ZoneProblem) -> str | None:
+    def _next_solver_log_path(
+        self, problem: ZoneProblem, *, suffix: str = ".log"
+    ) -> str | None:
         if not self.options.get("save_solver_logs"):
             return None
         log_dir = self.options.get("solver_log_dir")
@@ -68,12 +70,14 @@ class Solver(ABC):
         os.makedirs(log_dir, exist_ok=True)
         level_name = getattr(getattr(problem, "level", None), "name", "unknown_level")
         filename = _safe_filename(
-            f"solver_{self._solve_count:02d}_{level_name}_{self.name}.log"
+            f"solver_{self._solve_count:02d}_{level_name}_{self.name}{suffix}"
         )
         self._solve_count += 1
         return os.path.join(log_dir, filename)
 
-    def _solver_log_metadata(self, log_path: str | None) -> dict[str, str]:
+    def _solver_log_metadata(
+        self, log_path: str | None, *, log_format: str | None = None
+    ) -> dict[str, str]:
         if not log_path:
             return {}
         output_dir = self.options.get("output_dir")
@@ -83,7 +87,10 @@ class Solver(ABC):
             )
         else:
             display_path = log_path
-        return {"solver_log_path": display_path}
+        metadata = {"solver_log_path": display_path}
+        if log_format:
+            metadata["solver_log_format"] = log_format
+        return metadata
 
     def _new_solver_progress_tracker(
         self,

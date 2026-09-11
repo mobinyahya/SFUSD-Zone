@@ -28,6 +28,7 @@ from optimization.solvers.balance import (
     balance_constraints,
 )
 from optimization.solvers.base import Solver, register
+from optimization.solvers.heuristic_log import HeuristicProgressLog
 
 _EPS = 1e-6
 _WEIGHT_EPS = 1e-12
@@ -40,6 +41,11 @@ _RELAXED_WEIGHTS = {
     "shortage%": 10,
     "sch_count": 45,
 }
+# How ``propose`` picks the two zones it merges: uniformly at random, or by a
+# softmax over each zone's Lagrangian score - its own cut edges, the objective,
+# plus its weighted squared violations - which steers bursts at the zones that
+# currently look worst.
+_PAIR_SELECTORS = ("uniform", "lagrangian_softmax")
 
 
 class _HintError(ValueError):
@@ -306,6 +312,46 @@ class _ReComContext:
     def violation_count(self) -> int:
         return len(self.balance_rows) + (2 if self.school_bounds else 0)
 
+    def violation_labels(self) -> tuple[str, ...]:
+        """Name every entry of the aggregated violation vector.
+
+        Mirrors how ``balance_rows`` is flattened in ``__init__`` so labels and
+        violations stay index-aligned.  Racial constraints are named one per
+        ethnicity in ``problem.ethnicities`` order, which is the order
+        ``balance_constraints`` appends them.
+        """
+
+        ethnicities = list(getattr(self.problem, "ethnicities", ()) or ())
+        names: list[str] = []
+        racial_seen = 0
+        for constraint in self.constraints:
+            if constraint.kind == "racial":
+                suffix = (
+                    str(ethnicities[racial_seen])
+                    if racial_seen < len(ethnicities)
+                    else str(racial_seen)
+                )
+                names.append(f"racial_{suffix}")
+                racial_seen += 1
+            else:
+                names.append(constraint.kind)
+        labels = [
+            f"{name}_{sense}"
+            for name, constraint in zip(names, self.constraints, strict=True)
+            for sense, ratio in (
+                ("lower", constraint.lower_ratio),
+                ("upper", constraint.upper_ratio),
+            )
+            if ratio is not None
+        ]
+        if self.school_bounds is not None:
+            labels.extend(["schools_lower", "schools_upper"])
+        if len(labels) != self.violation_count:
+            raise ValueError(
+                "Violation labels do not match the violation vector length."
+            )
+        return tuple(labels)
+
     def zone_violations(self, stats: _ZoneStats) -> tuple[float, ...]:
         violations: list[float] = []
         for value, row in zip(stats.values, self.balance_rows, strict=True):
@@ -476,13 +522,29 @@ class _ReComKernel:
         *,
         lagrangian_weights: tuple[float, ...] | None = None,
         temperature: float = 1.0,
+        pair_selector: str = "uniform",
     ) -> _Move:
         adjacent_pairs = sorted(
             pair for pair, count in state.boundary_pairs.items() if count > 0
         )
         if not adjacent_pairs:
             raise _NoProposal("no_adjacent_zone_pairs")
-        zone_a, zone_b = self.rng.choice(adjacent_pairs)
+        if pair_selector == "uniform":
+            zone_a, zone_b = self.rng.choice(adjacent_pairs)
+        elif pair_selector == "lagrangian_softmax":
+            if lagrangian_weights is None:
+                raise ValueError(
+                    "lagrangian_weights must be supplied for the "
+                    "lagrangian_softmax pair selector."
+                )
+            zone_a, zone_b = self._select_zone_pair(
+                state,
+                adjacent_pairs,
+                weights=lagrangian_weights,
+                temperature=temperature,
+            )
+        else:  # pragma: no cover - guarded by config/class callers
+            raise ValueError(f"Unknown ReCom zone pair selector {pair_selector!r}.")
         union = state.zone_nodes[zone_a] | state.zone_nodes[zone_b]
         pair_adjacency, pair_edges = self._pair_graph(union)
         tree = self._random_spanning_tree(sorted(union), pair_adjacency)
@@ -849,29 +911,9 @@ class _ReComKernel:
         )
 
     def _relaxed_probabilities(self, candidates: list[_CutCandidate]) -> list[float]:
-        log_weights = [self._relaxed_log_weight(candidate) for candidate in candidates]
-        positive_infinity = [
-            idx for idx, value in enumerate(log_weights) if value == float("inf")
-        ]
-        if positive_infinity:
-            probability = 1.0 / len(positive_infinity)
-            return [
-                probability if idx in positive_infinity else 0.0
-                for idx in range(len(candidates))
-            ]
-
-        finite = [value for value in log_weights if math.isfinite(value)]
-        if not finite:
-            return [1.0 / len(candidates)] * len(candidates)
-        maximum = max(finite)
-        weights = [
-            math.exp(value - maximum) if math.isfinite(value) else 0.0
-            for value in log_weights
-        ]
-        total = sum(weights)
-        if not math.isfinite(total) or total <= 0:
-            return [1.0 / len(candidates)] * len(candidates)
-        return [weight / total for weight in weights]
+        return _softmax(
+            [self._relaxed_log_weight(candidate) for candidate in candidates]
+        )
 
     def _relaxed_log_weight(self, candidate: _CutCandidate) -> float:
         stats_a = candidate.stats_a
@@ -915,36 +957,62 @@ class _ReComKernel:
         temperature: float = 1.0,
     ) -> list[float]:
         temp = max(_EPS, float(temperature))
-        log_weights = [
-            -(
-                float(c.boundary_cost)
-                + sum(w * (v**2) for w, v in zip(weights, c.global_violations))
-            )
-            / temp
-            for c in candidates
-        ]
-        positive_infinity = [
-            idx for idx, value in enumerate(log_weights) if value == float("inf")
-        ]
-        if positive_infinity:
-            probability = 1.0 / len(positive_infinity)
-            return [
-                probability if idx in positive_infinity else 0.0
-                for idx in range(len(candidates))
+        return _softmax(
+            [
+                -(
+                    float(c.boundary_cost)
+                    + sum(w * (v**2) for w, v in zip(weights, c.global_violations))
+                )
+                / temp
+                for c in candidates
             ]
+        )
 
-        finite = [val for val in log_weights if math.isfinite(val)]
-        if not finite:
-            return [1.0 / len(candidates)] * len(candidates)
-        maximum = max(finite)
-        unnorm_weights = [
-            math.exp(val - maximum) if math.isfinite(val) else 0.0
-            for val in log_weights
-        ]
-        total = sum(unnorm_weights)
-        if not math.isfinite(total) or total <= 0:
-            return [1.0 / len(candidates)] * len(candidates)
-        return [w / total for w in unnorm_weights]
+    def _zone_lagrangian_score(
+        self,
+        state: _State,
+        zone: int,
+        weights: tuple[float, ...],
+    ) -> float:
+        """Score one zone the way the cut selector scores a whole solution.
+
+        Objective plus weighted squared violations, both restricted to this
+        zone: the cut edges it touches, and its own constraint residuals.
+        """
+        return float(
+            sum(cost for pair, cost in state.boundary_costs.items() if zone in pair)
+        ) + sum(
+            weight * (violation**2)
+            for weight, violation in zip(
+                weights, state.zone_violations[zone], strict=True
+            )
+        )
+
+    def _select_zone_pair(
+        self,
+        state: _State,
+        adjacent_pairs: list[tuple[int, int]],
+        *,
+        weights: tuple[float, ...],
+        temperature: float,
+    ) -> tuple[int, int]:
+        """Draw the zone to repair by softmax, then one of its neighbors uniformly."""
+        temp = max(_EPS, float(temperature))
+        zones = sorted({zone for pair in adjacent_pairs for zone in pair})
+        probabilities = _softmax(
+            [self._zone_lagrangian_score(state, zone, weights) / temp for zone in zones]
+        )
+        zone = self.rng.choices(zones, weights=probabilities, k=1)[0]
+        neighbors = sorted(
+            {
+                other
+                for pair in adjacent_pairs
+                if zone in pair
+                for other in pair
+                if other != zone
+            }
+        )
+        return _zone_pair(zone, self.rng.choice(neighbors))
 
     def _check_deadline(self) -> None:
         if self.deadline is None:
@@ -1062,6 +1130,48 @@ class _ReComSolverBase(Solver):
         if max_iterations is not None and attempted >= max_iterations:
             return False
         return deadline is None or time.monotonic() < deadline
+
+    def _open_progress_log(
+        self,
+        problem: ZoneProblem,
+        context: _ReComContext,
+        start: float,
+        *,
+        header: dict[str, object] | None = None,
+    ) -> HeuristicProgressLog | None:
+        """Open an improvement-only JSONL log, or return None when disabled."""
+
+        path = self._next_solver_log_path(problem, suffix=".jsonl")
+        if path is None:
+            return None
+        return HeuristicProgressLog(
+            path,
+            solver=self.name,
+            level=getattr(getattr(problem, "level", None), "name", "unknown_level"),
+            labels=context.violation_labels(),
+            start=start,
+            header={
+                "num_zones": problem.Z,
+                "weighted_edges": bool(problem.weight_edges),
+                "objective_unit": "meter" if problem.weight_edges else "cut_edges",
+                # ``normalize_fractional`` rescales residuals to a percentage of
+                # the zone's students, so penalty units differ by solver.
+                "penalty_scale": (
+                    "percent" if context.normalize_fractional else "absolute"
+                ),
+                **(header or {}),
+            },
+        )
+
+    def _progress_log_metadata(
+        self, log: HeuristicProgressLog | None
+    ) -> dict[str, object]:
+        if log is None:
+            return {}
+        return {
+            **self._solver_log_metadata(log.path, log_format="jsonl"),
+            "solver_log_improvements": log.improvements,
+        }
 
     @staticmethod
     def _snapshot(state: _State) -> _Snapshot:
@@ -1224,6 +1334,19 @@ class ReComSolver(_ReComSolverBase):
         kernel = _ReComKernel(setup.context, setup.rng, setup.deadline)
         initial = self._snapshot(state)
         best = initial if initial.feasible else None
+        log = self._open_progress_log(
+            problem,
+            setup.context,
+            start,
+            header={"cut_selector": selector, "reject_infeasible": reject_infeasible},
+        )
+        if log is not None:
+            log.record(
+                feasible=initial.feasible,
+                boundary_cost=initial.boundary_cost,
+                violations=initial.violations,
+                iteration=0,
+            )
         attempted = 0
         accepted = 0
         rejected = 0
@@ -1256,6 +1379,13 @@ class ReComSolver(_ReComSolverBase):
             kernel.apply(state, move)
             accepted += 1
             snapshot = self._snapshot(state)
+            if log is not None:
+                log.record(
+                    feasible=snapshot.feasible,
+                    boundary_cost=snapshot.boundary_cost,
+                    violations=snapshot.violations,
+                    iteration=attempted,
+                )
             if self._better_feasible(snapshot, best):
                 best = snapshot
             if snapshot.feasible and visitor is not None:
@@ -1265,6 +1395,15 @@ class ReComSolver(_ReComSolverBase):
 
         if setup.deadline is not None and time.monotonic() >= setup.deadline:
             stop_reason = "time_limit"
+        if log is not None:
+            log.finish(
+                stop_reason=stop_reason,
+                attempted_moves=attempted,
+                accepted_moves=accepted,
+                rejected_moves=rejected,
+                proposal_failures=proposal_failures,
+                feasible_found=best is not None,
+            )
         metadata = {
             **setup.hint_metadata,
             "recom_iterations": self.options.get("recom_iterations", -1),
@@ -1277,6 +1416,7 @@ class ReComSolver(_ReComSolverBase):
             "cut_selector": selector,
             "tree_sampler": "wilson_uniform",
             "tree_count_approximation": "exp_cycle_rank",
+            **self._progress_log_metadata(log),
         }
         return self._result(problem, setup.context, start, best, metadata)
 
@@ -1322,6 +1462,23 @@ class ShortBurstsSolver(_ReComSolverBase):
         initial = self._snapshot(current)
         normalizer.observe(initial.violations)
         best_feasible = initial if initial.feasible else None
+        log = self._open_progress_log(
+            problem,
+            context,
+            start,
+            header={
+                "cut_selector": selector,
+                "short_bursts_method": method,
+                "short_bursts_length": burst_length,
+            },
+        )
+        if log is not None:
+            log.record(
+                feasible=initial.feasible,
+                boundary_cost=initial.boundary_cost,
+                violations=initial.violations,
+                iteration=0,
+            )
         attempted = 0
         accepted = 0
         proposal_failures = 0
@@ -1345,6 +1502,14 @@ class ShortBurstsSolver(_ReComSolverBase):
             proposal_failures += burst.proposal_failures
             for snapshot in burst.samples:
                 normalizer.observe(snapshot.violations)
+                if log is not None:
+                    log.record(
+                        feasible=snapshot.feasible,
+                        boundary_cost=snapshot.boundary_cost,
+                        violations=snapshot.violations,
+                        iteration=attempted,
+                        extra={"burst": completed_bursts},
+                    )
                 if self._better_feasible(snapshot, best_feasible):
                     best_feasible = snapshot
 
@@ -1363,6 +1528,16 @@ class ShortBurstsSolver(_ReComSolverBase):
 
         if setup.deadline is not None and time.monotonic() >= setup.deadline:
             stop_reason = "time_limit"
+        if log is not None:
+            log.finish(
+                stop_reason=stop_reason,
+                attempted_moves=attempted,
+                accepted_moves=accepted,
+                proposal_failures=proposal_failures,
+                completed_bursts=completed_bursts,
+                selected_burst_improvements=selected_improvements,
+                feasible_found=best_feasible is not None,
+            )
         metadata = {
             **setup.hint_metadata,
             "recom_iterations": self.options.get("recom_iterations", -1),
@@ -1384,6 +1559,7 @@ class ShortBurstsSolver(_ReComSolverBase):
             "cut_selector": selector,
             "tree_sampler": "wilson_uniform",
             "tree_count_approximation": "exp_cycle_rank",
+            **self._progress_log_metadata(log),
         }
         return self._result(problem, context, start, best_feasible, metadata)
 
@@ -1555,6 +1731,17 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 self.options.get("adaptive_short_bursts_temperature", 1.0),
             )
         )
+        pair_selector = str(
+            self.options.get(
+                "pair_selector",
+                self.options.get("adaptive_short_bursts_pair_selector", "uniform"),
+            )
+        )
+        if pair_selector not in _PAIR_SELECTORS:
+            raise ValueError(
+                "adaptive_short_bursts_pair_selector must be one of: "
+                f"{', '.join(_PAIR_SELECTORS)}."
+            )
 
         context = setup.context
         current = setup.state
@@ -1581,6 +1768,28 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         # Start each constraint violation having a weight of 1
         weights = [1.0] * context.violation_count
         eta = [initial_eta] * context.violation_count
+
+        log = self._open_progress_log(
+            problem,
+            context,
+            start,
+            header={
+                "cut_selector": "adaptive_lagrangian",
+                "pair_selector": pair_selector,
+                "short_bursts_length": burst_length,
+                "softmax_temperature": temperature,
+                "adam_lr": adam_lr,
+                "initial_eta": initial_eta,
+            },
+        )
+        if log is not None:
+            log.record(
+                feasible=initial.feasible,
+                boundary_cost=initial.boundary_cost,
+                violations=initial.violations,
+                weights=weights,
+                iteration=0,
+            )
 
         attempted = 0
         accepted = 0
@@ -1618,6 +1827,7 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                         "adaptive",
                         lagrangian_weights=tuple(weights),
                         temperature=temperature,
+                        pair_selector=pair_selector,
                     )
                 except _DeadlineReached:
                     deadline_reached = True
@@ -1634,6 +1844,15 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 snapshot = self._snapshot(walk)
                 normalizer.observe(snapshot.violations)
                 samples.append(snapshot)
+                if log is not None:
+                    log.record(
+                        feasible=snapshot.feasible,
+                        boundary_cost=snapshot.boundary_cost,
+                        violations=snapshot.violations,
+                        weights=weights,
+                        iteration=attempted,
+                        extra={"burst": completed_bursts},
+                    )
                 if self._better_feasible(snapshot, best_feasible):
                     if time_to_first_feasible is None and snapshot.feasible:
                         time_to_first_feasible = time.monotonic() - start
@@ -1682,6 +1901,20 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         if setup.deadline is not None and time.monotonic() >= setup.deadline:
             stop_reason = "time_limit"
 
+        if log is not None:
+            log.finish(
+                stop_reason=stop_reason,
+                attempted_moves=attempted,
+                accepted_moves=accepted,
+                proposal_failures=proposal_failures,
+                completed_bursts=completed_bursts,
+                selected_burst_improvements=selected_improvements,
+                feasible_found=best_feasible is not None,
+                time_to_first_feasible=time_to_first_feasible,
+                final_weights=[float(weight) for weight in weights],
+                final_eta=[float(value) for value in eta],
+            )
+
         metadata = {
             **setup.hint_metadata,
             "recom_iterations": self.options.get("recom_iterations", -1),
@@ -1693,14 +1926,45 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
             "selected_burst_improvements": selected_improvements,
             "short_bursts_length": burst_length,
             "cut_selector": "adaptive_lagrangian",
+            "pair_selector": pair_selector,
             "tree_sampler": "wilson_uniform",
             "final_weights": tuple(float(w) for w in weights),
             "final_eta": tuple(float(e) for e in eta),
             "stop_reason": stop_reason,
             "initial_feasible": initial.feasible,
             "time_to_first_feasible": time_to_first_feasible,
+            **self._progress_log_metadata(log),
         }
         return self._result(problem, context, start, best_feasible, metadata)
+
+
+def _softmax(log_weights: list[float]) -> list[float]:
+    """Normalize log weights, splitting the mass over +inf entries if any exist."""
+    if not log_weights:
+        return []
+    uniform = [1.0 / len(log_weights)] * len(log_weights)
+    positive_infinity = {
+        idx for idx, value in enumerate(log_weights) if value == float("inf")
+    }
+    if positive_infinity:
+        probability = 1.0 / len(positive_infinity)
+        return [
+            probability if idx in positive_infinity else 0.0
+            for idx in range(len(log_weights))
+        ]
+
+    finite = [value for value in log_weights if math.isfinite(value)]
+    if not finite:
+        return uniform
+    maximum = max(finite)
+    weights = [
+        math.exp(value - maximum) if math.isfinite(value) else 0.0
+        for value in log_weights
+    ]
+    total = sum(weights)
+    if not math.isfinite(total) or total <= 0:
+        return uniform
+    return [weight / total for weight in weights]
 
 
 def _zone_pair(zone_a: int, zone_b: int) -> tuple[int, int]:

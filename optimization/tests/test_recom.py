@@ -20,6 +20,7 @@ from optimization.solvers.recom import (
     _DynamicMaxNormalizer,
     _ReComContext,
     _ReComKernel,
+    _State,
     _ZoneStats,
 )
 from optimization.tests.synthetic import make_grid_problem, make_solver_contract_problem
@@ -621,3 +622,156 @@ def test_scored_bursts_overrun_the_deadline_by_at_most_one_batch() -> None:
     # So the overrun stays bounded by a single batch rather than growing with
     # the number of remaining iterations.
     assert elapsed <= time_limit + scorer.delay + 0.5, elapsed
+
+
+def _pair_selection_state(
+    zone_violations: list[tuple[float, ...]],
+    boundary_costs: dict[tuple[int, int], int],
+) -> _State:
+    """Single-node zones with hand-set residuals, for pair selection only."""
+    stats = _ZoneStats(1, 1.0, (1.0,), 1.0, 0)
+    zone_count = len(zone_violations)
+    return _State(
+        assignment=list(range(zone_count)),
+        zone_nodes=[{zone} for zone in range(zone_count)],
+        zone_stats=[stats] * zone_count,
+        zone_violations=list(zone_violations),
+        violations=tuple(sum(values) for values in zip(*zone_violations, strict=True)),
+        boundary_pairs={pair: 1 for pair in boundary_costs},
+        boundary_costs=dict(boundary_costs),
+        boundary_cost=sum(boundary_costs.values()),
+    )
+
+
+def _test_kernel(seed: int) -> _ReComKernel:
+    return _ReComKernel(
+        _ReComContext(make_grid_problem(2, 2)), random.Random(seed), None
+    )
+
+
+def test_zone_lagrangian_score_scores_weighted_violations_and_own_cut_edges() -> None:
+    kernel = _test_kernel(0)
+    state = _pair_selection_state(
+        [(1.0, 0.0), (3.0, 2.0), (0.0, 0.0)],
+        {(0, 1): 4, (1, 2): 5},
+    )
+    weights = (2.0, 1.0)
+
+    # Each zone pays for the cut pairs it touches plus its own weighted squared
+    # violations: zone 1 sits between both cuts, zone 2 only touches one.
+    assert kernel._zone_lagrangian_score(state, 0, weights) == pytest.approx(4 + 2.0)
+    assert kernel._zone_lagrangian_score(state, 1, weights) == pytest.approx(
+        9 + 2.0 * 9 + 4.0
+    )
+    assert kernel._zone_lagrangian_score(state, 2, weights) == pytest.approx(5.0)
+
+
+def test_zone_pair_softmax_targets_the_worst_zone_with_a_random_neighbor() -> None:
+    kernel = _test_kernel(3)
+    # A 4-cycle of zones, so a pair that avoids the violated zone exists.
+    state = _pair_selection_state(
+        [(0.0,), (20.0,), (0.0,), (0.0,)],
+        {(0, 1): 1, (1, 2): 1, (2, 3): 1, (0, 3): 1},
+    )
+    adjacent_pairs = sorted(state.boundary_pairs)
+
+    pairs = [
+        kernel._select_zone_pair(state, adjacent_pairs, weights=(1.0,), temperature=1.0)
+        for _ in range(100)
+    ]
+
+    # Zone 1 carries all the violation, so every merge involves it, and both of
+    # its neighbors show up as the uniformly drawn partner.
+    assert all(1 in pair for pair in pairs)
+    assert set(pairs) == {(0, 1), (1, 2)}
+
+
+def test_zone_pair_softmax_spreads_out_at_high_temperature() -> None:
+    kernel = _test_kernel(5)
+    state = _pair_selection_state(
+        [(0.0,), (20.0,), (0.0,), (0.0,)],
+        {(0, 1): 1, (1, 2): 1, (2, 3): 1, (0, 3): 1},
+    )
+
+    pairs = {
+        kernel._select_zone_pair(
+            state, sorted(state.boundary_pairs), weights=(1.0,), temperature=1e6
+        )
+        for _ in range(200)
+    }
+
+    # Temperature still governs the draw, so the untroubled zones get merged too.
+    assert (2, 3) in pairs
+
+
+def test_propose_requires_weights_for_the_lagrangian_softmax_pair_selector() -> None:
+    problem = make_solver_contract_problem()
+    context = _ReComContext(problem)
+    state = context.build_state(context.validate_hint(problem.hint or {}))
+    kernel = _ReComKernel(context, random.Random(0), None)
+
+    with pytest.raises(ValueError, match="lagrangian_weights"):
+        kernel.propose(state, "uniform", pair_selector="lagrangian_softmax")
+
+
+def test_adaptive_short_bursts_end_to_end_solve_with_softmax_pairs() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
+    solver = get_solver(
+        "adaptive_short_bursts",
+        recom_iterations=20,
+        short_bursts_length=5,
+        softmax_temperature=1.0,
+        pair_selector="lagrangian_softmax",
+        seed=123,
+    )
+
+    solution = solver.solve(problem)
+
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["pair_selector"] == "lagrangian_softmax"
+    _assert_valid_recom_solution(problem, solution)
+
+
+def test_adaptive_short_bursts_defaults_to_uniform_pair_selection() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=0.5, overage=0.5, shortage=0.5)
+    solver = get_solver(
+        "adaptive_short_bursts",
+        recom_iterations=5,
+        short_bursts_length=5,
+        seed=123,
+    )
+
+    assert solver.solve(problem).metadata["pair_selector"] == "uniform"
+
+
+def test_adaptive_short_bursts_rejects_an_unknown_pair_selector() -> None:
+    solver = get_solver(
+        "adaptive_short_bursts",
+        recom_iterations=5,
+        pair_selector="nonsense",
+    )
+
+    with pytest.raises(ValueError, match="pair_selector"):
+        solver.solve(make_grid_problem(2, 2))
+
+
+def test_config_passes_adaptive_short_bursts_pair_selector() -> None:
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="adaptive_short_bursts",
+        recom_iterations=100,
+        adaptive_short_bursts_pair_selector="lagrangian_softmax",
+    )
+
+    solver = config.make_solver()
+
+    assert solver.options["adaptive_short_bursts_pair_selector"] == "lagrangian_softmax"
+
+
+def test_config_rejects_invalid_adaptive_short_bursts_pair_selector() -> None:
+    with pytest.raises(ValueError, match="adaptive_short_bursts_pair_selector"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="adaptive_short_bursts",
+            adaptive_short_bursts_pair_selector="bad",
+        )

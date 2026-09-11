@@ -24,7 +24,7 @@ optimization_defaults:
 
   carry_over_compute: true
   recom_iterations: -1
-  short_bursts_method: relaxed_recom
+  
 
   mid_utility_handling: omit_nonpositive
   saa_num_seeds: 15
@@ -49,7 +49,7 @@ tasks:
     solve_time_limits: [[1800]]
   
   - solver: 'cp_bool'
-    strategy: [mid, mid_decomp]
+    strategy: [mid]
     mid_complementary_slackness: [true, false]
     workers: 16
     seed: [1]
@@ -58,7 +58,13 @@ tasks:
   - solver: 'short_bursts'
     strategy: ['short_bursts_choice']
     workers: 1
-    seed: [1, 2, 3, 4, 5, 6, 7, 8]
+    seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    solve_time_limits: [[900]]
+
+    - solver: 'short_bursts'
+    strategy: ['single']
+    workers: 1
+    seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     solve_time_limits: [[900]]
 
 

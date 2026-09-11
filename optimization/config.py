@@ -81,6 +81,7 @@ class OptimizationConfig:
     short_bursts_method: str = "recom"
     adaptive_short_bursts_lr: float = 0.1
     adaptive_short_bursts_temperature: float = 1.0
+    adaptive_short_bursts_pair_selector: str = "uniform"
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0
@@ -460,6 +461,14 @@ class OptimizationConfig:
             raise ValueError("adaptive_short_bursts_lr must be positive.")
         if self.adaptive_short_bursts_temperature <= 0:
             raise ValueError("adaptive_short_bursts_temperature must be positive.")
+        if self.adaptive_short_bursts_pair_selector not in {
+            "uniform",
+            "lagrangian_softmax",
+        }:
+            raise ValueError(
+                "adaptive_short_bursts_pair_selector must be one of: "
+                "uniform, lagrangian_softmax."
+            )
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings
@@ -572,6 +581,9 @@ class OptimizationConfig:
             "short_bursts_method": self.short_bursts_method,
             "adaptive_short_bursts_lr": self.adaptive_short_bursts_lr,
             "adaptive_short_bursts_temperature": self.adaptive_short_bursts_temperature,
+            "adaptive_short_bursts_pair_selector": (
+                self.adaptive_short_bursts_pair_selector
+            ),
             "mid_lottery_scale": self.mid_lottery_scale,
             "mid_utility_handling": self.mid_utility_handling,
             "mid_transport_bounds": self.mid_transport_bounds,
