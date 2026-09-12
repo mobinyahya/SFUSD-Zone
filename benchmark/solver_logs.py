@@ -20,8 +20,8 @@ backends are:
 Caveats worth knowing before you plot:
 
 * CP-SAT and Gurobi log values in the solver's own objective scale.  That scale
-  is 1.0 whenever there is no choice objective (so the whole edges benchmark is
-  already in cut edges); for choice runs divide CP-SAT values by
+  is 1.0 whenever there is no choice objective (cut-edge units, or weighted
+  boundary metres when ``weight_edges`` is enabled); for choice runs divide CP-SAT values by
   ``choice_objective.scale`` via ``cpsat_objective_scale``.
 * Gurobi prints its node table on a display interval (5s by default) plus one
   line per new incumbent, so its bound trajectory is sampled, not continuous.
@@ -59,7 +59,7 @@ _NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 _GUROBI_FINAL = re.compile(
     rf"^Best objective (?P<incumbent>{_NUMBER}|-), "
     rf"best bound (?P<bound>{_NUMBER}|-), "
-    rf"gap (?P<gap>{_NUMBER})%"
+    rf"gap (?P<gap>{_NUMBER}%|-)"
 )
 _GUROBI_EXPLORED = re.compile(rf"^Explored .*? in (?P<seconds>{_NUMBER}) seconds")
 _GUROBI_ROOT = re.compile(
@@ -216,8 +216,19 @@ def parse_cpsat_log(path: str, *, objective_scale: float = 1.0) -> list[dict[str
                 summary[key] = line.split(":", 1)[1].strip()
 
     if summary:
-        incumbent = _number(summary.get("objective"))
-        bound = _number(summary.get("best_bound"))
+        status = summary.get("status")
+        # UNKNOWN responses can print the objective-domain endpoint even when
+        # no solution exists. It must never become a feasible incumbent.
+        incumbent = (
+            _number(summary.get("objective"))
+            if status in {"FEASIBLE", "OPTIMAL"}
+            else None
+        )
+        bound = (
+            _number(summary.get("best_bound"))
+            if status in {"UNKNOWN", "FEASIBLE", "OPTIMAL"}
+            else None
+        )
         rows.append(
             {
                 "record": "final",
@@ -253,7 +264,11 @@ def parse_gurobi_log(path: str) -> list[dict[str, Any]]:
                     "record": "final",
                     "incumbent": _number(final.group("incumbent")),
                     "bound": _number(final.group("bound")),
-                    "gap_rel": _number(final.group("gap")) / 100.0,
+                    "gap_rel": (
+                        float(final.group("gap")[:-1]) / 100.0
+                        if final.group("gap").endswith("%")
+                        else None
+                    ),
                 }
             )
             continue
@@ -411,7 +426,7 @@ def _number(value: Any) -> float | None:
         parsed = float(text)
     except ValueError:
         return None
-    return None if math.isinf(parsed) else parsed
+    return parsed if math.isfinite(parsed) else None
 
 
 def _scaled(value: float | None, scale: float) -> float | None:

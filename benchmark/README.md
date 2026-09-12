@@ -178,6 +178,127 @@ python -m benchmark.solver_logs <output_dir> --out solver_progress.csv
 
 `incumbent` and `bound` are the columns comparable across backends (`bound` is empty for the heuristics, which have none); `elapsed_seconds` is measured from the start of each solve.
 
+### Cut-edge convergence plots
+
+```bash
+uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml
+
+# Local output and a comparison of individual runs on the same instance:
+uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml \
+  --centroids 6-zone-3 --seeds 1 --levels Block_2 --time-limits 600 \
+  --output-dir analysis/plots/output/edges_6_zone_3
+```
+
+The positional argument can also be a benchmark output directory or its
+`summary.csv`. A YAML supplies only `execution.output_dir`: saved manifests
+identify the historical run settings, even if the YAML has since changed.
+No graph caches or district source tables are loaded. `--solvers` filters methods.
+
+The default output directory is `<benchmark root>/plots/edges`. Outputs are
+`cut_edges_Block_2_tl_600s_median.png`, etc. (one figure per budget **and level**),
+`cut_edges_events.csv` (raw parsed events with run identity), and
+`cut_edges_runs.csv` (run inventory, including missing logs, failures, and a
+`plotted` flag). `cut_edges_aggregates.csv` contains medians, quartiles, and
+the contributor count `n` at each event time.
+
+Panels separate zone counts. The default `--aggregate median` draws one median
+line per method with a light interquartile band (middle 50%) across seeds and
+centroid variants **within the same zone count, graph level, and budget**.
+It does not pool different zone counts or levels. Use `--aggregate individual`
+for the individual run traces; those filenames end in `_individual.png`.
+Never-feasible runs are excluded entirely, including their bounds and legend
+entries. The inventory and raw-event CSV retain them for auditing.
+
+`--skip-initial 1` is the default: omit each run's first distinct feasible
+objective value.
+Repeated node-table values, bound updates, and summary lines do not count.
+`--skip-initial 0` shows every feasible improvement. Runs with no remaining
+improvements are omitted entirely, including their bounds. Trimming applies
+before aggregation and is recorded in the figure subtitle and run CSV.
+
+The band shows the middle 50% of the **available** retained feasible values,
+including before every run is ready. No solid line appears during this early
+interval. With only one available run the band has zero width.
+The solid median uses a **fixed set of successful runs** for each method within
+a panel. Its curve starts at the latest first **retained** feasible timestamp
+among those runs. Earlier solutions are not backfilled, and later arrivals
+cannot cause upward jumps: every contributing incumbent is non-increasing,
+so the median and both quartiles are also non-increasing from that point onward.
+The early band can shift as additional runs become available. The tradeoff is that
+methods with a late feasible run start later; use `--aggregate individual` to
+inspect the early progress. This remains a success-conditional summary and
+does not represent failure rates. The band is spread across runs, not a
+confidence interval.
+Final logged values are held through the common horizon (at least the time
+budget) in aggregate mode so completed runs do not disappear from the cohort.
+No improvements are invented after the last log event. Lower bounds are omitted
+from all figures and the aggregate CSV; parsed bounds remain in the raw-event
+CSV for auditing.
+
+Use the filters above to inspect a single instance. Separate output directories
+keep filtered plots from replacing the overview.
+
+- Solid steps show **feasible logged objectives** (medians by default).
+  No line appears before a feasible incumbent is found. Infeasible heuristic
+  penalties and CP-SAT's `UNKNOWN` summary objective are never plotted as solutions.
+- This is a minimization problem: the feasible objective itself is an upper
+  bound on the optimum. Solver lower bounds are not plotted.
+- Time is the elapsed clock reported by each solver, not end-to-end benchmark
+  wall time. Pre-solve graph/model/hint work may be excluded. Individual steps stop at
+  the last logged timestamp, including a termination summary when present;
+  they are not extended to an unobserved time limit. Native logs have rounded
+  timestamps and sampled bounds. Gurobi root-relaxation durations are omitted
+  because they are phase durations, not cumulative solve times.
+- Only single-solve, unweighted boundary objectives are included. Recursive,
+  weighted, and other objective variants are counted in the skip report so
+  metres or unrelated objectives cannot silently appear on a `Cut edges` axis.
+
+CP/MIP boundary indicators are constrained to be positive on cut edges, but can
+also be positive on uncut edges in a suboptimal incumbent. Thus the native log
+objective is in cut-edge units and can overstate the actual cut count of that
+incumbent's zoning. The logs alone cannot recover the exact zoning cut count;
+that requires assignment snapshots or logging an explicitly recomputed count.
+
+### Comparing recursive stages
+
+Unweighted cut counts on different levels count different adjacency graphs;
+stitching their native objectives would not form a comparable trajectory.
+For existing logs, a useful extension would plot **only the target-level stage**
+with its start shifted by preceding stages' recorded durations, and show the
+coarse stages as a shaded preparation interval. This preserves cut-edge units
+but cannot recover earlier fine-level incumbents. Exact end-to-end timing would
+require explicit stage-start timestamps, because per-solve logs omit setup work.
+
+For new experiments, the existing `optimization_defaults.weight_edges: true`
+setting enables integer-metre shared-boundary costs for all these methods.
+Aggregation sums crossing parent-edge weights, so a coarse zoning and its
+unchanged projection onto a finer graph have exactly the same weighted cost.
+Use a **new `execution.output_dir`** for that experiment. Plot those results on
+a `Weighted boundary length (m)` axis with stage transitions; the cut-edge
+plotter intentionally excludes them. Keep `looseness: 1.0` when comparing
+feasibility across stages, and verify projected solutions against the target
+problem before calling them feasible target-level incumbents.
+
+For exact polygon geometry, the sum of zone perimeters equals the fixed district
+perimeter plus twice the internal shared-boundary length. The implemented cost
+is a perimeter proxy: base lengths are rounded to integer metres, point-touch
+edges have a minimum weight of one, and synthetic manual bridges receive
+positive weights. Its projection invariance holds for those implemented
+weights, rather than for an exact geometrical perimeter.
+
+Even with comparable weighted objectives, **recursive bounds remain local to
+each stage**. Coarse aggregation restricts possible partitions, and finer
+recursive solves restrict candidate zones near the previous boundary. Their
+lower bounds do not certify the unrestricted fine-level optimum and should
+not be merged into a global bound curve. Show them separately and reset at
+stage transitions, or omit them from a cross-method comparison.
+
+An alternative that retains `Cut edges` as the common metric is to enable
+`save_solver_progress: true` for recursive CP/MIP runs, project each saved
+incumbent to the chosen target graph, and recount cut edges there. That costs
+more storage and requires a separate snapshot-based plotter; old scalar logs
+cannot reconstruct it, and coarse bounds cannot be converted by recounting.
+
 ## Modes
 
 `run` expands the YAML into tasks, executes optimization, writes artifacts, computes final-solution metrics, and writes aggregate CSVs. Recursive/iterative stage objective and timing metadata are always preserved; expensive per-stage cut-edge/compactness metrics run only when `metrics.compute_stage_metrics: true`.
