@@ -39,7 +39,11 @@ def load(root: Path) -> pd.DataFrame:
                 "bound": config.get("saa_welfare_bound", "first_choice"),
                 "cuts": (
                     "disaggregated"
-                    if config.get("saa_disaggregate_cuts")
+                    if config.get(
+                        # Renamed; older result.json snapshots carry the legacy key.
+                        "saa_multicut",
+                        config.get("saa_disaggregate_cuts"),
+                    )
                     else "aggregated"
                 ),
                 "card": bool(config.get("choice_access_cardinality", False)),

@@ -6,10 +6,17 @@ the master's objective variable. That constant matters more than it looks:
 whenever the solver fails to improve its own dual bound -- which is what happens
 on these instances -- the constant *is* the optimality gap that gets reported.
 
-Two bounds live here. ``first_choice_upper_bound`` is the one the code shipped
-with: give every student their top-ranked program. ``transport_upper_bound``
-additionally respects program capacities, which is what makes it strictly
-smaller whenever any program is oversubscribed.
+Two zoning-independent bounds live here. ``first_choice_upper_bound`` is the
+one the code shipped with: give every student their top-ranked program.
+``transport_upper_bound`` additionally respects program capacities, which is
+what makes it strictly smaller whenever any program is oversubscribed.
+
+Neither prices the zoning restriction itself. The two ``zoned_transport_*``
+kinds do, by maximising the zone-restricted transportation value over the
+*linear relaxation* of the zoning model; they live in
+:mod:`optimization.zoned_transport` because they read the whole
+:class:`~optimization.problem.ZoneProblem` rather than just the market, and
+they are cached because the LP is large.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from optimization.data.mid import MidProgram, MidStudent
+    from optimization.problem import ZoneProblem
 
 
 def first_choice_upper_bound(students: Sequence["MidStudent"]) -> float:
@@ -79,17 +87,55 @@ def transport_upper_bound(
         return float(model.ObjVal)
 
 
-WELFARE_BOUNDS = ("first_choice", "transport")
+WELFARE_BOUNDS = (
+    "first_choice",
+    "transport",
+    "zoned_transport_neighbors",
+    "zoned_transport_flow",
+)
+
+# The two zone-aware kinds need the zoning model, so they cannot be evaluated
+# from the market alone. The suffix names the contiguity description.
+ZONED_WELFARE_BOUNDS = {
+    "zoned_transport_neighbors": "neighbors",
+    "zoned_transport_flow": "flow",
+}
 
 
 def welfare_upper_bound(
     kind: str,
     programs: Sequence["MidProgram"],
     students: Sequence["MidStudent"],
+    *,
+    problem: "ZoneProblem | None" = None,
+    workers: int = 1,
+    centroid_neighbor_radius: int = 0,
 ) -> float:
-    """Dispatch to the named a-priori welfare bound."""
+    """Dispatch to the named a-priori welfare bound.
+
+    ``problem`` is required by the ``zoned_transport_*`` kinds and ignored by
+    the others. ``workers`` only sets Gurobi's thread count and never the value,
+    which is why it is not part of the zoned bound's cache key; it defaults to
+    one because concurrent LP measured slower on that model.
+    """
     if kind == "first_choice":
         return first_choice_upper_bound(students)
     if kind == "transport":
         return transport_upper_bound(programs, students)
+    contiguity_model = ZONED_WELFARE_BOUNDS.get(kind)
+    if contiguity_model is not None:
+        if problem is None:
+            raise ValueError(
+                f"Welfare bound {kind!r} needs the zoning problem; none was given."
+            )
+        from optimization.zoned_transport import zoned_transport_bound
+
+        return zoned_transport_bound(
+            programs,
+            students,
+            problem,
+            contiguity_model=contiguity_model,
+            workers=workers,
+            centroid_neighbor_radius=centroid_neighbor_radius,
+        ).objective
     raise ValueError(f"Unknown welfare bound {kind!r}; expected one of {WELFARE_BOUNDS}.")

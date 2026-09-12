@@ -171,12 +171,17 @@ def _nearest_centroid_assignment(problem: ZoneProblem) -> dict[int, int]:
 # ---------------------------------------------------------------------- #
 # feasible-hint cache
 # ---------------------------------------------------------------------- #
-def feasibility_fingerprint(problem: ZoneProblem) -> str:
+def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) -> str:
     """Hash every problem input the objective-free zoning model reads.
 
     Two problems sharing a fingerprint have the same feasible set, so a hint
     found for one is a valid hint for the other. The objective is excluded
     because the hint solve ignores it.
+
+    ``include_hint`` keeps the warm start in the digest, which is what the hint
+    cache wants -- a hint solve is steered by the incoming hint. Callers that
+    only need the *feasible set* identified, such as the zoning relaxation in
+    :mod:`optimization.zoned_transport`, pass ``False``.
     """
 
     digest = hashlib.sha256()
@@ -241,7 +246,8 @@ def feasibility_fingerprint(problem: ZoneProblem) -> str:
         ["edges", [[u, v, int(problem.boundary_weight(u, v))] for u, v in edges]],
     )
     _write(digest, ["fixed", _sorted_assignment(problem.fixed)])
-    _write(digest, ["hint", _sorted_assignment(problem.hint)])
+    if include_hint:
+        _write(digest, ["hint", _sorted_assignment(problem.hint)])
     return digest.hexdigest()
 
 

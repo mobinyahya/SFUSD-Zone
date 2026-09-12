@@ -19,7 +19,45 @@ from choice.objective import ChoiceObjective
 from optimization.solvers import get_solver
 from optimization.strategies.base import Strategy, register
 from optimization.strategies.budget import Budget, make_budget
-from optimization.welfare_bounds import first_choice_upper_bound, welfare_upper_bound
+from optimization.welfare_bounds import (
+    ZONED_WELFARE_BOUNDS,
+    first_choice_upper_bound,
+    welfare_upper_bound,
+)
+
+
+def _welfare_bound(
+    market, problem, bound_kind, options, solver_options
+) -> tuple[float, dict]:
+    """The a-priori constant bounding every scenario's welfare, plus its metadata.
+
+    The zone-aware kinds read the whole zoning model and solve a cached LP, so
+    they are dispatched here rather than through the market-only signature. The
+    LP gets its own thread count -- one by default, because more measured
+    slower -- rather than the master's ``workers``, and that count is not part
+    of the cache key: it changes how long the LP takes, not what it returns.
+    """
+
+    contiguity_model = ZONED_WELFARE_BOUNDS.get(bound_kind)
+    if contiguity_model is None:
+        return (
+            welfare_upper_bound(bound_kind, market.programs, market.students),
+            {},
+        )
+
+    from optimization.zoned_transport import zoned_transport_bound
+
+    bound = zoned_transport_bound(
+        market.programs,
+        market.students,
+        problem,
+        contiguity_model=contiguity_model,
+        workers=int(options.get("zoned_transport_workers", 1)),
+        centroid_neighbor_radius=int(
+            solver_options.get("centroid_neighbor_radius", 0)
+        ),
+    )
+    return bound.objective, dict(bound.metadata)
 
 
 def _market_metadata(
@@ -46,15 +84,24 @@ def _market_metadata(
     }
 
 
-def _append_cuts(cuts: list, results, disaggregate: bool) -> int:
+def _append_cuts(cuts: list, results, multicut: bool) -> int:
     """Append this iteration's cuts, returning how many were added.
 
-    Averaging the scenario cuts into one is valid -- the sample objective is
-    itself an average -- but it hands the master a single hyperplane per
-    iteration. Keeping them apart, each scaled by 1/S and tagged with its
-    scenario, gives the same information a tighter shape.
+    Under ``multicut`` -- the default, and the form written up in the paper --
+    each scenario keeps its own cut, scaled by 1/S and tagged with its
+    scenario, so the master carries one epigraph variable ``eta_psi`` per seed
+    and maximises ``sum_psi eta_psi``. Because summing the per-scenario cuts of
+    one iteration reproduces the averaged cut, every multicut-feasible point
+    maps to an aggregated-master-feasible point of the same objective, so the
+    multicut master value is never above the aggregated one at the same cut
+    pool -- tighter from identical oracle calls.
+
+    Averaging them into one hyperplane per iteration is also valid, since the
+    sample objective is itself an average. That arm gives the master 1 row per
+    iteration instead of S, which is the practical argument on its side when
+    the master is time-starved, and it is selected by ``saa_multicut: false``.
     """
-    if disaggregate:
+    if multicut:
         weight = 1.0 / len(results)
         for index, result in enumerate(results):
             cuts.append(result.cut.to_choice_cut(weight=weight, group=index))
@@ -141,10 +188,12 @@ class SaaStrategy(Strategy):
             )
             for sample_index, sample in enumerate(samples)
         )
-        disaggregate = bool(self.options.get("saa_disaggregate_cuts", False))
-        bound_kind = str(self.options.get("saa_welfare_bound", "transport"))
-        welfare_bound = welfare_upper_bound(
-            bound_kind, market.programs, market.students
+        multicut = bool(self.options.get("saa_multicut", True))
+        bound_kind = str(
+            self.options.get("saa_welfare_bound", "zoned_transport_neighbors")
+        )
+        welfare_bound, bound_metadata = _welfare_bound(
+            market, base_problem, bound_kind, self.options, solver.options
         )
         preprocessing_seconds = time.perf_counter() - start
 
@@ -157,9 +206,12 @@ class SaaStrategy(Strategy):
         termination_reason = "iteration_limit"
         iterations_completed = 0
         apply_hints = normalize_hints(self.options.get("hints", "voronoi")) != "none"
-        market_metadata = _market_metadata(
-            backend, samples, tie_breaking_method, market, bound_kind, welfare_bound
-        )
+        market_metadata = {
+            **_market_metadata(
+                backend, samples, tie_breaking_method, market, bound_kind, welfare_bound
+            ),
+            **bound_metadata,
+        }
 
         if hint is not None and hint.metadata.get("hints") == "feasible":
             evaluation_start = time.perf_counter()
@@ -167,7 +219,7 @@ class SaaStrategy(Strategy):
             evaluation_seconds = time.perf_counter() - evaluation_start
             recourse_seconds += evaluation_seconds
             incumbent_welfare = sum(result.welfare for result in results) / len(results)
-            added_cuts = _append_cuts(cuts, results, disaggregate)
+            added_cuts = _append_cuts(cuts, results, multicut)
             incumbent = ZoneSolution(
                 problem=base_problem,
                 assignment=dict(hint.assignment),
@@ -185,7 +237,7 @@ class SaaStrategy(Strategy):
                     "saa_cuts_added": added_cuts,
                     "saa_cuts_total": len(cuts),
                     "saa_recourse_seconds": evaluation_seconds,
-                    "saa_aggregate_cuts": not disaggregate,
+                    "saa_multicut": multicut,
                     **_budget_metadata(budget, recourse_seconds),
                     "aggregate_capacity_overage_disabled": True,
                     "aggregate_capacity_shortage_disabled": True,
@@ -239,7 +291,7 @@ class SaaStrategy(Strategy):
                     "saa_iteration": iteration,
                     **market_metadata,
                     "saa_cuts_before": len(cuts),
-                    "saa_aggregate_cuts": not disaggregate,
+                    "saa_multicut": multicut,
                     **_budget_metadata(budget, recourse_seconds),
                     "saa_master_time_limit": iteration_time_limit,
                     "saa_master_best_bound": master_bound,
@@ -259,7 +311,7 @@ class SaaStrategy(Strategy):
             recourse_seconds += evaluation_seconds
             solution.wall_time = float(solution.wall_time or 0.0) + evaluation_seconds
             welfare = sum(result.welfare for result in results) / len(results)
-            added_cuts = _append_cuts(cuts, results, disaggregate)
+            added_cuts = _append_cuts(cuts, results, multicut)
             if welfare > incumbent_welfare:
                 incumbent = solution
                 incumbent_welfare = welfare
@@ -280,7 +332,7 @@ class SaaStrategy(Strategy):
                     "saa_cuts_total": len(cuts),
                     "saa_recourse_seconds": evaluation_seconds,
                     **_budget_metadata(budget, recourse_seconds),
-                    "saa_aggregate_cuts": not disaggregate,
+                    "saa_multicut": multicut,
                 }
             )
             gap_target = tolerance
@@ -320,7 +372,7 @@ class SaaStrategy(Strategy):
                     "mid_welfare": None,
                     "mid_discrete_welfare": None,
                     **_budget_metadata(budget, recourse_seconds),
-                    "saa_aggregate_cuts": not disaggregate,
+                    "saa_multicut": multicut,
                 }
             )
             return stages
@@ -388,7 +440,7 @@ class SaaStrategy(Strategy):
                 "saa_certified_optimal": certified,
                 "saa_termination_reason": termination_reason,
                 **_budget_metadata(budget, recourse_seconds),
-                "saa_aggregate_cuts": not disaggregate,
+                "saa_multicut": multicut,
             }
         )
         return stages

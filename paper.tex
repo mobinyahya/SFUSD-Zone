@@ -519,35 +519,44 @@ Fixed access terms (citywide programs and students residing at a school vertex) 
 \tilde{\kappa}^{(r, \psi)} = \kappa^{(r, \psi)} + \sum_{i \in \mathcal{I}} \sum_{\substack{s \in \mathcal{S} \\ s \text{ citywide} \lor v(i) = l(s)}} \beta_{i,s}^{(r, \psi)}
 \end{equation}
 
-Furthermore, rather than introducing separate epigraph variables $\eta_\psi$ for each sampled lottery seed $\psi \in \Psi$, the master problem optimizes a single expected welfare variable $\eta \in \mathbb{R}$. Averaging across all $|\Psi|$ samples at iteration $r$ yields a single aggregated Benders cut:
+\noindent\textbf{Multicut Master:}
+The $|\Psi|$ cuts produced at iteration $r$ could be averaged into the single hyperplane
 \begin{equation}\label{eq:saa_agg_cut}
-\eta \leq \bar{\kappa}^{(r)} + \sum_{v \in V} \sum_{u \in S} \bar{\Gamma}_{v, u}^{(r)} a_{v, u}
+\eta \leq \bar{\kappa}^{(r)} + \sum_{v \in V} \sum_{u \in S} \bar{\Gamma}_{v, u}^{(r)} a_{v, u},
+\qquad
+\bar{\kappa}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \tilde{\kappa}^{(r, \psi)}, \quad \bar{\Gamma}_{v, u}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \Gamma_{v, u}^{(r, \psi)},
 \end{equation}
-where:
-\begin{equation}
-\bar{\kappa}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \tilde{\kappa}^{(r, \psi)}, \qquad \bar{\Gamma}_{v, u}^{(r)} = \frac{1}{|\Psi|} \sum_{\psi \in \Psi} \Gamma_{v, u}^{(r, \psi)}
-\end{equation}
-
-The SAA master problem then optimizes expected welfare over the zoning partition:
+bounding a single expected-welfare variable $\eta \in \mathbb{R}$. That is valid, because the sample objective is itself an average, and it is what this implementation originally did. We instead keep a separate epigraph variable $\eta_\psi$ for every sampled seed and maximize their sum --- the multicut form of Benders decomposition (Birge 1985; Birge and Louveaux 1988). Each seed's cut carries the factor $1/|\Psi|$ so that $\sum_\psi \eta_\psi$ remains on the scale of the sample average:
 \begin{align}
-\max_{x, a, \eta} \quad & \eta \label{saa:master_obj} \\
+\max_{x, a, \eta} \quad & \sum_{\psi \in \Psi} \eta_\psi \label{saa:master_obj} \\
 \textrm{s.t.} \quad & x \in \Omega(G, C, k, \delta) \label{saa:master_omega} \\
-& \eta \leq \bar{\kappa}^{(r)} + \sum_{v \in V} \sum_{u \in S} \bar{\Gamma}_{v, u}^{(r)} a_{v, u} && \forall r = 1, \dots, R \label{saa:master_cut} \\
+& \eta_\psi \leq \frac{1}{|\Psi|} \Big( \tilde{\kappa}^{(r, \psi)} + \sum_{v \in V} \sum_{u \in S} \Gamma_{v, u}^{(r, \psi)} a_{v, u} \Big) && \forall \psi \in \Psi, \ r = 1, \dots, R \label{saa:master_cut} \\
 & a_{v, u} \iff \bigvee_{z \in [k]} (x_{v, z} \land x_{u, z}) && \forall (v, u) \in \mathcal{A}^* \label{saa:master_access} \\
-& 0 \leq \eta \leq \text{Welfare}_{\max} \label{saa:master_bounds} \\
+& 0 \leq \eta_\psi \leq \text{Welfare}_{\max} / |\Psi| && \forall \psi \in \Psi \label{saa:master_bounds} \\
 & a_{v, u} \in \{0, 1\} && \forall (v, u) \in \mathcal{A}^* \label{saa:master_domain}
 \end{align}
-where $\mathcal{A}^* = \{(v, u) \in V \times S \mid \exists r, \bar{\Gamma}_{v, u}^{(r)} \neq 0\}$ denotes the sparse set of active vertex-school pairs with non-zero marginal dual value, and $\text{Welfare}_{\max}$ is a global a priori upper bound developed in Appendix~\ref{app:welfare_bounds}.
+where $\mathcal{A}^* = \{(v, u) \in V \times S \mid \exists r, \psi, \ \Gamma_{v, u}^{(r, \psi)} \neq 0\}$ denotes the sparse set of active vertex-school pairs with non-zero marginal dual value, and $\text{Welfare}_{\max}$ is a global a priori upper bound developed in Appendix~\ref{app:welfare_bounds}. Since each $\eta_\psi$ bounds $\frac{1}{|\Psi|} W_\psi(x)$, the domain in \eqref{saa:master_bounds} splits the same constant $|\Psi|$ ways.
+
+\noindent\textbf{Proposition 12 (Multicut Dominance).} \textit{Fix any pool of oracle evaluations $r = 1, \dots, R$ and let $U^{\mathrm{multi}}_R$ and $U^{\mathrm{agg}}_R$ be the optimal values of \eqref{saa:master_obj}--\eqref{saa:master_domain} and of the same master with \eqref{saa:master_cut}--\eqref{saa:master_bounds} replaced by the single-variable rows \eqref{eq:saa_agg_cut} and $0 \le \eta \le \text{Welfare}_{\max}$. Then}
+\begin{equation}\label{eq:saa_multicut_chain}
+\max_{x \in \Omega} \ \frac{1}{|\Psi|} \sum_{\psi \in \Psi} W_\psi(x) \;\leq\; U^{\mathrm{multi}}_R \;\leq\; U^{\mathrm{agg}}_R .
+\end{equation}
+
+\textit{Proof.} For the right inequality, take any $(x, a, \eta)$ feasible for the multicut master and set $\eta^\dagger = \sum_\psi \eta_\psi$. Summing the $|\Psi|$ rows of \eqref{saa:master_cut} at a fixed $r$ reproduces \eqref{eq:saa_agg_cut} exactly, since $\frac{1}{|\Psi|}\sum_\psi \tilde\kappa^{(r,\psi)} = \bar\kappa^{(r)}$ and likewise for the coefficients; and summing \eqref{saa:master_bounds} gives $0 \le \eta^\dagger \le \text{Welfare}_{\max}$. So $(x, a, \eta^\dagger)$ is feasible for the aggregated master with the same objective value, and the aggregated optimum is at least the multicut optimum. For the left inequality, fix any $x \in \Omega$ with induced access pattern $a(x)$. Each row of \eqref{saa:master_cut} is $1/|\Psi|$ times a valid dual bound on $W_\psi$, which holds at every access pattern, so $\eta_\psi = \frac{1}{|\Psi|} W_\psi(x)$ satisfies all of them and lies in the domain \eqref{saa:master_bounds} by validity of $\text{Welfare}_{\max}$; hence $(x, a(x), \eta)$ is feasible with objective $\frac{1}{|\Psi|}\sum_\psi W_\psi(x)$. $\blacksquare$
+
+The two ends of \eqref{eq:saa_multicut_chain} are what matter operationally. The multicut master never reports a weaker bound than the aggregated one from the same oracle calls, because $|\Psi|$ separate rows describe $\sum_\psi \min_r(\cdot)$ whereas one averaged row describes only $\min_r \sum_\psi (\cdot)$, and the former implies the latter. The cost is $|\Psi|$ rows and $|\Psi| - 1$ extra continuous variables per iteration rather than one row, on a master that is already the expensive part of an iteration; that trade is the one empirical question the formulation raises, and it is why the aggregated form is retained as an ablation rather than deleted.
 
 \noindent\textbf{A Priori Welfare Bound:}
-The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is nominally just the domain of $\eta$, but it also caps the master's reported dual bound and hence the reported gap. Appendix~\ref{app:transport_bound} develops the two candidates: the first-choice constant $\overline{W}^{\mathrm{FC}}$, which ignores capacity and is therefore loose by the full extent of oversubscription, and the transportation bound $\overline{W}^{\mathrm{TP}}$ of Proposition~4, which respects capacity, remains independent of the zoning, is attained integrally, solves in milliseconds and weakly dominates. We take $\text{Welfare}_{\max} = \overline{W}^{\mathrm{TP}}$; on $\text{Block}_2$ it cuts $598$ to $612$ units off the constant. What neither constant prices is the zone confinement itself, which is the subject of Section~\ref{sec:priced_access}.
+The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is nominally just the domain of the epigraph variables, but it also caps the master's reported dual bound and hence the reported gap. Appendix~\ref{app:welfare_bounds} develops four candidates. Two are zoning-blind: the first-choice constant $\overline{W}^{\mathrm{FC}}$, which ignores capacity and is therefore loose by the full extent of oversubscription, and the transportation bound $\overline{W}^{\mathrm{TP}}$ of Proposition~4, which respects capacity, is attained integrally, solves in milliseconds and weakly dominates $\overline{W}^{\mathrm{FC}}$ --- on $\text{Block}_2$ by $598$ to $612$ units. Neither prices the zone confinement itself: $\overline{W}^{\mathrm{TP}}$ still hands every applicant a globally best available seat.
 
-\noindent\textbf{Computational Advantages of Aggregation:}
-This formulation confers three major advantages:
+The other two do. Appendix~\ref{app:zoned_transport} writes the zoning model itself as a linear program, relaxing each membership variable $x_{v,z}$ to $[0,1]$ so a geographic unit may sit fractionally in several zones, reifies the co-zoning indicators on top of it, and then maximizes the zone-restricted transportation value over that relaxed polytope. The two variants, $\widehat{W}^{\mathrm{ZT}}_{\mathrm{cn}}$ and $\widehat{W}^{\mathrm{ZT}}_{\mathrm{flow}}$, differ only in whether connectedness is written with the closer-neighbor rows \eqref{cp:contiguity} or with a rooted single-commodity flow; Proposition~13 shows both are valid and both lie below $\overline{W}^{\mathrm{TP}}$. On $\text{Block}_2$ with $\texttt{max\_distance} = 3.1$ they cut a further $1{,}134$ to $1{,}241$ units off $\overline{W}^{\mathrm{TP}}$ --- roughly a third of the standing gap --- at a cost of one cached LP solve of two to three seconds. We take $\text{Welfare}_{\max} = \widehat{W}^{\mathrm{ZT}}_{\mathrm{cn}}$, which measured both the tighter and the cheaper of the two on every instance we ran and is the variant that relaxes the rows the master itself carries. What none of the four prices is stability, which is where the remaining distance to the priced bound of Section~\ref{sec:priced_access} lies.
+
+\noindent\textbf{Computational Advantages of Geographic Aggregation:}
+Aggregating the student-level duals to vertex pairs --- as opposed to aggregating across seeds, which \eqref{saa:master_cut} no longer does --- confers three advantages:
 \begin{enumerate}
-    \item \textbf{Dimensionality Reduction:} Rather than tracking $|\mathcal{I}| \times |\mathcal{S}| \approx 4.5 \times 10^5$ student-level access indicators across $|\Psi|$ epigraph bounds, the master model instantiates binary access variables $a_{v, u}$ only on-demand for pairs $(v, u)$ with positive dual welfare values $\bar{\Gamma}_{v, u}^{(r)} > 0$.
+    \item \textbf{Dimensionality Reduction:} Rather than tracking $|\mathcal{I}| \times |\mathcal{S}| \approx 4.5 \times 10^5$ student-level access indicators, the master model instantiates binary access variables $a_{v, u}$ only on-demand for the $|\mathcal{A}^*| \approx 1.7 \times 10^3$ pairs $(v, u)$ carrying a non-zero marginal dual value. The access variables are shared across the $|\Psi|$ epigraphs, so the multicut form adds rows and continuous variables but no new integer structure.
     \item \textbf{Exact Equivalence:} Because geographic access $a_{i,s} \equiv a_{v(i), l(s)}$ is strictly identical for all students at vertex $v$, the algebraic aggregation of dual coefficients preserves exact LP outer-approximation guarantees with zero approximation error.
-    \item \textbf{Unified Base Solver Architecture:} Because the cut \eqref{eq:saa_agg_cut} shares the identical access variable structure $a_{v, u}$ as the choice set objective \kccomment{hallucinated reference, fix }\eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models.
+    \item \textbf{Unified Base Solver Architecture:} Because the cuts \eqref{saa:master_cut} share the identical access variable structure $a_{v, u}$ as the choice set objective \kccomment{hallucinated reference, fix }\eqref{eq:benders_cut_agg}, SAA directly reuses the core CP-SAT and MIP master solvers without requiring custom master models; a seed-tagged cut selects which epigraph variable it bounds and changes nothing else.
 \end{enumerate}
 
 \subsection{Congestion-Priced Access}
@@ -605,10 +614,11 @@ Two cautions attach to that. First, the certificate is about $\overline{W}^{\mat
 Compactness does not have to be traded away for this. At 6-zone-3 the priced-access arms return $1{,}128$ to $1{,}136$ cut edges against $1{,}265$ for SAA, so they are simultaneously better on both panels; at 6-zone-9 they range from $1{,}184$ to $1{,}225$ against SAA's $1{,}179$, which is a wash.
 
 \noindent\textbf{Scope:}
-These are four seeds on one instance family at one district size, so the ordering should be read as replicated on this instance rather than established in general, and the $\pm 150$ margin over SAA is small enough that a different instance could plausibly reverse it. What is not marginal, and what we would expect to transfer, is the termination behaviour: a bound that separates across applicants admits an exact finite cut family and therefore a real stopping certificate, whereas a single dual hyperplane per iteration over $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates does not, independently of which zoning either one happens to return.
+These are four seeds on one instance family at one district size, so the ordering should be read as replicated on this instance rather than established in general, and the $\pm 150$ margin over SAA is small enough that a different instance could plausibly reverse it. What is not marginal, and what we would expect to transfer, is the termination behaviour: a bound that separates across applicants admits an exact finite cut family and therefore a real stopping certificate, whereas one dual hyperplane per seed per iteration over $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates does not, independently of which zoning either one happens to return.
 
 \appendix
 \section{Extended Demographic Diversity Constraints}
+\label{app:diversity_constraints}
 In addition to socioeconomic (FRL) balance, the optimization framework supports multi-group racial and ethnic demographic balance across an arbitrary set of tracked groups $\mathcal{E}$.
 
 Let $r_{v,e} \ge 0$ denote the count of students of ethnicity $e \in \mathcal{E}$ residing in vertex $v \in V$. The district-wide proportion of group $e$ is:
@@ -699,7 +709,7 @@ The completeness claim has a consequence worth isolating, because it says what t
 
 \textit{Proof.} By Proposition~2 the feasible set is the convex hull of the stable matchings of $\Gamma(a)$, so the optimum is attained at one of them and equals the largest welfare of a stable matching. Deferred acceptance returns the applicant-optimal stable matching: every applicant weakly prefers it to every other stable matching (Gale and Shapley, 1962; Roth and Sotomayor, 1990). Since $u_{i,\cdot}$ is consistent with $\succ_i^\psi$, each applicant's utility is weakly largest there, hence so is the sum. $\blacksquare$
 
-Corollary~1 is the reason the comb family is worth stating even though the implementation does not load it. An oracle carrying it would be tangent to realized welfare at the candidate zoning, so the Benders cut \eqref{eq:saa_agg_cut} would be exact at $x^r$ rather than merely valid, and the incumbent selection problem noted in Section~\ref{sec:saa} would not arise.
+Corollary~1 is the reason the comb family is worth stating even though the implementation does not load it. An oracle carrying it would be tangent to realized welfare at the candidate zoning, so each seed's Benders cut \eqref{saa:master_cut} would be exact at $x^r$ rather than merely valid, and the incumbent selection problem noted in Section~\ref{sec:saa} would not arise.
 
 \subsection{Access as a Decision Variable}
 \label{app:ap_variable}
@@ -912,19 +922,19 @@ The practical consequence is that a base pair contributes two row families and t
 
 Two consequences of this appendix bear on the formulations in the body.
 
-First, the sign of the cut coefficients. The coefficient of $a_{i,s}$ in the dual cut of Section~\ref{sec:saa} collects the multiplier of \eqref{saa:access}, which is non-negative, together with $q_s$ times the multipliers of the stability rows based at $(i,s)$ --- and, once combs are separated, $-1$ times the multiplier of every comb row in which $i$ appears as a \emph{credited tooth}, since $a_{i,s}$ enters those rows through $\chi_{i,s} = 1 - a_{i,s}$ on the left. With only the aggregated rows \eqref{saa:rothblum} loaded, $a_{i,s}$ occurs in exactly one row and on one side, and the aggregate $\bar\Gamma^{(r)}_{v,u}$ inherits a single sign. With combs, or with the tiered rows \eqref{eq:ap_bonus_comb}, it does not. The sparse instantiation of the master must therefore key on $\bar\Gamma^{(r)}_{v,u} \neq 0$, as $\mathcal{A}^*$ in \eqref{saa:master_access} does, and the reading of $\beta^{(r,\psi)}_{i,s}$ as a marginal \emph{value} of access is specific to the aggregated relaxation.
+First, the sign of the cut coefficients. The coefficient of $a_{i,s}$ in the dual cut of Section~\ref{sec:saa} collects the multiplier of \eqref{saa:access}, which is non-negative, together with $q_s$ times the multipliers of the stability rows based at $(i,s)$ --- and, once combs are separated, $-1$ times the multiplier of every comb row in which $i$ appears as a \emph{credited tooth}, since $a_{i,s}$ enters those rows through $\chi_{i,s} = 1 - a_{i,s}$ on the left. With only the aggregated rows \eqref{saa:rothblum} loaded, $a_{i,s}$ occurs in exactly one row and on one side, and the vertex-pair coefficient $\Gamma^{(r,\psi)}_{v,u}$ inherits a single sign. With combs, or with the tiered rows \eqref{eq:ap_bonus_comb}, it does not. The sparse instantiation of the master must therefore key on $\Gamma^{(r,\psi)}_{v,u} \neq 0$, as $\mathcal{A}^*$ in \eqref{saa:master_access} does, and the reading of $\beta^{(r,\psi)}_{i,s}$ as a marginal \emph{value} of access is specific to the aggregated relaxation.
 
 Second, and more consequentially, a priority bonus does not admit the congestion-priced bound developed in Appendix~\ref{app:priced_access}. That construction starts from $T(x)$, the transportation value obtained by keeping the access constraints \eqref{saa:access} and deleting stability. Under a bonus there is no access constraint to keep. Every zoning has $\Gamma(a) = \Gamma$, so $T(x)$ collapses to the constant $\overline{W}^{\mathrm{TP}}$, the bound $\overline{W}^{\mathrm{PA}}(x; \pi)$ stops depending on $x$, and its maximizer is arbitrary. The reason is structural rather than technical. Under hard access the zoning acts on welfare through the \emph{feasible set}, which a transportation relaxation still sees; under a priority bonus it acts on welfare exclusively through \emph{who wins a contested seat}, which lives entirely in the stability constraints. Any relaxation that discards stability discards the whole dependence on the decision. The same argument disposes of the monotonicity that Proposition~6 relies on: granting $i$ the bonus at $s$ weakly helps $i$ and weakly harms every applicant that $i$ thereby overtakes, so welfare is not monotone in $a$ and the threshold family \eqref{eq:pa_threshold_cut} has no counterpart. Of the three budget-set formulations, the comb-based recourse is the only one whose dependence on the zoning is of the right kind to price a priority bonus.
 
 \section{Welfare Bounds for the Budget-Set Masters}
 \label{app:welfare_bounds}
 
-This appendix develops the two upper bounds that the SAA master of Section~\ref{sec:saa} can put in the epigraph domain \eqref{saa:master_bounds}: a zoning-independent constant, and a function of the zoning that prices the cost of confinement. The second is the congestion-priced bound the \texttt{priced\_access} strategy optimizes.
+This appendix develops the upper bounds that the SAA master of Section~\ref{sec:saa} can put in the epigraph domain \eqref{saa:master_bounds}. They come in three layers, each pricing something the previous one ignored. Section~\ref{app:transport_bound} gives zoning-independent constants that price capacity. Section~\ref{app:zoned_transport} keeps a constant but prices the confinement too, by maximizing the zone-restricted transportation value over a linear relaxation of the zoning model itself. Section~\ref{app:priced_access} abandons the constant altogether for a \emph{function} of the zoning; it is the congestion-priced bound the \texttt{priced\_access} strategy optimizes.
 
 \subsection{The A Priori Transportation Bound}
 \label{app:transport_bound}
 
-The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is merely the domain of the epigraph variable $\eta$, but it carries more weight than that role suggests. The optimality gap reported by the master is measured against its dual bound, and that dual bound is the smaller of $\text{Welfare}_{\max}$ and whatever the accumulated cuts \eqref{saa:master_cut} certify. Until the cuts descend below the constant, the constant \emph{is} the reported gap.
+The constant $\text{Welfare}_{\max}$ in \eqref{saa:master_bounds} is merely the domain of the epigraph variables $\eta_\psi$, but it carries more weight than that role suggests. The optimality gap reported by the master is measured against its dual bound, and that dual bound is the smaller of $\text{Welfare}_{\max}$ and whatever the accumulated cuts \eqref{saa:master_cut} certify. Until the cuts descend below the constant, the constant \emph{is} the reported gap.
 
 The natural choice, obtained by granting every applicant their top-ranked program,
 \begin{equation}\label{eq:welfare_fc}
@@ -952,12 +962,12 @@ Three properties make this substitution attractive. First, \eqref{eq:welfare_tp_
 
 On the $\text{Block}_2$ instances ($|\mathcal{I}| = 3953$ applicants, $|\mathcal{S}| = 123$ programs, $k = 6$ zones), $\overline{W}^{\mathrm{FC}} = 19{,}311.29$ against $\overline{W}^{\mathrm{TP}} = 18{,}699.31$ for one centroid configuration and $18{,}968.60$ against $18{,}370.41$ for a second, reductions of $611.98$ and $598.19$. The improvement actually realized in the reported bound lies between zero and that reduction, according to how far the cuts have already descended: we observe $573.19$ and $67.76$ respectively, the second case being one in which the cuts had already certified a value close to $\overline{W}^{\mathrm{TP}}$.
 
-We emphasize what this does not address. Neither constant prices the zoning restriction itself: $\overline{W}^{\mathrm{TP}}$ still permits every applicant a globally best available seat, whereas a feasible zoning confines each applicant to the programs co-zoned with their residence, roughly a $1/k$ share of the district. That unpriced restriction, rather than any weakness of the sample programs, accounts for the bulk of the residual gap, and closing it requires a relaxation that reasons about zone membership --- for instance a zone-restricted transportation problem, or an outer approximation written per (applicant, zone) pair rather than per access indicator.
+We emphasize what this does not address. Neither constant prices the zoning restriction itself: $\overline{W}^{\mathrm{TP}}$ still permits every applicant a globally best available seat, whereas a feasible zoning confines each applicant to the programs co-zoned with their residence, roughly a $1/k$ share of the district. That unpriced restriction, rather than any weakness of the sample programs, accounts for the bulk of the residual gap, and closing it requires a relaxation that reasons about zone membership. Two such relaxations follow. Section~\ref{app:zoned_transport} keeps a zoning-independent constant but computes it over a linear relaxation of the zoning model, so the constant sees the confinement; Section~\ref{app:priced_access} keeps the zoning integral and replaces the constant with a function of it.
 
-\subsection{Congestion-Priced Access}
-\label{app:priced_access}
+\subsection{Zoned Transportation Bounds}
+\label{app:zoned_transport}
 
-The residual gap identified above is the unpriced cost of confinement, and both routes suggested there --- a zone-restricted transportation problem and an outer approximation written per applicant rather than per access indicator --- turn out to be the same construction viewed from two sides. This subsection develops it. The result replaces the \emph{constant} $\text{Welfare}_{\max}$ with a \emph{function} of the zoning that is still a valid upper bound on stable-matching welfare, still separable across applicants, and --- unlike the dual cuts \eqref{eq:saa_agg_cut} --- admits a finite closed-form outer description requiring no recourse LP at all.
+Proposition 4 obtains its constant by deleting the access constraints \eqref{saa:access} outright, which is exactly why it cannot see the confinement. This subsection keeps those constraints and pays for the zoning model instead, at the price of relaxing that model to a linear program: geographic units may sit fractionally in several zones at once. The optimum is still a \emph{constant}, so nothing in the master of \eqref{saa:master_obj}--\eqref{saa:master_domain} changes --- but it is a constant computed over the zoning polytope rather than in ignorance of it.
 
 \noindent\textbf{Zone-Restricted Transportation Value:}
 Reinstating the access constraints \eqref{saa:access} in the transportation problem of Proposition 4 while still deleting the stability constraints \eqref{saa:comb} and \eqref{saa:rothblum} gives, for each zoning $x$,
@@ -967,14 +977,97 @@ T(x) = \max_{y} \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s
 & \sum_{i \in \mathcal{I}} y_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{eq:pa_restricted_cap} \\
 & 0 \leq y_{i,s} \leq a_{i,s}(x) && \forall i \in \mathcal{I}, s \in \mathcal{S}. \label{eq:pa_restricted_access}
 \end{align}
-By the argument of Proposition 4, $W_\psi(x) \leq T(x) \leq \overline{W}^{\mathrm{TP}}$ for every seed $\psi$, with the second inequality following from $a_{i,s}(x) \leq 1$. The quantity $T(x)$ is the tightest bound obtainable without reasoning about stability, but it is the optimal value of an LP parameterized by $x$; used directly it would reintroduce exactly the per-candidate recourse solve that makes \eqref{eq:saa_agg_cut} expensive, and it would again be summarized by a single dual hyperplane over all $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates. Lagrangian relaxation of the capacity constraints removes both objections at once.
+
+\noindent\textbf{Proposition 14 (Restricted Transportation Bound).} \textit{For every zoning $x \in \Omega(G, C, k, \delta)$ and every seed $\psi \in \Psi$, $W_\psi(x) \leq T(x) \leq \overline{W}^{\mathrm{TP}}$.}
+
+\textit{Proof.} The stable matching induced by $(x, \psi)$ satisfies \eqref{saa:access}, so the feasible point constructed in the proof of Proposition 4 also satisfies \eqref{eq:pa_restricted_access}; and $a_{i,s}(x) \leq 1$ makes \eqref{eq:pa_restricted_access} a restriction of \eqref{eq:welfare_tp_domain}. $\blacksquare$
+
+Both subsections that follow start from $T(x)$. This one bounds $\max_x T(x)$ by relaxing the partition; Section~\ref{app:priced_access} bounds $T(x)$ pointwise by relaxing capacity.
+
+\noindent\textbf{The Relaxed Zoning Polytope:}
+Write $Z(v) \subseteq [k]$ for the labels vertex $v$ may take, as induced by \texttt{max\_distance}, the centroid anchors and their graph-hop neighborhoods, and any fixed assignment. Relaxing the integrality of the base model \eqref{cp:obj}--\eqref{cp:b_domain} while retaining every row gives the polytope $\Omega^{\mathrm{LP}}(G, C, k, \delta)$ in the variables $x_{v,z}$ and $b_{i,j}$:
+\begin{align}
+& \sum_{z \in Z(v)} x_{v,z} = 1, \qquad 0 \leq x_{v,z} \leq 1, \qquad x_{v,z} = 0 \ \ \forall z \notin Z(v) && \forall v \in V \label{eq:zt_assign} \\
+& x_{c(z), z} = 1 && \forall z \in [k] \label{eq:zt_anchor} \\
+& \left\lfloor \tfrac{|S|}{k} \right\rfloor \leq \sum_{v \in V} s(v)\, x_{v,z} \leq \left\lceil \tfrac{|S|}{k} \right\rceil && \forall z \in [k] \label{eq:zt_schools} \\
+& \sum_{v \in V} \big( \gamma_v - \lambda^-\, n_v \big) x_{v,z} \geq 0, \qquad \sum_{v \in V} \big( \gamma_v - \lambda^+\, n_v \big) x_{v,z} \leq 0 && \forall z \in [k] \label{eq:zt_ratio} \\
+& b_{i,j} \geq x_{i,z} - x_{j,z}, \quad b_{i,j} \geq x_{j,z} - x_{i,z}, \quad \sum_{(i,j) \in E} b_{i,j} \leq \lfloor \delta_\partial |E| \rfloor && \forall (i,j) \in E, z \in [k] \label{eq:zt_boundary}
+\end{align}
+Row \eqref{eq:zt_ratio} is the zero-right-hand-side form of \eqref{cp:capacity}, \eqref{cp:frl} and the racial rows of Appendix~\ref{app:diversity_constraints}: one pair per balanced quantity, with $\gamma_v$ the per-vertex value of that quantity ($c_v$, $f_v$, or $r_{v,e}$) and $\lambda^\mp$ its lower and upper ratio bound. Each side is retained exactly when the corresponding tolerance is active and dropped when it is disabled, so a run with the capacity and racial tolerances off carries only the FRL pair. Row \eqref{eq:zt_boundary} is the cut-edge budget the budget-set masters impose in place of minimizing the boundary. Contiguity is written in one of two ways, which is the only difference between the two bounds:
+\begin{description}
+    \item[(CN)] the closer-neighbor rows of \eqref{cp:contiguity} relaxed to $x_{v,z} \leq \sum_{u \in \text{cn}(v, c(z))} x_{u,z}$ for $v \neq c(z)$, with $x_{v,z} = 0$ where the support set is empty;
+    \item[(F)] the rooted single-commodity flow description \eqref{eq:dw_flow_root}--\eqref{eq:dw_flow_capacity}, one commodity per zone with the root fixed at $c(z)$ --- so the root-selection variables $\xi$ disappear and the supply $\sum_{v \neq c(z)} x_{v,z}$ is injected at $c(z)$ --- and arc capacities $\varphi^z_{uv} \leq m\, x_{u,z}$, $\varphi^z_{uv} \leq m\, x_{v,z}$ with $m = |V|$.
+\end{description}
+
+\noindent\textbf{Reified Access:}
+The co-zoning indicators are linearized on the relaxed memberships exactly as the masters linearize \eqref{saa:master_access}, using an auxiliary $h_{v,u,z}$ for the conjunction:
+\begin{equation}\label{eq:zt_access}
+0 \leq h_{v,u,z} \leq x_{v,z}, \qquad h_{v,u,z} \leq x_{u,z}, \qquad 0 \leq a_{v,u} \leq \sum_{z \in Z(v) \cap Z(u)} h_{v,u,z} .
+\end{equation}
+At binary $x$ this forces $a_{v,u} = 1$ precisely when $v$ and $u$ are co-zoned, and permits it, which is all that is needed below.
+
+\noindent\textbf{The Bound:}
+For $\bullet \in \{\mathrm{cn}, \mathrm{flow}\}$ define
+\begin{align}
+\widehat{W}^{\mathrm{ZT}}_{\bullet} = \max \quad & \sum_{i \in \mathcal{I}} \sum_{s \in \mathcal{S}} u_{i,s}\, y_{i,s} \label{eq:zt_obj} \\
+\textrm{s.t.} \quad & x \in \Omega^{\mathrm{LP}}(G, C, k, \delta) \ \text{with contiguity } \bullet, \ \text{and } \eqref{eq:zt_access} \label{eq:zt_omega} \\
+& \sum_{s \in \mathcal{S}} y_{i,s} \leq 1 && \forall i \in \mathcal{I} \label{eq:zt_assign_row} \\
+& \sum_{i \in \mathcal{I}} y_{i,s} \leq q_s && \forall s \in \mathcal{S} \label{eq:zt_cap} \\
+& 0 \leq y_{i,s} \leq a_{v(i), l(s)} && \forall i, \ s \notin F_i \label{eq:zt_access_row} \\
+& 0 \leq y_{i,s} \leq 1 && \forall i, \ s \in F_i \label{eq:zt_free}
+\end{align}
+where $F_i \subseteq \mathcal{S}$ collects the programs whose access no zoning can revoke --- citywide programs, and programs with $l(s) = v(i)$ --- for which $a_{i,s} \equiv 1$ and no access variable exists. Pairs with $Z(v(i)) \cap Z(l(s)) = \emptyset$ carry $y_{i,s} = 0$, since no zoning can ever co-zone them.
+
+\noindent\textbf{Proposition 13 (Zoned Transportation Bound).} \textit{For $\bullet \in \{\mathrm{cn}, \mathrm{flow}\}$, every zoning $x \in \Omega(G, C, k, \delta)$ and every tie-breaking seed $\psi \in \Psi$,}
+\begin{equation}\label{eq:zt_chain}
+W_\psi(x) \;\leq\; T(x) \;\leq\; \widehat{W}^{\mathrm{ZT}}_{\bullet} \;\leq\; \overline{W}^{\mathrm{TP}} ,
+\qquad\text{hence}\qquad
+\max_{x \in \Omega} \ \frac{1}{|\Psi|} \sum_{\psi \in \Psi} W_\psi(x) \;\leq\; \widehat{W}^{\mathrm{ZT}}_{\bullet} ,
+\end{equation}
+\textit{so either value is a valid $\text{Welfare}_{\max}$ for \eqref{saa:master_bounds}.}
+
+\textit{Proof.} The first inequality is Proposition 14. For the third, every feasible point of \eqref{eq:zt_obj}--\eqref{eq:zt_free} has $y \geq 0$ and satisfies \eqref{eq:zt_assign_row} and \eqref{eq:zt_cap}, which are \eqref{eq:welfare_tp_assign} and \eqref{eq:welfare_tp_cap}; so its $y$ is feasible for \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain} with the same objective, and the transportation optimum is at least as large. Conversely, deleting the zoning block \eqref{eq:zt_omega} and the access rows \eqref{eq:zt_access_row} leaves exactly \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain}, so nothing but the access rows separates the two.
+
+For the second inequality, fix $x \in \Omega$ and exhibit a feasible point of \eqref{eq:zt_obj}--\eqref{eq:zt_free} whose objective is $T(x)$. Rows \eqref{eq:zt_assign}--\eqref{eq:zt_boundary} and (CN) are the rows of the base model, which $x$ satisfies integrally, with $b_{i,j}$ set to its induced value. For (F): closer-neighbor feasibility induces a strictly distance-decreasing path from every vertex of $Z_z$ to $c(z)$ inside $Z_z$, so $G[Z_z]$ is connected and contains $c(z)$; routing one unit from $c(z)$ to each other vertex of $Z_z$ along a spanning tree of $G[Z_z]$ gives arc flows in $[0, |V|]$, zero on every arc with an endpoint outside $Z_z$, so \eqref{eq:dw_flow_balance} and the relaxed capacities hold. Taking $h_{v,u,z} = x_{v,z} x_{u,z}$ satisfies \eqref{eq:zt_access} and yields $a_{v,u} = a_{v,u}(x)$, so any $y$ optimal for \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access} is feasible here and $T(x) \leq \widehat{W}^{\mathrm{ZT}}_{\bullet}$. The final claim holds because \eqref{eq:zt_chain} is pointwise in $(x, \psi)$, so it bounds the sample average and then its maximum over $\Omega$. $\blacksquare$
+
+Three remarks on the construction. First, the two variants are both valid but are \emph{not} nested: (CN) relaxes rows the master itself carries and is therefore the natural companion to it, while (F) is an exact description of connectedness at binary $x$ and rules out no $(v,z)$ pair a priori, so it contains every (CN)-feasible integral zoning --- but at fractional $x$ neither set of rows implies the other. We report both rather than choose. Second, the bound is a constant, so unlike the priced bound of Section~\ref{app:priced_access} it prices confinement only in the aggregate: it says what the best \emph{fractional} zoning could achieve, not what the master's current candidate achieves. Third, the value depends only on the feasible set $\Omega$, the market, and which contiguity description is used --- never on how many threads solved it --- which is why the implementation caches it content-addressed by exactly those inputs with the worker count excluded from the key. The LP must be solved to optimality for \eqref{eq:zt_chain} to mean anything: a time-limited LP returns a primal-feasible point, which bounds the value from below.
+
+\noindent\textbf{Remark (Where the tightening comes from).}
+It does not come from the contiguity rows. Suppose every unanchored vertex is a candidate for all $k$ labels and the school-count and ratio bounds admit the district averages. Then $\bar{x}$, placing $\bar{x}_{v,z} = 1/k$ at every unanchored $v$, is feasible for both variants: each zone receives a $1/k$ share of every quantity, so \eqref{eq:zt_schools} and \eqref{eq:zt_ratio} hold at the district average; each row of (CN) reads $1/k \leq |\text{cn}(v, c(z))|/k$, satisfied whenever the support is nonempty; (F) routes $1/k$ to each vertex along any spanning tree; and every unanchored vertex carries the same membership vector, so $b_{i,j} = 0$ on every edge between two of them and \eqref{eq:zt_boundary} is slack. At $\bar{x}$ we may take $h_{v,u,z} = 1/k$ for all $z$ and obtain $a_{v,u} = 1$ for \emph{every} pair with two unanchored endpoints: the same pair can be co-zoned a little in every zone at once. On such an instance $\widehat{W}^{\mathrm{ZT}}_\bullet$ can differ from $\overline{W}^{\mathrm{TP}}$ only through the anchors. The bound therefore earns whatever it earns from what pins zone membership --- the anchors and their neighborhoods, the candidate sets $Z(v)$ induced by \texttt{max\_distance}, and vertices whose closer-neighbor support is a single vertex --- and an instance run with \texttt{max\_distance} $= \infty$ should be expected to return $\overline{W}^{\mathrm{TP}}$ almost exactly. This is the same mechanism that made the triangle and cardinality inequalities on $a$ worthless: the all-access point is inside the relaxation, and no symmetric valid inequality in $a$-space removes it.
+
+Since the SFUSD instances are run with a finite \texttt{max\_distance}, the bound does earn something. On $\text{Block}_2$ with $k = 6$, $\texttt{max\_distance} = 3.1$ miles, $\delta_\partial = 0.18$, $\delta_F = 0.15$ and the racial and capacity tolerances disabled:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\hline
+centroid set & $\overline{W}^{\mathrm{FC}}$ & $\overline{W}^{\mathrm{TP}}$ & $\widehat{W}^{\mathrm{ZT}}_{\mathrm{cn}}$ & $\widehat{W}^{\mathrm{ZT}}_{\mathrm{flow}}$ \\
+\hline
+6-zone-3 & 18{,}948.93 & 18{,}355.58 & \textbf{17{,}114.93} & 17{,}187.56 \\
+6-zone-9 & 18{,}673.33 & 18{,}079.53 & \textbf{16{,}881.51} & 16{,}945.91 \\
+\hline
+\end{tabular}
+\end{center}
+
+The zoned bounds cut $1{,}240.65$ and $1{,}198.02$ off $\overline{W}^{\mathrm{TP}}$ under (CN), and $1{,}168.02$ and $1{,}133.63$ under (F) --- roughly a third of the standing gap, with (CN) tighter than (F) on both instances as the non-nesting remark allows but does not guarantee. The cost is one LP: $2.1 \times 10^4$ columns and $3.2 \times 10^4$ rows under (CN), $2.8 \times 10^4$ and $4.6 \times 10^4$ under (F), solved single-threaded in $1.8$ to $2.8$ seconds under (CN) and $2.3$ to $2.4$ under (F), against a master solve of $300\,\mathrm{s}$; model construction accounts for under $0.3\,\mathrm{s}$ of that and a cache hit for $14\,\mathrm{ms}$. Threads do not help: sweeping one to eight, no count above one was reliably faster and several were clearly slower, since the solver races LP algorithms concurrently and on a model this size they mostly contend --- (F) reaches $4.4\,\mathrm{s}$ at eight threads. The implementation therefore gives this LP a single thread regardless of how many the master gets, less to save the two seconds than to leave the cores to the master. Since (CN) dominates on both tightness and time, it is the default, and (F) is reported for the comparison rather than for use. Validity was checked directly at two integral zonings of the 6-zone-3 instance, where $T(x)$ came back at $14{,}493.94$ and $13{,}331.82$, far below both bounds. Replacing the constant in a two-iteration probe at 6-zone-3 moved the reported absolute gap from $4{,}262.54$ to $2{,}887.29$, which is the constant reduction plus a small incumbent difference; a single probe says nothing about whether changing the epigraph domain helps the search, and we make no claim there.
+
+What this does not do is escape the convexification gap. The bound still sits far above anything any method attains --- on the order of $2{,}000$ units, judging by the budget welfares of Section~\ref{sec:saa}, though those were measured on a differently parameterized instance of the same family and so are indicative rather than a matched comparison --- and the reason is visible in the remark: a fractional membership buys a pro-rata slice of a popular school that no integral zoning could hand to the same applicants, and \eqref{eq:zt_cap} limits only the total. That is a property of relaxing the partition, not of this particular objective, and it is why the values above land in the same range as the root relaxations of the fully joint formulations we have measured on this instance family. The contribution is not a tighter class of bound; it is that a value of that quality is available \emph{a priori}, in seconds, as a constant the master can be handed, instead of being something the master has to spend its root solve discovering.
+
+\noindent\textbf{Relation to the Priced Bound:}
+$\widehat{W}^{\mathrm{ZT}}_\bullet$ and the priced bound $\overline{W}^{\mathrm{PA}}(x^\ast; \pi)$ certified by Theorem 2 are both valid upper bounds on $\max_{x \in \Omega} \bar{W}_\Psi(x)$, and neither dominates the other: the former keeps capacity exactly and relaxes the partition, the latter keeps the partition integral and relaxes capacity into prices. The implementation therefore reports the smaller of the two, which is valid because both are. The zoned LP also supplies prices: the duals of \eqref{eq:zt_cap} are non-negative, so Proposition 5 applies to them verbatim, and they price a seat by its marginal value \emph{after} confinement rather than before it. The dominance clause of Proposition 5, that $\overline{W}^{\mathrm{PA}}(x; \pi^\star) \leq \overline{W}^{\mathrm{TP}}$, is specific to the duals of the unrestricted problem and is not inherited by these; validity is, and validity is what the bound needs.
+
+\subsection{Congestion-Priced Access}
+\label{app:priced_access}
+
+Section~\ref{app:zoned_transport} priced the confinement while keeping $\text{Welfare}_{\max}$ a constant, by relaxing the partition. This subsection takes the other route suggested at the end of Section~\ref{app:transport_bound}: keep the zoning integral and replace the \emph{constant} with a \emph{function} of it. The result is still a valid upper bound on stable-matching welfare, still separable across applicants, and --- unlike the dual cuts \eqref{saa:master_cut} --- admits a finite closed-form outer description requiring no recourse LP at all.
+
+Recall from Section~\ref{app:zoned_transport} the zone-restricted transportation value $T(x)$ of \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access}, and that $W_\psi(x) \leq T(x) \leq \overline{W}^{\mathrm{TP}}$ for every seed. $T(x)$ is the tightest bound obtainable without reasoning about stability, but it is the optimal value of an LP parameterized by $x$; used directly it would reintroduce exactly the per-candidate recourse solve that makes \eqref{saa:master_cut} expensive, and it would again be summarized by one dual hyperplane per seed over all $|\mathcal{I}| \times |\mathcal{S}|$ access coordinates. Lagrangian relaxation of the capacity constraints removes both objections at once.
 
 \noindent\textbf{Priced Access Bound:}
 Fix a price vector $\pi \in \mathbb{R}^{|\mathcal{S}|}_{\geq 0}$ and define the \emph{priced value} of program $s$ to applicant $i$ as
 \begin{equation}\label{eq:pa_priced_value}
 w_{i,s} = u_{i,s} - \pi_s .
 \end{equation}
-Let $F_i \subseteq \mathcal{S}$ collect the programs whose access no zoning can revoke --- citywide programs and programs with $l(s) = v(i)$ --- and write
+With $F_i$ as in Section~\ref{app:zoned_transport}, write
 \begin{equation}\label{eq:pa_student_term}
 g_i(a_{i, \cdot}) = \max\Big\{0, \ \max_{s \in \mathcal{S}} w_{i,s}\, a_{i,s}\Big\}, \qquad
 \phi_i = \max\Big\{0, \ \max_{s \in F_i} w_{i,s}\Big\},
@@ -992,7 +1085,7 @@ W_\psi(x) \;\leq\; T(x) \;\leq\; \overline{W}^{\mathrm{PA}}(x; \pi),
 \end{equation}
 \textit{Moreover, if $\pi^\star$ denotes an optimal dual solution to the capacity constraints \eqref{eq:welfare_tp_cap} of the unrestricted problem, then $\overline{W}^{\mathrm{PA}}(x; \pi^\star) \leq \overline{W}^{\mathrm{TP}}$ for every $x$.}
 
-\textit{Proof.} The first inequality is Proposition 4 with \eqref{saa:access} retained. For the second, relax \eqref{eq:pa_restricted_cap} into the objective with multipliers $\pi \geq 0$; weak duality gives, for any such $\pi$,
+\textit{Proof.} The first inequality is Proposition 14. For the second, relax \eqref{eq:pa_restricted_cap} into the objective with multipliers $\pi \geq 0$; weak duality gives, for any such $\pi$,
 $$T(x) \;\leq\; \sum_{s} q_s \pi_s + \max\Big\{ \textstyle\sum_{i,s} w_{i,s} y_{i,s} \;:\; \sum_s y_{i,s} \leq 1, \ 0 \leq y_{i,s} \leq a_{i,s}(x) \Big\}.$$
 The remaining program has no constraint coupling distinct applicants, so it separates into $|\mathcal{I}|$ independent problems. Each is a maximization of a linear function over $\{y_{i, \cdot} \geq 0 : \sum_s y_{i,s} \leq 1, \ y_{i,s} \leq a_{i,s}\}$, whose optimum places unit mass on a single accessible program of largest priced value when that value is positive, and no mass at all otherwise; its value is therefore exactly $g_i(a_{i, \cdot}(x))$, establishing \eqref{eq:pa_chain}. Since \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access} is a feasible bounded linear program, strong duality applies and the Lagrangian dual attains $T(x)$, giving the stated minimum. Finally, each $g_i$ is nondecreasing in $a_{i, \cdot}$ and $a_{i,s}(x) \leq 1$, so $\overline{W}^{\mathrm{PA}}(x; \pi^\star) \leq \overline{W}^{\mathrm{PA}}(\mathbf{1}; \pi^\star)$; the latter is the Lagrangian dual objective of the unrestricted transportation problem evaluated at its own optimal multipliers, which by strong duality equals $\overline{W}^{\mathrm{TP}}$. $\blacksquare$
 
@@ -1013,10 +1106,10 @@ g_i(a_{i, \cdot}) \;=\; \min_{\tau \in \Theta_i} \Bigg[ \tau + \sum_{\substack{s
 
 For the reverse, choose $\tau = m$ if $m > \phi_i$ and $\tau = \phi_i$ otherwise; in both cases $\tau \in \Theta_i$, because $m > \phi_i$ implies $m = w_{i, s^\ast}$ for some $s^\ast \in \mathcal{S} \setminus F_i$ as above. Every accessible program satisfies $w_{i,s} \leq m = \tau$ by maximality of $m$, so no surviving term has $a_{i,s} = 1$, the sum vanishes, and the bracket equals $\tau = m$. $\blacksquare$
 
-Proposition 6 is the structural payoff. The function $g_i$ is piecewise linear, concave and monotone in $a_{i, \cdot}$, and \eqref{eq:pa_threshold_exact} exhibits it as the minimum of at most one more affine function than the number of programs $i$ ranks with coefficients available in closed form from the sorted priced values --- no LP, no dual solution, and no dependence on the seed $\psi$. Each inequality \eqref{eq:pa_threshold_cut} touches only applicant $i$'s own access row, which is what makes the family exact rather than merely valid: the cut set describes $g_i$ on the whole cube, whereas the dual cut \eqref{eq:saa_agg_cut} is a single hyperplane tangent at one point of a $|\mathcal{I}| \times |\mathcal{S}|$-dimensional domain. The restriction $\tau \geq \phi_i$ is not cosmetic. A threshold below $\phi_i$ would leave the guaranteed value $\phi_i$ uncovered by any term of \eqref{eq:pa_threshold_cut}, since the programs realizing it lie in $F_i$ and carry no access variable, and the inequality would then cut away welfare the applicant retains under every zoning.
+Proposition 6 is the structural payoff. The function $g_i$ is piecewise linear, concave and monotone in $a_{i, \cdot}$, and \eqref{eq:pa_threshold_exact} exhibits it as the minimum of at most one more affine function than the number of programs $i$ ranks with coefficients available in closed form from the sorted priced values --- no LP, no dual solution, and no dependence on the seed $\psi$. Each inequality \eqref{eq:pa_threshold_cut} touches only applicant $i$'s own access row, which is what makes the family exact rather than merely valid: the cut set describes $g_i$ on the whole cube, whereas a dual cut \eqref{saa:master_cut} is one hyperplane, tangent at a single point of a $|\mathcal{I}| \times |\mathcal{S}|$-dimensional domain, and the multicut master of Section~\ref{sec:saa} buys $|\Psi|$ of them per iteration rather than a description. The restriction $\tau \geq \phi_i$ is not cosmetic. A threshold below $\phi_i$ would leave the guaranteed value $\phi_i$ uncovered by any term of \eqref{eq:pa_threshold_cut}, since the programs realizing it lie in $F_i$ and carry no access variable, and the inequality would then cut away welfare the applicant retains under every zoning.
 
 \noindent\textbf{Vertex Aggregation:}
-Because access is geographic, $a_{i,s} \equiv a_{v(i), l(s)}$, so applicants sharing a home vertex share an access row and their inequalities may be summed with no loss --- the same exact aggregation invoked for \eqref{eq:saa_agg_cut}, but applied to a family that is already per-applicant rather than to a dual hyperplane. Introduce per-vertex epigraph variables $\theta_v \in \mathbb{R}$ and, for any assignment of thresholds $\tau_i \geq \phi_i$ to the applicants of $\mathcal{I}_v$, define
+Because access is geographic, $a_{i,s} \equiv a_{v(i), l(s)}$, so applicants sharing a home vertex share an access row and their inequalities may be summed with no loss --- the same exact aggregation invoked for \eqref{saa:master_cut}, but applied to a family that is already per-applicant rather than to a dual hyperplane. Introduce per-vertex epigraph variables $\theta_v \in \mathbb{R}$ and, for any assignment of thresholds $\tau_i \geq \phi_i$ to the applicants of $\mathcal{I}_v$, define
 \begin{equation}\label{eq:pa_vertex_coeff}
 c_v(\tau) = \sum_{i \in \mathcal{I}_v} \tau_i,
 \qquad

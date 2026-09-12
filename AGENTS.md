@@ -176,3 +176,4 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 
 Graph cache path: `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
 Feasible-hint cache path: `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v1/<sha256>/`, keyed by the feasibility model plus the hint search settings (seed included).
+Zoned-transport bound cache path: `/soalnas/share/data/school_choice/Data/caches/zoned_transport_bound/v2/<sha256>/`, keyed by the zoning feasible set, the market, the contiguity description (`neighbors` or `flow`), and `centroid_neighbor_radius`. `zoned_transport_workers` is deliberately excluded: threads change how long the LP takes, not its value.

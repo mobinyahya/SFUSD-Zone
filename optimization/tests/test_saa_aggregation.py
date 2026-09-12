@@ -3,7 +3,10 @@
 from types import SimpleNamespace
 import pytest
 
-from benchmark.config import optimization_config_from_dict
+from benchmark.config import (
+    optimization_config_from_dict,
+    optimization_config_to_dict,
+)
 from optimization.data.mid import MidProgram, MidStudent
 from optimization.data.saa import SaaMarket
 from optimization.saa_oracle import SaaCut, aggregate_saa_cuts
@@ -72,10 +75,8 @@ def test_aggregate_saa_cuts_edge_cases():
     assert agg.coefficients == (((1, 2), 3.0),)
 
 
-def test_config_rejects_unknown_saa_aggregate_cut_keys():
-    """SAA cut aggregation has no config toggle; stray keys must not be ignored."""
-
-    dict_cfg = {
+def _saa_config(**extra) -> dict:
+    return {
         "levels": ["BlockGroup_0"],
         "strategy": "saa",
         "solver": "cp_bool",
@@ -83,12 +84,47 @@ def test_config_rejects_unknown_saa_aggregate_cut_keys():
             "scenario": "legacy",
             "overrides": {"filters": {"optimization": {"program_population": "All"}}},
         },
-        "saa_aggregated_cuts": True,
-        "saa_aggregate_cuts": True,
+        **extra,
     }
+
+
+def test_config_rejects_near_misses_of_the_multicut_key():
+    """``saa_multicut`` is the only spelling; plausible variants must not be ignored."""
+
+    dict_cfg = _saa_config(saa_aggregated_cuts=True, saa_averaged_cuts=True)
 
     with pytest.raises(ValueError, match="Unknown optimization config keys"):
         optimization_config_from_dict(dict_cfg)
+
+
+def test_multicut_is_a_validated_boolean_config_parameter():
+    assert optimization_config_from_dict(_saa_config()).saa_multicut is True
+    assert (
+        optimization_config_from_dict(_saa_config(saa_multicut=False)).saa_multicut
+        is False
+    )
+    with pytest.raises(ValueError, match="saa_multicut must be a Boolean"):
+        optimization_config_from_dict(_saa_config(saa_multicut="yes"))
+
+
+def test_the_legacy_key_name_still_loads_saved_configs():
+    """``result.json`` snapshots predate the rename and are reloaded by ``mode: metrics``.
+
+    Rejecting the old spelling would make every archived run unreadable, so it
+    is mapped onto the current field instead.
+    """
+    legacy = optimization_config_from_dict(
+        _saa_config(saa_disaggregate_cuts=False)
+    )
+    assert legacy.saa_multicut is False
+    # An explicit current-name entry wins over the legacy one.
+    both = optimization_config_from_dict(
+        _saa_config(saa_multicut=True, saa_disaggregate_cuts=False)
+    )
+    assert both.saa_multicut is True
+    # And the snapshot written back out carries only the current name.
+    assert "saa_disaggregate_cuts" not in optimization_config_to_dict(legacy)
+    assert optimization_config_to_dict(legacy)["saa_multicut"] is False
 
 
 def test_master_time_limit_schedule_distribution():
@@ -105,6 +141,10 @@ def test_master_time_limit_schedule_distribution():
 
 @pytest.mark.parametrize("backend", ["cp_bool", "mip"])
 def test_saa_strategy_with_aggregate_cuts(monkeypatch, backend):
+    """The single-cut ablation: one averaged hyperplane per iteration.
+
+    Multicut is the default, so this arm has to ask for aggregation explicitly.
+    """
     problem = make_grid_problem(2, 2, program_population="All")
     dataset = FakeDataset(problem)
     dataset.config = SimpleNamespace(program_population="All")
@@ -122,6 +162,7 @@ def test_saa_strategy_with_aggregate_cuts(monkeypatch, backend):
         tolerance=1e-8,
         saa_num_seeds=2,
         saa_tie_breaking_method="MTB",
+        saa_multicut=False,
         seed=11,
     )
 
@@ -132,7 +173,7 @@ def test_saa_strategy_with_aggregate_cuts(monkeypatch, backend):
     assert final.objective == pytest.approx(4.0)
     assert final.assignment == {0: 0, 1: 0, 2: 1, 3: 1}
     assert final.metadata["saa_selected_incumbent"] is True
-    assert final.metadata["saa_aggregate_cuts"] is True
+    assert final.metadata["saa_multicut"] is False
     assert (
         final.metadata["saa_budget_policy"] == "linearly_increasing_with_carry_forward"
     )
@@ -152,7 +193,7 @@ def test_saa_strategy_with_aggregate_cuts(monkeypatch, backend):
     # per-candidate search does not pay for reference-oracle metadata.
     for stage in solutions[:-1]:
         assert stage.metadata["saa_cuts_added"] == 1
-        assert stage.metadata["saa_aggregate_cuts"] is True
+        assert stage.metadata["saa_multicut"] is False
         assert "saa_master_time_limit" in stage.metadata
         assert isinstance(stage.metadata["saa_welfare"], float)
         assert stage.metadata["saa_welfare"] > 0.0
@@ -250,7 +291,7 @@ def test_saa_strategy_with_disaggregated_cuts(monkeypatch, backend):
         tolerance=1e-8,
         saa_num_seeds=2,
         saa_tie_breaking_method="MTB",
-        saa_disaggregate_cuts=True,
+        saa_multicut=True,
         seed=11,
     )
 
@@ -259,10 +300,58 @@ def test_saa_strategy_with_disaggregated_cuts(monkeypatch, backend):
 
     # Disaggregating changes the master's shape, not the welfare it can reach.
     assert final.objective == pytest.approx(4.0)
-    assert final.metadata["saa_aggregate_cuts"] is False
+    assert final.metadata["saa_multicut"] is True
     for stage in solutions[:-1]:
         assert stage.metadata["saa_cuts_added"] == 2
-        assert stage.metadata["saa_aggregate_cuts"] is False
+        assert stage.metadata["saa_multicut"] is True
+
+
+def test_multicut_is_the_default_saa_master():
+    """Pinned deliberately: the master maximizes a sum of per-seed epigraphs.
+
+    Summing the per-scenario cuts of one iteration reproduces the averaged cut,
+    so the multicut master is never looser at the same cut pool. Falling back to
+    the single-cut master should be a conscious ablation, not a default.
+    """
+    from optimization.config import OptimizationConfig
+
+    config = OptimizationConfig()
+    assert config.saa_multicut is True
+    # A config-free construction must agree, or the strategy's own fallback
+    # would silently average.
+    assert config.make_strategy().options["saa_multicut"] is True
+
+
+@pytest.mark.parametrize("backend", ["cp_bool", "mip"])
+def test_saa_multicut_default_gives_each_seed_its_own_epigraph(monkeypatch, backend):
+    """Two seeds, so two grouped cuts per iteration and no averaged row."""
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
+    monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
+
+    solver = get_solver(backend, solve_time_limit=10, workers=1)
+    strategy = get_strategy(
+        "saa",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[10],
+        gap_limits=[0],
+        hints="none",
+        max_iterations=5,
+        tolerance=1e-8,
+        saa_num_seeds=2,
+        saa_tie_breaking_method="MTB",
+        seed=11,
+    )
+
+    solutions = strategy.run(dataset, solver)
+    final = solutions[-1]
+
+    assert final.objective == pytest.approx(4.0)
+    assert final.metadata["saa_multicut"] is True
+    for stage in solutions[:-1]:
+        assert stage.metadata["saa_cuts_added"] == 2
 
 
 def test_relative_gap_lets_the_outer_loop_certify_a_large_welfare():

@@ -39,6 +39,16 @@ def _cut_key(cut) -> tuple:
     )
 
 
+def _tightest_bound(
+    model_bound: float | None, zoned_bound: float | None
+) -> float | None:
+    """The smaller of two simultaneously valid welfare upper bounds."""
+    candidates = [
+        value for value in (model_bound, zoned_bound) if value is not None
+    ]
+    return min(candidates) if candidates else None
+
+
 def _budget_metadata(budget: Budget, evaluation_seconds: float) -> dict:
     return {
         **budget.metadata("choice"),
@@ -78,6 +88,10 @@ class PricedAccessStrategy(Strategy):
                 self.options.get("priced_access_price_source", "transport")
             ),
             price_scale=float(self.options.get("priced_access_price_scale", 1.0)),
+            workers=int(self.options.get("zoned_transport_workers", 1)),
+            centroid_neighbor_radius=int(
+                solver.options.get("centroid_neighbor_radius", 0)
+            ),
         )
         lower_bound, upper_bound = model.utility_bounds(base_problem)
         preprocessing_seconds = time.perf_counter() - started
@@ -141,6 +155,8 @@ class PricedAccessStrategy(Strategy):
                     "priced_access_cuts_before": len(cuts),
                     "priced_access_initial_cuts": initial_cut_count,
                     "priced_access_price_constant": model.price_constant,
+                    "priced_access_zoned_transport_bound": model.welfare_bound,
+                    **model.bound_metadata,
                     "priced_access_master_time_limit_seconds": iteration_time_limit,
                     "priced_access_preprocessing_seconds": preprocessing_seconds,
                 }
@@ -181,6 +197,16 @@ class PricedAccessStrategy(Strategy):
                         None
                         if model_utility is None
                         else model_utility + model.price_constant
+                    ),
+                    # Two independently valid bounds on the best attainable
+                    # sample-average welfare: the master's own outer
+                    # approximation of the priced bound, and the zone-aware
+                    # relaxation the prices came from. Report the smaller.
+                    "priced_access_certified_welfare_bound": _tightest_bound(
+                        None
+                        if model_utility is None
+                        else model_utility + model.price_constant,
+                        model.welfare_bound,
                     ),
                     "priced_access_cuts_added": len(cuts_to_add),
                     "priced_access_cuts_total": len(cuts) + len(cuts_to_add),

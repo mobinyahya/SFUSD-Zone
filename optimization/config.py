@@ -97,20 +97,50 @@ class OptimizationConfig:
     mid_complementary_slackness_slack: float | str = "auto"
     saa_num_seeds: int = 5
     saa_tie_breaking_method: str = "MTB"
-    # Which a-priori constant bounds the master's objective variable.
-    # "transport" respects program capacities and is weakly dominant: the
-    # reported bound is min(constant, what the cuts prove), and the transport
-    # constant is never above the first-choice sum, so it can only help.
-    # See optimization/welfare_bounds.py and Proposition 4 in paper.tex.
-    saa_welfare_bound: str = "transport"
+    # Which a-priori constant bounds the master's objective variable. The
+    # reported bound is min(constant, what the cuts prove), so a smaller
+    # constant can only help. Ordered loosest first: "first_choice" ignores
+    # capacity; "transport" respects it; the two "zoned_transport_*" kinds also
+    # price the zone confinement, maximizing the zone-restricted transport
+    # value over the LP relaxation of the zoning model itself, with the suffix
+    # naming the contiguity description.
+    #
+    # "zoned_transport_neighbors" is the default because it is both the
+    # tightest and the cheapest of the four: measured on Block_2 it comes in
+    # ~1,200 below "transport" and ~100 below "zoned_transport_flow", for one
+    # cached LP of ~2-3s. Relaxing the closer-neighbor rows the master itself
+    # carries, rather than swapping in the flow description, is also the
+    # closer companion to the master. See optimization/welfare_bounds.py,
+    # optimization/zoned_transport.py, and Propositions 4, 13 and 14 in
+    # paper.tex.
+    saa_welfare_bound: str = "zoned_transport_neighbors"
+    # Gurobi threads for the zoned-transport LP. One, deliberately: Gurobi runs
+    # concurrent LP, and on a model this size the racing algorithms mostly just
+    # contend. Across 1/2/4/6/8 threads on two Block_2 instances, no count
+    # above 1 was reliably faster and several were clearly slower -- flow went
+    # 2.4s -> 4.4s from 1 to 8 threads, neighbors 1.8s -> 2.5s on 6-zone-3.
+    # (One cell bucked it: neighbors on 6-zone-9 at 4 threads, 2.5s against
+    # 2.8s single-threaded, on a single observation.) Since the spread is a
+    # couple of seconds either way against a 300s master solve, 1 is the right
+    # default mostly because it leaves the cores alone. Separate knob from
+    # `workers` for that reason, and excluded from the bound's cache key
+    # because it cannot change the value.
+    zoned_transport_workers: int = 1
     # Compare the outer-loop gap against tolerance * |incumbent| rather than
     # against tolerance outright, which on a welfare of ~15,000 asks for ten
     # significant digits and can never fire.
     saa_relative_gap: bool = False
-    # Give each sampled scenario its own epigraph variable in the master
-    # instead of averaging the scenario cuts into one. Strictly tighter
-    # relaxation from the same oracle calls.
-    saa_disaggregate_cuts: bool = False
+    # Multicut: give each sampled scenario its own epigraph variable eta_psi
+    # and maximize their sum. Summing the per-scenario cuts of one iteration
+    # reproduces the averaged cut, so the multicut master is never looser at
+    # the same cut pool -- it is the formulation of record (Proposition 12 in
+    # paper.tex). False recovers the single-cut master, which bounds one
+    # expected-welfare variable with one averaged hyperplane per iteration and
+    # trades that tightness for S times fewer rows; that arm measured *better*
+    # on the cluster on 2026-09-05, so a regression is worth checking here
+    # first. Formerly `saa_disaggregate_cuts`, still accepted when reading
+    # saved configs.
+    saa_multicut: bool = True
     # --- stable_cutoff ------------------------------------------------- #
     # How many strict priority orders the exact matching model averages over.
     # Each one costs a full matching block -- 2|Gamma| binaries and O(|Gamma|)
@@ -343,10 +373,16 @@ class OptimizationConfig:
             raise ValueError(
                 f"saa_welfare_bound must be one of: {', '.join(WELFARE_BOUNDS)}."
             )
+        if (
+            isinstance(self.zoned_transport_workers, bool)
+            or not isinstance(self.zoned_transport_workers, int)
+            or self.zoned_transport_workers <= 0
+        ):
+            raise ValueError("zoned_transport_workers must be a positive integer.")
         if not isinstance(self.saa_relative_gap, bool):
             raise ValueError("saa_relative_gap must be a Boolean.")
-        if not isinstance(self.saa_disaggregate_cuts, bool):
-            raise ValueError("saa_disaggregate_cuts must be a Boolean.")
+        if not isinstance(self.saa_multicut, bool):
+            raise ValueError("saa_multicut must be a Boolean.")
         if (
             isinstance(self.stable_cutoff_num_seeds, bool)
             or not isinstance(self.stable_cutoff_num_seeds, int)
@@ -624,8 +660,9 @@ class OptimizationConfig:
             saa_num_seeds=self.saa_num_seeds,
             saa_tie_breaking_method=self.saa_tie_breaking_method,
             saa_welfare_bound=self.saa_welfare_bound,
+            zoned_transport_workers=self.zoned_transport_workers,
             saa_relative_gap=self.saa_relative_gap,
-            saa_disaggregate_cuts=self.saa_disaggregate_cuts,
+            saa_multicut=self.saa_multicut,
             stable_cutoff_num_seeds=self.stable_cutoff_num_seeds,
             stable_cutoff_non_wastefulness=self.stable_cutoff_non_wastefulness,
             stable_cutoff_aggregate_stability=self.stable_cutoff_aggregate_stability,

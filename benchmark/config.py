@@ -303,7 +303,7 @@ def optimization_config_from_dict(
 ) -> OptimizationConfig:
     """Construct a :class:`OptimizationConfig` from a saved config snapshot."""
 
-    restored = _restore_special_values(dict(data))
+    restored = _apply_renamed_keys(_restore_special_values(dict(data)))
     field_names = _optimization_field_names()
     unknown = set(restored) - field_names - {"unit"}
     if unknown:
@@ -523,8 +523,28 @@ def _dataclass_from_dict(cls, data: Mapping[str, Any]):
     return cls(**{k: v for k, v in data.items() if k in field_names})
 
 
+# Config keys that were renamed. Accepted on read and mapped to the current
+# name, because saved `result.json` snapshots are reloaded by `mode: metrics`
+# and by the analysis scripts long after a rename.
+_RENAMED_OPTIMIZATION_KEYS = {"saa_disaggregate_cuts": "saa_multicut"}
+
+
+def _apply_renamed_keys(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Return ``data`` with legacy key names mapped to their current ones."""
+    if not any(key in data for key in _RENAMED_OPTIMIZATION_KEYS):
+        return dict(data)
+    migrated = dict(data)
+    for legacy, current in _RENAMED_OPTIMIZATION_KEYS.items():
+        if legacy not in migrated:
+            continue
+        value = migrated.pop(legacy)
+        # An explicit current-name entry wins; the legacy one only fills a gap.
+        migrated.setdefault(current, value)
+    return migrated
+
+
 def _validate_optimization_keys(data: Mapping[str, Any], section: str) -> None:
-    unknown = set(data) - _optimization_field_names()
+    unknown = set(_apply_renamed_keys(data)) - _optimization_field_names()
     if unknown:
         raise ValueError(f"Unknown keys in {section}: {sorted(unknown)}")
 

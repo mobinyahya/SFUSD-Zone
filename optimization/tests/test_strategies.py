@@ -1033,6 +1033,8 @@ def test_priced_access_closes_with_a_replay_of_its_best_zoning():
 
     class _Model:
         price_constant = 5.0
+        welfare_bound = None
+        bound_metadata: dict = {}
 
         def utility_bounds(self, _problem):
             return 0.0, 100.0

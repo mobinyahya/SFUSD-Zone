@@ -24,6 +24,7 @@ optimization_defaults:
   boundary_radius: 1
   short_bursts_method: relaxed_recom
   adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
+  adaptive_short_bursts_temperature: 1.1
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
@@ -46,6 +47,10 @@ tasks:
     solve_time_limits: [[600], [1800]]
 
   - solver: 'relaxed_recom'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'short_bursts'
     workers: 1
     solve_time_limits: [[600], [1800]]
 

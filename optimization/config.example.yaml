@@ -64,6 +64,12 @@ mid_complementary_slackness: false  # mid/mid_decomp: force cutoffs to 0 when de
 mid_complementary_slackness_slack: 'auto'  # mid/mid_decomp: capacity slack: auto | float seats | percentage (e.g. '5%')
 saa_num_seeds: 5              # saa: sampled strict-priority lotteries
 saa_tie_breaking_method: MTB  # saa: MTB | STB
+saa_multicut: true            # saa: one epigraph eta_psi per seed; false averages the seed cuts into one
+saa_welfare_bound: zoned_transport_neighbors  # saa: first_choice | transport | zoned_transport_{neighbors,flow}
+zoned_transport_workers: 1    # gurobi threads for the zoned-transport LP; >1 measured slower
+priced_access_price_source: transport  # priced_access: transport | none | zoned_transport_neighbors | zoned_transport_flow
+priced_access_price_scale: 1.0         # priced_access: any non-negative multiplier keeps the bound valid
+priced_access_cut_levels: 3            # priced_access: thresholds emitted per applicant per iteration
 
 # --- data ingestion ---
 data:

@@ -33,6 +33,13 @@ from optimization.solvers.base import Solver, register
 
 _SENSE = {"<=", ">=", "=="}
 
+# How connectedness is written. ``neighbors`` is the closer-neighbor support
+# formulation the solvers ship with; ``flow`` is the single-commodity rooted
+# flow description, which forbids no assignment outright and is therefore the
+# variant a relaxation must use when it has to contain every zoning the
+# closer-neighbor master can return. See ``optimization/zoned_transport.py``.
+CONTIGUITY_MODELS = ("neighbors", "flow")
+
 # A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
 _Term = tuple[float, int, int]
 _AssignmentVars = dict[tuple[int, int], gp.Var]
@@ -44,12 +51,70 @@ def add_gurobi_zoning_geography(
     problem: ZoneProblem,
     *,
     centroid_neighbor_radius: int = 0,
+    contiguity_model: str = "neighbors",
 ) -> _AssignmentVars:
     """Add the canonical complete-zoning variables and constraints to a model."""
-    builder = MipSolver(centroid_neighbor_radius=centroid_neighbor_radius)
+    builder = MipSolver(
+        centroid_neighbor_radius=centroid_neighbor_radius,
+        contiguity_model=contiguity_model,
+    )
     assignment = builder._build_assignment_vars(model, problem)
     builder._add_core_constraints(model, problem, assignment)
     return assignment
+
+
+def add_flow_contiguity(
+    m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+) -> dict[tuple[int, int, int], gp.Var]:
+    """Rooted single-commodity flow contiguity, one commodity per zone.
+
+    Each zone's centroid supplies one unit to every other vertex the zone
+    holds, and an arc may carry flow only if both endpoints are in the zone, so
+    a component detached from the centroid has demand it cannot be served.
+    Exact for binary ``x``.
+
+    Unlike :func:`optimization.data.contiguity.contiguity_supports` this rules
+    out no ``(node, zone)`` pair a priori, so its feasible set contains every
+    closer-neighbor-feasible zoning.
+    """
+    capacity = float(max(1, problem.A))
+    flows: dict[tuple[int, int, int], gp.Var] = {}
+    for zone in range(problem.Z):
+        centroid = problem.centroids[zone]
+        members = [
+            node for node in problem.nodes if zone in problem.candidate_zones(node)
+        ]
+        member_set = set(members)
+        arcs = [
+            arc
+            for u, v in problem.G.edges()
+            if u in member_set and v in member_set
+            for arc in ((u, v), (v, u))
+        ]
+        inflow: dict[int, list] = {node: [] for node in members}
+        outflow: dict[int, list] = {node: [] for node in members}
+        for tail, head in arcs:
+            flow = m.addVar(lb=0.0, ub=capacity, name=f"flow_{zone}_{tail}_{head}")
+            flows[(zone, tail, head)] = flow
+            m.addConstr(flow <= capacity * x[(zone, tail)])
+            m.addConstr(flow <= capacity * x[(zone, head)])
+            outflow[tail].append(flow)
+            inflow[head].append(flow)
+        for node in members:
+            if node == centroid:
+                continue
+            m.addConstr(
+                gp.quicksum(inflow[node]) - gp.quicksum(outflow[node])
+                == x[(zone, node)]
+            )
+        if centroid in member_set:
+            m.addConstr(
+                gp.quicksum(outflow[centroid]) - gp.quicksum(inflow[centroid])
+                == gp.quicksum(
+                    x[(zone, node)] for node in members if node != centroid
+                )
+            )
+    return flows
 
 
 @register("mip")
@@ -253,9 +318,20 @@ class MipSolver(Solver):
                 for other_zone in problem.candidate_zones(node) - {zone}:
                     self._forbid_assignment(m, other_zone, node, x)
 
+    def _contiguity_model(self) -> str:
+        model = self.options.get("contiguity_model", "neighbors")
+        if model not in CONTIGUITY_MODELS:
+            raise ValueError(
+                f"contiguity_model must be one of: {', '.join(CONTIGUITY_MODELS)}."
+            )
+        return model
+
     def _add_contiguity_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
+        if self._contiguity_model() == "flow":
+            add_flow_contiguity(m, problem, x)
+            return
         closer_supports = contiguity.closer_supports(
             problem.G,
             problem.centroids,
