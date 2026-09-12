@@ -113,6 +113,7 @@ class DantzigWolfeStrategy(Strategy):
             model="grid",
             tolerance=float(self.options.get("tolerance", 1e-6)),
             incumbent=incumbent,
+            workers=max(1, int(solver.options.get("workers", 1))),
         )
         incumbent = search.selected
         score = sum(c.score for c in incumbent) if incumbent else None
@@ -124,7 +125,8 @@ class DantzigWolfeStrategy(Strategy):
             "objective_kind": "mid_program_welfare"
             if kind == "mid"
             else "boundary_cost",
-            "dw_pricing": "global_mip_finite_grid",
+            "dw_pricing": "global_mip_gurobi_finite_grid",
+            "dw_pricing_models": search.pricing_models,
             "dw_pricing_certified": search.status in {"OPTIMAL", "INFEASIBLE"},
             "dw_global_bound": search.upper_bound,
             "dw_absolute_gap": (

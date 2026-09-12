@@ -145,18 +145,42 @@ With a finite time budget, return the incumbent and valid remaining upper bound
 without claiming optimality. `dw_absolute_gap`, `dw_branch_nodes`, pricing-call
 counts, per-node history, and termination reason are saved in solution metadata.
 
-The implementation uses SCIP/GLOP floating-point arithmetic and an explicit
+The implementation uses Gurobi floating-point arithmetic and an explicit
 `tolerance` (default 1e-6), rather than rational or interval proof certificates.
+Pricing runs at `MIPGap = MIPGapAbs = 0` with feasibility, integrality, and
+optimality tolerances at 1e-9, consistent with the 1e-6 slack the pool's own
+feasibility test allows. The master LP is solved with dual simplex rather than
+the default concurrent method so that a given column pool always yields the same
+duals -- those duals are the pricing objective.
 Its `OPTIMAL` status means completion to these numerical tolerances. Numerical
 stalls return an unresolved status. The mathematical proof above assumes exact
 arithmetic and zero gap; it applies to the specified finite-grid model, not to
 continuous-lottery MID or to a finer geographic graph.
 
+One pricing model is built per zone label and kept alive for the whole search.
+Between calls only the branch fixings and the master duals change: fixings are
+variable bounds, released and reapplied per call, and the duals are objective
+coefficients. `problem.fixed` and `problem.candidates` are written as rows, not
+bounds, so resetting a fixing cannot loosen them. `dw_pricing_models` reports
+the count, which should equal the zone count however many nodes and
+column-generation rounds the search took.
+
+A time-limited pricing solve is used for two different purposes with two
+different requirements. Adding a column needs only a positive reduced cost, so
+any status with a solution qualifies; the master independently re-checks the
+reduced cost and `ZonePool.feasible` re-checks the zone exactly, since the MIP
+works to a tolerance. Closing a node needs a proven bound, so it still requires
+every label to price to `OPTIMAL`. A round that adds columns without proving
+anything is an ordinary column-generation round and the search continues; it
+just never certifies.
+
 Tests compare global pricing with every feasible zone on small graphs, compare
 the complete search with a fully enumerated integer master, exercise a strict
-LP/integer gap requiring branching, recover an empty pool through Phase I, and
-check infeasibility and interrupted-pricing behavior.
+LP/integer gap requiring branching, recover an empty pool through Phase I,
+check infeasibility and interrupted-pricing behavior, confirm a reused model
+still honours each call's fixings, and confirm a never-optimal pricer still
+contributes its columns without closing a node.
 
 References: [SCIP pricing callbacks and infeasible-node pricing](https://www.scipopt.org/doc-7.0.1/html/PRICER.php),
 [SCIP branch-and-price example](https://www.scipopt.org/doc-6.0.0/html/BINPACKING_MAIN.php),
-[OR-Tools LP dual and MIP bound APIs](https://or-tools.github.io/docs/pdoc/ortools/linear_solver/pywraplp.html).
+[Gurobi attributes for LP duals (`Pi`) and MIP bounds (`ObjBound`)](https://docs.gurobi.com/projects/optimizer/en/current/reference/attributes.html).

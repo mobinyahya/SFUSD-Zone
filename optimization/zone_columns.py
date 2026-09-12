@@ -9,8 +9,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
+import gurobipy as gp
 import networkx as nx
-from ortools.linear_solver import pywraplp
+from gurobipy import GRB
 
 from optimization.data.mid import MidMarket
 from optimization.mid_oracle import finite_grid_oracle
@@ -215,66 +216,92 @@ def solve_master(
     if seconds <= 0:
         return MasterResult("TIME_LIMIT")
     columns = tuple(columns)
-    solver = pywraplp.Solver.CreateSolver("SCIP" if integer else "GLOP")
-    if solver is None:
-        raise RuntimeError("DW requires the OR-Tools GLOP and SCIP backends.")
-    if math.isfinite(seconds):
-        solver.SetTimeLimit(max(1, int(seconds * 1000)))
-    cover = {n: solver.Constraint(1, 1) for n in problem.nodes}
-    convexity = {z: solver.Constraint(1, 1) for z in range(problem.Z)}
-    boundary = None
-    if problem.boundary_prop >= 0:
-        boundary = solver.Constraint(-solver.infinity(), boundary_limit(problem))
-    objective = solver.Objective()
-    objective.SetMaximization()
-    artificials = []
-    if phase_one:
-        for row in (*cover.values(), *convexity.values()):
-            # Deficit-only artificials keep structural coverage <= 1. Empty
-            # columns are always feasible, and zero deficit recovers the exact
-            # master. Increasing a convexity dual remains valid for artificials.
-            for sign in (1,):
-                var = solver.NumVar(0, solver.infinity(), "")
-                row.SetCoefficient(var, sign)
-                objective.SetCoefficient(var, -1)
-                artificials.append(var)
-    variables = []
-    for i, column in enumerate(columns):
-        # No upper bound in the LP: implied by cover rows, and avoiding it
-        # leaves reduced costs entirely in the structural row duals.
-        var = (
-            solver.BoolVar(f"lambda_{i}")
-            if integer
-            else solver.NumVar(0, solver.infinity(), f"lambda_{i}")
-        )
-        variables.append(var)
-        for n in column.nodes:
-            cover[n].SetCoefficient(var, 1)
-        convexity[column.zone].SetCoefficient(var, 1)
-        if boundary is not None:
-            boundary.SetCoefficient(var, column.perimeter / 2)
-        objective.SetCoefficient(var, 0 if phase_one else column.score)
-    status = solver.Solve()
-    if status not in (solver.OPTIMAL, solver.FEASIBLE):
-        return MasterResult(
-            {solver.INFEASIBLE: "INFEASIBLE", solver.NOT_SOLVED: "TIME_LIMIT"}.get(
-                status, "ERROR"
+    with gp.Env(params={"OutputFlag": 0}) as env, gp.Model("dw_master", env=env) as m:
+        if math.isfinite(seconds):
+            m.Params.TimeLimit = max(1e-3, float(seconds))
+        # Dual simplex rather than the default concurrent method: these duals
+        # are the pricing objective, so the same pool has to produce the same
+        # duals on every run. Concurrent returns whichever algorithm finishes
+        # first, and barrier would return interior rather than vertex duals.
+        #
+        # REVISIT -- those interior duals may be exactly what this needs.
+        # Vertex duals of a set-partitioning master are massively degenerate
+        # (132 of 579 nonzero on BlockGroup_0), which is what freezes column
+        # generation; see the note in ``optimization/branch_price.py``. Trying
+        # ``Method = 2`` costs reproducibility, so measure before switching.
+        m.Params.Method = 1
+        m.Params.Seed = 0
+        m.Params.MIPGap = 0.0
+
+        variables = []
+        for i, column in enumerate(columns):
+            # No upper bound in the LP: implied by cover rows, and avoiding it
+            # leaves reduced costs entirely in the structural row duals.
+            variables.append(
+                m.addVar(vtype=GRB.BINARY, name=f"lambda_{i}")
+                if integer
+                else m.addVar(lb=0.0, ub=GRB.INFINITY, name=f"lambda_{i}")
             )
+
+        cover_terms: dict[int, list] = {n: [] for n in problem.nodes}
+        convexity_terms: dict[int, list] = {z: [] for z in range(problem.Z)}
+        boundary_terms = []
+        objective = gp.LinExpr()
+        for column, variable in zip(columns, variables):
+            for n in column.nodes:
+                cover_terms[n].append(variable)
+            convexity_terms[column.zone].append(variable)
+            boundary_terms.append((column.perimeter / 2, variable))
+            if not phase_one:
+                objective.addTerms(float(column.score), variable)
+
+        artificials = []
+        if phase_one:
+            for terms in (*cover_terms.values(), *convexity_terms.values()):
+                # Deficit-only artificials keep structural coverage <= 1. Empty
+                # columns are always feasible, and zero deficit recovers the
+                # exact master. Increasing a convexity dual remains valid for
+                # artificials.
+                variable = m.addVar(lb=0.0, ub=GRB.INFINITY)
+                terms.append(variable)
+                objective.addTerms(-1.0, variable)
+                artificials.append(variable)
+
+        cover = {
+            n: m.addConstr(gp.quicksum(terms) == 1, name=f"cover_{n}")
+            for n, terms in cover_terms.items()
+        }
+        convexity = {
+            z: m.addConstr(gp.quicksum(terms) == 1, name=f"zone_{z}")
+            for z, terms in convexity_terms.items()
+        }
+        boundary = None
+        if problem.boundary_prop >= 0:
+            boundary = m.addConstr(
+                gp.quicksum(weight * variable for weight, variable in boundary_terms)
+                <= boundary_limit(problem),
+                name="boundary",
+            )
+        m.setObjective(objective, GRB.MAXIMIZE)
+        m.optimize()
+
+        if m.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
+            return MasterResult("INFEASIBLE")
+        if m.SolCount == 0:
+            return MasterResult(
+                "TIME_LIMIT" if m.Status == GRB.TIME_LIMIT else "ERROR"
+            )
+        status = "OPTIMAL" if m.Status == GRB.OPTIMAL else "FEASIBLE"
+        if not integer and status != "OPTIMAL":
+            return MasterResult("LP_NOT_OPTIMAL")
+        return MasterResult(
+            status,
+            m.ObjVal,
+            tuple(c for c, v in zip(columns, variables) if integer and v.X > 0.5),
+            None if integer else {n: r.Pi for n, r in cover.items()},
+            None if integer else {z: r.Pi for z, r in convexity.items()},
+            boundary.Pi if boundary is not None and not integer else 0.0,
+            tuple(v.X for v in variables),
+            sum(v.X for v in artificials),
+            phase_one,
         )
-    if not integer and status != solver.OPTIMAL:
-        return MasterResult("LP_NOT_OPTIMAL")
-    return MasterResult(
-        "OPTIMAL" if status == solver.OPTIMAL else "FEASIBLE",
-        objective.Value(),
-        tuple(
-            c
-            for c, v in zip(columns, variables)
-            if integer and v.solution_value() > 0.5
-        ),
-        None if integer else {n: r.dual_value() for n, r in cover.items()},
-        None if integer else {z: r.dual_value() for z, r in convexity.items()},
-        boundary.dual_value() if boundary is not None and not integer else 0.0,
-        tuple(v.solution_value() for v in variables),
-        sum(v.solution_value() for v in artificials),
-        phase_one,
-    )

@@ -207,7 +207,19 @@ def build_mid_student_market(
     school_to_node = _school_to_node(problem)
     area_to_node = _area_to_node(problem)
 
+    # The MID market is drawn from the assignment program table, which has no
+    # ``include_citywide`` selector of its own, so the optimization filter has
+    # to be applied here. Skipping it is not a harmless superset: a citywide
+    # program has no school node, so every student reaches it under every
+    # zoning, and its seats are capacity the graph and the school-count
+    # constraints were built without (``loaders._attach_capacity`` drops those
+    # schools). Welfare would then be scored against a market the zoning
+    # problem cannot see, and whole-zone additivity -- the identity Dantzig
+    # --Wolfe rests on -- would fail.
+    include_citywide = bool(optimization_config.include_citywide)
+
     programs = []
+    retained_programs = []
     for program_id in available_programs:
         row = program_rows.loc[program_id]
         school_id = _integer(row["school_id"], f"school for program {program_id}")
@@ -215,6 +227,9 @@ def build_mid_student_market(
         if capacity < 0:
             raise ValueError(f"Program {program_id} has negative capacity.")
         citywide = school_id in citywide_schools
+        if citywide and not include_citywide:
+            continue
+        retained_programs.append(program_id)
         school_node = None if citywide else school_to_node.get(school_id)
         if not citywide and school_node is None:
             school_area = _area_key(row.get(problem.level.unit))
@@ -227,6 +242,9 @@ def build_mid_student_market(
         programs.append(
             MidProgram(program_id, school_id, capacity, citywide, school_node)
         )
+    # Preference lists are read positionally off ``available_programs``, so the
+    # utility and priority columns have to be narrowed in the same order.
+    available_programs = retained_programs
 
     area_column = _student_area_column(problem)
     students_frame = assignment_market.students.student_data

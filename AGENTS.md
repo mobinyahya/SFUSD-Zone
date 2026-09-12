@@ -34,7 +34,13 @@ experimental inputs and take precedence over registry-derived sources.
 
 Optimization selectors are canonical `years`, `grades`, `student_population`,
 `rounds`, `special_programs`, `program_population`, `capacity_scenario`, and the
-`include_k8`, `include_citywide`, and `include_mission_bay` flags. Both groups
+`include_k8`, `include_citywide`, and `include_mission_bay` flags. The welfare
+markets built by `optimization/data/mid.py` and `optimization/data/saa.py` draw
+their programs from the *assignment* table, which carries no such selector, so
+they apply `include_citywide` themselves. With the flag off a citywide program
+is dropped from the market entirely: it has no school node, so it would be
+reachable under every zoning while contributing seats the graph and the
+school-count constraints were built without. Both groups
 also select an optional `frl_estimate`. Assignment
 uses canonical `year`, a `grades` list, `student_population`, `rounds`,
 `special_programs`, `capacity_profile`, `capacity_scenario`, and

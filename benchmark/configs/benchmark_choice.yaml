@@ -37,11 +37,18 @@ optimization_defaults:
   mid_complementary_slackness_slack: 'auto' 
 
 sweep:
-  centroids_type: ['6-zone-3', '6-zone-9',]
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4']
   levels: [['Block_2']]
 
 tasks:
   - solver: 'cp_bool'
+    strategy: [iterative_choice, saa]
+    workers: 16
+    max_iterations: [15]
+    seed: [1]
+    solve_time_limits: [[1800]]
+  
+  - solver: 'mip'
     strategy: [iterative_choice, saa]
     workers: 16
     max_iterations: [15]

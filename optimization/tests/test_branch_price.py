@@ -3,6 +3,7 @@
 from dataclasses import replace
 from itertools import combinations
 import math
+from pathlib import Path
 import random
 import time
 from types import SimpleNamespace
@@ -13,7 +14,12 @@ from optimization.branch_price import branch_and_price
 from optimization.tests.synthetic import make_grid_problem
 from optimization.tests.test_dantzig_wolfe import market
 from optimization.zone_columns import MasterResult, ZoneColumn, ZonePool, solve_master
-from optimization.zone_pricing import PricingResult, compatible, price_zone
+from optimization.zone_pricing import (
+    PricingResult,
+    ZonePricer,
+    compatible,
+    price_zone,
+)
 
 
 def all_columns(pool):
@@ -255,3 +261,173 @@ def test_pricing_uses_the_same_balance_feasibility_slack_as_the_pool():
     result = price_zone(pool, 0, None, decisions, deadline=time.monotonic() + 5)
     assert result.status == "OPTIMAL"
     assert result.nodes == frozenset({0})
+
+
+def test_every_lp_and_mip_goes_through_gurobi():
+    """Pinned deliberately: these two modules were the last pywraplp holdouts.
+
+    SCIP could not find a single nonzero-welfare solution to the real pricing
+    MIP in 60s -- its incumbent was worse than the seed column it was handed --
+    while Gurobi found clearly improving columns in the same budget. The import
+    is the only thing a test can check cheaply, so it checks that.
+    """
+    import optimization.branch_price as bp
+    import optimization.zone_columns as zc
+    import optimization.zone_pricing as zp
+
+    for module in (zc, zp, bp):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        assert "pywraplp" not in source, f"{module.__name__} still uses OR-Tools"
+    assert zp.gp.__name__ == "gurobipy"
+    assert zc.gp.__name__ == "gurobipy"
+
+
+def test_the_search_builds_one_pricing_model_per_label_not_per_call():
+    """Rebuilding is what made pricing hopeless on real data.
+
+    One model there is 30,779 variables and 71,602 rows, and the shipped loop
+    rebuilt it per label per column-generation round per branch node. Only the
+    branch fixings and the master duals differ between calls, and both are
+    attribute updates on a live model.
+    """
+    p = make_grid_problem(1, 6)
+    p.centroids = [0, 2, 5]
+    p.centroid_school_ids = [100, 150, 200]
+    pool = ZonePool(p, market(), 3)
+    result = branch_and_price(pool, deadline=time.monotonic() + 20)
+
+    # Many calls, one model per label.
+    assert result.pricing_calls > p.Z
+    assert result.pricing_models == p.Z
+
+
+def test_a_reused_pricing_model_still_respects_each_call_s_branch_fixings():
+    """Branch fixings are variable bounds, so they must be released each call.
+
+    A stale bound would silently answer the previous node's question, which is
+    exactly the failure mode a persistent model invites.
+    """
+    p = make_grid_problem(2, 2)
+    pool = ZonePool(p, market(), 3)
+    lp = MasterResult(
+        "OPTIMAL", node_duals=dict.fromkeys(p.nodes, 0.0), zone_duals={0: 0.0, 1: 0.0}
+    )
+    with ZonePricer(pool) as pricer:
+        first = pricer(
+            pool, 0, lp, {(0, 0): 0, (3, 0): 1}, deadline=time.monotonic() + 5
+        )
+        assert first.status == "OPTIMAL"
+        assert 0 not in first.nodes and 3 in first.nodes
+        # The opposite fixing, on the same model.
+        second = pricer(
+            pool, 0, lp, {(0, 0): 1, (3, 0): 0}, deadline=time.monotonic() + 5
+        )
+        assert second.status == "OPTIMAL"
+        assert 0 in second.nodes and 3 not in second.nodes
+        # And no fixings at all releases both bounds again.
+        third = pricer(pool, 0, lp, {}, deadline=time.monotonic() + 5)
+        assert third.status == "OPTIMAL"
+        assert third.reduced_cost >= max(first.reduced_cost, second.reduced_cost)
+        assert pricer.models_built == 1
+
+
+def test_a_timed_out_pricing_solve_still_yields_its_improving_column():
+    """Optimality is needed to *bound*, never to add a column.
+
+    On real data every label timed out at FEASIBLE, so the shipped
+    ``status == "OPTIMAL"`` gate threw away every column pricing found and the
+    reported bound collapsed to the trivial first-choice constant. A positive
+    reduced cost is an improving column whatever the solver's status.
+    """
+    p = make_grid_problem(2, 2)
+    pool = ZonePool(p, market(), 5)
+    # A deliberately suboptimal seed, so improving columns certainly exist.
+    incumbent = pool.add_partition({0: 0, 1: 0, 2: 1, 3: 0})
+    seeded = len(pool.columns)
+    full = tuple(all_columns(pool))
+
+    def never_optimal(pool_, zone, lp, decisions, **kwargs):
+        """Exact pricing that refuses to ever claim optimality."""
+        candidates = [c for c in full if c.zone == zone and compatible(c, decisions)]
+        if not candidates:
+            return PricingResult("INFEASIBLE", -math.inf)
+        best = max(candidates, key=lp.reduced_cost)
+        return PricingResult(
+            "FEASIBLE", math.inf, best.nodes, best.score, lp.reduced_cost(best)
+        )
+
+    result = branch_and_price(
+        pool, pricer=never_optimal, incumbent=incumbent, deadline=time.monotonic() + 10
+    )
+    # Columns landed even though pricing never proved anything...
+    assert len(pool.columns) > seeded
+    assert any(h["columns_added"] for h in result.history)
+    # ...and the node was still never closed, so no false optimality claim.
+    assert result.status == "FEASIBLE"
+    assert result.reason == "pricing_incomplete"
+    assert result.upper_bound > sum(c.score for c in result.selected)
+
+
+def test_a_zone_the_pool_rejects_is_skipped_rather_than_raising():
+    """A MIP works to a tolerance; the pool re-checks feasibility exactly."""
+    p = make_grid_problem(2, 2)
+    pool = ZonePool(p, market(), 3)
+    incumbent = pool.add_partition({0: 0, 1: 0, 2: 1, 3: 1})
+    disconnected = frozenset({0, 3})
+    assert not pool.feasible(0, disconnected)
+
+    def returns_infeasible_zone(pool_, zone, lp, decisions, **kwargs):
+        return PricingResult("FEASIBLE", math.inf, disconnected, 99.0, 99.0)
+
+    result = branch_and_price(
+        pool,
+        pricer=returns_infeasible_zone,
+        incumbent=incumbent,
+        deadline=time.monotonic() + 10,
+    )
+    assert result.reason == "pricing_incomplete"
+    assert all(nodes != disconnected for _, nodes in pool.columns)
+
+
+def test_one_label_cannot_eat_the_whole_pricing_round():
+    """A certified bound needs a finite bound from every label.
+
+    The shipped loop handed each pricing call the whole remaining budget, so on
+    real data label 0 consumed all of it and labels 1-5 returned unpriced
+    before even building a model. ``certified_bound`` is then infinite by
+    construction and the reported bound can never leave the trivial constant.
+    """
+    p = make_grid_problem(1, 6)
+    p.centroids = [0, 2, 5]
+    p.centroid_school_ids = [100, 150, 200]
+    pool = ZonePool(p, market(), 3)
+    budgets = []
+
+    def record_budget(pool_, zone, lp, decisions, *, deadline, **kwargs):
+        budgets.append(deadline - time.monotonic())
+        return PricingResult("FEASIBLE", math.inf)
+
+    started = time.monotonic()
+    branch_and_price(pool, pricer=record_budget, deadline=started + 30)
+    assert len(budgets) == p.Z
+    # A third for the first of three labels, not everything: that is the fix.
+    assert budgets[0] == pytest.approx(30.0 / p.Z, abs=0.5), budgets
+    # Time a label does not spend rolls forward rather than being discarded, so
+    # the shares grow; by the last label there is nobody left to starve. This
+    # pricer returns instantly, so nothing is consumed and the growth is pure.
+    assert budgets == sorted(budgets)
+    assert budgets[-1] == pytest.approx(30.0, abs=0.5), budgets
+
+
+def test_an_unlimited_search_still_gives_every_label_unlimited_pricing():
+    """``solve_time_limits: [.inf]`` must not be sliced into finite shares."""
+    p = make_grid_problem(2, 2)
+    pool = ZonePool(p, market(), 3)
+    budgets = []
+
+    def record_budget(pool_, zone, lp, decisions, *, deadline, **kwargs):
+        budgets.append(deadline)
+        return PricingResult("OPTIMAL", 0.0)
+
+    branch_and_price(pool, pricer=record_budget, deadline=math.inf)
+    assert budgets and all(budget == math.inf for budget in budgets)

@@ -144,14 +144,22 @@ come from that student's earliest remaining selected round.
 Run `uv run python -m optimization.run optimization/dantzig_wolfe.example.yaml`.
 `strategy: dantzig_wolfe` now runs **branch-and-price** for the existing
 finite-grid MID objective. Each column is a whole connected zone; its cost is
-its exact MID welfare after removing citywide programs. The optimization graph
-must also use `include_citywide: false`, and MID requires
-`program_population: All` with matching geography vintages.
+its exact MID welfare over a market with no citywide programs. The config
+requires `include_citywide: false`, which the market builder now enforces, so
+`restrict_market` finds nothing left to strip; MID also requires
+`program_population: All` with matching geography vintages. The restriction is
+what makes the decomposition exact -- a citywide program's capacity is contested
+across every zone, so zone welfare would no longer be additive.
 
 ReCom supplies an optional broad initial pool. Every search node then uses a
 **global mixed-integer pricing model** containing zone membership, connectedness,
 balance constraints, branch fixings, program cutoffs, all preference-prefix
-recurrences, and capacity constraints. Phase-I pricing restores feasibility
+recurrences, and capacity constraints. It is a Gurobi model, kept alive across
+calls -- one per zone label for the whole search, re-aimed by variable bounds
+(branch fixings) and objective coefficients (master duals) rather than rebuilt.
+`dw_pricing_models` reports the count. A pricing solve that runs out of time
+still contributes any column it found with positive reduced cost, but only a
+label priced to proven optimality can close a node. Phase-I pricing restores feasibility
 when the current columns cannot form a partition, including when no ReCom seed
 was found. Branching on geographic assignment marginals resolves the integer
 gap. A restricted integer master provides incumbents, never an optimality proof

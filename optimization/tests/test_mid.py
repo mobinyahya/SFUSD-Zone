@@ -785,8 +785,82 @@ def test_mid_market_builds_for_summer_26_zoning():
     assert market.student_count == 3953
     assert market.utility_student_count == 3881
     assert market.outside_only_student_count >= 72
-    assert len(market.programs) == 130
+    # The scenario sets ``include_citywide: false``, and the MID market now
+    # honours it: 24 of the 130 assignment programs are citywide, carrying 723
+    # of 4,189 seats that no zoning restricts.
+    assert len(market.programs) == 106
+    assert all(not program.citywide for program in market.programs)
     assert sum(student_type.count for student_type in market.types) == 3953
+
+
+@pytest.mark.real_data
+def test_the_mid_market_drops_exactly_the_citywide_programs():
+    """``include_citywide`` is an optimization filter the MID market must obey.
+
+    The market is drawn from the *assignment* program table, which has no such
+    selector, so for a long time citywide programs survived into MID and SAA
+    welfare regardless of the flag. That is not a harmless superset: a citywide
+    program has no school node, so it is reachable under every zoning, and its
+    seats are capacity the graph was built without. Here that is 723 of 4,189
+    seats -- 17.3% of the district -- available free of any zoning decision.
+
+    The filter must also be surgical. Preference lists are read positionally
+    off the retained program list, so a misaligned narrowing would silently
+    re-label utilities and priority tiers rather than fail. This pins both: the
+    removed set is exactly the citywide set, and every surviving preference
+    keeps its original utility, tier, and rank order.
+    """
+    from optimization.data import mid as mid_module
+
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_bool",
+        strategy="mid",
+        data={"scenario": "summer-26-zoning", "overrides": {}},
+    )
+    assert config.include_citywide is False
+    problem = config.make_dataset().problem_for("BlockGroup_0")
+
+    filtered = mid_module.build_mid_student_market(problem, config)
+
+    class _KeepCitywide:
+        """The same config with only the one filter flipped."""
+
+        include_citywide = True
+
+        def __getattr__(self, name):
+            return getattr(config, name)
+
+    unfiltered = mid_module.build_mid_student_market(problem, _KeepCitywide())
+
+    citywide = {p.program_id for p in unfiltered.programs if p.citywide}
+    assert len(citywide) == 24
+    assert {p.program_id for p in filtered.programs} == {
+        p.program_id for p in unfiltered.programs
+    } - citywide
+    assert sum(p.capacity for p in unfiltered.programs if p.citywide) == 723
+
+    assert len(filtered.students) == len(unfiltered.students)
+    for kept, whole in zip(filtered.students, unfiltered.students):
+        assert kept.node == whole.node
+        surviving = [
+            entry
+            for entry in zip(
+                whole.programs,
+                whole.priorities,
+                whole.utilities,
+                whole.scaled_utilities,
+            )
+            if entry[0] not in citywide
+        ]
+        assert surviving == list(
+            zip(
+                kept.programs,
+                kept.priorities,
+                kept.utilities,
+                kept.scaled_utilities,
+            )
+        )
 
 
 def test_finite_grid_oracle_warm_cutoffs_decrease():
