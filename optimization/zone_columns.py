@@ -1,75 +1,62 @@
-"""Whole-zone columns and restricted masters for branch-and-price.
+"""Whole-zone columns and the restricted master they feed.
 
-All objectives are maximized internally. Boundary scores are minus half the
-zone perimeter, so summing over a partition counts each cut edge once.
+Everything here is maximized. Boundary scores are minus half a zone's
+perimeter, so summing them over a partition counts each cut edge once and the
+master's boundary row is the district boundary cost.
+
+The master is a set-partitioning LP and is therefore massively degenerate:
+many columns can enter with a strictly positive reduced cost and a step length
+of zero, which is a degenerate pivot, not progress. Measured on
+:math:`\\text{BlockGroup}_0` with a 404-column pool, three to six such columns
+entered every round and the LP value did not move for eight rounds. The
+standard remedies are both implemented here and both are about the *duals*
+rather than the columns:
+
+``method``
+    Which algorithm solves the LP, and hence which dual solution it lands on.
+    Dual simplex returns a vertex of the dual polyhedron, and with only 132 of
+    579 cover rows carrying a nonzero dual the pricing problem gets almost no
+    guidance -- it maximizes raw welfare and returns oversized zones. Barrier
+    without crossover returns an *interior* dual point instead, which spreads
+    the prices over the rows and is the default here. The cost is that the
+    duals are no longer bit-for-bit reproducible across runs.
+
+:func:`smooth`
+    Wentges dual smoothing: price against a convex combination of this LP's
+    duals and the previous round's point rather than against the raw LP duals.
+    Proposition 9's bound is valid at *any* dual point -- it only needs
+    ``mu >= 0`` and a global pricing bound at that point -- so smoothing costs
+    nothing in rigour. The bound is simply computed where the pricing happened.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import gurobipy as gp
-import networkx as nx
 from gurobipy import GRB
 
-from optimization.data.mid import MidMarket
-from optimization.mid_oracle import finite_grid_oracle
-from optimization.solvers.balance import balance_constraints
+from optimization.dw_options import DW_MASTER_METHODS as MASTER_METHODS
+from optimization.zone_family import (
+    ZoneFamily,
+    boundary_limit,
+    build_zone_family,
+    perimeter as zone_perimeter,
+)
+from optimization.zone_welfare import BoundaryZoneObjective, ZoneObjective
 
 
-ZONE_FEASIBILITY_TOLERANCE = 1e-6
-
-
-def boundary_limit(problem):
-    """Shared cap, including the partition validator's feasibility slack."""
-    total = sum(problem.boundary_weight(u, v) for u, v in problem.G.edges)
-    return problem.boundary_prop * total + ZONE_FEASIBILITY_TOLERANCE
-
-
-def restrict_market(market: MidMarket, nodes=None) -> MidMarket:
-    """Remove citywide programs, optionally keeping only one zone's market.
-
-    Students remain in the cohort even when all their preferences disappear.
-    Utilities and priority tiers retain their original values and rank order.
-    """
-    programs = tuple(
-        p
-        for p in market.programs
-        if not p.citywide and (nodes is None or p.school_node in nodes)
-    )
-    available = {p.program_id for p in programs}
-    types = []
-    for student in market.types:
-        if nodes is not None and student.node not in nodes:
-            continue
-        ranks = [i for i, p in enumerate(student.programs) if p in available]
-        types.append(
-            replace(
-                student,
-                programs=tuple(student.programs[i] for i in ranks),
-                priorities=tuple(student.priorities[i] for i in ranks),
-                utility_sums=tuple(student.utility_sums[i] for i in ranks),
-                scaled_utility_sums=tuple(
-                    student.scaled_utility_sums[i] for i in ranks
-                ),
-            )
-        )
-    count = sum(t.count for t in types)
-    return replace(
-        market,
-        programs=programs,
-        types=tuple(types),
-        student_count=count,
-        outside_only_student_count=sum(t.count for t in types if not t.programs),
-        # The source only stores the district utility-cohort count, not a flag
-        # per type. This diagnostic is not used by the oracle.
-        utility_student_count=(
-            market.utility_student_count
-            if nodes is None
-            else sum(t.count for t in types if t.programs)
-        ),
-    )
+__all__ = [
+    "DualPoint",
+    "MASTER_METHODS",
+    "MasterResult",
+    "ZoneColumn",
+    "ZonePool",
+    "boundary_limit",
+    "smooth",
+    "solve_master",
+]
 
 
 @dataclass(frozen=True)
@@ -81,91 +68,63 @@ class ZoneColumn:
 
 
 class ZonePool:
-    """Deduplicate, validate, and cache exact scores of zone memberships.
+    """Deduplicate, validate, and cache the exact value of zone memberships.
 
-    Geography follows ReCom: connected zones, unanchored centroids, no implicit
-    distance restriction. Explicit candidate and fixed assignments are hard.
+    Admissibility is :class:`~optimization.zone_family.ZoneFamily`'s and
+    nothing else, so the pool, the seeding filter and the pricing model agree
+    by construction rather than by two implementations of the same rows.
     """
 
-    def __init__(self, problem, market=None, lottery_scale=20):
+    def __init__(
+        self,
+        problem,
+        objective: ZoneObjective | None = None,
+        *,
+        family: ZoneFamily | None = None,
+        centroid_neighbor_radius: int = 0,
+    ):
         self.problem = problem
-        self.market = restrict_market(market) if market is not None else None
-        self.lottery_scale = lottery_scale
+        self.objective = objective if objective is not None else BoundaryZoneObjective()
+        self.family = (
+            family
+            if family is not None
+            else build_zone_family(
+                problem, centroid_neighbor_radius=centroid_neighbor_radius
+            )
+        )
+        self.nodes = frozenset(problem.nodes)
         self.columns: dict[tuple[int, frozenset[int]], ZoneColumn] = {}
         self.scores: dict[frozenset[int], tuple[float, int]] = {}
-        self.nodes = frozenset(problem.nodes)
-        self.constraints = balance_constraints(problem)
-        self.school_total = sum(problem.num_schools(n) for n in self.nodes)
-        if self.market is not None:
-            if any(t.node not in self.nodes for t in self.market.types):
-                raise ValueError("DW market students must belong to the graph.")
-            if any(p.school_node not in self.nodes for p in self.market.programs):
-                raise ValueError("DW market schools must belong to the graph.")
+        self.objective.validate(self.nodes)
 
     def feasible(self, zone, nodes) -> bool:
-        p = self.problem
-        if not nodes or not nodes <= self.nodes or not 0 <= zone < p.Z:
-            return False
-        for node, fixed in (p.fixed or {}).items():
-            if (node in nodes) != (fixed == zone):
-                return False
-        if any(
-            zone not in p.candidates[n]
-            for n in nodes
-            if p.candidates is not None and n in p.candidates
-        ):
-            return False
-        if not nx.is_connected(p.G.subgraph(nodes)):
-            return False
-        students = sum(p.students(n) for n in nodes)
-        for row in self.constraints:
-            value = sum(row.value(n) for n in nodes)
-            if (
-                row.lower_ratio is not None
-                and value < row.lower_ratio * students - ZONE_FEASIBILITY_TOLERANCE
-            ):
-                return False
-            if (
-                row.upper_ratio is not None
-                and value > row.upper_ratio * students + ZONE_FEASIBILITY_TOLERANCE
-            ):
-                return False
-        if self.school_total:
-            schools = sum(p.num_schools(n) for n in nodes)
-            average = self.school_total / p.Z
-            if (
-                not max(0, average - 1) - ZONE_FEASIBILITY_TOLERANCE
-                <= schools
-                <= average + 1 + ZONE_FEASIBILITY_TOLERANCE
-            ):
-                return False
-        return True
+        return self.family.feasible(zone, frozenset(nodes))
 
     def column(self, zone, nodes) -> ZoneColumn:
         nodes = frozenset(nodes)
         if not self.feasible(zone, nodes):
-            raise ValueError("Cannot create an infeasible zone column.")
+            raise ValueError("Cannot create an inadmissible zone column.")
         if nodes not in self.scores:
-            perimeter = sum(
-                self.problem.boundary_weight(u, v)
-                for u, v in self.problem.G.edges
-                if (u in nodes) != (v in nodes)
-            )
-            if self.market is None:
-                score = -perimeter / 2
-            else:
-                local = restrict_market(self.market, nodes)
-                score = finite_grid_oracle(
-                    local,
-                    {n: 0 for n in nodes},
-                    self.lottery_scale,
-                    check_minimality=False,
-                ).welfare
+            edge_cut = zone_perimeter(self.problem, nodes)
+            score = float(self.objective.score(nodes, edge_cut))
             if not math.isfinite(score):
-                raise ValueError("Zone oracle returned a non-finite welfare.")
-            self.scores[nodes] = (float(score), perimeter)
-        score, perimeter = self.scores[nodes]
-        return ZoneColumn(zone, nodes, score, perimeter)
+                raise ValueError("Zone objective returned a non-finite value.")
+            self.scores[nodes] = (score, edge_cut)
+        score, edge_cut = self.scores[nodes]
+        return ZoneColumn(zone, nodes, score, edge_cut)
+
+    def admit(self, zone, nodes) -> ZoneColumn | None:
+        """The column for ``nodes``, or ``None`` if it is not admissible.
+
+        Rejection is the normal case, not an error: a ReCom sample is
+        connected but knows nothing about anchors or closer-neighbour support,
+        and an interrupted pricing solve reports to a tolerance.
+        """
+
+        nodes = frozenset(nodes)
+        if not self.feasible(zone, nodes):
+            return None
+        return self.column(zone, nodes)
 
     def add(self, column) -> bool:
         key = (column.zone, column.nodes)
@@ -174,7 +133,7 @@ class ZonePool:
         self.columns[key] = column
         return True
 
-    def add_partition(self, assignment):
+    def add_partition(self, assignment) -> tuple[ZoneColumn, ...]:
         if set(assignment) != self.nodes or set(assignment.values()) != set(
             range(self.problem.Z)
         ):
@@ -186,6 +145,93 @@ class ZonePool:
         for column in columns:
             self.add(column)
         return columns
+
+    def admit_partition(self, assignment) -> tuple[ZoneColumn, ...] | None:
+        """Add every admissible zone of ``assignment``; return it if all are.
+
+        This is the rejection filter the ReCom seeder runs through. A partition
+        with one bad zone still contributes its other ``Z - 1`` zones, which is
+        most of what recombination produces: a ReCom step rewrites two zones
+        and leaves the rest of a previously admissible partition alone.
+        """
+
+        columns = []
+        complete = True
+        for zone in range(self.problem.Z):
+            nodes = frozenset(
+                node for node, label in assignment.items() if label == zone
+            )
+            column = self.admit(zone, nodes)
+            if column is None:
+                complete = False
+                continue
+            self.add(column)
+            columns.append(column)
+        return tuple(columns) if complete else None
+
+
+@dataclass(frozen=True)
+class DualPoint:
+    """A dual solution the pricing problem can be aimed at.
+
+    The pricer reads only these three fields, so a smoothed point and a raw LP
+    solution are interchangeable to it.
+    """
+
+    node_duals: dict[int, float]
+    zone_duals: dict[int, float]
+    boundary_dual: float = 0.0
+    phase_one: bool = False
+
+    def reduced_cost(self, column) -> float:
+        return (
+            (0.0 if self.phase_one else column.score)
+            - sum(self.node_duals[n] for n in column.nodes)
+            - self.zone_duals[column.zone]
+            - self.boundary_dual * column.perimeter / 2
+        )
+
+    def dual_objective(self, problem) -> float:
+        """The dual objective, which Proposition 9 corrects into a bound."""
+
+        value = sum(self.node_duals.values()) + sum(self.zone_duals.values())
+        if problem.boundary_prop >= 0:
+            value += self.boundary_dual * boundary_limit(problem)
+        return value
+
+
+def smooth(previous: DualPoint | None, current: DualPoint, alpha: float) -> DualPoint:
+    """Wentges smoothing of ``current`` toward ``previous``.
+
+    ``alpha = 1`` is no smoothing. The boundary multiplier is clamped
+    non-negative because Proposition 9 needs ``mu >= 0`` to read the master's
+    boundary row as a dual inequality; a convex combination of non-negative
+    multipliers is non-negative, so the clamp only ever catches a numerical
+    artefact.
+    """
+
+    if not 0.0 < alpha <= 1.0:
+        raise ValueError("dw_dual_smoothing must lie in (0, 1].")
+    if previous is None or alpha == 1.0:
+        return DualPoint(
+            dict(current.node_duals),
+            dict(current.zone_duals),
+            max(0.0, current.boundary_dual),
+            current.phase_one,
+        )
+    blend = lambda new, old: alpha * new + (1.0 - alpha) * old  # noqa: E731
+    return DualPoint(
+        {
+            node: blend(value, previous.node_duals.get(node, 0.0))
+            for node, value in current.node_duals.items()
+        },
+        {
+            zone: blend(value, previous.zone_duals.get(zone, 0.0))
+            for zone, value in current.zone_duals.items()
+        },
+        max(0.0, blend(current.boundary_dual, previous.boundary_dual)),
+        current.phase_one,
+    )
 
 
 @dataclass(frozen=True)
@@ -200,43 +246,53 @@ class MasterResult:
     artificial_mass: float = 0.0
     phase_one: bool = False
 
-    def reduced_cost(self, column):
-        return (
-            (0.0 if self.phase_one else column.score)
-            - sum(self.node_duals[n] for n in column.nodes)
-            - self.zone_duals[column.zone]
-            - self.boundary_dual * column.perimeter / 2
+    def duals(self) -> DualPoint:
+        return DualPoint(
+            dict(self.node_duals or {}),
+            dict(self.zone_duals or {}),
+            self.boundary_dual,
+            self.phase_one,
         )
+
+    def reduced_cost(self, column) -> float:
+        return self.duals().reduced_cost(column)
 
 
 def solve_master(
-    problem, columns, seconds, *, integer=False, phase_one=False
+    problem,
+    columns,
+    seconds,
+    *,
+    integer=False,
+    phase_one=False,
+    method="barrier",
 ) -> MasterResult:
     """Cover every node once and choose exactly one column per zone label."""
+
     if seconds <= 0:
         return MasterResult("TIME_LIMIT")
+    if method not in MASTER_METHODS:
+        raise ValueError(
+            f"dw_master_method must be one of: {sorted(MASTER_METHODS)}."
+        )
     columns = tuple(columns)
     with gp.Env(params={"OutputFlag": 0}) as env, gp.Model("dw_master", env=env) as m:
         if math.isfinite(seconds):
             m.Params.TimeLimit = max(1e-3, float(seconds))
-        # Dual simplex rather than the default concurrent method: these duals
-        # are the pricing objective, so the same pool has to produce the same
-        # duals on every run. Concurrent returns whichever algorithm finishes
-        # first, and barrier would return interior rather than vertex duals.
-        #
-        # REVISIT -- those interior duals may be exactly what this needs.
-        # Vertex duals of a set-partitioning master are massively degenerate
-        # (132 of 579 nonzero on BlockGroup_0), which is what freezes column
-        # generation; see the note in ``optimization/branch_price.py``. Trying
-        # ``Method = 2`` costs reproducibility, so measure before switching.
-        m.Params.Method = 1
         m.Params.Seed = 0
         m.Params.MIPGap = 0.0
+        if not integer:
+            m.Params.Method = MASTER_METHODS[method]
+            if method == "barrier":
+                # Stop at the barrier iterate. Crossover would walk it to a
+                # vertex, which is exactly the degenerate dual solution the
+                # interior point is chosen to avoid.
+                m.Params.Crossover = 0
 
         variables = []
         for i, column in enumerate(columns):
-            # No upper bound in the LP: implied by cover rows, and avoiding it
-            # leaves reduced costs entirely in the structural row duals.
+            # No upper bound in the LP: implied by the cover rows, and leaving
+            # it off keeps reduced costs entirely in the structural row duals.
             variables.append(
                 m.addVar(vtype=GRB.BINARY, name=f"lambda_{i}")
                 if integer
@@ -258,10 +314,10 @@ def solve_master(
         artificials = []
         if phase_one:
             for terms in (*cover_terms.values(), *convexity_terms.values()):
-                # Deficit-only artificials keep structural coverage <= 1. Empty
-                # columns are always feasible, and zero deficit recovers the
-                # exact master. Increasing a convexity dual remains valid for
-                # artificials.
+                # Deficit-only artificials keep structural coverage <= 1. An
+                # empty pool is always Phase-I feasible, and zero deficit
+                # recovers the exact master. Increasing a convexity dual stays
+                # valid for them, which is what Proposition 9 needs in Phase I.
                 variable = m.addVar(lb=0.0, ub=GRB.INFINITY)
                 terms.append(variable)
                 objective.addTerms(-1.0, variable)

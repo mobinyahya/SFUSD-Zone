@@ -41,16 +41,21 @@ def _attach_closer_neighbors(G: nx.Graph) -> None:
     G.graph["closer_neighbors"] = relation
 
 
-def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
+def make_grid_graph(rows: int = 3, cols: int = 3, schools=None) -> nx.Graph:
     """A ``rows x cols`` grid with uniform, balanced demographics.
 
     Node ``r*cols + c`` sits at coordinate ``(r, c)``; distances are plain grid
-    euclidean so the contiguity support relation is well defined. Corner nodes
-    (top-left, bottom-right) carry a school so a 2-zone school-count balance is
-    satisfiable.
+    euclidean so the contiguity support relation is well defined. By default the
+    corner nodes (top-left, bottom-right) carry a school, so a 2-zone
+    school-count balance is satisfiable. Pass ``schools`` as ``{node: id}`` for
+    a different set -- a three-centroid test needs three real school nodes,
+    because the closer-neighbour relation is keyed by school id.
     """
     G = nx.Graph()
     n = rows * cols
+    if schools is None:
+        schools = {0: 100, n - 1: 200}
+    schools = {int(node): int(school_id) for node, school_id in schools.items()}
     coords = {}
     for r in range(rows):
         for c in range(cols):
@@ -59,11 +64,7 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
 
     for idx, (r, c) in coords.items():
         eth = {e: 0.2 for e in AREA_ETHNICITIES}  # 5 ethnicities, sum to 1.0
-        schools = []
-        if idx == 0:
-            schools = [100]
-        elif idx == n - 1:
-            schools = [200]
+        schools_here = [schools[idx]] if idx in schools else []
         G.add_node(
             idx,
             area_id=1000 + idx,
@@ -71,9 +72,9 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
             ge_capacity=1.0,
             all_prog_students=1.0,
             all_prog_capacity=1.0,
-            num_schools=len(schools),
+            num_schools=len(schools_here),
             FRL=0.5,
-            school_ids=schools,
+            school_ids=schools_here,
             lat=float(r),
             lon=float(c),
             geometry=box(c, r, c + 1, r + 1),
@@ -96,14 +97,16 @@ def make_grid_graph(rows: int = 3, cols: int = 3) -> nx.Graph:
     G.graph["distance_dict"] = distance_dict
     G.graph["F"] = 0.5
     G.graph["R"] = {e: 0.2 for e in AREA_ETHNICITIES}
-    G.graph["school_data"] = {100: {}, 200: {}}
+    G.graph["school_data"] = {school_id: {} for school_id in schools.values()}
     G.graph["program_population"] = "GE"
     _attach_closer_neighbors(G)
     return G
 
 
-def make_grid_problem(rows: int = 3, cols: int = 3, **overrides) -> ZoneProblem:
-    G = make_grid_graph(rows, cols)
+def make_grid_problem(
+    rows: int = 3, cols: int = 3, schools=None, **overrides
+) -> ZoneProblem:
+    G = make_grid_graph(rows, cols, schools)
     params = dict(
         frl_dev=1.0,
         racial_dev=1.0,
@@ -112,11 +115,16 @@ def make_grid_problem(rows: int = 3, cols: int = 3, **overrides) -> ZoneProblem:
         max_distance=float("inf"),
     )
     params.update(overrides)
+    anchors = (
+        {0: 100, rows * cols - 1: 200}
+        if schools is None
+        else {int(node): int(sid) for node, sid in schools.items()}
+    )
     return ZoneProblem(
         G=G,
         level=LevelSpec("BlockGroup", 0),
-        centroids=[0, rows * cols - 1],
-        centroid_school_ids=[100, 200],
+        centroids=sorted(anchors),
+        centroid_school_ids=[anchors[node] for node in sorted(anchors)],
         **params,
     )
 

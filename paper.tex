@@ -458,6 +458,8 @@ The MID optimization problem maximizes total utilitarian welfare:
 \max_{x \in \Omega, P \ge 0} \sum_{g \in \mathcal{G}} \sum_{r=1}^{R_g} n_g u(g,r) d_{g,r} \quad \text{s.t.} \quad D_s(x, P) \leq q_s \quad \forall s \in \mathcal{S}
 \end{equation}
 
+When no program offers citywide access, both this objective and the sampled stable-matching objective of Section~\ref{sec:saa} admit an exact \emph{whole-zone} Dantzig--Wolfe decomposition: a column is one label's admissible zone together with its exactly evaluated welfare, the master tiles the district with one zone per label, and the zones are generated on demand from the master's shadow prices. Appendix~\ref{app:dw_mid} develops it --- why the base feasible set factors label by label, why zone welfare is additive under each definition, and why a single zone's sampled stable-matching value is one run of deferred acceptance rather than a solve of the access polytope of Appendix~\ref{app:access_polytope}.
+
 \noindent\textbf{MID Continuum Decomposition:} 
 \kccomment{this should def go to the appendix}
 The full MID problem couples discrete zoning $x \in \Omega$ with the exact recurrence $R_{g,r} = \min(R_{g,r-1}, e_{g,r})$ across all applicant types and preference ranks. To solve this efficiently, we decompose the problem by maintaining an active prefix vector $\mathbf{k} = (k_g)_{g \in \mathcal{G}}$ with $k_g \in \{0, \dots, R_g\}$.
@@ -996,8 +998,18 @@ Write $Z(v) \subseteq [k]$ for the labels vertex $v$ may take, as induced by \te
 Row \eqref{eq:zt_ratio} is the zero-right-hand-side form of \eqref{cp:capacity}, \eqref{cp:frl} and the racial rows of Appendix~\ref{app:diversity_constraints}: one pair per balanced quantity, with $\gamma_v$ the per-vertex value of that quantity ($c_v$, $f_v$, or $r_{v,e}$) and $\lambda^\mp$ its lower and upper ratio bound. Each side is retained exactly when the corresponding tolerance is active and dropped when it is disabled, so a run with the capacity and racial tolerances off carries only the FRL pair. Row \eqref{eq:zt_boundary} is the cut-edge budget the budget-set masters impose in place of minimizing the boundary. Contiguity is written in one of two ways, which is the only difference between the two bounds:
 \begin{description}
     \item[(CN)] the closer-neighbor rows of \eqref{cp:contiguity} relaxed to $x_{v,z} \leq \sum_{u \in \text{cn}(v, c(z))} x_{u,z}$ for $v \neq c(z)$, with $x_{v,z} = 0$ where the support set is empty;
-    \item[(F)] the rooted single-commodity flow description \eqref{eq:dw_flow_root}--\eqref{eq:dw_flow_capacity}, one commodity per zone with the root fixed at $c(z)$ --- so the root-selection variables $\xi$ disappear and the supply $\sum_{v \neq c(z)} x_{v,z}$ is injected at $c(z)$ --- and arc capacities $\varphi^z_{uv} \leq m\, x_{u,z}$, $\varphi^z_{uv} \leq m\, x_{v,z}$ with $m = |V|$.
+    \item[(F)] a rooted single-commodity flow, one commodity per zone with the root fixed at $c(z)$. Replace each undirected edge by both arcs, let $m = |V|$, and let $\varphi^z_{uv} \geq 0$ be the flow on arc $(u,v)$ for label $z$:
 \end{description}
+\begin{align}
+& \sum_{u \in N(v)} \big( \varphi^z_{uv} - \varphi^z_{vu} \big) = x_{v,z}
+&& \forall z \in [k],\ v \neq c(z) \label{eq:zt_flow_balance} \\
+& \sum_{u \in N(c(z))} \big( \varphi^z_{c(z)u} - \varphi^z_{uc(z)} \big)
+= \sum_{v \neq c(z)} x_{v,z}
+&& \forall z \in [k] \label{eq:zt_flow_supply} \\
+& 0 \leq \varphi^z_{uv} \leq m\, x_{u,z}, \qquad \varphi^z_{uv} \leq m\, x_{v,z}
+&& \forall z \in [k],\ (u,v) \label{eq:zt_flow_capacity}
+\end{align}
+At integral $x$ this enforces exactly that $G[Z_z]$ is connected and contains $c(z)$: a selected component not containing the root would have positive total demand \eqref{eq:zt_flow_balance} and no incoming flow, while a connected selected set can route one unit to every non-root member along a rooted spanning tree. Because the root is fixed rather than chosen, no root-selection variables are needed. The flow description is \emph{weaker} than (CN) at integral $x$ --- it permits connected zones that (CN) rejects for lack of monotone support toward the anchor --- which is why $\widehat{W}^{\mathrm{ZT}}_{\mathrm{flow}} \geq \widehat{W}^{\mathrm{ZT}}_{\mathrm{cn}}$ is the direction observed empirically.
 
 \noindent\textbf{Reified Access:}
 The co-zoning indicators are linearized on the relaxed memberships exactly as the masters linearize \eqref{saa:master_access}, using an auxiliary $h_{v,u,z}$ for the conjunction:
@@ -1028,7 +1040,7 @@ W_\psi(x) \;\leq\; T(x) \;\leq\; \widehat{W}^{\mathrm{ZT}}_{\bullet} \;\leq\; \o
 
 \textit{Proof.} The first inequality is Proposition 14. For the third, every feasible point of \eqref{eq:zt_obj}--\eqref{eq:zt_free} has $y \geq 0$ and satisfies \eqref{eq:zt_assign_row} and \eqref{eq:zt_cap}, which are \eqref{eq:welfare_tp_assign} and \eqref{eq:welfare_tp_cap}; so its $y$ is feasible for \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain} with the same objective, and the transportation optimum is at least as large. Conversely, deleting the zoning block \eqref{eq:zt_omega} and the access rows \eqref{eq:zt_access_row} leaves exactly \eqref{eq:welfare_tp_obj}--\eqref{eq:welfare_tp_domain}, so nothing but the access rows separates the two.
 
-For the second inequality, fix $x \in \Omega$ and exhibit a feasible point of \eqref{eq:zt_obj}--\eqref{eq:zt_free} whose objective is $T(x)$. Rows \eqref{eq:zt_assign}--\eqref{eq:zt_boundary} and (CN) are the rows of the base model, which $x$ satisfies integrally, with $b_{i,j}$ set to its induced value. For (F): closer-neighbor feasibility induces a strictly distance-decreasing path from every vertex of $Z_z$ to $c(z)$ inside $Z_z$, so $G[Z_z]$ is connected and contains $c(z)$; routing one unit from $c(z)$ to each other vertex of $Z_z$ along a spanning tree of $G[Z_z]$ gives arc flows in $[0, |V|]$, zero on every arc with an endpoint outside $Z_z$, so \eqref{eq:dw_flow_balance} and the relaxed capacities hold. Taking $h_{v,u,z} = x_{v,z} x_{u,z}$ satisfies \eqref{eq:zt_access} and yields $a_{v,u} = a_{v,u}(x)$, so any $y$ optimal for \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access} is feasible here and $T(x) \leq \widehat{W}^{\mathrm{ZT}}_{\bullet}$. The final claim holds because \eqref{eq:zt_chain} is pointwise in $(x, \psi)$, so it bounds the sample average and then its maximum over $\Omega$. $\blacksquare$
+For the second inequality, fix $x \in \Omega$ and exhibit a feasible point of \eqref{eq:zt_obj}--\eqref{eq:zt_free} whose objective is $T(x)$. Rows \eqref{eq:zt_assign}--\eqref{eq:zt_boundary} and (CN) are the rows of the base model, which $x$ satisfies integrally, with $b_{i,j}$ set to its induced value. For (F): closer-neighbor feasibility induces a strictly distance-decreasing path from every vertex of $Z_z$ to $c(z)$ inside $Z_z$, so $G[Z_z]$ is connected and contains $c(z)$; routing one unit from $c(z)$ to each other vertex of $Z_z$ along a spanning tree of $G[Z_z]$ gives arc flows in $[0, |V|]$, zero on every arc with an endpoint outside $Z_z$, so \eqref{eq:zt_flow_balance}--\eqref{eq:zt_flow_capacity} hold. Taking $h_{v,u,z} = x_{v,z} x_{u,z}$ satisfies \eqref{eq:zt_access} and yields $a_{v,u} = a_{v,u}(x)$, so any $y$ optimal for \eqref{eq:pa_restricted_obj}--\eqref{eq:pa_restricted_access} is feasible here and $T(x) \leq \widehat{W}^{\mathrm{ZT}}_{\bullet}$. The final claim holds because \eqref{eq:zt_chain} is pointwise in $(x, \psi)$, so it bounds the sample average and then its maximum over $\Omega$. $\blacksquare$
 
 Three remarks on the construction. First, the two variants are both valid but are \emph{not} nested: (CN) relaxes rows the master itself carries and is therefore the natural companion to it, while (F) is an exact description of connectedness at binary $x$ and rules out no $(v,z)$ pair a priori, so it contains every (CN)-feasible integral zoning --- but at fractional $x$ neither set of rows implies the other. We report both rather than choose. Second, the bound is a constant, so unlike the priced bound of Section~\ref{app:priced_access} it prices confinement only in the aggregate: it says what the best \emph{fractional} zoning could achieve, not what the master's current candidate achieves. Third, the value depends only on the feasible set $\Omega$, the market, and which contiguity description is used --- never on how many threads solved it --- which is why the implementation caches it content-addressed by exactly those inputs with the worker count excluded from the key. The LP must be solved to optimality for \eqref{eq:zt_chain} to mean anything: a time-limited LP returns a primal-feasible point, which bounds the value from below.
 
@@ -1175,24 +1187,152 @@ The last two columns are the two terms of \eqref{eq:pa_bias}. The zoning-indepen
 \noindent\textbf{Role of the Prices:}
 Setting $\pi = 0$ isolates what congestion pricing contributes. The resulting surrogate --- each applicant's favourite co-zoned program, capacity ignored --- is cheaper to optimize and in our runs converges faster, terminating on the absence of separation with a model-versus-realized gap of $0.01\%$; but it converges to a materially worse zoning, because an unpriced surrogate is indifferent between a program with spare seats and an oversubscribed one and is therefore rewarded for concentrating demand on popular schools. Charging $\pi^\star$ recovered $1{,}357$ units of realized welfare relative to $\pi = 0$ on one instance at a matched iteration allowance --- a single-instance observation, but a difference an order of magnitude larger than the bias figures tabulated above. This is the clearest illustration of the gap between Theorem 2 and the objective one actually cares about: the algorithm certifies optimality for whichever surrogate it is given, and the surrogate must be the right one.
 
-\section{Dantzig--Wolfe Decomposition}
+\section{Dantzig--Wolfe Decomposition over Whole Zones}
 \label{app:dw_mid}
-The MID objective admits a decomposition whose columns are entire feasible zones when no program offers citywide access. The restriction is substantive: a citywide program couples applicants in different zones through a shared capacity constraint, preventing zone welfare from being evaluated independently. In this appendix we remove citywide schools and their programs from the market and from the school and capacity counts. Applicants remain at their original residential vertices; their preference lists retain the order, utilities and priority tiers of the remaining programs. An applicant with no remaining acceptable program receives the outside option, of utility zero.
+Every formulation so far has described a zoning by its assignment variables and
+handed the whole thing to one solver. This appendix describes the alternative:
+take an entire zone as the atom of decision, let the master choose one zone per
+label so that the zones tile the district, and generate the zones themselves on
+demand from the master's shadow prices. What makes the exchange worthwhile is
+that a single zone's welfare is a well-posed object --- the welfare of a
+self-contained submarket --- so a column carries an exactly evaluated value
+rather than a surrogate, and the decomposition inherits whichever welfare
+definition we care to price.
 
-We develop the decomposition for the finite-grid MID model at a fixed geographic resolution. Fix an integer lottery scale $L \geq 1$ and restrict each cutoff to $P_s = p_s/L$, where $p_s$ is a nonnegative integer. Consequently, all assignment probabilities are multiples of $1/L$. The result below certifies the optimum of this specified finite-grid model; no approximation claim about the continuous-cutoff optimum is needed.
+Three things have to hold for that to work, and they organize the appendix.
+Section~\ref{app:dw_families} shows that the base feasible set
+$\Omega(G, C, k, \delta)$ of Section~2 factors label by label, so that ``legal
+zone for label $z$'' is a well-defined family $\mathcal F_z$ and the master's
+rows are exactly what is left over. Section~\ref{app:dw_value} shows that zone
+welfare is additive over a partition, under each of the three definitions we
+price, and that the sampled stable-matching definition is computable by running
+deferred acceptance rather than by solving the access polytope of
+Appendix~\ref{app:access_polytope}. Section~\ref{app:dw_pricing} writes the
+pricing problem for one anchored zone and Section~\ref{app:dw_bounds} gives the
+bound and explains why it survives an arbitrary dual point. That section also
+reports where the method actually stalls, which is neither the cost of pricing
+nor the choice of dual point but the \emph{completability} of the columns
+generated; Section~\ref{app:dw_redraw} answers it with a second, bound-free
+column source that re-partitions two zones at once and shows why adding one is
+sound while substituting it for pricing would not be.
+Section~\ref{app:dw_convergence} closes the integrality gap by branching.
 
-\subsection{Feasible Zones and Their Welfare}
-For each label $z \in [k]$, let $\mathcal{F}_z$ be the family of all admissible individual zones $A \subseteq V$. Membership requires $A \neq \emptyset$, connectedness of $G[A]$, and the capacity, school-count and demographic inequalities for that zone. These inequalities are local to $A$: for example,
+The decomposition requires that no program offer citywide access. The
+restriction is substantive rather than cosmetic: a citywide program's seats are
+contested by applicants in every zone through one shared capacity row, so zone
+welfare would not be additive and a column would have no well-defined value. We
+therefore remove citywide schools and their programs from the market and from
+the school and capacity counts. Applicants remain at their residential
+vertices; their lists retain the order, utilities and priority tiers of the
+remaining programs, and an applicant with no remaining acceptable program
+receives the outside option of utility zero.
+
+\subsection{Admissible Zones for One Label}
+\label{app:dw_families}
+
+Write $\mathcal C(v) \subseteq [k]$ for the labels vertex $v$ may take, as
+determined by $\texttt{max\_distance}$, explicit candidate restrictions and
+fixed assignments; $\text{cn}(v, c(z))$ for the graph neighbours of $v$ whose
+geometry is strictly closer to label $z$'s school point than $v$'s own, the
+relation already used in \eqref{cp:contiguity}; and $B_r(c)$ for the set of
+vertices within $r$ graph hops of $c$, with $r$ the configured centroid
+neighbourhood radius. Define the \emph{support}
+\begin{equation}\label{eq:dw_support}
+\text{cn}^{*}(v, z) = \big\{ u \in \text{cn}(v, c(z)) : z \in \mathcal C(u),
+\ u = c(z) \text{ or } \text{cn}^{*}(u, z) \neq \emptyset \big\},
+\end{equation}
+the greatest fixed point of the displayed recursion --- a neighbour counts as
+support only if it is itself a candidate and can itself continue toward the
+anchor. A vertex with $\text{cn}^{*}(v,z) = \emptyset$ can never carry label
+$z$; the base model reaches the same conclusion by propagation from
+\eqref{cp:contiguity}, so nothing is added or removed by taking the fixed point
+explicitly.
+
+For each label $z \in [k]$ let $\mathcal F_z$ be the family of $A \subseteq V$
+satisfying
 \begin{align}
-\underline{s} &\leq \sum_{v \in A} s(v) \leq \overline{s}, \label{eq:dw_local_schools} \\
-(1-\delta^-)N(A) &\leq C(A) \leq (1+\delta^+)N(A), \label{eq:dw_local_capacity} \\
-(F-\delta_F)N(A) &\leq \sum_{v \in A} f_v \leq (F+\delta_F)N(A), \label{eq:dw_local_frl} \\
-(R_e-\delta_R)N(A) &\leq \sum_{v \in A} r_{v,e} \leq (R_e+\delta_R)N(A)
-\quad \forall e \in \mathcal{E}. \label{eq:dw_local_racial}
+& c_z \in A \quad\text{and}\quad B_r(c_z) \subseteq A, \label{eq:dw_anchor} \\
+& A \cap B_r(c_{z'}) = \emptyset \qquad \forall z' \neq z, \label{eq:dw_exclude} \\
+& z \in \mathcal C(v) \qquad \forall v \in A, \label{eq:dw_candidacy} \\
+& A \cap \text{cn}^{*}(v, z) \neq \emptyset \qquad \forall v \in A \setminus \{c_z\}, \label{eq:dw_support_row} \\
+& \underline{s} \leq \textstyle\sum_{v \in A} s(v) \leq \overline{s},
+\qquad \text{and \eqref{cp:capacity}, \eqref{cp:frl} and their per-ethnicity
+analogues, evaluated on } A. \label{eq:dw_local}
 \end{align}
-Here $\underline{s}$ and $\overline{s}$ are the prescribed school-count bounds, such as those in \eqref{cp:schools}; either aggregate capacity bound may be omitted if it is not imposed. Explicit candidate labels and fixed assignments also enter $\mathcal{F}_z$. If anchors are required, include $c_z \in A$ and exclude every other centroid from $A$. For an unanchored formulation, omit these restrictions. The same decomposition applies to either choice, provided seeding, pricing and the master use the same families $\mathcal{F}_z$. Individual admissibility does not require that $V \setminus A$ itself be an admissible zone.
+Condition \eqref{eq:dw_exclude} subsumes the exclusion of every other centroid,
+since $c_{z'} \in B_r(c_{z'})$. Conditions \eqref{eq:dw_anchor} and
+\eqref{eq:dw_local} are exactly \eqref{cp:centroid} and
+\eqref{cp:schools}--\eqref{cp:frl} read at one label, and
+\eqref{eq:dw_support_row} is \eqref{cp:contiguity} read at one label. Only
+individual admissibility is required: $V \setminus A$ need not itself be an
+admissible zone.
 
-Let $\mathcal{G}_A = \{g \in \mathcal{G}: v(g) \in A\}$ and $\mathcal{S}_A = \{s \in \mathcal{S}: l(s) \in A\}$. Define $W_L(A)$ as the greatest MID welfare obtainable by these applicants using these programs at lottery scale $L$. To express it on an integer mass scale, write $\widehat{R}_{g,r} = L R_{g,r}$ and $\widehat{d}_{g,r} = L d_{g,r}$. Given access indicators $a_{g,s}$, the complete recurrence is
+\noindent\textbf{Lemma 3 (Monotone support).} \textit{Let $A \in \mathcal F_z$.
+Then every $v \in A$ is joined to $c_z$ by a path inside $A$ along which the
+distance to label $z$'s school point strictly decreases; in particular $G[A]$ is
+connected. The converse fails: there are connected sets containing $c_z$ and
+satisfying \eqref{eq:dw_anchor}--\eqref{eq:dw_local} that violate
+\eqref{eq:dw_support_row}.}
+
+\textit{Proof.} Let $d(v)$ denote the distance from $v$'s geometry to label
+$z$'s school point. If $v \in A \setminus \{c_z\}$ then
+\eqref{eq:dw_support_row} supplies $u \in A$ adjacent to $v$ with $d(u) < d(v)$.
+Iterating produces a strictly decreasing sequence of distances along vertices of
+$A$; since $A$ is finite the sequence terminates, and it can only terminate at a
+vertex carrying no obligation, i.e.\ at $c_z$. Every vertex of $A$ therefore
+reaches $c_z$ inside $A$, so $G[A]$ is connected.
+
+For the converse, take the four-cycle $v_0 - v_1 - v_2 - v_3 - v_0$ with
+$c_z = v_0$ and geometry giving $d(v_0) = 0$, $d(v_1) = 2$, $d(v_2) = 1$,
+$d(v_3) = 3$ --- nothing prevents $v_2$ from being geometrically nearer the
+school than the vertex one has to walk through to reach it. Then
+$A = \{v_0, v_1, v_2\}$ is connected and contains the anchor, but $v_2$'s only
+neighbour in $A$ is $v_1$, which is farther from the school, so
+\eqref{eq:dw_support_row} fails at $v_2$ and $A \notin \mathcal F_z$.
+$\blacksquare$
+
+The strictness in Lemma 3 is a modelling decision, not an oversight. It is the
+contiguity description the base solvers of Section~2 already use, and adopting
+it here is what makes the decomposition describe the same feasible set as the
+rest of the paper. It is also what makes pricing tractable: connectedness costs
+one clause per candidate vertex, where an unanchored rooted-flow description
+costs $2|E|$ arc variables with big-$M$ capacities and lets one label's
+subproblem range over every connected subset of the graph.
+
+\noindent\textbf{Proposition 15 (Label separability).} \textit{A tuple
+$(A_0, \dots, A_{k-1})$ with $A_z \in \mathcal F_z$ for every $z$ and
+$\bigsqcup_z A_z = V$ is precisely the zone tuple of a point
+$x \in \Omega(G, C, k, \delta)$, and conversely. If a boundary budget
+$\overline b$ is imposed, add $\sum_z b(A_z) \le \overline b$ on the left and
+the corresponding row on the right.}
+
+\textit{Proof.} Inspect the base model
+\eqref{cp:obj}--\eqref{cp:b_domain}. Every row involves the variables of a
+single label --- \eqref{cp:centroid}, \eqref{cp:contiguity},
+\eqref{cp:schools}, \eqref{cp:capacity}, \eqref{cp:frl} and the per-ethnicity
+rows all do --- except \eqref{cp:assignment}, which states that the labels
+partition $V$, and the boundary rows \eqref{cp:cut}, whose only aggregate use
+is the optional cap. Fix $x \in \Omega$ and set
+$A_z = \{v : x_{v,z} = 1\}$. Then \eqref{cp:assignment} gives
+$\bigsqcup_z A_z = V$, and the label-$z$ rows evaluated at $x$ are literally
+\eqref{eq:dw_anchor}--\eqref{eq:dw_local}, so $A_z \in \mathcal F_z$.
+Conversely, given such a tuple, define $x_{v,z} = \mathds{1}\{v \in A_z\}$;
+disjointness and coverage give \eqref{cp:assignment} and each family membership
+gives that label's rows. $\blacksquare$
+
+\subsection{The Value of a Zone}
+\label{app:dw_value}
+
+Let $\mathcal G_A = \{g \in \mathcal G : v(g) \in A\}$ and
+$\mathcal S_A = \{s \in \mathcal S : l(s) \in A\}$. We price three definitions
+of $W(A)$.
+
+\noindent\textbf{(i) Finite-grid MID welfare.}
+Fix an integer lottery scale $L \geq 1$ and restrict each cutoff to
+$P_s = p_s / L$ with $p_s$ a non-negative integer, so every assignment
+probability is a multiple of $1/L$. Writing
+$\widehat R_{g,r} = L R_{g,r}$ and $\widehat d_{g,r} = L d_{g,r}$, the mass
+recurrence \eqref{eq:mid_recurrence} becomes
 \begin{align}
 \widehat{t}_{s,\rho} &= \min\{L,\max\{p_s-L\rho,0\}\}, \label{eq:dw_threshold} \\
 \widehat{e}_{g,r} &= a_{g,s(g,r)}\widehat{t}_{s(g,r),\rho(g,r)}
@@ -1201,10 +1341,13 @@ Let $\mathcal{G}_A = \{g \in \mathcal{G}: v(g) \in A\}$ and $\mathcal{S}_A = \{s
 \widehat{R}_{g,r} = \min\{\widehat{R}_{g,r-1},\widehat{e}_{g,r}\}, \label{eq:dw_recurrence} \\
 \widehat{d}_{g,r} &= \widehat{R}_{g,r-1}-\widehat{R}_{g,r}. \label{eq:dw_mass}
 \end{align}
-For a fixed $A$, set $a_{g,s}=1$ exactly when $g \in \mathcal{G}_A$ and $s \in \mathcal{S}_A$. Using all types and ranks in \eqref{eq:dw_threshold}--\eqref{eq:dw_mass} then gives zero assigned mass to every omitted applicant. The zone value is
+For a fixed $A$ set $a_{g,s} = 1$ exactly when $g \in \mathcal G_A$ and
+$s \in \mathcal S_A$; running \eqref{eq:dw_threshold}--\eqref{eq:dw_mass} over
+all types and ranks then gives zero assigned mass to every omitted applicant.
+The zone value is
 \begin{equation}\label{eq:dw_zone_value}
 \begin{aligned}
-W_L(A) = \max_{p,\widehat{R},\widehat{d}}\quad
+W^{\mathrm{MID}}_L(A) = \max_{p,\widehat{R},\widehat{d}}\quad
 & \frac{1}{L}\sum_{g \in \mathcal{G}} n_g
        \sum_{r=1}^{R_g} u(g,r)\widehat{d}_{g,r} \\
 \text{s.t.}\quad
@@ -1216,31 +1359,118 @@ W_L(A) = \max_{p,\widehat{R},\widehat{d}}\quad
         \quad \forall s \in \mathcal{S},
 \end{aligned}
 \end{equation}
-where $\overline{p}_s=L(1+\max_{g,r:s(g,r)=s}\rho(g,r))$, with an empty maximum taken as zero. This bound permits rejection of every applicant, so \eqref{eq:dw_zone_value} is always feasible. All remaining masses are integers between zero and $L$.
+where $\overline p_s = L(1 + \max_{g,r : s(g,r) = s} \rho(g,r))$, an empty
+maximum read as zero. This bound permits rejecting every applicant, so
+\eqref{eq:dw_zone_value} is always feasible, and all masses are integers in
+$[0, L]$.
 
-\noindent\textbf{Proposition 7 (Least-Cutoff Zone Value).} \textit{For every admissible zone $A$, the value $W_L(A)$ equals the welfare at its componentwise least capacity-feasible cutoff vector.}
+\noindent\textbf{Proposition 7 (Least-Cutoff Zone Value).} \textit{For every
+$A \in \mathcal F_z$, the value $W^{\mathrm{MID}}_L(A)$ is the welfare at the
+componentwise least capacity-feasible cutoff vector.}
 
-\textit{Proof.} Start with $p=0$. Whenever a program is overloaded, raise only its cutoff to the smallest integer value that clears its capacity, holding the other cutoffs fixed. Demand is nonincreasing in a program's own cutoff, and $\overline{p}_s$ clears it. Each update strictly increases a bounded integer coordinate, so the procedure terminates at a capacity-feasible vector $p^\ast$.
+\textit{Proof.} Start with $p = 0$. Whenever a program is overloaded, raise only
+its cutoff to the smallest integer value clearing its capacity, holding the
+others fixed. Demand is non-increasing in a program's own cutoff and
+$\overline p_s$ clears it, so each update strictly increases a bounded integer
+coordinate and the procedure terminates at a capacity-feasible $p^\ast$.
 
-Let $\widetilde{p}$ be any capacity-feasible vector. Initially $p \leq \widetilde{p}$. If this inequality holds before an update of program $s$, then evaluating its demand at $p_s=\widetilde{p}_s$ while keeping all other cutoffs at their current, weakly smaller values yields demand no greater than at $\widetilde{p}$. Indeed, lower cutoffs at earlier choices can only reduce the mass remaining to demand $s$; later choices do not affect its demand. Thus the smallest clearing update satisfies $p_s \leq \widetilde{p}_s$. Induction gives $p^\ast \leq \widetilde{p}$, proving leastness.
+Let $\widetilde p$ be any capacity-feasible vector. Initially
+$p \le \widetilde p$. If this holds before an update of program $s$, then
+evaluating $s$'s demand at $p_s = \widetilde p_s$ with all other cutoffs at
+their current, weakly smaller values yields demand no greater than at
+$\widetilde p$: lower cutoffs at earlier choices only reduce the mass remaining
+to demand $s$, and later choices do not affect it. So the smallest clearing
+update satisfies $p_s \le \widetilde p_s$, and induction gives
+$p^\ast \le \widetilde p$.
 
-Set $u(g,R_g+1)=0$. By \eqref{eq:dw_recurrence}, lower cutoffs weakly decrease every remaining mass. For a nonempty preference list, the type's welfare is
+Set $u(g,R_g+1) = 0$. By \eqref{eq:dw_recurrence} lower cutoffs weakly decrease
+every remaining mass, and for a non-empty list
 \begin{equation}\label{eq:dw_welfare_telescoping}
 \frac{n_g}{L}\sum_{r=1}^{R_g}u(g,r)\widehat{d}_{g,r}
 = n_g u(g,1)-\frac{n_g}{L}\sum_{r=1}^{R_g}
-\big(u(g,r)-u(g,r+1)\big)\widehat{R}_{g,r}.
+\big(u(g,r)-u(g,r+1)\big)\widehat{R}_{g,r},
 \end{equation}
-Every coefficient of a remaining mass is nonpositive because utilities are ordered. Hence $p^\ast$ weakly maximizes welfare among all capacity-feasible cutoff vectors. Empty lists contribute zero. $\blacksquare$
+whose remaining-mass coefficients are all non-positive because utilities are
+rank-ordered. Hence $p^\ast$ weakly maximizes welfare among capacity-feasible
+cutoff vectors; empty lists contribute zero. $\blacksquare$
+
+\noindent\textbf{(ii) Sampled stable-matching welfare.}
+Fix a single tie-breaking seed $\psi$, drawn under the same single- or
+multiple-tie-breaking rule as Section~\ref{sec:saa} and after citywide programs
+have been removed, so that the realized strict orders $\succ_s^\psi$ refer to
+the programs that remain. Let $\Gamma(a_A)$ be the acceptable pairs of the zone
+submarket, that is those $(i,s) \in \Gamma$ with $v(i) \in A$ and
+$l(s) \in A$, and define
+\begin{equation}\label{eq:dw_sampled_value}
+W^{\psi}(A) = \max\Big\{ \textstyle\sum_{(i,s)} u_{i,s} D_{i,s}
+: D \text{ a stable matching of } \Gamma(a_A) \Big\}.
+\end{equation}
+This is the object Appendix~\ref{app:access_polytope} describes: the maximum of
+a linear utility over the stable admissions polytope
+\eqref{saa:primal_obj}--\eqref{saa:domain} of the submarket.
+
+\noindent\textbf{Proposition 16 (The sampled zone value is a deferred-acceptance
+run).} \textit{For every $A$, $W^{\psi}(A)$ equals the utilitarian welfare of
+the applicant-proposing deferred-acceptance outcome on $\Gamma(a_A)$.}
+
+\textit{Proof.} This is Corollary~1 applied to the submarket. The feasible set
+of \eqref{saa:primal_obj}--\eqref{saa:domain} at the binary access pattern
+$a_A$ is, by Proposition~2, the convex hull of the stable matchings of
+$\Gamma(a_A)$, so the maximum is attained at one of them. Deferred acceptance
+returns the applicant-optimal stable matching, every applicant weakly preferring
+it to every other, and $u_{i,\cdot}$ is consistent with $\succ_i^\psi$, so the
+sum is weakly largest there. $\blacksquare$
+
+Proposition 16 is the practical content of the whole access-polytope
+development for this appendix, and it cuts in a direction worth naming. The
+$\texttt{saa}$ master of Section~\ref{sec:saa} cannot run the mechanism,
+because it is searching over zonings and the access pattern is a variable, so
+it loads the aggregated stability row \eqref{saa:rothblum} and pays for the
+slack: on $\text{Block}_2$ that surrogate over-reports realized
+deferred-acceptance welfare by $194.8$ to $251.8$ units. Here the same quantity
+is needed only at a \emph{fixed} zone, where the mechanism can simply be run.
+The column's value is therefore exactly realized welfare, at the cost of one
+deferred-acceptance pass, and none of the comb machinery is needed to compute
+it. The inequalities come back in Section~\ref{app:dw_pricing}, where
+membership is again a variable.
+
+\noindent\textbf{(iii) Boundary cost.}
+With $w_{u,v} \geq 0$ the shared boundary length, define the half-perimeter
+\begin{equation}\label{eq:dw_half_perimeter}
+b(A)=\frac{1}{2}\sum_{\substack{\{u,v\}\in E\\ |\{u,v\}\cap A|=1}} w_{u,v},
+\qquad W^{\partial}(A) = -b(A).
+\end{equation}
+With $w \equiv 1$ this is half the number of edges leaving $A$. This is not a
+welfare; it reproduces the base compactness objective \eqref{cp:obj} and is
+included because it makes the decomposition checkable against an enumerated
+optimum with no market at all.
+
+\noindent\textbf{Proposition 17 (Additivity of zone value).} \textit{Let
+$(A_0, \dots, A_{k-1})$ be an admissible partition and let
+$W \in \{W^{\mathrm{MID}}_L, W^{\psi}, W^{\partial}\}$. Then the district value
+under $W$'s own definition equals $\sum_{z} W(A_z)$.}
+
+\textit{Proof.} Because no program is citywide, $\mathcal S_{A_z}$ partitions
+$\mathcal S$ and $\mathcal G_{A_z}$ partitions $\mathcal G$, and an applicant
+has access only to programs in their own zone. For $W^{\mathrm{MID}}_L$, both
+the recurrence \eqref{eq:dw_threshold}--\eqref{eq:dw_mass} and the capacity rows
+separate across zones: independent optimizers of \eqref{eq:dw_zone_value}
+combine into a feasible district allocation, and every district allocation
+restricts to a feasible allocation in each zone. For $W^{\psi}$, the acceptable
+pairs decompose as $\Gamma(a(x)) = \bigsqcup_z \Gamma(a_{A_z})$ with disjoint
+applicant and program sets, so a pair of $\Gamma(a_{A_z})$ blocks a matching
+$D$ iff it blocks $D$ restricted to zone $z$; stability, and hence the
+optimization \eqref{eq:dw_sampled_value}, therefore separates. For
+$W^{\partial}$, each cut edge lies in exactly two zone perimeters, so
+$\sum_z b(A_z)$ is the district boundary cost. $\blacksquare$
 
 \subsection{The Zone-Column Master}
-For $A \subseteq V$, define its half-perimeter by
-\begin{equation}\label{eq:dw_half_perimeter}
-b(A)=\frac{1}{2}\sum_{\substack{\{u,v\}\in E\\ |\{u,v\}\cap A|=1}} w_{u,v}.
-\end{equation}
-With $w_{u,v}=1$ this measures half the number of edges leaving $A$. Let $\overline{b}\geq0$ be an optional district boundary budget. Introduce a binary variable $\lambda_{z,A}$ selecting zone $A$ for label $z$. The master is
+\label{app:dw_master}
+Let $\overline b \geq 0$ be an optional district boundary budget and introduce a
+binary $\lambda_{z,A}$ selecting zone $A$ for label $z$. The master is
 \begin{align}
 \max_{\lambda}\quad
-& \sum_{z\in[k]}\sum_{A\in\mathcal{F}_z}W_L(A)\lambda_{z,A}
+& \sum_{z\in[k]}\sum_{A\in\mathcal{F}_z}W(A)\lambda_{z,A}
 \label{eq:dw_master_obj} \\
 \text{s.t.}\quad
 & \sum_{z\in[k]}\sum_{\substack{A\in\mathcal{F}_z\\v\in A}}\lambda_{z,A}=1
@@ -1254,74 +1484,138 @@ With $w_{u,v}=1$ this measures half the number of edges leaving $A$. Let $\overl
 \end{align}
 If compactness is unrestricted, delete \eqref{eq:dw_master_boundary}.
 
-\noindent\textbf{Proposition 8 (Exact Decomposition).} \textit{The integer master \eqref{eq:dw_master_obj}--\eqref{eq:dw_master_binary} has the same optimal value as finite-grid MID zoning over the prescribed families $\mathcal{F}_z$.}
+\noindent\textbf{Proposition 8 (Exact Decomposition).} \textit{For each of the
+three definitions of $W$, the integer master
+\eqref{eq:dw_master_obj}--\eqref{eq:dw_master_binary} has the same optimal value
+as maximizing the corresponding district objective over
+$\Omega(G, C, k, \delta)$.}
 
-\textit{Proof.} Constraints \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label} select exactly one nonempty admissible zone per label and cover each vertex exactly once. Thus they define precisely the admissible partitions. For any such partition $\mathcal{P}=(A_1,\ldots,A_k)$, the sets $\mathcal{G}_{A_z}$ partition the applicants and the sets $\mathcal{S}_{A_z}$ partition the programs. No applicant can use a program in another zone, so both the MID recurrence and the program capacity constraints separate across zones. Independent optimizers of \eqref{eq:dw_zone_value} therefore combine into a feasible district allocation, and every district allocation restricts to a feasible allocation in each zone. Consequently,
-\begin{equation}\label{eq:dw_additivity}
-W_L^{\mathrm{MID}}(\mathcal{P})=\sum_{z\in[k]}W_L(A_z).
-\end{equation}
-Finally, each cut edge occurs in exactly two zone perimeters, so $\sum_z b(A_z)$ is precisely the district boundary cost. Both objective and feasibility are preserved. $\blacksquare$
+\textit{Proof.} Rows \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label}
+say that exactly one member of each family is selected and that the selected
+sets cover each vertex exactly once, i.e.\ that they form a partition with
+$A_z \in \mathcal F_z$. By Proposition 15 these are precisely the admissible
+zonings, and \eqref{eq:dw_master_boundary} is the boundary cap because each cut
+edge appears in two perimeters. By Proposition 17 the objective
+\eqref{eq:dw_master_obj} is the district objective at that zoning. Both
+feasibility and objective are therefore preserved in both directions.
+$\blacksquare$
 
-\subsection{Exact Pricing of an Individual Zone}
-Maintain a restricted pool $\mathcal{F}'_z\subseteq\mathcal{F}_z$ and relax \eqref{eq:dw_master_binary} to $\lambda\geq0$. Let $\alpha_v$ and $\gamma_z$ be the unrestricted dual multipliers of \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label}, and let $\mu\geq0$ be the multiplier of \eqref{eq:dw_master_boundary}. The complete dual requires
+\subsection{Pricing One Anchored Zone}
+\label{app:dw_pricing}
+Maintain a restricted pool $\mathcal F'_z \subseteq \mathcal F_z$ and relax
+\eqref{eq:dw_master_binary} to $\lambda \geq 0$. Let $\alpha_v$ and $\gamma_z$
+be the unrestricted duals of \eqref{eq:dw_master_cover} and
+\eqref{eq:dw_master_label} and $\mu \geq 0$ the multiplier of
+\eqref{eq:dw_master_boundary}; the complete dual requires
 \begin{equation}\label{eq:dw_dual_row}
-\sum_{v\in A}\alpha_v+\gamma_z+\mu b(A)\geq W_L(A)
-\qquad \forall z\in[k],\ A\in\mathcal{F}_z.
+\sum_{v\in A}\alpha_v+\gamma_z+\mu b(A)\geq W(A)
+\qquad \forall z\in[k],\ A\in\mathcal{F}_z,
 \end{equation}
-Its objective is $\sum_v\alpha_v+\sum_z\gamma_z+\mu\overline{b}$. Take $\mu=0$ and omit the budget term when there is no boundary constraint. Pricing for label $z$ maximizes the reduced welfare
+with objective $\sum_v \alpha_v + \sum_z \gamma_z + \mu \overline b$. Take
+$\mu = 0$ and drop the budget term when there is no boundary constraint.
+Pricing label $z$ maximizes the \emph{reduced welfare}
 \begin{equation}\label{eq:dw_pricing}
-\max_{A\in\mathcal{F}_z}
-\left\{W_L(A)-\sum_{v\in A}\alpha_v-\gamma_z-\mu b(A)\right\}.
+f_z(A) \;=\; W(A)-\sum_{v\in A}\alpha_v-\gamma_z-\mu b(A),
+\qquad A \in \mathcal F_z .
 \end{equation}
-A strictly positive optimum identifies an improving column; nonpositive optima for all labels certify that the restricted LP solves the full LP relaxation.
+A strictly positive optimum identifies an improving column; non-positive optima
+for all labels certify that the restricted LP solves the full LP relaxation.
 
-To solve \eqref{eq:dw_pricing} globally, introduce binary memberships $y_v=\mathds{1}\{v\in A\}$ and optimize them jointly with the cutoff and mass variables in \eqref{eq:dw_zone_value}. Access becomes
-\begin{equation}\label{eq:dw_pricing_access}
-a_{g,s}=y_{v(g)}y_{l(s)},\qquad
-a_{g,s}\leq y_{v(g)},\quad a_{g,s}\leq y_{l(s)},\quad
-a_{g,s}\geq y_{v(g)}+y_{l(s)}-1.
+To solve \eqref{eq:dw_pricing} globally, introduce binary memberships
+$y_v = \mathds{1}\{v \in A\}$ for the vertices with $z \in \mathcal C(v)$ and
+$\text{cn}^{*}(v,z) \neq \emptyset$, and write
+\eqref{eq:dw_anchor}--\eqref{eq:dw_local} in them. Conditions
+\eqref{eq:dw_anchor}--\eqref{eq:dw_candidacy} fix variables. Condition
+\eqref{eq:dw_support_row} is the clause family
+\begin{equation}\label{eq:dw_support_clause}
+y_v \;\leq\; \sum_{u \in \text{cn}^{*}(v,z)} y_u
+\qquad \forall v \neq c_z ,
 \end{equation}
-All access variables are binary. If $v(g)=l(s)$, access equals $y_{v(g)}$, so omitted vertices contribute no applicants.
-
-Connectedness has an exact single-commodity flow description. Replace each undirected edge by both arcs, let $m=|V|$, choose a root with binary variables $\xi_v$, and let $\tau_v\geq0$ be the supply injected at vertex $v$. Nonnegative arc flows $\varphi_{uv}$ satisfy
-\begin{align}
-\sum_{v\in V}\xi_v &= 1,\qquad \xi_v\leq y_v
-&& \forall v\in V, \label{eq:dw_flow_root} \\
-0\leq\tau_v &\leq m\xi_v
-&& \forall v\in V, \label{eq:dw_flow_supply} \\
-\tau_v+\sum_{u\in N(v)}(\varphi_{uv}-\varphi_{vu}) &= y_v
-&& \forall v\in V, \label{eq:dw_flow_balance} \\
-0\leq\varphi_{uv} &\leq m y_u,\qquad \varphi_{uv}\leq m y_v
-&& \forall (u,v). \label{eq:dw_flow_capacity}
-\end{align}
-A selected component without the root would have positive total demand and zero net supply, contradicting \eqref{eq:dw_flow_balance}. Conversely, a connected selected set can route one unit to every selected vertex along a rooted spanning tree. Thus the formulation enforces exactly nonempty connectedness. Express \eqref{eq:dw_local_schools}--\eqref{eq:dw_local_racial} by replacing each sum over $A$ with its corresponding membership-weighted sum. Candidate labels and fixed assignments set the appropriate $y_v$ to zero or one.
-
-For each edge, a binary variable $\beta_{uv}=|y_u-y_v|$ is imposed by
+one row per candidate vertex, and \eqref{eq:dw_local} is the same inequality
+with each sum over $A$ replaced by its membership-weighted sum. By Lemma 3 no
+connectivity variables are required: \eqref{eq:dw_support_clause} already
+implies connectedness, and it is the description the base model uses. For the
+boundary term, $\beta_{uv} = |y_u - y_v|$ is imposed by
 \begin{equation}\label{eq:dw_edge_linearization}
 \begin{aligned}
 \beta_{uv}&\geq y_u-y_v, &\quad \beta_{uv}&\geq y_v-y_u,\\
-\beta_{uv}&\leq y_u+y_v, &\quad \beta_{uv}&\leq 2-y_u-y_v.
+\beta_{uv}&\leq y_u+y_v, &\quad \beta_{uv}&\leq 2-y_u-y_v,
 \end{aligned}
 \end{equation}
-The pricing objective is therefore
-\begin{equation}\label{eq:dw_joint_pricing_obj}
-\frac{1}{L}\sum_g n_g\sum_{r=1}^{R_g}u(g,r)\widehat d_{g,r}
--\sum_v\alpha_v y_v-\gamma_z
--\frac{\mu}{2}\sum_{\{u,v\}\in E}w_{u,v}\beta_{uv}.
-\end{equation}
-Together with \eqref{eq:dw_threshold}--\eqref{eq:dw_mass}, program capacities and the membership constraints above, this is an exact pricing formulation by Proposition 7. It does not require any simultaneous partition of the complement.
+and is created only when $\mu$ can be nonzero or $W = W^{\partial}$. An edge
+with exactly one candidate endpoint needs no variable: it is cut precisely when
+that endpoint joins.
 
-For completeness, each nonlinear expression has a bounded binary linearization. If $a,b\in[0,M]$, impose $h=\min(a,b)$ using a binary $\chi$ and
+\noindent\textbf{Access, with exactly one zone.}
+The zoning enters a welfare block only through the access indicators, and with
+a single zone
+\begin{equation}\label{eq:dw_pricing_access}
+a_{i,s} \;=\; y_{v(i)}\, y_{l(s)}, \qquad
+a_{i,s}\leq y_{v(i)}, \quad a_{i,s}\leq y_{l(s)}, \quad
+a_{i,s}\geq y_{v(i)}+y_{l(s)}-1 ,
+\end{equation}
+one variable and three rows per distinct vertex pair; if $v(i) = l(s)$ then
+$a_{i,s} = y_{v(i)}$. This is the structural saving relative to a
+whole-district master, which needs one conjunction variable per label plus the
+row $\sum_z a^{z}_{i,s} \le 1$ to reify the disjunction over labels
+\eqref{saa:master_access}. It can be pushed further.
+
+\noindent\textbf{Proposition 18 (Single-zone access elimination).}
+\textit{Suppose the access variables of a welfare block appear only (a) as upper
+bounds $D \leq a_{i,s}$ on non-negative quantities and (b) on the right-hand
+side of rows $\Lambda \geq \theta\, a_{i,s}$ with $\theta \geq 0$ and
+$\Lambda \geq 0$. Replacing (a) by the pair $D \leq y_{v(i)}$,
+$D \leq y_{l(s)}$ and (b) by
+$\Lambda \geq \theta\,(y_{v(i)} + y_{l(s)} - 1)$ leaves the feasible set
+unchanged at every integral $y$, and eliminates every access variable.}
+
+\textit{Proof.} Fix integral $y$. If $y_{v(i)} = y_{l(s)} = 1$ then
+$a_{i,s} = 1$, and both substitutions reproduce the original row exactly, since
+$\min\{y_{v(i)}, y_{l(s)}\} = 1$ and $y_{v(i)} + y_{l(s)} - 1 = 1$. Otherwise
+$a_{i,s} = 0$; the original (a) forces $D = 0$, which the pair does too because
+$\min\{y_{v(i)}, y_{l(s)}\} = 0$, and the original (b) reads $\Lambda \geq 0$,
+which is implied since $y_{v(i)} + y_{l(s)} - 1 \leq 0 \leq \Lambda$.
+$\blacksquare$
+
+The sampled-matching block below uses access in exactly those two ways ---
+\eqref{eq:dw_f34} is (a), and \eqref{eq:dw_f6} rearranges to
+$\pi_{i,s} - z_{i,s} + 1 \geq a_{i,s}$ with a non-negative left-hand side while
+\eqref{eq:dw_s2} is (b) outright --- so all of its access variables can be
+eliminated. The implementation nonetheless keeps them, because with a
+constraint-programming backend the reification \eqref{eq:dw_pricing_access}
+propagates in both directions where the substituted form does not, and the
+number of distinct vertex pairs is small. Proposition 18 is what says those
+variables are a convenience rather than a requirement.
+
+The MID block is different, and the difference is instructive.
+\eqref{eq:dw_effective} does not bound the effective rejected mass; it
+\emph{selects} between two values, $\widehat t$ and $L$, and the selecting row
+$\widehat e_{g,r} \geq L(1 - a_{g,s})$ becomes over-restrictive under the
+substitution --- at $y_{v(g)} = y_{l(s)} = 0$ it would read
+$\widehat e_{g,r} \geq 2L$. So the conjunction has to be represented there, and
+\eqref{eq:dw_pricing_access} is not optional for the finite-grid block.
+
+\noindent\textbf{The MID block.} With $a_{g,s}$ as above, impose
+\eqref{eq:dw_threshold}--\eqref{eq:dw_mass} and, for each program,
+\begin{equation}\label{eq:dw_mid_capacity}
+\sum_{g}\sum_{r : s(g,r)=s} n_g \widehat d_{g,r} \;\leq\; L\, q_s\, y_{l(s)} .
+\end{equation}
+The right-hand side is the single-zone strengthening of the capacity row in
+\eqref{eq:dw_zone_value}: a program outside the zone seats nobody, so it is
+valid, and it is far stronger than $\le L q_s$ in the relaxation. The nonlinear
+operators have exact bounded linearizations --- for $a, b \in [0,M]$,
+$h = \min(a,b)$ is
 \begin{equation}\label{eq:dw_min_linearization}
 0\leq h,\quad h\leq a,\quad h\leq b,\quad
-h\geq a-M\chi,\quad h\geq b-M(1-\chi).
+h\geq a-M\chi,\quad h\geq b-M(1-\chi)
 \end{equation}
-If $a\in[-M,M]$, impose $h=\max(a,0)$ using
+with $\chi$ binary, and $h = \max(a, 0)$ for $a \in [-M, M]$ is
 \begin{equation}\label{eq:dw_max_linearization}
 h\geq a,\quad h\geq0,\quad
-h\leq a+M(1-\chi),\quad h\leq M\chi.
+h\leq a+M(1-\chi),\quad h\leq M\chi ,
 \end{equation}
-Use $M=\overline p_s$ for the threshold operations and $M=L$ for the remaining-mass recurrence. Finally, \eqref{eq:dw_effective} is equivalent to
+using $M = \overline p_s$ for the threshold and $M = L$ for the recurrence ---
+and \eqref{eq:dw_effective} is equivalent to
 \begin{equation}\label{eq:dw_effective_linearization}
 \begin{aligned}
 0\leq\widehat e_{g,r}&\leq L, &
@@ -1330,46 +1624,636 @@ Use $M=\overline p_s$ for the threshold operations and $M=L$ for the remaining-m
 \widehat e_{g,r}&\leq\widehat t_{s(g,r),\rho(g,r)}+L(1-a_{g,s(g,r)}).
 \end{aligned}
 \end{equation}
-Cutoff, threshold and mass variables are integer; flow variables may be continuous. These formulations retain every rank of every preference list.
+A constraint-programming backend needs none of \eqref{eq:dw_min_linearization}
+or \eqref{eq:dw_max_linearization}: $\min$ and $\max$ are primitive
+constraints there and \eqref{eq:dw_effective_linearization} is a conditional
+equality. This is the reason the implementation prices with CP-SAT rather than a
+mixed-integer solver --- the recurrence \eqref{eq:dw_recurrence} is the
+expensive half of the model, roughly $24{,}000$ auxiliary binaries on
+$\text{Block}_2$ under \eqref{eq:dw_min_linearization}, and it is also the
+weakest part of that relaxation. One valid inequality repairs much of the
+weakness and is worth stating: since
+$\min(a,b) = a + b - \max(a,b) \geq a + b - L$ for $a, b \in [0, L]$,
+\begin{equation}\label{eq:dw_min_valid}
+\widehat R_{g,r} \;\geq\; \widehat R_{g,r-1} + \widehat e_{g,r} - L ,
+\end{equation}
+equivalently $\widehat d_{g,r} \le L - \widehat e_{g,r}$: a type cannot take
+more mass at rank $r$ than its acceptance chance there. It is valid because
+\eqref{eq:dw_threshold} clamps the thresholds to the lottery interval, and it
+changes no integral point.
 
-\noindent\textbf{Proposition 9 (Pricing-Corrected Upper Bound).} \textit{Suppose $\overline r_z$ bounds the maximum reduced welfare in \eqref{eq:dw_pricing} from above for each label. Then}
+\noindent\textbf{The sampled-matching block.} Here the access polytope is
+needed, because $A$ is a variable and the mechanism cannot be run. Let
+$y_{i,s} \in \{0,1\}$ seat applicant $i$ at program $s$, let
+$z_{i,s} \in \{0,1\}$ record that $i$ clears $s$'s realized cutoff, let
+$\pi_{i,s} = \sum_{s' \succeq_i^\psi s} y_{i,s'}$ be the weakly-preferred
+prefix, and let $\Gamma(s)$ be the drawn order restricted to the retained
+applicants. The block is
+\begin{align}
+& \pi_{i,s} \in \{0,1\}, \qquad
+\pi_{i,s} = \pi_{i,\mathrm{prev}(i,s)} + y_{i,s},
+\quad \pi_{i,\mathrm{prev}(i, \text{first})} = 0 \label{eq:dw_f1} \\
+& \sum_{i} y_{i,s} \leq q_s\, y_{l(s)} \label{eq:dw_f2} \\
+& y_{i,s} \leq a_{i,s}, \qquad y_{i,s} \leq z_{i,s} \label{eq:dw_f34} \\
+& z_{i,s} \leq z_{i',s} \qquad \text{for consecutive } (i', i) \text{ in } \Gamma(s) \label{eq:dw_f5} \\
+& \pi_{i,s} \geq a_{i,s} + z_{i,s} - 1 \label{eq:dw_f6} \\
+& \sum_{i'} y_{i',s} \geq q_s\,(1 - z_{i,s}) \label{eq:dw_s1} \\
+& q_s \pi_{i,s} + \sum_{i' \succ_s^\psi i} y_{i',s} \geq q_s\, a_{i,s} \label{eq:dw_s2}
+\end{align}
+with the objective $\sum_{i,s} u_{i,s} y_{i,s}$. Row \eqref{eq:dw_f5} makes
+$\{i : z_{i,s} = 1\}$ a prefix of $\Gamma(s)$, and a prefix of the realized
+priority order \emph{is} a cutoff, so no cutoff variable is needed and nothing
+has to live on a grid --- the contrast with \eqref{eq:dw_threshold} is the whole
+difference between the two blocks. Declaring $\pi$ binary in \eqref{eq:dw_f1}
+states ``at most one seat per applicant'' as a domain rather than a row.
+Row \eqref{eq:dw_f6} is the no-blocking condition of Lemma 1 and
+\eqref{eq:dw_s2} is the aggregated stability row \eqref{saa:rothblum}, which
+implies it and tightens the relaxation; \eqref{eq:dw_s1} is non-wastefulness,
+unnecessary for exactness but worth roughly two orders of magnitude in solve
+time through presolve. Row \eqref{eq:dw_f2} is again the single-zone
+strengthening. The inner sum of \eqref{eq:dw_s2} is carried by one running
+prefix variable per pair, so the family is $O(|\Gamma(s)|)$ rows rather than
+$O(|\Gamma(s)|^2)$.
+
+\noindent\textbf{Proposition 19 (Exactness of the sampled-matching block).}
+\textit{Fix integral $y_v$ with $A = \{v : y_v = 1\} \in \mathcal F_z$. Then the
+integral points of \eqref{eq:dw_f1}--\eqref{eq:dw_s2}, projected onto the
+applicants of $A$ and the programs of $A$, are exactly the stable matchings of
+$\Gamma(a_A)$, and the maximum of $\sum u_{i,s} y_{i,s}$ over them is
+$W^{\psi}(A)$. Retained applicants may be restricted to those with
+$v(i) \in A'$ for any $A' \supseteq A$ without changing this.}
+
+\textit{Proof.} At integral $y_v$ the reification
+\eqref{eq:dw_pricing_access} pins $a_{i,s} = \mathds{1}\{(i,s) \in \Gamma(a_A)\}$.
+Rows \eqref{eq:dw_f1}, \eqref{eq:dw_f2} and the first half of
+\eqref{eq:dw_f34} then make $y$ a matching of $\Gamma(a_A)$ within capacity.
+
+\emph{Feasible implies stable.} Suppose $(i,s) \in \Gamma(a_A)$ blocked $y$.
+By Lemma 1, $D(T^\psi(i,s)) = 0$, i.e.\ $\pi_{i,s} = 0$, and
+$D(S^\psi(s,i)) \leq q_s - 1$. Since $\pi_{i,s} = 0$ we have $y_{i,s} = 0$, so
+$\sum_{i' \succ_s^\psi i} y_{i',s} = D(S^\psi(s,i)) \leq q_s - 1$, and
+\eqref{eq:dw_s2} at $a_{i,s} = 1$ demands $q_s$ --- a contradiction. (Without
+\eqref{eq:dw_s2} the same conclusion follows from \eqref{eq:dw_f34}--\eqref{eq:dw_s1}:
+$\pi_{i,s} = 0$ forces $z_{i,s} = 0$ through \eqref{eq:dw_f6}, then
+\eqref{eq:dw_s1} makes $s$ full, and the prefix structure \eqref{eq:dw_f5}
+together with \eqref{eq:dw_f34} puts all $q_s$ admits weakly above $i$,
+contradicting $D(S^\psi(s,i)) \leq q_s - 1$.)
+
+\emph{Stable implies feasible.} Let $D$ be a stable matching of $\Gamma(a_A)$
+and set $z_{i,s} = 1$ exactly when $i$ is weakly above $s$'s realized cutoff,
+meaning $s$'s worst admit if $s$ is full and the bottom of $\Gamma(s)$
+otherwise. Then \eqref{eq:dw_f5} holds by construction and \eqref{eq:dw_f34}
+because an admit is weakly above the worst admit. For \eqref{eq:dw_f6}, suppose
+$a_{i,s} = z_{i,s} = 1$ and $\pi_{i,s} = 0$: then $i$ has access, receives
+nothing weakly preferred to $s$, and either $s$ has a free seat or $s$ admitted
+someone no better than $i$ --- so $(i,s)$ blocks, contradiction. For
+\eqref{eq:dw_s1}, $z_{i,s} = 0$ places $i$ strictly below the cutoff, which by
+construction happens only when $s$ is full. For \eqref{eq:dw_s2}, if
+$a_{i,s} = 1$ and $\pi_{i,s} = 0$ then non-blocking forces $s$ full with every
+admit strictly preferred to $i$, so the inner sum is $q_s$.
+
+The claimed maximum is then \eqref{eq:dw_sampled_value}. For the last sentence,
+an applicant with $v(i) \notin A$ has $a_{i,s} = 0$ for every $s$, so
+\eqref{eq:dw_f34} forces $y_{i,\cdot} = 0$ and \eqref{eq:dw_f6} and
+\eqref{eq:dw_s2} are vacuous; their $z_{i,s}$ is unconstrained except through
+\eqref{eq:dw_f5}, where an absent variable and a free variable impose the same
+thing --- nothing. $\blacksquare$
+
+The joint pricing problem is therefore \eqref{eq:dw_pricing} maximized over the
+memberships together with the chosen welfare block:
+\begin{equation}\label{eq:dw_joint_pricing_obj}
+\max \quad W\big(\{v : y_v = 1\}\big)
+-\sum_v\alpha_v y_v-\gamma_z
+-\frac{\mu}{2}\sum_{\{u,v\}\in E}w_{u,v}\beta_{uv} ,
+\end{equation}
+exact by Proposition 7 for $W^{\mathrm{MID}}_L$ and by Proposition 19 for
+$W^{\psi}$. It requires no simultaneous partition of the complement, and no
+variable of any other label.
+
+\noindent\textbf{Integer scaling.}
+A constraint-programming backend needs integer objective coefficients, so
+\eqref{eq:dw_joint_pricing_obj} is multiplied by a scale $K$ and rounded. The
+rounding must not destroy the bound of Section~\ref{app:dw_bounds}, and the
+direction is what secures it.
+
+\noindent\textbf{Proposition 20 (Directional rounding gives a valid bound with a
+computable allowance).} \textit{Let $\Upsilon \geq 1$, let $K = L\Upsilon$ for
+$W^{\mathrm{MID}}_L$ and $K = \Upsilon$ for $W^{\psi}$, and form the integer
+objective $\Theta$ from \eqref{eq:dw_joint_pricing_obj} by replacing each
+utility coefficient $u$ by $\lceil \Upsilon u \rceil$, each dual $\alpha_v$ by
+$\lfloor K\alpha_v \rfloor$, and each boundary coefficient
+$\mu w_{u,v}/2$ by $\lfloor K \mu w_{u,v}/2 \rfloor$, dropping the constant
+$\gamma_z$. Then for every $A \in \mathcal F_z$}
+\begin{equation}\label{eq:dw_rounding}
+f_z(A) \;\leq\; \frac{\Theta(A)}{K} - \gamma_z \;\leq\; f_z(A) + \varepsilon_z,
+\qquad
+\varepsilon_z \;=\; \frac{m_z + |V_z| + |E_z|}{K},
+\end{equation}
+\textit{where $V_z$ and $E_z$ are the membership and boundary variables of label
+$z$ and $m_z = L|\mathcal G_{z}|$ for $W^{\mathrm{MID}}_L$,
+$m_z = |\mathcal I_{z}|$ for $W^{\psi}$, and $m_z = 0$ for $W^{\partial}$.
+Consequently any upper bound on $\max_A \Theta(A)/K - \gamma_z$ is an upper
+bound on $\max_A f_z(A)$, and if that bound does not exceed $\varepsilon_z$ then
+no $A \in \mathcal F_z$ has $f_z(A) > \varepsilon_z$.}
+
+\textit{Proof.} Each of the three substitutions moves the objective weakly up:
+$\lceil \Upsilon u \rceil \geq \Upsilon u$ multiplies a non-negative mass, and
+$\lfloor K \alpha_v \rfloor \le K\alpha_v$ and
+$\lfloor K\mu w/2 \rfloor \le K\mu w/2$ are \emph{subtracted}. This gives the
+left inequality. For the right, each substitution moves it up by less than one
+scaled unit per term it multiplies. The dual terms contribute at most $|V_z|$
+and the boundary terms at most $|E_z|$, one per variable. For the utility
+terms, the masses of a single MID type sum to at most $L$ by
+\eqref{eq:dw_recurrence}, so that type contributes under $L$; an applicant
+holds at most one seat by \eqref{eq:dw_f1}, so that applicant contributes under
+$1$; and $W^{\partial}$'s coefficients $K w_{u,v}/2$ are integers already.
+Dividing by $K$ gives \eqref{eq:dw_rounding}. The two consequences are
+immediate. $\blacksquare$
+
+The allowance $\varepsilon_z$ is reported, not subtracted: subtracting it would
+break the left inequality of \eqref{eq:dw_rounding} and with it the bound's
+validity, whereas adding $\sum_z \varepsilon_z$ to the incumbent comparison
+turns the search's guarantee into a stated absolute tolerance. On
+$\text{Block}_2$ at $\Upsilon = 10^3$ and $L = 20$ it is a fraction of a unit
+per label against a welfare near $15{,}000$, and it shrinks like $1/\Upsilon$.
+Nothing else about the rounding is trusted: a zone returned by pricing is
+re-tested against \eqref{eq:dw_anchor}--\eqref{eq:dw_local}, re-scored by the
+exact evaluator of Section~\ref{app:dw_value}, and its reduced cost recomputed
+by the master, so a rounding artefact can waste a round but cannot admit a
+column that does not improve.
+
+\subsection{Bounds and the Choice of Dual Point}
+\label{app:dw_bounds}
+
+\noindent\textbf{Proposition 9 (Pricing-Corrected Upper Bound).} \textit{Let
+$(\alpha, \gamma, \mu)$ be \emph{any} vector with $\mu \geq 0$, and suppose
+$\overline r_z$ upper-bounds $\max_{A \in \mathcal F_z} f_z(A)$ at that vector
+for each label, where $f_z$ is \eqref{eq:dw_pricing}. Then}
 \begin{equation}\label{eq:dw_corrected_bound}
 \mathrm{UB}=\sum_v\alpha_v+\sum_z\gamma_z+\mu\overline b
               +\sum_z\max\{0,\overline r_z\}
 \end{equation}
-\textit{is an upper bound on the complete LP and hence on every admissible partition at that branch.}
+\textit{is an upper bound on the complete LP relaxation of
+\eqref{eq:dw_master_obj}--\eqref{eq:dw_master_boundary}, and hence on every
+admissible partition at that branch.}
 
-\textit{Proof.} Set $\gamma'_z=\gamma_z+\max\{0,\overline r_z\}$. For every $A\in\mathcal F_z$, the reduced-cost bound implies
-$$\sum_{v\in A}\alpha_v+\gamma'_z+\mu b(A)\geq W_L(A).$$
-Thus $(\alpha,\gamma',\mu)$ is feasible for the complete dual, and its objective is \eqref{eq:dw_corrected_bound}. Weak duality proves the claim. $\blacksquare$
+\textit{Proof.} Set $\gamma'_z = \gamma_z + \max\{0, \overline r_z\}$. For every
+$A \in \mathcal F_z$ the reduced-cost bound gives
+$W(A) - \sum_{v \in A}\alpha_v - \gamma_z - \mu b(A) \leq \overline r_z \leq
+\max\{0, \overline r_z\}$, i.e.\
+$\sum_{v\in A}\alpha_v+\gamma'_z+\mu b(A)\geq W(A)$, which is
+\eqref{eq:dw_dual_row}. With $\mu \geq 0$ the triple
+$(\alpha, \gamma', \mu)$ is therefore feasible for the complete dual, and its
+objective is \eqref{eq:dw_corrected_bound}. Weak duality proves the claim.
+$\blacksquare$
 
-The bound remains valid before column generation has converged, provided every $\overline r_z$ is a global upper bound on its pricing problem. In particular, finding no improving zone by a local search supplies no such certificate.
+The statement deliberately does not require $(\alpha, \gamma, \mu)$ to be an
+optimal dual solution of the restricted master, or a dual solution at all
+beyond $\mu \geq 0$. That freedom is what the implementation spends, and the
+reason is worth recording because it was the binding constraint on this method.
+
+The master is a set-partitioning LP and is therefore massively degenerate. An
+earlier build solved it with dual simplex, pinned so that a given column pool
+always produced the same duals, and the consequence was measurable: on
+$\text{BlockGroup}_0$ with a $404$-column pool, three to six columns of
+strictly positive reduced cost entered on every round and the LP value stayed at
+$11{,}142.80$ for eight consecutive rounds. A positive reduced cost that does
+not move the objective is a degenerate pivot --- the entering column's step
+length is zero. Only $132$ of $579$ cover rows carried a nonzero dual, so
+\eqref{eq:dw_pricing} was close to maximizing raw welfare, and six labels priced
+independently under an unanchored family returned six zones of $340$ to $392$
+vertices out of $579$, no six of which can tile anything.
+
+Two standard remedies apply, and Proposition 9 is what makes both free.
+\emph{Interior duals}: solve the master by a barrier method and stop at the
+barrier iterate rather than crossing over to a vertex, which spreads the prices
+across the cover rows instead of concentrating them on a basis.
+\emph{Dual smoothing}: price at
+$\widetilde\alpha^{(t)} = a\,\alpha^{(t)} + (1-a)\,\widetilde\alpha^{(t-1)}$ for
+$a \in (0,1]$, the Wentges rule, and likewise for $\gamma$ and $\mu$; a convex
+combination of non-negative $\mu$'s is non-negative, so Proposition 9 still
+applies, and the bound is simply evaluated at the smoothed point. A third
+remedy is structural and is Section~\ref{app:dw_families}'s: an anchored family
+cannot return two thirds of the district, so a priced zone is at least the right
+size to be part of a tiling.
+
+\noindent\textbf{Where the method actually stalls.}
+None of the three is sufficient, and the reason is worth recording because it is
+not the dual degeneracy those remedies were chosen for. On a district-sized
+instance ($|V| = 576$, six anchors, $4{,}032$ applicants, $|\Gamma| = 12{,}096$)
+seeded with one admissible partition, all four combinations of
+$\{\text{vertex},\ \text{interior}\} \times \{a = 1,\ a = 0.5\}$ admitted
+$400$ to $424$ columns of strictly positive reduced cost in ten rounds and left
+the restricted LP at the seed value $13{,}161.9302$ to four decimal places.
+Deleting the $k$ seed columns from the resulting $413$-column pool and re-solving
+the integer master returns \textsc{infeasible}: the pool contains exactly one
+tiling.
+
+The obstruction is a dimension count rather than a choice of basis. The
+restricted LP carries $|V| + k$ equality rows --- $582$ here --- against the
+number of columns generated, so while the pool is small relative to $|V|$ the
+system is over-determined and its solution set is essentially the tilings it
+happens to contain. Pricing each label independently maximizes
+\eqref{eq:dw_pricing} with no reference to the other labels, so $k$ priced zones
+are under no pressure to be mutually complementary, and a pool can grow by
+hundreds of individually improving zones without acquiring a second tiling.
+What a pool generated this way delivers is recombination of \emph{seeded}
+partitions through a set-partitioning master, which is a useful primal heuristic
+and not column generation. Note that this is a statement about the pool and not
+about the cost of pricing, which anchoring and Section~\ref{app:dw_pricing}'s
+constraint-programming formulation reduced by roughly two orders of magnitude.
+
+The diagnosis names its own repair: what is needed is a source of columns that
+are mutually \emph{completable} by construction, and pricing cannot be it,
+because the per-label question is exactly the question Proposition 9 requires
+and it makes no reference to the other labels. Section~\ref{app:dw_redraw}
+supplies such a source --- optimal re-partitions of two zones of an incumbent
+partition, every feasible solution of which is a complete tiling --- and
+Proposition 25 there records why adding it preserves both Proposition 9 and
+Theorem 3 while replacing pricing with it would destroy both.
+
+Two further repairs suggest themselves, neither implemented here. The first is
+an \emph{elastic} master: replace \eqref{eq:dw_master_cover} by
+$\sum \lambda + d_v - e_v = 1$ with $d, e \geq 0$ penalized at a large $M$,
+which is Phase I extended to Phase II. That makes the LP full-dimensional, so a
+column can enter with a positive step length and the duals become informative;
+it remains a relaxation of the exact master, so Proposition 9 survives, and a
+zero-slack optimum is still a partition. The second is pricing that knows its
+columns must tile: a cardinality or student-mass window per label, read off the
+incumbent, imposed on the column-generating pass while the bound-producing pass
+still ranges over all of $\mathcal F_z$. Until one of them is in place the
+\emph{bound} reported by this appendix's algorithm does not improve on the
+a-priori constants of Appendix~\ref{app:welfare_bounds}, whatever the
+incumbent does.
+
+One caveat on smoothing is load-bearing. If pricing at the smoothed point finds
+no column improving at the \emph{true} duals --- a \emph{mis-priced} round --- it
+must be repeated at $\alpha^{(t)}$ before any conclusion is drawn, and the
+smoothing centre reset there. Otherwise a smoothed point reports a convergence
+the restricted LP does not have, and \eqref{eq:dw_corrected_bound} evaluated at
+it is needlessly weak. Note also that Proposition 9 remains valid in Phase I
+below: a deficit artificial has coefficient $+1$ in its own row, so raising a
+convexity dual preserves its dual inequality, and a convex combination of two
+Phase-I dual points still satisfies those inequalities --- which is why the
+smoothing centre is reset when the phase changes.
+
+\noindent\textbf{Phase I.} Seeding is not required for correctness. If the
+restricted pool cannot cover the graph, add non-negative deficit-only
+artificials to \eqref{eq:dw_master_cover} and \eqref{eq:dw_master_label} and
+maximize minus their sum. An empty pool is Phase-I feasible, objective zero is
+equivalent to feasibility of the original master, and Phase-I pricing uses zero
+column cost with the same geometry and branch restrictions. Artificials never
+appear in a returned partition, and a strictly negative certified Phase-I value
+of \eqref{eq:dw_corrected_bound} proves the branch infeasible. Time-limited or
+failed pricing is never read as proof that no improving column exists.
+
+\noindent\textbf{Seeding.} Two sources supply initial columns, and they do
+different jobs. A single feasibility solve of the base model
+$\Omega(G, C, k, \delta)$ produces an admissible partition, hence $k$ columns
+that make the master feasible immediately. ReCom then samples from that
+partition and each sampled zone is \emph{rejection-filtered} against
+$\mathcal F_z$. The filter is per zone rather than per partition, which is what
+makes it worth running: a recombination step rewrites two zones and leaves the
+rest of an admissible partition alone, and ReCom's own cut candidates already
+respect $\mathcal C(\cdot)$, hence centroid anchoring, so what its zones
+typically fail is \eqref{eq:dw_support_row}. The filter is a set-membership test
+and runs before the welfare evaluator, so a rejected sample costs almost
+nothing. Neither source needs coverage of the feasible partition space or a
+mixing assumption; both are finite and bounded independently of the exact
+search.
+
+\subsection{Redrawing Two Zones at Once}
+\label{app:dw_redraw}
+The diagnosis at the end of Section~\ref{app:dw_bounds} identifies the pool,
+not the prices, as the obstruction, and it also says what a repair has to do:
+produce columns that are \emph{mutually completable} rather than individually
+attractive. This section gives one, and states precisely why it can be run
+alongside the pricing of Section~\ref{app:dw_pricing} without disturbing
+Proposition 9 or Theorem 3 --- and why it must not be run instead of it.
+
+Fix an admissible partition $\mathcal A = (A_0, \dots, A_{k-1})$, so
+$A_z \in \mathcal F_z$ for every $z$ and $\bigsqcup_z A_z = V$. Fix two labels
+$a \neq b$, write $U = A_a \cup A_b$ for their joint \emph{territory}, and let
+\begin{equation}\label{eq:dw_pair_splits}
+\mathcal S_{ab}(\mathcal A) \;=\;
+\big\{ (B_a, B_b) \;:\; B_a \in \mathcal F_a,\ B_b \in \mathcal F_b,\
+B_a \sqcup B_b = U \big\} .
+\end{equation}
+The incumbent pair $(A_a, A_b)$ belongs to $\mathcal S_{ab}(\mathcal A)$, so the
+set is never empty. Write $\delta(A)$ for the edges with exactly one endpoint in
+$A$, $E_U(B_a, B_b)$ for the edges of $G[U]$ with one endpoint in each part, and
+$w(\cdot)$ for total edge weight, so that $b(A) = \tfrac12 w(\delta(A))$.
+
+\noindent\textbf{Proposition 21 (Every pair split is a tiling).} \textit{Let
+$(B_a, B_b) \in \mathcal S_{ab}(\mathcal A)$ and let $\mathcal A'$ be obtained
+from $\mathcal A$ by replacing $A_a$ by $B_a$ and $A_b$ by $B_b$. Then
+$\mathcal A'$ is an admissible partition of $V$, its objective exceeds
+$\mathcal A$'s by exactly
+$[W(B_a) + W(B_b)] - [W(A_a) + W(A_b)]$, and}
+\begin{equation}\label{eq:dw_pair_boundary}
+b(B_a) + b(B_b) \;=\; \tfrac12\, w(\delta(U)) \;+\; w\big(E_U(B_a, B_b)\big) .
+\end{equation}
+\textit{Consequently the district cap \eqref{eq:dw_master_boundary} holds at
+$\mathcal A'$ if and only if}
+\begin{equation}\label{eq:dw_pair_cap}
+b(B_a) + b(B_b) \;\leq\; \overline b - \sum_{z \notin \{a, b\}} b(A_z) ,
+\end{equation}
+\textit{an inequality in the pair alone.}
+
+\textit{Proof.} $B_a \sqcup B_b = U = A_a \sqcup A_b$, so $\mathcal A'$ covers
+$V$ exactly once, and $B_a \in \mathcal F_a$, $B_b \in \mathcal F_b$ by
+\eqref{eq:dw_pair_splits} while the remaining $A_z$ are unchanged; Proposition
+15 then makes $\mathcal A'$ admissible. By Proposition 17 the objective is
+$\sum_z W(\cdot)$ over the parts, and the $k - 2$ untouched parts contribute the
+same value to both, which gives the displayed difference. For
+\eqref{eq:dw_pair_boundary}, an edge of $\delta(B_a)$ either has its other
+endpoint in $B_b$, hence lies in $E_U(B_a, B_b)$, or leaves $U$; the same holds
+for $\delta(B_b)$; each edge of $E_U(B_a, B_b)$ is therefore counted once in
+each of the two perimeters, while each edge of $\delta(U)$ is counted once in
+total, because its endpoint in $U$ lies in exactly one part. Halving gives
+\eqref{eq:dw_pair_boundary}. Finally $\sum_z b$ at $\mathcal A'$ equals
+$\sum_{z \notin \{a,b\}} b(A_z) + b(B_a) + b(B_b)$, so
+\eqref{eq:dw_master_boundary} is \eqref{eq:dw_pair_cap}. $\blacksquare$
+
+Proposition 21 is the whole point. \emph{Every} member of
+$\mathcal S_{ab}(\mathcal A)$ --- not only the optimum, and not only the
+improving ones --- yields two columns that provably complete the $k-2$ columns
+already in the pool into a tiling. A pool seeded with one partition and swept
+over $m$ pair splits therefore admits at least $m+1$ tilings, which is exactly
+the dimension the restricted master was missing. It also shows that the boundary
+budget need not be priced here: the untouched perimeters and the part of the
+pair's perimeter that faces them are constants, so the cap is an exact linear
+row in the pair's own cut indicators.
+
+\noindent\textbf{Proposition 22 (The cover prices cancel).} \textit{Fix any
+$(\alpha, \gamma, \mu)$ with $\mu \geq 0$ and let $f_z$ be
+\eqref{eq:dw_pricing}. For every $(B_a, B_b) \in \mathcal S_{ab}(\mathcal A)$,}
+\begin{equation}\label{eq:dw_pair_reduced}
+f_a(B_a) + f_b(B_b) \;=\;
+\Big[ W(B_a) + W(B_b) - \mu\, w\big(E_U(B_a,B_b)\big) \Big]
+\;-\; \kappa ,
+\end{equation}
+\textit{where $\kappa = \sum_{v \in U}\alpha_v + \gamma_a + \gamma_b
++ \tfrac{\mu}{2} w(\delta(U))$ does not depend on $(B_a, B_b)$. In particular,
+if $\mu = 0$ then maximizing the pair's summed welfare over
+$\mathcal S_{ab}(\mathcal A)$ maximizes its summed reduced cost, and a split
+whose summed welfare strictly exceeds the incumbent pair's supplies a column of
+strictly positive reduced cost.}
+
+\textit{Proof.} Summing \eqref{eq:dw_pricing} over the two labels,
+$\sum_{v \in B_a}\alpha_v + \sum_{v \in B_b}\alpha_v = \sum_{v \in U}\alpha_v$
+because $B_a \sqcup B_b = U$, and $\gamma_a + \gamma_b$ is constant; the
+$\mu$ term is $-\mu[b(B_a) + b(B_b)]$, which \eqref{eq:dw_pair_boundary}
+rewrites as $-\tfrac{\mu}{2} w(\delta(U)) - \mu\, w(E_U(B_a,B_b))$. Collecting
+the constants gives \eqref{eq:dw_pair_reduced}. For the last claim, if
+$f_a(B_a) + f_b(B_b) > f_a(A_a) + f_b(A_b)$ and the incumbent columns are in the
+pool with non-positive reduced cost, at least one of the two new columns has
+$f > 0$. $\blacksquare$
+
+So the redraw needs no dual solution, no restricted master and no LP: with no
+boundary row it maximizes the summed reduced cost at \emph{every} dual point
+simultaneously, and with one it solves the primal-exact problem, maximizing
+summed welfare subject to \eqref{eq:dw_pair_cap}, which is tighter than pricing
+$\mu$ and keeps every returned split admissible for
+\eqref{eq:dw_master_boundary}. It is therefore both an exact local search on the
+map and a reduced-cost-maximizing column generator, and it can be run before the
+first master solve.
+
+\noindent\textbf{Proposition 23 (Territory invariance).} \textit{If
+$\mathcal A'$ arises from $\mathcal A$ by an $(a,b)$-redraw then
+$\mathcal S_{ab}(\mathcal A') = \mathcal S_{ab}(\mathcal A)$. Hence a pair
+solved to optimality remains optimal until some other pair alters $A_a$ or
+$A_b$; and if no pair admits an improvement, $\mathcal A$ is a local maximum of
+the objective over the two-zone neighbourhood
+$\bigcup_{a \neq b}\mathcal S_{ab}(\mathcal A)$.}
+
+\textit{Proof.} $\mathcal S_{ab}(\mathcal A)$ depends on $\mathcal A$ only
+through $U = A_a \cup A_b$, and every element of it has $B_a \cup B_b = U$, so
+the territory --- and with it the whole set --- is unchanged. $\blacksquare$
+
+Proposition 23 is what makes a sweep cheap. Memoizing solved pairs on
+$(a, b, U)$ needs no invalidation rule: an entry expires precisely when another
+pair moves a vertex across $A_a$ or $A_b$, because that changes $U$.
+
+\noindent\textbf{Proposition 24 (Non-adjacent pairs are inert).} \textit{If no
+edge of $G$ joins $A_a$ to $A_b$ then
+$\mathcal S_{ab}(\mathcal A) = \{(A_a, A_b)\}$.}
+
+\textit{Proof.} Let $(B_a, B_b) \in \mathcal S_{ab}(\mathcal A)$ and suppose
+$A_a \cap B_b \neq \emptyset$. Let $d(\cdot)$ denote distance to label $b$'s
+school point and take $v \in A_a \cap B_b$ minimizing $d$. Since $c_b \in A_b$
+and $A_a \cap A_b = \emptyset$ we have $v \neq c_b$, so
+\eqref{eq:dw_support_row} supplies $u \in B_b$ adjacent to $v$ with
+$d(u) < d(v)$. As $B_b \subseteq U$ and no edge joins $A_a$ to $A_b$, the
+neighbour $u$ lies in $A_a$, hence in $A_a \cap B_b$ with $d(u) < d(v)$,
+contradicting minimality. So $A_a \subseteq B_a$, and symmetrically
+$A_b \subseteq B_b$; since both pairs partition $U$, equality holds.
+$\blacksquare$
+
+\noindent\textbf{The pair model.} Introduce
+$x_{v, \zeta} = \mathds{1}\{v \in B_\zeta\}$ for $v \in U$ and
+$\zeta \in \{a, b\}$ with $\zeta \in \mathcal C(v)$, and impose
+\begin{equation}\label{eq:dw_pair_exactly_one}
+\sum_{\zeta \in \{a,b\} \cap\, \mathcal C(v)} x_{v,\zeta} \;=\; 1
+\qquad \forall v \in U ,
+\end{equation}
+together with, for each $\zeta$ separately,
+\eqref{eq:dw_anchor}--\eqref{eq:dw_local} restricted to $U$ --- that is
+\eqref{eq:dw_support_clause} with $\text{cn}^{*}(v, \zeta)$ intersected with
+$U$, since $B_\zeta \subseteq U$ --- the cut indicators
+\eqref{eq:dw_edge_linearization} when they are needed, the cap
+\eqref{eq:dw_pair_cap}, and one welfare block per label, taken verbatim from
+Section~\ref{app:dw_pricing}. The objective is
+$\max\, W(B_a) + W(B_b)$. Four remarks on structure:
+
+\begin{enumerate}
+\item Row \eqref{eq:dw_pair_exactly_one} is the \emph{only} coupling between the
+two labels, and it is what turns two zone problems into a re-partition. Where
+both labels are candidates it has two terms, so $x_{v,b} = 1 - x_{v,a}$ and one
+variable per vertex is eliminated at presolve: the solver sees the same
+one-Boolean-per-vertex zoning model as \eqref{eq:dw_support_clause} does at a
+single label. Where only one label is a candidate it fixes the vertex.
+\item By Proposition 21 the model is always feasible --- the incumbent split
+satisfies it --- so it is supplied as a warm start and an interrupted solve
+still returns a tiling.
+\item The welfare blocks are per label in both settings, so their structure is
+unchanged. In particular the sampled-matching block
+\eqref{eq:dw_f1}--\eqref{eq:dw_s2} remains Boolean apart from the per-program
+seat counts and the running \eqref{eq:dw_s2} prefixes, and Proposition 18's
+elimination still applies to it label by label; the finite-grid block retains
+its small-domain cutoffs, thresholds and mass recurrence and, as before, needs
+the access conjunction.
+\item The one structural cost of two labels is that access
+\eqref{eq:dw_pricing_access} is reified once per label rather than once, which
+is the midpoint between the single-zone form and the $k$-joint form of
+\eqref{saa:master_access}. Against it, $U$ is two zones' worth of vertices
+rather than a label's whole candidate set.
+\end{enumerate}
+
+\noindent\textbf{Proposition 25 (The redraw is additive, and cannot replace
+pricing).} \textit{(i) Enlarging the restricted pool by any columns whose
+memberships lie in their own families leaves \eqref{eq:dw_corrected_bound} valid
+and every step of Theorem 3 intact. (ii) Let
+$\mathcal R_a = \{B_a : (B_a, B_b) \in \mathcal S_{ab}(\mathcal A)\}$. Then
+$\mathcal R_a \subseteq \mathcal F_a$, and the inclusion is proper whenever some
+member of $\mathcal F_a$ meets $V \setminus U$. Hence
+$\max_{A \in \mathcal R_a} f_a(A)$ is in general a strict \emph{lower} bound on
+$\max_{A \in \mathcal F_a} f_a(A)$ and does not satisfy the hypothesis of
+Proposition 9.}
+
+\textit{Proof.} (i) Proposition 9 is a statement about the \emph{complete} dual
+of \eqref{eq:dw_master_obj}--\eqref{eq:dw_master_boundary} and its hypothesis
+mentions no pool, so it is insensitive to which columns have been generated;
+enlarging the pool enlarges the restricted primal's feasible set, so its LP
+value can only move toward the complete LP value. Step 1 of Theorem 3 requires
+only that a round which adds columns adds \emph{new} members of a finite set,
+which deduplication and membership in $\mathcal F_z$ guarantee irrespective of
+the source, and steps 2--4 read only the branch structure and the certified
+bound. (ii) $\mathcal R_a \subseteq \mathcal F_a$ is immediate from
+\eqref{eq:dw_pair_splits}. Every $A \in \mathcal R_a$ satisfies $A \subseteq U$,
+so any $A \in \mathcal F_a$ with $A \not\subseteq U$ witnesses properness, and
+the maximum over a subset cannot exceed the maximum over the whole.
+$\blacksquare$
+
+Part (ii) is the reason the redraw is an \emph{addition} to the algorithm rather
+than a replacement for pricing. A node is closed only when every label's
+pricing problem is solved globally over all of $\mathcal F_z$ and returns
+nothing improving; a redraw contributes columns and incumbents and never a node
+bound, so a round in which only the redraw fires re-solves the master and
+returns to pricing. Were the redraw ever substituted for pricing, both
+Proposition 9's bound and Theorem 3's guarantee would be lost, and what remained
+would be a good heuristic with no certificate.
+
+\noindent\textbf{Measured on $\text{Block}_2$.} Take the district instance with
+$\texttt{max\_distance} = 3.1$, $k = 6$ centroids from the \texttt{6-zone-9}
+configuration, $\texttt{program\_population} = \texttt{All}$ and citywide
+programs removed as this appendix requires: $|V| = 501$ geographic units,
+$1{,}340$ edges and $4{,}154$ applicants, giving $2{,}309$ compressed MID types
+over $105$ programs and $4{,}154$ individual applicants over $100$ programs.
+Anchoring leaves candidate sets of $147, 147, 253, 309, 248$ and $170$ units,
+and $10$ of the $15$ label pairs are graph-adjacent at the seed, so
+Proposition 24 discards a third of the neighbourhood before any model is built.
+The seed is a single \texttt{cp\_bool} feasibility solve --- the
+\emph{feasibility} hint, which optimizes nothing --- and its zones are
+correspondingly lopsided, at $62, 65, 67, 81, 104$ and $122$ units. ReCom
+sampling is switched off so that the comparison isolates the construction of
+this section. Six workers, $600\,\mathrm{s}$.
+
+\begin{center}
+\begin{tabular}{lrrrrr}
+\hline
+& hint & no redraw & redraw & $\overline W^{\mathrm{TP}}$ & first-choice \\
+\hline
+$W^{\text{MID}}$ & $10{,}307.27$ & $10{,}307.27$ & $11{,}822.46$ & $15{,}956.50$ & $16{,}830.95$ \\
+$W^{\text{SM}}$  & $10{,}344.55$ & $10{,}344.55$ & $12{,}105.20$ & $15{,}180.98$ & $15{,}983.65$ \\
+\hline
+\end{tabular}
+\end{center}
+
+The redraw is worth $+14.70\%$ under $W^{\text{MID}}$ and $+17.02\%$ under
+$W^{\text{SM}}$ over the seeded partition. Without it the improvement is
+$+0.000\%$, and that figure is exact rather than rounded: both objectives ran
+$21$ column-generation rounds and generated $542$ to $555$ columns of strictly
+positive reduced cost inside the budget, and the restricted LP sat at the hint
+value to four decimal places on every single round, with the resulting pool
+still admitting exactly one tiling. The diagnosis of
+Section~\ref{app:dw_bounds} is therefore not an artefact of the synthetic
+instance it was found on; it is what the method does on the district. With the
+redraw enabled the same pool admits more than twenty-five tilings and the
+restricted LP climbs through a sequence of distinct values ---
+$10{,}307.27 \to 11{,}579.37 \to 11{,}624.64 \to 11{,}820.40 \to 11{,}822.46$
+under $W^{\text{MID}}$ --- rather than stepping once. Extending the budget to
+$1{,}800\,\mathrm{s}$ reaches $12{,}050.60$, or $+16.91\%$, over $107$ pair
+solves and $28$ improvements, so the construction is budget-limited rather than
+neighbourhood-limited at ten minutes. That partition was re-validated
+independently of the search: it covers $V$ exactly once, each of its six zones
+satisfies $\mathcal F_z$ on its own, and a fresh evaluation of the welfare
+oracle on each zone reproduces the reported value to $10^{-6}$. Its zone sizes
+are $65, 65, 77, 90, 94$ and $110$, against the hint's $62$ to $122$: the gain
+is the rebalancing of an unbalanced feasibility solve, which is exactly what
+program capacity rewards.
+
+\noindent\textbf{Which side of the gap converges.} The two sides behave
+completely differently and the distinction is the honest summary of this
+construction. The \emph{primal} side converges, and on the district it is still
+converging when the budget expires. The \emph{bound} side does not move at all:
+\eqref{eq:dw_corrected_bound} evaluates to the first-choice constant
+$\overline W^{\mathrm{FC}}$ of Appendix~\ref{app:welfare_bounds} in every arm,
+with the redraw and without it, at every budget tried. The mechanism is visible
+in the arithmetic. By LP duality the first two terms of
+\eqref{eq:dw_corrected_bound} are the restricted master's own objective, so for
+the bound to have stayed at $16{,}830.95$ while the restricted LP sat at
+$12{,}050.60$, the pricing residuals must be summing to at least $4{,}780$ ---
+close to $800$ per label. The entire headroom to the transportation bound is
+$15{,}956.50 - 12{,}050.60 = 3{,}906$. Six labels are each separately reporting
+more available improvement than provably exists in total, and no six of the
+zones they return can occupy one tiling. That is not a defect in the pricing
+problem, which answers the question Proposition 9 asks it and answers it to
+proved optimality; it is the price of asking a per-label question. It is also
+why the reported gap of roughly a quarter is mostly slack in the certificate:
+measured against $\overline W^{\mathrm{TP}}$ the same incumbents are within
+$24.5\%$ and $20.3\%$, and against the zoned transportation bound
+$\widehat W^{\mathrm{ZT}}_{\mathrm{cn}}$ of Appendix~\ref{app:zoned_transport},
+which on this instance at this $\texttt{max\_distance}$ cuts a further $1{,}134$
+to $1{,}241$ units off $\overline W^{\mathrm{TP}}$, closer still.
+
+This is Proposition 25(ii) seen from the other direction. The redraw supplies
+the tilings the pool was missing, which is a statement about the primal, and by
+construction it cannot drive the dual objective up, because its optimum ranges
+over a subset of one label's family. What remains open is therefore exactly the
+dual side, and it admits two quite different attacks: repair the decomposition's
+own duals, via the elastic master or completability-targeted pricing described
+in Section~\ref{app:dw_bounds}; or replace the constant that
+\eqref{eq:dw_corrected_bound} falls back on with one of the zoning-aware bounds
+this paper already develops, which requires nothing of the decomposition at
+all. On a synthetic grid ($|V| = 324$, $k = 6$) with capacity tightened to
+$80\%$ of the applicants needing seats the same comparison gives $+3.40\%$ and
+$+0.58\%$ against $+0.000\%$; the district gains are larger because a
+feasibility hint leaves far more on the table than the nearest-centroid tiling
+that grid was seeded with. All figures are single runs and vary between them,
+since a constraint solver using more than one search worker is
+nondeterministic.
 
 \subsection{Branching and Finite Convergence}
-Exact column generation solves the master LP, whose optimum may still be fractional. Define the geographic assignment marginals
+\label{app:dw_convergence}
+Exact column generation solves the master LP, whose optimum may still be
+fractional. Define the geographic assignment marginals
 \begin{equation}\label{eq:dw_marginal}
 \overline x_{v,z}=\sum_{\substack{A\in\mathcal F'_z\\v\in A}}\lambda_{z,A}.
 \end{equation}
-If $0<\overline x_{v,z}<1$, branch into $x_{v,z}=0$ and $x_{v,z}=1$. In the first child, exclude $v$ from every column of label $z$. In the second, require $v$ in every column of label $z$ and exclude it from every other label. Apply each decision both to the stored pool and to all future pricing problems. These operations define branch-specific subfamilies of $\mathcal F_z$ without adding any cross-zone constraint to the pricing problem.
-
-ReCom supplies an optional initialization: sample feasible partitions, retain their constituent zones, and evaluate each distinct labelled membership once. Accepted partitions need not improve the current welfare to contribute useful columns. The column pool can combine zones from different samples. A finite amount of sampling precedes the exact search; neither coverage of the feasible partition space nor a mixing assumption is required for correctness.
+If $0<\overline x_{v,z}<1$, branch into $x_{v,z}=0$ and $x_{v,z}=1$. In the
+first child, exclude $v$ from every column of label $z$; in the second, require
+$v$ in every column of label $z$ and exclude it from every other label. Apply
+each decision both to the stored pool and to all future pricing problems. These
+operations define branch-specific subfamilies of $\mathcal F_z$ without adding
+any cross-zone constraint to the pricing problem.
 
 \begin{algorithm}[t]
-\caption{Zone-Column Branch-and-Price for Finite-Grid MID}
+\caption{Anchored Zone-Column Branch-and-Price}
 \label{alg:dw_mid}
 \begin{algorithmic}[1]
-\Require Graph $G$, families $\mathcal F_z$, lottery scale $L$, optional budget $\overline b$.
-\State Seed pools with finitely many feasible ReCom samples, or leave empty.
+\Require Graph $G$, families $\mathcal F_z$, a zone value $W$, optional budget $\overline b$.
+\State Seed the pool with one feasibility solve of $\Omega$, then with rejection-filtered ReCom samples; either may be empty.
+\State Sweep two-zone redraws \eqref{eq:dw_pair_splits} from the seeded partition, retaining every split.
 \State Retain the best sampled partition, if any; initialize the root search node.
 \While{an unexplored node remains}
-    \State Select a node; restrict pools and pricing to its branch decisions.
-    \If{the restricted master is infeasible and the branch's columns are exhausted}
-        \State Discard the node and continue.
+    \State Select a node; restrict pool and pricing to its branch decisions.
+    \State Solve the restricted master; if artificials remain, stay in Phase I.
+    \State Form the dual point: interior duals, smoothed against the previous centre.
+    \State Price every label globally by \eqref{eq:dw_joint_pricing_obj}, in parallel, against one deadline.
+    \If{no column improves at the smoothed point}
+        \State Re-price at the raw duals and move the centre there.
     \EndIf
-    \State Solve the welfare LP; globally price every label using \eqref{eq:dw_pricing}.
-    \State Add positive-reduced-cost columns and repeat until none remain.
+    \State Add every improving column.
+    \If{the restricted master did not improve, or pricing added nothing}
+        \State Sweep two-zone redraws from the incumbent; add every split; contribute no bound.
+    \EndIf
+    \State Repeat from the restricted master until neither source adds a column.
+    \If{Phase I is certified strictly negative}
+        \State Discard the node as infeasible and continue.
+    \EndIf
     \State Optionally improve the incumbent using an integer restricted master.
-    \If{the certified node bound does not exceed incumbent welfare}
+    \If{the certified node bound does not exceed incumbent welfare $+\ \sum_z \varepsilon_z$}
         \State Discard the node.
     \ElsIf{all marginals \eqref{eq:dw_marginal} are integral}
         \State Recover the partition, update the incumbent, and discard the node.
@@ -1381,14 +2265,77 @@ ReCom supplies an optional initialization: sample feasible partitions, retain th
 \end{algorithmic}
 \end{algorithm}
 
-\noindent\textbf{Theorem 3 (Finite Convergence to Optimal MID Welfare).} \textit{Fix a finite graph, a finite lottery scale $L$, and the zone families $\mathcal F_z$. Suppose all restricted LPs and pricing problems are solved globally in exact arithmetic, and generated columns are retained and deduplicated by label and membership. Then Algorithm~\ref{alg:dw_mid} terminates after finitely many steps at a globally optimal finite-grid MID partition, or proves that no feasible partition exists.}
+\noindent\textbf{Theorem 3 (Finite Convergence).} \textit{Fix a finite graph,
+the families $\mathcal F_z$, a zone value $W$ from
+Section~\ref{app:dw_value} --- with a finite lottery scale $L$ in the MID case
+and a fixed seed $\psi$ in the sampled case --- and a scale $\Upsilon$ with
+allowances $\varepsilon_z$ as in Proposition 20. Suppose all restricted LPs and
+pricing problems are solved globally in exact arithmetic and generated columns
+are retained and deduplicated by label and membership. Then
+Algorithm~\ref{alg:dw_mid} terminates after finitely many steps and returns
+either an admissible partition whose value is within $\sum_z \varepsilon_z$ of
+the optimum of \eqref{eq:dw_master_obj}--\eqref{eq:dw_master_binary}, or a proof
+that no admissible partition exists. At $\Upsilon \to \infty$, or with rational
+duals and exact utilities, $\varepsilon_z = 0$ and the returned partition is
+globally optimal.}
 
-\textit{Proof.} Each family contains at most $2^{|V|}-1$ memberships. At an optimal restricted LP solution, a stored column has nonpositive reduced cost. Therefore every strictly positive priced column is new, and each column-generation loop can add only finitely many columns. When all pricing optima are nonpositive, the restricted dual is feasible for the complete branch-specific master, and strong duality certifies its LP optimum. A node whose restricted master is still infeasible once its column family is exhausted admits no feasible partition, every admissible zone of that branch having been generated by then. The pricing models themselves are bounded mixed-integer programs: cutoff and membership variables have finite domains, and the flow variables have finite bounds.
+\textit{Proof.} Each family contains at most $2^{|V|}-1$ memberships. At an
+optimal restricted LP solution a stored column has non-positive reduced cost, so
+every column added because its reduced cost at the raw duals is strictly
+positive is new; a redraw round continues only when it contributes a column that
+the pool did not already hold, which by \eqref{eq:dw_pair_splits} and
+Proposition 25(i) is again a new member of its own family. Each node's
+column-generation loop therefore adds at least one previously unseen member of
+$\bigcup_z \mathcal F_z$ per iteration and so performs finitely many
+iterations, whichever source supplies the column. When every label's pricing optimum is non-positive at the raw duals,
+the restricted dual --- corrected as in Proposition 9 --- is feasible for the
+complete branch-specific dual, so the node's LP bound is certified; by
+Proposition 20 the certificate is reached once the scaled bound falls to
+$\varepsilon_z$, which is why the closing test in
+Algorithm~\ref{alg:dw_mid} carries $\sum_z \varepsilon_z$. A node whose
+restricted master is still infeasible once its column family is exhausted
+admits no admissible partition, every member of $\mathcal F_z$ compatible with
+the branch having been generated by then. The pricing problems are bounded:
+membership, cutoff, seat and clearing variables all have finite domains and the
+boundary variables are binary.
 
-Suppose all marginals \eqref{eq:dw_marginal} are integral. For each label, nonnegative column weights sum to one. A marginal of one forces every positive-weight column to contain that vertex; a marginal of zero excludes it from all such columns. Their memberships therefore coincide. Deduplication leaves one column of weight one per label, yielding an integer partition.
+Suppose all marginals \eqref{eq:dw_marginal} are integral. For each label the
+non-negative column weights sum to one; a marginal of one forces every
+positive-weight column of that label to contain the vertex and a marginal of
+zero excludes it from all of them, so their memberships coincide and
+deduplication leaves one column of weight one per label. By Proposition 15 that
+is an admissible partition, and by Proposition 17 its value is
+$\sum_z W(A_z)$.
 
-Otherwise, branching on a fractional marginal is disjoint and exhaustive for integer partitions and fixes a previously unfixed binary assignment. Pricing respects all these decisions. Tree depth is therefore at most $k|V|$, and the tree is finite. Infeasibility pruning removes no feasible partition, while Proposition 9 justifies bound pruning. An integer restricted master can improve the incumbent but is never needed to justify a bound. On exhaustion of the tree, no feasible partition has welfare greater than the incumbent; Proposition 8 identifies its value with the global finite-grid MID optimum. If no incumbent exists, every branch was infeasible. $\blacksquare$
+Otherwise branching on a fractional marginal is disjoint and exhaustive for
+integer partitions and fixes a previously unfixed binary assignment, which
+pricing then respects, so tree depth is at most $k|V|$ and the tree is finite.
+Infeasibility pruning removes no admissible partition and bound pruning is
+justified by Proposition 9 up to the stated $\sum_z \varepsilon_z$. An integer
+restricted master can improve the incumbent but is never needed to justify a
+bound. On exhaustion no admissible partition exceeds the incumbent by more than
+$\sum_z \varepsilon_z$; Proposition 8 identifies the incumbent's value with the
+district objective. If no incumbent exists, every branch was proved infeasible.
+$\blacksquare$
 
-The guarantee holds for the fixed graph and lottery scale, without a polynomial bound on computation. If stopped early, incumbent welfare is a lower bound; its maximum with the valid bounds of unresolved nodes is a global upper bound. Closing this gap certifies optimality. ReCom contributes candidate zones, while exact pricing and branching establish the guarantee.
+The guarantee is for the fixed graph, the fixed lottery scale or seed, and the
+fixed scaling, with no polynomial bound on computation. If stopped early,
+incumbent value is a lower bound and its maximum with the valid bounds of
+unresolved nodes is a global upper bound; closing that gap to
+$\sum_z \varepsilon_z$ certifies optimality at the stated tolerance. Seeding
+contributes candidate zones, while pricing and branching establish the
+guarantee.
+
+Two limitations are worth stating plainly, because they bound what this appendix
+claims. First, the decomposition is exact for the \emph{specified} value ---
+finite-grid MID at scale $L$, or sampled stable matching at one seed $\psi$ ---
+and not for continuous-lottery MID or for an expectation over seeds; a single
+seed fixes the lottery, which is exactly what makes the column value an exactly
+realized welfare rather than an average of them, and the variance across seeds
+is not addressed here. Second, the implementation uses floating-point LP duals
+and integer constraint-programming bounds, not formal exact-arithmetic
+certificates, so the theorem's hypothesis of exact arithmetic is an idealization
+of what is computed.
+
 
 \end{document}

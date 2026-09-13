@@ -194,6 +194,18 @@ The positional argument can also be a benchmark output directory or its
 identify the historical run settings, even if the YAML has since changed.
 No graph caches or district source tables are loaded. `--solvers` filters methods.
 
+For runs configured with `weight_edges: true`, add `--weighted`. This selects
+weighted runs (including recursive CP/MIP), labels the axis `Cut length (km)`, and prefixes
+plots and CSVs with `weighted_boundary` instead of `cut_edges`. Weighted and
+unweighted objectives are never combined. `--length-unit m` restores metres;
+all CSV objective values remain in their source units (metres for weighted runs),
+with an `objective_unit` column. `--single-only` excludes recursive methods.
+For example:
+
+```bash
+uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml --weighted
+```
+
 The default output directory is `<benchmark root>/plots/edges`. Outputs are
 `cut_edges_Block_2_tl_600s_median.png`, etc. (one figure per budget **and level**),
 `cut_edges_events.csv` (raw parsed events with run identity), and
@@ -203,18 +215,41 @@ the contributor count `n` at each event time.
 
 Panels separate zone counts. The default `--aggregate median` draws one median
 line per method with a light interquartile band (middle 50%) across seeds and
-centroid variants **within the same zone count, graph level, and budget**.
+centroid variants **within the same zone count, final graph level, and budget**.
 It does not pool different zone counts or levels. Use `--aggregate individual`
 for the individual run traces; those filenames end in `_individual.png`.
 Never-feasible runs are excluded entirely, including their bounds and legend
 entries. The inventory and raw-event CSV retain them for auditing.
+
+`--y-frame` sets the vertical scale. Medians end within a few percent of each
+other, while a first feasible solution can be an order of magnitude worse, so a
+zero-baseline linear axis flattens every curve into the bottom of the panel.
+
+| `--y-frame` | Axis | Filename suffix |
+| --- | --- | --- |
+| `log` (default) | Logarithmic over the full range of every drawn value, cropping nothing. | none |
+| `zoom` | Linear, scaled to the range the medians occupy. First-feasible values and the outer parts of the bands fall outside the panel. | `_zoom` |
+| `zero` | Linear from zero over the full range. | `_zero` |
+
+`log` is the default because it crops nothing, which matters most where one
+method lands several times worse than the rest (plain CP on `Block_0`). Use
+`zoom` where every method finishes within a few percent and the log axis still
+bunches them (`Block_2`); the suffixes let both coexist in one output
+directory. The frame is deliberately not called `median`, which already names
+an `--aggregate` choice and appears in every filename. Either way the
+`by_zone` figures keep a full-range **Full run** panel beside the zoom, so
+nothing cropped out goes unreported. Each
+method has its own colour *and* marker, and the recursive strategies are
+dashed, so no two curves are distinguished by colour alone.
 
 `--skip-initial 1` is the default: omit each run's first distinct feasible
 objective value.
 Repeated node-table values, bound updates, and summary lines do not count.
 `--skip-initial 0` shows every feasible improvement. Runs with no remaining
 improvements are omitted entirely, including their bounds. Trimming applies
-before aggregation and is recorded in the figure subtitle and run CSV.
+before aggregation and is recorded in the figure subtitle and run CSV. For
+recursive methods the skip count applies once to the best-so-far trajectory
+across all stages, rather than restarting at each refinement.
 
 The band shows the middle 50% of the **available** retained feasible values,
 including before every run is ready. No solid line appears during this early
@@ -243,15 +278,15 @@ keep filtered plots from replacing the overview.
   penalties and CP-SAT's `UNKNOWN` summary objective are never plotted as solutions.
 - This is a minimization problem: the feasible objective itself is an upper
   bound on the optimum. Solver lower bounds are not plotted.
-- Time is the elapsed clock reported by each solver, not end-to-end benchmark
+- Time is cumulative solve time, not end-to-end benchmark
   wall time. Pre-solve graph/model/hint work may be excluded. Individual steps stop at
   the last logged timestamp, including a termination summary when present;
   they are not extended to an unobserved time limit. Native logs have rounded
   timestamps and sampled bounds. Gurobi root-relaxation durations are omitted
   because they are phase durations, not cumulative solve times.
-- Only single-solve, unweighted boundary objectives are included. Recursive,
-  weighted, and other objective variants are counted in the skip report so
-  metres or unrelated objectives cannot silently appear on a `Cut edges` axis.
+- Single-solve boundary objectives and weighted recursive runs are included.
+  Unweighted recursive runs, mismatched units, and other objective variants are counted
+  in the skip report so metres cannot silently appear on a `Cut edges` axis.
 
 CP/MIP boundary indicators are constrained to be positive on cut edges, but can
 also be positive on uncut edges in a suboptimal incumbent. Thus the native log
@@ -261,23 +296,35 @@ that requires assignment snapshots or logging an explicitly recomputed count.
 
 ### Comparing recursive stages
 
-Unweighted cut counts on different levels count different adjacency graphs;
-stitching their native objectives would not form a comparable trajectory.
-For existing logs, a useful extension would plot **only the target-level stage**
-with its start shifted by preceding stages' recorded durations, and show the
-coarse stages as a shaded preparation interval. This preserves cut-edge units
-but cannot recover earlier fine-level incumbents. Exact end-to-end timing would
-require explicit stage-start timestamps, because per-solve logs omit setup work.
+`--weighted` includes separate `CP (Recursive)` and `MIP (Recursive)` series.
+Their panels use the final configured level, and their budgets sum all configured
+stage limits (e.g. `[450, 150]` groups with the single-solve 600-second budget).
+Each stage's local log clock is offset by the preceding stages' recorded
+`wall_time`, not their allocated budgets. This preserves early finishes and
+carried-over time. A log timestamp beyond its recorded duration extends the
+stage duration to prevent overlap. Missing stage logs or timing are reported
+in the skip counts; explicitly skipped stages can have no log.
 
-For new experiments, the existing `optimization_defaults.weight_edges: true`
-setting enables integer-metre shared-boundary costs for all these methods.
+The recursive objective is the **best stage-feasible weighted cut length found
+so far**. A worse warm start on a finer level does not raise the curve. This
+tracks native logged feasible incumbents, not revalidated fine-level snapshots:
+coarse and fine contiguity/candidate restrictions can differ. Recursive runs
+with `looseness != 1.0` are excluded because their coarse feasibility tolerances
+are relaxed. A run that finds a feasible coarse solution is included even if its
+final stage fails to find a solution, so these counts can differ from the final
+success-rate heatmap. Stage boundaries and original local timestamps are
+preserved in `stage_level`, `stage_index`, `stage_start_seconds`, and
+`stage_elapsed_seconds` in the events CSV. Source solver and strategy remain
+separate columns; `method` distinguishes recursive series in aggregates.
+Exact end-to-end timing would require stage-start timestamps, since work between
+solve calls is not represented by the stage durations.
+
+The `optimization_defaults.weight_edges: true` setting enables integer-metre
+shared-boundary costs for all these methods.
 Aggregation sums crossing parent-edge weights, so a coarse zoning and its
 unchanged projection onto a finer graph have exactly the same weighted cost.
-Use a **new `execution.output_dir`** for that experiment. Plot those results on
-a `Weighted boundary length (m)` axis with stage transitions; the cut-edge
-plotter intentionally excludes them. Keep `looseness: 1.0` when comparing
-feasibility across stages, and verify projected solutions against the target
-problem before calling them feasible target-level incumbents.
+Unweighted cut counts count different adjacency graphs, so unweighted recursive
+runs remain excluded.
 
 For exact polygon geometry, the sum of zone perimeters equals the fixed district
 perimeter plus twice the internal shared-boundary length. The implemented cost
@@ -290,8 +337,8 @@ Even with comparable weighted objectives, **recursive bounds remain local to
 each stage**. Coarse aggregation restricts possible partitions, and finer
 recursive solves restrict candidate zones near the previous boundary. Their
 lower bounds do not certify the unrestricted fine-level optimum and should
-not be merged into a global bound curve. Show them separately and reset at
-stage transitions, or omit them from a cross-method comparison.
+not be merged into a global bound curve. The plotter omits them; the raw events
+retain them only as `stage_bound` for auditing.
 
 An alternative that retains `Cut edges` as the common metric is to enable
 `save_solver_progress: true` for recursive CP/MIP runs, project each saved

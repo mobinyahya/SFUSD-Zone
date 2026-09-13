@@ -7,10 +7,18 @@ import pandas as pd
 import pytest
 
 from benchmark.plot_edges import (
+    DASHES,
+    METHODS,
+    Y_FRAMES,
+    frame_ylim,
     load_trajectories,
+    late_window,
     main,
+    marker_phases,
     prepare_trajectory,
+    recursive_events,
     render_figures,
+    spread_positions,
     summarize_traces,
     visible_trajectories,
 )
@@ -130,6 +138,32 @@ def test_loader_filters_and_preserves_missing_logs(tmp_path):
         "objective is not plain cut edges": 1,
         "filtered": 1,
     }
+
+
+def test_weighted_mode_selects_metres_and_uses_distinct_outputs(tmp_path):
+    _run(tmp_path, "weighted", weight_edges=True)
+    _run(tmp_path, "unweighted")
+    events, runs, _ = load_trajectories(tmp_path, weighted=True)
+    assert set(runs["run_id"]) == {"weighted"}
+    assert set(events["objective_unit"]) == {"meter"}
+    output = tmp_path / "plots"
+    assert (
+        main(
+            [
+                str(tmp_path),
+                "--weighted",
+                "--skip-initial",
+                "0",
+                "--dpi",
+                "30",
+                "-o",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert (output / "weighted_boundary_Block_2_tl_600s_median.png").exists()
+    assert (output / "weighted_boundary_aggregates.csv").exists()
 
 
 def test_cli_reads_yaml_without_source_data_and_renders(tmp_path):
@@ -295,5 +329,255 @@ def test_render_never_draws_bounds(tmp_path, monkeypatch, aggregate):
     render_figures(
         events, runs, tmp_path / "plots", skip_initial=0, aggregate=aggregate, dpi=30
     )
-    assert len(series) == 1
-    assert np.isin(series[0][np.isfinite(series[0])], [80]).all()
+    assert len(series) == (3 if aggregate == "median" else 1)
+    for values in series:
+        assert np.isin(values[np.isfinite(values)], [80]).all()
+
+
+def test_zoom_preserves_step_value_at_left_edge_without_backfilling():
+    frame = pd.DataFrame(
+        {
+            "elapsed_seconds": [0, 100, 500, 600],
+            "incumbent": [np.nan, np.nan, 80, 70],
+            "q25": [np.nan, 90, 75, 65],
+            "q75": [np.nan, 110, 85, 75],
+        }
+    )
+    zoom = late_window(frame, 300, 600).reset_index(drop=True)
+    assert zoom["elapsed_seconds"].tolist() == [300, 500, 600]
+    assert np.isnan(zoom.loc[0, "incumbent"])
+    assert zoom.loc[0, "q25"] == 90
+    assert zoom.loc[0, "q75"] == 110
+
+
+def test_recursive_timeline_uses_actual_stage_durations_and_keeps_best_objective():
+    stages = [
+        {"index": 0, "level": "Block_3", "wall_time": 40},
+        {"index": 1, "level": "Block_2", "wall_time": 560},
+    ]
+    rows = [
+        {
+            "log_index": 0,
+            "level": "Block_3",
+            "elapsed_seconds": 2,
+            "incumbent": 80,
+            "bound": 20,
+        },
+        {"log_index": 0, "level": "Block_3", "elapsed_seconds": 10, "incumbent": 50},
+        {"log_index": 1, "level": "Block_2", "elapsed_seconds": 1, "incumbent": 70},
+        {"log_index": 1, "level": "Block_2", "elapsed_seconds": 5, "incumbent": 40},
+    ]
+    joined = recursive_events(rows, stages)
+    assert [row["elapsed_seconds"] for row in joined] == [2, 10, 40, 41, 45, 600]
+    assert joined[0]["stage_bound"] == 20
+    assert joined[0]["bound"] is None
+    trace = prepare_trajectory(pd.DataFrame(joined), skip_initial=1)
+    np.testing.assert_allclose(trace["incumbent"], [np.nan, 50, 50, 50, 40, 40])
+    assert trace["bound"].isna().all()
+    with pytest.raises(ValueError, match="missing recursive stage log"):
+        recursive_events(rows[:2], stages)
+
+
+def test_weighted_recursive_loader_groups_by_total_budget_and_final_level(tmp_path):
+    directory = _run(
+        tmp_path, "recursive", strategy="recursive", weight_edges=True, log=False
+    )
+    path = directory / "benchmark_manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["config"].update(solver="cp_bool", solve_time_limits=[450, 150])
+    stages = []
+    logs = directory / "solver_logs"
+    logs.mkdir()
+    for index, (level, duration) in enumerate([("Block_3", 40), ("Block_2", 560)]):
+        filename = f"solver_{index:02d}_{level}_cp_bool.log"
+        (logs / filename).write_text(
+            "Starting CP-SAT solver\n"
+            "#1 1.00s best:80000 next:[0,79999]\n"
+            "#2 5.00s best:40000 next:[0,39999]\n"
+            "CpSolverResponse summary:\nstatus: FEASIBLE\n"
+            f"objective: 40000\nbest_bound: 20\nwalltime: {duration}\n"
+        )
+        stages.append(
+            {
+                "index": index,
+                "level": level,
+                "wall_time": duration,
+                "metadata": {"solver_log_path": f"solver_logs/{filename}"},
+            }
+        )
+    manifest["stages"] = stages
+    path.write_text(json.dumps(manifest))
+    events, runs, _ = load_trajectories(tmp_path, weighted=True, time_limits=[600])
+    assert runs.loc[0, "method"] == "recursive_cp_bool"
+    assert runs.loc[0, "level"] == "Block_2"
+    assert runs.loc[0, "time_limit"] == 600
+    assert set(events["stage_level"]) == {"Block_3", "Block_2"}
+    assert set(events["stage_start_seconds"]) == {0, 40}
+    assert events["elapsed_seconds"].max() == 600
+    assert load_trajectories(tmp_path, weighted=True, single_only=True)[1].empty
+    manifest["config"]["looseness"] = 1.2
+    path.write_text(json.dumps(manifest))
+    assert load_trajectories(tmp_path, weighted=True)[1].empty
+
+
+@pytest.mark.parametrize("unit,expected", [("km", 0.08), ("m", 80)])
+def test_length_unit_scales_objective_without_changing_time(
+    tmp_path, monkeypatch, unit, expected
+):
+    from matplotlib.axes import Axes
+
+    _run(tmp_path, "weighted", weight_edges=True)
+    events, runs, _ = load_trajectories(tmp_path, weighted=True)
+    series = []
+    original = Axes.step
+
+    def capture(self, x, y, *args, **kwargs):
+        series.append((np.asarray(x), np.asarray(y)))
+        return original(self, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "step", capture)
+    render_figures(
+        events,
+        runs,
+        tmp_path / "plots",
+        skip_initial=0,
+        weighted=True,
+        length_unit=unit,
+        dpi=30,
+    )
+    x, y = series[0]
+    np.testing.assert_allclose(y[np.isfinite(y)], expected)
+    assert x[np.isfinite(y)][0] == 3
+    assert x[-1] == 600
+
+
+def _axis(frames):
+    import matplotlib.pyplot as plt
+
+    figure, ax = plt.subplots()
+    for frame in frames:
+        ax.plot(frame["elapsed_seconds"], frame["incumbent"])
+    return figure, ax
+
+
+def _summary(incumbents, band=200.0):
+    return pd.DataFrame(
+        {
+            "elapsed_seconds": np.arange(len(incumbents), dtype=float),
+            "incumbent": incumbents,
+            "q25": [value - 1 for value in incumbents],
+            "q75": [band] * len(incumbents),
+        }
+    )
+
+
+def test_zoom_frame_excludes_early_spikes_but_keeps_every_final_value():
+    import matplotlib.pyplot as plt
+
+    frames = [_summary([900.0, 60.0, 50.0]), _summary([800.0, 130.0, 120.0])]
+    figure, ax = _axis(frames)
+    frame_ylim(ax, frames, mode="zoom")
+    low, high = ax.get_ylim()
+    plt.close(figure)
+    # The transient 800-900 km first solutions and the 200 km band are cropped;
+    # both final medians stay inside the panel with room to spare.
+    assert low < 50 <= 120 < high
+    assert high < 200
+
+
+def test_zoom_frame_gives_a_flat_series_a_usable_span():
+    import matplotlib.pyplot as plt
+
+    frames = [_summary([40.0, 40.0, 40.0])]
+    figure, ax = _axis(frames)
+    frame_ylim(ax, frames, mode="zoom")
+    low, high = ax.get_ylim()
+    plt.close(figure)
+    assert low < 40 < high
+
+
+def test_log_frame_keeps_the_full_range_including_the_bands():
+    import matplotlib.pyplot as plt
+
+    frames = [_summary([900.0, 60.0, 50.0])]
+    figure, ax = _axis(frames)
+    frame_ylim(ax, frames, mode="log")
+    low, high = ax.get_ylim()
+    scale = ax.get_yscale()
+    plt.close(figure)
+    assert scale == "log"
+    assert low < 49 and high > 900
+
+
+def test_zero_frame_starts_at_zero_and_rejects_unknown_modes():
+    import matplotlib.pyplot as plt
+
+    frames = [_summary([900.0, 60.0, 50.0])]
+    figure, ax = _axis(frames)
+    frame_ylim(ax, frames, mode="zero")
+    low, high = ax.get_ylim()
+    assert low == 0 and high > 900
+    with pytest.raises(ValueError):
+        frame_ylim(ax, frames, mode="linear")
+    plt.close(figure)
+
+
+@pytest.mark.parametrize("mode", Y_FRAMES)
+def test_every_frame_survives_a_panel_with_no_median_yet(mode):
+    import matplotlib.pyplot as plt
+
+    frames = [_summary([np.nan, np.nan])]
+    figure, ax = _axis(frames)
+    frame_ylim(ax, frames, mode=mode)
+    plt.close(figure)
+
+
+def test_recursive_methods_are_dashed_and_no_two_methods_share_an_encoding():
+    recursive = {method for method in METHODS if method.startswith("recursive_")}
+    assert recursive and len(recursive) < len(METHODS)
+    assert all(DASHES[method] != "solid" for method in recursive)
+    assert all(
+        DASHES[method] == "solid" for method in METHODS if method not in recursive
+    )
+    colors = [color for _, color in METHODS.values()]
+    assert len(set(colors)) == len(METHODS)
+
+
+def test_marker_phases_are_distinct_and_stay_inside_one_step():
+    phases = marker_phases(["cp_bool", "mip", "recursive_mip"])
+    assert len(set(phases.values())) == 3
+    assert all(abs(phase) < 0.5 for phase in phases.values())
+    assert marker_phases([]) == {}
+
+
+def test_spread_positions_separates_ties_without_leaving_the_axes():
+    positions = spread_positions([0.5, 0.5, 0.5], 0.072)
+    assert positions == sorted(positions)
+    assert all(0.0 <= position <= 1.0 for position in positions)
+    gaps = np.diff(positions)
+    assert (gaps >= 0.072 - 1e-9).all()
+    # Anchors already far apart are left where they are.
+    assert spread_positions([0.1, 0.9], 0.072) == [0.1, 0.9]
+    # More labels than the axis can hold fall back to even spacing.
+    crowded = spread_positions([0.5] * 20, 0.072)
+    assert crowded[0] == 0.0 and crowded[-1] == 1.0
+
+
+@pytest.mark.parametrize("y_frame", Y_FRAMES)
+def test_render_writes_one_file_per_frame_so_variants_coexist(tmp_path, y_frame):
+    _run(tmp_path, "good")
+    events, runs, _ = load_trajectories(tmp_path)
+    paths = render_figures(
+        events,
+        runs,
+        tmp_path / "plots",
+        skip_initial=0,
+        dpi=30,
+        y_frame=y_frame,
+    )
+    # "_median" here is the aggregate, which is why the frame is not named that.
+    suffix = "" if y_frame == "log" else f"_{y_frame}"
+    assert all(path.exists() for path in paths)
+    assert paths[0].name.endswith(f"_median{suffix}.png")
+    with pytest.raises(ValueError):
+        render_figures(events, runs, tmp_path / "plots", dpi=30, y_frame="linear")

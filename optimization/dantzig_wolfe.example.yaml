@@ -1,32 +1,68 @@
-# Whole-zone columns; run from the project/worktree root:
+# Anchored whole-zone branch-and-price; run from the project/worktree root:
 # uv run python -m optimization.run optimization/dantzig_wolfe.example.yaml
 strategy: dantzig_wolfe
-solver: recom
+# The master LP is Gurobi; the zone subproblem is CP-SAT. `cp_bool` is named
+# here because it is what produces the feasible hint and what defines the
+# feasible set the decomposition reproduces label by label.
+solver: cp_bool
 centroids_type: '6-zone-9'
 levels: [BlockGroup_0]
 # Set [.inf] to run the complete branch-and-price search without a time cap.
 # A finite budget may return FEASIBLE/UNKNOWN with an unresolved global gap.
 solve_time_limits: [600]
 budget_accounting: wall_clock
+# `feasible` is what you want on the real instance: it is the only seeding step
+# that reliably yields an admissible partition, and it is cached across runs.
 hints: feasible
 feasible_hint_time_limit: 60
 seed: 42
 workers: 8
 frl_dev: 0.3
 racial_dev: 0.3
-# Capacity constraints are retained when nonnegative. Here the MID oracle
+# Capacity constraints are retained when nonnegative. Here the welfare oracle
 # enforces program capacities without an aggregate seats/student restriction.
 overage: -1
 shortage: -1
 boundary_prop: -1
-dw_objective: mid             # mid (maximize welfare) | boundary (minimize cuts)
-dw_recom_samples: 1000        # distinct partitions; 0 disables optional seeding
+# mid             -- finite-grid least-cutoff MID welfare
+# stable_matching -- deferred-acceptance welfare under one tie-breaking draw,
+#                    drawn with `saa_tie_breaking_method` and `seed`
+# boundary        -- minus half the perimeter (the base compactness objective)
+dw_objective: mid
+saa_tie_breaking_method: MTB
+mid_lottery_scale: 20
+mid_utility_handling: omit_nonpositive
+# Barrier without crossover: interior duals rather than a degenerate
+# set-partitioning vertex. `dual` reproduces bit-for-bit across runs.
+dw_master_method: barrier
+# Wentges smoothing weight on the current LP's duals; 1.0 disables smoothing.
+dw_dual_smoothing: 0.5
+# Integer scaling of the CP-SAT pricing objective. Larger shrinks the reported
+# `dw_bound_slack` and slows each solve.
+dw_pricing_scale: 1000
+dw_pricing_columns_per_call: 8
+dw_pricing_parallel: true
+# Seconds one column-generation round may spend pricing; doubles only when a
+# round neither adds a column nor proves a bound. `.inf` removes the cap, which
+# on a real instance means one round consumes the whole budget.
+dw_pricing_time_limit: 30
+# Two-zone redraws: re-partition a pair of the incumbent's zones optimally and
+# leave the other Z - 2 alone. Every solution of that model is a complete
+# tiling, so this is the only column source here that grows the number of ways
+# the master can cover V -- which is the measured obstruction. It supplies
+# columns and incumbents only, never a bound, so switching it off changes the
+# result but not the guarantee. Runs once before the search from the seeded
+# incumbent, then inside the search whenever the restricted LP stops moving.
+dw_redraw: true
+dw_redraw_time_limit: 60      # seconds per sweep; pairs share it
+dw_redraw_splits_per_call: 8
+# ReCom seeding after the hint; every zone is rejection-filtered against the
+# anchored family. 0 disables it.
+dw_recom_samples: 1000
 dw_recom_chains: 4
 dw_recom_time_limit: 60       # bounded even when the exact search is unlimited
 recom_iterations: -1          # time-limited proposals per chain
 tolerance: 0.000001           # numerical pricing / absolute-gap tolerance
-mid_lottery_scale: 20
-mid_utility_handling: omit_nonpositive
 data:
   scenario: legacy
   overrides:

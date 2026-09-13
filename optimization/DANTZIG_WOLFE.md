@@ -1,186 +1,630 @@
-# Whole-zone MID branch-and-price
+# Anchored whole-zone branch-and-price
 
 ## Scope
 
-The objective is the repository's **finite-grid MID welfare**, with integer
-lottery mass `L = mid_lottery_scale`. Citywide schools are excluded from the
-geographic school/capacity data, and citywide programs are removed from all
-preference lists before market evaluation. Students remain in their geographic
-nodes, including those left with no available preferences.
+Let `G = (V, E)` be the level's adjacency graph and `z = 0, ..., Z-1` the zone
+labels, each anchored at a centroid `c_z` carrying school id `sigma_z`. Citywide
+schools are excluded from the geographic school/capacity data and citywide
+programs are removed from every preference list before market evaluation.
+Students remain in their geographic vertices, including those left with no
+available preferences.
 
-Let `N` be the finite geographic node set and `z = 0,...,Z-1` the zone labels.
-Let `F_z` contain every nonempty connected subset satisfying the configured
-demographic, aggregate capacity, school-count, explicit candidate, and fixed
-assignment constraints for label z. These are the existing ReCom semantics:
-centroids do not impose hard anchors or implicit distance limits.
-The implementation carries the same 1e-6 feasibility slack in zone validation,
-the pricing inequalities, and the master boundary cap (including its dual-bound
-calculation). Thus pricing does not silently exclude a zone admitted by seeding.
+## The zone families
 
-For `S in F_z`, let `W(S)` be its least-cutoff MID welfare, computed using only
-residents of S and programs whose schools lie in S. Without citywide access,
-different zones have disjoint students and program capacities. Therefore
-district welfare is exactly the sum of zone welfares. The partition master is
+For each label, `F_z` is the family of admissible individual zones, and it is
+the base zoning model's label-`z` rows -- nothing added, nothing relaxed. A set
+`A subset V` lies in `F_z` iff
+
+1. `c_z in A`, and `B_r(c_z) subset A` where `r = centroid_neighbor_radius`;
+2. `A` is disjoint from `B_r(c_{z'})` for every other label `z'` (this also
+   excludes every other centroid);
+3. `z in candidate_zones(v)` for every `v in A`, which carries `max_distance`,
+   explicit `candidates` and `fixed`;
+4. every `v in A \ {c_z}` has a *closer-neighbour support* in `A`: a graph
+   neighbour `u in A` whose geometry is strictly closer to `sigma_z` than `v`'s
+   is, drawn from `contiguity.contiguity_supports`;
+5. the FRL, racial and aggregate-capacity balance rows and the school-count
+   band hold, **in the integer-rounded form `cp_bool` writes them** -- each
+   coefficient `round(CP_SAT_SCALE * a_v)` against an integer right-hand side.
+
+Condition 4 implies `G[A]` is connected, and is strictly stronger: iterating
+the support gives every member a distance-decreasing path to `c_z`, so a zone
+that wraps around and re-approaches its anchor from the far side is connected
+and inadmissible. Condition 4 is also what removes the rooted single-commodity
+flow the previous build priced with: connectedness is `|A|` clauses, not `2|E|`
+arc variables with big-`M` capacities.
+
+Condition 5 is why there is no feasibility tolerance anywhere in this code. The
+previous build tested float rows with a 1e-6 slack in the pool and re-stated
+them with a different rounding in the pricer, so the two disagreed about the
+boundary of `F_z` in both directions. `ZoneFamily.feasible` and the pricing
+model now evaluate the same integers.
+
+Candidate sets are pruned to a fixed point: a non-anchor vertex with an empty
+support list can never be a member, which can empty another vertex's support
+list. `cp_bool` reaches the same fixings by propagation, so the pruning changes
+no feasible set; it makes the family's own description closed under the
+implication.
+
+**Exact decomposition.** Every row of the base model involves a single label,
+except the assignment row (one label per vertex) and the boundary cap. So a
+tuple `(A_0, ..., A_{Z-1})` is an admissible zoning iff each `A_z in F_z` and
+the sets partition `V` -- the first becomes the master's convexity rows, the
+second its cover rows, and the cap its boundary row. `test_dantzig_wolfe.py`
+checks this against `cp_bool`'s own solution enumeration on a small graph.
+
+## What a zone is worth
+
+Three definitions, selected by `dw_objective`. All three are additive over a
+partition, which is the whole reason the decomposition exists: with no citywide
+program, a partition splits the applicants and the seats into independent
+submarkets.
+
+**`mid`.** `W_L(A)` is finite-grid least-cutoff MID welfare at integer lottery
+scale `L = mid_lottery_scale`, computed by `finite_grid_oracle` over the
+residents of `A` and the programs whose schools lie in `A`. Proposition 7 is
+what licenses computing it by maximizing over capacity-clearing cutoffs: the
+finite-grid oracle raises an overloaded program's cutoff to its smallest
+clearing value, every iterate stays componentwise below every clearing vector,
+integrality gives finite termination, and with positive rank-ordered utilities
+the least clearing vector maximizes welfare.
+
+**`stable_matching`.** Fix one tie-breaking draw `psi` -- `saa_tie_breaking_method`
+(`MTB` or `STB`) and `seed`, one sample, drawn *after* citywide programs are
+removed so the positional program order still lines up. `W^psi(A)` is the
+largest welfare of a stable matching of the zone submarket. Because
+maximizing utility over a market's stable-admissions polytope returns the
+applicant-proposing deferred-acceptance outcome -- the polytope is the convex
+hull of the stable matchings, DA is applicant-optimal, and the utilities are
+rank-consistent -- the column value is **one run of the mechanism**. No LP, no
+MIP, a few hundred microseconds, and *exactly* realized welfare: the +195 to
++252 over-report that `SaaOracle`'s aggregated Rothblum row carries on
+`Block_2` does not arise here, because a single zone's stable matchings are
+enumerated by running the mechanism rather than described by inequalities.
+
+**`boundary`.** `-b(A)`, where `b(A)` is half the weighted cut of `A`, so a
+partition's scores sum to the district boundary cost. Not a welfare; it exists
+because it makes the decomposition testable against an enumerated optimum
+without a market.
+
+## The master
+
+With `b(A)` as above and an optional district budget `B`:
 
 ```text
-maximize  sum(z,S) W(S) lambda[z,S]
+maximize  sum(z,A) W(A) lambda[z,A]
 subject to
-  sum(z,S: i in S) lambda[z,S] = 1       for every i in N
-  sum(S in F_z) lambda[z,S] = 1          for every label z
-  sum(z,S) b(S) lambda[z,S] <= B         optional boundary cap
-  lambda[z,S] in {0,1}
+  sum(z,A: v in A) lambda[z,A] = 1        for every v in V
+  sum(A in F_z)    lambda[z,A] = 1        for every label z
+  sum(z,A) b(A) lambda[z,A] <= B          optional boundary cap
+  lambda[z,A] in {0,1}
 ```
 
-Here `b(S)` is half the weighted zone perimeter. Each cut edge appears in two
-zone perimeters, so the sum equals the district boundary cost.
+Each cut edge appears in two zone perimeters, so the boundary row is the
+district boundary cost, and `B = floor(boundary_prop * sum_E w)` is the same
+number `cp_bool`'s cut-edge cap uses at unit weights.
 
-## Exact zone pricing
-
-Relax lambda to nonnegative real values. Let `pi_i` and `sigma_z` be the free
-duals of cover and label rows, and `mu >= 0` the optional boundary-row dual.
-The pricing problem for each label is
+Relax `lambda >= 0`. Let `alpha_v` and `gamma_z` be the free duals of the cover
+and convexity rows and `mu >= 0` the boundary dual. Pricing label `z` maximizes
+the reduced welfare
 
 ```text
-maximize over S in F_z:
-  W(S) - sum(i in S) pi_i - sigma_z - mu b(S).
+max over A in F_z:  W(A) - sum(v in A) alpha_v - gamma_z - mu b(A).
 ```
 
-`zone_pricing.py` solves this globally as a MIP. A binary `x_i` selects node i.
-A freely chosen root supplies one flow unit to each selected node; flow can
-traverse only selected endpoints, enforcing connectedness without strengthening
-it to distance-monotone connectedness. All balance and branch constraints are
-part of this same pricing model.
+### The duals are the interesting part
 
-MID uses an integer cutoff `p_j` for each non-citywide program j. For type t,
-rank k, priority tier `rho_tk`, and program school node `s(t,k)`, define
+The master is a set-partitioning LP and is therefore massively degenerate. The
+previous build solved it with dual simplex, pinned for reproducibility, and
+measured the consequence directly: on `BlockGroup_0` with a 404-column pool,
+three to six columns of genuinely positive reduced cost entered every round and
+the LP value sat at 11,142.80 for eight consecutive rounds. A positive reduced
+cost that does not move the objective is a *degenerate pivot* -- the entering
+column's step length is zero. Only 132 of 579 cover rows carried a nonzero
+dual, so pricing had almost no guidance, and six unanchored labels priced
+independently returned six zones of 340 to 392 vertices out of 579, no six of
+which can tile anything.
+
+Three things address that, and none of them costs rigour:
+
+- **Interior duals.** `dw_master_method: barrier` with `Crossover = 0` returns
+  the barrier iterate rather than walking it to a vertex, spreading the prices
+  over the rows. `dual` restores the old vertex duals; the cost of the default
+  is bit-for-bit reproducibility, not validity.
+- **Wentges smoothing.** `dw_dual_smoothing = a` prices against
+  `a * (this LP's duals) + (1-a) * (previous centre)`. When the smoothed point
+  *mis-prices* -- finds no zone improving at the LP's own duals -- the round
+  re-prices at the raw duals before concluding anything and moves the centre
+  there. Without that fallback a smoothed point reports convergence the LP does
+  not have, and its dual objective gives a needlessly weak bound.
+- **Anchored zones.** A label can no longer return two thirds of the district,
+  so a priced zone is at least the right size to be part of a tiling.
+- **A bounded round.** `dw_pricing_time_limit` caps what one round spends
+  pricing and doubles only when a round neither adds a column nor proves a
+  bound. Uncapped, the first round on a real instance ate the whole budget:
+  240s bought two master LPs.
+
+### The pool, not the prices: why this needed a second column source
+
+None of that was sufficient, and the reason is not the dual degeneracy those
+remedies were chosen for. Measured on `Block_2` (501 units, six anchors, 4,154
+applicants) seeded with one `cp_bool` feasibility hint, both welfare objectives
+ran 21 rounds and admitted 542 to 555 columns of strictly positive reduced cost
+inside 600s while the restricted LP stayed at the hint value to four decimal
+places on every round, leaving a pool that still admits **exactly one tiling**.
+The same on a district-sized synthetic instance (576 vertices, 4,032
+applicants, `|Gamma| = 12,096`): all four combinations of `{dual, barrier}` x
+`{alpha = 1, alpha = 0.5}` admitted 400 to 424 such columns in ten rounds and
+left the LP at the seed value 13,161.9302, and deleting the `Z` seed columns
+from the resulting 413-column pool makes the integer master `INFEASIBLE`.
+
+The obstruction is a dimension count, not a choice of basis. The restricted LP
+carries `|V| + Z` equality rows -- 582 here -- against however many columns
+have been generated, so while the pool is small relative to `|V|` the system is
+over-determined and its solution set is essentially the tilings it happens to
+contain. Pricing each label independently maximizes reduced welfare with no
+reference to the other labels, so `Z` priced zones are under no pressure to be
+mutually complementary, and the pool can grow by hundreds of individually
+improving zones without acquiring a second tiling. Every entering column is
+then a degenerate pivot: strictly positive reduced cost, zero step length.
+
+This is what `zone_redraw.py` addresses, and it is the reason the module
+exists. Pricing cannot fix it -- the per-label question is the *right* question
+for the bound and the wrong one for the pool.
+
+Two other repairs were considered and are not implemented: an **elastic
+master** (cover equality `sum(lambda) + d_v - e_v = 1` with `d, e >= 0`
+penalized at a large `M`, i.e. Phase I extended to Phase II, which makes the LP
+full-dimensional so a column can enter with a positive step), and
+**completability-targeted pricing** (a cardinality or student-mass window per
+label read off the incumbent, on the column-generating pass only).
+
+## The two-zone redraw
+
+`zone_redraw.py` is the second column source. Fix an admissible partition
+`(A_1, ..., A_Z)`, choose two labels `a, b`, and re-partition their joint
+territory `U = A_a u A_b` optimally, leaving the other `Z - 2` zones untouched.
+This is ReCom's move with the guesswork removed: the same neighbourhood, but
+the split is chosen by CP-SAT under the run's real welfare objective instead of
+by a spanning-tree cut, and admissibility is a constraint rather than a
+rejection test.
+
+Four properties make it the right move here.
+
+1. **Every feasible solution is a tiling.** `A'_a` and `A'_b` partition `U` by
+   construction and the untouched zones partition `V \ U`, so *any* solution of
+   the pair model -- not just the optimum, not just an improving one -- is a
+   complete admissible partition of `V`, and its two columns provably complete
+   the `Z - 2` already in the pool. After `k` successful redraws the pool holds
+   at least `k + 1` tilings. That is exactly the dimension the master was
+   missing.
+2. **No duals are needed.** The two new zones cover `U` exactly once, so
+   `sum_{v in U} pi_v` is the same number for every feasible solution and
+   cannot influence which one is best. The pair's summed reduced cost and its
+   summed welfare differ by a constant: maximizing welfare maximizes both. The
+   redraw therefore runs with no master, no LP and no dual point -- it is
+   simultaneously an exact primal local search on the map and the
+   reduced-cost-maximizing pair split. The boundary cap is handled *exactly*
+   rather than priced: the other zones' perimeters are fixed and so is the part
+   of the pair's perimeter facing them, so the district cap becomes an integer
+   row on the pair's own cut indicators.
+3. **A pair's territory is invariant under its own redraw.** `A'_a u A'_b = U`,
+   so once a pair is solved to optimality it stays optimal until some *other*
+   pair moves a block into or out of one of its two zones. Memoizing on
+   `(pair, U, branch fixings)` gives exact "don't look" bookkeeping for free --
+   an entry expires precisely when it should, with no invalidation logic. A
+   sweep that reaches a state where every adjacent pair is solved has produced
+   a tiling no two-zone move can improve. Measured: after the incumbent
+   stabilizes, a sweep costs 0.0s.
+4. **Non-adjacent pairs are provably no-ops**, so they are never enumerated. If
+   no edge joins `A_a` and `A_b` then every `U`-neighbour of a block of `A_a`
+   lies in `A_a`; a block joining `A'_b` needs a strictly closer support in
+   `A'_b`, and iterating that requirement gives a support chain that must
+   terminate at `c_b`, which is not in `A_a`. No block can cross in either
+   direction.
+
+### It is additive, and that is not optional
+
+The redraw is **not** a pricing problem and produces no `R_z`. Its search space
+is `{A in F_a : A subset U}`, a *subset* of `F_a`, so its optimum is a lower
+bound on the label's pricing optimum rather than an upper bound; and it couples
+two labels, so it does not answer the per-label question at all. Proposition 9
+and Theorem 3 consume the single-zone pricer's bounds and nothing else, and
+`branch_price.py` never writes `node_bound` from a redraw. What survives is
+what has to: adding columns can only enlarge the master's feasible set and
+tighten its LP, every column is re-validated by `ZoneFamily` through
+`ZonePool.admit` before entering, and a node still closes only when every label
+proved `OPTIMAL` with no improving zone at the LP's own duals. **If the redraw
+ever replaced pricing, both results would be lost.**
+
+### The model
+
+One Boolean per block per admissible label over `U`, tied by an exactly-one
+row -- which presolve substitutes into a *single* Boolean per block wherever
+both labels are candidates, so the solver sees the same
+one-variable-per-block zoning model the single-zone pricer does. Contiguity,
+balance and anchoring are `zone_family.py`'s rows applied once per label, and
+welfare is one block per label, built by the same functions the pricer uses
+(`add_mid_welfare`, `add_matching_welfare`, `add_cut_indicators` in
+`zone_pricing.py`, shared rather than reimplemented):
+
+- the **`stable_matching`** block keeps its all-Boolean core exactly. The block
+  is per label either way, so the seat, clearing and prefix variables stay
+  Boolean and the drawn-order chain still encodes the cutoff with no cutoff
+  variable;
+- the **`mid`** block keeps its small-domain integers (cutoffs, thresholds, the
+  mass recurrence), again per label;
+- the **access conjunction** is the one place two labels cost more than one: it
+  becomes `x_{i,z} AND x_{l(s),z}` for each of the two labels rather than a
+  single conjunction -- the halfway point between the single-zone form and the
+  `Z`-joint form a whole-district master would need. Against that, `U` is two
+  zones' worth of blocks rather than a label's whole candidate set, which on
+  the measured instance is 1.5 to 2.5 times smaller.
+
+The incumbent split is supplied as a CP-SAT hint, so an interrupted solve still
+returns at least the incumbent and the harvest is never empty. Because there
+are no duals to floor, the only rounding is the welfare block's own ceiling
+inflation, so a redraw's reported `allowance` is strictly smaller than a
+pricing call's.
+
+### When it fires
+
+- **Before the search**, in the strategy, from the seeded incumbent. Under a
+  finite budget this is the load-bearing sweep.
+- **Inside the search**, whenever a round's restricted LP fails to improve --
+  the degenerate-pivot signature -- or pricing stops adding columns. Waiting
+  for pricing to be *exhausted* is too late: on a district-sized instance under
+  a finite budget it never is, and a redraw hook placed there measurably never
+  fired. A round that only redraws re-solves the master and cannot close the
+  node. On `Block_2` this trigger is the whole difference between +0.000% and
+  +15%.
+
+Each pending pair gets a share of the sweep's remaining budget and pairs are
+queued by attempt count, so one expensive pair can neither consume a sweep nor
+monopolize later ones.
+
+### Measured on Block_2
+
+The district instance, `max_distance: 3.1`, `centroids_type: 6-zone-9`,
+`program_population: All`, citywide programs removed: 501 geographic units,
+1,340 edges, `Z = 6`, 4,154 applicants -> 2,309 compressed MID types over 105
+programs, and 4,154 individual applicants over 100 programs. Anchoring leaves
+candidate sets of `[147, 147, 253, 309, 248, 170]`, and 10 of the 15 label
+pairs are graph-adjacent at the seed, so a third of the neighbourhood is
+discarded before a model is built.
+
+The seed is one `cp_bool` **feasibility** solve -- it optimizes nothing -- and
+its zones are correspondingly lopsided: `[62, 65, 67, 81, 104, 122]`. ReCom
+sampling is off so the comparison isolates the redraw. Six workers, 600s.
+
+| objective | hint | `dw_redraw: false` | default | transportation | first-choice |
+|---|---|---|---|---|---|
+| `mid` | 10,307.2692 | 10,307.2692 | **11,822.4615** | 15,956.4997 | 16,830.9547 |
+| `stable_matching` | 10,344.5486 | 10,344.5486 | **12,105.1983** | 15,180.9833 | 15,983.6543 |
+
+**+14.70%** on `mid` and **+17.02%** on `stable_matching` over the seed,
+against **+0.000%** without -- and that zero is exact, not rounded. With the
+redraw off, both objectives ran 21 rounds and generated 542-555 columns of
+strictly positive reduced cost inside the budget, the restricted LP sat at the
+hint value to four decimals on every round, and the resulting pool still held
+exactly one tiling. The one-tiling diagnosis is not an artefact of the
+synthetic instance it was found on.
+
+With the redraw on, the same pool holds 25+ tilings and the LP climbs through
+distinct values rather than stepping once:
+`10307.27 -> 11579.37 -> 11624.64 -> 11820.40 -> 11822.46` (`mid`) and
+`10344.55 -> 11651.25 -> 12028.39 -> 12105.20` (`stable_matching`). Redraw
+activity: 63 pairs / 14 improvements / 325 columns / +1,515.19 (`mid`), 75 / 25
+/ 271 / +1,760.65 (`stable_matching`).
+
+**At 600s it is budget-limited, not neighbourhood-limited.** Extending `mid` to
+1800s reaches 12,050.5995 (**+16.91%**) over 107 pair solves and 28
+improvements, with 1,756 columns. That partition was re-validated independently
+of the search -- covers V exactly once, every zone satisfies its own family,
+and a fresh oracle evaluation per zone reproduces the reported value to 1e-6 --
+and its zone sizes are `[65, 65, 77, 90, 94, 110]` against the hint's 62-122.
+The gain is the rebalancing of an unbalanced feasibility solve, which is what
+program capacity rewards.
+
+For reference, a synthetic grid (324 units, `Z = 6`, capacity at 80% of
+applicants needing seats, nearest-centroid seed) gives +3.40% and +0.58%
+against the same +0.000%. The district gains are far larger because a
+feasibility hint leaves much more on the table than a Voronoi seed does. All
+figures are single runs and vary, since CP-SAT is nondeterministic above one
+search worker.
+
+### Is it converging?
+
+The two sides of the gap behave completely differently.
+
+**Primal: yes, and on the district it is still converging when the budget
+expires.** 600s gave +14.70%, 1800s gave +16.91%. On the small synthetic a
+sweep exhausts the neighbourhood in seconds and every later sweep costs 0.0s;
+on Block_2 it does not get that far in ten minutes.
+
+**Bound: not at all.** In every run measured -- both instances, both
+objectives, redraw on and off, 90s through 1800s -- the certified bound is
+*exactly* the first-choice constant. The mechanism is visible in the
+arithmetic. By LP duality the first two terms of the pricing-corrected bound
+are the restricted master's own objective, so for the bound to stay at
+16,830.95 while the LP sits at 12,050.60, the pricing residuals must sum to at
+least 4,780 -- close to 800 per label. The entire headroom to the
+transportation bound is 15,956.50 - 12,050.60 = 3,906. Six labels are each
+separately reporting more available improvement than provably exists in total,
+and no six of the zones they return can occupy one tiling.
+
+That is not a defect in the pricing problem, which answers the question the
+bound asks it and answers it to proved optimality. It is the price of asking a
+per-label question, and it means the reported ~25% gap is mostly slack in the
+certificate: against the transportation bound the same incumbents are within
+24.5% and 20.3%, and against the zoned transportation bound (which on this
+instance at this `max_distance` cuts a further 1,134-1,241 units off the
+transportation bound) closer still.
+
+So what remains open is exactly the dual side, and it admits two different
+attacks: repair the decomposition's own duals (elastic master,
+completability-targeted pricing, a wider redraw neighbourhood), or replace the
+constant the bound falls back on with one of the zoning-aware bounds already
+developed elsewhere in the paper -- which requires nothing of the
+decomposition at all.
+
+## Pricing, in CP-SAT
+
+`zone_pricing.py` solves each pricing problem globally as a CP-SAT model over
+binary memberships `x_v`, `v` in label `z`'s candidate set. Geometry is
+conditions 1-5 above. Perimeter indicators are created only when they are
+needed -- the boundary objective, or a live boundary cap.
+
+CP-SAT rather than Gurobi for two model-specific reasons. The `min` recurrence
+that *defines* finite-grid MID welfare is native here (`AddMinEquality`), where
+a MIP needs a big-`M` disjunction per `(type, rank)` pair: about 24,000
+auxiliary integers on `Block_2`, and the weakest part of that relaxation. And
+the zoning block is what CP-SAT is best at in this repo.
+
+Two simplifications come from there being exactly one zone:
+
+- **Access is one Boolean.** Co-zoning of a student vertex `u` and a school
+  vertex `w` is `x_u AND x_w`: one variable and three rows, not the `Z`
+  conjunction variables plus a `sum(joints) <= 1` row a whole-district master
+  needs. In the matching block it can be eliminated outright -- its only
+  appearances are an upper bound on `y` (replace by the two separate bounds)
+  and the right-hand side of the two stability rows (replace by
+  `x_u + x_w - 1`), both exact at integral memberships -- and is kept only
+  because the reification propagates better. The MID block needs it: its
+  effective-rejection row *selects* between the threshold and `L` rather than
+  bounding one of them, so the substitution is over-restrictive there.
+- **Capacity tightens.** A program outside the zone seats nobody, so the
+  aggregate row is `sum_i y[i,s] <= q_s x_{l(s)}` rather than `<= q_s`, and
+  `<= L q_s x_{l(s)}` for the finite-grid masses.
+
+### The `mid` block
+
+For each in-zone program an integer cutoff `p_s in [0, pbar_s]`, with `pbar_s`
+from `cutoff_upper_bounds` on the candidate-restricted market -- valid for every
+sub-selection, since removing students can only lower the least clearing
+cutoff. Then, with `a_tk` the access Boolean of type `t`'s vertex and rank
+`k`'s school vertex,
 
 ```text
-a_tk = x[node(t)] AND x[s(t,k)]
-h_tk = min(L, max(0, p_j - rho_tk L))
-e_tk = h_tk if a_tk = 1, otherwise L
-r_t0 = L
-r_tk = min(r_t,k-1, e_tk)
-d_tk = r_t,k-1 - r_tk
+t_{s,rho} = min(L, max(p_s - rho L, 0))            native min/max
+e_tk      = t   if a_tk else L                     conditional equality
+R_t0      = L,   R_tk = min(R_t,k-1, e_tk)         native min
+R_tk     >= R_t,k-1 + e_tk - L                     valid inequality
+d_tk      = R_t,k-1 - R_tk
+sum_{t,k at s} n_t d_tk <= L q_s x_{l(s)}
 ```
 
-The model imposes `sum(t,k at j) count_t d_tk <= capacity_j L` and maximizes
-`sum(t,k) utility_sum_tk d_tk / L` minus the membership-dependent dual terms.
-Every min/max and access expression has an exact binary linearization; no
-prefix tail is relaxed, no candidate zone is omitted, and utility coefficients
-are not replaced by rounded integer utilities. Co-located student/school pairs
-still require membership: omitting their node cannot earn welfare or use seats.
-Cutoffs are bounded by `(maximum observed priority tier + 1) L`, which suffices
-to reject all lottery mass.
+The valid inequality is what stops the relaxation of the `min` from
+manufacturing mass at high-utility ranks; it is valid because the thresholds are
+clamped to the lottery interval. Every rank of every list is represented; an
+alternative whose school is outside the candidate set has `e = L` identically
+and is dropped, which is exact.
 
-Why does maximizing over capacity-clearing cutoffs give **least-cutoff** welfare?
-Starting at zero, the finite-grid oracle monotonically raises an overloaded
-program's cutoff to its smallest clearing value. Every iterate is componentwise
-below every capacity-clearing cutoff vector: lowering other programs' cutoffs
-can only reduce the remaining mass demanding this program. Integer bounded
-cutoffs imply finite termination at the least clearing vector. Lower cutoffs
-weakly improve each type's allocation in rank order. With the market's positive,
-rank-ordered utilities, least cutoffs therefore maximize welfare among all
-clearing vectors. For fixed S all dual terms are constants, so the joint pricing
-model attains exactly `W(S)` at a global optimum. Ties between cutoff vectors
-do not affect that optimal value.
+### The `stable_matching` block
+
+The access polytope's rows, made integral. `y[i,s]` seats student `i` at `s`,
+`z[i,s]` says `i` clears `s`'s realized cutoff, `pi[i,s]` is the prefix
+"seated at something weakly preferred to `s`", and `Gamma(s)` is the drawn
+priority order restricted to retained students:
+
+```text
+(F1)  pi[i, last] <= 1                       Boolean domain of pi
+(F2)  sum_i y[i,s] <= q_s x_{l(s)}
+(F3)  y[i,s] <= a_{i,s}
+(F4)  y[i,s] <= z[i,s]
+(F5)  z[i,s] <= z[i',s]  for consecutive (i', i) in Gamma(s)
+(F6)  pi[i,s] >= a_{i,s} + z[i,s] - 1
+(S1)  sum_{i'} y[i',s] >= q_s (1 - z[i,s])
+(S2)  q_s pi[i,s] + sum_{i' >_s i} y[i',s] >= q_s a_{i,s}
+```
+
+(F5) makes `{i : z[i,s] = 1}` a prefix of the drawn order, which *is* the
+cutoff, so no cutoff variable is needed and nothing has to live on a grid.
+Declaring `pi` Boolean states (F1) as a domain rather than a row. (S1) is
+unnecessary for exactness but is worth roughly 100x in time through presolve;
+(S2) is the aggregate stability row and tightens the relaxation. (S2)'s inner
+sum is carried by one running prefix variable per pair, so the family stays
+`O(|Gamma(s)|)` rows. Students outside the candidate set are dropped from the
+chain and from every sum: their `y` is zero, their (F6) and (S2) rows are
+vacuous at `a = 0`, and an absent `z` in the chain is the same as a free one.
+
+`test_branch_price.py` checks both blocks against their oracles at *every*
+admissible zone of a test instance, with membership pinned by branch
+assumptions: the CP-SAT welfare equals `finite_grid_oracle` and equals the
+deferred-acceptance run respectively.
+
+### Integer arithmetic, and what it costs
+
+CP-SAT needs integer coefficients, so the objective is scaled by `K` --
+`dw_pricing_scale * L` for `mid`, `dw_pricing_scale` for `stable_matching`,
+`2 * dw_pricing_scale` for `boundary` -- and rounded *directionally*: utilities
+with a ceiling, duals with a floor. Both push the objective up, so the scaled
+objective dominates the true reduced welfare pointwise and CP-SAT's proven
+objective bound divided by `K` is a valid upper bound on it.
+
+The cost is that the proven bound can sit slightly *above* zero when no
+improving zone exists. That residual is bounded: the ceiling inflates by under
+one scaled unit per welfare term (and a type's masses sum to at most `L`, an
+applicant's seats to at most 1), and the floor under-charges by under one per
+membership or cut variable. `PricingResult.allowance` reports
+`units / K` per label; the search sums it into `dw_bound_slack` and uses
+`tolerance + dw_bound_slack` as its incumbent comparison. That is the search's
+absolute optimality tolerance, stated rather than hidden, and raising
+`dw_pricing_scale` shrinks it. The allowance is never subtracted from the
+bound, which would break validity.
+
+Nothing else is trusted. A returned zone is re-validated by
+`ZoneFamily.feasible`, scored by the exact oracle, and its reduced cost
+recomputed by the master, so a rounding artefact can waste a round but can
+never admit a column that does not improve.
+
+### Model reuse and harvesting
+
+One model per label and phase, built once and re-aimed: branch fixings are
+CP-SAT *assumptions*, released with `ClearAssumptions`, and the duals are a
+fresh objective on a welfare variable that binds the whole block, so re-aiming
+touches two terms rather than thousands. `dw_pricing_models` should be at most
+`2 Z` however many rounds and branch nodes the search took. `problem.fixed` and
+`problem.candidates` are structural rows, not assumptions, so releasing a
+fixing cannot loosen them.
+
+A solution callback harvests up to `dw_pricing_columns_per_call` improving
+zones per call rather than only the last one. When steps are degenerate, more
+columns per round is the cheapest thing that helps.
+
+`dw_pricing_parallel` prices the labels in threads against one shared deadline,
+each with `workers / Z` search workers. That matters for the bound: it needs a
+finite bound from *every* label, and under a sequential split the first label
+used to consume the budget and the rest returned unpriced. Sequential pricing
+splits the round evenly instead.
 
 ## Feasibility pricing and bounds
 
-ReCom seeds accelerate the search but are not required. If the restricted pool
-cannot cover the graph, Phase I adds nonnegative **deficit-only** artificials to
-the cover and label equalities and maximizes minus their sum. An empty pool is
-feasible in Phase I; objective zero is equivalent to a feasible original master.
-Phase-I pricing uses zero original column cost and the same geometric constraints
-and branch restrictions. Every newly admitted zone is scored with the exact MID
-oracle before Phase II uses it. Artificial variables never appear in a returned
-partition.
+Seeding is two-stage. A `cp_bool` feasibility solve is the only step that
+reliably yields an admissible partition, and it is cached across runs. ReCom
+then samples from that hint, and every sampled zone is rejection-filtered
+against `F_z`. The filter is per zone, not per partition -- a recombination step
+rewrites two zones and leaves the rest of an admissible partition alone -- and
+it runs before the welfare oracle, so a rejected sample is nearly free. ReCom's
+own cut candidates already respect `candidate_zones` and hence centroid
+anchoring, so what its zones typically fail is closer-neighbour support.
 
-If each pricing problem has a global reduced-cost upper bound `R_z`, then
+Neither stage is required. If the pool cannot cover the graph, Phase I adds
+non-negative **deficit-only** artificials to the cover and convexity rows and
+maximizes minus their sum. An empty pool is Phase-I feasible; objective zero is
+equivalent to a feasible original master. Phase-I pricing uses zero column cost
+and the same geometry and branch restrictions. Artificials never appear in a
+returned partition.
+
+If each pricing problem has a global reduced-cost upper bound `R_z` at the dual
+point `(alpha, gamma, mu)` that was priced, then
 
 ```text
-UB = sum(i) pi_i + sum(z) sigma_z + mu B + sum(z) max(0, R_z)
+UB = sum_v alpha_v + sum_z gamma_z + mu B + sum_z max(0, R_z)
 ```
 
-is a valid full-master upper bound: increase each label dual by `max(0,R_z)`.
-This covers every omitted column. The same correction is valid in Phase I
-because deficit artificials have coefficient +1 in their row; increasing a label
-dual preserves their dual inequalities. A strictly negative certified Phase-I
-upper bound proves the branch infeasible. Time-limited or failed pricing is
-never interpreted as proof that no improving column exists.
+bounds the full master: raise each convexity dual by `max(0, R_z)` and the dual
+becomes feasible for every omitted column, so weak duality applies. It holds at
+*any* dual point with `mu >= 0`, which is exactly why interior duals and
+smoothing are free -- the bound is simply computed where the pricing happened.
+The same correction is valid in Phase I, because a deficit artificial has
+coefficient +1 in its own row, so raising a convexity dual preserves its dual
+inequality; and a convex combination of two Phase-I dual points still satisfies
+those inequalities, which is why the smoothing centre is reset when the phase
+flips. A strictly negative certified Phase-I upper bound proves the branch
+infeasible. Time-limited or failed pricing is never read as proof that no
+improving column exists.
 
 ## Integer optimality and finite convergence
 
-Exact root pricing alone certifies only the LP relaxation. `branch_price.py`
-therefore runs column generation at **every node** of a branch-and-bound tree.
-For the current LP define `q_iz = sum(S containing i) lambda[z,S]`. If q_iz is
-fractional, branch into `q_iz = 0` and `q_iz = 1`. The latter also fixes all other
-labels for node i to zero. Filter stored columns by these decisions and impose
-the identical membership fixings in every subsequent pricing model. Re-run
-Phase I if needed; a missing compatible column is not proof of infeasibility.
+Exact root pricing alone certifies only the LP relaxation, so
+`branch_price.py` runs column generation at **every** node of a
+branch-and-bound tree. For the current LP define
+`q_vz = sum(A containing v) lambda[z,A]`. If `q_vz` is fractional, branch into
+`q_vz = 0` and `q_vz = 1`, the latter also fixing every other label for `v` to
+zero. Stored columns are filtered by those decisions and the identical
+membership fixings are imposed in every subsequent pricing model. Phase I is
+re-run when needed; a missing compatible column is not proof of infeasibility.
 
-In exact arithmetic, assuming globally solved bounded LPs and pricing MIPs:
+In exact arithmetic, assuming globally solved bounded LPs and pricing models:
 
-1. There are at most `Z * (2^|N| - 1)` distinct labelled memberships. Every
-   positive-reduced-cost iteration introduces a new column, so each node's
-   column-generation loop terminates. No improving columns means its complete
-   LP has been solved, or Phase I certifies it infeasible.
+1. There are at most `Z (2^|V| - 1)` distinct labelled memberships. Every
+   improving round introduces a new column, so each node's column-generation
+   loop terminates. No improving column means its complete LP has been solved,
+   or Phase I certifies it infeasible.
 2. Branches are disjoint and exhaustive. Each fixes a previously unfixed binary
-   geographic-assignment marginal, so tree depth is at most `|N| Z`.
-3. If all q_iz are integral, every positive column of a given label must have
-   exactly the membership specified by q. Because columns are deduplicated by
-   label and membership, its lambda is one: the LP yields an integer partition.
-4. Infeasible branches and branches whose certified upper bound cannot beat the
-   incumbent can be discarded. Finite tree exhaustion therefore returns a
-   globally MID-optimal feasible partition, or proves no feasible partition exists.
+   geographic-assignment marginal, so tree depth is at most `|V| Z`.
+3. If all `q_vz` are integral, every positive column of a given label has
+   exactly the membership `q` specifies. Because columns are deduplicated by
+   label and membership, its weight is one: the LP yields an integer partition.
+4. Infeasible branches, and branches whose certified bound cannot beat the
+   incumbent, are discarded. Finite tree exhaustion therefore returns a
+   globally optimal admissible partition over the prescribed families, or
+   proves none exists.
 
-This establishes finite convergence without relying on ReCom's mixing,
-sampling every partition, or a heuristic pricing neighborhood. It is not a
-polynomial-time guarantee; exact pricing and the search tree can be expensive.
+The two-zone redraw does not enter this argument and does not disturb it.
+Step 1 needs only that a round which adds columns adds *new* ones from a finite
+set, which the pool's deduplication and `ZoneFamily` re-validation guarantee
+whatever the source; steps 2-4 read `node_bound`, which is written by pricing
+alone. Termination of a node's loop is likewise unaffected: a redraw sweep adds
+finitely many columns, and its `(pair, territory, fixings)` memo means repeated
+sweeps at an unchanged incumbent solve nothing, so the redraw cannot generate an
+infinite sequence of rounds. Correspondingly it cannot *close* a node either --
+a round that only redraws re-solves the master and returns to pricing.
+
+This is finite convergence without relying on ReCom's mixing, on sampling every
+partition, or on a heuristic pricing neighbourhood. It is not a polynomial
+guarantee.
+
+The one caveat is the scaling above. Because the pricing objective is rounded,
+"no improving column" is detected as *pricing proved optimality of the rounded
+objective and no zone it returned improves the master exactly*, and the node
+bound retains the residual. So the guarantee delivered is optimality to
+`tolerance + dw_bound_slack` rather than to `tolerance`, with both reported.
+Branching remains exhaustive regardless, so the residual costs tightness, not
+correctness.
 
 ## Practical stopping and verification
 
-Use `solve_time_limits: [.inf]` for unlimited search; ReCom seeding still has a
-finite `dw_recom_time_limit`. `max_iterations` does not cap this algorithm.
-With a finite time budget, return the incumbent and valid remaining upper bound
-without claiming optimality. `dw_absolute_gap`, `dw_branch_nodes`, pricing-call
-counts, per-node history, and termination reason are saved in solution metadata.
+Use `solve_time_limits: [.inf]` for unlimited search; hint and ReCom seeding
+still have their own finite budgets. `max_iterations` does not cap this
+algorithm. With a finite budget, the incumbent and a valid remaining upper bound
+are returned without claiming optimality. `dw_absolute_gap`, `dw_bound_slack`,
+`dw_branch_nodes`, pricing-call counts, per-round history and the termination
+reason are all in solution metadata.
 
-The implementation uses Gurobi floating-point arithmetic and an explicit
-`tolerance` (default 1e-6), rather than rational or interval proof certificates.
-Pricing runs at `MIPGap = MIPGapAbs = 0` with feasibility, integrality, and
-optimality tolerances at 1e-9, consistent with the 1e-6 slack the pool's own
-feasibility test allows. The master LP is solved with dual simplex rather than
-the default concurrent method so that a given column pool always yields the same
-duals -- those duals are the pricing objective.
-Its `OPTIMAL` status means completion to these numerical tolerances. Numerical
-stalls return an unresolved status. The mathematical proof above assumes exact
-arithmetic and zero gap; it applies to the specified finite-grid model, not to
-continuous-lottery MID or to a finer geographic graph.
+`OPTIMAL` means the tree closed to the stated tolerance. Numerical stalls return
+an unresolved status with a distinguishing `stop_reason`:
+`pricing_incomplete` (a label did not prove a bound),
+`column_generation_stall` (the LP claimed optimality with an exactly improving
+column already in the pool), `phase_one_numerical_stall`,
+`integrality_numerical_stall`, `master_*`, `time_limit`. The proof above assumes
+exact arithmetic; the implementation uses Gurobi floating-point LP duals and
+CP-SAT integer bounds.
 
-One pricing model is built per zone label and kept alive for the whole search.
-Between calls only the branch fixings and the master duals change: fixings are
-variable bounds, released and reapplied per call, and the duals are objective
-coefficients. `problem.fixed` and `problem.candidates` are written as rows, not
-bounds, so resetting a fixing cannot loosen them. `dw_pricing_models` reports
-the count, which should equal the zone count however many nodes and
-column-generation rounds the search took.
+Tests compare each welfare block with its oracle at every admissible zone,
+compare global pricing with enumeration over every admissible zone under random
+duals, reach an enumerated integer optimum from an empty pool for all three
+objectives, exercise a strict LP/integer gap requiring branching, check that
+Phase I proves an infeasible instance, confirm a reused model honours each
+call's assumptions, confirm a never-optimal pricer still contributes its columns
+without closing a node, and check that smoothing and both master methods reach
+the same certified optimum.
 
-A time-limited pricing solve is used for two different purposes with two
-different requirements. Adding a column needs only a positive reduced cost, so
-any status with a solution qualifies; the master independently re-checks the
-reduced cost and `ZonePool.feasible` re-checks the zone exactly, since the MIP
-works to a tolerance. Closing a node needs a proven bound, so it still requires
-every label to price to `OPTIMAL`. A round that adds columns without proving
-anything is an ordinary column-generation round and the search continues; it
-just never certifies.
-
-Tests compare global pricing with every feasible zone on small graphs, compare
-the complete search with a fully enumerated integer master, exercise a strict
-LP/integer gap requiring branching, recover an empty pool through Phase I,
-check infeasibility and interrupted-pricing behavior, confirm a reused model
-still honours each call's fixings, and confirm a never-optimal pricer still
-contributes its columns without closing a node.
+For the redraw specifically (`tests/test_zone_redraw.py`): its optimum is
+compared with enumeration of every admissible re-partition of a pair's
+territory, for all three objectives, both when that territory is the whole
+district and when it is a strict subset; every harvested split is checked to be
+family-admissible on both halves and to complete the untouched zones into a
+tiling; the dual cancellation of property 2 is checked directly against random
+dual points; a seeded pool with exactly one tiling is checked to gain more;
+the memo is checked to make a second sweep solve nothing and the swept
+partition to be two-zone optimal; branch fixings and the boundary cap are
+checked in both the satisfiable and the unsatisfiable direction; and
+`branch_and_price` is checked to certify the same optimum and the same valid
+bound with the redraw on as with it off.
 
 References: [SCIP pricing callbacks and infeasible-node pricing](https://www.scipopt.org/doc-7.0.1/html/PRICER.php),
 [SCIP branch-and-price example](https://www.scipopt.org/doc-6.0.0/html/BINPACKING_MAIN.php),
-[Gurobi attributes for LP duals (`Pi`) and MIP bounds (`ObjBound`)](https://docs.gurobi.com/projects/optimizer/en/current/reference/attributes.html).
+[Gurobi attributes for LP duals (`Pi`) and the barrier `Crossover` parameter](https://docs.gurobi.com/projects/optimizer/en/current/reference/attributes.html),
+[CP-SAT assumptions and solution callbacks](https://developers.google.com/optimization/cp/cp_solver).

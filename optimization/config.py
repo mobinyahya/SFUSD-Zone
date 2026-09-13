@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 
 from loaders import DataScenario, anchor_data_config, load_scenario
+from optimization.dw_options import DW_MASTER_METHODS, DW_OBJECTIVES
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.mid_options import normalize_complementary_slackness_slack
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
@@ -184,6 +185,28 @@ class OptimizationConfig:
     dw_recom_samples: int = 500
     dw_recom_chains: int = 4
     dw_recom_time_limit: float = 60.0
+    # Barrier without crossover, so the pricing problem is aimed at an
+    # interior dual point rather than a degenerate set-partitioning vertex.
+    dw_master_method: str = "barrier"
+    # Wentges smoothing weight on this round's duals; 1.0 is no smoothing.
+    dw_dual_smoothing: float = 1.0
+    # Integer units the CP-SAT pricing objective is measured in.
+    dw_pricing_scale: int = 1000
+    dw_pricing_columns_per_call: int = 8
+    dw_pricing_parallel: bool = True
+    # Seconds one column-generation round may spend pricing, doubled whenever a
+    # round neither adds a column nor proves a bound. Uncapped, the first round
+    # on a real instance eats the whole budget and nothing about convergence is
+    # observable; `.inf` restores that.
+    dw_pricing_time_limit: float = 30.0
+    # Two-zone redraws: re-partition a pair of the incumbent's zones optimally,
+    # leaving the other Z - 2 alone. Every solution of that model is a complete
+    # tiling, so this is the only column source here that grows the number of
+    # ways the master can cover V -- which is the measured obstruction. It
+    # contributes columns and incumbents only, never a bound.
+    dw_redraw: bool = True
+    dw_redraw_time_limit: float = 60.0
+    dw_redraw_splits_per_call: int = 8
 
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
@@ -280,8 +303,10 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
-        if self.dw_objective not in {"mid", "boundary"}:
-            raise ValueError("dw_objective must be mid or boundary.")
+        if self.dw_objective not in DW_OBJECTIVES:
+            raise ValueError(
+                f"dw_objective must be one of: {', '.join(DW_OBJECTIVES)}."
+            )
         for name in ("dw_recom_samples", "dw_recom_chains"):
             value = getattr(self, name)
             minimum = 0 if name == "dw_recom_samples" else 1
@@ -293,9 +318,49 @@ class OptimizationConfig:
             or self.dw_recom_time_limit < 0
         ):
             raise ValueError("dw_recom_time_limit must be finite and nonnegative.")
+        if self.dw_master_method not in DW_MASTER_METHODS:
+            raise ValueError(
+                f"dw_master_method must be one of: "
+                f"{', '.join(sorted(DW_MASTER_METHODS))}."
+            )
+        if (
+            isinstance(self.dw_dual_smoothing, bool)
+            or not isinstance(self.dw_dual_smoothing, (int, float))
+            or not 0.0 < float(self.dw_dual_smoothing) <= 1.0
+        ):
+            raise ValueError("dw_dual_smoothing must lie in (0, 1].")
+        self.dw_dual_smoothing = float(self.dw_dual_smoothing)
+        for name in (
+            "dw_pricing_scale",
+            "dw_pricing_columns_per_call",
+            "dw_redraw_splits_per_call",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer.")
+        if not isinstance(self.dw_pricing_parallel, bool):
+            raise ValueError("dw_pricing_parallel must be a Boolean.")
+        if (
+            isinstance(self.dw_pricing_time_limit, bool)
+            or not isinstance(self.dw_pricing_time_limit, (int, float))
+            or math.isnan(self.dw_pricing_time_limit)
+            or self.dw_pricing_time_limit <= 0
+        ):
+            raise ValueError("dw_pricing_time_limit must be positive or infinity.")
+        self.dw_pricing_time_limit = float(self.dw_pricing_time_limit)
+        if not isinstance(self.dw_redraw, bool):
+            raise ValueError("dw_redraw must be a Boolean.")
+        if (
+            isinstance(self.dw_redraw_time_limit, bool)
+            or not isinstance(self.dw_redraw_time_limit, (int, float))
+            or math.isnan(self.dw_redraw_time_limit)
+            or self.dw_redraw_time_limit < 0
+        ):
+            raise ValueError("dw_redraw_time_limit must be nonnegative or infinity.")
+        self.dw_redraw_time_limit = float(self.dw_redraw_time_limit)
         if self.strategy == "dantzig_wolfe":
-            if self.solver != "recom":
-                raise ValueError("dantzig_wolfe requires solver='recom'.")
+            if self.solver != "cp_bool":
+                raise ValueError("dantzig_wolfe requires solver='cp_bool'.")
             if self.include_citywide:
                 raise ValueError("dantzig_wolfe requires include_citywide=false.")
             if self.budget_accounting != "wall_clock":
@@ -310,16 +375,17 @@ class OptimizationConfig:
                 raise ValueError(
                     "tolerance must be finite and non-negative for dantzig_wolfe."
                 )
-            if self.dw_objective == "mid":
+            if self.dw_objective != "boundary":
                 if self.program_population != "All":
                     raise ValueError(
-                        "DW MID welfare requires program_population='All'."
+                        "DW welfare objectives require program_population='All'."
                     )
                 if self._data_scenario.filter(
                     "optimization", "geography_vintage"
                 ) != self._data_scenario.filter("assignment", "geography_vintage"):
                     raise ValueError(
-                        "DW MID welfare requires matching geography_vintage values."
+                        "DW welfare objectives require matching geography_vintage "
+                        "values."
                     )
         if self.strategy in {"mid", "mid_decomp", "saa"}:
             if self.strategy == "saa" and self.solver not in {"cp_bool", "mip"}:
@@ -674,4 +740,13 @@ class OptimizationConfig:
             dw_recom_samples=self.dw_recom_samples,
             dw_recom_chains=self.dw_recom_chains,
             dw_recom_time_limit=self.dw_recom_time_limit,
+            dw_master_method=self.dw_master_method,
+            dw_dual_smoothing=self.dw_dual_smoothing,
+            dw_pricing_scale=self.dw_pricing_scale,
+            dw_pricing_columns_per_call=self.dw_pricing_columns_per_call,
+            dw_pricing_parallel=self.dw_pricing_parallel,
+            dw_pricing_time_limit=self.dw_pricing_time_limit,
+            dw_redraw=self.dw_redraw,
+            dw_redraw_time_limit=self.dw_redraw_time_limit,
+            dw_redraw_splits_per_call=self.dw_redraw_splits_per_call,
         )

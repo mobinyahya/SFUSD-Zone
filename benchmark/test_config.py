@@ -197,11 +197,11 @@ def test_saa_manifest_hashes_matching_policy_files():
     }
 
 
-@pytest.mark.parametrize("objective", ["mid", "boundary"])
+@pytest.mark.parametrize("objective", ["mid", "stable_matching", "boundary"])
 def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
     config = OptimizationConfig(
         strategy="dantzig_wolfe",
-        solver="recom",
+        solver="cp_bool",
         dw_objective=objective,
         data={
             "scenario": "legacy",
@@ -209,7 +209,7 @@ def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
         },
     )
     manifest = _benchmark_source_manifest(config)
-    assert ("matching_policy" in manifest) == (objective == "mid")
+    assert ("matching_policy" in manifest) == (objective != "boundary")
 
 
 def test_visualization_config_anchors_shared_artifact_dir(tmp_path):
