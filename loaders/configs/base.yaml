@@ -105,6 +105,36 @@ files:
     root: data
     classification: restricted
     geography_vintage: "2010"
+  optimization.students.enrolled.2425:
+    path: Data/Cleaned/enrolled_2425.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2425:
+    path: Data/Cleaned/student_2425.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2526:
+    path: Data/Cleaned/enrolled_2526.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2526:
+    path: Data/Cleaned/student_2526.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2627:
+    path: Data/Cleaned/enrolled_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applicant.2627:
+    path: Data/Cleaned/student_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
 
   assignment.students.1415:
     path: Data/Cleaned/student_1415.csv
@@ -156,6 +186,21 @@ files:
     root: data
     classification: restricted
     geography_vintage: "2010"
+  assignment.students.2425:
+    path: Data/Cleaned/student_2425.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2526:
+    path: Data/Cleaned/student_2526.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2627:
+    path: Data/Cleaned/student_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
 
   assignment.programs.1516:
     path: Data/Cleaned/programs_1516.csv
@@ -191,6 +236,30 @@ files:
     classification: internal
   assignment.programs.2324:
     path: Data/Cleaned/programs_2324.csv
+    root: data
+    classification: internal
+  assignment.programs.2425:
+    path: Data/Cleaned/programs_2425.csv
+    root: data
+    classification: internal
+  assignment.programs.2425.mission_bay:
+    path: Data/Cleaned/programs_withMissionBay_2425.csv
+    root: data
+    classification: internal
+  assignment.programs.2526:
+    path: Data/Cleaned/programs_2526.csv
+    root: data
+    classification: internal
+  assignment.programs.2526.mission_bay:
+    path: Data/Cleaned/programs_withMissionBay_2526.csv
+    root: data
+    classification: internal
+  assignment.programs.2627:
+    path: Data/Cleaned/programs_2627.csv
+    root: data
+    classification: internal
+  assignment.programs.2627.mission_bay:
+    path: Data/Cleaned/programs_withMissionBay_2627.csv
     root: data
     classification: internal
   assignment.programs.2122.no_special:
@@ -284,6 +353,18 @@ files:
     path: Data/Cleaned/programs_06_2223.csv
     root: data
     classification: internal
+  assignment.programs.06.2425:
+    path: Data/Cleaned/programs_06_2425.csv
+    root: data
+    classification: internal
+  assignment.programs.06.2526:
+    path: Data/Cleaned/programs_06_2526.csv
+    root: data
+    classification: internal
+  assignment.programs.06.2627:
+    path: Data/Cleaned/programs_06_2627.csv
+    root: data
+    classification: internal
   assignment.programs.09.1516:
     path: Data/Cleaned/programs_09_1516.csv
     root: data
@@ -314,6 +395,18 @@ files:
     classification: internal
   assignment.programs.09.2223:
     path: Data/Cleaned/programs_09_2223.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2425:
+    path: Data/Cleaned/programs_09_2425.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2526:
+    path: Data/Cleaned/programs_09_2526.csv
+    root: data
+    classification: internal
+  assignment.programs.09.2627:
+    path: Data/Cleaned/programs_09_2627.csv
     root: data
     classification: internal
 
@@ -1038,3 +1131,96 @@ school_years:
                 programs: assignment.programs.2324.status_quo
                 programs_catalog: assignment.programs.2324.mission_bay
                 schools: assignment.schools.current_mission_bay
+  "2425":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2425
+        enrolled: optimization.students.enrolled.2425
+    assignment:
+      students:
+        applicant: assignment.students.2425
+        enrolled: optimization.students.enrolled.2425
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2425
+                schools: assignment.schools.2324
+              mission_bay:
+                programs: assignment.programs.2425.mission_bay
+                schools: assignment.schools.current_mission_bay
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2425
+                schools: assignment.schools.06.2324
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2425
+                schools: assignment.schools.09.2324
+  "2526":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2526
+        enrolled: optimization.students.enrolled.2526
+    assignment:
+      students:
+        applicant: assignment.students.2526
+        enrolled: optimization.students.enrolled.2526
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2526
+                schools: assignment.schools.2324
+              mission_bay:
+                programs: assignment.programs.2526.mission_bay
+                schools: assignment.schools.current_mission_bay
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2526
+                schools: assignment.schools.06.2324
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2526
+                schools: assignment.schools.09.2324
+  "2627":
+    optimization:
+      students:
+        applicant: optimization.students.applicant.2627
+        enrolled: optimization.students.enrolled.2627
+    assignment:
+      students:
+        applicant: assignment.students.2627
+        enrolled: optimization.students.enrolled.2627
+      grades:
+        KG:
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.2627
+                schools: assignment.schools.2324
+              mission_bay:
+                programs: assignment.programs.2627.mission_bay
+                schools: assignment.schools.current_mission_bay
+        "06":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.06.2627
+                schools: assignment.schools.06.2324
+        "09":
+          profiles:
+            default:
+              standard:
+                programs: assignment.programs.09.2627
+                schools: assignment.schools.09.2324

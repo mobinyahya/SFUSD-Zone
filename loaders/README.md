@@ -308,11 +308,41 @@ Its capacities replace matching catalog capacities. Unmatched catalog rows keep
 their existing capacity, or remain missing if the catalog has no capacity
 column.
 
-The current registry supports optimization years `"1415"` through `"2324"`.
+The current registry supports optimization years `"1415"` through `"2627"`.
 Assignment years `"1516"` through `"2223"` provide grades `KG`, `"06"`, and
 `"09"` with profile `default` and variant `standard`. Assignment year `"2324"`
-provides `KG/default/standard` and `KG/status_quo/mission_bay`. The checked-in
+provides `KG/default/standard` and `KG/status_quo/mission_bay`. Assignment
+years `"2425"` through `"2627"` provide grades `KG`, `"06"`, and `"09"` with
+profile `default`; the `KG` profile carries both `standard` and `mission_bay`
+variants, while `"06"` and `"09"` carry `standard` only. The checked-in
 `base.yaml` remains authoritative when this inventory changes.
+
+### The 2024-25 through 2026-27 transfer years
+
+These three years come from the September 2026 SFUSD transfer and are built by
+`analysis/data_prep/convert_sfusd_transfer.py`. The transfer holds only
+students, so these registry years borrow from the 2023-24 tables in ways a
+reader has to know about:
+
+| What | Where it comes from |
+|---|---|
+| Students, grades, ranked preferences, tie-breakers | That year's pre-run, post-run, and demographics extracts |
+| Which programs exist | That year's observed requests |
+| Program capacities | The 2023-24 district tables, or the program's observed assignment count where the 2023-24 tables have no such program |
+| School coordinates, category, ratings | The 2023-24 school tables |
+| Block-level equity indices (`FRL Score`, `AALPI Score`, `HOCidx1`, …) | The 2021-22 through 2023-24 cleaned student files, joined on the 2010 Census Block |
+| Preference rounds | One round only, so `rounds: all` resolves to `[1]` |
+
+Every emitted program row carries a `capacity_source` column naming its
+provenance, and the converter writes
+`sfusd_transfer_report_<year>.md` beside the tables listing every field the
+transfer does not contain. Read that report before comparing a number from one
+of these years against a checked-in year.
+
+SY26-27 introduces one identity change worth knowing: Mission Bay ES appears in
+real requests under school ID `1731`, which none of this repository's Mission
+Bay handling recognises. The converter rewrites it to the canonical `999`, so
+`include_mission_bay` keeps working as documented.
 
 ## Scenario Configuration
 

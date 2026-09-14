@@ -126,6 +126,10 @@ def test_bundled_scenarios_are_declared_as_package_data():
         "historical-2324.yaml",
         "legacy.yaml",
         "mission-bay-2324.yaml",
+        "sfusd-2425-2627.yaml",
+        "sfusd-2425.yaml",
+        "sfusd-2526.yaml",
+        "sfusd-2627.yaml",
         "summer-26-zoning.yaml",
     }
     scenario_resources = files("loaders").joinpath("configs", "scenarios")
@@ -568,6 +572,9 @@ def test_base_schema_two_registry_is_strict_and_catalog_backed(tmp_path):
         "2122",
         "2223",
         "2324",
+        "2425",
+        "2526",
+        "2627",
     }
     catalog_ids = set(base["files"])
     for entry in base["school_years"].values():
@@ -876,11 +883,13 @@ def test_assignment_registry_rejects_unsupported_combinations(overrides, error):
 
 
 def test_registry_has_no_nearby_year_fallback():
-    with pytest.raises(ValueError, match="school year '2425'.*available years"):
+    # 2728 is deliberately one year past the newest registered year, so this
+    # stays a test of the absent-year path rather than of a stale inventory.
+    with pytest.raises(ValueError, match="school year '2728'.*available years"):
         load_scenario(
             {
                 "scenario": "legacy",
-                "overrides": {"filters": {"optimization": {"years": ["2425"]}}},
+                "overrides": {"filters": {"optimization": {"years": ["2728"]}}},
             },
             environ={},
         )

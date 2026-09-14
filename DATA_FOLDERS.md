@@ -112,6 +112,16 @@ geometry only.
 | `historical-2324` | 2023-24 assignment runs excluding Mission Bay |
 | `mission-bay-2324` | 2023-24 optimization/assignment integration including Mission Bay |
 | `assignment-generated-zones-2324` | Large 2023-24 assignment policy sweeps over generated zone CSVs |
+| `sfusd-2425` / `sfusd-2526` / `sfusd-2627` | One school year of the September 2026 SFUSD transfer, for both optimization and assignment |
+| `sfusd-2425-2627` | Optimization pooled over all three transfer years, with assignment on 2026-27 |
+
+The four `sfusd-*` scenarios read tables produced by
+`analysis/data_prep/convert_sfusd_transfer.py` from
+`Data/raw_SFUSD_data_downloads/Sep 14 2026 data transfer/`. The transfer
+contains students only, so those scenarios inherit 2023-24 capacities, 2023-24
+school attributes, and a single preference round. `loaders/README.md` has the
+provenance table, and the converter writes a per-year gap report beside the
+converted tables.
 
 Scenarios own invariant sources and complete selector defaults. Run filter
 overrides select canonical years/grades, applicant or enrolled students,
