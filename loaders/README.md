@@ -331,13 +331,26 @@ reader has to know about:
 | Program capacities | The 2023-24 district tables, or the program's observed assignment count where the 2023-24 tables have no such program |
 | School coordinates, category, ratings | The 2023-24 school tables |
 | Block-level equity indices (`FRL Score`, `AALPI Score`, `HOCidx1`, …) | The 2021-22 through 2023-24 cleaned student files, joined on the 2010 Census Block |
-| Preference rounds | One round only, so `rounds: all` resolves to `[1]` |
+| Preference rounds | One list per student, emitted as `r1_*`, so `rounds: all` resolves to `[1]`. Which round that list came from is not recoverable &mdash; see below |
 
 Every emitted program row carries a `capacity_source` column naming its
 provenance, and the converter writes
 `sfusd_transfer_report_<year>.md` beside the tables listing every field the
 transfer does not contain. Read that report before comparing a number from one
 of these years against a checked-in year.
+
+The round label deserves a second look before any per-round comparison. Each
+transfer holds exactly one preference list per student: the pre-run has no
+round column and no student has a repeated rank. But the demographics
+extract's per-student `rounds_applied` field records a later round (`4` is the
+amendment round; `50`, `666`, `888`, `902`, `905`, `999` are administrative
+codes) for a substantial minority of applicants &mdash; 9% of 2024-25
+kindergarten applicants, 38% of 2025-26, and 27% of 2026-27 &mdash; and the
+pre-run carries nothing that separates those requests: `idRequest` spans the
+same range for tagged and untagged students. So `r1_*` is the label the
+converter assigns, not a fact the transfer states, and this is true of all
+three years rather than any one of them. The checked-in years through 2023-24
+are different: they carry genuine separate `r1_`/`r2_`/`r4_` blocks.
 
 SY26-27 introduces one identity change worth knowing: Mission Bay ES appears in
 real requests under school ID `1731`, which none of this repository's Mission

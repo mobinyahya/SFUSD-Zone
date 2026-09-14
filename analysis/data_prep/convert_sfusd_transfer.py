@@ -18,7 +18,8 @@ Usage
 
 Outputs, per year, below ``--out`` (default ``<data root>/Data/Cleaned``):
 
-* ``student_<year>.csv``   -- every applicant, every grade, one round.
+* ``student_<year>.csv``   -- every applicant, every grade, one
+  preference list each.
 * ``enrolled_<year>.csv``  -- the kindergarten subset, matching the existing
   ``enrolled_*`` convention (verified: for 2021-22 through 2023-24 the
   checked-in ``enrolled_*`` file is exactly the KG rows of ``student_*``).
@@ -1284,6 +1285,81 @@ def drop_unlocatable_requests(
     return prerun.loc[~drop.to_numpy()].reset_index(drop=True)
 
 
+def _report_round_participation(
+    prerun: pd.DataFrame, demographics: pd.DataFrame, report: Report
+) -> None:
+    """Record how many applicants the demographics extract ties to a later round.
+
+    The pre-run carries one list per student and nothing that says which round
+    it came from, so the converter labels every list ``r1_``. The demographics
+    extract has a per-student ``rounds_applied`` field naming the later rounds
+    that student engaged with (``4`` is the amendment round; ``50``, ``666``,
+    ``888``, ``902``, ``905`` and ``999`` are administrative codes). It is
+    blank for the majority but not for a small minority, so the ``r1_`` label
+    is an assumption worth quantifying rather than a fact.
+
+    Two checks say the pre-run is nonetheless a single coherent snapshot rather
+    than several rounds stacked together: no student has a repeated rank, and
+    ``idRequest`` spans the same range for tagged and untagged students, so
+    tagged rows are not a distinguishable later batch. Whatever round each list
+    came from, there is exactly one per student and no column separates them.
+    """
+    if "rounds_applied" not in demographics.columns:
+        report.missing(
+            "round_participation",
+            {
+                "note": (
+                    "the demographics extract has no rounds_applied column, so "
+                    "nothing corroborates or contradicts the r1_ label"
+                )
+            },
+        )
+        return
+
+    identity = demographics["scrambledstudentno"].astype("string").str.strip()
+    tags = (
+        demographics.loc[identity.notna() & identity.ne(""), "rounds_applied"]
+        .groupby(identity.loc[identity.notna() & identity.ne("")])
+        .first()
+    )
+
+    def normalize(value: Any) -> str:
+        if value is None or (not isinstance(value, str) and pd.isna(value)):
+            return "blank"
+        parts = (part.strip() for part in str(value).replace("\n", ",").split(","))
+        return ",".join(sorted(part for part in parts if part)) or "blank"
+
+    applicants = prerun["scrambledstudentno"].astype("string").str.strip()
+    grades = prerun["Grade"].map(normalize_grade)
+    payload: dict[str, Any] = {}
+    for label, mask in (
+        ("all_applicants", pd.Series(True, index=prerun.index)),
+        ("kindergarten_applicants", grades.eq("KG")),
+    ):
+        selected = applicants.loc[mask].drop_duplicates()
+        if selected.empty:
+            continue
+        counts = selected.map(tags).map(normalize).value_counts()
+        total = int(counts.sum())
+        blank = int(counts.get("blank", 0))
+        payload[label] = {
+            "total": total,
+            "no_later_round_recorded": blank,
+            "some_later_round_recorded": total - blank,
+            "by_rounds_applied": {
+                str(key): int(value) for key, value in counts.items() if key != "blank"
+            },
+        }
+    payload["note"] = (
+        "rounds_applied is a per-student field in the demographics extract, "
+        "not a per-request one, and idRequest does not separate tagged from "
+        "untagged rows, so the pre-run cannot be split by round. Students "
+        "counted under some_later_round_recorded still contribute exactly one "
+        "list, emitted as r1_."
+    )
+    report.missing("round_participation", payload)
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
@@ -1394,12 +1470,14 @@ def convert_year(
         "2023-24 vintage while students and programs are this year's."
     )
     report.note(
-        "Each transfer holds exactly one round of requests: the pre-run has no "
-        "round column, no student has a repeated rank, and the demographics "
-        "'rounds_applied' field is blank for all but a few hundred students. "
-        "Only r1_* preference columns are emitted, so `rounds: all` resolves to "
-        "[1] for these years."
+        "The pre-run holds exactly one preference list per student: it has no "
+        "round column and no student has a repeated rank. Only r1_* preference "
+        "columns are emitted, so `rounds: all` resolves to [1] for these "
+        "years. That list is labelled round 1 by assumption, not by evidence -- "
+        "see rounds_applied below for how many applicants also engaged with a "
+        "later round."
     )
+    _report_round_participation(prerun, demographics, report)
 
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)

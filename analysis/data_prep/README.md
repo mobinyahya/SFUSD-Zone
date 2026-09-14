@@ -41,8 +41,14 @@ one:
 - **No capacity file.** Program existence is derived from requests; capacity
   comes from the 2023-24 district tables, or from the program's observed
   assignment count when 2023-24 has no such program.
-- **One round only.** The pre-run has no round column and no student has a
-  repeated rank, so only `r1_*` preference columns are emitted.
+- **One preference list per student, of unknown round.** The pre-run has no
+  round column and no student has a repeated rank, so only `r1_*` preference
+  columns are emitted. But the demographics extract's per-student
+  `rounds_applied` field records a later round for a minority of applicants
+  (9% of 2024-25 KG applicants, 38% of 2025-26, 27% of 2026-27), and nothing in
+  the pre-run separates those rows: `idRequest` spans the same range for tagged
+  and untagged students. So the `r1_` label is an assumption. The report's
+  `round_participation` section quantifies it per year.
 
 ## Tests
 

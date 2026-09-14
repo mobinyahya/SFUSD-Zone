@@ -4,14 +4,16 @@
 # converted by analysis/data_prep/convert_sfusd_transfer.py. Read the
 # conversion report written beside the cleaned tables
 # (sfusd_transfer_report_<year>.md) before trusting a number from this
-# scenario: the transfer carries no capacity file, no school table, and only
-# one preference round, so this scenario inherits
+# scenario: the transfer carries no capacity file, no school table, and one
+# preference list per student, so this scenario inherits
 #
 #   * 2023-24 program capacities wherever the transfer's programs exist in the
 #     2023-24 district tables, and each program's observed per-year assignment
 #     count where they do not (see the capacity_source column);
 #   * 2023-24 school coordinates, categories, and ratings; and
-#   * a single preference round, so `rounds: all` resolves to [1].
+#   * a single preference list per student, emitted as r1_* so
+#     `rounds: all` resolves to [1]. Which round that list came from is not
+#     recoverable from the transfer; see round_participation in the report.
 #
 # The choice-model utility estimate is still the 2023-24 one; no estimate has
 # been fitted on per-year preferences.
