@@ -60,6 +60,13 @@ tasks:
     solve_time_limits: [[1800],[3600]]
 
   - solver: 'cp_bool'
+    saa_num_seeds: [5,10]
+    strategy: [direct_samples]
+    workers: 16
+    seed: [1,2,3,4]
+    solve_time_limits: [[1800],[3600]]
+
+  - solver: 'cp_bool'
     strategy: [priced_access]
     workers: 16
     max_iterations: [25]
@@ -80,7 +87,7 @@ tasks:
 
 
 execution:
-  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v6'
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v7'
   skip_existing: true
   rerun_failed: true
   sequential: false

@@ -21,7 +21,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom`, `relaxed_recom`, `short_bursts`, `adaptive_short_bursts` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `short_bursts_choice`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `short_bursts_choice`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary

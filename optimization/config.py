@@ -33,6 +33,7 @@ _STRATEGIES = {
     "mid",
     "mid_decomp",
     "saa",
+    "direct_samples",
     "short_bursts_choice",
     "priced_access",
     "stable_cutoff",

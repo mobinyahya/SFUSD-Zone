@@ -25,6 +25,7 @@ from optimization.tests.synthetic import FakeDataset, make_grid_problem
 def test_only_supported_strategies_are_registered():
     assert available_strategies() == [
         "dantzig_wolfe",
+        "direct_samples",
         "iterative_choice",
         "mid",
         "mid_decomp",
