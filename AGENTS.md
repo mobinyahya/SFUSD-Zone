@@ -136,7 +136,8 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
 Graphs are cached by exact source contents, data filters, and partition-policy
-parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
+parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v<N>/<sha256>/`,
+where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (14 at time of writing).
 
 ## Benchmarking
 
@@ -186,6 +187,31 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `hints` | `voronoi` | Warm-start method: `feasible`, `voronoi`, or `none` |
 | `seed` | `42` | Solver seed |
 
-Graph cache path: `/soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/`.
-Feasible-hint cache path: `/soalnas/share/data/school_choice/Data/caches/feasible_hint/v1/<sha256>/`, keyed by the feasibility model plus the hint search settings (seed included).
-Zoned-transport bound cache path: `/soalnas/share/data/school_choice/Data/caches/zoned_transport_bound/v2/<sha256>/`, keyed by the zoning feasible set, the market, the contiguity description (`neighbors` or `flow`), and `centroid_neighbor_radius`. `zoned_transport_workers` is deliberately excluded: threads change how long the LP takes, not its value.
+Cache paths carry the artifact's schema version, which lives in code and moves
+without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (14),
+`initial_solutions.FEASIBLE_HINT_CACHE_SCHEMA_VERSION` (3). Read the constant
+rather than the number quoted here.
+
+Graph cache path: `.../caches/graphs/v14/<sha256>/`.
+
+Feasible-hint cache path: `.../caches/feasible_hint/v3/<sha256>/`, keyed by the
+*feasible set* and nothing else: `feasibility_fingerprint(problem)` plus
+`_hint_model_identity` (the hint solver, `CP_SAT_SCALE`,
+`COEFFICIENT_ROUNDING`, and `centroid_neighbor_radius`). Search settings are
+excluded by construction — `workers`, `seed`, `feasible_hint_time_limit` and
+the CP-SAT tuning knobs (`linearization_level`, `cp_model_probing_level`,
+`symmetry_level`, `cp_sat_search_strategy`) all change how hard a run looks,
+never which assignments satisfy the model. So a hint solved once with many
+workers and a long limit is served to every later run whatever its own budget,
+which is what makes warming hints up front worth doing. Every hint is
+revalidated with `check_zoning` on write and on read, so a stale or
+solver-specific one is rejected rather than reused.
+
+`boundary_prop` is part of that fingerprint, and `Dataset.problem_for` does
+*not* set it — it returns `-1.0` (constraint off) and each strategy applies its
+own `options["boundary_prop"]` afterwards. Anything that builds a problem
+outside a strategy and expects to share the strategy's hints has to do the
+same, or it keys a different, strictly easier feasible set.
+
+Zoned-transport bound cache path: `.../caches/zoned_transport_bound/v2/<sha256>/`
+(`zoned_transport.ZONED_TRANSPORT_CACHE_SCHEMA_VERSION`), keyed by the zoning feasible set, the market, the contiguity description (`neighbors` or `flow`), and `centroid_neighbor_radius`. `zoned_transport_workers` is deliberately excluded: threads change how long the LP takes, not its value.
