@@ -42,6 +42,23 @@ from optimization.solvers.balance import (
 from optimization.solvers.base import Solver, register
 
 CP_SAT_SCALE = 100  # integer scaling for float coefficients
+
+# Rounding a float coefficient to the nearest integer multiple of 1/CP_SAT_SCALE
+# can go either way, so a solution of the scaled model could break the exact
+# constraint by up to 0.5/CP_SAT_SCALE per term -- roughly 0.4 FRL students per
+# zone at Block_2. Nothing inside CP-SAT notices (it only ever sees the scaled
+# model), but consumers that re-check the exact constraint do: ReCom rejects any
+# violation above 1e-6, which is what made CP-SAT warm starts unusable as short
+# bursts' initial state. Rounding each side away from feasibility instead makes
+# the scaled feasible set a subset of the exact one, so anything CP-SAT calls
+# feasible really is. The price is a bound tightened by under
+# 1/CP_SAT_SCALE per term, well inside the FRL band's slack.
+#
+# Anything persisted from a solve of this model -- the feasible-hint cache --
+# keys on COEFFICIENT_ROUNDING and CP_SAT_SCALE, so changing either invalidates
+# what the old arithmetic produced instead of re-serving it.
+COEFFICIENT_ROUNDING = "conservative"
+_SCALE_SNAP = 1e-9  # absorbs float noise so exact multiples are not nudged
 _SENSE = {"<=", ">=", "=="}
 _CP_SAT_INT_PARAMETERS = (
     "linearization_level",
@@ -659,18 +676,20 @@ class _CpSatSolver(Solver):
     ) -> None:
         if sense not in _SENSE:
             raise ValueError(f"Bad sense {sense!r}.")
-        expr = sum(
-            int(round(c * CP_SAT_SCALE)) * x[(z, i)]
-            for (c, z, i) in terms
-            if (z, i) in x
-        )
-        r = int(round(rhs * CP_SAT_SCALE))
         if sense == "<=":
-            m.Add(expr <= r)
+            # Over-state the left side and under-state the bound, so satisfying
+            # the scaled row implies satisfying the exact one.
+            expr = _scaled_expr(x, terms, _ceil_scaled)
+            m.Add(expr <= _floor_scaled(rhs))
         elif sense == ">=":
-            m.Add(expr >= r)
+            expr = _scaled_expr(x, terms, _floor_scaled)
+            m.Add(expr >= _ceil_scaled(rhs))
         else:
-            m.Add(expr == r)
+            # An equality has no conservative rounding: tightening either side
+            # moves the only feasible hyperplane. Accept it only when the scale
+            # represents every coefficient exactly.
+            expr = _scaled_expr(x, terms, _exact_scaled)
+            m.Add(expr == _exact_scaled(rhs))
 
     def _candidate_nodes(self, problem: ZoneProblem, zone: int) -> list[int]:
         return [n for n in problem.nodes if zone in problem.candidate_zones(n)]
@@ -1292,6 +1311,48 @@ def _scaled_ceil(value: float, scale: float) -> int:
     if not math.isfinite(float(value)):
         raise ValueError(f"Choice objective contains non-finite value: {value!r}")
     return math.ceil(float(value) * scale)
+
+
+def _scaled_expr(
+    x: _AssignmentVars,
+    terms: list[_Term],
+    scale_coefficient,
+) -> Any:
+    """Build ``sum(scale_coefficient(c) * x[z][i])`` over the live variables."""
+
+    return sum(scale_coefficient(c) * x[(z, i)] for (c, z, i) in terms if (z, i) in x)
+
+
+def _checked(value: float) -> float:
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError(f"Linear constraint contains non-finite value: {value!r}")
+    return numeric
+
+
+def _ceil_scaled(value: float) -> int:
+    """Smallest integer at or above ``value * CP_SAT_SCALE``."""
+
+    return math.ceil(_checked(value) * CP_SAT_SCALE - _SCALE_SNAP)
+
+
+def _floor_scaled(value: float) -> int:
+    """Largest integer at or below ``value * CP_SAT_SCALE``."""
+
+    return math.floor(_checked(value) * CP_SAT_SCALE + _SCALE_SNAP)
+
+
+def _exact_scaled(value: float) -> int:
+    """``value * CP_SAT_SCALE`` when the scale represents it exactly."""
+
+    scaled = _checked(value) * CP_SAT_SCALE
+    rounded = round(scaled)
+    if abs(scaled - rounded) > _SCALE_SNAP:
+        raise ValueError(
+            f"Coefficient {value!r} is not an exact multiple of 1/{CP_SAT_SCALE}, "
+            "so an equality constraint cannot be scaled without changing it."
+        )
+    return int(rounded)
 
 
 def _normalized_cp_sat_search_strategy(value: object) -> str | None:

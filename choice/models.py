@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 
 from choice.mnl import MNLZoningUtility
 from choice.objective import ChoiceCut, ChoiceEvaluation
@@ -50,6 +51,7 @@ class MNLChoiceModel(ChoiceModel):
         lower_bound: float = -1_000_000_000.0,
         upper_bound: float = 1_000_000_000.0,
         empty_utility: float = -1e10,
+        citywide_schools: Iterable[object] = (),
     ):
         self.lower_bound = float(lower_bound)
         self.upper_bound = float(upper_bound)
@@ -58,6 +60,7 @@ class MNLChoiceModel(ChoiceModel):
             method=method,
             area_column=area_column,
             empty_utility=empty_utility,
+            citywide_schools=citywide_schools,
         )
 
     def evaluate_with_cuts(
@@ -82,9 +85,21 @@ def build_mnl_choice_model(
     *,
     method: str = "logsum",
 ) -> MNLChoiceModel:
-    """Build the sole supported zoning choice model."""
+    """Build the sole supported zoning choice model.
 
-    return MNLChoiceModel(data=data, method=method)
+    Resolves ``include_citywide_choice_opt`` from the scenario rather than
+    taking it as an argument, so every caller -- the strategy, the metrics, the
+    offline replays -- gets the same answer for the same scenario.
+    """
+
+    citywide: tuple[object, ...] = ()
+    if data.filter("optimization", "include_citywide_choice_opt", False):
+        # Imported here: the top-level choice package must not depend on
+        # optimization.data, which imports choice in turn.
+        from optimization.data.loaders import citywide_school_ids
+
+        citywide = tuple(citywide_school_ids(data))
+    return MNLChoiceModel(data=data, method=method, citywide_schools=citywide)
 
 
 class PricedAccessChoiceModel(ChoiceModel):

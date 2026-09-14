@@ -1,4 +1,49 @@
-"""Shared initial-solution helpers for solver warm starts."""
+"""Shared initial-solution helpers for solver warm starts.
+
+Cache-key policy for the feasible hint
+--------------------------------------
+The hint solve is expensive and its result is interchangeable: any point inside
+the feasible set is as good a warm start as any other. So the cache key names
+the *feasible set* and nothing else, and a run is meant to lean on a hint some
+other run found -- including one that searched with far more resources than it
+has. A 1-worker Slurm task reusing what a 16-worker task proved is the point of
+the cache, not a bug in it.
+
+That splits every input to the hint solve into two lists, and the split is
+enforced rather than documented: :func:`_hint_solver_options` builds the solver
+and raises if it is about to pass a name neither list classifies, and
+:func:`_hint_model_identity` raises if a feasibility-affecting name is missing
+from the key.
+
+``_HINT_FEASIBILITY_OPTIONS``
+    Changes *which* assignments are feasible. Must be in the key -- two runs
+    that disagree here are asking different questions and cannot share an
+    answer. ``centroid_neighbor_radius`` is the only one today: a positive
+    radius pins each centroid's graph-hop neighbourhood, shrinking the feasible
+    set in a way the problem fingerprint cannot see.
+
+``_HINT_SEARCH_OPTIONS``
+    Steers the search for a point inside an unchanged feasible set, so it must
+    stay *out* of the key. ``workers``, ``seed`` and
+    ``feasible_hint_time_limit`` are the obvious ones -- a run that searched
+    harder proves the same thing, only more often. The CP-SAT tuning knobs
+    (``linearization_level``, ``cp_model_probing_level``, ``symmetry_level``,
+    ``cp_sat_search_strategy``) belong here too -- they change the encoding
+    CP-SAT searches over and which solution it lands on, never the set of
+    assignments that satisfy the model.
+
+Options are not the whole story, so the key also carries
+:func:`_hint_model_identity`: the encoding, the coefficient scale and the
+rounding direction, read from the solver module rather than restated here.
+Those are code-level choices that move the feasible set just as surely as an
+option would, and a hint found under one of them is not valid under another.
+Adding a new option to the hint solver means putting its name in one of the two
+lists above; changing the model's arithmetic means the identity changes with it.
+
+Nothing here can make a stored hint trustworthy on its own, so every hint is
+checked against :func:`optimization.data.feasibility.check_zoning` before it is
+stored and again after it is read back.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +55,7 @@ from typing import Any, Mapping
 from loaders import CacheNamespace, CacheStore, DataScenario
 from optimization.data import contiguity
 from optimization.data.closer_neighbors import CLOSER_NEIGHBORS_GRAPH_KEY
+from optimization.data.feasibility import check_zoning
 from optimization.problem import ZoneProblem
 
 HINT_METHODS = {"feasible", "voronoi", "none"}
@@ -19,9 +65,25 @@ class FeasibleHintError(RuntimeError):
     """The bounded feasibility search found no zoning hint."""
 
 
-FEASIBLE_HINT_CACHE_SCHEMA_VERSION = 2
+# Bumped to 3 when the CP-SAT balance rows moved to conservative rounding: the
+# v2 hints were solutions of a slightly looser model and some of them break the
+# exact constraints.
+FEASIBLE_HINT_CACHE_SCHEMA_VERSION = 3
 FEASIBLE_HINT_ARTIFACT = "feasible_hint"
 FEASIBLE_HINT_PAYLOAD = "hint.pickle"
+
+# See the module docstring. Every option the hint solver reads must be in one.
+_HINT_FEASIBILITY_OPTIONS = ("centroid_neighbor_radius",)
+_HINT_SEARCH_OPTIONS = (
+    "feasible_hint_time_limit",
+    "seed",
+    "workers",
+    "linearization_level",
+    "cp_model_probing_level",
+    "symmetry_level",
+    "cp_sat_search_strategy",
+)
+_HINT_SOLVER_NAME = "cp_bool"
 
 
 @dataclass(frozen=True)
@@ -60,47 +122,50 @@ def feasible_initial_solution(
 ) -> InitialSolution:
     """Find one zoning-feasible assignment without an optimization objective.
 
-    The solve is reused through the shared content-addressed cache, keyed by
-    the feasibility model itself (:func:`feasibility_fingerprint`) and nothing
-    that only steers the search. Any assignment inside the feasible set is as
-    good a warm start as any other, so the seed, worker count, time limit, and
-    CP-SAT tuning parameters are all excluded from the key: two runs that
-    differ only in how hard they searched share one hint. Problems built
-    without an originating config carry no scenario and are never cached.
+    The solve is reused through the shared content-addressed cache, keyed by the
+    feasibility model itself and nothing that only steers the search -- see this
+    module's docstring for the policy and for why ``workers`` in particular is
+    excluded. Problems built without an originating config carry no scenario and
+    are never cached.
+
+    Every hint is checked against
+    :func:`optimization.data.feasibility.check_zoning` before it is stored and
+    again after it is read back, so a solver that is feasible only in its own
+    arithmetic cannot poison the cache for later runs.
     """
 
     options = solver_options or {}
     time_limit = _feasible_hint_time_limit(options)
 
     namespace = _feasible_hint_namespace(problem, options)
+    rejected: str | None = None
     if namespace is not None:
-        cached = _cached_hint(problem, namespace.load_pickle(FEASIBLE_HINT_PAYLOAD))
+        cached = _cached_hint(namespace.load_pickle(FEASIBLE_HINT_PAYLOAD))
         if cached is not None:
-            return InitialSolution(
-                assignment=cached["assignment"],
-                metadata={
-                    "hints": "feasible",
-                    "hint_solver": "cp_bool",
-                    "hint_solver_status": cached["status"],
-                    "hint_solver_wall_time_seconds": cached["wall_time"],
-                    "hint_cache": "hit",
-                    "hint_cache_key": namespace.key,
-                },
-            )
+            report = check_zoning(problem, cached["assignment"])
+            if report.feasible:
+                return InitialSolution(
+                    assignment=cached["assignment"],
+                    metadata={
+                        "hints": "feasible",
+                        "hint_solver": _HINT_SOLVER_NAME,
+                        "hint_solver_status": cached["status"],
+                        "hint_solver_wall_time_seconds": cached["wall_time"],
+                        "hint_cache": "hit",
+                        "hint_cache_key": namespace.key,
+                    },
+                )
+            # Solve again rather than hand on a hint that does not survive the
+            # exact check; the fresh one overwrites this payload below.
+            rejected = report.describe()
 
     # Import lazily because CP-SAT also consumes this shared hint interface.
     from optimization.solvers.cpsat import CpBoolSolver
 
     solver = CpBoolSolver(
         solve_time_limit=time_limit,
-        seed=int(options.get("seed", 42)),
-        workers=int(options.get("workers", 8)),
         hints="voronoi",
-        centroid_neighbor_radius=int(options.get("centroid_neighbor_radius", 0)),
-        linearization_level=options.get("linearization_level"),
-        cp_model_probing_level=options.get("cp_model_probing_level"),
-        symmetry_level=options.get("symmetry_level"),
-        cp_sat_search_strategy=options.get("cp_sat_search_strategy"),
+        **_hint_solver_options(options),
     )
     solution = solver.find_feasible_solution(problem)
     if not solution.feasible:
@@ -109,12 +174,21 @@ def feasible_initial_solution(
             f"{time_limit:g} seconds (status={solution.status})."
         )
 
+    report = check_zoning(problem, solution.assignment)
+    if not report.feasible:
+        raise FeasibleHintError(
+            f"{_HINT_SOLVER_NAME} reported a feasible hint that fails the exact "
+            f"feasibility check -- {report.describe()}."
+        )
+
     metadata: dict[str, object] = {
         "hints": "feasible",
-        "hint_solver": "cp_bool",
+        "hint_solver": _HINT_SOLVER_NAME,
         "hint_solver_status": solution.status,
         "hint_solver_wall_time_seconds": solution.wall_time,
     }
+    if rejected is not None:
+        metadata["hint_cache_rejected_reason"] = rejected
     if namespace is not None:
         namespace.save_pickle(
             FEASIBLE_HINT_PAYLOAD,
@@ -126,10 +200,37 @@ def feasible_initial_solution(
                 "wall_time": solution.wall_time,
             },
         )
-        metadata["hint_cache"] = "miss"
+        metadata["hint_cache"] = "rejected" if rejected else "miss"
         metadata["hint_cache_key"] = namespace.key
 
     return InitialSolution(assignment=solution.assignment, metadata=metadata)
+
+
+def _hint_solver_options(options: Mapping[str, object]) -> dict[str, object]:
+    """Solver keyword arguments for the hint solve, with every name classified.
+
+    Raises if a name is in neither list, so a new hint-solver option cannot be
+    added without deciding whether it belongs in the cache key.
+    """
+
+    classified = set(_HINT_FEASIBILITY_OPTIONS) | set(_HINT_SEARCH_OPTIONS)
+    passed = {
+        "seed": int(options.get("seed", 42)),
+        "workers": int(options.get("workers", 8)),
+        "centroid_neighbor_radius": int(options.get("centroid_neighbor_radius", 0)),
+        "linearization_level": options.get("linearization_level"),
+        "cp_model_probing_level": options.get("cp_model_probing_level"),
+        "symmetry_level": options.get("symmetry_level"),
+        "cp_sat_search_strategy": options.get("cp_sat_search_strategy"),
+    }
+    unclassified = sorted(set(passed) - classified)
+    if unclassified:
+        raise ValueError(
+            "Feasible-hint solver options must be classified as feasibility- or "
+            f"search-affecting before use: {unclassified}. See the cache-key "
+            "policy in optimization.data.initial_solutions."
+        )
+    return passed
 
 
 def voronoi_initial_solution(problem: ZoneProblem) -> InitialSolution:
@@ -305,7 +406,14 @@ def _feasible_hint_namespace(
     problem: ZoneProblem,
     options: Mapping[str, object],
 ) -> CacheNamespace | None:
-    """Resolve the cache namespace for one hint solve, or ``None`` if unusable."""
+    """Resolve the cache namespace for one hint solve, or ``None`` if unusable.
+
+    The key is the feasible set and nothing else: the problem fingerprint for
+    everything the model reads off the problem, plus
+    :func:`_hint_model_identity` for what it reads off the code and the
+    feasibility-affecting options. Search settings are absent by construction --
+    see the module docstring.
+    """
 
     scenario = _hint_scenario(problem)
     if scenario is None:
@@ -314,16 +422,38 @@ def _feasible_hint_namespace(
         FEASIBLE_HINT_ARTIFACT,
         {
             "problem": feasibility_fingerprint(problem),
-            # Not a search setting: a positive radius fixes each centroid's
-            # graph-hop neighborhood, shrinking the feasible set the fingerprint
-            # describes, and `_cached_hint` does not re-check that fixing.
-            "centroid_neighbor_radius": int(options.get("centroid_neighbor_radius", 0)),
+            **_hint_model_identity(options),
         },
         schema_version=FEASIBLE_HINT_CACHE_SCHEMA_VERSION,
         # The fingerprint already pins every source-derived model input, so the
         # namespace only needs the scenario's identity and selectors.
         roles=(),
     )
+
+
+def _hint_model_identity(options: Mapping[str, object]) -> dict[str, object]:
+    """Everything outside the problem that decides the hint's feasible set.
+
+    The scale and rounding come from the solver module rather than being
+    restated here, so a change to either invalidates the hints the old
+    arithmetic produced instead of silently re-serving them.
+    """
+
+    from optimization.solvers.cpsat import COEFFICIENT_ROUNDING, CP_SAT_SCALE
+
+    identity: dict[str, object] = {
+        "solver": _HINT_SOLVER_NAME,
+        "coefficient_scale": CP_SAT_SCALE,
+        "coefficient_rounding": COEFFICIENT_ROUNDING,
+        "centroid_neighbor_radius": int(options.get("centroid_neighbor_radius", 0)),
+    }
+    unkeyed = [name for name in _HINT_FEASIBILITY_OPTIONS if name not in identity]
+    if unkeyed:
+        raise ValueError(
+            f"Feasibility-affecting hint options {unkeyed} are missing from the "
+            "cache key; two runs that disagree on them would share one hint."
+        )
+    return identity
 
 
 def _hint_scenario(problem: ZoneProblem) -> DataScenario | None:
@@ -334,30 +464,23 @@ def _hint_scenario(problem: ZoneProblem) -> DataScenario | None:
     return scenario if isinstance(scenario, DataScenario) else None
 
 
-def _cached_hint(problem: ZoneProblem, payload: object) -> dict[str, Any] | None:
-    """Return a cached hint only when it is still a valid assignment."""
+def _cached_hint(payload: object) -> dict[str, Any] | None:
+    """Parse one cache payload into a hint, or ``None`` if it is not one.
+
+    Only the payload's shape is judged here. Whether the assignment is still a
+    feasible zoning is :func:`~optimization.data.feasibility.check_zoning`'s
+    call, which keeps a malformed payload distinguishable from a well-formed
+    one that no longer holds.
+    """
 
     if not isinstance(payload, Mapping):
         return None
     raw = payload.get("assignment")
-    if not isinstance(raw, Mapping):
+    if not isinstance(raw, Mapping) or not raw:
         return None
     try:
         assignment = {int(node): int(zone) for node, zone in raw.items()}
     except (TypeError, ValueError):
-        return None
-    if set(assignment) != {int(node) for node in problem.nodes}:
-        return None
-    if any(
-        zone not in problem.candidate_zones(node) for node, zone in assignment.items()
-    ):
-        return None
-    if any(
-        assignment.get(int(centroid)) != zone
-        for zone, centroid in enumerate(problem.centroids)
-    ):
-        return None
-    if not contiguity.is_contiguous(problem.G, assignment, problem.centroids):
         return None
     return {
         "assignment": assignment,

@@ -39,10 +39,15 @@ from benchmark.solver_logs import parse_run_dir
 
 
 DEFAULT_CONFIG = Path(__file__).parent / "configs" / "benchmark_edges.yaml"
-# Same solver ordering and names as the success-rate heatmap. Medians run within
-# a few percent of each other late in a solve, so every method carries its own
-# hue AND marker, and the recursive strategies are dashed: no two curves are
-# told apart by colour alone.
+# Same solver ordering and names as the success-rate heatmap: these labels and
+# their order must match ``SOLVER_DISPLAY_ORDER`` in
+# analysis/plots/plot_benchmark_success_heatmap.py, which
+# test_plot_benchmark_success_heatmap.py asserts against this dict. The sweep
+# config names the strategy ``recursive`` and the method keys keep that name,
+# but both figures label it "Multi-Level" for the reader.
+# Medians run within a few percent of each other late in a solve, so every
+# method carries its own hue AND marker, and the recursive strategies are
+# dashed: no two curves are told apart by colour alone.
 SOLVERS = {
     "recom": ("Recom", "#8c564b"),
     "relaxed_recom": ("Relaxed Recom", "#7570b3"),
@@ -54,9 +59,9 @@ SOLVERS = {
 }
 METHODS = {
     **SOLVERS,
-    "recursive_mip": ("MIP (Recursive)", "#a11d33"),
-    "recursive_cp_bool": ("CP (Recursive)", "#173f66"),
-    "recursive_cp_int": ("CP (Int, Recursive)", "#4d4d4d"),
+    "recursive_mip": ("MIP (Multi-Level)", "#a11d33"),
+    "recursive_cp_bool": ("CP (Multi-Level)", "#173f66"),
+    "recursive_cp_int": ("CP (Int, Multi-Level)", "#4d4d4d"),
 }
 MARKERS = dict(zip(METHODS, ["x", "+", "v", "P", "s", "o", "*", "D", "^", "h"]))
 # Stroke-only markers have no face to outline, and matplotlib warns if asked.
@@ -70,6 +75,18 @@ DASHES = {
 # range. ``log`` is the default because it crops nothing, which matters most
 # where one method lands several times worse than the rest.
 Y_FRAMES = ("log", "zoom", "zero")
+# Budgets and solver logs are both in seconds, but a 600-1800 second axis reads
+# better in minutes. Only the drawn axis is converted: events, aggregates and
+# run CSVs keep ``elapsed_seconds`` in its source unit, as the objective
+# columns keep metres.
+SECONDS_PER_MINUTE = 60.0
+
+
+def minutes(seconds):
+    """Seconds to minutes, for axis coordinates only. Accepts scalars/arrays."""
+    return np.asarray(seconds, dtype=float) / SECONDS_PER_MINUTE
+
+
 Y_FRAME_NOTES = {
     "log": "Vertical axis is logarithmic over the full range of every drawn value.",
     "zoom": "Vertical axis is scaled to the medians and does not start at zero; first-feasible values and parts of the bands fall outside the panel.",
@@ -106,7 +123,7 @@ def draw_summary(
     """Render the unchanged IQR and median, with sparse identity markers."""
     color = METHODS[method][1]
     ax.fill_between(
-        summary["elapsed_seconds"],
+        minutes(summary["elapsed_seconds"]),
         summary["q25"],
         summary["q75"],
         step="post",
@@ -116,7 +133,7 @@ def draw_summary(
         zorder=1,
     )
     ax.step(
-        summary["elapsed_seconds"],
+        minutes(summary["elapsed_seconds"]),
         summary["incumbent"],
         where="post",
         color=color,
@@ -143,7 +160,7 @@ def draw_summary(
             else {"edgecolors": "white", "linewidths": 0.5}
         )
         ax.scatter(
-            points["elapsed_seconds"],
+            minutes(points["elapsed_seconds"]),
             points["incumbent"],
             marker=MARKERS[method],
             color=color,
@@ -255,7 +272,7 @@ def label_endpoints(ax, series: dict[str, pd.DataFrame], unit: str) -> None:
         label, color = METHODS[method]
         ax.annotate(
             f"{label}  {row['incumbent']:.1f}{unit}",
-            xy=(row["elapsed_seconds"], row["incumbent"]),
+            xy=(minutes(row["elapsed_seconds"]), row["incumbent"]),
             xycoords="data",
             xytext=(1.035, position),
             textcoords="axes fraction",
@@ -334,9 +351,9 @@ def render_zone_detail(
         ax.tick_params(labelsize=10, colors="#475569", length=3)
         ax.yaxis.set_major_locator(MaxNLocator(6))
         ax.yaxis.set_major_formatter(StrMethodFormatter("{x:g}"))
-        ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-        ax.set_xlabel("Cumulative solve time (seconds)", fontsize=11, labelpad=10)
-    axes[0].set_xlim(0, end * 1.01)
+        ax.xaxis.set_major_locator(MaxNLocator(6, integer=True))
+        ax.set_xlabel("Cumulative solve time (minutes)", fontsize=11, labelpad=10)
+    axes[0].set_xlim(0, minutes(end * 1.01))
     # The left panel always shows the full range, so nothing the right panel
     # crops out of frame goes unreported.
     frame_ylim(
@@ -345,14 +362,14 @@ def render_zone_detail(
     axes[0].set_ylabel(
         f"Cut length ({length_unit})" if weighted else "Cut edges", fontsize=12
     )
-    axes[1].set_xlim(budget / 2, end * 1.01)
+    axes[1].set_xlim(minutes(budget / 2), minutes(end * 1.01))
     frame_ylim(axes[1], list(late.values()), mode=y_frame)
     label_endpoints(axes[1], late, f" {length_unit}" if weighted else "")
     handles = legend_handles(series)
     fig.text(
         0.065,
         0.97,
-        f"{level} · {zones} zones · {budget:,.0f}-second budget",
+        f"{level} · {zones} zones · {minutes(budget):g}-minute budget",
         fontsize=19,
         fontweight="bold",
         va="top",
@@ -371,7 +388,7 @@ def render_zone_detail(
         0.025,
         f"Band: middle 50% of available runs. Median starts once all retained runs are ready. First {skip_initial} improvement omitted.\n"
         + (
-            "Both panels use a logarithmic vertical scale; recursive curves use stage feasibility."
+            "Both panels use a logarithmic vertical scale; multi-level curves use stage feasibility."
             if y_frame == "log"
             else "The right panel is scaled to the medians, so early values and parts of the bands fall outside it."
         ),
@@ -826,7 +843,7 @@ def render_figures(
                     values = values[keep]
                     panel_frames.append(values)
                     ax.step(
-                        values["elapsed_seconds"],
+                        minutes(values["elapsed_seconds"]),
                         values["incumbent"],
                         where="post",
                         color=color,
@@ -837,7 +854,7 @@ def render_figures(
                     )
                     endpoints = values.iloc[[0, -1]].drop_duplicates()
                     ax.scatter(
-                        endpoints["elapsed_seconds"],
+                        minutes(endpoints["elapsed_seconds"]),
                         endpoints["incumbent"],
                         color=color,
                         s=12,
@@ -846,8 +863,8 @@ def render_figures(
                         edgecolors="none",
                     )
             endpoint = panel["last_log_seconds"].max()
-            ax.set_xlim(0, max(float(budget), endpoint) * 1.015)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=5, integer=True))
+            ax.set_xlim(0, minutes(max(float(budget), endpoint) * 1.015))
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
             ax.yaxis.set_major_locator(
                 MaxNLocator(nbins=6, integer=not weighted or length_unit == "m")
             )
@@ -892,7 +909,7 @@ def render_figures(
         fig.text(
             0.065,
             0.915,
-            f"{budget:,.0f}-second budget  ·  Successful runs only  ·  First {skip_initial} feasible improvements omitted",
+            f"{minutes(budget):g}-minute budget  ·  Successful runs only  ·  First {skip_initial} feasible improvements omitted",
             fontsize=10,
             color="#647286",
             va="top",
@@ -909,7 +926,7 @@ def render_figures(
                 columnspacing=1.9,
             )
         fig.supxlabel(
-            "Cumulative solve time (seconds)", fontsize=11, color="#364559", y=0.06
+            "Cumulative solve time (minutes)", fontsize=11, color="#364559", y=0.06
         )
         fig.supylabel(
             f"Cut length ({length_unit})" if weighted else "Cut edges",
@@ -925,13 +942,13 @@ def render_figures(
                     (
                         "Band: middle 50% of available runs. Solid median starts only once all runs have retained feasible values."
                         if aggregate == "median"
-                        else "Each line is one seed / centroid run; recursive curves show best stage-feasible cut length so far."
+                        else "Each line is one seed / centroid run; multi-level curves show best stage-feasible cut length so far."
                     ),
                     Y_FRAME_NOTES[y_frame],
                 ]
                 + (
                     [
-                        "Recursive curves (dashed) use stage feasibility and cumulative recorded solve durations."
+                        "Multi-level curves (dashed) use stage feasibility and cumulative recorded solve durations."
                     ]
                     if page_runs["strategy"].eq("recursive").any()
                     else []

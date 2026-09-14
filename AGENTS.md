@@ -34,13 +34,19 @@ experimental inputs and take precedence over registry-derived sources.
 
 Optimization selectors are canonical `years`, `grades`, `student_population`,
 `rounds`, `special_programs`, `program_population`, `capacity_scenario`, and the
-`include_k8`, `include_citywide`, and `include_mission_bay` flags. The welfare
-markets built by `optimization/data/mid.py` and `optimization/data/saa.py` draw
-their programs from the *assignment* table, which carries no such selector, so
-they apply `include_citywide` themselves. With the flag off a citywide program
-is dropped from the market entirely: it has no school node, so it would be
-reachable under every zoning while contributing seats the graph and the
-school-count constraints were built without. Both groups
+`include_k8`, `include_citywide_zoning`, `include_citywide_choice_opt`, and
+`include_mission_bay` flags. The two citywide selectors are independent and
+documented in `loaders/README.md`. `include_citywide_zoning` governs the school
+table, so it decides whether a citywide school occupies a graph node and joins
+the capacity and school-count balance of the zone containing it.
+`include_citywide_choice_opt` governs the welfare markets built by
+`optimization/data/mid.py` and `optimization/data/saa.py`, and the MNL zoning
+utility in `choice/mnl.py`; those markets draw their programs from the
+*assignment* table, which carries no such selector, so they apply it
+themselves. The default pairing is `zoning: false, choice_opt: true`: no zone
+owns a citywide school, but every student may still choose one, which the
+markets model with `school_node=None` and every oracle reads as reachable from
+every zone. Both groups
 also select an optional `frl_estimate`. Assignment
 uses canonical `year`, a `grades` list, `student_population`, `rounds`,
 `special_programs`, `capacity_profile`, `capacity_scenario`, and

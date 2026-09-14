@@ -276,3 +276,101 @@ def _node_utility(evaluator, problem, assignment, node: int) -> float:
         for block_id in mnl._node_area_ids(problem.G.nodes[node])
         if block_id in utility.block_utilities.index
     )
+
+
+def test_citywide_schools_are_offered_by_every_zone(tmp_path):
+    """A citywide school belongs to no zone's ``school_ids`` but to every zone.
+
+    Availability is read off the graph, and with ``include_citywide_zoning``
+    off a citywide school has no node at all. Before it was passed in
+    explicitly it therefore landed in no zone and vanished from the logsum,
+    which is the opposite of what a citywide school is.
+    """
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1", "2324-2"],
+            "100-GE-KG": [2.0, 1.0],
+            "200-GE-KG": [0.5, 4.0],
+            # School 300 sits on no node of the grid problem below.
+            "300-GE-KG": [9.0, 9.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1002],
+            "grade": ["KG", "KG"],
+            "r1_ranked_idschool": ["[100]", "[200]"],
+            "r1_programs": ["['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    scenario = _scenario(utility_path, student_path)
+
+    ignored = MNLChoiceModel(scenario, method="max")
+    offered = MNLChoiceModel(scenario, method="max", citywide_schools=[300])
+
+    # Without it, the unplaced school contributes nothing at all.
+    assert ignored.preassignment_utility(problem, assignment) == pytest.approx(6.0)
+    # With it, both students take the citywide option: 9.0 each.
+    assert offered.preassignment_utility(problem, assignment) == pytest.approx(18.0)
+
+
+def test_citywide_schools_do_not_double_count_when_also_on_a_node(tmp_path):
+    """``include_citywide_zoning`` on puts the school on a node as well."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {"studentno": ["2324-1"], "100-GE-KG": [2.0], "200-GE-KG": [5.0]}
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    scenario = _scenario(utility_path, student_path)
+
+    # School 200 is on node 3, in zone 1; the student is in zone 0. Declaring it
+    # citywide makes it reachable anyway, and declaring it twice changes nothing.
+    plain = MNLChoiceModel(scenario, method="max")
+    citywide = MNLChoiceModel(scenario, method="max", citywide_schools=[200])
+
+    assert plain.preassignment_utility(problem, assignment) == pytest.approx(2.0)
+    assert citywide.preassignment_utility(problem, assignment) == pytest.approx(5.0)
+
+
+def test_build_mnl_choice_model_reads_the_choice_selector(tmp_path, monkeypatch):
+    """The flag is resolved from the scenario, not passed by each caller."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame({"studentno": ["2324-1"], "100-GE-KG": [1.0]}).to_csv(
+        utility_path, index=False
+    )
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    import optimization.data.loaders as opt_loaders
+
+    monkeypatch.setattr(opt_loaders, "citywide_school_ids", lambda data: frozenset({300}))
+    scenario = _scenario(utility_path, student_path)
+
+    # The legacy scenario sets the choice selector off.
+    assert build_mnl_choice_model(scenario).evaluator.citywide_schools == frozenset()

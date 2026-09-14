@@ -785,24 +785,32 @@ def test_mid_market_builds_for_summer_26_zoning():
     assert market.student_count == 3953
     assert market.utility_student_count == 3881
     assert market.outside_only_student_count >= 72
-    # The scenario sets ``include_citywide: false``, and the MID market now
-    # honours it: 24 of the 130 assignment programs are citywide, carrying 723
-    # of 4,189 seats that no zoning restricts.
-    assert len(market.programs) == 106
-    assert all(not program.citywide for program in market.programs)
+    # The scenario pairs ``include_citywide_zoning: false`` with
+    # ``include_citywide_choice_opt: true``: no zone owns a citywide school, but
+    # every student may still choose one. All 130 assignment programs are in the
+    # market, 24 of them citywide, carrying 723 of the 4,189 seats. Those 24
+    # have no school node, which every oracle reads as reachable from any zone.
+    assert len(market.programs) == 130
+    citywide = [program for program in market.programs if program.citywide]
+    assert len(citywide) == 24
+    assert all(program.school_node is None for program in citywide)
+    assert sum(program.capacity for program in citywide) == 723
     assert sum(student_type.count for student_type in market.types) == 3953
 
 
 @pytest.mark.real_data
 def test_the_mid_market_drops_exactly_the_citywide_programs():
-    """``include_citywide`` is an optimization filter the MID market must obey.
+    """``include_citywide_choice_opt`` is the selector the MID market obeys.
 
     The market is drawn from the *assignment* program table, which has no such
     selector, so for a long time citywide programs survived into MID and SAA
-    welfare regardless of the flag. That is not a harmless superset: a citywide
-    program has no school node, so it is reachable under every zoning, and its
-    seats are capacity the graph was built without. Here that is 723 of 4,189
-    seats -- 17.3% of the district -- available free of any zoning decision.
+    welfare regardless of any flag. Here they are 723 of 4,189 seats -- 17.3%
+    of the district -- so whether they are in the market is worth 22% of
+    reported welfare and cannot be left to whichever table was read.
+
+    Note this is *not* the zoning selector: ``include_citywide_zoning`` decides
+    whether the school occupies a graph node and contributes to the capacity
+    and school-count balance, and the two are set independently.
 
     The filter must also be surgical. Preference lists are read positionally
     off the retained program list, so a misaligned narrowing would silently
@@ -818,20 +826,20 @@ def test_the_mid_market_drops_exactly_the_citywide_programs():
         strategy="mid",
         data={"scenario": "summer-26-zoning", "overrides": {}},
     )
-    assert config.include_citywide is False
+    assert config.include_citywide_zoning is False
+    assert config.include_citywide_choice_opt is True
     problem = config.make_dataset().problem_for("BlockGroup_0")
 
-    filtered = mid_module.build_mid_student_market(problem, config)
-
-    class _KeepCitywide:
+    class _DropCitywide:
         """The same config with only the one filter flipped."""
 
-        include_citywide = True
+        include_citywide_choice_opt = False
 
         def __getattr__(self, name):
             return getattr(config, name)
 
-    unfiltered = mid_module.build_mid_student_market(problem, _KeepCitywide())
+    filtered = mid_module.build_mid_student_market(problem, _DropCitywide())
+    unfiltered = mid_module.build_mid_student_market(problem, config)
 
     citywide = {p.program_id for p in unfiltered.programs if p.citywide}
     assert len(citywide) == 24

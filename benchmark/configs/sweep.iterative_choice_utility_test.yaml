@@ -40,7 +40,8 @@ optimization_defaults:
           program_population: GE
           capacity_scenario: A
           include_k8: false
-          include_citywide: false
+          include_citywide_zoning: false
+          include_citywide_choice_opt: false
           include_mission_bay: true
           geography_vintage: "2020"
 

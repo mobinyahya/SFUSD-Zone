@@ -231,6 +231,11 @@ zero-baseline linear axis flattens every curve into the bottom of the panel.
 | `zoom` | Linear, scaled to the range the medians occupy. First-feasible values and the outer parts of the bands fall outside the panel. | `_zoom` |
 | `zero` | Linear from zero over the full range. | `_zero` |
 
+Time is drawn in **minutes** on every figure, since the budgets are 600 and
+1800 seconds. Only the axis is converted: `elapsed_seconds` in the events,
+aggregates, and run CSVs stays in seconds, and the `tl_<budget>s` filenames
+stay in seconds too, the same way objective columns stay in metres.
+
 `log` is the default because it crops nothing, which matters most where one
 method lands several times worse than the rest (plain CP on `Block_0`). Use
 `zoom` where every method finishes within a few percent and the log axis still
@@ -296,7 +301,7 @@ that requires assignment snapshots or logging an explicitly recomputed count.
 
 ### Comparing recursive stages
 
-`--weighted` includes separate `CP (Recursive)` and `MIP (Recursive)` series.
+`--weighted` includes separate `CP (Multi-Level)` and `MIP (Multi-Level)` series.
 Their panels use the final configured level, and their budgets sum all configured
 stage limits (e.g. `[450, 150]` groups with the single-solve 600-second budget).
 Each stage's local log clock is offset by the preceding stages' recorded

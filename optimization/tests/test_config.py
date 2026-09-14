@@ -128,7 +128,8 @@ def test_scenario_backed_properties_are_read_only():
     assert config.program_population == "GE"
     assert config.capacity_scenario == "programs"
     assert config.include_k8 is False
-    assert config.include_citywide is False
+    assert config.include_citywide_zoning is False
+    assert config.include_citywide_choice_opt is False
     assert config.include_mission_bay is True
     assert config.frl_estimate is None
     assert config.outside_district_students == "ignore"
@@ -162,7 +163,8 @@ def test_example_uses_central_2021_through_2024_selectors():
         "program_population": "GE",
         "capacity_scenario": "programs",
         "include_k8": False,
-        "include_citywide": False,
+        "include_citywide_zoning": False,
+        "include_citywide_choice_opt": False,
         "include_mission_bay": True,
         "geography_vintage": "2020",
         "frl_estimate": "updated_2526",
@@ -228,7 +230,8 @@ def test_from_yaml_anchors_data_paths_and_preserves_them_in_snapshot(tmp_path):
                         "program_population": "GE",
                         "capacity_scenario": "A",
                         "include_k8": False,
-                        "include_citywide": False,
+                        "include_citywide_zoning": False,
+                        "include_citywide_choice_opt": False,
                         "include_mission_bay": True,
                     }
                 },

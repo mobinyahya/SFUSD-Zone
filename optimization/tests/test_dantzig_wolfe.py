@@ -437,7 +437,9 @@ def test_smoothed_duals_still_price_a_column_the_same_way():
 def _dataset(problem=None):
     problem = problem or make_grid_problem(2, 2, hint={0: 0, 1: 0, 2: 1, 3: 1})
     dataset = FakeDataset(problem)
-    dataset.config = SimpleNamespace(include_citywide=False, program_population="All")
+    dataset.config = SimpleNamespace(
+        include_citywide_choice_opt=False, program_population="All"
+    )
     dataset.problem = problem
     return dataset
 
@@ -551,7 +553,7 @@ def test_config_and_example():
     strategy = config.make_strategy()
     assert strategy.name == "dantzig_wolfe"
     assert config.solver == "cp_bool"
-    assert config.include_citywide is False
+    assert config.include_citywide_choice_opt is False
     assert strategy.options["dw_objective"] in ("mid", "stable_matching")
     assert strategy.options["dw_master_method"] == "barrier"
 
@@ -580,14 +582,18 @@ def test_invalid_config(overrides, match):
 
 
 def test_config_rejects_citywide():
-    with pytest.raises(ValueError, match="include_citywide=false"):
+    with pytest.raises(ValueError, match="include_citywide_choice_opt=false"):
         OptimizationConfig(
             strategy="dantzig_wolfe",
             solver="cp_bool",
             dw_objective="boundary",
             data={
                 "scenario": "legacy",
-                "overrides": {"filters": {"optimization": {"include_citywide": True}}},
+                "overrides": {
+                    "filters": {
+                        "optimization": {"include_citywide_choice_opt": True}
+                    }
+                },
             },
         )
 
@@ -604,7 +610,8 @@ def test_config_requires_all_programs_for_welfare_objectives(objective):
                 "overrides": {
                     "filters": {
                         "optimization": {
-                            "include_citywide": False,
+                            "include_citywide_zoning": False,
+                            "include_citywide_choice_opt": False,
                             "program_population": "GE",
                         }
                     }

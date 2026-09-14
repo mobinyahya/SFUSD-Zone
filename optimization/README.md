@@ -108,7 +108,8 @@ data:
         program_population: GE
         capacity_scenario: programs    # programs | A | B | C | D
         include_k8: false
-        include_citywide: false
+        include_citywide_zoning: false
+        include_citywide_choice_opt: true
         include_mission_bay: true
         geography_vintage: "2020"
         outside_district_students: ignore  # ignore | include
@@ -169,9 +170,9 @@ previous unanchored build returned zones of 340 to 392 of 579 vertices.
 ### Three welfare definitions
 
 `dw_objective` selects what a zone is worth. All three are additive across a
-partition, which is why `include_citywide: false` is required: a citywide
-program's seats are contested by every zone, so zone welfare would stop being
-additive. The two welfare objectives also need `program_population: All` and
+partition, which is why `include_citywide_choice_opt: false` is required: a
+citywide program's seats are contested by every zone, so zone welfare would
+stop being additive. The two welfare objectives also need `program_population: All` and
 matching geography vintages.
 
 - `mid` -- finite-grid least-cutoff MID welfare, scored by

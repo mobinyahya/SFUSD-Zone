@@ -670,12 +670,14 @@ def test_mid_decomp_rounds_large_cp_sat_bounds_outward():
 
 
 def test_config_rejects_non_boolean_citywide_scenario_filter():
-    with pytest.raises(ValueError, match="include_citywide"):
+    with pytest.raises(ValueError, match="include_citywide_zoning"):
         OptimizationConfig(
             levels=["BlockGroup_0"],
             data={
                 "scenario": "legacy",
-                "overrides": {"filters": {"optimization": {"include_citywide": 1}}},
+                "overrides": {
+                    "filters": {"optimization": {"include_citywide_zoning": 1}}
+                },
             },
         )
 

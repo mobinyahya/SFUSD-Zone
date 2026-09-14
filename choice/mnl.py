@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
@@ -34,6 +35,14 @@ class MNLZoningUtility:
     The utility matrix is student-by-program. A zone offers every program whose
     school is located in that zone; a student's zoning utility is either the max
     utility or log-sum-exp utility across those offered programs.
+
+    ``citywide_schools`` are offered by *every* zone instead. Availability here
+    is read off the graph -- a zone offers the schools sitting on its nodes --
+    and a citywide school has no node whenever ``include_citywide_zoning`` is
+    off, so without this set it belongs to no zone and drops out of the logsum
+    entirely rather than being available everywhere. Pass the set when
+    ``include_citywide_choice_opt`` is on; the empty default reproduces the
+    zone-located-only behaviour.
     """
 
     def __init__(
@@ -43,6 +52,7 @@ class MNLZoningUtility:
         method: str = "logsum",
         area_column: str | None = None,
         empty_utility: float = -1e10,
+        citywide_schools: Iterable[object] = (),
     ):
         if method not in {"max", "logsum"}:
             raise ValueError("MNL utility method must be 'max' or 'logsum'.")
@@ -52,6 +62,9 @@ class MNLZoningUtility:
         self.method = method
         self.area_column = area_column
         self.empty_utility = float(empty_utility)
+        self.citywide_schools = frozenset(
+            _school_key(school_id) for school_id in citywide_schools
+        )
 
         self.utility_df: pd.DataFrame | None = None
         self.student_df: pd.DataFrame | None = None
@@ -260,6 +273,11 @@ class MNLZoningUtility:
             )
             for area_id in _node_area_ids(attrs):
                 area_to_zone[area_id] = zone
+        # Held by every zone, so no zoning can take them away. Added after the
+        # per-node pass because a citywide school may sit on a node too, when
+        # ``include_citywide_zoning`` is on -- a set union keeps that idempotent.
+        for schools in zone_to_schools.values():
+            schools.update(self.citywide_schools)
 
         merged = self.student_df.merge(self.utility_df, on="studentno").copy()
         merged["_area_key"] = merged[student_area_col].map(_area_key)

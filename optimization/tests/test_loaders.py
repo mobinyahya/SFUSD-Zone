@@ -392,7 +392,7 @@ def _write_school_sources(tmp_path, schools, capacities, *, program_capacities=N
     }
 
 
-def test_all_program_school_loading_respects_citywide_scenario_filter(
+def test_all_program_school_loading_respects_citywide_zoning_filter(
     tmp_path, scenario_factory
 ):
     schools = pd.DataFrame(
@@ -410,24 +410,24 @@ def test_all_program_school_loading_respects_citywide_scenario_filter(
         }
     )
     sources = _write_school_sources(tmp_path, schools, capacities)
-    include_citywide = scenario_factory(
+    citywide_zoning_on = scenario_factory(
         sources=sources,
         filters={
             "optimization": {
                 "program_population": "All",
                 "capacity_scenario": "A",
-                "include_citywide": True,
+                "include_citywide_zoning": True,
                 "include_k8": False,
             }
         },
     )
-    exclude_citywide = scenario_factory(
+    citywide_zoning_off = scenario_factory(
         sources=sources,
         filters={
             "optimization": {
                 "program_population": "All",
                 "capacity_scenario": "A",
-                "include_citywide": False,
+                "include_citywide_zoning": False,
                 "include_k8": False,
             }
         },
@@ -443,11 +443,11 @@ def test_all_program_school_loading_respects_citywide_scenario_filter(
         },
     )
 
-    assert set(loaders.load_schools(_ingest(include_citywide))["school_id"]) == {
+    assert set(loaders.load_schools(_ingest(citywide_zoning_on))["school_id"]) == {
         100,
         618,
     }
-    assert set(loaders.load_schools(_ingest(exclude_citywide))["school_id"]) == {100}
+    assert set(loaders.load_schools(_ingest(citywide_zoning_off))["school_id"]) == {100}
     assert set(loaders.load_schools(_ingest(ge))["school_id"]) == {100}
 
 

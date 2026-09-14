@@ -53,7 +53,7 @@ tasks:
     strategy: [saa]
     saa_multicut: [true, false]
     workers: 16
-    max_iterations: [30]
+    max_iterations: [20]
     seed: [1,2]
     solve_time_limits: [[1800, 3600]]
   

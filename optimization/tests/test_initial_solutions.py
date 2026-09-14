@@ -2,8 +2,11 @@ import math
 import pytest
 
 from optimization.config import OptimizationConfig
+from optimization.data import initial_solutions
+from optimization.data.feasibility import FeasibilityReport, FeasibilityViolation
 from optimization.data.initial_solutions import (
     FEASIBLE_HINT_PAYLOAD,
+    FeasibleHintError,
     _feasible_hint_namespace,
     feasibility_fingerprint,
     initial_solution,
@@ -229,5 +232,96 @@ def test_feasible_hint_cache_ignores_an_invalid_cached_assignment(tmp_path):
     )
     result = initial_solution(problem, "feasible", solver_options=options)
 
-    assert result.metadata["hint_cache"] == "miss"
+    assert result.metadata["hint_cache"] == "rejected"
+    assert "coverage" in result.metadata["hint_cache_rejected_reason"]
     _check_candidate_assignment(problem, result.assignment)
+
+
+def test_feasible_hint_cache_re_solves_a_hint_the_validator_rejects(
+    tmp_path, monkeypatch
+):
+    """A stored hint that fails the exact check is replaced, not handed on.
+
+    This is the shape of the failure that took short bursts down: a warm start
+    every structural check accepts, but which a consumer re-checking the exact
+    constraints rejects. The cached copy must not survive it.
+    """
+
+    options = {"feasible_hint_time_limit": 10, "seed": 3}
+    problem = _cached_grid_problem(tmp_path)
+    stored = initial_solution(problem, "feasible", solver_options=options)
+    assert stored.metadata["hint_cache"] == "miss"
+
+    real_check = initial_solutions.check_zoning
+    calls = []
+
+    def reject_the_cached_one(prob, assignment, **kwargs):
+        calls.append(assignment)
+        if len(calls) == 1:
+            return FeasibilityReport(
+                (FeasibilityViolation("frl_upper", "synthetic", 0.5),)
+            )
+        return real_check(prob, assignment, **kwargs)
+
+    monkeypatch.setattr(initial_solutions, "check_zoning", reject_the_cached_one)
+    result = initial_solution(problem, "feasible", solver_options=options)
+
+    assert result.metadata["hint_cache"] == "rejected"
+    assert "frl_upper" in result.metadata["hint_cache_rejected_reason"]
+    _check_candidate_assignment(problem, result.assignment)
+
+    # The replacement was written back, so the next run is a clean hit.
+    monkeypatch.setattr(initial_solutions, "check_zoning", real_check)
+    assert (
+        initial_solution(problem, "feasible", solver_options=options).metadata[
+            "hint_cache"
+        ]
+        == "hit"
+    )
+
+
+def test_feasible_hint_raises_when_the_solver_disagrees_with_the_validator():
+    """A hint the solver calls feasible but the exact check rejects is fatal."""
+
+    problem = make_grid_problem(3, 3, boundary_prop=0.5)
+
+    with pytest.raises(FeasibleHintError, match="fails the exact feasibility check"):
+        _solve_with_validator(
+            problem,
+            FeasibilityReport((FeasibilityViolation("frl_upper", "synthetic", 0.5),)),
+        )
+
+
+def _solve_with_validator(problem, report):
+    original = initial_solutions.check_zoning
+    initial_solutions.check_zoning = lambda *args, **kwargs: report
+    try:
+        return initial_solution(
+            problem,
+            "feasible",
+            solver_options={"feasible_hint_time_limit": 10, "seed": 3},
+        )
+    finally:
+        initial_solutions.check_zoning = original
+
+
+def test_hint_solver_options_reject_an_unclassified_option(monkeypatch):
+    """A new hint-solver option must be classified before it can be used."""
+
+    monkeypatch.setattr(initial_solutions, "_HINT_SEARCH_OPTIONS", ("seed",))
+
+    with pytest.raises(ValueError, match="classified"):
+        initial_solutions._hint_solver_options({"seed": 3})
+
+
+def test_hint_cache_key_covers_every_feasibility_option(monkeypatch):
+    """Classifying an option as feasibility-affecting must put it in the key."""
+
+    monkeypatch.setattr(
+        initial_solutions,
+        "_HINT_FEASIBILITY_OPTIONS",
+        ("centroid_neighbor_radius", "some_new_knob"),
+    )
+
+    with pytest.raises(ValueError, match="missing from the cache key"):
+        initial_solutions._hint_model_identity({})

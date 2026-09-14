@@ -932,7 +932,8 @@ def test_registry_generated_role_overrides_scenario_invariant_role(tmp_path):
                     "program_population": "GE",
                     "capacity_scenario": "A",
                     "include_k8": False,
-                    "include_citywide": False,
+                    "include_citywide_zoning": False,
+                    "include_citywide_choice_opt": False,
                     "include_mission_bay": False,
                     "geography_vintage": "2010",
                 }

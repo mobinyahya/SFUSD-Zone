@@ -53,7 +53,8 @@ def _write_custom_sweep(tmp_path: Path, location: str = "optimization_defaults")
                         "program_population": "GE",
                         "capacity_scenario": "A",
                         "include_k8": False,
-                        "include_citywide": False,
+                        "include_citywide_zoning": False,
+                        "include_citywide_choice_opt": False,
                         "include_mission_bay": True,
                     },
                     "assignment": {

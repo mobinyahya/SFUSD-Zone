@@ -208,15 +208,15 @@ def build_mid_student_market(
     area_to_node = _area_to_node(problem)
 
     # The MID market is drawn from the assignment program table, which has no
-    # ``include_citywide`` selector of its own, so the optimization filter has
-    # to be applied here. Skipping it is not a harmless superset: a citywide
-    # program has no school node, so every student reaches it under every
-    # zoning, and its seats are capacity the graph and the school-count
-    # constraints were built without (``loaders._attach_capacity`` drops those
-    # schools). Welfare would then be scored against a market the zoning
-    # problem cannot see, and whole-zone additivity -- the identity Dantzig
-    # --Wolfe rests on -- would fail.
-    include_citywide = bool(optimization_config.include_citywide)
+    # citywide selector of its own, so the optimization filter is applied here.
+    # This is the *choice* selector, not the zoning one: a citywide program
+    # keeps ``school_node=None`` and every oracle reads that as reachable from
+    # every zone, which is what a citywide school is. Whether it also occupies
+    # a graph node and contributes to the capacity and school-count balance is
+    # ``include_citywide_zoning``, applied in ``loaders._attach_capacity``.
+    # The two are deliberately independent -- the default pairing is a citywide
+    # school that no zone owns but every student can still choose.
+    keep_citywide = bool(optimization_config.include_citywide_choice_opt)
 
     programs = []
     retained_programs = []
@@ -227,7 +227,7 @@ def build_mid_student_market(
         if capacity < 0:
             raise ValueError(f"Program {program_id} has negative capacity.")
         citywide = school_id in citywide_schools
-        if citywide and not include_citywide:
+        if citywide and not keep_citywide:
             continue
         retained_programs.append(program_id)
         school_node = None if citywide else school_to_node.get(school_id)

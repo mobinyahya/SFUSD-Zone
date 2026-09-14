@@ -106,6 +106,24 @@ def test_requires_feasible_initial_solution(monkeypatch) -> None:
     )
 
 
+def test_rejected_hint_reports_which_rows_it_broke(monkeypatch) -> None:
+    """Naming the violated rows is what turns this error into a diagnosis."""
+
+    _use_market(monkeypatch, _make_test_market())
+    infeasible = make_solver_contract_problem(
+        hint={0: 0, 1: 0, 2: 1, 3: 1}, frl_dev=0.01
+    )
+    infeasible.G.nodes[0]["FRL"] = 1.0
+
+    metadata = _strategy().run(_dataset(infeasible), _short_bursts())[0].metadata
+
+    assert "frl_upper" in metadata["error_message"]
+    # Provenance survives the error path, so a bad hint says where it came from.
+    assert metadata["hint_source"] == "generated"
+    assert metadata["hints"] == "voronoi"
+    assert metadata["initial_feasible"] is False
+
+
 @pytest.mark.parametrize(
     ("strategy_options", "solver_options", "match"),
     [

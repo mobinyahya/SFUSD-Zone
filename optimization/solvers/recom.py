@@ -51,7 +51,16 @@ _PAIR_SELECTORS = ("uniform", "lagrangian_softmax")
 
 
 class _HintError(ValueError):
-    """A supplied/generated hint cannot initialize a ReCom chain."""
+    """A supplied/generated hint cannot initialize a ReCom chain.
+
+    Carries whatever is known about where the hint came from, so a rejected
+    hint reports its origin (cache hit or fresh solve, and which cache key)
+    rather than leaving the caller to guess.
+    """
+
+    def __init__(self, message: str, metadata: Mapping[str, object] | None = None):
+        super().__init__(message)
+        self.metadata = dict(metadata or {})
 
 
 class _NoProposal(RuntimeError):
@@ -1091,7 +1100,11 @@ class _ReComSolverBase(Solver):
                 hint = self._voronoi_hint(context)
                 hint_metadata = {"hints": "voronoi", "hint_source": "generated"}
 
-        assignment = context.validate_hint(hint)
+        try:
+            assignment = context.validate_hint(hint)
+        except _HintError as exc:
+            # Re-raise with the provenance validate_hint has no way to know.
+            raise _HintError(str(exc), hint_metadata) from exc
         max_iterations, deadline = self._limits(start)
         return _Setup(
             context=context,
@@ -1245,6 +1258,7 @@ class _ReComSolverBase(Solver):
         problem: ZoneProblem,
         start: float,
         message: str,
+        metadata: Mapping[str, object] | None = None,
     ) -> ZoneSolution:
         return ZoneSolution(
             problem=problem,
@@ -1252,7 +1266,12 @@ class _ReComSolverBase(Solver):
             status="ERROR",
             objective=None,
             wall_time=time.monotonic() - start,
-            metadata={"solver": self.name, "error_message": message},
+            metadata={
+                # Hint provenance first, so an explicit solver/error always wins.
+                **dict(metadata or {}),
+                "solver": self.name,
+                "error_message": message,
+            },
         )
 
     def _result(
@@ -1330,7 +1349,7 @@ class ReComSolver(_ReComSolverBase):
         try:
             setup = self._initialize(problem, start)
         except _HintError as exc:
-            return self._error_solution(problem, start, str(exc))
+            return self._error_solution(problem, start, str(exc), exc.metadata)
 
         state = setup.state
         kernel = _ReComKernel(setup.context, setup.rng, setup.deadline)
@@ -1453,7 +1472,7 @@ class ShortBurstsSolver(_ReComSolverBase):
         try:
             setup = self._initialize(problem, start)
         except _HintError as exc:
-            return self._error_solution(problem, start, str(exc))
+            return self._error_solution(problem, start, str(exc), exc.metadata)
 
         method, selector, burst_length = self._options()
 
@@ -1579,14 +1598,23 @@ class ShortBurstsSolver(_ReComSolverBase):
         try:
             setup = self._initialize(problem, start)
         except _HintError as exc:
-            return self._error_solution(problem, start, str(exc))
+            return self._error_solution(problem, start, str(exc), exc.metadata)
 
         initial = self._snapshot(setup.state)
         if not initial.feasible:
+            broken = {
+                label: value
+                for label, value in zip(
+                    setup.context.violation_labels(), initial.violations, strict=True
+                )
+                if value > _EPS
+            }
             return self._error_solution(
                 problem,
                 start,
-                f"{self.name} requires a feasible initial solution for scored bursts.",
+                f"{self.name} requires a feasible initial solution for scored "
+                f"bursts; the hint violates {broken}.",
+                {**setup.hint_metadata, "initial_feasible": False},
             )
 
         method, selector, burst_length = self._options()
@@ -1712,7 +1740,7 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         try:
             setup = self._initialize(problem, start, normalize_fractional=True)
         except _HintError as exc:
-            return self._error_solution(problem, start, str(exc))
+            return self._error_solution(problem, start, str(exc), exc.metadata)
 
         burst_length = int(self.options.get("short_bursts_length", 25))
         if burst_length <= 0:

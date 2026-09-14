@@ -393,7 +393,8 @@ filters:
     program_population: GE
     capacity_scenario: programs
     include_k8: false
-    include_citywide: false
+    include_citywide_zoning: false
+    include_citywide_choice_opt: true
     include_mission_bay: true
     geography_vintage: "2020"
     frl_estimate: updated_2526
@@ -410,11 +411,58 @@ filters:
 | `program_population` | Non-empty string | Yes | `GE` selects GE participants and GE population weights; `All` retains all program participants. Another exact program code filters students to that program. Non-`GE` graph weighting uses all-program totals. |
 | `capacity_scenario` | Non-empty string | No | Capacity behavior described above. Defaults to `programs`. |
 | `include_k8` | Boolean | Yes | Retains K-8 schools when true. This filter is applied only when `program_population` is not `All`. |
-| `include_citywide` | Boolean | Yes | Retains Citywide schools only when true and `program_population` is `All`. |
+| `include_citywide_zoning` | Boolean | Yes | Citywide schools exist for the **base zoning problem** only when true (and `program_population` is `All`). See below. |
+| `include_citywide_choice_opt` | Boolean | Yes | Citywide programs are alternatives in the **welfare markets and choice optimization** when true. See below. |
 | `include_mission_bay` | Boolean | Yes | Shared Mission Bay policy described above. |
 | `geography_vintage` | Four-digit registered vintage | No | Target Census geography. Defaults to `"2010"`. |
 | `frl_estimate` | Registered estimate name or `null` | No | Block-count FRL source. Defaults to `null`, which retains optimization's source `FRL Score`. |
 | `outside_district_students` | `ignore` or `include` | No | Outside-district policy. Defaults to `ignore`. |
+
+### The two citywide selectors
+
+A citywide school enrols from the whole district, so it does not belong to any
+one zone. The two questions that follow are independent, and there is one
+selector for each.
+
+`include_citywide_zoning` decides whether a citywide school **exists for the
+partitioning problem**. It is applied in `optimization.data.loaders.load_schools`,
+which feeds the graph, so with it on the school occupies a node and its seats
+and its count join the capacity balance (`overage`/`shortage`) and the
+school-count constraints of whichever zone contains it. With it off the school
+has no node, contributes no capacity, and is counted by no zone. It is off by
+default: assigning a district-wide school to one zone's balance sheet
+overstates that zone's supply to students who were never restricted to it.
+
+`include_citywide_choice_opt` decides whether a citywide program is an
+**alternative in the welfare markets** — `optimization.data.mid`, the SAA market
+built on top of it, and the MNL zoning utility in `choice.mnl`. It is on by
+default, because students really can attend these schools and a welfare number
+that omits them understates what students get. In the markets such a program
+carries `school_node=None`, which every oracle reads as *reachable from every
+zone*; no zoning can grant or remove it.
+
+The default pairing is therefore `zoning: false, choice_opt: true`: no zone owns
+a citywide school, but every student may still choose one. The other
+combinations are legal. `zoning: true` with `choice_opt: false` describes a
+district that sites the school in a zone but scores welfare without it;
+`true/true` treats it as an ordinary school on both sides.
+
+Two consequences worth knowing:
+
+- **Welfare scale.** On `summer-26-zoning` at Block level, citywide is 24 of 130
+  programs and 723 of 4,189 seats — 17% of capacity, and about 22% of reported
+  MID welfare. Turning `include_citywide_choice_opt` on or off moves every
+  welfare number, so numbers computed under different settings are not
+  comparable.
+- **Zone-welfare decomposition.** Zone values are additive only when each
+  program belongs to exactly one zone. A citywide program is held by every zone
+  at once, so `dantzig_wolfe` requires `include_citywide_choice_opt: false` and
+  rejects the config otherwise. The MID, SAA, iterative-choice, priced-access
+  and short-bursts paths all support it.
+
+Adding or renaming any selector changes every derived cache key, because
+`DataScenario.source_manifest` hashes the whole filter block into each cache
+namespace. The first run after this split rebuilds graphs and student tables.
 
 `program_population` and `capacity_scenario` accept any non-empty string at
 schema validation. Values other than the special cases above must be supported

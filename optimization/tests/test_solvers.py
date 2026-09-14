@@ -2,6 +2,8 @@
 
 import json
 import os
+import random
+from dataclasses import replace
 
 import pytest
 from ortools.sat.python import cp_model
@@ -10,6 +12,7 @@ from choice.objective import ChoiceCut, ChoiceObjective, ChoiceTerm
 from optimization.config import OptimizationConfig
 from optimization.data import contiguity
 from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
+from optimization.data.feasibility import check_zoning
 from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
@@ -247,6 +250,134 @@ def test_cp_int_does_not_add_exactly_one_constraint(monkeypatch):
     solution = solver.solve(problem)
     assert solution.status in ("OPTIMAL", "FEASIBLE")
     assert_valid_solution(problem, solution)
+
+
+def _solve_single_bool(terms, sense, rhs):
+    """Post one scaled constraint over a single Boolean and report its domain."""
+
+    solver = get_solver("cp_bool")
+    m = cp_model.CpModel()
+    x = {(0, 0): m.NewBoolVar("x")}
+    solver._add_linear_constraint(m, x, terms, sense, rhs)
+    cp = cp_model.CpSolver()
+    cp.parameters.enumerate_all_solutions = True
+    values = []
+
+    class Collect(cp_model.CpSolverSolutionCallback):
+        def on_solution_callback(self):
+            values.append(int(self.Value(x[(0, 0)])))
+
+    cp.Solve(m, Collect())
+    return sorted(values)
+
+
+@pytest.mark.parametrize(
+    ("terms", "sense", "rhs", "allowed"),
+    [
+        # 0.004 * x <= 0: nearest rounding drops the coefficient to 0 and admits
+        # x=1, which breaks the exact row. Rounding the coefficient up forbids it.
+        ([(0.004, 0, 0)], "<=", 0.0, [0]),
+        # x <= 0.006: nearest rounding lifts the bound to 0.01 and admits x=1.
+        ([(1.0, 0, 0)], "<=", 0.006, [0]),
+        # x >= 0.004: nearest rounding drops the bound to 0 and admits x=0.
+        ([(1.0, 0, 0)], ">=", 0.004, [1]),
+        # Exact multiples of the scale must not be nudged either way.
+        ([(1.0, 0, 0)], "<=", 1.0, [0, 1]),
+        ([(1.0, 0, 0)], ">=", 1.0, [1]),
+        ([(1.0, 0, 0)], ">=", 0.0, [0, 1]),
+    ],
+)
+def test_cpsat_rounds_linear_constraints_away_from_feasibility(
+    terms, sense, rhs, allowed
+):
+    """The scaled row must admit no point the exact row rejects."""
+
+    assert _solve_single_bool(terms, sense, rhs) == allowed
+
+
+def test_cpsat_rejects_an_equality_the_scale_cannot_represent():
+    """An equality has no conservative rounding, so an inexact one is an error."""
+
+    solver = get_solver("cp_bool")
+    m = cp_model.CpModel()
+    x = {(0, 0): m.NewBoolVar("x")}
+
+    with pytest.raises(ValueError, match="exact multiple"):
+        solver._add_linear_constraint(m, x, [(0.004, 0, 0)], "==", 0.0)
+
+
+def _fractional_grid_problem(seed, frl_dev):
+    """A 6x6 grid with fractional area data, so the FRL row has real fractions.
+
+    Uniform synthetic data hides coefficient rounding entirely: every zone hits
+    the district ratio exactly. Real area counts do not, which is why this uses
+    fractional students and FRL.
+    """
+
+    rng = random.Random(seed)
+    problem = make_grid_problem(6, 6, schools={0: 100, 35: 200})
+    students = frl = 0.0
+    for node in problem.G.nodes:
+        count = round(rng.uniform(5.0, 40.0), 3)
+        share = round(count * rng.uniform(0.25, 0.75), 3)
+        problem.G.nodes[node].update(
+            ge_students=count,
+            all_prog_students=count,
+            ge_capacity=count * 2,
+            all_prog_capacity=count * 2,
+            FRL=share,
+        )
+        students += count
+        frl += share
+    problem.G.graph["F"] = frl / students
+    return replace(
+        problem,
+        frl_dev=frl_dev,
+        racial_dev=-1.0,
+        overage=-1.0,
+        shortage=-1.0,
+        boundary_prop=-1.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("seed", "frl_dev", "must_be_feasible"),
+    [
+        # Bands tight enough to bind. Nearest-rounded rows answered OPTIMAL on
+        # every one of these with a point 0.0006-0.012 FRL students outside the
+        # exact band; refusing is the only other honest answer.
+        (2, 5e-05, False),
+        (4, 1e-04, False),
+        (5, 1e-04, False),
+        (9, 2e-04, False),
+        (10, 5e-05, False),
+        (12, 5e-05, False),
+        # Slack bands, so the exact check is reached on a real solution too.
+        (4, 0.01, True),
+        (9, 0.01, True),
+    ],
+)
+def test_cpsat_feasible_solution_survives_the_exact_check(
+    seed, frl_dev, must_be_feasible
+):
+    """A CP-SAT feasibility claim must hold outside CP-SAT's own arithmetic.
+
+    This is the defect that made CP-SAT warm starts unusable as short bursts'
+    initial state: a hint feasible to the scaled model but not to a consumer
+    re-checking the exact constraints.
+    """
+
+    problem = _fractional_grid_problem(seed, frl_dev)
+
+    solution = get_solver(
+        "cp_bool", solve_time_limit=30, seed=3, workers=1, hints="voronoi"
+    ).find_feasible_solution(problem)
+
+    if must_be_feasible:
+        assert solution.feasible, solution.status
+    if solution.feasible:
+        report = check_zoning(problem, solution.assignment)
+        assert report.feasible, report.describe()
 
 
 def test_negative_racial_dev_disables_racial_balance_constraints():
@@ -597,9 +728,7 @@ def test_access_inequalities_do_not_change_the_integer_optimum(name, flags):
         total_upper_bound=100.0,
     )
 
-    solution = get_solver(
-        name, solve_time_limit=30, workers=1, **flags
-    ).solve(problem)
+    solution = get_solver(name, solve_time_limit=30, workers=1, **flags).solve(problem)
 
     assert solution.status == "OPTIMAL"
     assert solution.objective == pytest.approx(10.0)

@@ -55,7 +55,8 @@ _FILTER_KEYS = {
         "program_population",
         "capacity_scenario",
         "include_k8",
-        "include_citywide",
+        "include_citywide_zoning",
+        "include_citywide_choice_opt",
         "include_mission_bay",
         "geography_vintage",
         "frl_estimate",
@@ -656,7 +657,12 @@ def _validate_filters(
             raise ValueError(
                 f"{label}.{group}.outside_district_students must be ignore or include."
             )
-        for key in ("include_k8", "include_citywide", "include_mission_bay"):
+        for key in (
+            "include_k8",
+            "include_citywide_zoning",
+            "include_citywide_choice_opt",
+            "include_mission_bay",
+        ):
             if key in values and not isinstance(values[key], bool):
                 raise ValueError(f"{label}.{group}.{key} must be a boolean.")
     return filters

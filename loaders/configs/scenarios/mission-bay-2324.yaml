@@ -54,7 +54,8 @@ filters:
     program_population: GE
     capacity_scenario: programs
     include_k8: false
-    include_citywide: false
+    include_citywide_zoning: false
+    include_citywide_choice_opt: false
     include_mission_bay: true
     geography_vintage: "2010"
     outside_district_students: ignore

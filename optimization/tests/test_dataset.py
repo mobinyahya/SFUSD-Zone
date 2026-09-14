@@ -44,7 +44,7 @@ def _config(tmp_path, *, data_filters=None, data_sources=None, **overrides):
         {"program_population": "All"},
         {"capacity_scenario": "B"},
         {"include_k8": True},
-        {"include_citywide": True},
+        {"include_citywide_zoning": True},
         {"include_mission_bay": False},
     ],
 )
@@ -311,3 +311,4 @@ def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
     assert problem.centroids == [0, 2]
     assert problem.max_distance == 3.0
     assert problem.candidate_zones(1) == {0}
+

@@ -8,6 +8,7 @@ import pytest
 
 from benchmark.plot_edges import (
     DASHES,
+    SECONDS_PER_MINUTE,
     METHODS,
     Y_FRAMES,
     frame_ylim,
@@ -15,6 +16,7 @@ from benchmark.plot_edges import (
     late_window,
     main,
     marker_phases,
+    minutes,
     prepare_trajectory,
     recursive_events,
     render_figures,
@@ -421,7 +423,7 @@ def test_weighted_recursive_loader_groups_by_total_budget_and_final_level(tmp_pa
 
 
 @pytest.mark.parametrize("unit,expected", [("km", 0.08), ("m", 80)])
-def test_length_unit_scales_objective_without_changing_time(
+def test_length_unit_scales_objective_independently_of_the_time_axis(
     tmp_path, monkeypatch, unit, expected
 ):
     from matplotlib.axes import Axes
@@ -447,8 +449,10 @@ def test_length_unit_scales_objective_without_changing_time(
     )
     x, y = series[0]
     np.testing.assert_allclose(y[np.isfinite(y)], expected)
-    assert x[np.isfinite(y)][0] == 3
-    assert x[-1] == 600
+    # The objective divisor must not touch the time axis, which is drawn in
+    # minutes while the logs and CSVs stay in seconds.
+    assert x[np.isfinite(y)][0] == 3 / SECONDS_PER_MINUTE
+    assert x[-1] == 600 / SECONDS_PER_MINUTE
 
 
 def _axis(frames):
@@ -581,3 +585,28 @@ def test_render_writes_one_file_per_frame_so_variants_coexist(tmp_path, y_frame)
     assert paths[0].name.endswith(f"_median{suffix}.png")
     with pytest.raises(ValueError):
         render_figures(events, runs, tmp_path / "plots", dpi=30, y_frame="linear")
+
+
+def test_time_axis_is_minutes_while_the_data_stays_in_seconds(tmp_path):
+    from matplotlib.axes import Axes
+
+    _run(tmp_path, "good")
+    events, runs, _ = load_trajectories(tmp_path)
+    drawn = []
+    original = Axes.step
+
+    def capture(self, x, y, *args, **kwargs):
+        drawn.append(np.asarray(x, dtype=float))
+        return original(self, x, y, *args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(Axes, "step", capture)
+    render_figures(events, runs, tmp_path / "plots", skip_initial=0, dpi=30)
+    monkeypatch.undo()
+    # A 600-second budget is drawn as a 10-minute axis...
+    assert drawn and max(values.max() for values in drawn) == 600 / SECONDS_PER_MINUTE
+    # ...while the trajectory the figure was built from keeps seconds.
+    traces = visible_trajectories(events, runs, skip_initial=0)
+    assert max(trace["elapsed_seconds"].max() for trace in traces.values()) == 600
+    assert minutes(600) == 10
+    assert minutes([0, 30, 600]).tolist() == [0, 0.5, 10]

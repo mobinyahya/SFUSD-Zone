@@ -299,7 +299,8 @@ class OptimizationConfig:
         self.program_population
         self.capacity_scenario
         self.include_k8
-        self.include_citywide
+        self.include_citywide_zoning
+        self.include_citywide_choice_opt
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
@@ -361,8 +362,10 @@ class OptimizationConfig:
         if self.strategy == "dantzig_wolfe":
             if self.solver != "cp_bool":
                 raise ValueError("dantzig_wolfe requires solver='cp_bool'.")
-            if self.include_citywide:
-                raise ValueError("dantzig_wolfe requires include_citywide=false.")
+            if self.include_citywide_choice_opt:
+                raise ValueError(
+                    "dantzig_wolfe requires include_citywide_choice_opt=false."
+                )
             if self.budget_accounting != "wall_clock":
                 raise ValueError(
                     "dantzig_wolfe requires budget_accounting='wall_clock'."
@@ -614,8 +617,30 @@ class OptimizationConfig:
         return self._data_scenario.filter("optimization", "include_k8")
 
     @property
-    def include_citywide(self) -> bool:
-        return self._data_scenario.filter("optimization", "include_citywide")
+    def include_citywide_zoning(self) -> bool:
+        """Whether citywide schools exist for the base zoning problem.
+
+        Governs the school table, so it decides whether a citywide school gets
+        a graph node and whether its seats count toward the capacity
+        (``overage``/``shortage``) and school-count balance of the zone that
+        contains it. It is a property of the geography the optimizer partitions
+        and says nothing about welfare.
+        """
+        return self._data_scenario.filter("optimization", "include_citywide_zoning")
+
+    @property
+    def include_citywide_choice_opt(self) -> bool:
+        """Whether citywide programs are alternatives in the welfare markets.
+
+        Governs the MID and SAA markets and the MNL zoning utility -- every
+        method that optimizes or reports choice welfare. Independent of
+        :attr:`include_citywide_zoning`: a citywide school with no graph node
+        is still an option every student holds under every zoning, which is
+        exactly what these markets model with ``school_node=None``.
+        """
+        return self._data_scenario.filter(
+            "optimization", "include_citywide_choice_opt"
+        )
 
     @property
     def include_mission_bay(self) -> bool:

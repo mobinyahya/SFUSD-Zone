@@ -77,8 +77,13 @@ class DantzigWolfeStrategy(Strategy):
     def run(self, dataset, solver):
         if getattr(solver, "name", None) != "cp_bool":
             raise ValueError("dantzig_wolfe requires solver='cp_bool'.")
-        if dataset.config.include_citywide:
-            raise ValueError("dantzig_wolfe requires include_citywide=false.")
+        # Zone values are additive only when every program belongs to exactly
+        # one zone. A citywide program is held by every zone at once, so the
+        # decomposition's central identity fails; see optimization.zone_welfare.
+        if dataset.config.include_citywide_choice_opt:
+            raise ValueError(
+                "dantzig_wolfe requires include_citywide_choice_opt=false."
+            )
         if self.options.get("budget_accounting", "wall_clock") != "wall_clock":
             raise ValueError("dantzig_wolfe requires budget_accounting='wall_clock'.")
         kind = str(self.options.get("dw_objective", "mid"))

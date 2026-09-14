@@ -173,8 +173,12 @@ class IngestConfig:
         return self.data.filter("optimization", "include_k8")
 
     @property
-    def include_citywide(self) -> bool:
-        return self.data.filter("optimization", "include_citywide")
+    def include_citywide_zoning(self) -> bool:
+        return self.data.filter("optimization", "include_citywide_zoning")
+
+    @property
+    def include_citywide_choice_opt(self) -> bool:
+        return self.data.filter("optimization", "include_citywide_choice_opt")
 
     @property
     def include_mission_bay(self) -> bool:
@@ -427,6 +431,24 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
     return frame
 
 
+def citywide_school_ids(data) -> frozenset[int]:
+    """School IDs the district runs citywide, before any selector is applied.
+
+    ``load_schools`` drops these when ``include_citywide_zoning`` is off, so
+    they are unrecoverable from its output. The welfare side needs them even
+    then: ``include_citywide_choice_opt`` can keep a citywide school as an
+    alternative every student holds while the zoning problem owns no node for
+    it, which is the default pairing.
+    """
+    frame = load_school_records(
+        data, SCHOOL_ROLE, filter_group="optimization", low_memory=False
+    )
+    if "category" not in frame.columns or "school_id" not in frame.columns:
+        return frozenset()
+    citywide = frame.loc[frame["category"] == "Citywide", "school_id"]
+    return frozenset(int(school_id) for school_id in citywide.dropna())
+
+
 def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
     """Return canonical school IDs and raw locations before capacity filtering."""
     frame = load_school_records(
@@ -509,7 +531,12 @@ def _attach_capacity(frame: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
         frame = frame.loc[frame["ge_capacity"] > 0]
     if cfg.program_population != "All" and not cfg.include_k8:
         frame = frame.loc[frame["K-8"] == 0]
-    if cfg.program_population != "All" or not cfg.include_citywide:
+    # Zoning-side selector only: dropping a citywide school here removes its
+    # graph node, its seats from the zone capacity balance, and its count from
+    # the school-count constraints. Whether it remains an *alternative* for
+    # welfare is ``include_citywide_choice_opt``, applied in the market
+    # builders, which model such a school as reachable from every zone.
+    if cfg.program_population != "All" or not cfg.include_citywide_zoning:
         frame = frame.loc[frame["category"] != "Citywide"]
     return frame
 

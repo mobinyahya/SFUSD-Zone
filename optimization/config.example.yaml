@@ -85,7 +85,8 @@ data:
         program_population: GE        # GE | All | another selected program code; mid/saa require All
         capacity_scenario: programs    # programs | A | B | C | D
         include_k8: false
-        include_citywide: false
+        include_citywide_zoning: false
+        include_citywide_choice_opt: false
         include_mission_bay: true
         geography_vintage: '2020'     # 2010 | 2020
         frl_estimate: updated_2526     # updated_2526 | null (student-file FRL)

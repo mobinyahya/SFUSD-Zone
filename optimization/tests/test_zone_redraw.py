@@ -574,7 +574,9 @@ def test_the_redraw_never_lowers_the_search_bound_below_the_optimum():
 def _dataset(problem=None):
     problem = problem or make_grid_problem(2, 2, hint={0: 0, 1: 0, 2: 1, 3: 1})
     dataset = FakeDataset(problem)
-    dataset.config = SimpleNamespace(include_citywide=False, program_population="All")
+    dataset.config = SimpleNamespace(
+        include_citywide_choice_opt=False, program_population="All"
+    )
     dataset.problem = problem
     return dataset
 

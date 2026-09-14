@@ -70,7 +70,8 @@ data:
       optimization:
         years: ['2324']
         program_population: All
-        include_citywide: false
+        include_citywide_zoning: false
+        include_citywide_choice_opt: false
         geography_vintage: '2010'
       assignment:
         year: '2324'
