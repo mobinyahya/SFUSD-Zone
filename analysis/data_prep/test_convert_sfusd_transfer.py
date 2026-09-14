@@ -333,6 +333,63 @@ def test_program_numbers_are_unique_and_contiguous(frames, cleaned_dir):
     assert not programs["program_id"].duplicated().any()
 
 
+def test_unlocatable_school_requests_and_programs_are_dropped_together(
+    frames, cleaned_dir
+):
+    # Add a grade-6 request for a school the grade-6 school table cannot place.
+    extra = frames["prerun"].iloc[[4]].copy()
+    extra["Rank"] = 2
+    extra["idSchool"] = 466
+    extra["SchoolName"] = "Independence HS"
+    frames["prerun"] = pd.concat([frames["prerun"], extra], ignore_index=True)
+
+    bundle = GRADE_BUNDLES["06"]
+    pd.DataFrame(
+        {
+            "program_id": ["404-GE-06"],
+            "school_id": [404],
+            "program_type": ["GE"],
+            "capacity": [271],
+        }
+    ).to_csv(cleaned_dir / bundle.capacity_reference, index=False)
+    pd.DataFrame({"school_id": [404], "lat": [37.75], "lon": [-122.40]}).to_csv(
+        cleaned_dir / bundle.schools_standard, index=False
+    )
+
+    with pytest.raises(TransferGapError, match="no coordinates"):
+        converter.drop_unlocatable_requests(
+            frames["prerun"],
+            cleaned_dir=cleaned_dir,
+            gaps="fail",
+            report=Report(year="2627", transfer="synthetic"),
+        )
+
+    report = Report(year="2627", transfer="synthetic")
+    filtered = converter.drop_unlocatable_requests(
+        frames["prerun"],
+        cleaned_dir=cleaned_dir,
+        gaps="fill-and-report",
+        report=report,
+    )
+    # The request is gone, so no student list can reference the dropped program.
+    assert 466 not in set(filtered["idSchool"])
+    programs = build_program_table(
+        filtered,
+        frames["postrun"],
+        bundle,
+        cleaned_dir=cleaned_dir,
+        include_mission_bay=False,
+        gaps="fill-and-report",
+        report=report,
+    )
+    assert "466-GE-06" not in set(programs["program_id"])
+    finding = next(
+        item for item in report.substitutions if item["kind"] == "unlocatable_school"
+    )
+    assert finding["findings"][0]["schools"] == [466]
+    assert finding["findings"][0]["requests"] == 1
+
+
 def test_a_grade_absent_from_the_transfer_emits_no_table(frames, cleaned_dir):
     report = Report(year="2627", transfer="synthetic")
     result = build_program_table(

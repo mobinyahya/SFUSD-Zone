@@ -1169,21 +1169,10 @@ def _assigned_counts(postrun: pd.DataFrame, grade: str) -> pd.Series:
     return frame.groupby(["school_id", "program_type"]).size()
 
 
-def check_school_coverage(
-    programs: pd.DataFrame,
-    bundle: GradeBundle,
-    *,
-    cleaned_dir: Path,
-    include_mission_bay: bool,
-    gaps: str,
-    report: Report,
-) -> pd.DataFrame:
-    """Verify every emitted program has a locatable school, or drop and report.
-
-    Assignment builds student-program distances from school coordinates and
-    rejects a non-finite distance, so a program at a school the school table
-    does not contain would fail the run rather than degrade it.
-    """
+def locatable_schools(
+    bundle: GradeBundle, *, cleaned_dir: Path, include_mission_bay: bool
+) -> set[int]:
+    """Return the school IDs one grade's school table can place on a map."""
     name = bundle.schools_mission_bay if include_mission_bay else None
     name = name or bundle.schools_standard
     path = cleaned_dir / name
@@ -1193,45 +1182,106 @@ def check_school_coverage(
         "verified without it)",
     )
     schools = pd.read_csv(path)
-    required = {"school_id", "lat", "lon"}
-    missing = required - set(schools.columns)
+    missing = {"school_id", "lat", "lon"} - set(schools.columns)
     if missing:
         raise TransferGapError(f"School table {path} is missing {sorted(missing)}.")
-    locatable = set(
+    return set(
         schools.loc[schools["lat"].notna() & schools["lon"].notna(), "school_id"]
         .astype(int)
         .tolist()
     )
-    unlocatable = sorted(set(programs["school_id"].astype(int)) - locatable)
-    if not unlocatable:
-        return programs
 
-    affected = programs.loc[programs["school_id"].astype(int).isin(unlocatable)]
+
+def drop_unlocatable_requests(
+    prerun: pd.DataFrame,
+    *,
+    cleaned_dir: Path,
+    gaps: str,
+    report: Report,
+) -> pd.DataFrame:
+    """Remove requests for schools no borrowed school table can place.
+
+    Assignment builds student-program distances from school coordinates and
+    rejects a non-finite distance, so a program at a school the school table
+    does not contain would fail a run rather than degrade it. Dropping the
+    program but keeping the request that ranks it is worse still: the student
+    then references a program ID the market does not know, which
+    ``Students._validate_ranked_programs`` rejects. So the request and the
+    program go together, before anything else is built.
+
+    Only the grades with a registered school table are checked. Requests for
+    other grades are left alone: nothing borrows a school table for them, so
+    there is nothing to be inconsistent with.
+    """
+    requests = prerun.copy()
+    requests["_grade"] = requests["Grade"].map(normalize_grade)
+    requests["_school_id"] = (
+        _school_ids(requests["idSchool"], "Pre-run")
+        .replace(RAW_SCHOOL_ID_ALIASES)
+        .astype("Int64")
+    )
+
+    drop = pd.Series(False, index=requests.index)
+    findings: list[dict[str, Any]] = []
+    for grade, bundle in GRADE_BUNDLES.items():
+        in_grade = requests["_grade"] == grade
+        if not in_grade.any():
+            continue
+        # A school must be locatable in every variant that could select it, so
+        # the union of both school tables is the fair test.
+        locatable: set[int] = set()
+        for include_mission_bay in (False, True):
+            if include_mission_bay and bundle.schools_mission_bay is None:
+                continue
+            locatable |= locatable_schools(
+                bundle,
+                cleaned_dir=cleaned_dir,
+                include_mission_bay=include_mission_bay,
+            )
+        unlocatable = sorted(
+            set(requests.loc[in_grade, "_school_id"].dropna().astype(int)) - locatable
+        )
+        if not unlocatable:
+            continue
+        affected = in_grade & requests["_school_id"].isin(unlocatable)
+        drop |= affected
+        findings.append(
+            {
+                "grade": grade,
+                "schools": unlocatable,
+                "requests": int(affected.sum()),
+                "school_names": sorted(
+                    set(requests.loc[affected, "SchoolName"].dropna().astype(str))
+                )
+                if "SchoolName" in requests.columns
+                else [],
+            }
+        )
+
+    if not findings:
+        return prerun
+
     if gaps == "fail":
         raise TransferGapError(
-            f"grade {bundle.grade}: schools {unlocatable} appear in the transfer "
-            f"but have no coordinates in {name}, so the affected programs "
-            f"{affected['program_id'].tolist()} cannot be located. The transfer "
-            "carries no school table. Re-run with --gaps fill-and-report to drop "
-            "them, or add the schools to the school table."
+            "These schools appear in the transfer but have no coordinates in "
+            f"the borrowed school tables: {findings}. The transfer carries no "
+            "school table of its own. Re-run with --gaps fill-and-report to "
+            "drop the affected requests and programs, or add the schools to "
+            "the school table."
         )
     report.substitute(
         kind="unlocatable_school",
-        grade=bundle.grade,
-        include_mission_bay=include_mission_bay,
-        schools=unlocatable,
-        dropped_programs=affected["program_id"].tolist(),
-        requests_affected=None,
-        rule="program rows dropped from the emitted program table",
+        findings=findings,
+        rule=(
+            "the affected requests are removed from the student preference "
+            "lists and the affected programs are not emitted"
+        ),
         reason=(
-            f"{name} has no coordinates for these schools, and assignment "
-            "rejects a non-finite student-program distance"
+            "the borrowed school table has no coordinates for these schools, "
+            "and assignment rejects a non-finite student-program distance"
         ),
     )
-    kept = programs.loc[~programs["school_id"].astype(int).isin(unlocatable)].copy()
-    kept = kept.sort_values("program_id", kind="stable").reset_index(drop=True)
-    kept["programno"] = np.arange(1, len(kept) + 1)
-    return kept
+    return prerun.loc[~drop.to_numpy()].reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1272,6 +1322,11 @@ def convert_year(
         "Demographics",
         report,
     )
+
+    prerun = drop_unlocatable_requests(
+        prerun, cleaned_dir=cleaned_dir, gaps=gaps, report=report
+    )
+    report.row_counts["prerun_rows_used"] = len(prerun)
 
     block_indices = load_block_indices(cleaned_dir, report)
     students = build_student_table(
@@ -1327,14 +1382,6 @@ def convert_year(
             )
             if programs is None:
                 continue
-            programs = check_school_coverage(
-                programs,
-                bundle,
-                cleaned_dir=cleaned_dir,
-                include_mission_bay=include_mission_bay,
-                gaps=gaps,
-                report=report,
-            )
             outputs[template.format(year=year)] = programs
             report.row_counts[f"programs_{grade}_mb{int(include_mission_bay)}"] = len(
                 programs
