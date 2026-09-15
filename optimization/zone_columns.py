@@ -27,6 +27,36 @@ rather than the columns:
     Proposition 9's bound is valid at *any* dual point -- it only needs
     ``mu >= 0`` and a global pricing bound at that point -- so smoothing costs
     nothing in rigour. The bound is simply computed where the pricing happened.
+
+Neither remedy was sufficient, and the measured reason is that the primal has
+no freedom rather than that the duals are badly chosen: with ``|V| + Z``
+equality rows against a pool that holds one tiling, the LP's feasible set is a
+single point and *every* entering column has a zero step length. Changing which
+dual you read off that point cannot help.
+
+``overlap_budget``
+    The repair that addresses the primal. Each cover row becomes
+    ``sum(lambda) + d_v - e_v = 1`` with ``d, e >= 0``, and one extra row
+    rations the total mismatch: ``sum_v w_v (d_v + e_v) <= K``. The LP is then
+    full-dimensional in ``lambda``, so a priced zone that collides with the
+    incumbent's other zones can enter with a positive step length, and the
+    cover duals are set by where mismatch is contested rather than left at
+    zero by degeneracy.
+
+    Budgeting rather than penalizing is the point. The classical elastic master
+    penalizes mismatch at a hand-chosen ``M``, and ``M`` has to be guessed in
+    welfare-per-node units: above ``max_v |alpha_v|`` the elastic variables
+    price themselves out and the degenerate single point is back, below it the
+    LP drifts toward zones that can never tile. The budget row's dual *is* that
+    ``M``, re-chosen by the LP every round and bounded by the elastic pair's own
+    dual-feasibility rows, ``|alpha_v| <= w_v mu_K``. What is left to choose is
+    ``K``, in student-equivalents, which is the same kind of knob as
+    ``boundary_prop``.
+
+    It stays a relaxation of the exact master -- every tiling has ``d = e = 0``
+    and the same objective -- so Proposition 9 survives and the bound stays
+    valid at any ``K``; a weaker ``K`` costs bound quality, never correctness.
+    ``K = 0`` is the exact master.
 """
 
 from __future__ import annotations
@@ -54,9 +84,36 @@ __all__ = [
     "ZoneColumn",
     "ZonePool",
     "boundary_limit",
+    "overlap_limit",
+    "overlap_weight",
     "smooth",
     "solve_master",
 ]
+
+
+def overlap_weight(problem, node) -> float:
+    """What one unit of coverage mismatch at ``node`` costs the budget.
+
+    Student mass, floored at one unit. The floor is not cosmetic: a node with
+    no students would otherwise be double-claimable for free, and a free node
+    is exactly what lets two labels each run their own support chain through it
+    without either paying for it. Weighting by students rather than uniformly
+    matters because block mass spans an order of magnitude -- a uniform weight
+    charges the same for double-claiming a 2-student block and a 40-student
+    one, so the LP would spend its whole budget where the welfare payoff is and
+    the duals would be least informative exactly there.
+    """
+
+    return max(1.0, float(problem.students(node)))
+
+
+def overlap_limit(problem, proportion) -> float:
+    """``K``, from a proportion of the district's total weighted mass."""
+
+    proportion = float(proportion)
+    if proportion <= 0:
+        return 0.0
+    return proportion * sum(overlap_weight(problem, n) for n in problem.nodes)
 
 
 @dataclass(frozen=True)
@@ -182,6 +239,11 @@ class DualPoint:
     zone_duals: dict[int, float]
     boundary_dual: float = 0.0
     phase_one: bool = False
+    # Dual of the overlap-budget row, and the ``M`` the elastic pair is priced
+    # at. It is deliberately absent from ``reduced_cost``: the elastic
+    # variables are always in the master and are never priced, so they change
+    # no zone column's reduced cost. It enters the *bound*, as ``mu_K * K``.
+    overlap_dual: float = 0.0
 
     def reduced_cost(self, column) -> float:
         return (
@@ -191,23 +253,35 @@ class DualPoint:
             - self.boundary_dual * column.perimeter / 2
         )
 
-    def dual_objective(self, problem) -> float:
-        """The dual objective, which Proposition 9 corrects into a bound."""
+    def dual_objective(self, problem, overlap_limit: float = 0.0) -> float:
+        """The dual objective, which Proposition 9 corrects into a bound.
+
+        ``overlap_limit`` is ``K``. Omitting it would understate the dual
+        objective of a budgeted-elastic master and so report a bound *below*
+        the relaxation's own optimum, which is the one direction that is not
+        merely weak but wrong.
+        """
 
         value = sum(self.node_duals.values()) + sum(self.zone_duals.values())
         if problem.boundary_prop >= 0:
             value += self.boundary_dual * boundary_limit(problem)
-        return value
+        return value + self.overlap_dual * float(overlap_limit)
 
 
 def smooth(previous: DualPoint | None, current: DualPoint, alpha: float) -> DualPoint:
     """Wentges smoothing of ``current`` toward ``previous``.
 
-    ``alpha = 1`` is no smoothing. The boundary multiplier is clamped
-    non-negative because Proposition 9 needs ``mu >= 0`` to read the master's
-    boundary row as a dual inequality; a convex combination of non-negative
-    multipliers is non-negative, so the clamp only ever catches a numerical
-    artefact.
+    ``alpha = 1`` is no smoothing. The boundary and overlap multipliers are
+    clamped non-negative because Proposition 9 needs ``mu >= 0`` to read those
+    rows as dual inequalities; a convex combination of non-negative multipliers
+    is non-negative, so the clamp only ever catches a numerical artefact.
+
+    Smoothing is safe for the elastic pair's dual-feasibility rows as well.
+    ``|alpha_v| <= w_v mu_K`` cuts out a convex set, and both endpoints satisfy
+    it, so the blend does too -- provided ``mu_K`` is blended along with
+    ``alpha``, which is why it lives on :class:`DualPoint` rather than being
+    folded into the bound at the call site. The rows do not mention ``K``, so a
+    point smoothed across a change in ``K`` stays dual-feasible.
     """
 
     if not 0.0 < alpha <= 1.0:
@@ -218,6 +292,7 @@ def smooth(previous: DualPoint | None, current: DualPoint, alpha: float) -> Dual
             dict(current.zone_duals),
             max(0.0, current.boundary_dual),
             current.phase_one,
+            max(0.0, current.overlap_dual),
         )
     blend = lambda new, old: alpha * new + (1.0 - alpha) * old  # noqa: E731
     return DualPoint(
@@ -231,6 +306,7 @@ def smooth(previous: DualPoint | None, current: DualPoint, alpha: float) -> Dual
         },
         max(0.0, blend(current.boundary_dual, previous.boundary_dual)),
         current.phase_one,
+        max(0.0, blend(current.overlap_dual, previous.overlap_dual)),
     )
 
 
@@ -245,6 +321,17 @@ class MasterResult:
     values: tuple[float, ...] = ()
     artificial_mass: float = 0.0
     phase_one: bool = False
+    overlap_dual: float = 0.0
+    #: Weighted coverage mismatch the budget actually spent. Zero means this
+    #: LP solution is a partition of the pool's columns after all, so the
+    #: elasticity bought nothing; equal to ``K`` means the budget is binding.
+    elastic_mass: float = 0.0
+    #: How many nodes carry any mismatch, which is the shape of it.
+    elastic_nodes: int = 0
+    #: Cover duals sitting exactly on ``|alpha_v| <= w_v mu_K``. A large count
+    #: means the budget row, not the columns, is setting the prices -- the
+    #: signature of a ``K`` too small to guide pricing.
+    duals_pinned: int = 0
 
     def duals(self) -> DualPoint:
         return DualPoint(
@@ -252,6 +339,7 @@ class MasterResult:
             dict(self.zone_duals or {}),
             self.boundary_dual,
             self.phase_one,
+            self.overlap_dual,
         )
 
     def reduced_cost(self, column) -> float:
@@ -266,14 +354,34 @@ def solve_master(
     integer=False,
     phase_one=False,
     method="barrier",
+    overlap_budget=0.0,
 ) -> MasterResult:
-    """Cover every node once and choose exactly one column per zone label."""
+    """Cover every node once and choose exactly one column per zone label.
+
+    ``overlap_budget`` is ``K``: the weighted coverage mismatch the cover rows
+    may carry between them, rationed by a single row rather than priced by a
+    penalty. ``0`` is the exact master and is the default.
+    """
 
     if seconds <= 0:
         return MasterResult("TIME_LIMIT")
     if method not in MASTER_METHODS:
         raise ValueError(
             f"dw_master_method must be one of: {sorted(MASTER_METHODS)}."
+        )
+    overlap_budget = float(overlap_budget)
+    if overlap_budget < 0 or math.isnan(overlap_budget):
+        raise ValueError("dw_overlap_prop must be nonnegative.")
+    if overlap_budget > 0 and integer:
+        raise ValueError(
+            "The integer master must be exact. It is the only thing here that "
+            "produces an incumbent, and an incumbent has to be a tiling."
+        )
+    if overlap_budget > 0 and phase_one:
+        raise ValueError(
+            "Phase I already carries deficit artificials and its completion "
+            "test is zero deficit, so a surplus variable would let it pass by "
+            "double-claiming a node instead of by covering the graph."
         )
     columns = tuple(columns)
     with gp.Env(params={"OutputFlag": 0}) as env, gp.Model("dw_master", env=env) as m:
@@ -323,14 +431,48 @@ def solve_master(
                 objective.addTerms(-1.0, variable)
                 artificials.append(variable)
 
-        cover = {
-            n: m.addConstr(gp.quicksum(terms) == 1, name=f"cover_{n}")
-            for n, terms in cover_terms.items()
-        }
+        elastic: dict[int, tuple] = {}
+        if overlap_budget > 0:
+            for n in cover_terms:
+                # Both directions are needed. Raising a new label-z column
+                # pushes the incumbent's label-z column down by the same
+                # amount, which under-covers the nodes only the incumbent held
+                # (deficit) and over-covers the ones only the newcomer holds
+                # (surplus). Deficit alone -- which is what Phase I carries --
+                # still leaves the step length at zero, so the surplus
+                # variable is the load-bearing half.
+                #
+                # No objective coefficient and no upper bound. The price of a
+                # unit of mismatch is the budget row's dual, and a bound whose
+                # own reduced cost the dual objective did not account for
+                # would understate the bound rather than merely weaken it. The
+                # budget row bounds them anyway: w_v >= 1, so e_v <= K.
+                elastic[n] = (
+                    m.addVar(lb=0.0, ub=GRB.INFINITY, name=f"deficit_{n}"),
+                    m.addVar(lb=0.0, ub=GRB.INFINITY, name=f"surplus_{n}"),
+                )
+
+        cover = {}
+        for n, terms in cover_terms.items():
+            row = gp.quicksum(terms)
+            if n in elastic:
+                deficit, surplus = elastic[n]
+                row = row + deficit - surplus
+            cover[n] = m.addConstr(row == 1, name=f"cover_{n}")
         convexity = {
             z: m.addConstr(gp.quicksum(terms) == 1, name=f"zone_{z}")
             for z, terms in convexity_terms.items()
         }
+        overlap = None
+        if elastic:
+            overlap = m.addConstr(
+                gp.quicksum(
+                    overlap_weight(problem, n) * (deficit + surplus)
+                    for n, (deficit, surplus) in elastic.items()
+                )
+                <= overlap_budget,
+                name="overlap",
+            )
         boundary = None
         if problem.boundary_prop >= 0:
             boundary = m.addConstr(
@@ -350,6 +492,27 @@ def solve_master(
         status = "OPTIMAL" if m.Status == GRB.OPTIMAL else "FEASIBLE"
         if not integer and status != "OPTIMAL":
             return MasterResult("LP_NOT_OPTIMAL")
+        overlap_dual = 0.0 if overlap is None or integer else float(overlap.Pi)
+        elastic_mass = 0.0
+        elastic_nodes = 0
+        for n, (deficit, surplus) in elastic.items():
+            units = deficit.X + surplus.X
+            if units > 1e-9:
+                elastic_nodes += 1
+                elastic_mass += overlap_weight(problem, n) * units
+        # A cover dual sitting *at* ``w_v mu_K`` is one the budget row is
+        # holding down rather than one the columns set, so counting them says
+        # whether K is large enough for the prices to mean anything.
+        duals_pinned = (
+            sum(
+                1
+                for n, row in cover.items()
+                if abs(abs(row.Pi) - overlap_weight(problem, n) * overlap_dual)
+                <= 1e-6 * max(1.0, abs(row.Pi))
+            )
+            if overlap_dual > 1e-9
+            else 0
+        )
         return MasterResult(
             status,
             m.ObjVal,
@@ -360,4 +523,8 @@ def solve_master(
             tuple(v.X for v in variables),
             sum(v.X for v in artificials),
             phase_one,
+            overlap_dual,
+            elastic_mass,
+            elastic_nodes,
+            duals_pinned,
         )

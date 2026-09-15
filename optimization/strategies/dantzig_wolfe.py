@@ -184,6 +184,7 @@ class DantzigWolfeStrategy(Strategy):
             seed=int(self.options.get("seed", 42)),
             master_method=str(self.options.get("dw_master_method", "barrier")),
             dual_smoothing=float(self.options.get("dw_dual_smoothing", 1.0)),
+            overlap_prop=float(self.options.get("dw_overlap_prop", 0.0)),
             pricing_scale=int(self.options.get("dw_pricing_scale", 1000)),
             pricing_columns_per_call=int(
                 self.options.get("dw_pricing_columns_per_call", 8)
@@ -216,6 +217,7 @@ class DantzigWolfeStrategy(Strategy):
                 self.options.get("dw_pricing_time_limit", 30.0)
             ),
             "dw_dual_smoothing": float(self.options.get("dw_dual_smoothing", 1.0)),
+            "dw_overlap_prop": float(self.options.get("dw_overlap_prop", 0.0)),
             "dw_pricing_models": search.pricing_models,
             "dw_pricing_certified": search.status in {"OPTIMAL", "INFEASIBLE"},
             "dw_global_bound": search.upper_bound,

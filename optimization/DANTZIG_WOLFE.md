@@ -172,12 +172,207 @@ This is what `zone_redraw.py` addresses, and it is the reason the module
 exists. Pricing cannot fix it -- the per-label question is the *right* question
 for the bound and the wrong one for the pool.
 
-Two other repairs were considered and are not implemented: an **elastic
-master** (cover equality `sum(lambda) + d_v - e_v = 1` with `d, e >= 0`
-penalized at a large `M`, i.e. Phase I extended to Phase II, which makes the LP
-full-dimensional so a column can enter with a positive step), and
-**completability-targeted pricing** (a cardinality or student-mass window per
-label read off the incumbent, on the column-generating pass only).
+Two other repairs were identified. The first is now implemented, in the section
+below. The second is not: **completability-targeted pricing**, a cardinality or
+student-mass window per label read off the incumbent, on the column-generating
+pass only.
+
+## The budgeted-elastic master
+
+`dw_overlap_prop` addresses the primal deficiency directly. Each Phase-II cover
+row becomes
+
+```text
+sum(z,A: v in A) lambda[z,A]  +  d_v  -  e_v  =  1,      d_v, e_v >= 0
+sum(v) w_v (d_v + e_v)  <=  K                            one extra row
+```
+
+where `w_v = max(1, students(v))`. `d_v` is deficit -- `v` left uncovered --
+and `e_v` is surplus -- `v` claimed by two zones at once. Both are required,
+and the surplus is the load-bearing half. Raising a new label-`z` column forces
+the incumbent's label-`z` column down by the same amount, which under-covers
+the nodes only the incumbent held and over-covers the ones only the newcomer
+holds; Phase I's deficit-only artificials keep structural coverage `<= 1`, so
+they cannot absorb the collision and leave the step length at zero even during
+Phase I. The convexity rows stay hard -- one zone per label, or labels
+evaporate.
+
+With both in place the LP is full-dimensional in `lambda`: a priced zone that
+collides with the incumbent's other zones can enter with a positive step
+length, paying budget for the overlap and banking `W(A)`, and it does so
+exactly when the welfare gain is worth the ration. Three things follow that the
+exact master cannot give: the LP value moves, so "did this column help?"
+becomes answerable; the cover duals are set by where overlap is contested
+rather than left at zero by degeneracy, which is what shrinks the ~800
+per-label pricing residual; and the overlap pattern at the optimum names the
+contested vertices, which is completability information that per-label pricing
+structurally cannot see.
+
+### Why a budget and not a penalty
+
+The classical elastic master penalizes mismatch at a large `M`. `M` is not a
+free parameter: at the optimum `d_v` has reduced cost `-M - alpha_v` and `e_v`
+has `-M + alpha_v`, so `d = e = 0` is optimal exactly when
+`M >= max_v |alpha_v|`. Above that exact-penalty threshold the elastic
+variables price themselves out and the degenerate single point is back, with
+nothing gained; below it the LP drifts toward overlapping high-welfare zones
+that will never tile. `M` therefore has to be discovered per instance, per
+objective and per graph level, in welfare-per-node units -- on `Block_2` a
+scale of roughly 24, from 12,050 welfare over 501 units.
+
+Budgeting inverts that. The budget row's dual `mu_K >= 0` *is* `M`, chosen by
+the LP and re-chosen every round, and the elastic pair's own dual-feasibility
+rows make the relationship explicit: `|alpha_v| <= w_v mu_K`. What is left to
+choose is `K`, in student-equivalents and expressed as a proportion of the
+district total, which is the same kind of knob as `boundary_prop`.
+
+Two details are load-bearing. The weights are student mass rather than uniform
+because block mass spans an order of magnitude, and a uniform weight charges
+the same for double-claiming a 2-student block and a 40-student one, so the LP
+would spend the whole budget where the welfare payoff is and the duals would be
+least informative exactly there. The floor at one unit is there because a
+student-free node would otherwise be double-claimable for nothing, which is the
+one way a budget denominated in students can be spent on geometry: two labels
+each running their own support chain through the same free node.
+
+`d` and `e` carry no objective coefficient and no upper bound. The price of a
+unit of mismatch is the row's dual, and a variable bound whose reduced cost the
+dual objective did not account for would report a bound *below* the relaxation
+it was computed from -- the one error that is wrong rather than merely weak.
+The budget row bounds them anyway: `w_v >= 1`, so `e_v <= K`.
+
+### What it costs in rigour: nothing
+
+Every tiling has `d = e = 0` and the same objective, so the elastic LP contains
+the exact master's feasible set and agrees with it there. Its optimum is
+therefore `>=` the exact master LP's at every `K`, and `K = 0` is the exact
+master. Proposition 9 survives unchanged, with one arithmetic obligation:
+`mu_K * K` must be added to the dual objective, since dropping it understates
+the dual point's value and so reports a bound below the relaxation's own
+optimum. `DualPoint` carries `mu_K` for that reason, which also makes Wentges
+smoothing safe -- `|alpha_v| <= w_v mu_K` cuts out a convex set, so a blend of
+two dual-feasible points is dual-feasible provided `mu_K` is blended alongside
+`alpha`, and the rows do not mention `K`, so a point smoothed across a change
+in `K` stays feasible.
+
+A loose `K` therefore costs bound *quality* and never correctness. Note also
+that the integer master is never elastic: it is the only thing here that
+produces an incumbent, and an incumbent has to be a tiling. Phase I is never
+elastic either -- its completion test is zero deficit, so a surplus variable
+would let it pass by double-claiming a node instead of by covering the graph.
+
+### The one dead end, and its exit
+
+Elasticity creates a state the exact master cannot reach: integral marginals
+with mismatch still spent. There is nothing fractional to branch on and the LP
+is not a partition. The search halves `K` and re-solves; `K = 0` is the exact
+master, so this terminates in finitely many halvings, and because `K` never
+rises again the bound the node finally certifies is the tighter one.
+
+### Tuning K
+
+`K` is a one-dimensional sweep on weakly monotone quantities, and the
+instrumentation is per round in `dw_history`:
+
+| symptom | reading | move |
+|---|---|---|
+| `elastic_mass = 0`, or the LP still at the exact-master value | the overlap bought nothing: either `K` is too small to matter, or the pool already holds the LP optimum | raise `K`; if the LP is already optimal, elasticity is not this instance's problem |
+| `overlap_dual = 0` with `elastic_mass > 0` and the LP saturated | `K` exceeds what overlap can buy, so the ration is a free spend the LP is indifferent to. The search recognizes this and drops `K` to zero rather than bisecting | lower `K` |
+| `overlap_dual > 0` and `elastic_mass` at `K` | the budget binds and is pricing the mismatch: the working range | -- |
+
+`duals_pinned` is the weakest of the four and does *not* read as "`K` too
+small". A binding budget bounds `alpha` by `w_v mu_K` and many nodes sit at
+that bound, so the count is high across the whole working range -- 10 of 12 in
+the ladder below. It says the budget row is setting the prices, which is what a
+binding budget does; the discriminating signals are `overlap_dual` and whether
+the LP moved.
+
+A ladder on a 12-node, 2-label instance with the `mid` objective, enumerated
+down to one tiling plus 187 individually-good zones that cannot complete it
+(integer optimum over the *full* enumeration: 6.00):
+
+| `K` | LP | `elastic_mass` | `elastic_nodes` | `mu_K` | `duals_pinned` |
+|---|---|---|---|---|---|
+| 0.00 | 2.4000 | 0.000 | 0 | 0.0000 | 0 |
+| 0.24 | 2.5920 | 0.240 | 1 | 0.8000 | 10 |
+| 0.60 | 2.8800 | 0.600 | 1 | 0.8000 | 10 |
+| 1.20 | 3.3600 | 1.200 | 2 | 0.8000 | 10 |
+| 3.00 | 4.0000 | 3.000 | 3 | 0.0000 | 0 |
+| 6.00 | 4.0000 | 4.000 | 4 | 0.0000 | 0 |
+| 12.00 | 4.0000 | 4.000 | 4 | 0.0000 | 0 |
+
+The exact master is stuck at its one tiling's 2.40. The budget binds through
+`K <= 1.2`, spending every unit it is given at a stable price of 0.80 per unit
+and climbing the LP monotonically; by `K = 3` the LP has saturated at 4.00 and
+`mu_K` has gone to zero, which is the upper edge. The window is `K` in
+`(0, 3)`, and the shape -- a binding budget at a stable price, then saturation
+-- is what to look for on a real instance.
+
+On a pool that already contains the LP optimum every positive `K` reads as the
+saturated row: mass spent, `mu_K = 0`, LP unmoved. That is a correct answer --
+there is nothing for the elasticity to buy -- and not a badly chosen `K`.
+
+Calibrate on a *fixed* pool before spending any pricing budget: the saved
+400-555-column pools re-solve at a geometric ladder of `K` in seconds, with no
+pricing and no CP-SAT, which brackets the window for free. The acceptance
+metric is not the LP value but the certified bound, `elastic_LP(K) + sum_z
+max(0, b_z)` against the a-priori constant -- the two terms move in opposite
+directions as `K` falls, so there is an interior optimum that has to be
+measured rather than reasoned. One master plus one pricing round per `K` is
+under a minute now that a label prices in 0.1-8s. The primal pass/fail stays
+the one-tiling diagnostic: delete the `Z` seed columns and re-solve the integer
+master.
+
+### Measured on Block_2, 2026-09-14
+
+`analysis/probe_overlap_budget.py`, mid objective, 501 nodes, 4,154 students,
+constant 16,830.9547. The exact master reproduced the pathology precisely: LP
+pinned at **10,229.7554 for all nine rounds**, 34 columns, `one_tiling = True`.
+
+| `prop` | `K` | LP | mass | `mu_K` | pinned | residual | certified |
+|---|---|---|---|---|---|---|---|
+| 0 | 0 | 10,229.76 | 0 | 0 | 0 | 133,566 | 143,795 |
+| 0.002 | 8.42 | 10,239.13 | 8.42 | 1.11356 | 499 | 49,181 | 59,420 |
+| 0.01 | 42.10 | 10,276.64 | 42.10 | 1.11356 | 499 | 49,195 | 59,472 |
+| 0.05 | 210.50 | 10,464.16 | 210.50 | 1.11356 | 499 | 46,611 | 57,075 |
+| 0.25 | 1052.50 | 11,401.78 | 1052.50 | 1.11356 | 499 | 43,580 | **54,982** |
+| 0.5 | 2105.00 | 12,181.12 | 2105.00 | 0.60091 | 499 | 46,106 | 58,287 |
+
+The budget is fully spent at every `K` and the LP gain is *exactly* `mu_K * K`
+over two orders of magnitude -- there is no interior window of the kind the toy
+instance showed, and `duals_pinned` is 499 of 501 throughout, so the cover
+duals become `±w_v mu_K`: student mass with a sign. That is still a large
+improvement on `K = 0`, where only **6 of 501** duals are nonzero, and the
+residual does fall 63% at the smallest budget. **But no `K` beats the
+constant.**
+
+Two findings matter more than the table.
+
+**Raising `K` makes the residual target harder.** `certified = LP + sum_z b_z`
+and the elastic LP is a relaxation, so `K` inflates the first term while
+shrinking the second:
+
+| | LP | needed `sum b_z` | per label |
+|---|---|---|---|
+| `K = 0` | 10,230 | < 4,967 | 830 |
+| `prop = 0.25` | 11,402 | < 3,795 | 632 |
+
+So the budget buys dual quality and pays for it in bound inflation. What has no
+such cost is simply *more columns at `K = 0`* -- a richer pool
+de-degenerates the duals while the LP stays a valid tight bound, which points
+at the redraw rather than at this knob.
+
+**The residual at the default pricing budget is mostly solver slack.** See the
+REVISIT note in `branch_price.py`: 20,783-24,161 per label at ~20s against
+~5,300 at 600s, with a 0.45-0.58% gap to the label's own best zone. Any `K`
+sweep run at the default budget is therefore measuring slack more than
+optimism, which is the main caveat on the table above.
+
+What is verified independently of all this is the mechanism:
+`test_dantzig_wolfe.py` reproduces the zero step length on a colliding column
+and removes it with a budget, checks the relaxation ordering and the
+strong-duality identity including `mu_K * K`, and checks
+`|alpha_v| <= w_v mu_K` at both dual points.
 
 ## The two-zone redraw
 

@@ -649,3 +649,117 @@ def test_a_node_closes_as_soon_as_its_bound_meets_the_incumbent():
     assert sum(column.score for column in result.selected) == pytest.approx(
         sum(column.score for column in best)
     )
+
+
+# ---------------------------------------------------------------------- #
+# The budgeted-elastic master, inside the search
+# ---------------------------------------------------------------------- #
+@pytest.mark.parametrize("overlap_prop", [0.1, 0.5])
+def test_an_overlap_budget_leaves_the_optimum_and_the_bound_valid(overlap_prop):
+    """Elasticity changes where the LP may go, never what may be concluded.
+
+    The relaxation is looser at every positive ``K``, so the bound is allowed
+    to be weaker -- but it must still *be* a bound, and the incumbent it
+    returns must still be a tiling, because only the exact integer master ever
+    produces one.
+    """
+
+    p = make_grid_problem(2, 2)
+    pool = ZonePool(p, MidZoneObjective(market(), 5))
+    enumerated = solve_master(p, tuple(all_columns(pool)), 5, integer=True)
+    result = branch_and_price(
+        pool,
+        deadline=time.monotonic() + 60,
+        overlap_prop=overlap_prop,
+        pricing_parallel=False,
+    )
+    assert result.selected
+    assert sum(c.score for c in result.selected) == pytest.approx(
+        enumerated.objective
+    )
+    assert result.upper_bound >= enumerated.objective - 1e-9
+    # Still a partition: the elastic rows are Phase-II LP only.
+    assert {c.zone for c in result.selected} == set(range(p.Z))
+    assert frozenset().union(*(c.nodes for c in result.selected)) == pool.nodes
+    assert sum(len(c.nodes) for c in result.selected) == p.A
+
+
+def test_the_budget_diagnostics_are_reported_only_when_it_is_enabled():
+    """``K`` is tuned by sweeping it, which needs these five numbers per round.
+
+    They are withheld at ``K = 0`` because the history goes into every saved
+    run and five always-zero keys per round is not free there.
+    """
+
+    p = make_grid_problem(2, 2)
+    keys = {
+        "overlap_budget",
+        "overlap_dual",
+        "elastic_mass",
+        "elastic_nodes",
+        "duals_pinned",
+    }
+    for overlap_prop, expected in ((0.0, False), (0.25, True)):
+        pool = ZonePool(p, MidZoneObjective(market(), 5))
+        result = branch_and_price(
+            pool,
+            deadline=time.monotonic() + 60,
+            overlap_prop=overlap_prop,
+            pricing_parallel=False,
+        )
+        phase_two = [h for h in result.history if not h["phase_one"]]
+        assert phase_two
+        assert all((keys <= set(h)) is expected for h in phase_two)
+        # Phase I is never elastic whatever K is.
+        assert all(
+            h.get("overlap_budget", 0.0) == 0.0
+            for h in result.history
+            if h["phase_one"]
+        )
+
+
+def test_the_search_shrinks_the_budget_rather_than_calling_a_non_tiling_integral():
+    """The one dead end elasticity creates, and its exit.
+
+    Integral marginals with mismatch still spent leaves nothing fractional to
+    branch on and an LP that is not a partition. Halving ``K`` is the exit, and
+    ``K = 0`` is the exact master, so it terminates. The pool here holds one
+    tiling and one colliding column worth far more, so the first Phase-II LP
+    puts all its weight on the collision and takes that path.
+    """
+
+    p = make_grid_problem(1, 6)
+    # Scores stay inside BoundaryZoneObjective's own a-priori bound of zero, so
+    # the root node is not closed against the incumbent before it is priced.
+    columns = (
+        ZoneColumn(0, frozenset({0, 1, 2}), -1.0, 0),
+        ZoneColumn(1, frozenset({3, 4, 5}), -1.0, 0),
+        ZoneColumn(0, frozenset({0, 1, 2, 3}), -0.001, 0),
+    )
+
+    def priced_out(pool_, zone, duals, decisions, **kwargs):
+        """Never offers a column, so the LP is the only thing moving."""
+
+        return PricingResult("OPTIMAL", 0.0, frozenset(), 0.0, ())
+
+    pool = ZonePool(p, BoundaryZoneObjective())
+    for column in columns:
+        pool.add(column)
+    result = branch_and_price(
+        pool,
+        pricer=priced_out,
+        incumbent=columns[:2],
+        deadline=time.monotonic() + 30,
+        overlap_prop=1.0,
+    )
+    phase_two = [h for h in result.history if not h["phase_one"]]
+    budgets = [h["overlap_budget"] for h in phase_two]
+    assert len(budgets) > 1
+    # Monotone down, and it really did move: K never rises, so the bound the
+    # node finally certifies is the tighter one.
+    assert budgets == sorted(budgets, reverse=True)
+    assert budgets[-1] < budgets[0]
+    assert max(h["elastic_mass"] for h in phase_two) > 1e-6
+    # The collision was never reported as a solution.
+    assert sum(c.score for c in result.selected) == pytest.approx(-2.0)
+    assert frozenset().union(*(c.nodes for c in result.selected)) == pool.nodes

@@ -128,15 +128,15 @@ def test_the_legacy_key_name_still_loads_saved_configs():
 
 
 def test_master_time_limit_schedule_distribution():
-    # Weighted shares remain unchanged when they exceed the 30s floor.
-    # iter 0: weight 1, remaining weights 1+2+3 = 6 -> 600 * 1/6 = 100s
-    assert master_time_limit(600.0, 0, 3) == pytest.approx(100.0)
+    # Weighted shares remain unchanged when they exceed MIN_MASTER_SECONDS.
+    # iter 0: weight 1, remaining weights 1+2+3 = 6 -> 6000 * 1/6 = 1000s
+    assert master_time_limit(6000.0, 0, 3) == pytest.approx(1000.0)
 
-    # iter 1: remaining = 500s, weight 2, remaining weights 2+3 = 5 -> 200s
-    assert master_time_limit(500.0, 1, 3) == pytest.approx(200.0)
+    # iter 1: remaining = 5000s, weight 2, remaining weights 2+3 = 5 -> 2000s
+    assert master_time_limit(5000.0, 1, 3) == pytest.approx(2000.0)
 
-    # iter 2: the last iteration receives the remaining 300s.
-    assert master_time_limit(300.0, 2, 3) == pytest.approx(300.0)
+    # iter 2: the last iteration receives the remaining 3000s.
+    assert master_time_limit(3000.0, 2, 3) == pytest.approx(3000.0)
 
 
 @pytest.mark.parametrize("backend", ["cp_bool", "mip"])

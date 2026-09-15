@@ -25,6 +25,8 @@ from optimization.zone_columns import (
     ZoneColumn,
     ZonePool,
     smooth,
+    overlap_limit,
+    overlap_weight,
     solve_master,
 )
 from optimization.zone_family import boundary_limit, build_zone_family
@@ -556,6 +558,7 @@ def test_config_and_example():
     assert config.include_citywide_choice_opt is False
     assert strategy.options["dw_objective"] in ("mid", "stable_matching")
     assert strategy.options["dw_master_method"] == "barrier"
+    assert strategy.options["dw_overlap_prop"] == 0.0
 
 
 @pytest.mark.parametrize(
@@ -570,6 +573,10 @@ def test_config_and_example():
         ({"dw_master_method": "crossover"}, "dw_master_method"),
         ({"dw_dual_smoothing": 0.0}, "dw_dual_smoothing"),
         ({"dw_dual_smoothing": 1.5}, "dw_dual_smoothing"),
+        ({"dw_overlap_prop": -0.1}, "dw_overlap_prop"),
+        ({"dw_overlap_prop": 1.5}, "dw_overlap_prop"),
+        ({"dw_overlap_prop": True}, "dw_overlap_prop"),
+        ({"dw_overlap_prop": float("inf")}, "dw_overlap_prop"),
         ({"dw_pricing_scale": 0}, "dw_pricing_scale"),
         ({"dw_pricing_columns_per_call": 0}, "dw_pricing_columns_per_call"),
         ({"dw_pricing_parallel": "yes"}, "dw_pricing_parallel"),
@@ -666,3 +673,158 @@ def test_a_partition_with_one_bad_zone_still_contributes_its_good_ones():
     assert pool.admit_partition(assignment) is None
     assert {key[0] for key in pool.columns} == {1}
     assert math.isfinite(sum(c.score for c in pool.columns.values()))
+
+
+# ---------------------------------------------------------------------- #
+# The budgeted-elastic master
+# ---------------------------------------------------------------------- #
+def _collision_instance():
+    """One tiling, plus a high-value label-0 zone that collides with label 1.
+
+    Raw columns, so the LP's behaviour is isolated from the welfare oracle.
+    Node 2 is the contested one: it belongs to the tiling's label-1 zone and
+    to the newcomer.
+    """
+
+    p = make_grid_problem(1, 6)
+    p.centroids = [0, 2, 5]
+    p.centroid_school_ids = [100, 150, 200]
+    tiling = [
+        ZoneColumn(0, frozenset({0, 1}), 1.0, 0),
+        ZoneColumn(1, frozenset({2, 3}), 1.0, 0),
+        ZoneColumn(2, frozenset({4, 5}), 1.0, 0),
+    ]
+    collides = ZoneColumn(0, frozenset({0, 1, 2}), 100.0, 0)
+    return p, (*tiling, collides)
+
+
+def test_a_colliding_column_has_a_zero_step_length_until_the_budget_exists():
+    """The measured obstruction, reproduced, and then removed.
+
+    The exact master cannot give the newcomer any weight: node 2's cover row
+    is already satisfied by the only label-1 column available, so raising the
+    newcomer would over-cover it. The pool grows by a column worth 100 against
+    a tiling worth 3 and the LP does not move -- a zero step length, which is
+    exactly what 400 to 555 columns per run did on the real instances. With a
+    budget the surplus variable absorbs the collision and the same column
+    enters.
+    """
+
+    p, columns = _collision_instance()
+    seeded = solve_master(p, columns[:-1], 5, method="dual")
+    assert seeded.objective == pytest.approx(3.0)
+
+    exact = solve_master(p, columns, 5, method="dual")
+    assert exact.status == "OPTIMAL"
+    assert exact.objective == pytest.approx(seeded.objective)
+    assert exact.values[-1] == pytest.approx(0.0)
+    assert exact.elastic_mass == 0.0
+
+    lp = solve_master(p, columns, 5, method="dual", overlap_budget=0.5)
+    assert lp.status == "OPTIMAL"
+    # lambda on the newcomer rises to the budget: one unit of surplus at node
+    # 2 per unit of weight, so 0.5 buys 0.5, worth 99 each over the tiling.
+    assert lp.values[-1] == pytest.approx(0.5)
+    assert lp.objective == pytest.approx(3.0 + 99.0 * 0.5)
+    assert lp.elastic_mass == pytest.approx(0.5)
+    assert lp.elastic_nodes == 1
+
+
+def test_zero_budget_is_the_exact_master():
+    p, columns = _collision_instance()
+    exact = solve_master(p, columns, 5, method="dual")
+    for budget in (0.0, -0.0):
+        lp = solve_master(p, columns, 5, method="dual", overlap_budget=budget)
+        assert lp.objective == pytest.approx(exact.objective)
+        assert lp.elastic_mass == 0.0
+        assert lp.overlap_dual == 0.0
+        assert lp.duals_pinned == 0
+
+
+@pytest.mark.parametrize("budget", [0.1, 0.5, 1.0, 2.0])
+def test_the_budget_binds_and_the_relaxation_only_ever_loosens(budget):
+    p, columns = _collision_instance()
+    exact = solve_master(p, columns, 5, method="dual")
+    lp = solve_master(p, columns, 5, method="dual", overlap_budget=budget)
+    assert lp.status == "OPTIMAL"
+    assert lp.elastic_mass <= budget + 1e-9
+    # A relaxation: every tiling stays feasible at its own objective, so the
+    # value can only rise. That is what keeps Proposition 9's bound valid.
+    assert lp.objective >= exact.objective - 1e-9
+
+
+@pytest.mark.parametrize("method", ["barrier", "dual"])
+def test_the_budget_dual_completes_the_dual_objective(method):
+    """Strong duality, including the budget row, at whichever dual point.
+
+    Omitting ``mu_K * K`` would report a dual objective *below* the
+    relaxation's own optimum, and a bound below the relaxation it was computed
+    from is wrong rather than merely weak.
+    """
+
+    p, columns = _collision_instance()
+    budget = 0.5
+    lp = solve_master(p, columns, 5, method=method, overlap_budget=budget)
+    assert lp.status == "OPTIMAL"
+    assert lp.duals().dual_objective(p, budget) == pytest.approx(
+        lp.objective, abs=1e-6
+    )
+    # ... and without the term it is strictly short, so the test has teeth.
+    assert lp.duals().dual_objective(p) < lp.objective - 1e-6
+
+
+@pytest.mark.parametrize("method", ["barrier", "dual"])
+def test_the_budget_dual_is_the_M_the_penalty_form_would_have_guessed(method):
+    """``|alpha_v| <= w_v mu_K`` is the elastic pair's dual-feasibility row.
+
+    It is the whole reason for budgeting instead of penalizing: that bound is
+    the exact-penalty threshold a hand-chosen ``M`` has to clear, and here the
+    LP reports it rather than being told it.
+    """
+
+    p, columns = _collision_instance()
+    lp = solve_master(p, columns, 5, method=method, overlap_budget=0.5)
+    assert lp.status == "OPTIMAL"
+    assert lp.overlap_dual >= -1e-9
+    assert lp.overlap_dual > 1e-6  # the budget binds here
+    for node, dual in lp.node_duals.items():
+        assert abs(dual) <= overlap_weight(p, node) * lp.overlap_dual + 1e-6
+    # The contested node is where the budget is spent, so its price is the one
+    # held at the bound.
+    assert lp.duals_pinned >= 1
+
+
+def test_the_exact_and_phase_one_masters_refuse_a_budget():
+    p, columns = _collision_instance()
+    with pytest.raises(ValueError, match="must be exact"):
+        solve_master(p, columns, 5, integer=True, overlap_budget=0.5)
+    with pytest.raises(ValueError, match="Phase I"):
+        solve_master(p, columns, 5, phase_one=True, overlap_budget=0.5)
+    with pytest.raises(ValueError, match="dw_overlap_prop"):
+        solve_master(p, columns, 5, overlap_budget=-1.0)
+
+
+def test_overlap_weight_floors_a_student_free_node_at_one_unit():
+    """Otherwise a free node is double-claimable for nothing.
+
+    Two labels could each run their own support chain through it without
+    either paying, which is the one way a budget in student mass could be
+    spent on geometry rather than on students.
+    """
+
+    p = make_grid_problem(1, 3)
+    for node in p.nodes:
+        p.G.nodes[node][p.student_attribute] = 0.0
+    assert [overlap_weight(p, n) for n in p.nodes] == [1.0, 1.0, 1.0]
+    assert overlap_limit(p, 0.5) == pytest.approx(1.5)
+    p.G.nodes[1][p.student_attribute] = 40.0
+    assert overlap_limit(p, 1.0) == pytest.approx(42.0)
+    assert overlap_limit(p, 0.0) == 0.0
+
+
+def test_smoothing_carries_the_budget_dual_and_clamps_it():
+    previous = DualPoint({0: 0.0}, {0: 0.0}, 0.0, False, 4.0)
+    current = DualPoint({0: 0.0}, {0: 0.0}, 0.0, False, 0.0)
+    assert smooth(previous, current, 0.25).overlap_dual == pytest.approx(3.0)
+    assert smooth(previous, current, 1.0).overlap_dual == 0.0
+    assert smooth(None, DualPoint({}, {}, 0.0, False, -1e-12), 0.5).overlap_dual == 0.0

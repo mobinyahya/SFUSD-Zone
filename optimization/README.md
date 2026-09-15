@@ -278,6 +278,20 @@ bit-for-bit reproducibility; `dual` restores the old vertex duals. When a
 smoothed point mis-prices, the round re-prices at the raw LP duals before
 concluding anything, and moves the smoothing centre there.
 
+Neither is the binding problem. The measured obstruction is that the master
+LP's feasible set is essentially the single tiling the pool holds, so *every*
+entering column has a zero step length and which dual you read off that point
+cannot matter. `dw_overlap_prop` is the repair that addresses the primal: the
+Phase-II cover rows become `sum(lambda) + d_v - e_v = 1` with one row rationing
+`sum_v w_v (d_v + e_v) <= K`, which makes the LP full-dimensional in `lambda`
+so a colliding priced column can enter with a positive step. It is a budget
+rather than a penalty because the row's dual *is* the penalty `M`, chosen by
+the LP each round instead of guessed in welfare-per-node units. A relaxation at
+every `K`, so the bound stays valid and a loose `K` costs bound quality only;
+`0.0` is the exact master and the default until `K` has been swept. See
+[the formulation](DANTZIG_WOLFE.md) for the tuning table and the diagnostics
+each round reports.
+
 ### Seeding and budget
 
 `hints: feasible` runs one `cp_bool` feasibility solve, which is the only

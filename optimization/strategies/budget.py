@@ -3,8 +3,18 @@
 An iterative strategy gets one total budget for the whole run rather than one
 limit per solve. Every iteration re-reads the clock and claims a linearly
 increasing share of what is left, so time an early iteration leaves unused
-carries forward to the later, harder solves. Each allocation has a 30-second
-floor, capped by the remaining total budget.
+carries forward to the later, harder solves. Each allocation has a floor of
+``MIN_MASTER_SECONDS``, capped by the remaining total budget.
+
+The floor exists because the schedule's first shares are tiny -- at
+``max_iterations: 15`` iteration 0 gets 1/120th of the budget -- and a master
+solve that cannot finish CP-SAT's presolve returns ``UNKNOWN`` having searched
+nothing at all. ``iterative_choice`` seeds its master with one MNL cut per
+node, which puts it at 60k-134k Booleans and 13-48s of presolve on a
+Block_2-sized instance; under the old 30s floor its two largest centroid
+configurations aborted at iteration 0 with no zoning saved. Set the floor
+above the presolve cost of the *largest* master any strategy here builds, not
+the typical one.
 
 ``budget_accounting`` chooses what the budget pays for:
 
@@ -26,7 +36,10 @@ import time
 
 BUDGET_POLICY = "linearly_increasing_with_carry_forward"
 BUDGET_ACCOUNTING_MODES = ("wall_clock", "solver_time")
-MIN_MASTER_SECONDS = 30.0
+# Above CP-SAT presolve on the largest master these strategies build; see the
+# module docstring. Raised from 30.0 after iterative_choice runs on
+# benchmark_choice_v7 died inside presolve.
+MIN_MASTER_SECONDS = 120.0
 
 
 def final_value(values, default) -> float:
@@ -133,7 +146,7 @@ def master_time_limit(
     iteration: int,
     max_iterations: int,
 ) -> float:
-    """Weighted share with a 30-second floor, capped by the remaining budget."""
+    """Weighted share with a ``MIN_MASTER_SECONDS`` floor, capped by the budget."""
 
     current_weight = iteration + 1
     remaining_weight = sum(range(current_weight, max_iterations + 1))

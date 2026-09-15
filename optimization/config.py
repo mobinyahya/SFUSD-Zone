@@ -191,6 +191,17 @@ class OptimizationConfig:
     dw_master_method: str = "barrier"
     # Wentges smoothing weight on this round's duals; 1.0 is no smoothing.
     dw_dual_smoothing: float = 1.0
+    # The budgeted-elastic master. K, as a proportion of the district's total
+    # student mass (floored at one unit per node), that the Phase-II cover rows
+    # may carry as coverage mismatch: `sum(lambda) + d_v - e_v = 1` with
+    # `sum_v w_v (d_v + e_v) <= K`. It exists because the measured obstruction
+    # is that the master LP's feasible set is a single point, so a priced zone
+    # colliding with the incumbent's other zones enters with a zero step
+    # length. A budget rather than a penalty because the row's dual is then the
+    # penalty M, chosen by the LP every round instead of guessed in
+    # welfare-per-node units. Relaxation at every value, so the bound stays
+    # valid; 0.0 is the exact master and the default until K is swept.
+    dw_overlap_prop: float = 0.0
     # Integer units the CP-SAT pricing objective is measured in.
     dw_pricing_scale: int = 1000
     dw_pricing_columns_per_call: int = 8
@@ -350,6 +361,14 @@ class OptimizationConfig:
         ):
             raise ValueError("dw_pricing_time_limit must be positive or infinity.")
         self.dw_pricing_time_limit = float(self.dw_pricing_time_limit)
+        if (
+            isinstance(self.dw_overlap_prop, bool)
+            or not isinstance(self.dw_overlap_prop, (int, float))
+            or not math.isfinite(self.dw_overlap_prop)
+            or not 0.0 <= float(self.dw_overlap_prop) <= 1.0
+        ):
+            raise ValueError("dw_overlap_prop must lie in [0, 1].")
+        self.dw_overlap_prop = float(self.dw_overlap_prop)
         if not isinstance(self.dw_redraw, bool):
             raise ValueError("dw_redraw must be a Boolean.")
         if (
@@ -768,6 +787,7 @@ class OptimizationConfig:
             dw_recom_time_limit=self.dw_recom_time_limit,
             dw_master_method=self.dw_master_method,
             dw_dual_smoothing=self.dw_dual_smoothing,
+            dw_overlap_prop=self.dw_overlap_prop,
             dw_pricing_scale=self.dw_pricing_scale,
             dw_pricing_columns_per_call=self.dw_pricing_columns_per_call,
             dw_pricing_parallel=self.dw_pricing_parallel,

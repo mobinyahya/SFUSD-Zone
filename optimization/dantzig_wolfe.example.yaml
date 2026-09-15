@@ -37,6 +37,22 @@ mid_utility_handling: omit_nonpositive
 dw_master_method: barrier
 # Wentges smoothing weight on the current LP's duals; 1.0 disables smoothing.
 dw_dual_smoothing: 0.5
+# The budgeted-elastic master. K, as a proportion of total student mass, that
+# the Phase-II cover rows may carry as coverage mismatch: each becomes
+# `sum(lambda) + d_v - e_v = 1` and one row rations `sum_v w_v (d_v + e_v)`.
+# Without it the master LP's feasible set is essentially the single tiling the
+# pool holds, so a priced zone that collides with the incumbent's other zones
+# enters with a zero step length -- measured as 400-555 such columns per run
+# against an LP that never moved. A budget rather than a penalty because the
+# row's dual *is* the penalty M, re-chosen by the LP each round instead of
+# guessed in welfare-per-node units. It is a relaxation at every value, so the
+# bound stays valid and a loose K costs bound quality only; 0 is the exact
+# master. Read `elastic_mass`, `overlap_dual` and `duals_pinned` out of
+# `dw_history` to tune it: an unmoved LP means the overlap bought nothing, and
+# `overlap_dual` falling to zero with the LP saturated means K exceeds what
+# overlap can buy. The working range is a positive `overlap_dual` with the
+# ration fully spent.
+dw_overlap_prop: 0.0
 # Integer scaling of the CP-SAT pricing objective. Larger shrinks the reported
 # `dw_bound_slack` and slows each solve.
 dw_pricing_scale: 1000

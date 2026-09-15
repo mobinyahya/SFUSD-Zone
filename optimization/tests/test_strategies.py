@@ -646,17 +646,24 @@ def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bo
 
 
 def test_mid_decomp_splits_remaining_budget_across_iterations():
-    assert budget.master_time_limit(600, 0, 3) == pytest.approx(100)
-    assert budget.master_time_limit(500, 1, 3) == pytest.approx(200)
-    assert budget.master_time_limit(300, 2, 3) == pytest.approx(300)
+    # Shares chosen above the floor, so this tests the distribution alone.
+    assert budget.master_time_limit(6000, 0, 3) == pytest.approx(1000)
+    assert budget.master_time_limit(5000, 1, 3) == pytest.approx(2000)
+    assert budget.master_time_limit(3000, 2, 3) == pytest.approx(3000)
 
 
 @pytest.mark.parametrize(
     ("remaining", "iteration", "expected"),
     [
-        (3600.0, 0, 30.0),
-        (3570.0, 1, 3570.0 * 2 / 209),
-        (30.0, 0, 30.0),
+        # The early shares of a 20-iteration schedule are far under the floor
+        # (3600/210 = 17s), and a master that cannot finish presolve returns
+        # nothing, so the floor is what it gets.
+        (3600.0, 0, budget.MIN_MASTER_SECONDS),
+        (3570.0, 1, budget.MIN_MASTER_SECONDS),
+        # Late enough that the weighted share clears the floor on its own.
+        (3600.0, 18, 3600.0 * 19 / 39),
+        # The floor never overdraws: what is left is the hard cap.
+        (budget.MIN_MASTER_SECONDS, 0, budget.MIN_MASTER_SECONDS),
         (12.0, 0, 12.0),
         (0.0, 0, 0.0),
     ],
@@ -707,24 +714,27 @@ def test_iterative_choice_splits_one_budget_across_iterations(monkeypatch):
         "build_mnl_choice_model",
         lambda data, **kwargs: model,
     )
+    floor = budget.MIN_MASTER_SECONDS
+    total = 2 * floor
     strat = get_strategy(
         "iterative_choice",
         levels=["BlockGroup_0"],
         max_iterations=3,
-        solve_time_limits=[60.0],
+        solve_time_limits=[total],
         gap_limits=[0.0],
     )
 
     solutions = strat.run(dataset, solver)
     final = solutions[-1]
 
-    # The first two weighted shares are below the 30s floor. This solver returns
-    # instantly, so unused time carries forward and the last solve gets all 60s.
-    assert solver.solve_time_limits[0] == pytest.approx(30.0, rel=1e-2)
-    assert solver.solve_time_limits[1] == pytest.approx(30.0, rel=1e-2)
-    assert solver.solve_time_limits[2] == pytest.approx(60.0, rel=1e-2)
+    # The first two weighted shares (total/6 and 2*total/5) are below the
+    # floor. This solver returns instantly, so unused time carries forward and
+    # the last solve gets the whole budget.
+    assert solver.solve_time_limits[0] == pytest.approx(floor, rel=1e-2)
+    assert solver.solve_time_limits[1] == pytest.approx(floor, rel=1e-2)
+    assert solver.solve_time_limits[2] == pytest.approx(total, rel=1e-2)
     assert solver.options["relative_gap_limit"] == 0.0
-    assert final.metadata["choice_total_budget_seconds"] == 60.0
+    assert final.metadata["choice_total_budget_seconds"] == total
     assert (
         final.metadata["choice_budget_policy"]
         == "linearly_increasing_with_carry_forward"
@@ -775,16 +785,18 @@ def test_wall_clock_budget_pays_for_every_kind_of_work():
 
 
 def test_solver_time_budget_only_pays_for_charged_solves():
-    solver_time = budget.Budget(60.0, 3, "solver_time")
+    floor = budget.MIN_MASTER_SECONDS
+    total = 2 * floor
+    solver_time = budget.Budget(total, 3, "solver_time")
 
-    assert solver_time.iteration_limit(0) == pytest.approx(30.0)
+    assert solver_time.iteration_limit(0) == pytest.approx(floor)
 
-    solver_time.charge(10.0)
+    solver_time.charge(floor / 3)
 
-    assert solver_time.remaining_seconds == pytest.approx(50.0)
-    assert solver_time.iteration_limit(1) == pytest.approx(30.0)
+    assert solver_time.remaining_seconds == pytest.approx(total - floor / 3)
+    assert solver_time.iteration_limit(1) == pytest.approx(floor)
 
-    solver_time.charge(50.0)
+    solver_time.charge(total - floor / 3)
 
     assert solver_time.exhausted()
 

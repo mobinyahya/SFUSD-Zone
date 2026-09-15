@@ -58,22 +58,45 @@ improving zones without acquiring a second tiling. What this module then
 delivers is recombination of *seeded* partitions through a set-partitioning
 master: a useful primal heuristic, not column generation.
 
-Two repairs, in order of effort, neither implemented:
+Two repairs. The first is now implemented and off by default:
 
-* An **elastic master**: replace the cover equality by
-  ``sum(lambda) + d_v - e_v = 1`` with ``d, e >= 0`` penalized at a large M,
-  i.e. Phase I extended to Phase II. The LP becomes full-dimensional so a
-  column can enter with a positive step length and the duals become
-  informative; it stays a relaxation of the exact master, so Proposition 9
-  survives, and a zero-slack optimum is still a partition.
-* **Completability-targeted pricing**: a cardinality or student-mass window per
-  label read off the incumbent, imposed on the column-generating pass while the
-  bound-producing pass still ranges over all of ``F_z``.
+* The **budgeted-elastic master**, ``overlap_prop``. Each cover row becomes
+  ``sum(lambda) + d_v - e_v = 1`` with ``d, e >= 0``, and one row rations the
+  total: ``sum_v w_v (d_v + e_v) <= K``. That makes the LP full-dimensional in
+  ``lambda``, so a priced zone colliding with the incumbent's other zones can
+  enter with a positive step length, and the cover duals are set by where the
+  mismatch is contested rather than left at zero by degeneracy. Budgeting
+  rather than penalizing is deliberate: the classical form needs a penalty
+  ``M`` in welfare-per-node units, and above ``max_v |alpha_v|`` the elastic
+  variables price themselves out and the degenerate single point is back. The
+  budget row's dual *is* that ``M``, chosen by the LP and bounded by the
+  elastic pair's own dual-feasibility rows ``|alpha_v| <= w_v mu_K``. It stays
+  a relaxation at every ``K``, so Proposition 9 survives and a loose ``K``
+  costs bound quality rather than correctness; ``K = 0`` is the exact master.
+  Each round reports ``elastic_mass``, ``overlap_dual`` and ``duals_pinned``,
+  which is what a sweep over ``K`` is read off.
+* **Completability-targeted pricing**, not implemented: a cardinality or
+  student-mass window per label read off the incumbent, imposed on the
+  column-generating pass while the bound-producing pass still ranges over all
+  of ``F_z``.
 
-Until one of them lands, the bound this module reports does not improve on the
-a-priori welfare constants. Note that pricing is no longer what holds it back:
-anchoring plus the CP-SAT formulation took a label's pricing solve from ~600s
-for a 0.62% gap to 0.1-8s proved optimal.
+At ``overlap_prop = 0`` the bound this module reports does not improve on the
+a-priori welfare constants.
+
+REVISIT -- the claim that pricing is no longer what holds it back was measured
+on a 576-node *synthetic* grid (0.1-8s to proved optimal) and does not hold on
+``Block_2``. There, one label at 600s reaches a bound within 0.45-0.58% of its
+own best admissible zone but never reports OPTIMAL, and at the shipped
+``dw_pricing_time_limit`` of 30s split over six labels the returned bounds are
+~4x inflated: 20,783-24,161 per label against ~5,300 properly solved. So the
+residual that keeps the bound at the a-priori constant is mostly *solver slack*
+at the default budget, and raising the per-label budget is the first thing to
+try -- before the master-side repairs below.
+
+The structural gap does survive correct pricing, though. With LP = 10,229.76,
+beating the zoned-transport constant of 15,197 needs ``sum_z b_z < 4,967``,
+about 830 per label, against ~5,300 solved. Label 0's best zone is 256 of its
+496 candidates -- half the district -- and six of those cannot tile 501 nodes.
 
 Certification is also stated more carefully than before. CP-SAT reports a
 proven objective bound even on an interrupted solve, so a label contributes a
@@ -88,7 +111,12 @@ import math
 import time
 from dataclasses import dataclass
 
-from optimization.zone_columns import boundary_limit, smooth, solve_master
+from optimization.zone_columns import (
+    boundary_limit,
+    overlap_limit,
+    smooth,
+    solve_master,
+)
 from optimization.zone_pricing import ZonePricer, compatible
 
 
@@ -141,6 +169,7 @@ def branch_and_price(
     seed=42,
     master_method="barrier",
     dual_smoothing=1.0,
+    overlap_prop=0.0,
     pricing_scale=1000,
     pricing_columns_per_call=8,
     pricing_parallel=True,
@@ -171,6 +200,7 @@ def branch_and_price(
             owned,
             master_method,
             dual_smoothing,
+            overlap_prop,
             pricing_time_limit,
             redraw,
             redraw_time_limit,
@@ -189,6 +219,7 @@ def _search(
     owned,
     master_method,
     dual_smoothing,
+    overlap_prop=0.0,
     pricing_time_limit=math.inf,
     redraw=None,
     redraw_time_limit=math.inf,
@@ -217,6 +248,15 @@ def _search(
     cap = float(pricing_time_limit)
     if cap <= 0:
         raise ValueError("dw_pricing_time_limit must be positive or infinity.")
+    # K, in the weighted units of ``overlap_weight``: how much coverage
+    # mismatch the Phase-II master may carry so that a colliding priced column
+    # has somewhere to go. It only ever *decreases* here, halved when the LP
+    # goes integral without becoming a tiling -- the one dead end elasticity
+    # creates -- so the relaxation ends at least as tight as it started and
+    # reaches the exact master in finitely many halvings.
+    budget = overlap_limit(p, overlap_prop)
+    if budget < 0:
+        raise ValueError("dw_overlap_prop must be nonnegative.")
 
     def closable(bound) -> bool:
         return bool(best) and bound <= lower + tolerance + slack
@@ -276,12 +316,18 @@ def _search(
             columns = tuple(
                 c for c in pool.columns.values() if compatible(c, decisions)
             )
+            # Phase I is never elastic: it already carries deficit
+            # artificials and its completion test is zero deficit, so a
+            # surplus variable would let it pass by double-claiming a node
+            # rather than by covering the graph.
+            live_budget = 0.0 if phase_one else budget
             lp = solve_master(
                 p,
                 columns,
                 deadline - time.monotonic(),
                 phase_one=phase_one,
                 method=master_method,
+                overlap_budget=live_budget,
             )
             lp_iterations += 1
             if lp.status != "OPTIMAL":
@@ -324,8 +370,13 @@ def _search(
             bounds = [result.bound for result in results.values()]
             proved = all(r.status == "OPTIMAL" for r in results.values())
             slack = max(slack, sum(r.allowance for r in results.values()))
+            # ``live_budget`` is not optional here. The budget row contributes
+            # ``mu_K * K`` to the dual objective, and dropping it would report
+            # a bound below the relaxation's own optimum -- the one direction
+            # that is wrong rather than merely weak.
             certified = (
-                point.dual_objective(p) + sum(max(0.0, b) for b in bounds)
+                point.dual_objective(p, live_budget)
+                + sum(max(0.0, b) for b in bounds)
                 if all(math.isfinite(b) for b in bounds)
                 else math.inf
             )
@@ -345,6 +396,17 @@ def _search(
                     "pricing_cap": cap if math.isfinite(cap) else None,
                     "bound_slack": slack,
                     "node_bound": node_bound if math.isfinite(node_bound) else None,
+                    **(
+                        {}
+                        if not overlap_prop
+                        else {
+                            "overlap_budget": live_budget,
+                            "overlap_dual": lp.overlap_dual,
+                            "elastic_mass": lp.elastic_mass,
+                            "elastic_nodes": lp.elastic_nodes,
+                            "duals_pinned": lp.duals_pinned,
+                        }
+                    ),
                 }
             )
             # Test the pruning rule *before* spending another round on column
@@ -463,6 +525,26 @@ def _search(
                 for key, value in marginals.items()
                 if key not in decisions and tolerance < value < 1 - tolerance
             ]
+            if not fractional and lp.elastic_mass > tolerance:
+                # Integral marginals with mismatch still spent: there is
+                # nothing fractional to branch on and the LP is not a
+                # partition, so elasticity has nothing further to offer at this
+                # node. Shrink K and re-solve. Zero is the exact master, so
+                # this terminates, and because K never rises again the bound
+                # the node finally certifies is the tighter one.
+                #
+                # A zero budget dual says the mismatch bought *nothing* -- the
+                # LP is indifferent to it and spent the ration only because it
+                # was free -- so there is no window to bisect toward and K goes
+                # straight to zero. Halving is for the case where the overlap
+                # is genuinely worth something and a smaller ration may still
+                # be integral.
+                budget = (
+                    0.0
+                    if lp.overlap_dual <= tolerance or budget <= tolerance
+                    else budget / 2
+                )
+                continue
             if not fractional:
                 selected = tuple(
                     c for c, value in zip(columns, lp.values) if value > 0.5
