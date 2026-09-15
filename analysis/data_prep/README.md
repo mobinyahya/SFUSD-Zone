@@ -27,6 +27,14 @@ Per year, below `--out` (default `<data root>/Data/Cleaned`):
 No school table is written: the transfer has no school coordinates, so the
 registry reuses the 2023-24 school tables.
 
+## What is missing, and how it is resolved
+
+[`TRANSFER_2425_2627_GAPS.md`](TRANSFER_2425_2627_GAPS.md) is the standing
+account for the September 2026 transfer: a severity-ranked ledger of every gap,
+the per-year missingness counts, the capacity substitutions, and the decisions
+that were judgement rather than transcription. Read it before quoting a number
+from `sfusd-2425`, `sfusd-2526`, `sfusd-2627` or `sfusd-2425-2627`.
+
 ## Missing data
 
 The default `--gaps fail` aborts and names the gap rather than substituting a
