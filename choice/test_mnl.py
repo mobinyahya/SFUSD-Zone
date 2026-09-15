@@ -369,8 +369,79 @@ def test_build_mnl_choice_model_reads_the_choice_selector(tmp_path, monkeypatch)
 
     import optimization.data.loaders as opt_loaders
 
-    monkeypatch.setattr(opt_loaders, "citywide_school_ids", lambda data: frozenset({300}))
+    monkeypatch.setattr(
+        opt_loaders, "citywide_school_ids", lambda data: frozenset({300})
+    )
     scenario = _scenario(utility_path, student_path)
 
     # The legacy scenario sets the choice selector off.
     assert build_mnl_choice_model(scenario).evaluator.citywide_schools == frozenset()
+
+
+def _coverage_scenario(tmp_path, estimate_ids, student_ids=(1, 2)):
+    """Scenario whose estimate names ``estimate_ids`` and students ``student_ids``."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": estimate_ids,
+            "100-GE-KG": [2.0] * len(estimate_ids),
+            "200-GE-KG": [0.5] * len(estimate_ids),
+        }
+    ).to_csv(utility_path, index=False)
+    students = list(student_ids)
+    pd.DataFrame(
+        {
+            "studentno": students,
+            "census_blockgroup": [1001 + index for index in range(len(students))],
+            "grade": ["KG"] * len(students),
+            "r1_ranked_idschool": ["[100]"] * len(students),
+            "r1_programs": ["['GE']"] * len(students),
+        }
+    ).to_csv(student_path, index=False)
+    return _scenario(utility_path, student_path)
+
+
+def test_no_warning_when_the_estimate_covers_the_students(tmp_path):
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-2"]), method="max"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model.evaluator._ensure_loaded()
+
+
+def test_zero_overlap_warns_that_the_total_is_not_a_measurement(tmp_path):
+    # This is the transfer-year situation: the estimate is a per-student matrix
+    # fitted on a different cohort, so the inner join is empty and the total is
+    # 0.0 rather than an error.
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-9001", "2324-9002"]), method="max"
+    )
+    with pytest.warns(UserWarning, match="covers 0 of 2 selected students"):
+        model.evaluator._ensure_loaded()
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert model.preassignment_utility(problem, assignment) == pytest.approx(0.0)
+
+
+def test_partial_overlap_below_the_threshold_warns(tmp_path):
+    # 1 of 3 is below the 50% threshold; exactly 50% deliberately does not warn.
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-9001"], student_ids=(1, 2, 3)),
+        method="max",
+    )
+    with pytest.warns(UserWarning, match="covers 1 of 3 selected students"):
+        model.evaluator._ensure_loaded()
+
+
+def test_coverage_at_the_threshold_does_not_warn(tmp_path):
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-9001"]), method="max"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model.evaluator._ensure_loaded()

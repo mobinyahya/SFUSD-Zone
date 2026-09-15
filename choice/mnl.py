@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from collections.abc import Iterable
 from typing import Any
@@ -252,6 +253,45 @@ class MNLZoningUtility:
         self.utility_df = utility_df.dropna(subset=["studentno"])
         self.student_df = student_df.dropna(subset=["studentno"])
         self.school_to_cols = school_to_cols
+        self._warn_on_estimate_coverage(utility_source)
+
+    _COVERAGE_WARNING_THRESHOLD = 0.5
+
+    def _warn_on_estimate_coverage(self, utility_source: Any) -> None:
+        """Warn when the estimate covers few of the students being scored.
+
+        The estimate is a per-student utility matrix, and ``_prepare`` inner-
+        joins it to the student table on ``studentno``. A student the estimate
+        does not name therefore contributes nothing, and if it names none of
+        them the total is ``0.0`` -- a number indistinguishable from "every
+        student got their worst option". That is silent by construction, so it
+        is worth saying out loud rather than leaving in a metrics column.
+
+        This only warns. Partial coverage is legitimate for some analyses, and
+        raising here would break callers that already accept it.
+        """
+        assert self.utility_df is not None
+        assert self.student_df is not None
+        students = set(self.student_df["studentno"].dropna())
+        if not students:
+            return
+        covered = len(students & set(self.utility_df["studentno"].dropna()))
+        fraction = covered / len(students)
+        if fraction >= self._COVERAGE_WARNING_THRESHOLD:
+            return
+        detail = (
+            f"MNL utility estimate {utility_source.path} covers {covered} of "
+            f"{len(students)} selected students ({fraction:.1%}). Utilities for "
+            "the rest are absent, not zero-valued, so every MNL and choice "
+            "metric derived from this estimate understates welfare"
+        )
+        if covered == 0:
+            detail += (
+                ". With no student in common the total is exactly 0.0, which is "
+                "not a welfare measurement. Fit an estimate for this cohort, or "
+                "read the choice metrics as unavailable rather than as zero"
+            )
+        warnings.warn(detail + ".", stacklevel=2)
 
     def _prepare(
         self, problem: ZoneProblem, assignment: dict[int, int]

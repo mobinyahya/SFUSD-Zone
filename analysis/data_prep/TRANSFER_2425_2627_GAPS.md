@@ -34,7 +34,7 @@ measurable subset; **C** = cosmetic or unused.
 |---|---|---|---|---|---|
 | 1 | Program capacities | **A** | every program | 2023-24 district tables; observed post-run assignment count where 2023-24 has no such program | Capacities are 2023-24, not that year's. Cross-year capacity comparisons are invalid. Fallback rows are lower bounds — see §3 |
 | 2 | School table (coordinates, category, ratings) | **A** | every school | Registry reuses the 2023-24 school tables | School attributes are 2023-24 vintage while students are current |
-| 3 | Choice-model utility estimate | **A** | every welfare number | Still `utility.2324.exp8` | No estimate fitted on 24-27 preferences; MID/SAA welfare is a 2023-24 preference model applied to new students |
+| 3 | Choice-model utility estimate | **A** | every welfare number | Still `utility.2324.exp8`; a coverage warning now fires | The estimate is **per student**, not a coefficient vector, so it covers 0.9% / 0% / 0% of these cohorts and every choice metric reads exactly `0.0` — see §4a |
 | 4 | Preference round identity | **A** | all rows | One list per student, emitted as `r1_*`; `rounds: all` → `[1]` | The `r1_` label is an assumption. 9%/38%/28% of KG applicants are recorded in a later round and cannot be separated — see §4 |
 | 5 | Block equity indices (`FRL Score`, `AALPI Score`, `HOCidx1`, `N'hood SES Score`, `Academic Score`, `freelunch_prob`, `reducedlunch_prob`, `median_hh_income`) | **A** | every student | Joined on the 2010 Census Block from the 2122-2324 cleaned student files | Two vintages exist; the lookup stops at the 1819 boundary — see §5. Coverage gaps in §6 |
 | 6 | Census Block / BlockGroup / Tract | **B** | every student | Derived from post-run coordinates via `loaders.geography.match_points_to_census`, tagged `geography_vintage: "2010"` | Students with no coordinates get no Block and are filtered by the default `outside_district_students: ignore` |
@@ -101,6 +101,34 @@ in the transfer.
 one list the district supplied", not "round 1". The checked-in years through
 2023-24 carry genuine separate `r1_`/`r2_`/`r4_` blocks, so a per-round
 comparison between a transfer year and 2023-24 is not meaningful.
+
+## 4a. The choice estimate covers none of these students
+
+`choice.estimate` (`estimates_2324_exp8_0514.csv`) is a per-student utility
+matrix: one row per `studentno`, one column per `<school>-<program>-<grade>`.
+`choice/mnl.py::_prepare` inner-joins it to the student table on `studentno`,
+so a student the estimate does not name contributes nothing.
+
+| Year | KG students | covered by the estimate |
+|---|---|---|
+| 2324 | 4,304 | 4,232 (98.3%) |
+| 2425 | 3,835 | 34 (0.9%) |
+| 2526 | 3,400 | **0** |
+| 2627 | 3,149 | **0** |
+
+So `choice_total_preassignment_utility` is **exactly 0.0** for 2526 and 2627,
+and near it for 2425 — against 13,238 for `summer-26-zoning` on the same
+zoning. It is not a small bias; the metric is simply unavailable, and `0.0` is
+indistinguishable from "every student got their worst option".
+
+This was silent. `_ensure_loaded` now warns when coverage falls below 50%, and
+says explicitly that a zero-overlap total is not a welfare measurement. It only
+warns — partial coverage is legitimate for some analyses, and raising would
+break callers that accept it.
+
+**Do not quote any MNL, MID, SAA, or `choice_*` number from these scenarios
+until an estimate is fitted on the relevant cohort.** The zoning objective,
+capacity balance, contiguity, and every demographic metric are unaffected.
 
 ## 5. Block equity indices have two vintages
 
@@ -187,9 +215,9 @@ Run against the real data, all three years:
 | Optimization solve (`6-zone-9`, `BlockGroup_1`, 2010 vintage) | FEASIBLE, contiguous, objective 85-89 vs 88 for the existing `summer-26-zoning`. Zone artifacts written; the objective varies run to run because the 20 s limit is wall-clock with 8 workers |
 | Test suite | `loaders/tests` + `analysis/data_prep` green; converter tests run on a synthetic transfer and need no shared data |
 
-Not verified on this machine: **optimization metrics**. `MetricsCalculator`
-fails in `choice/mnl.py::_ensure_loaded` with `EmptyDataError` because the
-choice utility estimate cannot be read here — see §10.
+Optimization metrics run: 67 metric keys written for both `sfusd-2627` and
+`summer-26-zoning`. The `choice_*` keys are `0.0` for the transfer years for the
+reason in §4a, not because the metrics step failed.
 
 ## 10. Not caused by this work
 
@@ -199,19 +227,21 @@ choice utility estimate cannot be read here — see §10.
   the checked-in `summer-26-zoning`.
 - `assignment/tests/test_slurm.py` fails in any fresh worktree because it reads
   a gitignored personal config.
-- **Optimization metrics cannot run on this machine at all.**
-  `simulation-files/choice-model/estimates_2324_exp8_0514.csv` reports 8.3 MB
-  but delivers **zero bytes** — iCloud holds it as a stub and will not fetch it
-  (`dd` transfers 0 bytes in 0.6 s and the file stays dataless). Every scenario
-  shares that file, so `legacy`, `summer-26-zoning` and the four `sfusd-*`
-  scenarios all die at the same line with the same `EmptyDataError` after a
-  successful solve. Verified by running the identical config on
-  `summer-26-zoning`: FEASIBLE objective 88, then the same failure.
+- **The choice estimate was unreadable, and has been repaired.**
+  `simulation-files/choice-model/estimates_2324_exp8_0514.csv` reported 8.3 MB
+  and delivered **zero bytes**: iCloud held it as a stub and would not fetch it
+  (`dd` moved 0 bytes in 0.6 s across three attempts). Every scenario shares
+  that file, so `legacy`, `summer-26-zoning` and all four `sfusd-*` scenarios
+  died at the same line with `EmptyDataError` after a successful solve.
 
-  This is the clearest example of the hazard in §11.1: the eviction produced a
-  **silent zero-byte read**, not an I/O error. Here pandas happened to raise
-  loudly; a NumPy or partial read in the same position would have produced
-  wrong numbers instead.
+  Repaired from `ChoiceModel_20240514/estimates_2324.csv`, which is byte-
+  identical in length (8,328,455), sits beside the `config_exp8.yaml` that
+  names the same experiment, and reads cleanly. Restored in place and verified:
+  SHA `07a4d938…`, 4,233 rows, now local. Metrics run again for every scenario.
+
+  Worth keeping on record because the eviction produced a **silent zero-byte
+  read**, not an I/O error. pandas happened to raise loudly here; a NumPy or
+  partial read in the same position would have produced wrong numbers.
 
 ## 11. Open items
 
