@@ -184,8 +184,12 @@ Run against the real data, all three years:
 | Assignment table load, 12 year x grade x Mission Bay combos | 0 unknown ranked programs, 0 null capacities, 0 null school locations |
 | Assignment simulation (DA, `status_quo_3`) | Runs and exports citywide metrics for all three years |
 | Optimization ingestion, 16 population x vintage combos | All build area tables |
-| Optimization solve (`6-zone-9`, `BlockGroup_1`, 2010 vintage) | FEASIBLE, contiguous, objective 87-89 vs 88 for the existing `summer-26-zoning` |
+| Optimization solve (`6-zone-9`, `BlockGroup_1`, 2010 vintage) | FEASIBLE, contiguous, objective 85-89 vs 88 for the existing `summer-26-zoning`. Zone artifacts written; the objective varies run to run because the 20 s limit is wall-clock with 8 workers |
 | Test suite | `loaders/tests` + `analysis/data_prep` green; converter tests run on a synthetic transfer and need no shared data |
+
+Not verified on this machine: **optimization metrics**. `MetricsCalculator`
+fails in `choice/mnl.py::_ensure_loaded` with `EmptyDataError` because the
+choice utility estimate cannot be read here — see §10.
 
 ## 10. Not caused by this work
 
@@ -195,15 +199,33 @@ Run against the real data, all three years:
   the checked-in `summer-26-zoning`.
 - `assignment/tests/test_slurm.py` fails in any fresh worktree because it reads
   a gitignored personal config.
+- **Optimization metrics cannot run on this machine at all.**
+  `simulation-files/choice-model/estimates_2324_exp8_0514.csv` reports 8.3 MB
+  but delivers **zero bytes** — iCloud holds it as a stub and will not fetch it
+  (`dd` transfers 0 bytes in 0.6 s and the file stays dataless). Every scenario
+  shares that file, so `legacy`, `summer-26-zoning` and the four `sfusd-*`
+  scenarios all die at the same line with the same `EmptyDataError` after a
+  successful solve. Verified by running the identical config on
+  `summer-26-zoning`: FEASIBLE objective 88, then the same failure.
+
+  This is the clearest example of the hazard in §11.1: the eviction produced a
+  **silent zero-byte read**, not an I/O error. Here pandas happened to raise
+  loudly; a NumPy or partial read in the same position would have produced
+  wrong numbers instead.
 
 ## 11. Open items
 
 1. **Move the data root off iCloud.** `/soalnas/share` resolves to
    `~/Documents/share`, which iCloud replicates, so files evict to contentless
-   stubs. Reads then block for minutes and can fail with `Errno 89`, and a
-   partially evicted shapefile silently yields geometry with no attributes. Set
-   `SFUSD_DATA_ROOT` to a non-replicated path. This also stops `restricted`
-   student data replicating to a personal iCloud account.
+   stubs. Three distinct failure modes were seen in one session: reads that
+   block for minutes and fail with `Errno 89`; a partially evicted shapefile
+   that silently yields geometry with no attribute columns; and a file that
+   reports its full size while delivering zero bytes, which currently blocks
+   optimization metrics for every scenario (§10). Set `SFUSD_DATA_ROOT` to a
+   non-replicated path. This also stops `restricted` student data replicating
+   to a personal iCloud account.
+
+   Two of those three are silent. That is the argument, not the slowness.
 2. **Ask the district for a complete SY26-27 post-run** (§7).
 3. **Ask whether a capacity file exists** for these years (§3), and whether
    `rounds_applied` means "also applied in" or "only applied in" (§4). A
