@@ -123,6 +123,9 @@ def test_unknown_root_override_has_no_typo_fallback(tmp_path):
 def test_bundled_scenarios_are_declared_as_package_data():
     expected = {
         "assignment-generated-zones-2324.yaml",
+        "assignment-generated-zones-2425.yaml",
+        "assignment-generated-zones-2526.yaml",
+        "assignment-generated-zones-2627.yaml",
         "historical-2324.yaml",
         "legacy.yaml",
         "mission-bay-2324.yaml",

@@ -112,6 +112,7 @@ geometry only.
 | `historical-2324` | 2023-24 assignment runs excluding Mission Bay |
 | `mission-bay-2324` | 2023-24 optimization/assignment integration including Mission Bay |
 | `assignment-generated-zones-2324` | Large 2023-24 assignment policy sweeps over generated zone CSVs |
+| `assignment-generated-zones-2425` / `-2526` / `-2627` | The same generated-zone sweeps on one September 2026 SFUSD transfer year |
 | `sfusd-2425` / `sfusd-2526` / `sfusd-2627` | One school year of the September 2026 SFUSD transfer, for both optimization and assignment |
 | `sfusd-2425-2627` | Optimization pooled over all three transfer years, with assignment on 2026-27 |
 
@@ -166,6 +167,36 @@ The six large generated-zone run configs share
 `assignment-generated-zones-2324`. The scenario exposes 256 zone aliases and
 one citywide-zone alias. `assignment/configs/all_zones_selected.yaml` has a
 different zone collection and remains explicitly configured.
+
+`assignment-generated-zones-2425`, `-2526`, and `-2627` carry the identical
+source map -- the same 292 resolved zone plans and the same citywide zone --
+against a transfer year instead of 2023-24. Point an existing generated-zone
+run config at one by changing `data.scenario` alone. Three filters differ
+from the 2023-24 scenario:
+
+* `capacity_profile` is `default`, because the registry publishes no
+  `status_quo` profile for the transfer years.
+* `include_mission_bay` is `false` for 2024-25 and 2025-26 and `true` only
+  for 2026-27. Mission Bay ES is idSchool 1731 in the transfer, remapped to
+  999 by `RAW_SCHOOL_ID_ALIASES` in
+  `analysis/data_prep/sfusd_transfer_schema.py`. It appears in the SY26-27
+  Main Round capacity file only, at K GE 69, MM 5 and AF 0 seats, and is the
+  single school added anywhere across the three years (Presidio EES is the
+  only one dropped). The 2024-25 and 2025-26 demographics and post-run
+  extracts carry no `SCHOOL_CODE` 1731 at all -- their "Mission Bay" strings
+  are home addresses on Mission Bay Blvd -- so their `mission_bay` program
+  variant is byte-identical to the standard one.
+  Enabling Mission Bay for them selects the Mission Bay *school* table
+  against a program table without Mission Bay, and zone setup then fails with
+  `Unknown program IDs: ['999-GE-KG']`, because
+  `Zones.get_area_id2ge_program_id_dict` turns every attendance-area school
+  into a `<school>-GE-KG` program id. The shipped `sfusd-2425` and
+  `sfusd-2526` scenarios still set `include_mission_bay: true` and hit this
+  on any zoned assignment run.
+* `year` selects the transfer year.
+
+The choice-model utility estimate stays `utility.2324.exp8` for all three,
+because none has been fitted on transfer-year preferences.
 
 ## External Source Layout
 
