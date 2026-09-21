@@ -320,18 +320,21 @@ variants, while `"06"` and `"09"` carry `standard` only. The checked-in
 ### The 2024-25 through 2026-27 transfer years
 
 These three years come from the September 2026 SFUSD transfer and are built by
-`analysis/data_prep/convert_sfusd_transfer.py`. The transfer holds only
-students, so these registry years borrow from the 2023-24 tables in ways a
-reader has to know about:
+`analysis/data_prep/convert_sfusd_transfer.py`. The three per-year extracts
+hold only students; a folder of auxiliary files that arrived on 2026-09-20 adds
+the district's Main Round capacities and TK-to-K auto-promotion lists. What is
+still borrowed, a reader has to know about:
 
 | What | Where it comes from |
 |---|---|
 | Students, grades, ranked preferences, tie-breakers | That year's pre-run, post-run, and demographics extracts |
-| Which programs exist | That year's observed requests |
-| Program capacities | The 2023-24 district tables, or the program's observed assignment count where the 2023-24 tables have no such program |
+| Kindergarten programs and capacities | That year's Main Round capacity file, at gross `TotalSeats` |
+| Grade 6 and 9 programs and capacities | That year's observed requests, with capacities from the 2022-23 district tables or the program's observed assignment count |
 | School coordinates, category, ratings | The 2023-24 school tables |
 | Block-level equity indices (`FRL Score`, `AALPI Score`, `HOCidx1`, …) | The 2021-22 through 2023-24 cleaned student files, joined on the 2010 Census Block |
-| Preference rounds | One list per student, emitted as `r1_*`, so `rounds: all` resolves to `[1]`. Which round that list came from is not recoverable &mdash; see below |
+| Preference rounds | One list per student, emitted as `r1_*`, so `rounds: all` resolves to `[1]`. That list is the main round; the later rounds are absent &mdash; see below |
+| The kindergarten `enrolled` population | That year's post-run, not the KG rows of the applicant table &mdash; see below |
+| A kindergarten student's auto-promotion claim | The post-run's current TK program, checked against the capacity file &mdash; see below |
 
 Every emitted program row carries a `capacity_source` column naming its
 provenance, and the converter writes
@@ -339,18 +342,119 @@ provenance, and the converter writes
 transfer does not contain. Read that report before comparing a number from one
 of these years against a checked-in year.
 
-The round label deserves a second look before any per-round comparison. Each
-transfer holds exactly one preference list per student: the pre-run has no
-round column and no student has a repeated rank. But the demographics
-extract's per-student `rounds_applied` field records a later round (`4` is the
-amendment round; `50`, `666`, `888`, `902`, `905`, `999` are administrative
-codes) for a substantial minority of applicants &mdash; 9% of 2024-25
-kindergarten applicants, 38% of 2025-26, and 27% of 2026-27 &mdash; and the
-pre-run carries nothing that separates those requests: `idRequest` spans the
-same range for tagged and untagged students. So `r1_*` is the label the
-converter assigns, not a fact the transfer states, and this is true of all
-three years rather than any one of them. The checked-in years through 2023-24
-are different: they carry genuine separate `r1_`/`r2_`/`r4_` blocks.
+#### `rounds: [1]` is the main round, and the later rounds are absent
+
+Each transfer holds exactly one preference list per student: the pre-run has no
+round column and no student has a repeated rank. That list is the **main
+round**. The district confirmed the extract is the main-round request file, and
+the post-run corroborates it: every student it seats at a grade either holds a
+pre-run request for that grade or is flagged `byPromote`.
+
+What the transfer omits is the later-round requests themselves. The
+demographics extract's per-student `rounds_applied` field records a later round
+(`4` is the amendment round; `50`, `666`, `888`, `902`, `905`, `999` are
+administrative codes) for a substantial minority of applicants &mdash; 9% of
+2024-25 kindergarten applicants, 38% of 2025-26, and 27% of 2026-27 &mdash; but
+no request rows accompany those tags, and `idRequest` spans the same range for
+tagged and untagged students. The field is also unreliable in the other
+direction: among 2026-27 enrolled kindergarteners who *do* hold a main-round
+request, 1,598 have it blank and 793 are tagged round 4, so no value of it
+identifies the main round. Use `rounds: [1]`, read it as "the main round", and
+do not attempt a per-round comparison against the checked-in years, which carry
+genuine separate `r1_`/`r2_`/`r4_` blocks.
+
+#### Auto-promotion into kindergarten
+
+From 2024-25 SFUSD auto-promotes TK students into kindergarten. A student in TK
+at a school that also runs their pathway at kindergarten keeps that seat
+without applying; a family that wants something else files an ordinary
+main-round application and keeps the seat if nothing they asked for comes
+through. So a kindergarten market is the main-round applicants *plus* the
+promoted students, and some students are in both groups: 40 students took a
+kindergarten seat without applying in 2024-25, 580 in 2025-26, and 847 in
+2026-27, alongside 575, 278 and 341 promotion-eligible students who did apply.
+Three things follow.
+
+**The applicant pool is not the set of people who applied.** A promoted
+student holds a claim on a kindergarten seat without filing anything, so
+`student_<year>.csv` holds them too: its kindergarten rows are the Main Round
+applicants *plus* the promotion-eligible students *plus* anyone else the run
+seated at kindergarten without a request. Every row carries `mr_applicant`
+&mdash; 1 for a Main Round applicant, 0 otherwise &mdash; and a promoted
+student's preference list is reconstructed rather than transcribed, as below.
+No other grade is treated this way: grades 6 and 9 are out of scope, so their
+rows are Main Round applicants only.
+
+`enrolled_<year>.csv` is then the subset of those rows the post-run seats, so
+`enrolled` is a subset of `applicant` by construction. In all three transfer
+years every market student takes a seat, so at `grades: [KG]` the two
+coincide; that is a fact about these years rather than an invariant, and a
+market student the run seated nowhere would appear in `applicant` alone.
+
+**Capacity is gross, and no seat is reserved anywhere in the data.** The
+capacity file publishes both `TotalSeats` and `OpenSeatsPreRun`, the latter net
+of the seats held for promotion. The tables use `TotalSeats`. A promote who
+wins a school elsewhere releases the held seat back into the same run, so the
+seats never leave the market: 413-GE had 52 open seats before the SY26-27 run
+and made 53 choice assignments. Each program row carries the district's
+`total_promote_before_run`, `total_promote_with_request_before_run` and
+`free_seats` as provenance, and none of them touches `capacity`.
+
+An earlier `capacity_profile: post_promotion` did net those seats out. It is
+gone &mdash; profile and files &mdash; because it modelled a market the
+district never ran. See
+[`TK_PROMOTION_SPEC.md`](../analysis/data_prep/TK_PROMOTION_SPEC.md).
+
+**The claim lives on the student, in four columns.** Every kindergarten row of
+both tables carries:
+
+| Column | Meaning |
+|---|---|
+| `promote_eligible` | 1 when the post-run puts the student in TK in a program that also exists at kindergarten that year |
+| `feeder_school`, `feeder_program` | the program they are entitled to |
+| `pref_source` | which source supplied their preference list |
+
+`pref_source` takes four values. `k_list` is the student's own main-round list.
+`tk_imputed` is the TK requests they filed the year before, mapped onto this
+year's kindergarten programs and dropping any with no counterpart. `feeder_only`
+and `aa_only` mean no source held them at all, split by whether they have a
+feeder; those students get their feeder and their attendance-area GE program,
+which is the *only* case in which the attendance area enters the data &mdash;
+for everyone else appending it is the policy config's job (`add_aa_schools`).
+An eligible student's feeder is appended to whatever list they have, unless
+they already rank it.
+
+`promote_eligible` is not the post-run's `byPromote` flag. That flag is
+overloaded &mdash; TK promotion at kindergarten, Lowell and SOTA admission at
+grade 9, K-8 continuation at grade 6 &mdash; and it is 0 for every 2024-25
+student even though the capacity file holds seats. The rule used instead
+reproduces the district's `TotalPromoteWithReqBeforeRun` exactly, program by
+program, for 2026-27.
+
+Two discrepancies are recorded rather than reconciled, both in the conversion
+report's `promote_counts_vs_district_KG` section. For 2026-27 the rule
+identifies 1,178 eligible students against 1,188 seats held, and for 2025-26
+854 against 859. For 2024-25 the three sources disagree three ways: the
+auto-promotion list says nobody was promoted, the capacity file holds 20 seats,
+and the post-run seats 40 students with no application, only one of them at
+their current school. The rule is applied uniformly all the same, so it marks
+607 students eligible that year.
+
+Finally, one limit of the loader: it drops any student who ranks no school in
+the selected rounds, because every market indexes students by their ranked
+list. The construction above gives every promoted student a list, so they
+survive that filter &mdash; but a student with no list, no feeder, and no
+usable attendance area does not, and the conversion report counts them under
+`market_KG_students_with_no_list` (one student, in 2024-25). That student is
+in both files and in neither loaded table.
+
+The Early Education Schools are a case the data carries but does not yet use.
+From the 2026-27 TK cohort, a TK student at an EES or the Mission Education
+Center is promoted to a designated feeder elementary rather than to their own
+site. The 24 rows describing that are parsed out of the SY26-27 list and kept,
+but the first kindergarten class they place enters in SY2027-28, so no
+converted year applies them. `EES_FEEDER_FIRST_YEAR` in
+`analysis/data_prep/sfusd_transfer_schema.py` is the switch.
 
 SY26-27 introduces one identity change worth knowing: Mission Bay ES appears in
 real requests under school ID `1731`, which none of this repository's Mission

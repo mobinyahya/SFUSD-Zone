@@ -117,9 +117,18 @@ geometry only.
 
 The four `sfusd-*` scenarios read tables produced by
 `analysis/data_prep/convert_sfusd_transfer.py` from
-`Data/raw_SFUSD_data_downloads/Sep 14 2026 data transfer/`. The transfer
-contains students only, so those scenarios inherit 2023-24 capacities, 2023-24
-school attributes, and a single preference round. `loaders/README.md` has the
+`Data/raw_SFUSD_data_downloads/Sep 14 2026 data transfer/`. Kindergarten
+programs and capacities come from the district's Main Round capacity files in
+that transfer's `auxillary data` folder; grades 6 and 9 still borrow 2022-23
+capacities, and every year borrows 2023-24 school attributes and holds a single
+preference round — the main round. One thing is specific to these years:
+because SFUSD auto-promotes TK students into K, the kindergarten applicant pool
+includes students who filed nothing, so the KG rows of `student_<year>.csv` are
+the whole market and `enrolled_<year>.csv` is the subset of them the run
+seated. Those students, and the promotion claim an applicant may hold, are
+carried in the `mr_applicant`, `promote_eligible`, `feeder_school`,
+`feeder_program` and `pref_source` columns; see
+`analysis/data_prep/TK_PROMOTION_SPEC.md`. `loaders/README.md` has the
 provenance table, and the converter writes a per-year gap report beside the
 converted tables.
 

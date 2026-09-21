@@ -185,6 +185,81 @@ Students outside the selected Census district geometry have blank Census
 geography. They are filtered by default; `outside_district_students: include`
 keeps them in the assignment market without geographic-zone priority.
 
+### TK-to-K auto-promotion, and what is still to be built
+
+From 2024-25 SFUSD promotes TK students into kindergarten without an
+application. The **data** side of this is done: for registry years `2425`,
+`2526` and `2627` every kindergarten student in `student_<year>.csv` and
+`enrolled_<year>.csv` carries
+
+| Column | Meaning |
+|---|---|
+| `promote_eligible` | 1 when the student was in TK in a program that also runs at kindergarten |
+| `promote` | that program as a one-element list of program IDs — the priority-layer shape, filtered and aliased for `include_mission_bay` like `currentlpsibling` |
+| `feeder_school`, `feeder_program` | the same program, unfiltered, as provenance |
+| `pref_source` | where the student's preference list came from |
+
+and the feeder is already appended to the student's ranked list. See
+[`analysis/data_prep/TK_PROMOTION_SPEC.md`](../analysis/data_prep/TK_PROMOTION_SPEC.md).
+
+**The priority is not implemented.** Nothing yet turns `promote` into a claim
+the lottery respects, so a promoted student currently competes for their
+feeder on the same footing as any other applicant. Three pieces are needed.
+
+**1. A `promote` priority weight.** `PriorityGenerator._set_policy_priorities`
+dispatches on the keys of `priority-weights`, so this is one branch beside the
+existing `sibling` and `prek` ones:
+
+```python
+elif k == "promote":
+    priorities += v * self.market.students.promotion(self.market.programs.indices)
+```
+
+with `Students.promotion` a copy of `Students.language_pathway_sibling`
+reading the `promote` column instead of `currentlpsibling` — both are lists of
+program IDs, which is why `promote` is emitted in that shape.
+
+**2. A weight that dominates.** The existing weights are zone 256,
+non_designation 128, soft_reserve 64, sibling 16, ctip 8, distance 4, so
+`promote: 1024` outranks all of them including the FRL reserves. The claim is
+to *one program*, so a large weight is safe: it cannot help the student
+anywhere else on their list.
+
+**3. Placement before the zone mask — this is the whole ballgame.** Add the
+term inside `priorities`, not to the return value of `get_priorities`.
+`restrict-zone` is enforced afterwards as
+
+```python
+if self.market.config["restrict-zone"]:
+    zone_mask = self.market.zones.zone_eligibility_matrix
+    return np.multiply(final, zone_mask) - (1 - zone_mask) * 500
+```
+
+The mask is multiplicative, so an out-of-zone program is zeroed and then
+penalised to −500 **however large the boost is**. Putting the boost inside
+`priorities` therefore gives the intended behaviour with no magnitude tuning:
+
+| Policy | Feeder in zone | Feeder out of zone |
+|---|---|---|
+| `restrict-zone: false` | promote outranks everyone at the feeder | same — no zone restriction applies |
+| `restrict-zone: true` | promote outranks everyone at the feeder | feeder collapses to −500; the promote is blocked and falls through to the AA append and designation |
+
+Do **not** add promotion to `Zones.zone_eligibility_matrix`. That matrix
+already carries the sibling and CTIP exceptions, and promotion is
+deliberately not one of them: under a zone policy the block wins. That is the
+mechanism by which a zone policy takes the feeder away from the promotes whose
+feeder sits outside their attendance area, which is the intended policy effect
+rather than a bug to work around. Verify with a unit test at both settings of
+`restrict-zone` rather than by reading the priority matrix.
+
+Two smaller follow-ups recorded with it:
+
+* **Utility model off** (`utility-model.enable: false`) for these years: no
+  choice estimate covers these cohorts, and the 2023-24 one is exactly the
+  forward-fill the conversion avoids.
+* **Outcome accounting**: promotes are applicants, and landing on the feeder
+  counts as a first choice.
+
 Every option (top-level keys, `paths.*`, `utility-model.*`, policy subconfigs,
 list-augmentation, the analysis config, and pipeline settings files) is
 documented in **[docs/CONFIG_OPTIONS.md](docs/CONFIG_OPTIONS.md)**.

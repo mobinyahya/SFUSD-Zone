@@ -4,16 +4,35 @@
 # converted by analysis/data_prep/convert_sfusd_transfer.py. Read the
 # conversion report written beside the cleaned tables
 # (sfusd_transfer_report_2627.md) before trusting a number from this
-# scenario: the transfer carries no capacity file, no school table, and one
-# preference list per student, so this scenario inherits
+# scenario: the transfer carries no school table and one preference list per
+# student, and its capacity file has been reconciled at kindergarten only,
+# so this scenario inherits
 #
-#   * 2023-24 program capacities wherever the transfer's programs exist in the
-#     2023-24 district tables, and each program's observed 2026-27 assignment
-#     count where they do not (see the capacity_source column);
+#   * kindergarten capacities from the transfer's own Main Round capacity
+#     file, but grade 6 and grade 9 capacities from the 2022-23 district
+#     tables, or each program's observed assignment count where those
+#     tables have no such program (see the capacity_source column);
 #   * 2023-24 school coordinates, categories, and ratings; and
 #   * a single preference list per student, emitted as r1_* so
-#     `rounds: all` resolves to [1]. Which round that list came from is not
-#     recoverable from the transfer; see round_participation in the report.
+#     `rounds: all` resolves to [1]. That list is the main round: the district
+#     confirmed the pre-run is the main-round request file, and every student
+#     the post-run seats either holds a pre-run request for the grade or is
+#     flagged byPromote. What the transfer omits is the later-round requests
+#     themselves; see round_participation in the report for how many
+#     applicants also engaged with a later round elsewhere.
+#
+# From 2024-25 SFUSD promotes TK students into kindergarten, so the kindergarten
+# applicant pool is not the set of people who applied. Three consequences are
+# live here. The KG rows of student_<year>.csv are the whole market -- Main
+# Round applicants plus the promoted students, flagged mr_applicant -- and
+# enrolled_<year>.csv is the subset of them the run seated, so enrolled is
+# contained in applicant. Kindergarten capacity is the district's own Main
+# Round capacity file, gross: no seat is reserved anywhere in the data, because
+# the run releases a promote's held seat back into the same market when they
+# win elsewhere. And every kindergarten student carries promote_eligible,
+# feeder_school, feeder_program and pref_source, which is where the promotion
+# claim lives until a policy turns it into a priority.
+# See analysis/data_prep/TK_PROMOTION_SPEC.md.
 #
 # The choice-model utility estimate is still the 2023-24 one; no estimate has
 # been fitted on 2026-27 preferences.

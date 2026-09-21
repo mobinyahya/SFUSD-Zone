@@ -28,6 +28,112 @@ TRANSFER_YEAR_FOLDERS: dict[str, str] = {
     "2627": "SY26-27",
 }
 
+#: Canonical school year -> the ``YY-YY`` label the district uses inside the
+#: auxiliary filenames, which is spaced and punctuated differently from the
+#: subfolder name.
+TRANSFER_YEAR_LABELS: dict[str, str] = {
+    "2425": "24-25",
+    "2526": "25-26",
+    "2627": "26-27",
+}
+
+#: Subfolder of the transfer holding the district's capacity and
+#: auto-promotion files. The district's own spelling, kept verbatim so the
+#: path matches the shipped folder.
+AUXILIARY_DIRECTORY = "auxillary data"
+
+#: Main Round capacity file, one per year, all three in the same folder.
+MR_CAPACITY_FILENAME = (
+    "Main Round capacities (including inflation) for SY24-25, SY25-26, "
+    "SY26-27 - {label} MR Capacities.csv"
+)
+
+#: TK-to-K auto-promotion list, one per year.
+AUTOPROMOTION_FILENAME = "TK-to-K autopromotion lists - SY {label}.csv"
+
+#: Rows of prose above each auto-promotion list's header. The district leads
+#: every list with a paragraph describing the policy and, in SY25-26, with the
+#: excluded-school table as well, so the header row sits at a different line in
+#: each file. ``None`` marks a year whose file carries no data rows at all: the
+#: SY24-25 "list" is the single sentence "NONE - All TK students had to reapply
+#: for K".
+AUTOPROMOTION_HEADER_ROWS: dict[str, int | None] = {
+    "2425": None,
+    "2526": 13,
+    "2627": 2,
+}
+
+#: Column names of an auto-promotion list, in file order. The files carry no
+#: usable header beyond these eight fields; trailing empty columns pad each row
+#: out to the width of the prose line above it.
+AUTOPROMOTION_COLUMNS: tuple[str, ...] = (
+    "tk_school",
+    "tk_school_name",
+    "tk_grade",
+    "tk_pathway",
+    "k_school",
+    "k_school_name",
+    "k_grade",
+    "k_pathway",
+)
+
+#: Required columns of a Main Round capacity file.
+MR_CAPACITY_REQUIRED: tuple[str, ...] = (
+    "idSchool",
+    "Grade",
+    "ProgramCode",
+    "TotalSeats",
+)
+
+#: Capacity-file columns carried onto the program table as provenance. They are
+#: inputs to the validation gates and to the conversion report, never to
+#: capacity: see ``PROGRAM_COLUMNS``.
+MR_CAPACITY_PROVENANCE: dict[str, str] = {
+    "TotalPromoteBeforeRun": "total_promote_before_run",
+    "TotalPromoteWithReqBeforeRun": "total_promote_with_request_before_run",
+    "FreeSeats": "free_seats",
+}
+
+#: The first school year in which a TK student at an Early Education School or
+#: the Mission Education Center is auto-promoted to a feeder elementary. The
+#: rule was adopted for the 2026-27 TK cohort, so the first class it places in
+#: kindergarten enters in SY2027-28. Every year before it had to apply: the
+#: 2025-26 EES cohort was not covered, and 259 of them filed a SY26-27
+#: application of whom none was promoted. The 24 EES rows in the SY26-27
+#: auto-promotion list are therefore parsed and carried but not applied.
+EES_FEEDER_FIRST_YEAR = "2728"
+
+
+@dataclass(frozen=True, slots=True)
+class PriorTkSource:
+    """Where one run year's prior-year TK preference lists come from.
+
+    A student promoted into kindergarten filed no kindergarten application, so
+    the only preferences they ever expressed are the ones they filed for TK a
+    year earlier. Those come either from a checked-in cleaned table or from an
+    earlier year's pre-run inside the same transfer.
+    """
+
+    #: ``Data/Cleaned`` filename whose ``grade == "TK"`` rows hold the lists.
+    cleaned_file: str | None = None
+    #: Canonical year of the transfer pre-run whose ``Grade == "TK"`` requests
+    #: hold them.
+    transfer_year: str | None = None
+
+
+#: Run year -> the TK requests filed the year before.
+#:
+#: The 2024-25 run reaches back into the checked-in 2023-24 student table. That
+#: is deliberate and is not the forward-fill the rest of this conversion
+#: avoids: the prohibition is on taking 2023-24 *capacities*, school attributes
+#: and the choice estimate into a later year, none of which is a preference
+#: list a real family filed in 2023-24 for a TK seat.
+PRIOR_TK_SOURCES: dict[str, PriorTkSource] = {
+    "2425": PriorTkSource(cleaned_file="student_2324.csv"),
+    "2526": PriorTkSource(transfer_year="2425"),
+    "2627": PriorTkSource(transfer_year="2526"),
+}
+
 #: Transfer file roles and the filename fragments that identify them. The
 #: district is inconsistent about capitalisation and separators
 #: ("out_SY24-25 student demographics.csv" versus
@@ -80,7 +186,9 @@ POSTRUN_REQUIRED: tuple[str, ...] = (
 POSTRUN_OPTIONAL: tuple[str, ...] = (
     "idSchoolAttendance",
     "idNextSchool",
+    "NextGrade",
     "NextProgramCode",
+    "byPromote",
     "CurrentProgramCode",
     "Rank",
     "Distance",
@@ -274,16 +382,86 @@ STUDENT_COLUMNS: tuple[str, ...] = (
     "sota_ranked",
 )
 
-#: Column order of the emitted program tables. ``capacity_source`` is an extra
-#: provenance column the repository's readers ignore; it exists so a capacity
-#: that did not come from a district capacity file is visible in the data and
-#: not only in the conversion report.
+#: Provenance column both emitted student tables carry beyond
+#: ``STUDENT_COLUMNS``. From 2024-25 the kindergarten applicant pool is not
+#: the set of people who applied: TK students are auto-promoted into K, so
+#: they hold a claim on a seat without filing a request. They are in
+#: ``student_<year>.csv`` because the market includes them, and this column
+#: says which rows came with a Main Round request (1) and which did not (0).
+#: The repository's readers ignore it.
+MARKET_STUDENT_COLUMNS: tuple[str, ...] = ("mr_applicant",)
+
+#: Per-student columns describing SFUSD's TK-to-K auto-promotion, emitted on
+#: both the student and the enrolled table. A student in TK at a school that
+#: also runs their pathway at kindergarten is promoted into that program
+#: without applying, so the kindergarten market is the main-round applicants
+#: *plus* the promoted students, and a promoted applicant holds a claim on one
+#: program that no preference list records.
+#:
+#: ``promote_eligible`` is 1 when the post-run puts the student in TK in a
+#: program that is a kindergarten program in the same year's capacity file;
+#: ``feeder_school`` and ``feeder_program`` name that program. ``pref_source``
+#: says where the emitted preference list came from -- see ``PREF_SOURCES``.
+#:
+#: ``promote`` says the same thing as the two feeder columns in the shape the
+#: priority layer already reads: a list of program IDs the student holds a
+#: claim on, exactly like ``currentlpsibling``. It is what a promotion
+#: priority weight keys on, and it is not redundant with ``feeder_school``
+#: after loading -- the shared loader filters and aliases program lists for
+#: ``include_mission_bay``, so a feeder at Mission Bay drops out of ``promote``
+#: in a run that excludes the school while the raw feeder columns still name
+#: it.
+PROMOTION_STUDENT_COLUMNS: tuple[str, ...] = (
+    "promote_eligible",
+    "promote",
+    "feeder_school",
+    "feeder_program",
+    "pref_source",
+)
+
+#: The four values ``pref_source`` can take, in resolution order. It names the
+#: *source* consulted for the student's list, not the list's contents: a
+#: student found in the prior year's TK requests is ``tk_imputed`` even when
+#: none of those requests has a kindergarten counterpart, because that is still
+#: where the converter looked. ``feeder_only`` and ``aa_only`` mean no source
+#: held the student at all, split by whether they have a feeder to fall back
+#: on.
+PREF_SOURCES: tuple[str, ...] = (
+    "k_list",
+    "tk_imputed",
+    "feeder_only",
+    "aa_only",
+)
+
+#: Column order of the emitted program tables. Everything after ``capacity`` up
+#: to ``programno`` is provenance the repository's readers ignore.
+#:
+#: ``capacity`` is gross: at kindergarten it is the capacity file's
+#: ``TotalSeats``, and no seat is held back anywhere. The district does hold
+#: seats for auto-promoted TK students, but the promotes who win a school
+#: elsewhere release theirs back into the same run -- 413-GE had 52 open seats
+#: before the SY26-27 run and made 53 choice assignments -- so a table with
+#: those seats removed models a market the district never ran. The promotion
+#: claim belongs at run time, as a priority boost at the feeder program.
+#:
+#: ``capacity_source`` names where the number came from, so a capacity that did
+#: not come from a district capacity file is visible in the data and not only
+#: in the conversion report. ``total_promote_before_run``,
+#: ``total_promote_with_request_before_run`` and ``free_seats`` are the
+#: district's own counts, carried through as the inputs to the promotion
+#: validation gates. ``promotes_seated`` is the converter's own count of
+#: students the post-run seats in the program having filed no main-round
+#: request for the grade, which is the same quantity observed after the fact.
 PROGRAM_COLUMNS: tuple[str, ...] = (
     "program_id",
     "school_id",
     "program_type",
     "capacity",
     "capacity_source",
+    "total_promote_before_run",
+    "total_promote_with_request_before_run",
+    "free_seats",
+    "promotes_seated",
     "programno",
     "r1_assigned",
     "r1_first_choice",
@@ -301,6 +479,8 @@ class GradeBundle:
 
     grade: str
     #: ``Data/Cleaned`` filename holding the most recent district capacities.
+    #: Used only when ``capacity_grade`` is None: a grade whose capacity comes
+    #: from the transfer's own capacity file borrows nothing.
     capacity_reference: str
     #: ``Data/Cleaned`` filenames of the school tables, without and with
     #: Mission Bay.
@@ -309,6 +489,13 @@ class GradeBundle:
     #: Output filename template, formatted with the canonical year.
     programs_template: str = "programs_{year}.csv"
     programs_mission_bay_template: str | None = None
+    #: The grade code this bundle takes from the transfer's Main Round capacity
+    #: file, or None to fall back to ``capacity_reference``. The capacity file
+    #: covers every grade, but only kindergarten has been reconciled against
+    #: the district's own promotion counts; grades 6 and 9 hold seats for a
+    #: different reason (invisible K-8 continuers at 6, Lowell and SOTA
+    #: admissions at 9) and stay on the borrowed table until that is checked.
+    capacity_grade: str | None = None
     extra_columns: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -320,6 +507,7 @@ GRADE_BUNDLES: dict[str, GradeBundle] = {
         schools_mission_bay="schools_rehauled_withMissionBay_2324.csv",
         programs_template="programs_{year}.csv",
         programs_mission_bay_template="programs_withMissionBay_{year}.csv",
+        capacity_grade="K",
     ),
     "06": GradeBundle(
         grade="06",
@@ -339,13 +527,24 @@ GRADE_BUNDLES: dict[str, GradeBundle] = {
 
 
 __all__ = [
+    "AUTOPROMOTION_COLUMNS",
+    "AUTOPROMOTION_FILENAME",
+    "AUTOPROMOTION_HEADER_ROWS",
+    "AUXILIARY_DIRECTORY",
     "BLOCK_INDEX_COLUMNS",
     "BLOCK_INDEX_SOURCE_YEARS",
     "DEMOGRAPHICS_OPTIONAL",
     "DEMOGRAPHICS_REQUIRED",
+    "EES_FEEDER_FIRST_YEAR",
     "GRADE_BUNDLES",
     "GradeBundle",
     "LOWELL_SCHOOL_ID",
+    "MARKET_STUDENT_COLUMNS",
+    "MR_CAPACITY_FILENAME",
+    "MR_CAPACITY_PROVENANCE",
+    "MR_CAPACITY_REQUIRED",
+    "PREF_SOURCES",
+    "PRIOR_TK_SOURCES",
     "POSTRUN_OPTIONAL",
     "POSTRUN_REQUIRED",
     "PRERUN_OPTIONAL",
@@ -353,6 +552,8 @@ __all__ = [
     "PRIORITY_FLAGS",
     "PRIORITY_LISTS",
     "PROGRAM_COLUMNS",
+    "PROMOTION_STUDENT_COLUMNS",
+    "PriorTkSource",
     "PriorityFlag",
     "PriorityList",
     "RAW_SCHOOL_ID_ALIASES",
@@ -360,4 +561,5 @@ __all__ = [
     "STUDENT_COLUMNS",
     "TRANSFER_FILE_FRAGMENTS",
     "TRANSFER_YEAR_FOLDERS",
+    "TRANSFER_YEAR_LABELS",
 ]

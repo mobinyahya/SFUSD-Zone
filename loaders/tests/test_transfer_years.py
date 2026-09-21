@@ -140,3 +140,37 @@ def test_transfer_scenarios_keep_mission_bay_consistent_across_consumers(name):
     assert [source.path.name for source in programs] == [
         f"programs_withMissionBay_{assignment_year}.csv"
     ]
+
+
+def test_no_registry_year_nets_the_promoted_seats_out_of_capacity(base):
+    # An interim post_promotion profile once held each program's capacity net
+    # of the seats the run gave students who filed no request. That models a
+    # market the district never ran: a promote who wins a school elsewhere
+    # releases the held seat back into the same run, so the seats never leave.
+    # Kindergarten capacity is now the Main Round capacity file's gross
+    # TotalSeats and the promotion claim is a run-time priority instead, so
+    # neither the profile nor its files may come back.
+    # See analysis/data_prep/TK_PROMOTION_SPEC.md.
+    for source in base["files"].values():
+        assert "postPromotion" not in source["path"]
+    for entry in base["school_years"].values():
+        for registry in entry.get("assignment", {}).get("grades", {}).values():
+            assert "post_promotion" not in registry["profiles"]
+
+
+@pytest.mark.parametrize("name", PER_YEAR_SCENARIOS + (POOLED_SCENARIO,))
+def test_transfer_scenarios_take_the_default_capacity_profile(name):
+    scenario = load_scenario({"scenario": name, "overrides": {}}, environ={})
+    assert scenario.filter("assignment", "capacity_profile") == "default"
+
+
+def test_the_enrolled_population_is_registered_as_its_own_file(base):
+    # enrolled_<year>.csv is the kindergarten subset of student_<year>.csv the
+    # post-run seats. The two coincide in these years, because every market
+    # student takes a seat, but they are distinct selections and both
+    # consumers must read the same file for each.
+    for year in TRANSFER_YEARS:
+        entry = base["school_years"][year]
+        enrolled = entry["optimization"]["students"]["enrolled"]
+        assert entry["assignment"]["students"]["enrolled"] == enrolled
+        assert base["files"][enrolled]["path"] == f"Data/Cleaned/enrolled_{year}.csv"

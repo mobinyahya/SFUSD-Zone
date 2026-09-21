@@ -201,6 +201,72 @@ def test_frl_estimate_rejects_inconsistent_counts(tmp_path, scenario_factory):
         load_student_records(scenario, "optimization.students")
 
 
+def test_students_who_rank_nothing_are_dropped_with_a_warning(
+    tmp_path, scenario_factory
+):
+    # A student who ranks nothing cannot enter a choice market, so the table
+    # drops them. From 2024-25 that is worth saying out loud: the transfer
+    # years' enrolled table holds students who filed no request at all, and
+    # although the converter gives each of them a list, a silent drop here
+    # would shrink the population a metric is computed over without a trace.
+    rows = [
+        {"studentno": 1, "grade": "KG", **_round_columns(1, [20], ["GE"])},
+        {"studentno": 2, "grade": "KG", **_round_columns(1, [], [])},
+    ]
+    students = pd.DataFrame(rows)
+    scenario = _student_scenario(tmp_path, scenario_factory, students, rounds=[1])
+
+    with pytest.warns(UserWarning, match="rank no school"):
+        loaded = normalize_student_records(students, scenario, "assignment")
+
+    assert loaded["studentno"].tolist() == [1]
+
+
+def test_the_promotion_claim_is_filtered_and_aliased_like_any_program_list(
+    tmp_path, scenario_factory
+):
+    # promote is a program-ID list, the same shape as currentlpsibling, so a
+    # run that excludes Mission Bay must not be left holding a claim on a
+    # school it does not have -- nor may the scalar feeder_school keep it.
+    rows = [
+        {
+            "studentno": 1,
+            "grade": "KG",
+            "promote": "['909-GE-KG']",
+            "feeder_school": 909,
+            **_round_columns(1, [20], ["GE"]),
+        },
+        {
+            "studentno": 2,
+            "grade": "KG",
+            "promote": "['20-GE-KG']",
+            "feeder_school": 20,
+            **_round_columns(1, [20], ["GE"]),
+        },
+    ]
+    students = pd.DataFrame(rows)
+
+    scenario = _student_scenario(
+        tmp_path, scenario_factory, students, rounds=[1], include_mission_bay=True
+    )
+    loaded = normalize_student_records(students, scenario, "assignment").set_index(
+        "studentno"
+    )
+    assert loaded.loc[1, "promote"] == ["999-GE-KG"]
+    assert loaded.loc[1, "feeder_school"] == 999
+
+    scenario = _student_scenario(
+        tmp_path, scenario_factory, students, rounds=[1], include_mission_bay=False
+    )
+    loaded = normalize_student_records(students, scenario, "assignment").set_index(
+        "studentno"
+    )
+    assert loaded.loc[1, "promote"] == []
+    assert pd.isna(loaded.loc[1, "feeder_school"])
+    # The student who is not at Mission Bay keeps their claim either way.
+    assert loaded.loc[2, "promote"] == ["20-GE-KG"]
+
+
 def test_round_selection_is_chronological_and_derives_first_participation(
     tmp_path, scenario_factory
 ):

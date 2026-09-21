@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import re
+import warnings
 from collections.abc import Mapping
 from typing import Any
 
@@ -21,8 +22,18 @@ _SCALAR_SCHOOL_COLUMNS = {
     "enrolled_idschool",
     "final_school",
     "msf",
+    # The school half of a TK-to-K promotion claim. Aliased and blanked with
+    # the rest so that a run excluding Mission Bay cannot be left holding a
+    # feeder at a school it does not have.
+    "feeder_school",
 }
 _SCHOOL_LIST_COLUMNS = ("sibling", "aaprek", "prek")
+#: Per-student columns holding a list of *program* IDs the student holds a
+#: priority claim on, rather than a list of school IDs. ``currentlpsibling``
+#: is the language-pathway sibling claim; ``promote`` is the TK-to-K
+#: auto-promotion claim, which is program-level for the same reason -- the
+#: entitlement is to one pathway at one school, not to the school.
+_PROGRAM_LIST_COLUMNS = ("currentlpsibling", "promote")
 _ROUND_ALIGNED_LIST_SUFFIXES = ("listed_ranks", "cohortstring", "randomnumber")
 _ROUND_PREFERENCE_COLUMN = re.compile(
     r"r(\d+)_(ranked_idschool|programs|listed_ranks|cohortstring|randomnumber|"
@@ -541,15 +552,17 @@ def normalize_student_records(
             )
         frame[column] = pd.Series(parsed_values, index=frame.index, dtype=object)
 
-    if "currentlpsibling" in frame.columns:
+    for column in _PROGRAM_LIST_COLUMNS:
+        if column not in frame.columns:
+            continue
         parsed_program_values: list[list[str]] = []
-        for index, value in frame["currentlpsibling"].items():
+        for index, value in frame[column].items():
             identity = frame.at[index, "studentno"]
             try:
                 programs = parse_ranked_programs(value)
             except ValueError as exc:
                 raise ValueError(
-                    f"Invalid currentlpsibling programs for student {identity}: {exc}"
+                    f"Invalid {column} programs for student {identity}: {exc}"
                 ) from exc
             if not include_mission_bay:
                 programs = [
@@ -565,7 +578,7 @@ def normalize_student_records(
                     for program in programs
                 ]
             )
-        frame["currentlpsibling"] = pd.Series(
+        frame[column] = pd.Series(
             parsed_program_values, index=frame.index, dtype=object
         )
 
@@ -588,7 +601,27 @@ def normalize_student_records(
     participating = pd.Series(False, index=frame.index)
     for round_number in rounds:
         participating |= frame[f"r{round_number}_ranked_idschool"].map(bool)
+    dropped = int((~participating).sum())
     frame, source_rows = _filter_student_rows(frame, source_rows, participating)
+    if dropped:
+        # Every downstream market indexes students by their ranked list, so a
+        # student with no list in any selected round cannot be represented.
+        # From 2024-25 the kindergarten applicant pool includes students who
+        # filed no request at all -- SFUSD auto-promotes TK students into K --
+        # and the transfer years' tables hold them (mr_applicant = 0). The
+        # converter gives each one a list, from the TK requests they filed the
+        # year before or from their feeder and attendance-area program, so
+        # they survive this filter. Anyone still dropped here has no placeable
+        # program anywhere in the transfer, which the conversion report counts
+        # under market_KG_students_with_no_list. Dropping them silently would
+        # quietly shrink the population a metric is computed over, so say so.
+        warnings.warn(
+            f"{dropped} of {dropped + len(frame)} students in the "
+            f"{scenario.filter(group, 'student_population')} population rank no "
+            f"school in round(s) {sorted(rounds)} and are excluded from this "
+            "table, so no metric computed over it counts them.",
+            stacklevel=2,
+        )
 
     first_rounds: list[int] = []
     first_ordinals: list[int] = []

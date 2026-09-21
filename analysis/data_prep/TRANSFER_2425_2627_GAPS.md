@@ -18,12 +18,21 @@ Three CSVs per year, **students only**:
 | File | Grain | Carries |
 |---|---|---|
 | `*_PreRun.csv` | one row per ranked choice | school, program, rank, per-request priority flags, tie-breaker random number |
-| `*_PostRun.csv` | one row per student | assignment outcome, coordinates, attendance-area school |
+| `*_PostRun.csv` | one row per student | assignment outcome, coordinates, attendance-area school, current school/grade/program. Also the only record of the students the run seats *without* a request — see §4b |
 | `*Demographics.csv` | one row per enrolment record | ethnicity, home language, address/ZIP |
 
-There is **no** capacity file, **no** school table, **no** Census geography,
-**no** block-level equity index, and **no** choice-model estimate. Everything
-those feed is borrowed, derived, or left blank — itemised below.
+Plus an `auxillary data/` folder shared by all three years, which arrived later
+(2026-09-20) and closed the largest gap this document used to open with:
+
+| File | Grain | Carries |
+|---|---|---|
+| `... MR Capacities.csv`, one per year | one row per school, grade, program | `TotalSeats`, `OpenSeatsPreRun`, `FreeSeats`, and the run's own promote and assignment counts |
+| `TK-to-K autopromotion lists - SY <YY-YY>.csv`, one per year | one row per TK program | the kindergarten program each TK program promotes into |
+
+There is still **no** school table, **no** Census geography, **no**
+block-level equity index, and **no** choice-model estimate. Everything those
+feed is borrowed, derived, or left blank — itemised below. Capacity is now a
+gap at grades 6 and 9 only.
 
 ## 2. Gap ledger
 
@@ -32,10 +41,11 @@ measurable subset; **C** = cosmetic or unused.
 
 | # | Missing | Sev | Scale | Resolution | Residual risk |
 |---|---|---|---|---|---|
-| 1 | Program capacities | **A** | every program | 2023-24 district tables; observed post-run assignment count where 2023-24 has no such program | Capacities are 2023-24, not that year's. Cross-year capacity comparisons are invalid. Fallback rows are lower bounds — see §3 |
+| 1 | Program capacities, grades 6 and 9 | **A** | every grade-6 and grade-9 program | 2022-23 district tables; observed post-run assignment count where 2022-23 has no such program | Capacities are 2022-23, not that year's. Cross-year capacity comparisons are invalid, and fallback rows are lower bounds — see §3. **Kindergarten is no longer affected**: it reads that year's Main Round capacity file — see §4b |
 | 2 | School table (coordinates, category, ratings) | **A** | every school | Registry reuses the 2023-24 school tables | School attributes are 2023-24 vintage while students are current |
 | 3 | Choice-model utility estimate | **A** | every welfare number | Still `utility.2324.exp8`; a coverage warning now fires | The estimate is **per student**, not a coefficient vector, so it covers 0.9% / 0% / 0% of these cohorts and every choice metric reads exactly `0.0` — see §4a |
-| 4 | Preference round identity | **A** | all rows | One list per student, emitted as `r1_*`; `rounds: all` → `[1]` | The `r1_` label is an assumption. 9%/38%/28% of KG applicants are recorded in a later round and cannot be separated — see §4 |
+| 4 | Later-round requests | **B** | 9%/38%/28% of KG applicants | Nothing: the transfer holds the main round only, emitted as `r1_*`; `rounds: all` → `[1]` | No per-round comparison against the checked-in years is possible, and later-round preferences are simply unavailable — see §4 |
+| 4b | Auto-promoted students: their seats, and their preferences | **A** | 40/580/847 KG students with no application, plus 575/278/341 who applied | `enrolled_<year>.csv` rebuilt from the post-run; capacity taken gross from the Main Round capacity file, with the promotion claim carried per student in `promote_eligible` / `feeder_school` / `feeder_program` / `pref_source`; preference lists imputed from last year's TK requests or built from the feeder and attendance area — see §4b | 668/382/21 lists are imputed rather than filed, and the identification rule finds 1,178 eligible against the district's 1,188 in 2026-27, 854 against 859 in 2025-26, and 607 in 2024-25 against a file that promoted nobody |
 | 5 | Block equity indices (`FRL Score`, `AALPI Score`, `HOCidx1`, `N'hood SES Score`, `Academic Score`, `freelunch_prob`, `reducedlunch_prob`, `median_hh_income`) | **A** | every student | Joined on the 2010 Census Block from the 2122-2324 cleaned student files | Two vintages exist; the lookup stops at the 1819 boundary — see §5. Coverage gaps in §6 |
 | 6 | Census Block / BlockGroup / Tract | **B** | every student | Derived from post-run coordinates via `loaders.geography.match_points_to_census`, tagged `geography_vintage: "2010"` | Students with no coordinates get no Block and are filtered by the default `outside_district_students: ignore` |
 | 7 | Student coordinates | **B** | 1,756 / 52 / 46 | Not substituted; left blank | 12.4% of 2024-25 applicants are ungeocodable because they have no post-run row at all |
@@ -47,39 +57,42 @@ measurable subset; **C** = cosmetic or unused.
 
 ## 3. Capacity substitutions
 
-`--gaps fail` (the default) aborts and names these. They were accepted under
-`--gaps fill-and-report`, and every affected row carries a `capacity_source`
-column so the substitution is visible in the data, not only here.
+Kindergarten no longer substitutes anything: every kindergarten program and its
+capacity come from that year's Main Round capacity file (§4b). Grades 6 and 9
+still borrow, and `--gaps fail` (the default) aborts and names the programs
+below. They were accepted under `--gaps fill-and-report`, and every affected
+row carries a `capacity_source` column so the substitution is visible in the
+data, not only here.
 
 | Year | Grade | Program | Capacity used |
 |---|---|---|---|
 | 2425 | 09 | `757-AF-09` | 1 (observed) |
-| 2526 | KG | `453-MM-KG` | 1 (observed) |
 | 2526 | 06 | `607-AF-06`, `858-MM-06` | 5, 1 (observed) |
 | 2526 | 06 | `868-SA-06` | **0** — never assigned, no district row |
 | 2526 | 09 | `559-AF-09`, `757-AF-09`, `832-TC-09`, `853-NS-09` | 4, 1, 2, 8 (observed) |
-| 2627 | KG | `790-SA-KG` | 7 (observed) |
-| 2627 | KG (Mission Bay) | `999-MM-KG` | 5 (observed) |
-| 2627 | KG (Mission Bay) | `999-AF-KG` | **0** — never assigned, no district row |
 | 2627 | 06 | `607-AF-06`, `858-MM-06` | 2, 2 (observed) |
 | 2627 | 09 | `559-AF-09`, `757-AF-09` | 3, 5 (observed) |
 
 An observed count is a **lower bound** on true capacity: an undersubscribed
-program looks smaller than it is. The two rows at capacity 0 are effectively
-closed programs in these scenarios. All are special or language programs, so a
+program looks smaller than it is. The one row at capacity 0 is effectively a
+closed program in these scenarios. All are special or language programs, so a
 `program_population: GE` run is unaffected.
 
 ## 4. The round label
 
-This is the gap most likely to be misread, and it applies to **all three
-years**, not one.
+The pre-run is the **main round**. Reed Levitt (SFUSD Enrollment Center, 15 Sep
+2026) confirmed the extract is the main-round request file, and the post-run
+corroborates it: every student it seats at a grade either holds a pre-run
+request for that grade or is flagged `byPromote`. `rounds: [1]` is therefore
+both the only valid selector and the correct label.
 
-Established: the pre-run has no round column, and no student has a repeated
-rank. So there is exactly **one preference list per student** — rounds are not
-stacked together.
+Established alongside it: there is exactly **one** preference list per student
+— the pre-run has no round column and no student has a repeated rank — so
+rounds are not stacked together.
 
-Not established: which round that list is. The demographics extract's
-per-student `rounds_applied` field records a later round for a large minority:
+What the transfer does **not** contain is the later-round requests. The
+demographics extract's per-student `rounds_applied` field records a later round
+for a large minority:
 
 | Year | KG applicants | recorded in a later round | breakdown |
 |---|---|---|---|
@@ -90,17 +103,18 @@ per-student `rounds_applied` field records a later round for a large minority:
 (`4` is the amendment round; `50`/`666`/`888`/`902`/`905`/`999` are
 administrative codes.)
 
-The pre-run cannot be split by round: no column separates tagged from untagged
-students, and `idRequest` spans the same range for both (2627 KG: tagged
-min/median/max 11/34,820/60,160 vs untagged 41/33,932/60,711). So tagged rows
-are not a later batch appended to the file — `rounds_applied` describes rounds
-the student engaged with elsewhere, and those extra request rows are simply not
-in the transfer.
+No request rows accompany those tags, and `idRequest` spans the same range for
+tagged and untagged students (2627 KG: tagged min/median/max 11/34,820/60,160
+vs untagged 41/33,932/60,711), so they are not a later batch appended to the
+file. The field is unreliable in the other direction too: among 2026-27
+enrolled kindergarteners who *do* hold a main-round request, 1,598 have
+`rounds_applied` blank and 793 are tagged round 4. Neither value identifies the
+main round, and the district has said the field is incomplete.
 
-**Consequence:** `rounds: [1]` is the only valid selector, but read it as "the
-one list the district supplied", not "round 1". The checked-in years through
-2023-24 carry genuine separate `r1_`/`r2_`/`r4_` blocks, so a per-round
-comparison between a transfer year and 2023-24 is not meaningful.
+**Consequence:** use `rounds: [1]`, read as "the main round". A per-round
+comparison against the checked-in years — which carry genuine separate
+`r1_`/`r2_`/`r4_` blocks — is still not meaningful, and later-round preferences
+are unavailable for these years.
 
 ## 4a. The choice estimate covers none of these students
 
@@ -129,6 +143,178 @@ break callers that accept it.
 **Do not quote any MNL, MID, SAA, or `choice_*` number from these scenarios
 until an estimate is fitted on the relevant cohort.** The zoning objective,
 capacity balance, contiguity, and every demographic metric are unaffected.
+
+## 4b. Auto-promotion: who holds a kindergarten seat
+
+From 2024-25 SFUSD auto-promotes TK students into kindergarten as the first
+step of the main run: they take a seat before any applicant is placed, and
+because they filed no request they are in the post-run and absent from the
+pre-run. This was silent in the first conversion, which built every table from
+the pre-run.
+
+| Run year | Post-run seats at KG | Held by a main-round applicant | Held without a request | `byPromote = 1` |
+|---|---|---|---|---|
+| 2425 | 3,875 | 3,835 | 40 | 0 |
+| 2526 | 3,980 | 3,400 | 580 | 636 |
+| 2627 | 3,996 | 3,149 | 847 | 915 |
+
+`byPromote` is deliberately *not* the identifying rule. It is 0 for every
+student in 2024-25 despite 40 such seats, and in the later years it is also set
+for applicants promoted after an unsuccessful application (56 in 2526, 68 in
+2627) — students who are already in the modelled pool, and whose seats must not
+be removed from capacity as well. The rule used is: a post-run seat at the
+grade with no pre-run request for that grade. The same shape appears at grades
+6 and 9 in 2024-25 (179 and 138 seats) and nowhere else.
+
+Two things follow.
+
+**The applicant pool is not the set of people who applied.** A promoted
+student holds a claim on a kindergarten seat without filing anything, so
+`student_<year>.csv` holds them: its kindergarten rows are the Main Round
+applicants plus the promotion-eligible students plus anyone else the run
+seated at kindergarten without a request. Every row carries `mr_applicant`
+(1 for a Main Round applicant, 0 otherwise), and the promoted students'
+preference lists are reconstructed rather than transcribed — see below. No
+other grade is treated this way: grades 6 and 9 are out of scope, so their
+rows are Main Round applicants only, even though 2024-25 has 179 and 138
+seats of the same shape there.
+
+`enrolled_<year>.csv` is then the subset of those rows the post-run seats, so
+the enrolled population is a subset of the applicant one by construction.
+
+| Run year | KG rows in `student_*` | …Main Round applicants | …added | `enrolled_*` |
+|---|---|---|---|---|
+| 2425 | 3,875 | 3,835 | 40 | 3,875 |
+| 2526 | 3,980 | 3,400 | 580 | 3,980 |
+| 2627 | 3,996 | 3,149 | 847 | 3,996 |
+
+The two tables coincide in all three years because every market student takes
+a kindergarten seat. That is a fact about these years, not an invariant: a
+promotion-eligible student the run seated nowhere would be in
+`student_<year>.csv` and absent from `enrolled_<year>.csv`, and the
+conversion report counts them under
+`promotion_eligible_who_took_no_KG_seat` (zero in all three years).
+
+Residual: the shared loader drops students who rank no school in the selected
+rounds, because every market indexes students by their ranked list. Every
+promoted student now carries a list, so they survive it; the one student who
+does not — 2024-25's student with no application, no usable TK list, no
+feeder and no attendance area — is in both files and in neither loaded table,
+and is counted under `market_KG_students_with_no_list`.
+
+The added students carry no `ctip1`, which is a per-request pre-run flag — the
+post-run's own `CTIP1` column is empty for every one of them (0 of 580 in
+2526). Their coordinates, attendance-area school, assignment, demographics,
+Census Block, and equity indices all come through as for any other student; 21
+(2425), 236 (2526) and 117 (2627) of them have no Block, at a rate close to the
+applicant tables'.
+
+**Capacity is gross, and nothing is reserved.** The Main Round capacity files
+that arrived on 2026-09-20 settled this. They publish both `TotalSeats` and
+`OpenSeatsPreRun`, the latter net of the seats held for promotion, and the
+tables use `TotalSeats`. A held seat is *released back into the same run* when
+its holder wins a choice elsewhere: 413-GE had 52 open seats before the SY26-27
+run and made 53 choice assignments. A netted table therefore models a market
+the district never ran. An interim `capacity_profile: post_promotion` did net
+them out; it has been removed, profile and files.
+
+Kindergarten capacity now comes from the capacity file itself, which also
+supplies the program row set:
+
+| Run year | KG programs | Seats (`TotalSeats`) | Opened with no seats | Seats held for promotion |
+|---|---|---|---|---|
+| 2425 | 166 | 4,099 | 13 | 20 |
+| 2526 | 166 | 4,202 | 10 | 859 |
+| 2627 | 162 | 4,306 | 2 | 1,188 |
+
+A program with `TotalSeats <= 0` is emitted rather than dropped: it exists, it
+can hold TK students, and it offers nobody a kindergarten seat. The Mission Bay
+variant of 2026-27 carries 3 programs and 74 seats the standard variant does
+not, which is the only difference between them. Each row also carries
+`total_promote_before_run`, `total_promote_with_request_before_run` and
+`free_seats` as provenance; none of them touches `capacity`.
+
+**The promotion claim is carried per student instead.** Every kindergarten row
+of both tables now has four columns:
+
+| Column | Meaning |
+|---|---|
+| `promote_eligible` | 1 when the post-run puts the student in TK in a program that also exists at kindergarten that year |
+| `feeder_school`, `feeder_program` | the program they are entitled to |
+| `pref_source` | which source supplied their preference list |
+
+Eligibility is *not* `byPromote`, for the reasons above. The rule — TK at a
+school that also runs the pathway at kindergarten — reproduces the district's
+`TotalPromoteWithReqBeforeRun` exactly, program by program, for 2026-27.
+
+Every kindergarten row of both tables carries a reconstructed preference
+list, and `pref_source` says where it came from:
+
+| Run year | `k_list` | `tk_imputed` | no source (`feeder_only` + `aa_only`) | Total | Promotion-eligible | …of whom applied |
+|---|---|---|---|---|---|---|
+| 2425 | 3,835 | 21 | 19 | 3,875 | 607 | 575 |
+| 2526 | 3,400 | 382 | 198 | 3,980 | 854 | 278 |
+| 2627 | 3,149 | 668 | 179 | 3,996 | 1,178 | 341 |
+
+`pref_source` names the source that answered, not the contents of the list. A
+student on last year's TK roll is `tk_imputed` even if none of their TK
+requests has a kindergarten counterpart, because that is where the converter
+looked. `feeder_only` and `aa_only` are reserved for a student no source held
+at all, split by whether they have a feeder.
+
+Three judgements inside the construction:
+
+1. **A promotion-eligible student's feeder is appended to their list**, unless
+   they already rank it. In 2026-27, 192 of the 341 promote-applicants already
+   rank the feeder *school* and 122 rank it first, but the list is of programs,
+   so the append is a no-op only for the 117 who also rank its pathway. 421
+   lists gain an entry in 2026-27, 410 in 2025-26, and 176 in 2024-25.
+2. **The attendance-area program enters the data only for a student with no
+   list of their own** — 125 students in 2026-27, 142 in 2025-26, 18 in
+   2024-25. For everyone else appending it is the policy config's job
+   (`add_aa_schools`). About 70 kindergarten students in 2026-27 have no
+   attendance-area school on record, or one that runs no general education
+   kindergarten; they are counted, not given a placement the transfer does not
+   state.
+3. **An appended choice carries the student's own post-run lottery draw.**
+   `r1_randomnumber` is a per-request number — SFUSD runs multiple tiebreaking
+   — so a choice the student never filed has none, and
+   `PriorityGenerator._mtb_real` rejects a list whose lottery numbers do not
+   align with it. `studentRandomNumber` is a real draw from the same run and is
+   already what `r1_designation_randomnumber` carries. It decides nothing at a
+   feeder in any case, where the promotion boost will outrank every tiebreaker.
+
+One student, in 2024-25, ends with an empty list: no application, no usable TK
+list, no feeder, and no attendance area. The conversion report counts them
+under `market_KG_students_with_no_list`, and the loader's own filter drops
+them.
+
+**The Early Education Schools are parsed but not applied.** From the 2026-27 TK
+cohort, a TK student at an EES or the Mission Education Center is promoted to a
+designated feeder elementary rather than to their own site — one EES feeds
+several, which is why the TK pathway codes in those rows are compound
+(`GE750` → Sunset, `SE420` → Alvarado). The 24 rows describing it appear only
+in the SY26-27 list and place their first kindergarten class in SY2027-28, so
+no converted year uses them. The 2025-26 EES cohort was not covered and had to
+apply: 259 of them filed a 2026-27 application and none was promoted.
+`EES_FEEDER_FIRST_YEAR` in `sfusd_transfer_schema.py` is the switch.
+
+**2024-25 is three contradictory sources, and the rule is applied anyway.**
+The auto-promotion list for that year is one sentence saying no TK student was
+promoted. The capacity file holds 20 seats, as singletons across 14 mostly
+special or language programs (SE, MS, TC, AF, AO, SN). The post-run flags
+`byPromote` for nobody yet seats 40 students with no application — only 1 of
+them at their current school, against 580 of 580 in 2025-26 and 847 of 847 in
+2026-27, and some of them from an EES. Three different populations. The
+capacity file is honoured for capacity, the identification rule is applied
+uniformly, and it consequently marks 607 students eligible in a year whose own
+counts say 20. Anyone comparing 2024-25 promotion numbers against 2025-26 or
+2026-27 is comparing a rule's output against a policy's output.
+
+Two smaller residuals, both in the conversion report's
+`promote_counts_vs_district_KG` section: 2026-27 identifies 1,178 eligible
+students against 1,188 seats held, and 2025-26 identifies 854 against 859 and
+278 applied against 279.
 
 ## 5. Block equity indices have two vintages
 
@@ -166,6 +352,10 @@ Counts are students, out of all applicants for that year.
 | In a Block the index lookup misses | 334 | 433 | 488 |
 | Programs emitted (KG / KG+MB / 06 / 09) | 155 / 155 / 62 / 54 | 153 / 153 / 63 / 56 | 152 / 155 / 62 / 50 |
 
+The enrolled table adds the students the run seated without a request, whose
+own missingness is close to the applicants': of the 40 / 580 / 847 added, 21 /
+236 / 117 have no `census_block`.
+
 Two notes on reading this table:
 
 - **2024-25 is the weak year.** 1,756 applicants (12.4%) have no post-run row
@@ -201,7 +391,12 @@ actually reads; the one real loss is `r1_distance`, blank for all of 2026-27.
 | Unlocatable school | 2627 grade 9 has one request for Independence HS (466), absent from the 2023-24 grade-9 school table | Request **and** program dropped together, so no student references a program the market does not know |
 | Duplicate demographics rows | One row per enrolment record, so mid-year movers appear twice (584 / 22 / 42 students) | Kept the row with the most non-null fields |
 | Blank demographics IDs | 450 (2425) and 1 (2526) rows carry no `scrambledstudentno` | Dropped — unattributable to any applicant |
-| `enrolled_<year>.csv` = KG subset | The name suggests a population, but for 2122-2324 the checked-in `enrolled_*` is exactly the KG rows of `student_*` | Reproduced that convention. So `student_population: applicant` and `enrolled` give identical rows under `grades: [KG]` |
+| Promoted students put in `student_<year>.csv`, not only in `enrolled_<year>.csv` | For 2122-2324 the checked-in `enrolled_*` is exactly the KG rows of `student_*`. Reproducing that convention silently dropped every auto-promoted student, who holds a claim on a seat but filed no request; putting them only in `enrolled_*` inverted the containment and made the enrolled population larger than the applicant one | The KG rows of `student_<year>.csv` are the whole market, flagged `mr_applicant`; `enrolled_<year>.csv` is the subset of them the run seated — see §4b |
+| `promote_eligible` identified from the current TK program, not `byPromote` | `byPromote` is overloaded (TK promotion at KG, Lowell/SOTA admission at grade 9, K-8 continuation at grade 6) and is 0 for every 2024-25 student despite the capacity file holding seats | A post-run row with `CurrentGrade == TK` whose current program is also a KG program that year. Reproduces the district's `TotalPromoteWithReqBeforeRun` exactly, program by program, for 2026-27 — see §4b |
+| The identification rule applied uniformly in 2024-25 | The year's three sources contradict each other: the list says nobody was promoted, the capacity file holds 20 seats, and the post-run seats 40 students with no application | Rule applied anyway, marking 607 students eligible against the district's 20. Recorded rather than reconciled — see §4b |
+| `pref_source` names the source, not the list | A student on last year's TK roll whose requests have no KG counterpart has been looked up and found; calling them `aa_only` would say nobody was ever asked | `tk_imputed` is assigned on presence in the prior-year source. `feeder_only` / `aa_only` are reserved for a student no source held. Affects 2 students, both 2024-25 |
+| Imputed lists renumbered from rank 1 | The prior year's ranks belong to a TK market with a different program set, and mapping drops entries out of the middle of a list | Surviving choices renumbered 1..n. A submitted KG list keeps its own ranks, gaps and all |
+| An appended choice gets the student's post-run lottery draw | `r1_randomnumber` is per-request and `PriorityGenerator._mtb_real` rejects a misaligned list, so a choice the student never filed still needs a number | `studentRandomNumber`, a real draw from the same run and already the source of `r1_designation_randomnumber`. It decides nothing at a feeder, where the promotion boost outranks every tiebreaker — see §4b |
 
 ## 9. Verification
 
@@ -213,7 +408,11 @@ Run against the real data, all three years:
 | Assignment simulation (DA, `status_quo_3`) | Runs and exports citywide metrics for all three years |
 | Optimization ingestion, 16 population x vintage combos | All build area tables |
 | Optimization solve (`6-zone-9`, `BlockGroup_1`, 2010 vintage) | FEASIBLE, contiguous, objective 85-89 vs 88 for the existing `summer-26-zoning`. Zone artifacts written; the objective varies run to run because the 20 s limit is wall-clock with 8 workers |
-| Test suite | `loaders/tests` + `analysis/data_prep` green; converter tests run on a synthetic transfer and need no shared data |
+| Test suite | `loaders/tests` + `analysis/data_prep` green. `test_convert_sfusd_transfer.py` runs on a synthetic transfer and pins the rules; `test_tk_promotion_real.py` reads the real transfer and pins every number in §4b, program by program where the district publishes one |
+| Netted capacity vs realized assignments, all 3 years x 3 grades | 0 programs offer fewer seats than the run gave main-round applicants; 0 negative capacities |
+| Enrolled table row counts | 3,875 / 3,980 / 3,996, matching the post-run's KG seat count exactly |
+| DA on `sfusd-2627`, `status_quo`, netted capacities | Runs; all 3,125 students placed, none unassigned |
+| Same run on `capacity_profile: default` | Netting costs 226 first choices (2,166 → 1,940), 276 top-three (2,824 → 2,548), and moves 123 more students onto an administratively designated seat (76 → 199). 19% of students get a different program. This is the size of the error the gross capacities were hiding |
 
 Optimization metrics run: 67 metric keys written for both `sfusd-2627` and
 `summer-26-zoning`. The `choice_*` keys are `0.0` for the transfer years for the
@@ -257,8 +456,14 @@ reason in §4a, not because the metrics step failed.
 
    Two of those three are silent. That is the argument, not the slowness.
 2. **Ask the district for a complete SY26-27 post-run** (§7).
-3. **Ask whether a capacity file exists** for these years (§3), and whether
-   `rounds_applied` means "also applied in" or "only applied in" (§4). A
-   one-line answer to the second would turn an assumption into a fact.
+3. **Reconcile the grade 6 and grade 9 capacities** against the Main Round
+   capacity file (§3). The kindergarten capacity question is closed: the file
+   arrived on 2026-09-20 and kindergarten now reads it directly. The same file
+   covers grades 6 and 9, but their held seats are a different phenomenon —
+   invisible K-8 continuers at 6, Lowell and SOTA admissions at 9 — and until
+   somebody checks them against the district's counts the way kindergarten was
+   checked, those two grades keep 2022-23 capacities. The round question is
+   also closed (§4); the district has offered corrected `rounds_applied` data,
+   which would be useful but is not blocking.
 4. **Fit a choice-model estimate on 24-27 preferences** before quoting welfare
    from these scenarios (§2 row 3).

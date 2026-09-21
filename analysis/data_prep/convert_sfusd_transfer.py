@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 """Convert an SFUSD pre-run/post-run/demographics transfer into cleaned tables.
 
-The district ships one folder per school year holding three CSVs. This script
-turns those into the student, program, and school tables the ``loaders``
-package already knows how to read, so that a new school year becomes a
-registry entry rather than a new code path.
+The district ships one folder per school year holding three CSVs, plus a
+shared folder of auxiliary files: the Main Round capacities and the TK-to-K
+auto-promotion lists. This script turns those into the student and program
+tables the ``loaders`` package already knows how to read, so that a new school
+year becomes a registry entry rather than a new code path.
 
 Usage
 -----
@@ -20,12 +21,26 @@ Outputs, per year, below ``--out`` (default ``<data root>/Data/Cleaned``):
 
 * ``student_<year>.csv``   -- every applicant, every grade, one
   preference list each.
-* ``enrolled_<year>.csv``  -- the kindergarten subset, matching the existing
-  ``enrolled_*`` convention (verified: for 2021-22 through 2023-24 the
-  checked-in ``enrolled_*`` file is exactly the KG rows of ``student_*``).
+* ``enrolled_<year>.csv``  -- the post-run's seated kindergarten cohort: the
+  main-round applicants the run placed, plus the students it seated without a
+  request (auto-promoted TK students), marked ``mr_applicant = 0``. Through
+  2023-24 the checked-in ``enrolled_*`` file was exactly the KG rows of
+  ``student_*`` because everyone who enrolled had applied; auto-promotion ends
+  that from 2024-25.
 * ``programs_<year>.csv`` / ``programs_withMissionBay_<year>.csv``,
   ``programs_06_<year>.csv``, ``programs_09_<year>.csv``.
 * ``sfusd_transfer_report_<year>.json`` and ``.md`` -- the gap report.
+
+Auto-promotion
+--------------
+
+From 2024-25 a kindergarten cohort is not a kindergarten applicant pool: SFUSD
+promotes TK students into K without an application. The kindergarten rows of
+both student tables therefore carry ``promote_eligible``, ``feeder_school``,
+``feeder_program`` and ``pref_source``, and a promoted student's preference
+list is built rather than transcribed. ``tk_promotion.py`` holds the rules and
+the reasoning; nothing about it reserves a seat, because the run releases a
+promote's held seat back into the same market when they win elsewhere.
 
 Missing data policy
 -------------------
@@ -60,25 +75,45 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from analysis.data_prep.sfusd_transfer_schema import (  # noqa: E402
+    AUXILIARY_DIRECTORY,
+    EES_FEEDER_FIRST_YEAR,
     BLOCK_INDEX_COLUMNS,
     BLOCK_INDEX_SOURCE_YEARS,
     DEMOGRAPHICS_OPTIONAL,
     DEMOGRAPHICS_REQUIRED,
     GRADE_BUNDLES,
     LOWELL_SCHOOL_ID,
+    MARKET_STUDENT_COLUMNS,
     POSTRUN_OPTIONAL,
     POSTRUN_REQUIRED,
     PRERUN_OPTIONAL,
+    PREF_SOURCES,
     PRERUN_REQUIRED,
     PRIORITY_FLAGS,
     PRIORITY_LISTS,
     PROGRAM_COLUMNS,
+    PROMOTION_STUDENT_COLUMNS,
     RAW_SCHOOL_ID_ALIASES,
     SOTA_SCHOOL_ID,
     STUDENT_COLUMNS,
     TRANSFER_FILE_FRAGMENTS,
     TRANSFER_YEAR_FOLDERS,
     GradeBundle,
+)
+from analysis.data_prep.tk_promotion import (  # noqa: E402
+    PreferenceInputs,
+    PreferenceResult,
+    PromotionMap,
+    build_market_preferences,
+    build_promotion_map,
+    compare_promote_counts,
+    discover_auxiliary_files,
+    load_mr_capacities,
+    prior_tk_source,
+    program_keys,
+    promotion_entitlements,
+    tk_lists_from_cleaned_table,
+    tk_lists_from_prerun,
 )
 from loaders import load_scenario  # noqa: E402
 from loaders.geography import match_points_to_census  # noqa: E402
@@ -707,6 +742,32 @@ def build_student_table(
     # ------------------------------------------------------------------ #
     # Post-run: coordinates and assignment outcome
     # ------------------------------------------------------------------ #
+    outcomes = _postrun_outcomes(postrun)
+    _attach_postrun_columns(students, outcomes, report)
+
+    # ------------------------------------------------------------------ #
+    # Demographics: ethnicity, home language, ZIP
+    # ------------------------------------------------------------------ #
+    demo = _collapse_demographics(demographics, report)
+    _attach_demographics_columns(students, demo, report)
+    report.blank(
+        "englprof",
+        "no transfer file carries an English-proficiency field. The column is "
+        "emitted empty; no live pipeline reads it (only "
+        "assignment/scripts/generators/generate_fake_dataset.py names it)",
+    )
+    report.blank(
+        "Academic Score",
+        "not present in the transfer and not carried by the Block index lookup "
+        "for every Block; see the Block index notes",
+    )
+
+    students = students.reset_index()
+    return students
+
+
+def _postrun_outcomes(postrun: pd.DataFrame) -> pd.DataFrame:
+    """Index the post-run by student, rejecting an ambiguous outcome."""
     outcomes = postrun.copy()
     outcomes["studentno"] = _student_identity(
         outcomes["scrambledstudentno"], "Post-run"
@@ -718,8 +779,19 @@ def build_student_table(
             f"Post-run has several rows for one student: {bad}. The assignment "
             "outcome is ambiguous."
         )
-    outcomes = outcomes.set_index("studentno")
+    return outcomes.set_index("studentno")
 
+
+def _attach_postrun_columns(
+    students: pd.DataFrame, outcomes: pd.DataFrame, report: Report
+) -> None:
+    """Copy coordinates and the assignment outcome onto an indexed student frame.
+
+    ``students`` is indexed by ``studentno`` and mutated in place. The rules are
+    identical for the applicant table and the enrolled table, and the report's
+    per-column entries are keyed by column, so calling this twice records each
+    derivation once.
+    """
     students["latitude"] = pd.to_numeric(outcomes["Latitude"], errors="coerce").reindex(
         students.index
     )
@@ -789,10 +861,11 @@ def build_student_table(
     else:
         report.blank("sped", "post-run has neither Sped_Pathway nor IEP_Code")
 
-    # ------------------------------------------------------------------ #
-    # Demographics: ethnicity, home language, ZIP
-    # ------------------------------------------------------------------ #
-    demo = _collapse_demographics(demographics, report)
+
+def _attach_demographics_columns(
+    students: pd.DataFrame, demo: pd.DataFrame, report: Report
+) -> None:
+    """Copy ethnicity, home language, and ZIP onto an indexed student frame."""
     if "Race_Ethnicity" in demo.columns:
         ethnicity = demo["Race_Ethnicity"].astype("string")
         if "HISPANIC_INDICATOR" in demo.columns:
@@ -837,39 +910,31 @@ def build_student_table(
     else:
         report.blank("zipcode", "demographics has no Home_Zip column")
 
-    report.blank(
-        "englprof",
-        "no transfer file carries an English-proficiency field. The column is "
-        "emitted empty; no live pipeline reads it (only "
-        "assignment/scripts/generators/generate_fake_dataset.py names it)",
-    )
-    report.blank(
-        "Academic Score",
-        "not present in the transfer and not carried by the Block index lookup "
-        "for every Block; see the Block index notes",
-    )
 
-    students = students.reset_index()
-    return students
+def _collapse_demographics(
+    demographics: pd.DataFrame, report: Report, *, record: bool = True
+) -> pd.DataFrame:
+    """Reduce the demographics extract to one row per student, deterministically.
 
-
-def _collapse_demographics(demographics: pd.DataFrame, report: Report) -> pd.DataFrame:
-    """Reduce the demographics extract to one row per student, deterministically."""
+    ``record`` is false for the second pass over the same extract (the enrolled
+    table), whose substitutions would otherwise be appended to the report twice.
+    """
     frame = demographics.copy()
     identity = frame["scrambledstudentno"].astype("string").str.strip()
     unattributable = identity.isna() | identity.eq("")
     if unattributable.any():
-        report.missing(
-            "demographics_unattributable_rows",
-            {
-                "rows_dropped": int(unattributable.sum()),
-                "reason": (
-                    "these demographics rows carry no scrambledstudentno, so "
-                    "they cannot be attached to any applicant. They are dropped "
-                    "rather than matched by any other key"
-                ),
-            },
-        )
+        if record:
+            report.missing(
+                "demographics_unattributable_rows",
+                {
+                    "rows_dropped": int(unattributable.sum()),
+                    "reason": (
+                        "these demographics rows carry no scrambledstudentno, "
+                        "so they cannot be attached to any applicant. They are "
+                        "dropped rather than matched by any other key"
+                    ),
+                },
+            )
         frame = frame.loc[~unattributable].copy()
     frame["studentno"] = _student_identity(frame["scrambledstudentno"], "Demographics")
     frame = frame.drop_duplicates()
@@ -883,15 +948,17 @@ def _collapse_demographics(demographics: pd.DataFrame, report: Report) -> pd.Dat
         collapsed = frame.drop_duplicates("studentno", keep="first").drop(
             columns="_completeness"
         )
-        report.substitute(
-            kind="demographics_duplicate_collapse",
-            students=int(frame["studentno"].duplicated(keep=False).sum()),
-            rule="kept the row with the most non-null fields",
-            reason=(
-                "the demographics extract has one row per enrolment record, so a "
-                "student who changed school mid-year appears more than once"
-            ),
-        )
+        if record:
+            report.substitute(
+                kind="demographics_duplicate_collapse",
+                students=int(frame["studentno"].duplicated(keep=False).sum()),
+                rule="kept the row with the most non-null fields",
+                reason=(
+                    "the demographics extract has one row per enrolment record, "
+                    "so a student who changed school mid-year appears more than "
+                    "once"
+                ),
+            )
         frame = collapsed
     return frame.set_index("studentno")
 
@@ -900,7 +967,11 @@ def _collapse_demographics(demographics: pd.DataFrame, report: Report) -> pd.Dat
 # Geography
 # --------------------------------------------------------------------------- #
 def attach_geography(
-    students: pd.DataFrame, report: Report, *, scenario_name: str = "legacy"
+    students: pd.DataFrame,
+    report: Report,
+    *,
+    scenario_name: str = "legacy",
+    report_label: str = "geography",
 ) -> pd.DataFrame:
     """Map student coordinates to 2010 Census Block, BlockGroup, and Tract.
 
@@ -938,7 +1009,7 @@ def attach_geography(
         ).sum()
     )
     report.missing(
-        "geography",
+        report_label,
         {
             "students_without_coordinates": no_coordinates,
             "students_with_coordinates_outside_district_blocks": outside,
@@ -954,7 +1025,11 @@ def attach_geography(
 
 
 def attach_block_indices(
-    students: pd.DataFrame, block_indices: pd.DataFrame, report: Report
+    students: pd.DataFrame,
+    block_indices: pd.DataFrame,
+    report: Report,
+    *,
+    report_label: str = "block_indices",
 ) -> pd.DataFrame:
     """Join the Block equity indices, reporting Blocks the lookup does not cover."""
     result = students.copy()
@@ -980,7 +1055,7 @@ def attach_block_indices(
         known & ~result["census_block"].isin(block_indices.index), "census_block"
     ]
     report.missing(
-        "block_indices",
+        report_label,
         {
             "students_in_blocks_absent_from_the_lookup": int(len(uncovered)),
             "distinct_blocks_absent_from_the_lookup": sorted(
@@ -1002,6 +1077,358 @@ def attach_block_indices(
 
 
 # --------------------------------------------------------------------------- #
+# Seats the run fills without a request
+# --------------------------------------------------------------------------- #
+def _requested_at_grade(prerun: pd.DataFrame, grade: str) -> set[int]:
+    """Students holding at least one pre-run request for one grade."""
+    identity = _student_identity(prerun["scrambledstudentno"], "Pre-run")
+    grades = prerun["Grade"].map(normalize_grade)
+    return set(identity.loc[grades == grade].dropna())
+
+
+def seated_at_grade(outcomes: pd.DataFrame, grade: str) -> pd.DataFrame | None:
+    """Post-run rows the run seats at one grade, indexed by student.
+
+    ``None`` when the post-run has no ``NextGrade`` column, which no transfer
+    year so far is missing but the SY26-27 truncation shows is possible.
+    """
+    if "NextGrade" not in outcomes.columns:
+        return None
+    grades = outcomes["NextGrade"].map(normalize_grade)
+    return outcomes.loc[grades == grade]
+
+
+def seated_without_request(
+    prerun: pd.DataFrame, outcomes: pd.DataFrame, grade: str
+) -> pd.DataFrame | None:
+    """Students the run seats at one grade who filed no request for that grade.
+
+    From 2024-25 SFUSD auto-promotes TK students into kindergarten as the first
+    step of the main run: they take a seat before any applicant is placed, and
+    they are absent from the pre-run because they filed no request (847 of them
+    in SY26-27, 580 in SY25-26, 40 in SY24-25). The same shape appears at grades
+    6 and 9 in SY24-25.
+
+    Identified as a post-run seat at the grade with no pre-run request for it,
+    which deliberately does not use ``byPromote``: SY24-25 carries that column
+    but leaves it 0 for every student, and in the later years it is also set for
+    applicants who were promoted after an unsuccessful application -- students
+    who *are* in the applicant pool, and whose seat must not be counted twice.
+    """
+    seated = seated_at_grade(outcomes, grade)
+    if seated is None:
+        return None
+    requested = _requested_at_grade(prerun, grade)
+    return seated.loc[~seated.index.isin(requested)]
+
+
+# --------------------------------------------------------------------------- #
+# The market at one grade
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class Market:
+    """Who is in one grade's market, and which program each of them may claim.
+
+    Decided once, at the top of the conversion, because three later steps have
+    to agree about it: the student table gains a row for every member, the
+    preference construction gives every member a list, and the enrolled table
+    is the subset the run seated. Recomputing any part of it separately is how
+    those three drift apart.
+    """
+
+    grade: str
+    #: Every student in the market, sorted.
+    population: list[int]
+    #: The students who filed a Main Round request at the grade.
+    applicants: set[int]
+    #: Member -> the program they may claim. Restricted to programs a school
+    #: table can place, because a claim that cannot enter a preference list is
+    #: not usable; ``entitlements`` holds the unrestricted identification.
+    feeders: dict[int, tuple[int, str]]
+    #: Every placeable program at the grade.
+    programs: set[tuple[int, str]]
+    #: The identification before that restriction, indexed by ``studentno``
+    #: with ``feeder_school`` and ``feeder_program``. This is the set the
+    #: district's own promote counts are measured over, so the report compares
+    #: against it rather than against ``feeders``.
+    entitlements: pd.DataFrame
+
+
+def define_market(
+    students: pd.DataFrame,
+    prerun: pd.DataFrame,
+    postrun: pd.DataFrame,
+    *,
+    grade: str,
+    capacities: pd.DataFrame,
+    cleaned_dir: Path,
+    report: Report,
+) -> Market:
+    """Decide one grade's market: its members and their promotion claims.
+
+    Three groups, and the union of them is the applicant pool that
+    ``student_<year>.csv`` holds at this grade:
+
+    * the Main Round applicants, straight from the pre-run;
+    * the promotion-eligible students, who hold a claim on a program whether
+      or not they applied and whether or not they took a seat;
+    * the students the post-run seats at the grade without a request. Most of
+      those are promotion-eligible, but not all: 8 of 2024-25's 40, 4 of
+      2025-26's 580 and 10 of 2026-27's 847 sit in a program that is not a
+      kindergarten program, an Early Education School in the main. They took a
+      kindergarten seat all the same, so the market has to hold them.
+
+    A promotion-eligible student who took no seat anywhere belongs here too --
+    they had a claim the run did not convert -- and none exists in the three
+    transfer years, which is worth recording rather than assuming.
+    """
+    outcomes = _postrun_outcomes(postrun)
+    indexed = students.set_index("studentno")
+    applicants = set(indexed.index[indexed["grade"] == grade])
+
+    entitlements = promotion_entitlements(outcomes, program_keys(capacities, grade))
+    eligible = set(entitlements.index)
+    programs = _placeable_programs(capacities, cleaned_dir=cleaned_dir, grade=grade)
+    feeders = {
+        int(studentno): (int(school), str(program))
+        for studentno, school, program in zip(
+            entitlements.index,
+            entitlements["feeder_school"],
+            entitlements["feeder_program"],
+            strict=True,
+        )
+        if (int(school), str(program)) in programs
+    }
+    unplaceable = len(entitlements) - len(feeders)
+    if unplaceable:
+        report.missing(
+            f"promotion_feeders_at_unplaceable_schools_{grade}",
+            {
+                "students": unplaceable,
+                "reason": (
+                    "their feeder program is at a school no school table can "
+                    "place, so it cannot enter a preference list. They are not "
+                    "marked promote_eligible, though the district's promote "
+                    "counts still include them"
+                ),
+            },
+        )
+
+    seated = seated_without_request(prerun, outcomes, grade)
+    without_request = set() if seated is None else set(seated.index)
+    seated_at = seated_at_grade(outcomes, grade)
+    unseated = eligible - (set() if seated_at is None else set(seated_at.index))
+    if unseated:
+        report.missing(
+            f"promotion_eligible_who_took_no_{grade}_seat",
+            {
+                "students": len(unseated),
+                "reason": (
+                    "identified as promotion-eligible but not seated at this "
+                    "grade by the run. They are in the market, because the "
+                    "claim was theirs whether or not it was converted"
+                ),
+            },
+        )
+
+    report.row_counts[f"market_{grade}_main_round_applicants"] = len(applicants)
+    report.row_counts[f"market_{grade}_promotion_eligible_non_applicants"] = len(
+        eligible - applicants
+    )
+    report.row_counts[f"market_{grade}_seated_without_a_request"] = len(without_request)
+    report.row_counts[f"market_{grade}_seated_without_a_claim"] = len(
+        without_request - eligible
+    )
+    return Market(
+        grade=grade,
+        population=sorted(applicants | eligible | without_request),
+        applicants=applicants,
+        feeders=feeders,
+        programs=programs,
+        entitlements=entitlements,
+    )
+
+
+def _placeable_programs(
+    capacities: pd.DataFrame, *, cleaned_dir: Path, grade: str
+) -> set[tuple[int, str]]:
+    """Every program at one grade a student may be given this year.
+
+    The capacity file's programs, less the ones at a school no borrowed school
+    table can place: assignment builds student-program distances from school
+    coordinates and rejects a non-finite one, so putting an unplaceable
+    program into a preference list would fail a run rather than degrade it.
+    The test is the union of both school tables, matching
+    ``drop_unlocatable_requests`` -- Mission Bay is placeable in one of them,
+    and which variant a run selects is the loader's business, not this one's.
+    """
+    bundle = GRADE_BUNDLES[grade]
+    locatable: set[int] = set()
+    for include_mission_bay in (False, True):
+        if include_mission_bay and bundle.schools_mission_bay is None:
+            continue
+        locatable |= locatable_schools(
+            bundle, cleaned_dir=cleaned_dir, include_mission_bay=include_mission_bay
+        )
+    return {
+        program
+        for program in program_keys(capacities, grade)
+        if program[0] in locatable
+    }
+
+
+def add_market_students(
+    students: pd.DataFrame,
+    postrun: pd.DataFrame,
+    demographics: pd.DataFrame,
+    block_indices: pd.DataFrame,
+    *,
+    market: Market,
+    report: Report,
+    scenario_name: str,
+) -> pd.DataFrame:
+    """Add the market's non-applicants to the student table as grade rows.
+
+    ``student_<year>.csv`` is the applicant pool, and from 2024-25 the
+    kindergarten applicant pool is not the set of people who applied: a
+    promoted TK student holds a claim on a seat without filing anything. They
+    belong in the table, so they are added here with their outcome,
+    demographics, geography and Block indices resolved the same way an
+    applicant's are, and with ``mr_applicant = 0``.
+
+    Their preference list is written later, by
+    :func:`build_market_table`. The empty lists set here are
+    placeholders that every one of them overwrites.
+    """
+    grade = market.grade
+    outcomes = _postrun_outcomes(postrun)
+    missing = pd.Index(sorted(set(market.population) - set(students["studentno"])))
+    students = students.copy()
+    students["mr_applicant"] = 1
+    if missing.empty:
+        report.row_counts[f"market_{grade}_students_added_to_the_table"] = 0
+        return students
+
+    extra = pd.DataFrame(index=pd.Index(missing, name="studentno"))
+    extra["grade"] = grade
+    for column in (
+        "r1_ranked_idschool",
+        "r1_listed_ranks",
+        "r1_programs",
+        "r1_randomnumber",
+        "r1_cohortstring",
+        "sibling",
+        "currentlpsibling",
+        "currentlp",
+        "aaprek",
+        "prek",
+        "aa",
+    ):
+        extra[column] = "[]"
+    for column in (
+        "num_ranked",
+        "lowell_ranked",
+        "sota_ranked",
+        "bayview_to_all_ms",
+        "bayview_to_brown_ms",
+        "brown_ms_to_hs",
+    ):
+        extra[column] = 0
+    extra["ctip1"] = pd.NA
+    extra["msf"] = pd.NA
+    report.blank(
+        "ctip1 (promoted students)",
+        "CTIP1 is a per-request pre-run flag, so a student who filed no "
+        "request has none. The post-run's own CTIP1 column is empty for every "
+        "one of them (checked: 0 of 580 in SY25-26), so it cannot stand in",
+    )
+
+    _attach_postrun_columns(extra, outcomes, report)
+    _attach_demographics_columns(
+        extra, _collapse_demographics(demographics, report, record=False), report
+    )
+    extra = extra.reset_index()
+    extra = attach_geography(
+        extra, report, scenario_name=scenario_name, report_label="geography_promoted"
+    )
+    extra = attach_block_indices(
+        extra, block_indices, report, report_label="block_indices_promoted"
+    )
+    extra["mr_applicant"] = 0
+    for column in students.columns:
+        if column not in extra.columns:
+            extra[column] = pd.NA
+
+    combined = pd.concat([students, extra[list(students.columns)]], ignore_index=True)
+    combined = combined.sort_values("studentno", kind="stable").reset_index(drop=True)
+    report.row_counts[f"market_{grade}_students_added_to_the_table"] = len(extra)
+    report.derived(
+        "mr_applicant",
+        "1 when the student filed a Main Round request, 0 when they are in "
+        "the market without one -- an auto-promoted TK student, in the main",
+    )
+    report.note(
+        f"student_<year>.csv holds {len(extra):,} grade-{grade} students who "
+        "filed no Main Round request. From 2024-25 the kindergarten applicant "
+        "pool is the Main Round applicants plus the students SFUSD promotes "
+        "into kindergarten from TK, who hold a claim on a seat without "
+        "applying; leaving them out would make the pool smaller than the "
+        "cohort the run actually seated. They carry mr_applicant = 0. No "
+        "other grade is treated this way: grades 6 and 9 are out of scope, so "
+        "their rows are Main Round applicants only."
+    )
+    return combined
+
+
+def build_enrolled_table(
+    students: pd.DataFrame,
+    postrun: pd.DataFrame,
+    *,
+    market: Market,
+    report: Report,
+) -> pd.DataFrame:
+    """Select the seated cohort out of the student table.
+
+    ``enrolled_<year>.csv`` is the students the post-run seats at ``grade``.
+    Since :func:`add_market_students` puts the whole market in the student
+    table, this is a filter of it rather than a second construction, which is
+    what makes the enrolled population a subset of the applicant one. Through
+    2023-24 the checked-in ``enrolled_*`` file was exactly the KG rows of
+    ``student_*``; the two coincide again here whenever every market student
+    takes a seat, which is true of all three transfer years.
+    """
+    grade = market.grade
+    outcomes = _postrun_outcomes(postrun)
+    at_grade = students.loc[students["grade"] == grade]
+    seated = seated_at_grade(outcomes, grade)
+    if seated is None:
+        report.note(
+            f"enrolled_<year>.csv falls back to every grade-{grade} row of "
+            "student_<year>.csv: the post-run has no NextGrade column, so "
+            "which of them took a seat cannot be determined."
+        )
+        return at_grade.reset_index(drop=True)
+
+    enrolled = at_grade.loc[at_grade["studentno"].isin(seated.index)]
+    enrolled = enrolled.sort_values("studentno", kind="stable").reset_index(drop=True)
+    unseated = len(at_grade) - len(enrolled)
+
+    report.row_counts[f"enrolled_{grade}_total"] = len(enrolled)
+    report.row_counts[f"enrolled_{grade}_main_round_applicants"] = int(
+        enrolled["mr_applicant"].sum()
+    )
+    report.row_counts[f"enrolled_{grade}_market_students_with_no_seat"] = unseated
+    report.note(
+        f"enrolled_<year>.csv is the grade-{grade} subset of "
+        f"student_<year>.csv that the post-run seats: {len(enrolled):,} of "
+        f"{len(at_grade):,} market students, "
+        f"{int(enrolled['mr_applicant'].sum()):,} of whom filed a Main Round "
+        f"request. {unseated:,} market students took no seat at the grade."
+    )
+    return enrolled
+
+
+# --------------------------------------------------------------------------- #
 # Program tables
 # --------------------------------------------------------------------------- #
 def build_program_table(
@@ -1013,16 +1440,34 @@ def build_program_table(
     include_mission_bay: bool,
     gaps: str,
     report: Report,
+    capacities: pd.DataFrame | None = None,
 ) -> pd.DataFrame | None:
-    """Derive one grade's program table from observed offers and old capacities.
+    """Build one grade's program table.
 
-    The transfer contains no capacity file. Program *existence* is observable
-    (a program a student could rank existed), so the row set is derived from the
-    requests; the capacity is taken from the most recent district capacity
-    table that has the program, and the ``capacity_source`` column records
-    which. A program with no district capacity is either an error
+    Kindergarten reads the transfer's own Main Round capacity file: it lists
+    every program the run opened, and ``TotalSeats`` is its capacity. That
+    capacity is *gross*. The file also publishes ``OpenSeatsPreRun``, which is
+    ``TotalSeats`` less the seats held for auto-promoted TK students, and that
+    is deliberately not used: a promote who wins a school elsewhere releases
+    the held seat back into the same run, so the seats never leave the market.
+    413-GE had 52 open seats before the SY26-27 run and made 53 choice
+    assignments. The promotion claim is a run-time priority at the feeder
+    program, not a seat withheld here. A program with ``TotalSeats <= 0`` is a
+    closed program and is emitted as such rather than dropped, because a TK
+    student can still sit in one.
+
+    Grades 6 and 9 have no reconciled capacity in the transfer, so they keep
+    the earlier derivation: program *existence* comes from the requests (a
+    program a student could rank existed), the capacity from the most recent
+    district capacity table that has the program, and ``capacity_source``
+    records which. A program with no district capacity is either an error
     (``--gaps fail``) or falls back to the count assigned to it in this year's
-    post-run, which is a lower bound on its true capacity.
+    post-run, which is a lower bound.
+
+    ``promotes_seated`` counts the students the post-run seats in the program
+    having filed no main-round request for the grade (see
+    ``seated_without_request``). It is provenance only; no capacity is netted
+    against it.
     """
     grade = bundle.grade
     requests = prerun.copy()
@@ -1034,28 +1479,27 @@ def build_program_table(
     requests["grade"] = requests["Grade"].map(normalize_grade)
     requests["program_type"] = requests["ProgramCode"].astype("string").str.strip()
     selected = requests.loc[requests["grade"] == grade].copy()
-    if selected.empty:
-        report.note(
-            f"grade {grade}: the transfer has no requests for this grade, so no "
-            "program table is emitted"
-        )
-        return None
-
     if not include_mission_bay:
         selected = selected.loc[~selected["school_id"].isin([909, 999])]
 
-    offered = (
-        selected.groupby(["school_id", "program_type"], as_index=False)
-        .size()
-        .rename(columns={"size": "_requests"})
-    )
-    offered["program_id"] = (
-        offered["school_id"].astype("int64").astype(str)
-        + "-"
-        + offered["program_type"].astype(str)
-        + "-"
-        + grade
-    )
+    if bundle.capacity_grade is not None:
+        offered = _programs_from_capacity_file(
+            bundle,
+            capacities,
+            include_mission_bay=include_mission_bay,
+            cleaned_dir=cleaned_dir,
+            report=report,
+        )
+        if offered is None:
+            return None
+    else:
+        if selected.empty:
+            report.note(
+                f"grade {grade}: the transfer has no requests for this grade, so "
+                "no program table is emitted"
+            )
+            return None
+        offered = _programs_from_requests(selected, grade)
 
     # First-choice and assigned counts, which grade 6 needs for K-8 capacities.
     first_choice = (
@@ -1080,11 +1524,181 @@ def build_program_table(
         "post-run students whose assignment is this program",
     )
 
+    if bundle.capacity_grade is None:
+        _borrow_capacities(
+            offered, bundle, cleaned_dir=cleaned_dir, gaps=gaps, report=report
+        )
+
+    promotes = seated_without_request(prerun, _postrun_outcomes(postrun), grade)
+    if promotes is None:
+        offered["promotes_seated"] = pd.NA
+        report.blank(
+            f"programs[{grade}].promotes_seated",
+            "post-run has no NextGrade column, so seats taken without a "
+            "request cannot be attributed to a program",
+        )
+    else:
+        counts = _program_counts(promotes)
+        keys = offered.set_index(["school_id", "program_type"]).index
+        offered["promotes_seated"] = (
+            pd.Series(keys.map(counts), index=offered.index).fillna(0).astype("int64")
+        )
+        report.derived(
+            f"programs[{grade}].promotes_seated",
+            "post-run students seated in this program who filed no pre-run "
+            "request for the grade -- auto-promoted TK students, in the main. "
+            "Provenance only: no capacity is netted against it",
+        )
+        unattributed = int(len(promotes) - int(offered["promotes_seated"].sum()))
+        if unattributed:
+            report.missing(
+                f"promotes_unattributed_{grade}_mb{int(include_mission_bay)}",
+                {
+                    "students": unattributed,
+                    "reason": (
+                        "counted at this grade with no request, but their seat "
+                        "is not in a program this table holds: they took no "
+                        "seat at all, no applicant ranked the program, or it "
+                        "belongs to a school this variant excludes"
+                    ),
+                },
+            )
+
+    offered = offered.sort_values("program_id", kind="stable").reset_index(drop=True)
+    offered["programno"] = np.arange(1, len(offered) + 1)
+    for column in bundle.extra_columns:
+        if column == "r2_capacity":
+            offered[column] = offered["capacity"]
+            report.derived(
+                f"programs[{grade}].r2_capacity",
+                "copied from capacity; Programs.fix_k8_capacities overwrites it "
+                "for K-8 schools at grade 6",
+            )
+        else:
+            offered[column] = pd.NA
+
+    for column in PROGRAM_COLUMNS:
+        if column not in offered.columns:
+            offered[column] = pd.NA
+    columns = [*PROGRAM_COLUMNS, *bundle.extra_columns]
+    return offered[columns]
+
+
+def _programs_from_requests(selected: pd.DataFrame, grade: str) -> pd.DataFrame:
+    """One row per (school, program) any student ranked at this grade."""
+    offered = (
+        selected.groupby(["school_id", "program_type"], as_index=False)
+        .size()
+        .drop(columns="size")
+    )
+    offered["program_id"] = (
+        offered["school_id"].astype("int64").astype(str)
+        + "-"
+        + offered["program_type"].astype(str)
+        + "-"
+        + grade
+    )
+    return offered
+
+
+def _programs_from_capacity_file(
+    bundle: GradeBundle,
+    capacities: pd.DataFrame | None,
+    *,
+    include_mission_bay: bool,
+    cleaned_dir: Path,
+    report: Report,
+) -> pd.DataFrame | None:
+    """One row per capacity-file program at this grade, at gross capacity."""
+    grade = bundle.grade
+    if capacities is None:
+        raise TransferGapError(
+            f"grade {grade}: no Main Round capacity file was supplied, but the "
+            "grade takes its capacity from one. Point --transfer at a transfer "
+            f"whose '{AUXILIARY_DIRECTORY}' folder holds it."
+        )
+    rows = capacities.loc[capacities["grade"] == grade].copy()
+    if rows.empty:
+        report.note(
+            f"grade {grade}: the capacity file has no rows for this grade, so "
+            "no program table is emitted"
+        )
+        return None
+
+    if not include_mission_bay:
+        rows = rows.loc[~rows["school_id"].isin([909, 999])]
+
+    locatable = locatable_schools(
+        bundle, cleaned_dir=cleaned_dir, include_mission_bay=include_mission_bay
+    )
+    unlocatable = sorted(set(rows["school_id"].dropna().astype(int)) - locatable)
+    if unlocatable:
+        dropped = rows.loc[rows["school_id"].isin(unlocatable)]
+        report.substitute(
+            kind="capacity_program_unlocatable_school",
+            grade=grade,
+            include_mission_bay=include_mission_bay,
+            schools=unlocatable,
+            programs=int(len(dropped)),
+            seats=int(pd.to_numeric(dropped["capacity"], errors="coerce").sum()),
+            rule="the affected programs are not emitted",
+            reason=(
+                "the borrowed school table has no coordinates for these "
+                "schools, and assignment rejects a non-finite student-program "
+                "distance"
+            ),
+        )
+        rows = rows.loc[~rows["school_id"].isin(unlocatable)]
+
+    offered = rows.reset_index(drop=True)
+    offered["program_id"] = (
+        offered["school_id"].astype("int64").astype(str)
+        + "-"
+        + offered["program_type"].astype(str)
+        + "-"
+        + grade
+    )
+    offered["capacity_source"] = (
+        f"transfer Main Round capacity file, TotalSeats at grade "
+        f"{bundle.capacity_grade}"
+    )
+    report.derived(
+        f"programs[{grade}].capacity",
+        "TotalSeats from the transfer's Main Round capacity file. Gross: the "
+        "seats the file holds for auto-promoted TK students are not removed, "
+        "because promotes who win elsewhere release them back into the same "
+        "run",
+    )
+    closed = int((pd.to_numeric(offered["capacity"], errors="coerce") <= 0).sum())
+    report.missing(
+        f"closed_programs_{grade}_mb{int(include_mission_bay)}",
+        {
+            "programs": closed,
+            "reason": (
+                "the capacity file opens these programs with no seats. They are "
+                "emitted rather than dropped: a program can exist, hold TK "
+                "students, and offer nobody a kindergarten seat"
+            ),
+        },
+    )
+    return offered
+
+
+def _borrow_capacities(
+    offered: pd.DataFrame,
+    bundle: GradeBundle,
+    *,
+    cleaned_dir: Path,
+    gaps: str,
+    report: Report,
+) -> None:
+    """Fill a grade's capacity from the most recent checked-in district table."""
+    grade = bundle.grade
     reference_path = cleaned_dir / bundle.capacity_reference
     require_readable(
         reference_path,
-        f"grade {grade}: capacity reference (the transfer carries no capacity "
-        "of its own)",
+        f"grade {grade}: capacity reference (the transfer's capacity file has "
+        "not been reconciled for this grade)",
     )
     reference = pd.read_csv(reference_path)
     missing_reference = {"program_id", "capacity"} - set(reference.columns)
@@ -1105,69 +1719,58 @@ def build_program_table(
     )
 
     gap = offered["capacity"].isna()
-    if gap.any():
-        rows = offered.loc[gap, ["program_id", "r1_assigned"]].to_dict("records")
-        if gaps == "fail":
-            raise TransferGapError(
-                f"grade {grade}: no district capacity exists for "
-                f"{[row['program_id'] for row in rows]}. The transfer has no "
-                "capacity file. Re-run with --gaps fill-and-report to substitute "
-                "each program's observed post-run assignment count, which is a "
-                "lower bound, or supply a capacity table."
-            )
-        fallback = offered.loc[gap, "r1_assigned"]
-        never_assigned = fallback.isna()
-        offered.loc[gap, "capacity"] = fallback.fillna(0.0).to_numpy()
-        offered.loc[gap, "capacity_source"] = np.where(
-            never_assigned.to_numpy(),
-            "NONE -- no district capacity and never assigned; written as 0",
-            "observed post-run assignment count (lower bound)",
+    if not gap.any():
+        return
+    rows = offered.loc[gap, ["program_id", "r1_assigned"]].to_dict("records")
+    if gaps == "fail":
+        raise TransferGapError(
+            f"grade {grade}: no district capacity exists for "
+            f"{[row['program_id'] for row in rows]}. Re-run with --gaps "
+            "fill-and-report to substitute each program's observed post-run "
+            "assignment count, which is a lower bound, or supply a capacity "
+            "table."
         )
-        report.substitute(
-            kind="program_capacity",
-            grade=grade,
-            include_mission_bay=include_mission_bay,
-            programs=rows,
-            rule=(
-                "capacity set to the program's post-run assignment count, or 0 "
-                "where the program was never assigned"
-            ),
-            reason=f"{bundle.capacity_reference} has no row for these programs",
-        )
-
-    offered = offered.sort_values("program_id", kind="stable").reset_index(drop=True)
-    offered["programno"] = np.arange(1, len(offered) + 1)
-    for column in bundle.extra_columns:
-        if column == "r2_capacity":
-            offered[column] = offered["capacity"]
-            report.derived(
-                f"programs[{grade}].r2_capacity",
-                "copied from capacity; Programs.fix_k8_capacities overwrites it "
-                "for K-8 schools at grade 6",
-            )
-        else:
-            offered[column] = pd.NA
-
-    columns = [*PROGRAM_COLUMNS, *bundle.extra_columns]
-    return offered[columns]
+    fallback = offered.loc[gap, "r1_assigned"]
+    never_assigned = fallback.isna()
+    offered.loc[gap, "capacity"] = fallback.fillna(0.0).to_numpy()
+    offered.loc[gap, "capacity_source"] = np.where(
+        never_assigned.to_numpy(),
+        "NONE -- no district capacity and never assigned; written as 0",
+        "observed post-run assignment count (lower bound)",
+    )
+    report.substitute(
+        kind="program_capacity",
+        grade=grade,
+        programs=rows,
+        rule=(
+            "capacity set to the program's post-run assignment count, or 0 "
+            "where the program was never assigned"
+        ),
+        reason=f"{bundle.capacity_reference} has no row for these programs",
+    )
 
 
-def _assigned_counts(postrun: pd.DataFrame, grade: str) -> pd.Series:
-    """Count post-run assignments per (school, program) for one grade."""
-    if not {"idNextSchool", "NextProgramCode"} <= set(postrun.columns):
+def _program_counts(frame: pd.DataFrame) -> pd.Series:
+    """Count post-run rows per (school, program), keyed like the program table."""
+    if not {"idNextSchool", "NextProgramCode"} <= set(frame.columns):
         return pd.Series(dtype="int64")
-    frame = postrun.copy()
+    frame = frame.copy()
     frame["school_id"] = (
         _school_ids(frame["idNextSchool"], "Post-run idNextSchool")
         .replace(RAW_SCHOOL_ID_ALIASES)
         .astype("Int64")
     )
     frame["program_type"] = frame["NextProgramCode"].astype("string").str.strip()
-    if "NextGrade" in frame.columns:
-        frame["grade"] = frame["NextGrade"].map(normalize_grade)
-        frame = frame.loc[frame["grade"] == grade]
     frame = frame.dropna(subset=["school_id", "program_type"])
     return frame.groupby(["school_id", "program_type"]).size()
+
+
+def _assigned_counts(postrun: pd.DataFrame, grade: str) -> pd.Series:
+    """Count post-run assignments per (school, program) for one grade."""
+    frame = postrun
+    if "NextGrade" in frame.columns:
+        frame = frame.loc[frame["NextGrade"].map(normalize_grade) == grade]
+    return _program_counts(frame)
 
 
 def locatable_schools(
@@ -1361,6 +1964,436 @@ def _report_round_participation(
 
 
 # --------------------------------------------------------------------------- #
+# TK-to-K promotion: the preference construction
+# --------------------------------------------------------------------------- #
+def load_prior_tk_lists(
+    year: str,
+    *,
+    transfer: Path,
+    cleaned_dir: Path,
+    report: Report,
+) -> dict[int, list[tuple[int, str]]]:
+    """Load the TK requests the market's students filed the year before."""
+    source = prior_tk_source(year)
+    if source.cleaned_file is not None:
+        path = cleaned_dir / source.cleaned_file
+        require_readable(
+            path,
+            f"prior-year TK preference lists for {year} (a student promoted "
+            "into kindergarten filed no kindergarten application, so this is "
+            "the only list they have)",
+        )
+        frame = pd.read_csv(path, low_memory=False)
+        lists = tk_lists_from_cleaned_table(frame)
+        report.derived(
+            "pref_source=tk_imputed",
+            f"TK rows of {source.cleaned_file}, mapped onto this year's "
+            "kindergarten programs",
+        )
+    else:
+        paths = discover_transfer_files(transfer, source.transfer_year)
+        require_readable(
+            paths["prerun"],
+            f"prior-year TK preference lists for {year}",
+        )
+        prior = _clean_nulls(pd.read_csv(paths["prerun"], low_memory=False))
+        identity = _student_identity(
+            prior["scrambledstudentno"], f"Pre-run {source.transfer_year}"
+        )
+        lists = tk_lists_from_prerun(prior, identity)
+        report.derived(
+            "pref_source=tk_imputed",
+            f"Grade == TK requests in the {source.transfer_year} pre-run, "
+            "mapped onto this year's kindergarten programs",
+        )
+    report.row_counts["prior_year_tk_students"] = len(lists)
+    return lists
+
+
+def build_market_table(
+    students: pd.DataFrame,
+    postrun: pd.DataFrame,
+    *,
+    market: Market,
+    year: str,
+    capacities: pd.DataFrame,
+    promotion: PromotionMap,
+    prior_tk: dict[int, list[tuple[int, str]]],
+    report: Report,
+) -> pd.DataFrame:
+    """Build every market student's promotion columns and preference list.
+
+    ``students`` must already hold the whole market at the grade -- see
+    :func:`define_market` and :func:`add_market_students` -- so this reads its
+    grade rows rather than deciding again who is in the market.
+
+    Returns one row per market student, indexed by ``studentno``, holding the
+    promotion columns, the reconstructed preference lists, and the derived
+    counts that read them.
+    """
+    grade = market.grade
+    outcomes = _postrun_outcomes(postrun)
+    indexed = students.set_index("studentno")
+    at_grade = indexed.loc[indexed["grade"] == grade]
+    # The applicant set is the pre-run's, carried on the market: the table's
+    # grade rows are the whole market by this point, promoted non-applicants
+    # included, and treating one of those as an applicant would label an empty
+    # submitted list ``k_list``.
+    applicants = at_grade.loc[at_grade.index.isin(market.applicants)]
+    population = sorted(at_grade.index)
+
+    inputs = PreferenceInputs(
+        submitted={
+            int(studentno): list(
+                zip(
+                    (int(value) for value in _literal(schools)),
+                    (str(value) for value in _literal(programs)),
+                    strict=True,
+                )
+            )
+            for studentno, schools, programs in zip(
+                applicants.index,
+                applicants["r1_ranked_idschool"],
+                applicants["r1_programs"],
+                strict=True,
+            )
+        },
+        submitted_ranks={
+            int(studentno): [int(value) for value in _literal(ranks)]
+            for studentno, ranks in zip(
+                applicants.index, applicants["r1_listed_ranks"], strict=True
+            )
+        },
+        submitted_lottery=_aligned_list_column(applicants, "r1_randomnumber", float),
+        submitted_cohort=_aligned_list_column(applicants, "r1_cohortstring", str),
+        prior_tk=prior_tk,
+        tk_to_k=promotion.active_feeders(),
+        feeders=market.feeders,
+        attendance_area=_attendance_area_map(outcomes),
+        student_lottery=_student_lottery_map(outcomes),
+        kindergarten_programs=market.programs,
+    )
+    results = build_market_preferences(population, inputs)
+
+    frame = pd.DataFrame(
+        {
+            "r1_ranked_idschool": [_as_list_literal(r.schools) for r in results],
+            "r1_listed_ranks": [_as_list_literal(r.ranks) for r in results],
+            "r1_programs": [_as_list_literal(r.programs) for r in results],
+            "r1_randomnumber": [_as_list_literal(r.lottery) for r in results],
+            "r1_cohortstring": [_as_list_literal(r.cohort) for r in results],
+            "num_ranked": [len(r.schools) for r in results],
+            "lowell_ranked": [int(LOWELL_SCHOOL_ID in r.schools) for r in results],
+            "sota_ranked": [int(SOTA_SCHOOL_ID in r.schools) for r in results],
+            "promote_eligible": [r.promote_eligible for r in results],
+            "promote": [
+                _as_list_literal(
+                    []
+                    if r.feeder_school is None
+                    else [f"{r.feeder_school}-{r.feeder_program}-{grade}"]
+                )
+                for r in results
+            ],
+            "feeder_school": pd.array(
+                [r.feeder_school for r in results], dtype="Int64"
+            ),
+            "feeder_program": pd.array(
+                [r.feeder_program for r in results], dtype="string"
+            ),
+            "pref_source": [r.pref_source for r in results],
+        },
+        index=pd.Index([r.studentno for r in results], name="studentno"),
+    )
+    _report_market(
+        frame,
+        results,
+        market=market,
+        capacities=capacities,
+        promotion=promotion,
+        year=year,
+        report=report,
+    )
+    return frame
+
+
+def _aligned_list_column(
+    applicants: pd.DataFrame, column: str, cast: Any
+) -> dict[int, list[Any]]:
+    """Parse one of the per-request list columns, keyed by student."""
+    if column not in applicants.columns:
+        return {}
+    return {
+        int(studentno): [cast(value) for value in _literal(values)]
+        for studentno, values in zip(applicants.index, applicants[column], strict=True)
+    }
+
+
+def _attendance_area_map(outcomes: pd.DataFrame) -> dict[int, int]:
+    if "idSchoolAttendance" not in outcomes.columns:
+        return {}
+    schools = (
+        _school_ids(outcomes["idSchoolAttendance"], "Post-run idSchoolAttendance")
+        .replace(RAW_SCHOOL_ID_ALIASES)
+        .astype("Int64")
+    )
+    return {
+        int(studentno): int(school)
+        for studentno, school in zip(outcomes.index, schools, strict=True)
+        if pd.notna(school)
+    }
+
+
+def _student_lottery_map(outcomes: pd.DataFrame) -> dict[int, float]:
+    if "studentRandomNumber" not in outcomes.columns:
+        return {}
+    numbers = pd.to_numeric(outcomes["studentRandomNumber"], errors="coerce")
+    return {
+        int(studentno): float(value)
+        for studentno, value in zip(outcomes.index, numbers, strict=True)
+        if pd.notna(value)
+    }
+
+
+def _report_market(
+    frame: pd.DataFrame,
+    results: list[PreferenceResult],
+    *,
+    market: Market,
+    capacities: pd.DataFrame,
+    promotion: PromotionMap,
+    year: str,
+    report: Report,
+) -> None:
+    """Record what the market construction did, and how it compares to the run."""
+    grade = market.grade
+    applicants = market.applicants
+    counts = frame["pref_source"].value_counts()
+    report.row_counts[f"market_{grade}_total"] = len(frame)
+    for source in PREF_SOURCES:
+        report.row_counts[f"market_{grade}_{source}"] = int(counts.get(source, 0))
+    report.row_counts[f"market_{grade}_promote_eligible"] = int(
+        frame["promote_eligible"].sum()
+    )
+    report.row_counts[f"market_{grade}_promote_eligible_with_application"] = int(
+        frame.loc[frame.index.isin(applicants), "promote_eligible"].sum()
+    )
+    report.row_counts[f"market_{grade}_feeder_appended"] = sum(
+        1 for result in results if result.feeder_appended
+    )
+    report.row_counts[f"market_{grade}_attendance_area_appended"] = sum(
+        1 for result in results if result.attendance_area_appended
+    )
+
+    empty = [result.studentno for result in results if not result.schools]
+    if empty:
+        report.missing(
+            f"market_{grade}_students_with_no_list",
+            {
+                "students": len(empty),
+                "reason": (
+                    "no kindergarten application, no prior-year TK list with a "
+                    "kindergarten counterpart, no feeder, and either no "
+                    "attendance-area school on record or one that runs no "
+                    "general education kindergarten. An empty list is emitted "
+                    "rather than a placement nothing in the transfer states"
+                ),
+            },
+        )
+
+    for column, rule in (
+        (
+            "promote_eligible",
+            "1 when the post-run puts the student in TK in a program that is "
+            "also a kindergarten program in this year's capacity file. Not "
+            "byPromote, which is 0 for every 2024-25 student despite the "
+            "capacity file holding seats, and which marks Lowell and SOTA "
+            "admissions at grade 9",
+        ),
+        ("feeder_school", "idCurrentSchool of a promotion-eligible student"),
+        ("feeder_program", "CurrentProgramCode of a promotion-eligible student"),
+        (
+            "promote",
+            "the feeder as a one-element list of program IDs, the shape the "
+            "priority layer reads -- the same idiom as currentlpsibling, and "
+            "filtered for include_mission_bay by the shared loader where the "
+            "raw feeder columns are not",
+        ),
+        (
+            "pref_source",
+            "which source supplied the student's list: their own kindergarten "
+            "application (k_list), the prior year's TK requests (tk_imputed), "
+            "or neither, in which case the list is built from the feeder and "
+            "the attendance-area program (feeder_only) or from the "
+            "attendance-area program alone (aa_only)",
+        ),
+        (
+            f"r1_ranked_idschool[{grade}]",
+            "the submitted list with the feeder appended where the student is "
+            "promotion-eligible and does not already rank it. The "
+            "attendance-area program is appended only for a student with no "
+            "list of their own; for everyone else that is the policy config's "
+            "job (add_aa_schools)",
+        ),
+    ):
+        report.derived(column, rule)
+
+    comparison = compare_promote_counts(
+        market.entitlements, applicants, capacities, grade
+    )
+    report.missing(f"promote_counts_vs_district_{grade}", comparison)
+
+    if promotion.empty:
+        report.note(
+            f"{year}: the auto-promotion list for this year carries no map -- "
+            "it is the single sentence that all TK students had to reapply for "
+            "kindergarten. The identification rule is applied all the same, "
+            "because the post-run and the capacity file both contradict the "
+            "sentence, and the three sources disagree three ways: the capacity "
+            "file holds "
+            f"{int(comparison['eligible']['district']):,} seats for promotion, "
+            "the post-run flags byPromote for none of them, and it seats "
+            f"{report.row_counts.get(f'market_{grade}_seated_without_a_request', 0):,} "
+            "students at kindergarten with no application at all. See the "
+            "promote_counts_vs_district section for the per-program difference."
+        )
+    if promotion.ees_feeder and not promotion.ees_active:
+        report.note(
+            f"{year}: the auto-promotion list carries "
+            f"{len(promotion.ees_feeder)} Early Education School feeder rows. "
+            "They are parsed and kept but not applied: the feeder rule covers "
+            "the 2026-27 TK cohort onward, whose first kindergarten class "
+            f"enters in SY{EES_FEEDER_FIRST_YEAR[:2]}-{EES_FEEDER_FIRST_YEAR[2:]}. "
+            "A TK student at an EES in these years had to apply."
+        )
+
+
+def validate_market(
+    table: pd.DataFrame,
+    students: pd.DataFrame,
+    enrolled: pd.DataFrame,
+    postrun: pd.DataFrame,
+    *,
+    market: Market,
+    report: Report,
+) -> None:
+    """Fail the build when the emitted tables do not reconcile with the market.
+
+    These gates are checkable against the transfer itself, so they hold for
+    any year rather than only for the three converted so far:
+
+    * every market student carries exactly one ``pref_source``, drawn from the
+      four the schema names;
+    * the market is exactly the student table's rows at the grade, which is
+      what makes ``student_<year>.csv`` the applicant pool rather than the
+      subset of it that filed something;
+    * the ``k_list`` students are exactly the Main Round applicants, and
+      exactly the ``mr_applicant`` rows;
+    * the enrolled table is a subset of the market and holds every market
+      student the post-run seats.
+
+    The numbers those gates come out at are pinned in the converter's tests
+    against the real transfer, not asserted here: this checks that the parts
+    agree with each other, the tests check that they agree with the district.
+    """
+    grade = market.grade
+    sources = table["pref_source"]
+    unknown = sorted(set(sources.dropna()) - set(PREF_SOURCES))
+    if unknown or sources.isna().any():
+        raise TransferGapError(
+            f"grade {grade}: {int(sources.isna().sum())} market students have "
+            f"no pref_source and {unknown} are not among {list(PREF_SOURCES)}."
+        )
+    buckets = int(sources.value_counts().sum())
+    if buckets != len(table):
+        raise TransferGapError(
+            f"grade {grade}: the pref_source buckets hold {buckets:,} students "
+            f"but the market has {len(table):,}."
+        )
+
+    at_grade = students.loc[students["grade"].eq(grade)]
+    if set(at_grade["studentno"]) != set(table.index):
+        raise TransferGapError(
+            f"grade {grade}: the student table holds {len(at_grade):,} rows at "
+            f"the grade but the market has {len(table):,}. The table is the "
+            "applicant pool, so the two are the same set by construction; a "
+            "difference means a market student has no row, or a row has no "
+            "constructed preference list."
+        )
+
+    listed = set(table.index[sources.eq("k_list")])
+    if listed != market.applicants & set(table.index):
+        raise TransferGapError(
+            f"grade {grade}: {len(listed):,} students are labelled k_list but "
+            f"the pre-run holds a request from {len(market.applicants):,} at "
+            "the grade."
+        )
+    flagged = set(at_grade.loc[at_grade["mr_applicant"].eq(1), "studentno"])
+    if flagged != listed:
+        raise TransferGapError(
+            f"grade {grade}: {len(flagged):,} rows are flagged mr_applicant "
+            f"but {len(listed):,} are labelled k_list. The two say the same "
+            "thing and must agree."
+        )
+
+    outside = sorted(set(enrolled["studentno"]) - set(table.index))
+    if outside:
+        raise TransferGapError(
+            f"grade {grade}: {len(outside)} enrolled students are outside the "
+            "market, so the enrolled population is not a subset of the "
+            "applicant one."
+        )
+    seated = seated_at_grade(_postrun_outcomes(postrun), grade)
+    if seated is not None:
+        unclaimed = sorted(
+            set(seated.index) & set(table.index) - set(enrolled["studentno"])
+        )
+        if unclaimed:
+            raise TransferGapError(
+                f"grade {grade}: the post-run seats {len(unclaimed)} market "
+                "students the enrolled table does not hold."
+            )
+
+    no_source = int(sources.eq("feeder_only").sum()) + int(sources.eq("aa_only").sum())
+    report.note(
+        f"The grade-{grade} market is {len(table):,} students: "
+        f"{int(sources.eq('k_list').sum()):,} with their own Main Round list, "
+        f"{int(sources.eq('tk_imputed').sum()):,} whose list is imputed from "
+        f"the TK requests they filed the year before, and {no_source:,} with "
+        "neither, who get their feeder and their attendance-area program. "
+        f"{int(table['promote_eligible'].sum()):,} of them hold an "
+        "auto-promotion claim on one program."
+    )
+
+
+def apply_market_columns(
+    frame: pd.DataFrame, table: pd.DataFrame, *, grade: str
+) -> pd.DataFrame:
+    """Overwrite one table's kindergarten rows with the market construction.
+
+    Rows outside the market and rows at another grade are untouched, so the
+    student table keeps every other grade exactly as the pre-run filed it.
+    """
+    result = frame.copy()
+    for column in table.columns:
+        if column not in result.columns:
+            result[column] = pd.NA
+    selected = result["studentno"].isin(table.index) & result["grade"].eq(grade)
+    if not selected.any():
+        return result
+    aligned = table.reindex(result.loc[selected, "studentno"])
+    for column in table.columns:
+        result.loc[selected, column] = aligned[column].to_numpy()
+        # Writing into a column of pd.NA widens a school ID to float, so
+        # feeder_school would be emitted as "664.0" where every other school
+        # column in the table is "664". Restore the nullable integer.
+        if table[column].dtype == "Int64":
+            result[column] = pd.to_numeric(result[column], errors="coerce").astype(
+                "Int64"
+            )
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 def convert_year(
@@ -1375,18 +2408,34 @@ def convert_year(
 ) -> Report:
     """Convert one school year and write its outputs and gap report."""
     paths = discover_transfer_files(transfer, year)
+    auxiliary = discover_auxiliary_files(transfer, year)
     report = Report(year=year, transfer=str(transfer))
     report.inputs = {role: str(path) for role, path in paths.items()}
+    report.inputs |= {role: str(path) for role, path in auxiliary.items()}
 
     for role, path in paths.items():
         require_readable(path, f"transfer {role} file")
+    require_readable(
+        auxiliary["capacities"],
+        "transfer Main Round capacity file (kindergarten capacity comes from "
+        "it, and its promote counts are the validation gates)",
+    )
+    require_readable(
+        auxiliary["autopromotion"],
+        "transfer TK-to-K auto-promotion list",
+    )
     prerun = _clean_nulls(pd.read_csv(paths["prerun"], low_memory=False))
     postrun = _clean_nulls(pd.read_csv(paths["postrun"], low_memory=False))
     demographics = _clean_nulls(pd.read_csv(paths["demographics"], low_memory=False))
+    capacities = load_mr_capacities(auxiliary["capacities"])
+    promotion = build_promotion_map(auxiliary["autopromotion"], year)
     report.row_counts = {
         "prerun_rows": len(prerun),
         "postrun_rows": len(postrun),
         "demographics_rows": len(demographics),
+        "capacity_rows": len(capacities),
+        "autopromotion_same_site_rows": len(promotion.same_site),
+        "autopromotion_ees_feeder_rows": len(promotion.ees_feeder),
     }
 
     _check_columns(prerun, PRERUN_REQUIRED, PRERUN_OPTIONAL, "Pre-run", report)
@@ -1416,35 +2465,86 @@ def convert_year(
             students[column] = pd.NA
     students = students[list(STUDENT_COLUMNS)]
 
+    report.row_counts["main_round_applicants"] = len(students)
+    report.row_counts["kindergarten_main_round_applicants"] = int(
+        (students["grade"] == "KG").sum()
+    )
+
+    # From 2024-25 the kindergarten applicant pool is not the set of people
+    # who applied: SFUSD promotes TK students into kindergarten, and they hold
+    # a claim on a seat without filing anything. They join the student table
+    # first, so that everything below -- the preference construction, the
+    # enrolled table, the emitted columns -- sees one population.
+    market = define_market(
+        students,
+        prerun,
+        postrun,
+        grade="KG",
+        capacities=capacities,
+        cleaned_dir=cleaned_dir,
+        report=report,
+    )
+    students = add_market_students(
+        students,
+        postrun,
+        demographics,
+        block_indices,
+        market=market,
+        report=report,
+        scenario_name=scenario_name,
+    )
+    table = build_market_table(
+        students,
+        postrun,
+        market=market,
+        year=year,
+        capacities=capacities,
+        promotion=promotion,
+        prior_tk=load_prior_tk_lists(
+            year, transfer=transfer, cleaned_dir=cleaned_dir, report=report
+        ),
+        report=report,
+    )
+    students = apply_market_columns(students, table, grade=market.grade)
+
+    student_columns = [
+        *STUDENT_COLUMNS,
+        *PROMOTION_STUDENT_COLUMNS,
+        *MARKET_STUDENT_COLUMNS,
+    ]
+    for column in student_columns:
+        if column not in students.columns:
+            students[column] = pd.NA
+    students = students[student_columns]
     report.row_counts["students"] = len(students)
+
+    # The enrolled table is a filter of the student table, so the enrolled
+    # population is a subset of the applicant one by construction.
+    enrolled = build_enrolled_table(students, postrun, market=market, report=report)
+    validate_market(table, students, enrolled, postrun, market=market, report=report)
+
+    # Counted after the market is written on, so the promotion columns are
+    # included and the kindergarten preference columns are the emitted ones.
     report.missing(
         "student_table",
         {
             column: int(students[column].isna().sum())
-            for column in STUDENT_COLUMNS
+            for column in student_columns
             if students[column].isna().any()
         },
     )
 
-    kindergarten = students.loc[students["grade"] == "KG"].reset_index(drop=True)
-    report.row_counts["kindergarten_students"] = len(kindergarten)
-    report.note(
-        "enrolled_<year>.csv holds the kindergarten rows of student_<year>.csv. "
-        "That reproduces the checked-in convention: for 2021-22 through 2023-24 "
-        "the enrolled_* file is exactly the KG subset of student_*, not a "
-        "different population."
-    )
-
     outputs: dict[str, pd.DataFrame] = {
         f"student_{year}.csv": students,
-        f"enrolled_{year}.csv": kindergarten,
+        f"enrolled_{year}.csv": enrolled,
     }
 
     for grade, bundle in GRADE_BUNDLES.items():
-        for include_mission_bay, template in (
+        variants = (
             (False, bundle.programs_template),
             (True, bundle.programs_mission_bay_template),
-        ):
+        )
+        for include_mission_bay, template in variants:
             if template is None:
                 continue
             programs = build_program_table(
@@ -1455,6 +2555,7 @@ def convert_year(
                 include_mission_bay=include_mission_bay,
                 gaps=gaps,
                 report=report,
+                capacities=capacities,
             )
             if programs is None:
                 continue
@@ -1462,6 +2563,9 @@ def convert_year(
             report.row_counts[f"programs_{grade}_mb{int(include_mission_bay)}"] = len(
                 programs
             )
+            report.row_counts[
+                f"programs_{grade}_mb{int(include_mission_bay)}_seats"
+            ] = int(pd.to_numeric(programs["capacity"], errors="coerce").sum())
 
     report.note(
         "No school table is emitted. The transfer carries no school "
@@ -1470,12 +2574,35 @@ def convert_year(
         "2023-24 vintage while students and programs are this year's."
     )
     report.note(
+        "Grades 6 and 9 still borrow their capacities from the checked-in "
+        "district tables. The transfer's capacity file covers them, but their "
+        "held seats are a different phenomenon -- invisible K-8 continuers at "
+        "grade 6, Lowell and SOTA admissions at grade 9, both of which "
+        "byPromote also marks -- and neither has been reconciled against the "
+        "district's counts the way kindergarten has. Neither grade has an "
+        "attendance-area school in the transfer at all."
+    )
+    report.note(
         "The pre-run holds exactly one preference list per student: it has no "
         "round column and no student has a repeated rank. Only r1_* preference "
         "columns are emitted, so `rounds: all` resolves to [1] for these "
-        "years. That list is labelled round 1 by assumption, not by evidence -- "
-        "see rounds_applied below for how many applicants also engaged with a "
-        "later round."
+        "years. That list is the main round -- the district confirmed the "
+        "extract is the main-round request file (Levitt, 15 Sep 2026), and the "
+        "post-run corroborates it: every student it seats at a grade either "
+        "holds a pre-run request for that grade or is flagged byPromote. What "
+        "the transfer omits is the later-round requests themselves: see "
+        "rounds_applied below for how many applicants also engaged with a "
+        "later round elsewhere."
+    )
+    report.note(
+        "Kindergarten capacity is the Main Round capacity file's TotalSeats, "
+        "gross. No seat is held back for auto-promotion anywhere in the data. "
+        "The file's OpenSeatsPreRun does net the held seats out, and is "
+        "deliberately unused: a promote who wins a school elsewhere releases "
+        "the held seat back into the same run, so a netted table models a "
+        "market the district never ran. The promotion claim is a run-time "
+        "priority at the feeder program instead, and the data side of it is "
+        "the feeder columns on the student and enrolled tables."
     )
     _report_round_participation(prerun, demographics, report)
 
