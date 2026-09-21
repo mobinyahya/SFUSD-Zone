@@ -478,10 +478,17 @@ class Zones:
 
     def get_studentno_to_zone_dict(self, student_data):
         if self.config["zone-building-blocks"] == "attendance_area":
+            # SFUSD writes a missing attendance area as either blank or 0: the
+            # SY25-26 and SY26-27 post-run extracts carry idSchoolAttendance
+            # == 0 for 61 and 52 rows respectively, where SY24-25 and the
+            # checked-in years use blanks only. 0 is not a school id anywhere
+            # in the data, so treat it as the blank it stands for. Callers
+            # already tolerate a student missing from this map -- see
+            # GuardrailSetup, which falls back to a NaN zone.
             return {
                 studentno: self.area2zone[x["idschoolattendance"]]
                 for studentno, x in student_data.iterrows()
-                if pd.notna(x["idschoolattendance"])
+                if pd.notna(x["idschoolattendance"]) and x["idschoolattendance"] != 0
             }
         elif self.config["zone-building-blocks"] == "block_group":
             return {
