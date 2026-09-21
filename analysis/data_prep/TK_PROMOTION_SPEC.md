@@ -185,9 +185,15 @@ Using 2023-24 for the 24-25 run is explicitly allowed; the general prohibition
 on forward-filling from 2023-24 concerns capacities, school attributes and the
 choice estimate, not TK preference lists.
 
-The attendance-area program enters the **data** only in the `feeder_only` case.
-For every other student the AA append is the policy config's job
-(`add_aa_schools`), which already exists.
+The attendance-area program enters the **data** only in the `feeder_only` and
+`aa_only` cases — that is, only for a TK promote who has neither a K list nor a
+TK list to work from (confirmed 2026-09-21, narrowing an earlier "append for
+everyone under every policy").
+
+For every other student, whether the AA program is appended is decided entirely
+by the policy config's existing `add_aa_schools` setting, which the `#3`/`#4`
+family sets and other policies do not. **Do not enable it anywhere it is not
+already enabled**, and do not append AA in the data for anyone else.
 
 Deduplication matters: 192 of the 341 promote-applicants in 26-27 already rank
 their own feeder, 122 of them first.
@@ -209,11 +215,14 @@ their own feeder, 122 of them first.
 
 These close exactly. Fail the build if they do not.
 
-| Run | `k_list` | `tk_imputed` | `feeder_only` | Total | Post-run K seats |
+| Run | `k_list` | `tk_imputed` | `feeder_only` + `aa_only` | Total | Post-run K seats |
 |---|---|---|---|---|---|
-| 2425 | 3,835 | 21 | 19 | 3,875 | 3,875 |
-| 2526 | 3,400 | 382 | 198 | 3,980 | 3,980 |
-| 2627 | 3,149 | 668 | 179 | 3,996 | 3,996 |
+| 2425 | 3,835 | 21 | 19 (15 + 4) | 3,875 | 3,875 |
+| 2526 | 3,400 | 382 | 198 (194 + 4) | 3,980 | 3,980 |
+| 2627 | 3,149 | 668 | 179 (169 + 10) | 3,996 | 3,996 |
+
+The last column splits by whether the student has a feeder at all: `feeder_only`
+is a promote with no lists, `aa_only` is the handful with no feeder either.
 
 Of the `k_list` students, 0 / 279 / 341 are promotion-eligible and get a feeder
 appended. Of the 40 students in the 24-25 non-applicant group, 32 are
