@@ -24,6 +24,8 @@ import pandas as pd
 import pytest
 import yaml
 
+from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_models_estimates.sh"
 TEST_SETTINGS = REPO_ROOT / "scripts" / "settings" / "models_test.env"
@@ -162,6 +164,7 @@ def test_full_pipeline_tiny(tmp_path):
             "programcodes",
             "rank_basis",
             "submitted_rank",
+            "rank_excluding_promotion",
             "utility_rank",
             "rank",
             "mechanism_rank",
@@ -169,7 +172,11 @@ def test_full_pipeline_tiny(tmp_path):
             "In-Zone Rank",
         }
         assert canonical_columns <= set(assignment_df.columns)
-        assert assignment_df["assignment_schema_version"].eq(2).all()
+        assert (
+            assignment_df["assignment_schema_version"]
+            .eq(ASSIGNMENT_SCHEMA_VERSION)
+            .all()
+        )
         expected_basis = "utility" if label in UTILITY_RUN_LABELS else "listed"
         assert assignment_df["rank_basis"].eq(expected_basis).all()
         basis_rank = assignment_df[
@@ -187,7 +194,13 @@ def test_full_pipeline_tiny(tmp_path):
         assert (
             assignment_df.loc[
                 unassigned,
-                ["rank", "submitted_rank", "utility_rank", "mechanism_rank"],
+                [
+                    "rank",
+                    "submitted_rank",
+                    "rank_excluding_promotion",
+                    "utility_rank",
+                    "mechanism_rank",
+                ],
             ]
             .isna()
             .all(axis=None)

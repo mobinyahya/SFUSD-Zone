@@ -710,6 +710,28 @@ class Students:
             language_sibling[i, indices] = 1
         return language_sibling
 
+    def promotion(self, program_id2index):
+        """Return a (students x programs) 0/1 matrix of TK-to-K promotion claims.
+
+        A student promoted from TK holds a claim on exactly one program -- the
+        same pathway at the same school -- so at most one cell per row is set.
+        Keyed on the ``promote`` column rather than on ``feeder_school``
+        because the loader filters ``promote`` for ``include_mission_bay`` and
+        does not reconstruct the program ID. Registry years before 2024-25
+        have no such column and get an all-zero matrix.
+        """
+        promotion = np.zeros((self.n, self.num_programs), dtype=int)
+        if "promote" not in self.student_data.columns:
+            return promotion
+        for i, value in enumerate(self.student_data["promote"]):
+            indices = [
+                program_id2index[program_id] - 1
+                for program_id in self._programs_to_list(value)
+                if program_id in program_id2index
+            ]
+            promotion[i, indices] = 1
+        return promotion
+
     def msf(self, school2indices):
         msf_indicator = np.zeros((self.n, self.num_programs), dtype=int)
         for i, ms in enumerate(self.student_data.msf):

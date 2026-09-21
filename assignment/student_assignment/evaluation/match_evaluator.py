@@ -32,6 +32,7 @@ from ..choice_ranks import (
     cumulative_choice_rates,
     listed_preference_rank_matrix,
     normalize_assignment_ranks,
+    promotion_first_choice_ranks,
     ranks_for_matches,
 )
 from ..data_interfaces.programs import Programs
@@ -725,7 +726,12 @@ class MatchEvaluator:
             .reindex(self.student_data["studentno"])
             .to_numpy()
         )
-        ranks = ranks_for_matches(rank_matrix, matches)
+        ranks = promotion_first_choice_ranks(
+            self.student_data,
+            self._program_number_by_id,
+            matches,
+            ranks_for_matches(rank_matrix, matches),
+        )
         rank_by_student = pd.Series(ranks, index=self.student_data["studentno"])
         return (
             self.assignments["studentno"]

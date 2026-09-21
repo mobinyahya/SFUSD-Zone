@@ -17,6 +17,7 @@ from ..choice_ranks import (
     LISTED_RANK_BASIS,
     UTILITY_RANK_BASIS,
     normalize_assignment_ranks,
+    promotion_first_choice_ranks,
     ranks_for_matches,
     ranks_from_preference_order,
 )
@@ -1659,10 +1660,11 @@ class MarketGenerator(SchoolChoiceMarket):
     def _choice_rank_columns(self, match: np.ndarray, policy: str):
         """Return policy-independent listed or utility ranks for each match."""
         student_count = len(match)
-        submitted_rank = ranks_for_matches(
+        listed_rank = ranks_for_matches(
             self.students.selected_preference_rank_matrix(),
             match,
         )
+        submitted_rank = self._promotion_adjusted_ranks(match, listed_rank)
         utility_rank = np.full(student_count, np.nan)
         if self.config["utility-model"]["enable"]:
             utility_rank = ranks_from_preference_order(
@@ -1670,17 +1672,41 @@ class MarketGenerator(SchoolChoiceMarket):
                 match,
             )
             if policy != "real_match":
-                return UTILITY_RANK_BASIS, submitted_rank, utility_rank, utility_rank
-        return LISTED_RANK_BASIS, submitted_rank, utility_rank, submitted_rank
+                return (
+                    UTILITY_RANK_BASIS,
+                    submitted_rank,
+                    listed_rank,
+                    utility_rank,
+                    utility_rank,
+                )
+        return (
+            LISTED_RANK_BASIS,
+            submitted_rank,
+            listed_rank,
+            utility_rank,
+            submitted_rank,
+        )
+
+    def _promotion_adjusted_ranks(self, matches, listed_ranks) -> np.ndarray:
+        """Apply the promotion first-choice convention to source ranks."""
+        return promotion_first_choice_ranks(
+            self.students.student_data,
+            self.programs.indices,
+            matches,
+            listed_ranks,
+        )
 
     def _source_submitted_ranks(self, assignment_df: pd.DataFrame) -> pd.Series:
         """Return source ranks aligned to assignment rows by student identity."""
         match_by_student = assignment_df.set_index("studentno")["programno"]
         student_ids = self.students.student_data.index
         matches = match_by_student.reindex(student_ids).to_numpy()
-        source_ranks = ranks_for_matches(
-            self.students.selected_preference_rank_matrix(),
+        source_ranks = self._promotion_adjusted_ranks(
             matches,
+            ranks_for_matches(
+                self.students.selected_preference_rank_matrix(),
+                matches,
+            ),
         )
         rank_by_student = pd.Series(source_ranks, index=student_ids)
         return (
@@ -1779,6 +1805,7 @@ class MarketGenerator(SchoolChoiceMarket):
             "rank",
             "rank_basis",
             "submitted_rank",
+            "rank_excluding_promotion",
             "utility_rank",
             "mechanism_rank",
             "designation",
@@ -1973,13 +2000,14 @@ class MarketGenerator(SchoolChoiceMarket):
         assignment_df["programcodes"] = [
             self.programs.codes.get(x, np.nan) for x in match
         ]
-        rank_basis, submitted_rank, utility_rank, choice_rank = (
+        rank_basis, submitted_rank, listed_rank, utility_rank, choice_rank = (
             self._choice_rank_columns(match, policy_data.name)
         )
         mechanism_rank = np.asarray(in_zone_rank, dtype=float).copy()
         mechanism_rank[match == 0] = np.nan
         assignment_df["rank_basis"] = rank_basis
         assignment_df["submitted_rank"] = submitted_rank
+        assignment_df["rank_excluding_promotion"] = listed_rank
         assignment_df["utility_rank"] = utility_rank
         assignment_df["rank"] = choice_rank
         assignment_df["mechanism_rank"] = mechanism_rank

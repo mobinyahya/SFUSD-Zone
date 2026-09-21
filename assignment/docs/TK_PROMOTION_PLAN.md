@@ -505,3 +505,94 @@ target and it is not an identification rule; the spec's §6 rule is.
    to be listed here was withdrawn.
 9. Policy 5 (§5.3) and the utility-model flag (§5.4), which are independent of
    all of the above.
+
+---
+
+## 9. What landed, and where it diverges from the plan above
+
+Implemented 2026-09-21. Read this section before acting on §2–§8: five things
+came out differently, and three of them were Kumar's call.
+
+### 9.1 The priority is applied after the language mask, not in the weights loop
+
+§2.2 puts the `promote` branch beside `sibling` inside the kindergarten
+weights loop. That is wrong, and the plan missed it. Ten lines further down,
+`_get_kg_language_program_priorities` **replaces** rather than adds:
+
+```python
+priorities = np.multiply(lp_priorities, lp_mask) + np.multiply(ge_priorities, 1 - lp_mask)
+```
+
+so at every citywide language program the general-education priorities — and
+with them the promote boost — are discarded. Plenty of feeders are exactly
+that: on 2026-27 under policy #3 it cost 14 promotes their feeder, every one
+of them at 537-SN, 537-SE or 509-CE, and 9 more were pushed off their list
+entirely.
+
+The boost now lives in `PriorityGenerator._get_promotion_priorities`, applied
+after the mask beside `_get_attendance_area_priorities`, which had the same
+requirement and solved it the same way. §2.4 is unaffected: this is still
+inside `priorities`, so the zone mask still blocks an out-of-zone feeder.
+
+With the fix, §4.3's invariant holds exactly under policy #3 — of 1,062
+promotes in the market, 727 land at their feeder and **none** is assigned
+below it or off their list.
+
+The `else: raise` §2.2 recommends for the kindergarten loop is in, exempting
+`language-programs` and `promote` as the two keys handled after it. The
+grade-6 loop skips `promote` explicitly; grade 9 reads its weights by key and
+never saw the problem.
+
+### 9.2 §3.1's convention is narrower than decided
+
+**Kumar, 2026-09-21, superseding §3.1:** `submitted_rank = 1` only when the
+promote *filed no Main Round request* — `mr_applicant = 0`, equivalently
+`pref_source != k_list`, the two agree on every row of all three years. A
+promote who applied and was assigned their feeder keeps the rank they listed
+it at, because for them the feeder really was a lower choice.
+
+This is the same principle §3.1's last paragraph already settled on the data
+side: an appended program counts as a submitted choice only when the list
+would otherwise not be theirs. It lives in
+`choice_ranks.promotion_first_choice_ranks`, shared by the simulator,
+`MatchEvaluator` and `extract_real_assignment` so the three cannot drift.
+
+`rank_excluding_promotion` carries the unadjusted listed rank beside it.
+
+### 9.3 `ASSIGNMENT_SCHEMA_VERSION` is 3
+
+Confirmed, not dodged: the new column is canonical and validated, so every
+assignment CSV saved under 2 is now rejected rather than migrated. Validation
+also enforces `submitted_rank <= rank_excluding_promotion`, since honouring a
+claim can only move a rank to 1.
+
+### 9.4 No 2024-25 gate — §6.2 was declined
+
+**Kumar, 2026-09-21:** leave 2024-25 boosted. The 607 flagged students get the
+priority even though the district adopted auto-promotion in April 2025, after
+that round ran. `assignment/configs/sfusd_2425.yaml` says so in a comment.
+Anyone using 2024-25 as the pre-promotion baseline needs to know this.
+
+### 9.5 Every policy config carries `promote: 1024`
+
+Not just the #3/#4 family: 78 configs, everything under `policy_configs/`
+with a kindergarten weight map. It is a no-op for 1516–2324, which have no
+`promote` column. The two grade-6/9 configs are untouched.
+
+### 9.6 Also landed
+
+* **Policy 5 (§5.3)** — `neighborhood_assignment_#5.yaml`, on a new
+  `aa_ge_only` preference flag. `remove_non_aa_or_citywide` was not enough:
+  it keeps citywide programs and the language pathways at the AA school, and
+  §5.3 wants those gone too.
+* **§5.4** — `sfusd_2425.yaml`, `sfusd_2526.yaml`, `sfusd_2627.yaml`, each
+  with `utility-model.enable: false` and the #3/#4/5 subconfigs.
+
+### 9.7 Still open
+
+* **§3.2**, the baseline question. Untouched, and it still blocks quoting a
+  match rate from these years.
+* **§4.3** as a checked-in `real_data` test. The invariant was verified by
+  hand on 2026-27 (§9.1) but is not in the suite.
+* **§6.1**, the Main Round capacity files. Unwired, so no capacity-sensitive
+  figure from these years should leave the room.

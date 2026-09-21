@@ -34,6 +34,7 @@ def _listed_assignments(
             "programcodes": programcodes,
             "rank_basis": "listed",
             "submitted_rank": submitted_rank,
+            "rank_excluding_promotion": submitted_rank,
             "utility_rank": np.nan,
             "rank": submitted_rank,
             "mechanism_rank": mechanism_rank,
@@ -883,11 +884,12 @@ def test_full_evaluator_can_replace_assignments_without_reloading_sources(tmp_pa
             "programno",
             "programcodes",
             "submitted_rank",
+            "rank_excluding_promotion",
             "rank",
             "mechanism_rank",
             "In-Zone Rank",
         ],
-    ] = [2, "202-GE-KG", np.nan, np.nan, 2, 2]
+    ] = [2, "202-GE-KG", np.nan, np.nan, np.nan, 2, 2]
 
     evaluator.update_assignments(updated_assignments)
     fresh_evaluator = _make_full_evaluator(
@@ -964,6 +966,7 @@ def test_full_evaluator_rejects_designated_unassigned_student(tmp_path):
         0,
         [
             "submitted_rank",
+            "rank_excluding_promotion",
             "rank",
             "mechanism_rank",
             "In-Zone Rank",

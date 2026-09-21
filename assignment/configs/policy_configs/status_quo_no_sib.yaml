@@ -11,6 +11,7 @@ policies:
 - Con1
 
 priority-weights:
+  promote: 1024
   ctip: 8
   zone: 4
   language-programs:

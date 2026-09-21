@@ -29,12 +29,14 @@ class PreferenceGenerator:
         remove_non_aa_or_citywide = self.market.config.get(
             "remove_non_aa_or_citywide", False
         )
+        aa_ge_only = self.market.config.get("aa_ge_only", False)
         cache_key = (
             cache_context,
             designate,
             add_aa_schools,
             drop_below_aa,
             remove_non_aa_or_citywide,
+            aa_ge_only,
         )
         if cache_context is not None and cache_key in self._real_preferences_cache:
             prefs, pref_length = self._real_preferences_cache[cache_key]
@@ -48,6 +50,8 @@ class PreferenceGenerator:
 
         self.pref_length = np.count_nonzero(prefs, axis=1)
 
+        if aa_ge_only:
+            prefs = self._collapse_to_attendance_area_ge(prefs)
         if add_aa_schools:
             prefs = self._add_attendance_area_schools_to_preferences(prefs)
         if drop_below_aa:
@@ -63,6 +67,29 @@ class PreferenceGenerator:
                 self.pref_length.copy(),
             )
         return prefs
+
+    def _collapse_to_attendance_area_ge(self, prefs: np.ndarray) -> np.ndarray:
+        """Replace every list with the student's attendance-area GE program.
+
+        Neighborhood assignment with no choice: what a student ranked, and
+        whether they ranked a language pathway, stops mattering. Students
+        whose attendance area has no GE program at this grade are left with an
+        empty list, exactly as they would be if they had ranked nothing.
+        """
+        collapsed = np.zeros_like(prefs)
+        attendance_areas = self.market.students.attendance_area
+        grade = self.market.config["grade"]
+
+        for student_idx, studentno in self.market.students.idx2studentno.items():
+            attendance_area = attendance_areas.get(studentno, 0)
+            program_idx = self.market.programs.indices.get(
+                f"{attendance_area}-GE-{grade}"
+            )
+            if program_idx is not None:
+                collapsed[student_idx, 0] = program_idx
+
+        self.pref_length = np.count_nonzero(collapsed, axis=1)
+        return collapsed
 
     def _add_attendance_area_schools_to_preferences(
         self, prefs: np.ndarray
@@ -551,6 +578,8 @@ class PreferenceGenerator:
             eligible = np.logical_and(eligible, aa_or_citywide_eligible)
         prefs = self._truncate_utility_model_preferences(eligible)
         self.pref_length = np.count_nonzero(prefs, axis=1)
+        if self.market.config.get("aa_ge_only", False):
+            prefs = self._collapse_to_attendance_area_ge(prefs)
         if self.market.config.get("add_aa_schools", False):
             prefs = self._add_attendance_area_schools_to_preferences(prefs)
         if self.market.config.get("drop_below_aa", False):

@@ -26,6 +26,7 @@ policies:
 
 
 priority-weights:
+  promote: 1024
   ctip: 4
   zone: 2
   distance: 32

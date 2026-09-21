@@ -293,6 +293,33 @@ def test_saved_rank_uses_source_listed_position_not_filtered_mechanism_rank(tmp_
     assert assignment.loc[1, ["rank", "mechanism_rank"]].isna().all()
 
 
+def test_saved_rank_counts_an_honoured_promotion_as_a_first_choice(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    # Student 1 is a TK promote who filed no Main Round request, so the
+    # conversion appended their feeder at position 4; student 2 is not.
+    market.students.student_data = market.students.student_data.assign(
+        promote=[["101-GE-KG"], []],
+        mr_applicant=[0, 1],
+    )
+    market.students.selected_preference_rank_matrix.return_value = np.array(
+        [[4.0], [1.0]]
+    )
+
+    assignment = market._save_assignment(
+        np.array([[1], [0]]),
+        Policy("zones", 0, 0, "STB"),
+        0,
+        np.array([1, 0]),
+        np.array([1, 2]),
+        np.zeros(2),
+    )
+
+    assert assignment.loc[0, "submitted_rank"] == 1
+    assert assignment.loc[0, "rank"] == 1
+    assert assignment.loc[0, "rank_excluding_promotion"] == 4
+    assert assignment.loc[1, ["submitted_rank", "rank_excluding_promotion"]].isna().all()
+
+
 def test_saved_utility_rank_is_independent_from_submitted_rank(tmp_path):
     market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
     market.config["utility-model"]["enable"] = True

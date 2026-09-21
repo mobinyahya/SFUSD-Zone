@@ -17,6 +17,7 @@ policies:
 - 6zone-1
 
 priority-weights:
+  promote: 1024
   ctip: 8
   sibling: 16
   zone: 4

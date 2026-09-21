@@ -312,6 +312,11 @@ class PriorityGenerator:
 
                     distances = distances[prog_list].to_numpy()
                     priorities += v * self._get_distance_priority(distances)
+            elif k not in {"language-programs", "promote"}:
+                # Those two are handled after this loop. Everything else with
+                # no branch would otherwise be a silent no-op: a weight in the
+                # config that models nothing.
+                raise ValueError(f"Unknown priority category '{k}'.")
 
         # mask for language programs must happen last
         # TODO: make this compatible with zone restriction
@@ -323,9 +328,31 @@ class PriorityGenerator:
                 sibling,
             )
 
+        priorities += self._get_promotion_priorities()
         priorities += self._get_attendance_area_priorities()
         self._policy_priorities_cache[cache_key] = priorities
         return priorities
+
+    def _get_promotion_priorities(self) -> np.ndarray:
+        """Return the configured boost at each student's TK-to-K feeder.
+
+        Applied after the language-program mask, which *replaces* rather than
+        adds to the priorities at every citywide language program. Plenty of
+        feeders are exactly that -- 537-SN, 509-CE -- and the claim is to one
+        program, so it has to survive the mask the way the attendance-area
+        boost below does.
+
+        It is applied inside `priorities`, though, not to the return value of
+        get_priorities_*: the zone mask there is multiplicative, so an
+        out-of-zone feeder is zeroed and then penalised however large the
+        boost was. Under a zone policy the block wins and the promote falls
+        through to the attendance-area append, which is the intended policy
+        effect rather than something to tune around.
+        """
+        weight = self.market.config["priority-weights"].get("promote", 0)
+        if not weight:
+            return np.zeros((self.market.n, self.market.num_programs))
+        return weight * self.market.students.promotion(self.market.programs.indices)
 
     def _get_attendance_area_priorities(self) -> np.ndarray:
         """Return the configured priority boost at each student's AA GE program."""
@@ -720,6 +747,10 @@ class PriorityGenerator:
                     weights, sibling, msf, ctip
                 )
             elif category == "remaining":
+                continue
+            elif category == "promote":
+                # TK-to-K auto-promotion is a kindergarten rule; grade 6's
+                # reserved seats are K-8 continuers who never reach our files.
                 continue
             else:
                 raise ValueError(f"Unknown priority category '{category}'.")

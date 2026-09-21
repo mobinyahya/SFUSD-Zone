@@ -19,6 +19,7 @@ policies:
 - 18zone_2
 
 priority-weights:
+  promote: 1024
   ctip: 8
   # sibling: 16 # always disabled as suggested by SFUSD
   zone: 4

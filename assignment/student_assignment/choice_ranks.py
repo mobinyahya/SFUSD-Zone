@@ -9,7 +9,13 @@ import pandas as pd
 from loaders import normalize_grade
 
 
-ASSIGNMENT_SCHEMA_VERSION = 2
+#: 3 added ``rank_excluding_promotion``, and with it the convention that a
+#: TK-to-K promote who filed no Main Round request counts their feeder as a
+#: first choice. Assignments saved under 2 are not readable rather than
+#: migrated: carrying both columns is the whole point, so back-filling one
+#: from the other would quietly report the convention where it was never
+#: applied -- on exactly the top-choice metric these scenarios are quoted on.
+ASSIGNMENT_SCHEMA_VERSION = 3
 LISTED_RANK_BASIS = "listed"
 UTILITY_RANK_BASIS = "utility"
 RANK_BASES = {LISTED_RANK_BASIS, UTILITY_RANK_BASIS}
@@ -17,6 +23,7 @@ CANONICAL_RANK_COLUMNS = {
     "assignment_schema_version",
     "rank_basis",
     "submitted_rank",
+    "rank_excluding_promotion",
     "utility_rank",
     "mechanism_rank",
     "rank",
@@ -103,6 +110,9 @@ def normalize_assignment_ranks(
         result["assignment_schema_version"] = ASSIGNMENT_SCHEMA_VERSION
         result["rank_basis"] = LISTED_RANK_BASIS
         result["submitted_rank"] = source_ranks.where(assigned)
+        # Legacy assignments predate TK-to-K promotion, so there is no claim
+        # for the convention to honour and the two columns coincide.
+        result["rank_excluding_promotion"] = result["submitted_rank"]
         result["utility_rank"] = np.nan
         result["rank"] = result["submitted_rank"]
         result["mechanism_rank"] = pd.to_numeric(
@@ -223,6 +233,49 @@ def ranks_for_matches(rank_matrix: np.ndarray, matches: np.ndarray) -> np.ndarra
     return ranks
 
 
+def promotion_first_choice_ranks(
+    student_data: pd.DataFrame,
+    program_indices: Mapping[str, int],
+    matches: np.ndarray,
+    listed_ranks: np.ndarray,
+) -> np.ndarray:
+    """Record an honoured TK-to-K promotion claim as a first choice.
+
+    From 2024-25 SFUSD promotes TK students into kindergarten, and the
+    conversion puts the feeder program on every promote's list -- appended at
+    the end when they did not rank it themselves. A promote who filed no Main
+    Round request (``mr_applicant = 0``) ranked nothing else, so landing on
+    the feeder is not a fall-back to their sixth choice; that list is not one
+    they submitted. A promote who *did* apply keeps the rank they listed the
+    feeder at, because for them the feeder really was a lower choice.
+
+    Registry years whose student table carries neither column -- 1516 through
+    2324 -- are returned unchanged.
+    """
+    ranks = np.asarray(listed_ranks, dtype=float).copy()
+    if not {"promote", "mr_applicant"} <= set(student_data.columns):
+        return ranks
+    matches = np.asarray(matches)
+    if matches.shape != (len(student_data),) or ranks.shape != matches.shape:
+        raise ValueError("Matches and ranks do not align with the student rows.")
+
+    # A missing mr_applicant is read as "applied": the convention only ever
+    # improves a reported rank, so the silent direction has to be off.
+    applicant = pd.to_numeric(student_data["mr_applicant"], errors="coerce")
+    for row, (claim, applied, match) in enumerate(
+        zip(student_data["promote"], applicant, matches, strict=True)
+    ):
+        if applied != 0 or not match > 0:
+            continue
+        claimed = {
+            program_indices.get(program_id)
+            for program_id in _list_value(claim, "promote")
+        }
+        if int(match) in claimed:
+            ranks[row] = 1.0
+    return ranks
+
+
 def ranks_from_preference_order(
     preferences: np.ndarray, matches: np.ndarray
 ) -> np.ndarray:
@@ -265,6 +318,7 @@ def _validate_canonical_rank_columns(
     for column in (
         "rank",
         "submitted_rank",
+        "rank_excluding_promotion",
         "utility_rank",
         "mechanism_rank",
         "In-Zone Rank",
@@ -299,11 +353,18 @@ def _validate_canonical_rank_columns(
     rank_columns = [
         "rank",
         "submitted_rank",
+        "rank_excluding_promotion",
         "utility_rank",
         "mechanism_rank",
         "In-Zone Rank",
     ]
     inconsistent |= (~assigned) & assignments[rank_columns].notna().any(axis=1)
+    # Honouring a promotion claim can only move a rank to 1, never away from
+    # it, so the two columns cannot cross. This is what catches the pair being
+    # written the wrong way round, or one of them missing the convention.
+    submitted = assignments["submitted_rank"]
+    excluding = assignments["rank_excluding_promotion"]
+    inconsistent |= submitted.notna() & excluding.notna() & submitted.gt(excluding)
     if source_ranks is not None:
         inconsistent |= ~_nullable_equal(assignments["submitted_rank"], source_ranks)
     if inconsistent.any():

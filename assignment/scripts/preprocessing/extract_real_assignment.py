@@ -21,6 +21,7 @@ from assignment.student_assignment.choice_ranks import (
     LISTED_RANK_BASIS,
     listed_preference_rank_matrix,
     normalize_assignment_ranks,
+    promotion_first_choice_ranks,
     ranks_for_matches,
 )
 
@@ -223,16 +224,23 @@ def extract_real_assignment(
     preference_columns = ["r1_ranked_idschool", "r1_programs", "grade"]
     if "r1_listed_ranks" in df_students:
         preference_columns.append("r1_listed_ranks")
-    submitted_rank = ranks_for_matches(
+    listed_rank = ranks_for_matches(
         listed_preference_rank_matrix(
             df_students[preference_columns],
             program_lookup,
         ),
         assignment["programno"].to_numpy(),
     )
+    submitted_rank = promotion_first_choice_ranks(
+        df_students,
+        program_lookup,
+        assignment["programno"].to_numpy(),
+        listed_rank,
+    )
     assignment["assignment_schema_version"] = ASSIGNMENT_SCHEMA_VERSION
     assignment["rank_basis"] = LISTED_RANK_BASIS
     assignment["submitted_rank"] = submitted_rank
+    assignment["rank_excluding_promotion"] = listed_rank
     assignment["utility_rank"] = np.nan
     assignment["rank"] = submitted_rank
     assignment["mechanism_rank"] = ranks.mask(~assigned)
@@ -250,6 +258,7 @@ def extract_real_assignment(
         "programcodes",
         "rank_basis",
         "submitted_rank",
+        "rank_excluding_promotion",
         "utility_rank",
         "rank",
         "mechanism_rank",

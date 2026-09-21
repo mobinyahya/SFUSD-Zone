@@ -1,0 +1,26 @@
+# SFUSD 26-27 transfer: the TK-to-K promotion policies.
+#
+# utility-model is off for every transfer year. No choice estimate covers
+# these cohorts -- the 2023-24 estimate is a per-student matrix covering 0.9%
+# of 2024-25 and none of the other two -- so enabling it would forward-fill
+# preferences the conversion deliberately did not.
+
+data:
+  scenario: sfusd-2627
+  overrides: {}
+iterations:
+  start: 0
+  end: 15
+paths:
+  assignment-folder: ./assignment_output/assignments/sfusd_2627/
+random-seed: 2023
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- distance_05_1_2+reserves_05frl_#3
+- distance_05_1_2+reserves_05frl_#4
+- neighborhood_assignment_#5
+utility-model:
+  enable: false
+  list-length: "7"

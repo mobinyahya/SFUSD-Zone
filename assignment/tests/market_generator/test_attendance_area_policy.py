@@ -401,6 +401,60 @@ def test_remove_non_aa_or_citywide_filters_designation_options():
     np.testing.assert_array_equal(generator.pref_length, [1, 1, 1])
 
 
+def test_aa_ge_only_collapses_every_list_to_the_attendance_area_program():
+    """Policy #5: neighborhood assignment, no choice."""
+    initial_preferences = np.array(
+        [
+            [2, 4, 0, 0],
+            [3, 2, 0, 0],
+            [4, 0, 0, 0],
+        ]
+    )
+    market = _preference_market(
+        {
+            "aa_ge_only": True,
+            "add_aa_schools": True,
+            "drop_below_aa": True,
+            "grade": "KG",
+        },
+        initial_preferences,
+    )
+    generator = PreferenceGenerator(market)
+
+    preferences = generator.initialize_real_preferences(designate=False)
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                # The citywide school and the language pathway both go; what
+                # is left is the attendance-area GE program alone.
+                [1, 0, 0, 0],
+                [3, 0, 0, 0],
+                # No attendance-area GE program, so no list at all.
+                [0, 0, 0, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [1, 1, 0])
+
+
+def test_aa_ge_only_defaults_to_false():
+    initial_preferences = np.array(
+        [
+            [2, 4, 0, 0],
+            [3, 2, 0, 0],
+            [4, 0, 0, 0],
+        ]
+    )
+    market = _preference_market({"grade": "KG"}, initial_preferences)
+    generator = PreferenceGenerator(market)
+
+    preferences = generator.initialize_real_preferences(designate=False)
+
+    np.testing.assert_array_equal(preferences, initial_preferences)
+
+
 def test_aa_boost_applies_only_to_attendance_area_ge_program():
     students = SimpleNamespace(
         attendance_area=pd.Series({10: 101, 11: 102, 12: 999}),

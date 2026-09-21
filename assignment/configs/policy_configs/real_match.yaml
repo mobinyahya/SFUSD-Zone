@@ -10,6 +10,7 @@ policies:
 - real_match
 
 priority-weights:
+  promote: 1024
   ctip: 4
   sibling: 16
   zone: 2
