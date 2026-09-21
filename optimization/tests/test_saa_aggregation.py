@@ -113,9 +113,7 @@ def test_the_legacy_key_name_still_loads_saved_configs():
     Rejecting the old spelling would make every archived run unreadable, so it
     is mapped onto the current field instead.
     """
-    legacy = optimization_config_from_dict(
-        _saa_config(saa_disaggregate_cuts=False)
-    )
+    legacy = optimization_config_from_dict(_saa_config(saa_disaggregate_cuts=False))
     assert legacy.saa_multicut is False
     # An explicit current-name entry wins over the legacy one.
     both = optimization_config_from_dict(

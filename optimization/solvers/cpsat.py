@@ -785,9 +785,7 @@ class _CpSatSolver(Solver):
                 reward_vars.append(var)
                 reward_weights.append(weight)
 
-        self._add_access_inequalities(
-            m, problem, x, access_vars, access_joints
-        )
+        self._add_access_inequalities(m, problem, x, access_vars, access_joints)
 
         objective = total + round(reward_constant * scale)
         if reward_vars:

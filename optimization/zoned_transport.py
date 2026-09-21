@@ -236,9 +236,9 @@ def _solve_zoned_transport(
                 existing = access.get(key)
                 if existing is not None:
                     return existing
-                shared = problem.candidate_zones(student_node) & problem.candidate_zones(
-                    school_node
-                )
+                shared = problem.candidate_zones(
+                    student_node
+                ) & problem.candidate_zones(school_node)
                 joint = []
                 for zone in sorted(shared):
                     both = model.addVar(
@@ -257,9 +257,7 @@ def _solve_zoned_transport(
                 access[key] = variable
                 return variable
 
-            seats: dict[str, list] = {
-                program_id: [] for program_id in program_by_id
-            }
+            seats: dict[str, list] = {program_id: [] for program_id in program_by_id}
             assignment_rows = 0
             for student in students:
                 share = []
@@ -290,8 +288,7 @@ def _solve_zoned_transport(
                 if not variables:
                     continue
                 capacity_rows[program_id] = model.addConstr(
-                    gp.quicksum(variables)
-                    <= float(program_by_id[program_id].capacity),
+                    gp.quicksum(variables) <= float(program_by_id[program_id].capacity),
                     name=f"capacity_{program_id}",
                 )
 
@@ -329,9 +326,7 @@ def _solve_zoned_transport(
                 "zoned_transport_workers": int(workers),
                 "zoned_transport_solve_seconds": time.perf_counter() - started,
             }
-    return ZonedTransportBound(
-        objective=objective, prices=prices, metadata=metadata
-    )
+    return ZonedTransportBound(objective=objective, prices=prices, metadata=metadata)
 
 
 # ---------------------------------------------------------------------- #

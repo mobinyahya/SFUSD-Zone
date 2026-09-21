@@ -311,4 +311,3 @@ def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
     assert problem.centroids == [0, 2]
     assert problem.max_distance == 3.0
     assert problem.candidate_zones(1) == {0}
-

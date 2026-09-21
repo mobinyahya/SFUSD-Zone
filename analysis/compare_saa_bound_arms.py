@@ -63,7 +63,9 @@ def load(root: Path) -> pd.DataFrame:
                 "iterations": final.get("saa_iteration_count"),
                 "termination": final.get("saa_termination_reason"),
                 # Did the solver ever prove anything better than the constant?
-                "best_iteration_bound": min(iteration_bounds) if iteration_bounds else None,
+                "best_iteration_bound": min(iteration_bounds)
+                if iteration_bounds
+                else None,
                 "cuts_total": final.get("saa_cuts_total"),
             }
         )
@@ -86,9 +88,21 @@ def main() -> None:
     table = table.sort_values(["centroid", "bound", "cuts", "card", "tri"])
 
     columns = [
-        "centroid", "bound", "cuts", "card", "tri", "declared_constant",
-        "reported_upper_bound", "incumbent", "gap", "gap_pct", "logsum_welfare",
-        "cliques_added", "triples_added", "access_pairs", "termination",
+        "centroid",
+        "bound",
+        "cuts",
+        "card",
+        "tri",
+        "declared_constant",
+        "reported_upper_bound",
+        "incumbent",
+        "gap",
+        "gap_pct",
+        "logsum_welfare",
+        "cliques_added",
+        "triples_added",
+        "access_pairs",
+        "termination",
     ]
     with pd.option_context("display.width", 200, "display.max_columns", None):
         print(table[columns].to_string(index=False))
@@ -110,9 +124,7 @@ def main() -> None:
     if (plain["bound"] == "first_choice").any():
         plain = plain[plain["bound"] == "first_choice"]
     baseline = plain.drop_duplicates("centroid").set_index("centroid")
-    label = (
-        baseline["bound"].iloc[0] if len(baseline) else "?"
-    )
+    label = baseline["bound"].iloc[0] if len(baseline) else "?"
     print(f"\nChange against the {label} + aggregated, no-inequalities baseline:")
     for _, row in table.iterrows():
         if row["centroid"] not in baseline.index:

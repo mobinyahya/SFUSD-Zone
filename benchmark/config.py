@@ -383,8 +383,7 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     } or (
         # Both DW welfare objectives read the assignment-side market; the
         # boundary objective needs no market at all.
-        config.strategy == "dantzig_wolfe"
-        and config.dw_objective != "boundary"
+        config.strategy == "dantzig_wolfe" and config.dw_objective != "boundary"
     )
     roles.extend(
         role

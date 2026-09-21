@@ -68,7 +68,11 @@ def valid_optimization_result(task: BenchmarkTask, execution: ExecutionConfig) -
         return False
     if manifest.get("schema_version") != SCHEMA_VERSION:
         return False
-    if manifest.get("phase") in {"optimization_error", "metrics_error", "visualization_error"}:
+    if manifest.get("phase") in {
+        "optimization_error",
+        "metrics_error",
+        "visualization_error",
+    }:
         if execution.rerun_failed:
             return False
     if manifest.get("status") == "ERROR" and execution.rerun_failed:

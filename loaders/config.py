@@ -523,7 +523,9 @@ def _validate_source_ref(value: Any, label: str, *, partial: bool = False) -> No
             raise ValueError(f"Direct source {label}.root must be a root name.")
         if "identity" in value and value["identity"] not in _IDENTITY_MODES:
             expected = ", ".join(sorted(_IDENTITY_MODES))
-            raise ValueError(f"Direct source {label}.identity must be one of {expected}.")
+            raise ValueError(
+                f"Direct source {label}.identity must be one of {expected}."
+            )
         if "classification" in value and not isinstance(value["classification"], str):
             raise ValueError(f"Direct source {label}.classification must be a string.")
         if "geography_vintage" in value:

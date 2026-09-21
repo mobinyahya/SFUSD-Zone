@@ -53,9 +53,7 @@ def _welfare_bound(
         problem,
         contiguity_model=contiguity_model,
         workers=int(options.get("zoned_transport_workers", 1)),
-        centroid_neighbor_radius=int(
-            solver_options.get("centroid_neighbor_radius", 0)
-        ),
+        centroid_neighbor_radius=int(solver_options.get("centroid_neighbor_radius", 0)),
     )
     return bound.objective, dict(bound.metadata)
 

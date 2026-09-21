@@ -299,7 +299,10 @@ class ZoneRedraw:
         territory = by_label[pair[0]].nodes | by_label[pair[1]].nodes
         if deadline - start <= 0:
             return RedrawResult(
-                "TIME_LIMIT", pair, base, territory=len(territory),
+                "TIME_LIMIT",
+                pair,
+                base,
+                territory=len(territory),
                 tolerance=self.tolerance,
             )
 
@@ -318,7 +321,10 @@ class ZoneRedraw:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return RedrawResult(
-                "TIME_LIMIT", pair, base, territory=len(built.territory),
+                "TIME_LIMIT",
+                pair,
+                base,
+                territory=len(built.territory),
                 tolerance=self.tolerance,
             )
         solver = cp_model.CpSolver()
@@ -337,14 +343,22 @@ class ZoneRedraw:
         allowance = built.allowance_units / self.objective_scale
         if status == "INFEASIBLE":
             return RedrawResult(
-                "INFEASIBLE", pair, base, bound=-math.inf,
-                territory=len(built.territory), wall_time=wall,
+                "INFEASIBLE",
+                pair,
+                base,
+                bound=-math.inf,
+                territory=len(built.territory),
+                wall_time=wall,
                 tolerance=self.tolerance,
             )
         if status == "MODEL_INVALID":
             return RedrawResult(
-                "ERROR", pair, base, territory=len(built.territory),
-                wall_time=wall, tolerance=self.tolerance,
+                "ERROR",
+                pair,
+                base,
+                territory=len(built.territory),
+                wall_time=wall,
+                tolerance=self.tolerance,
             )
         bound = solver.BestObjectiveBound() / self.objective_scale
         if not math.isfinite(bound):
@@ -563,9 +577,7 @@ class ZoneRedraw:
         blocked = None
         if len(current) != self.pool.problem.Z or self.pool.problem.Z < 2:
             blocked = "no_incumbent"
-        elif decisions and not all(
-            compatible(column, decisions) for column in current
-        ):
+        elif decisions and not all(compatible(column, decisions) for column in current):
             blocked = "incumbent_incompatible"
         if blocked is not None:
             return current, self._metadata(

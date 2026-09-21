@@ -51,7 +51,6 @@ from optimization.zone_welfare import (
 )
 
 
-
 def build_objective(problem, config, options):
     """The welfare definition this run decomposes."""
 
@@ -190,13 +189,9 @@ class DantzigWolfeStrategy(Strategy):
                 self.options.get("dw_pricing_columns_per_call", 8)
             ),
             pricing_parallel=bool(self.options.get("dw_pricing_parallel", True)),
-            pricing_time_limit=float(
-                self.options.get("dw_pricing_time_limit", 30.0)
-            ),
+            pricing_time_limit=float(self.options.get("dw_pricing_time_limit", 30.0)),
             redraw=redraw,
-            redraw_time_limit=float(
-                self.options.get("dw_redraw_time_limit", 60.0)
-            ),
+            redraw_time_limit=float(self.options.get("dw_redraw_time_limit", 60.0)),
         )
         selected = search.selected
         score = sum(c.score for c in selected) if selected else None
@@ -329,8 +324,7 @@ class DantzigWolfeStrategy(Strategy):
                         admissible.append(key)
                         offer(columns)
                 return (
-                    len(visited) < chain_target
-                    and time.monotonic() < sampling_deadline
+                    len(visited) < chain_target and time.monotonic() < sampling_deadline
                 )
 
             try:

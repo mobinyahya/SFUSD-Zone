@@ -110,9 +110,7 @@ def add_flow_contiguity(
         if centroid in member_set:
             m.addConstr(
                 gp.quicksum(outflow[centroid]) - gp.quicksum(inflow[centroid])
-                == gp.quicksum(
-                    x[(zone, node)] for node in members if node != centroid
-                )
+                == gp.quicksum(x[(zone, node)] for node in members if node != centroid)
             )
     return flows
 
@@ -566,9 +564,7 @@ class MipSolver(Solver):
                 m, problem, x, access_vars, access_joints, pair[0], pair[1]
             )
 
-        self._add_access_inequalities(
-            m, problem, x, access_vars, access_joints
-        )
+        self._add_access_inequalities(m, problem, x, access_vars, access_joints)
 
         m.setObjective(total + reward, GRB.MAXIMIZE)
 

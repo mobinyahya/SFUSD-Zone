@@ -658,9 +658,7 @@ class OptimizationConfig:
         is still an option every student holds under every zoning, which is
         exactly what these markets model with ``school_node=None``.
         """
-        return self._data_scenario.filter(
-            "optimization", "include_citywide_choice_opt"
-        )
+        return self._data_scenario.filter("optimization", "include_citywide_choice_opt")
 
     @property
     def include_mission_bay(self) -> bool:

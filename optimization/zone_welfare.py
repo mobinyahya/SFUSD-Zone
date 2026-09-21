@@ -177,9 +177,7 @@ def prepare_sampled_matching(
         students_by_node={
             node: tuple(indices) for node, indices in students_by_node.items()
         },
-        programs_by_node={
-            node: tuple(ids) for node, ids in programs_by_node.items()
-        },
+        programs_by_node={node: tuple(ids) for node, ids in programs_by_node.items()},
         capacity={
             program.program_id: int(program.capacity) for program in market.programs
         },

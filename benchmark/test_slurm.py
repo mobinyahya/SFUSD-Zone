@@ -655,7 +655,9 @@ def test_create_plan_skips_existing_results(tmp_path, monkeypatch):
         mode="run",
         execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=True),
     )
-    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(
+        SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
+    )
     monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1, task2])
 
     plan = create_plan(str(tmp_path / "sweep.yaml"))
@@ -689,7 +691,9 @@ def test_create_plan_retains_all_tasks_when_skip_existing_false(tmp_path, monkey
         mode="run",
         execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=False),
     )
-    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(
+        SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
+    )
     monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1])
 
     plan = create_plan(str(tmp_path / "sweep.yaml"))
@@ -723,7 +727,9 @@ def test_create_plan_all_skipped_handles_zero_allocations(tmp_path, monkeypatch)
         mode="run",
         execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=True),
     )
-    monkeypatch.setattr(SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep))
+    monkeypatch.setattr(
+        SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
+    )
     monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task1])
 
     plan = create_plan(str(tmp_path / "sweep.yaml"))

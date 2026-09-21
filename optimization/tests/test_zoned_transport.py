@@ -133,9 +133,7 @@ def test_the_uniform_point_makes_the_access_relaxation_vacuous(contiguity_model)
         programs, students, problem, contiguity_model=contiguity_model
     )
 
-    assert bound.objective == pytest.approx(
-        transport_upper_bound(programs, students)
-    )
+    assert bound.objective == pytest.approx(transport_upper_bound(programs, students))
 
 
 @pytest.mark.parametrize("contiguity_model", ZONED_TRANSPORT_MODELS)
@@ -165,9 +163,7 @@ def test_capacity_duals_are_non_negative_admissible_prices():
     assert all(price >= 0.0 for price in bound.prices.values())
 
 
-@pytest.mark.parametrize(
-    "kind", ["zoned_transport_neighbors", "zoned_transport_flow"]
-)
+@pytest.mark.parametrize("kind", ["zoned_transport_neighbors", "zoned_transport_flow"])
 def test_welfare_upper_bound_dispatches_the_zoned_kinds(kind):
     problem = _path_problem(max_distance=2.0)
     programs, students = _contested_market()
@@ -178,9 +174,7 @@ def test_welfare_upper_bound_dispatches_the_zoned_kinds(kind):
     ) == pytest.approx(1.0)
 
 
-@pytest.mark.parametrize(
-    "kind", ["zoned_transport_neighbors", "zoned_transport_flow"]
-)
+@pytest.mark.parametrize("kind", ["zoned_transport_neighbors", "zoned_transport_flow"])
 def test_zoned_kinds_refuse_to_run_without_the_zoning_problem(kind):
     programs, students = _contested_market()
 
@@ -193,9 +187,7 @@ def test_unknown_contiguity_model_is_rejected():
     programs, students = _contested_market()
 
     with pytest.raises(ValueError, match="contiguity_model"):
-        zoned_transport_bound(
-            programs, students, problem, contiguity_model="wishful"
-        )
+        zoned_transport_bound(programs, students, problem, contiguity_model="wishful")
 
 
 def test_market_fingerprint_reads_only_what_the_relaxation_reads():
@@ -242,9 +234,10 @@ def test_the_solve_is_cached_and_the_worker_count_is_not_in_the_key(scenario_fac
 
     assert first.metadata["zoned_transport_cache"] == "miss"
     assert second.metadata["zoned_transport_cache"] == "hit"
-    assert second.metadata["zoned_transport_cache_key"] == first.metadata[
-        "zoned_transport_cache_key"
-    ]
+    assert (
+        second.metadata["zoned_transport_cache_key"]
+        == first.metadata["zoned_transport_cache_key"]
+    )
     assert second.objective == pytest.approx(first.objective)
     assert second.prices == pytest.approx(first.prices)
 
@@ -259,9 +252,7 @@ def test_the_contiguity_variant_is_part_of_the_cache_key(scenario_factory):
     neighbors = zoned_transport_bound(
         programs, students, problem, contiguity_model="neighbors"
     )
-    flow = zoned_transport_bound(
-        programs, students, problem, contiguity_model="flow"
-    )
+    flow = zoned_transport_bound(programs, students, problem, contiguity_model="flow")
 
     assert flow.metadata["zoned_transport_cache"] == "miss"
     assert (
@@ -285,24 +276,21 @@ def test_the_hint_is_not_part_of_the_cache_key(scenario_factory):
 
     assert first.metadata["zoned_transport_cache"] == "miss"
     assert second.metadata["zoned_transport_cache"] == "hit"
-    assert second.metadata["zoned_transport_cache_key"] == first.metadata[
-        "zoned_transport_cache_key"
-    ]
+    assert (
+        second.metadata["zoned_transport_cache_key"]
+        == first.metadata["zoned_transport_cache_key"]
+    )
 
 
 def test_flow_contiguity_returns_a_contiguous_zoning():
     """The replacement description is exact at binary ``x``, not merely valid."""
     problem = make_grid_problem(3, 3)
-    solver = get_solver(
-        "mip", solve_time_limit=30, workers=1, contiguity_model="flow"
-    )
+    solver = get_solver("mip", solve_time_limit=30, workers=1, contiguity_model="flow")
 
     solution = solver.solve(problem)
 
     assert solution.feasible
-    assert contiguity.is_contiguous(
-        problem.G, solution.assignment, problem.centroids
-    )
+    assert contiguity.is_contiguous(problem.G, solution.assignment, problem.centroids)
     for zone, centroid in enumerate(problem.centroids):
         assert solution.assignment[centroid] == zone
 

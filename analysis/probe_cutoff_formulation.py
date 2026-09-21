@@ -418,20 +418,18 @@ class CutoffModel:
                 self.z[(index, program_id)] = z
 
                 if isinstance(access, float):
-                    if access <= 0.0:                                     # (F3)
+                    if access <= 0.0:  # (F3)
                         y.UB = 0.0
                         blocked += 1
                 else:
-                    m.addConstr(y <= access)                              # (F3)
-                m.addConstr(y <= z)                                       # (F4)
+                    m.addConstr(y <= access)  # (F3)
+                m.addConstr(y <= z)  # (F4)
 
                 # The running "seated at something weakly preferred" sum, shared
                 # by (F1), (F6) and (S2); an equality definition, so it changes
                 # no relaxation value.
                 cumulative = m.addVar(lb=0.0, name=f"P_{index}_{rank}")
-                m.addConstr(
-                    cumulative == (y if previous is None else previous + y)
-                )
+                m.addConstr(cumulative == (y if previous is None else previous + y))
                 self.prefix[(index, program_id)] = cumulative
 
                 # (F6): access and clearing the cutoff together mean i must be
@@ -444,7 +442,7 @@ class CutoffModel:
                 objective += float(student.scaled_utilities[rank]) * y
                 previous = cumulative
             if previous is not None:
-                m.addConstr(previous <= 1.0)                              # (F1)
+                m.addConstr(previous <= 1.0)  # (F1)
 
         self.counts["gamma"] = len(self.y)
         self.counts["access_blocked_pairs"] = blocked
@@ -466,9 +464,8 @@ class CutoffModel:
                     f"Priority order for {program_id!r} is not Gamma(s)."
                 )
             seats = m.addVar(lb=0.0, ub=capacity[program_id], name=f"T_{program_id}")
-            m.addConstr(                                                  # (F2)
-                seats
-                == gp.quicksum(self.y[(i, program_id)] for i in order)
+            m.addConstr(  # (F2)
+                seats == gp.quicksum(self.y[(i, program_id)] for i in order)
             )
             self.seated[program_id] = seats
 
@@ -478,24 +475,27 @@ class CutoffModel:
                 y = self.y[(i, program_id)]
                 z = self.z[(i, program_id)]
                 if previous_z is not None:
-                    m.addConstr(z <= previous_z)                          # (F5)
+                    m.addConstr(z <= previous_z)  # (F5)
                     f5_rows += 1
                 previous_z = z
                 if "S1" in self.extras:
                     # sum_i' y[i', s] >= q_s (1 - z[i, s])
-                    m.addConstr(seats + capacity[program_id] * z >= capacity[program_id])
+                    m.addConstr(
+                        seats + capacity[program_id] * z >= capacity[program_id]
+                    )
                     s1_rows += 1
                 if "S2" in self.extras:
                     access = self.access_of[(i, program_id)]
                     rhs = capacity[program_id] * access
                     m.addConstr(
-                        capacity[program_id] * self.prefix[(i, program_id)]
-                        + running
+                        capacity[program_id] * self.prefix[(i, program_id)] + running
                         >= rhs
                     )
                     s2_rows += 1
                     nxt = m.addVar(
-                        lb=0.0, ub=capacity[program_id], name=f"B_{program_id}_{position}"
+                        lb=0.0,
+                        ub=capacity[program_id],
+                        name=f"B_{program_id}_{position}",
                     )
                     m.addConstr(nxt == running + y)
                     self.tail[(program_id, position + 1)] = nxt
@@ -581,7 +581,9 @@ class CutoffModel:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="benchmark/configs/priced_access_seeds.yaml")
+    parser.add_argument(
+        "--config", default="benchmark/configs/priced_access_seeds.yaml"
+    )
     parser.add_argument("--centroids", default="6-zone-3")
     parser.add_argument("--seed", type=int, default=1, help="STB sample base seed")
     parser.add_argument("--zonings", type=int, default=8)
@@ -659,8 +661,10 @@ def main() -> None:
             f"nonzeros={arm.model.NumNZs:,} build={build_seconds:.1f}s",
             flush=True,
         )
-        print("    " + "  ".join(f"{k}={v:,}" for k, v in sorted(arm.counts.items())),
-              flush=True)
+        print(
+            "    " + "  ".join(f"{k}={v:,}" for k, v in sorted(arm.counts.items())),
+            flush=True,
+        )
 
         # GATE C first: the model as built already has x free and continuous.
         root = arm.optimize(method=2)
@@ -676,14 +680,16 @@ def main() -> None:
             arm.fix_zoning(assignment)
             result = arm.optimize()
             slack = result["value"] - da_welfare[index]
-            gate_b.append({
-                "zoning": index,
-                "lp": result["value"],
-                "da": da_welfare[index],
-                "slack": slack,
-                "oracle_lp": oracle_welfare[index],
-                "seconds": result["seconds"],
-            })
+            gate_b.append(
+                {
+                    "zoning": index,
+                    "lp": result["value"],
+                    "da": da_welfare[index],
+                    "slack": slack,
+                    "oracle_lp": oracle_welfare[index],
+                    "seconds": result["seconds"],
+                }
+            )
             flag = "  *** NEGATIVE (validity violation)" if slack < -1e-4 else ""
             print(
                 f"  GATE B  zoning {index}: LP={result['value']:12,.2f} "
@@ -703,9 +709,7 @@ def main() -> None:
         # The two arms whose exactness is in question get every zoning; the
         # (S2) arms are exact by construction and get a bounded spot check.
         gate_a_count = (
-            args.gate_a_zonings
-            if label in GATE_A_ARMS
-            else args.gate_a_spot_check
+            args.gate_a_zonings if label in GATE_A_ARMS else args.gate_a_spot_check
         )
         if not args.skip_gate_a and gate_a_count > 0:
             arm.set_integral()
@@ -713,18 +717,20 @@ def main() -> None:
                 arm.fix_zoning(assignment)
                 result = arm.optimize(seconds=args.mip_seconds)
                 raw = arm.raw_value()
-                gate_a.append({
-                    "zoning": index,
-                    "mip": result["value"],
-                    "mip_raw_utility": raw,
-                    "mip_bound": result["bound"],
-                    "mip_gap": result["gap"],
-                    "da": da_welfare[index],
-                    "difference": result["value"] - da_welfare[index],
-                    "raw_difference": raw - da_welfare[index],
-                    "seconds": result["seconds"],
-                    "status": result["status"],
-                })
+                gate_a.append(
+                    {
+                        "zoning": index,
+                        "mip": result["value"],
+                        "mip_raw_utility": raw,
+                        "mip_bound": result["bound"],
+                        "mip_gap": result["gap"],
+                        "da": da_welfare[index],
+                        "difference": result["value"] - da_welfare[index],
+                        "raw_difference": raw - da_welfare[index],
+                        "seconds": result["seconds"],
+                        "status": result["status"],
+                    }
+                )
                 flag = ""
                 if result["status"] == GRB.TIME_LIMIT:
                     flag += f"  [TIME LIMIT, gap={result['gap']:.2%}]"
@@ -734,7 +740,9 @@ def main() -> None:
                 if raw - da_welfare[index] < -1e-3:
                     flag += "  *** MIP BELOW DA: formulation excludes the true matching"
                 elif raw - da_welfare[index] > 1e-3:
-                    flag += "  *** MIP ABOVE DA: formulation admits an unstable matching"
+                    flag += (
+                        "  *** MIP ABOVE DA: formulation admits an unstable matching"
+                    )
                 print(
                     f"  GATE A  zoning {index}: MIP={result['value']:12,.4f} "
                     f"raw={raw:12,.4f} DA={da_welfare[index]:12,.4f} "
@@ -745,25 +753,29 @@ def main() -> None:
                 )
             arm.free_zoning()
 
-        records.append({
-            "arm": label,
-            "extras": list(extras),
-            "rows": rows,
-            "columns": columns,
-            "nonzeros": arm.model.NumNZs,
-            "build_seconds": build_seconds,
-            "root_bound": root["value"],
-            "root_seconds": root["seconds"],
-            "counts": dict(arm.counts),
-            "gate_b": gate_b,
-            "gate_a": gate_a,
-        })
+        records.append(
+            {
+                "arm": label,
+                "extras": list(extras),
+                "rows": rows,
+                "columns": columns,
+                "nonzeros": arm.model.NumNZs,
+                "build_seconds": build_seconds,
+                "root_bound": root["value"],
+                "root_seconds": root["seconds"],
+                "counts": dict(arm.counts),
+                "gate_b": gate_b,
+                "gate_a": gate_a,
+            }
+        )
         arm.model.dispose()
 
     print("\n" + "=" * 100)
-    print(f"{'arm':16s} {'root LP':>12s} {'rows':>10s} {'cols':>10s} "
-          f"{'lp s':>8s} {'B slack mean':>13s} {'B slack min':>12s} "
-          f"{'A max |diff|':>13s} {'A n':>4s}")
+    print(
+        f"{'arm':16s} {'root LP':>12s} {'rows':>10s} {'cols':>10s} "
+        f"{'lp s':>8s} {'B slack mean':>13s} {'B slack min':>12s} "
+        f"{'A max |diff|':>13s} {'A n':>4s}"
+    )
     for record in records:
         slacks = [row["slack"] for row in record["gate_b"]]
         diffs = [abs(row["raw_difference"]) for row in record["gate_a"]]
@@ -786,24 +798,26 @@ def main() -> None:
     print("=" * 100)
 
     if args.output:
-        Path(args.output).write_text(json.dumps(
-            {
-                "instance": {
-                    "nodes": len(problem.nodes),
-                    "zones": problem.Z,
-                    "programs": len(market.programs),
-                    "students": len(market.students),
-                    "gamma": gamma,
-                    "lottery_seed": sample.seed,
+        Path(args.output).write_text(
+            json.dumps(
+                {
+                    "instance": {
+                        "nodes": len(problem.nodes),
+                        "zones": problem.Z,
+                        "programs": len(market.programs),
+                        "students": len(market.students),
+                        "gamma": gamma,
+                        "lottery_seed": sample.seed,
+                    },
+                    "da_welfare": da_welfare,
+                    "da_seated": seated_counts,
+                    "saa_oracle_lp": oracle_welfare,
+                    "references": dict(REFERENCES),
+                    "arms": records,
                 },
-                "da_welfare": da_welfare,
-                "da_seated": seated_counts,
-                "saa_oracle_lp": oracle_welfare,
-                "references": dict(REFERENCES),
-                "arms": records,
-            },
-            indent=2,
-        ))
+                indent=2,
+            )
+        )
 
 
 if __name__ == "__main__":

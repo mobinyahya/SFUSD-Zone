@@ -81,9 +81,7 @@ def access_mask(
         for program_id in student.programs:
             pair, fixed = access_state(problem, student.node, programs[program_id])
             row.append(
-                bool(fixed)
-                if pair is None
-                else zoning[pair[0]] == zoning[pair[1]]
+                bool(fixed) if pair is None else zoning[pair[0]] == zoning[pair[1]]
             )
         mask.append(tuple(row))
     return tuple(mask)
@@ -124,9 +122,7 @@ def deferred_acceptance(
         }
         for index, program in enumerate(market.programs)
     }
-    held: dict[str, list[tuple[int, int]]] = {
-        program_id: [] for program_id in capacity
-    }
+    held: dict[str, list[tuple[int, int]]] = {program_id: [] for program_id in capacity}
 
     matched = [-1] * len(market.students)
     cursor = [0] * len(market.students)

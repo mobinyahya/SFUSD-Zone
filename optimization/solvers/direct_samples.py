@@ -215,13 +215,13 @@ class DirectSamplesCpSatSolver(CpBoolSolver):
                         f"ds_d_{sample_index}_{student_index}_{rank}"
                     )
                     if not isinstance(access, int):
-                        model.Add(seat <= access)                          # (A3)
+                        model.Add(seat <= access)  # (A3)
                     seats[(sample_index, student_index, rank)] = seat
                     row.append(seat)
                     objective_terms.append(seat)
                     objective_weights.append(int(student.scaled_utilities[rank]))
                 if len(row) > 1:
-                    model.AddAtMostOne(row)                                # (A1)
+                    model.AddAtMostOne(row)  # (A1)
 
         shafts: dict[_SeatKey, Any] = {}
         stability_rows = 0
@@ -280,8 +280,7 @@ class DirectSamplesCpSatSolver(CpBoolSolver):
             access=access_vars,
             objective_bound=len(self.samples)
             * sum(
-                max(student.scaled_utilities, default=0)
-                for student in market.students
+                max(student.scaled_utilities, default=0) for student in market.students
             ),
             access_pair_count=len(required_access_pairs(market)),
             blocked_pair_count=blocked,
@@ -352,9 +351,9 @@ class DirectSamplesCpSatSolver(CpBoolSolver):
         welfares = [0.0] * len(self.samples)
         for (sample_index, student_index, rank), seat in variables.seats.items():
             if solver.Value(seat):
-                welfares[sample_index] += self.market.students[
-                    student_index
-                ].utilities[rank]
+                welfares[sample_index] += self.market.students[student_index].utilities[
+                    rank
+                ]
         return welfares
 
     def _additional_solution_metadata(
@@ -382,9 +381,7 @@ class DirectSamplesCpSatSolver(CpBoolSolver):
             ),
             "direct_samples_blocked_pair_count": variables.blocked_pair_count,
             "direct_samples_student_count": len(self.market.students),
-            "direct_samples_utility_student_count": (
-                self.market.utility_student_count
-            ),
+            "direct_samples_utility_student_count": (self.market.utility_student_count),
             # Students whose whole list was dropped -- by `omit_nonpositive`,
             # or because no zoning reaches any of it. They cost no variables:
             # the outside option is the absence of a seat, not a column.
@@ -433,9 +430,7 @@ class DirectSamplesCpSatSolver(CpBoolSolver):
         matchings = replay(self.market, self.samples, problem, solution.assignment)
         replay_seconds = time.perf_counter() - replay_start
         self.sample_matchings = matchings
-        welfares = [
-            matching_welfare(self.market, matching) for matching in matchings
-        ]
+        welfares = [matching_welfare(self.market, matching) for matching in matchings]
         scaled = [
             scaled_matching_welfare(self.market, matching) for matching in matchings
         ]

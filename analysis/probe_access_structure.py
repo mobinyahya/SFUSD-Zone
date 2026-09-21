@@ -57,7 +57,9 @@ def main() -> None:
 
     market = build_saa_market(problem, dataset.config)
     sample = sample_school_preferences(
-        market, 1, str(options.get("saa_tie_breaking_method", "MTB")).upper(),
+        market,
+        1,
+        str(options.get("saa_tie_breaking_method", "MTB")).upper(),
         int(options.get("seed", 42)),
     )[0]
     oracle = SaaOracle(market, sample, 0, problem, workers=args.workers)
@@ -82,15 +84,15 @@ def main() -> None:
     anchors_with_conflict = 0
     for anchor, others in neighbours.items():
         local = sum(
-            1
-            for x, y in combinations(sorted(others), 2)
-            if not (zones[x] & zones[y])
+            1 for x, y in combinations(sorted(others), 2) if not (zones[x] & zones[y])
         )
         conflicting += local
         anchors_with_conflict += local > 0
 
     cliques = cardinality_cliques(variable_pairs, problem.candidate_zones)
-    covered_pairs = sum(len(members) * (len(members) - 1) // 2 for _, members in cliques)
+    covered_pairs = sum(
+        len(members) * (len(members) - 1) // 2 for _, members in cliques
+    )
     triples = list(transitivity_triples(variable_pairs))
 
     payload = {

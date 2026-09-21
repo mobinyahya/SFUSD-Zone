@@ -221,13 +221,13 @@ class StableCutoffMipSolver(MipSolver):
                     y[key] = seat
                     z[key] = clears
 
-                    if isinstance(access, (int, float)):            # (F3)
+                    if isinstance(access, (int, float)):  # (F3)
                         if float(access) <= 0.0:
                             seat.UB = 0.0
                             blocked += 1
                     else:
-                        m.addConstr(seat <= access)                 # (F3)
-                    m.addConstr(seat <= clears)                     # (F4)
+                        m.addConstr(seat <= access)  # (F3)
+                    m.addConstr(seat <= clears)  # (F4)
 
                     # The running "seated at something weakly preferred to s"
                     # sum, shared by (F1), (F6) and (S2). An equality
@@ -252,7 +252,7 @@ class StableCutoffMipSolver(MipSolver):
                     objective += weight * utility[key] * seat
                     previous = cumulative
                 if previous is not None:
-                    m.addConstr(previous <= 1.0)                    # (F1)
+                    m.addConstr(previous <= 1.0)  # (F1)
 
         for sample_index, sample in enumerate(self.samples):
             for program_index, program in enumerate(market.programs):
@@ -266,7 +266,7 @@ class StableCutoffMipSolver(MipSolver):
                     ub=quota,
                     name=f"sc_seats_{sample_index}_{program_id}",
                 )
-                m.addConstr(                                        # (F2)
+                m.addConstr(  # (F2)
                     total
                     == gp.quicksum(
                         y[(sample_index, student_index, program_id)]
@@ -281,7 +281,7 @@ class StableCutoffMipSolver(MipSolver):
                     key = (sample_index, student_index, program_id)
                     clears = z[key]
                     if previous_clears is not None:
-                        m.addConstr(clears <= previous_clears)      # (F5)
+                        m.addConstr(clears <= previous_clears)  # (F5)
                         chain_rows += 1
                     previous_clears = clears
 

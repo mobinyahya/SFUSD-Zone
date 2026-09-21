@@ -322,9 +322,7 @@ def test_multi_sample_objective_is_the_sum_of_the_per_sample_optima():
     zoning = _zonings(problem, count=4)[2]
 
     combined = _solve_fixed(problem, market, samples, zoning)
-    separate = [
-        _solve_fixed(problem, market, (sample,), zoning) for sample in samples
-    ]
+    separate = [_solve_fixed(problem, market, (sample,), zoning) for sample in samples]
 
     assert combined == sum(separate)
     # And each block is still exact on its own draw.
@@ -453,9 +451,7 @@ def test_hinted_values_are_a_feasible_optimal_matching():
         for zone in problem.candidate_zones(node)
     }
     for node in problem.nodes:
-        model.AddExactlyOne(
-            x[(zone, node)] for zone in problem.candidate_zones(node)
-        )
+        model.AddExactlyOne(x[(zone, node)] for zone in problem.candidate_zones(node))
     solver._add_model_objective(model, problem, x, {})
     solver._add_hints(model, problem, x, {})
 

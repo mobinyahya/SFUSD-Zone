@@ -164,7 +164,9 @@ class FixedAccessWelfare:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="benchmark/configs/priced_access_seeds.yaml")
+    parser.add_argument(
+        "--config", default="benchmark/configs/priced_access_seeds.yaml"
+    )
     parser.add_argument("--centroids", default="6-zone-3")
     parser.add_argument("--lottery-scale", type=int, default=20)
     parser.add_argument("--zonings", type=int, default=40)
@@ -191,12 +193,11 @@ def main() -> None:
     def integral_access(assignment):
         def access(node, school_node):
             return 1.0 if assignment[node] == assignment[school_node] else 0.0
+
         return access
 
     exact, relaxed = [], []
-    counts: dict[tuple[int, int], float] = {
-        pair: 0.0 for pair in welfare.access_rows
-    }
+    counts: dict[tuple[int, int], float] = {pair: 0.0 for pair in welfare.access_rows}
     for index, assignment in enumerate(zonings):
         oracle = finite_grid_oracle(market, assignment, args.lottery_scale)
         exact.append(oracle.welfare)
@@ -221,19 +222,23 @@ def main() -> None:
         "lp_at_integral_max": max(relaxed),
         "lp_at_averaged_access": averaged,
         "mean_access_share": statistics.mean(shares.values()),
-        "fixed_x_slack_mean": statistics.mean(
-            r - e for r, e in zip(relaxed, exact)
-        ),
+        "fixed_x_slack_mean": statistics.mean(r - e for r, e in zip(relaxed, exact)),
         "convexification_gap": averaged - statistics.mean(relaxed),
     }
     print("\n" + "=" * 72)
-    print(f"exact MID welfare        mean {record['exact_mean']:12,.2f}"
-          f"   max {record['exact_max']:12,.2f}")
-    print(f"welfare LP at integral a mean {record['lp_at_integral_mean']:12,.2f}"
-          f"   max {record['lp_at_integral_max']:12,.2f}")
+    print(
+        f"exact MID welfare        mean {record['exact_mean']:12,.2f}"
+        f"   max {record['exact_max']:12,.2f}"
+    )
+    print(
+        f"welfare LP at integral a mean {record['lp_at_integral_mean']:12,.2f}"
+        f"   max {record['lp_at_integral_max']:12,.2f}"
+    )
     print(f"  => LP slack at fixed x      {record['fixed_x_slack_mean']:12,.2f}")
-    print(f"welfare LP at averaged a      {record['lp_at_averaged_access']:12,.2f}"
-          f"   (mean share {record['mean_access_share']:.3f})")
+    print(
+        f"welfare LP at averaged a      {record['lp_at_averaged_access']:12,.2f}"
+        f"   (mean share {record['mean_access_share']:.3f})"
+    )
     print(f"  => convexification gap      {record['convexification_gap']:12,.2f}")
     print("=" * 72)
     print(

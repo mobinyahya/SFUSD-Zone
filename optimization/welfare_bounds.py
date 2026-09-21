@@ -138,4 +138,6 @@ def welfare_upper_bound(
             workers=workers,
             centroid_neighbor_radius=centroid_neighbor_radius,
         ).objective
-    raise ValueError(f"Unknown welfare bound {kind!r}; expected one of {WELFARE_BOUNDS}.")
+    raise ValueError(
+        f"Unknown welfare bound {kind!r}; expected one of {WELFARE_BOUNDS}."
+    )

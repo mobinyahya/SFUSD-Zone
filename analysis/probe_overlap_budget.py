@@ -172,9 +172,15 @@ def main() -> None:
     out["total_weight"] = overlap_limit(problem, 1.0)
 
     seeds = seed(problem, pool, solver)
-    print(f"seeded {len(pool.columns)} columns, hint = {sum(c.score for c in seeds):.4f}", flush=True)
+    print(
+        f"seeded {len(pool.columns)} columns, hint = {sum(c.score for c in seeds):.4f}",
+        flush=True,
+    )
 
-    print(f"\n[0] building the diagnostic pool ({args.pool_seconds:.0f}s, redraw off)", flush=True)
+    print(
+        f"\n[0] building the diagnostic pool ({args.pool_seconds:.0f}s, redraw off)",
+        flush=True,
+    )
     search = branch_and_price(
         pool,
         deadline=time.monotonic() + args.pool_seconds,
@@ -202,9 +208,7 @@ def main() -> None:
     rows = ladder(problem, pool, PROPS, out)
 
     window = [
-        r["prop"]
-        for r in rows
-        if r["prop"] > 0 and r["overlap_dual"] > 1e-9
+        r["prop"] for r in rows if r["prop"] > 0 and r["overlap_dual"] > 1e-9
     ] or [p for p in PROPS if p > 0][:3]
     print(f"\n[2] certified bound over the window {window}", flush=True)
     with ZonePricer(
@@ -215,7 +219,9 @@ def main() -> None:
         columns_per_call=int(config.dw_pricing_columns_per_call),
         parallel=bool(config.dw_pricing_parallel),
     ) as pricer:
-        certify(problem, pool, pricer, [0.0, *window], args.price_seconds, constant, out)
+        certify(
+            problem, pool, pricer, [0.0, *window], args.price_seconds, constant, out
+        )
 
     out["wall_seconds"] = time.monotonic() - t0
     with open(args.out, "w") as fh:

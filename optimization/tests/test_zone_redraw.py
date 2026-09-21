@@ -46,9 +46,7 @@ def _ranked(problem, schools, node):
     """The school nodes, nearest first, as ranks into ``schools``."""
 
     distances = problem.G.graph["distance_dict"]
-    return sorted(
-        range(len(schools)), key=lambda i: (distances[schools[i]][node], i)
-    )
+    return sorted(range(len(schools)), key=lambda i: (distances[schools[i]][node], i))
 
 
 def _programs(schools, capacity):
@@ -142,9 +140,10 @@ def pooled_tilings(pool):
     found = []
     for combination in product(*by_label):
         covered = frozenset().union(*(c.nodes for c in combination))
-        if covered == pool.nodes and sum(
-            len(c.nodes) for c in combination
-        ) == pool.problem.A:
+        if (
+            covered == pool.nodes
+            and sum(len(c.nodes) for c in combination) == pool.problem.A
+        ):
             found.append(combination)
     return found
 
@@ -290,9 +289,7 @@ def test_the_cover_prices_cancel_over_the_joint_territory():
         base_reduced = sum(duals.reduced_cost(column) for column in held)
         for columns in enumerated:
             welfare_gap = sum(c.score for c in columns) - base_welfare
-            reduced_gap = (
-                sum(duals.reduced_cost(c) for c in columns) - base_reduced
-            )
+            reduced_gap = sum(duals.reduced_cost(c) for c in columns) - base_reduced
             assert reduced_gap == pytest.approx(welfare_gap)
 
 
@@ -448,9 +445,7 @@ def test_redraw_honours_the_branch_fixings_it_is_given():
 def test_a_sweep_skips_an_incumbent_the_branch_has_already_excluded():
     _, pool, seed = three_zone_pool("mid")
     redraw = ZoneRedraw(pool, workers=1)
-    final, metadata = redraw.sweep(
-        seed, deadline=math.inf, decisions={(1, 0): 1}
-    )
+    final, metadata = redraw.sweep(seed, deadline=math.inf, decisions={(1, 0): 1})
     assert metadata["dw_redraw_status"] == "incumbent_incompatible"
     assert final == seed
     assert metadata["dw_redraw_pairs_solved"] == 0
@@ -582,9 +577,7 @@ def _dataset(problem=None):
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_strategy_sweeps_before_the_search_when_the_redraw_is_on(
-    monkeypatch, enabled
-):
+def test_strategy_sweeps_before_the_search_when_the_redraw_is_on(monkeypatch, enabled):
     dataset = _dataset()
     monkeypatch.setattr(dw, "build_mid_market", lambda *_: market())
     monkeypatch.setattr(dw, "build_saa_market", lambda *_: individual_market())

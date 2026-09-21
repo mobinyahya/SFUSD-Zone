@@ -108,9 +108,7 @@ def test_global_pricing_matches_the_best_of_every_admissible_zone(kind, phase_on
             )
             for zone in range(p.Z):
                 eligible = [
-                    c
-                    for c in columns
-                    if c.zone == zone and compatible(c, decisions)
+                    c for c in columns if c.zone == zone and compatible(c, decisions)
                 ]
                 expected = max(duals.reduced_cost(c) for c in eligible)
                 result = pricer(
@@ -234,9 +232,7 @@ def test_empty_pool_reaches_the_exhaustive_global_optimum(kind, cap):
         pool, deadline=time.monotonic() + 60, pricing_parallel=False
     )
     assert result.status == "OPTIMAL"
-    assert sum(c.score for c in result.selected) == pytest.approx(
-        enumerated.objective
-    )
+    assert sum(c.score for c in result.selected) == pytest.approx(enumerated.objective)
     assert result.upper_bound >= enumerated.objective - 1e-9
     assert result.upper_bound <= enumerated.objective + result.bound_slack + 1e-9
     assert any(h["phase_one"] and h["columns_added"] for h in result.history)
@@ -303,9 +299,7 @@ def test_both_dual_points_reach_the_same_certified_optimum(method):
         pricing_parallel=False,
     )
     assert result.status == "OPTIMAL"
-    assert sum(c.score for c in result.selected) == pytest.approx(
-        enumerated.objective
-    )
+    assert sum(c.score for c in result.selected) == pytest.approx(enumerated.objective)
 
 
 def test_parallel_and_sequential_pricing_agree():
@@ -560,9 +554,7 @@ def test_individual_and_compressed_markets_describe_the_same_cohort():
 
     compressed = MidZoneObjective(market(), 5)
     sampled = StableMatchingZoneObjective(individual_market(), seed=1)
-    assert sum(t.count for t in compressed.market.types) == len(
-        sampled.market.students
-    )
+    assert sum(t.count for t in compressed.market.types) == len(sampled.market.students)
     assert {p.school_node for p in compressed.market.programs} == {
         p.school_node for p in sampled.market.programs
     }
@@ -620,9 +612,7 @@ def test_a_node_closes_as_soon_as_its_bound_meets_the_incumbent():
                     pool.admit(zone, frozenset(nodes))
                     for zone, nodes in enumerate(split)
                 )
-                for split in (
-                    (range(cut), range(cut, 5)) for cut in range(1, 5)
-                )
+                for split in ((range(cut), range(cut, 5)) for cut in range(1, 5))
             )
             if all(column is not None for column in columns)
         ),
@@ -674,9 +664,7 @@ def test_an_overlap_budget_leaves_the_optimum_and_the_bound_valid(overlap_prop):
         pricing_parallel=False,
     )
     assert result.selected
-    assert sum(c.score for c in result.selected) == pytest.approx(
-        enumerated.objective
-    )
+    assert sum(c.score for c in result.selected) == pytest.approx(enumerated.objective)
     assert result.upper_bound >= enumerated.objective - 1e-9
     # Still a partition: the elastic rows are Phase-II LP only.
     assert {c.zone for c in result.selected} == set(range(p.Z))

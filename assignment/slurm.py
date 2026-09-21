@@ -619,15 +619,17 @@ def _job_script(
         f"export {name}={shlex.quote(value)}"
         for name, value in THREAD_ENVIRONMENT.items()
     )
-    lines.extend([
-        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
-        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
-        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
-        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
-        'else',
-        '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
-        'fi',
-    ])
+    lines.extend(
+        [
+            'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
+            '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
+            'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
+            '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
+            "else",
+            '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
+            "fi",
+        ]
+    )
     lines.append(f"exec {shlex.join(command)}")
     return "\n".join(lines) + "\n"
 
@@ -694,9 +696,9 @@ def write_slurm_scripts(
         '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
         'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
         '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
-        'else',
+        "else",
         '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
-        'fi',
+        "fi",
         f"cd {shlex.quote(str(workspace_root))}",
     ]
     submit_lines.append(f'exec {shlex.join(submit_command)} "$@"')
@@ -935,9 +937,7 @@ def _run_cached_assignment_batch(
             market.simulate_target(
                 entry["name"],
                 iteration,
-                include_real_match=(
-                    need_real_match and iteration == first_iteration
-                ),
+                include_real_match=(need_real_match and iteration == first_iteration),
                 write_utility_output=(
                     task["write_utility_output"] and iteration == first_iteration
                 ),
@@ -960,13 +960,18 @@ def _assignment_batches(plan: dict, job: dict) -> list[tuple[int, list[int]]]:
             continue
         all_iterations = _assignment_iterations(entry["config"])
         reuse = entry["config"].get("reuse_assignments", True)
-        assignment_folder = entry.get("assignment_folder") or plan.get("assignment_folder")
+        assignment_folder = entry.get("assignment_folder") or plan.get(
+            "assignment_folder"
+        )
         if reuse and assignment_folder:
             needed_iterations = [
-                it for it in all_iterations
+                it
+                for it in all_iterations
                 if not _is_iteration_assignment_done(entry, assignment_folder, it)
             ]
-            need_real = task["include_real_match"] and not _is_real_match_assignment_done(entry, assignment_folder)
+            need_real = task[
+                "include_real_match"
+            ] and not _is_real_match_assignment_done(entry, assignment_folder)
             if not needed_iterations and not need_real:
                 continue
             if not needed_iterations and need_real:

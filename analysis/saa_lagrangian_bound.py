@@ -146,14 +146,41 @@ def scenario_inner_max(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=True, help="Sweep YAML to take the problem from.")
+    parser.add_argument(
+        "--config", required=True, help="Sweep YAML to take the problem from."
+    )
     parser.add_argument("--centroids", default=None, help="Override centroids_type.")
-    parser.add_argument("--scenarios", type=int, default=None, help="How many scenarios to use (default: all).")
-    parser.add_argument("--inner-iterations", type=int, default=4, help="Cutting-plane iterations per scenario.")
-    parser.add_argument("--master-time-limit", type=float, default=120.0, help="Seconds per master solve.")
-    parser.add_argument("--lambda-steps", type=int, default=0, help="Subgradient steps; 0 gives the perfect-information bound.")
+    parser.add_argument(
+        "--scenarios",
+        type=int,
+        default=None,
+        help="How many scenarios to use (default: all).",
+    )
+    parser.add_argument(
+        "--inner-iterations",
+        type=int,
+        default=4,
+        help="Cutting-plane iterations per scenario.",
+    )
+    parser.add_argument(
+        "--master-time-limit",
+        type=float,
+        default=120.0,
+        help="Seconds per master solve.",
+    )
+    parser.add_argument(
+        "--lambda-steps",
+        type=int,
+        default=0,
+        help="Subgradient steps; 0 gives the perfect-information bound.",
+    )
     parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--incumbent", type=float, default=None, help="Known feasible welfare, used for the Polyak step.")
+    parser.add_argument(
+        "--incumbent",
+        type=float,
+        default=None,
+        help="Known feasible welfare, used for the Polyak step.",
+    )
     parser.add_argument(
         "--max-price-step",
         type=float,
@@ -165,7 +192,9 @@ def main() -> None:
             "capping it gives the dual its best chance of improving on D(0)."
         ),
     )
-    parser.add_argument("--output", required=True, help="Where to write the JSON result.")
+    parser.add_argument(
+        "--output", required=True, help="Where to write the JSON result."
+    )
     args = parser.parse_args()
 
     plan = create_plan(args.config)
@@ -205,7 +234,10 @@ def main() -> None:
         f"{len(used)}/{total_scenarios} scenarios, setup {setup_seconds:.1f}s",
         flush=True,
     )
-    print(f"a-priori bounds: first_choice={first_choice:,.2f}  transport={transport:,.2f}", flush=True)
+    print(
+        f"a-priori bounds: first_choice={first_choice:,.2f}  transport={transport:,.2f}",
+        flush=True,
+    )
 
     # Reuses the shared feasibility cache, so this is normally a lookup.
     hint = initial_solution(
@@ -215,9 +247,11 @@ def main() -> None:
 
     # Prices live only on the access pairs the cuts actually touch, so no new
     # access variables are created for their sake.
-    probe = [
-        oracle.solve(hint_assignment) for oracle in oracles
-    ] if hint_assignment is not None else []
+    probe = (
+        [oracle.solve(hint_assignment) for oracle in oracles]
+        if hint_assignment is not None
+        else []
+    )
     # The solvers key access variables on the unordered pair, so prices must be
     # deduplicated the same way; a self-pair is a constant and cannot
     # discriminate between scenarios, so it is dropped.
@@ -273,7 +307,10 @@ def main() -> None:
                 "seconds": elapsed,
             }
         )
-        print(f"  D = {bound:,.2f}   best {best_bound:,.2f}   ({elapsed:.0f}s)", flush=True)
+        print(
+            f"  D = {bound:,.2f}   best {best_bound:,.2f}   ({elapsed:.0f}s)",
+            flush=True,
+        )
 
         if step == args.lambda_steps:
             break
@@ -287,7 +324,10 @@ def main() -> None:
             for pair in pairs
         }
         gradient = [
-            {pair: (r["access"].get(pair, 0) - consensus[pair]) / count for pair in pairs}
+            {
+                pair: (r["access"].get(pair, 0) - consensus[pair]) / count
+                for pair in pairs
+            }
             for r in results
         ]
         norm_sq = sum(value * value for g in gradient for value in g.values())

@@ -597,9 +597,7 @@ def test_config_rejects_citywide():
             data={
                 "scenario": "legacy",
                 "overrides": {
-                    "filters": {
-                        "optimization": {"include_citywide_choice_opt": True}
-                    }
+                    "filters": {"optimization": {"include_citywide_choice_opt": True}}
                 },
             },
         )
@@ -766,9 +764,7 @@ def test_the_budget_dual_completes_the_dual_objective(method):
     budget = 0.5
     lp = solve_master(p, columns, 5, method=method, overlap_budget=budget)
     assert lp.status == "OPTIMAL"
-    assert lp.duals().dual_objective(p, budget) == pytest.approx(
-        lp.objective, abs=1e-6
-    )
+    assert lp.duals().dual_objective(p, budget) == pytest.approx(lp.objective, abs=1e-6)
     # ... and without the term it is strictly short, so the test has teeth.
     assert lp.duals().dual_objective(p) < lp.objective - 1e-6
 

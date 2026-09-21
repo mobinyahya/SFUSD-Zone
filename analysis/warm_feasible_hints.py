@@ -41,11 +41,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("sweep", help="Path to the sweep YAML")
     parser.add_argument("centroid", help="Centroid configuration to warm")
     parser.add_argument(
-        "--time-limit", type=float, default=300.0,
+        "--time-limit",
+        type=float,
+        default=300.0,
         help="Seconds for the CP-SAT hint search (default: 300)",
     )
     parser.add_argument(
-        "--workers", type=int, default=8,
+        "--workers",
+        type=int,
+        default=8,
         help="CP-SAT workers for the hint search (default: 8)",
     )
     return parser.parse_args()

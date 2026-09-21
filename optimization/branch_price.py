@@ -140,9 +140,7 @@ def _price_labels(pricer, pool, duals, decisions, deadline, phase_one):
 
     price_all = getattr(pricer, "price_all", None)
     if price_all is not None:
-        return price_all(
-            pool, duals, decisions, deadline=deadline, phase_one=phase_one
-        )
+        return price_all(pool, duals, decisions, deadline=deadline, phase_one=phase_one)
     labels = tuple(range(pool.problem.Z))
     results = {}
     for priced, zone in enumerate(labels):
@@ -375,8 +373,7 @@ def _search(
             # a bound below the relaxation's own optimum -- the one direction
             # that is wrong rather than merely weak.
             certified = (
-                point.dual_objective(p, live_budget)
-                + sum(max(0.0, b) for b in bounds)
+                point.dual_objective(p, live_budget) + sum(max(0.0, b) for b in bounds)
                 if all(math.isfinite(b) for b in bounds)
                 else math.inf
             )

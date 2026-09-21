@@ -366,9 +366,7 @@ def solve_master(
     if seconds <= 0:
         return MasterResult("TIME_LIMIT")
     if method not in MASTER_METHODS:
-        raise ValueError(
-            f"dw_master_method must be one of: {sorted(MASTER_METHODS)}."
-        )
+        raise ValueError(f"dw_master_method must be one of: {sorted(MASTER_METHODS)}.")
     overlap_budget = float(overlap_budget)
     if overlap_budget < 0 or math.isnan(overlap_budget):
         raise ValueError("dw_overlap_prop must be nonnegative.")
@@ -486,9 +484,7 @@ def solve_master(
         if m.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
             return MasterResult("INFEASIBLE")
         if m.SolCount == 0:
-            return MasterResult(
-                "TIME_LIMIT" if m.Status == GRB.TIME_LIMIT else "ERROR"
-            )
+            return MasterResult("TIME_LIMIT" if m.Status == GRB.TIME_LIMIT else "ERROR")
         status = "OPTIMAL" if m.Status == GRB.OPTIMAL else "FEASIBLE"
         if not integer and status != "OPTIMAL":
             return MasterResult("LP_NOT_OPTIMAL")

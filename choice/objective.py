@@ -161,8 +161,7 @@ class ChoiceObjective:
                 not isinstance(pair, tuple)
                 or len(pair) != 2
                 or any(
-                    isinstance(node, bool) or not isinstance(node, int)
-                    for node in pair
+                    isinstance(node, bool) or not isinstance(node, int) for node in pair
                 )
             ):
                 raise ValueError("Choice access term keys must be integer node pairs.")

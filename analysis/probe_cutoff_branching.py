@@ -102,16 +102,21 @@ def main() -> None:
     }
     print("\n" + "=" * 76)
     print(f"status={status}  solutions={solutions}  wall={elapsed:,.0f}s")
-    print(f"  dual bound      {record['bound']:12,.2f}   "
-          f"(mid: {MID_DUAL_BOUND:,.2f} -> "
-          f"{record['bound'] - MID_DUAL_BOUND:+,.2f})")
+    print(
+        f"  dual bound      {record['bound']:12,.2f}   "
+        f"(mid: {MID_DUAL_BOUND:,.2f} -> "
+        f"{record['bound'] - MID_DUAL_BOUND:+,.2f})"
+    )
     if solutions:
-        print(f"  incumbent       {record['incumbent']:12,.2f}   "
-              f"(mid: {MID_INCUMBENT:,.2f} -> "
-              f"{record['incumbent'] - MID_INCUMBENT:+,.2f})")
+        print(
+            f"  incumbent       {record['incumbent']:12,.2f}   "
+            f"(mid: {MID_INCUMBENT:,.2f} -> "
+            f"{record['incumbent'] - MID_INCUMBENT:+,.2f})"
+        )
         print(f"  raw incumbent   {record['raw_incumbent']:12,.2f}")
-        print(f"  relative gap    {100 * record['relative_gap']:11.2f}%   "
-              f"(mid: 17.74%)")
+        print(
+            f"  relative gap    {100 * record['relative_gap']:11.2f}%   (mid: 17.74%)"
+        )
     else:
         print("  no feasible zoning found")
     print("=" * 76)

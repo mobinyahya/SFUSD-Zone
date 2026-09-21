@@ -149,7 +149,11 @@ def main() -> None:
         flush=True,
     )
     with open(args.out, "w") as fh:
-        json.dump({"level": args.level, "seeded_lp": lp.objective, "labels": rows}, fh, indent=2)
+        json.dump(
+            {"level": args.level, "seeded_lp": lp.objective, "labels": rows},
+            fh,
+            indent=2,
+        )
     print(f"wrote {args.out}", flush=True)
 
 

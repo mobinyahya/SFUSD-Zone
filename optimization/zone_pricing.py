@@ -491,8 +491,6 @@ class ZonePricer:
         }
 
 
-
-
 # ---------------------------------------------------------------------- #
 # Shared model builders
 # ---------------------------------------------------------------------- #
@@ -681,13 +679,9 @@ def add_mid_welfare(model, x, objective, scale, *, tag=""):
     for program_id, program in programs.items():
         terms = capacity_terms[program_id]
         if terms:
-            model.Add(
-                sum(terms) <= lottery * program.capacity * x[program.school_node]
-            )
+            model.Add(sum(terms) <= lottery * program.capacity * x[program.school_node])
 
-    welfare = bind_welfare(
-        model, welfare_terms, bound, name=f"{tag}zone_welfare"
-    )
+    welfare = bind_welfare(model, welfare_terms, bound, name=f"{tag}zone_welfare")
     return welfare, {
         "types": len(market.types),
         "programs": len(programs),
@@ -763,13 +757,13 @@ def add_matching_welfare(
             z = model.NewBoolVar(f"{tag}z_{index}_{program_id}")
             seat[key] = y
             clears[key] = z
-            model.Add(y <= indicator)                                   # (F3)
-            model.Add(y <= z)                                           # (F4)
+            model.Add(y <= indicator)  # (F3)
+            model.Add(y <= z)  # (F4)
             # The weakly-preferred prefix. Boolean, so (F1) is its domain.
             weakly = model.NewBoolVar(f"{tag}prefix_{index}_{rank}")
             model.Add(weakly == (y if previous is None else previous + y))
             prefix[key] = weakly
-            model.Add(weakly >= indicator + z - 1)                      # (F6)
+            model.Add(weakly >= indicator + z - 1)  # (F6)
             coefficient = ceil_scale(student.utilities[rank], scale)
             welfare_terms.append(coefficient * y)
             best = max(best, coefficient)
@@ -792,17 +786,17 @@ def add_matching_welfare(
             continue
         seats = model.NewIntVar(0, quota, f"{tag}seats_{program_id}")
         model.Add(seats == sum(seat[(index, program_id)] for index in order))
-        model.Add(seats <= quota * x[program.school_node])              # (F2)
+        model.Add(seats <= quota * x[program.school_node])  # (F2)
         running = 0
         previous_clears = None
         for position, index in enumerate(order):
             key = (index, program_id)
             if previous_clears is not None:
-                model.Add(clears[key] <= previous_clears)               # (F5)
+                model.Add(clears[key] <= previous_clears)  # (F5)
                 chain_rows += 1
             previous_clears = clears[key]
             if non_wastefulness:
-                model.Add(seats + quota * clears[key] >= quota)         # (S1)
+                model.Add(seats + quota * clears[key] >= quota)  # (S1)
             if aggregate_stability:
                 indicator = access_indicator(
                     model,
@@ -812,9 +806,7 @@ def add_matching_welfare(
                     access,
                     tag=tag,
                 )
-                model.Add(
-                    quota * prefix[key] + running >= quota * indicator
-                )                                                       # (S2)
+                model.Add(quota * prefix[key] + running >= quota * indicator)  # (S2)
                 stability_rows += 1
                 if position + 1 < len(order):
                     # Running prefix over the students the program *strictly*
@@ -826,9 +818,7 @@ def add_matching_welfare(
                     model.Add(tail == running + seat[key])
                     running = tail
 
-    welfare = bind_welfare(
-        model, welfare_terms, bound, name=f"{tag}zone_welfare"
-    )
+    welfare = bind_welfare(model, welfare_terms, bound, name=f"{tag}zone_welfare")
     return welfare, {
         "students": len(retained),
         "programs": len(available),
@@ -871,9 +861,7 @@ def add_welfare_block(
     """One label's welfare, whichever definition this run decomposes."""
 
     if objective.kind == "boundary":
-        return boundary_welfare(
-            model, cut_terms, scale, name=f"{tag}zone_welfare"
-        ), {}
+        return boundary_welfare(model, cut_terms, scale, name=f"{tag}zone_welfare"), {}
     if objective.kind == "mid":
         return add_mid_welfare(model, x, objective, scale, tag=tag)
     if objective.kind == "stable_matching":

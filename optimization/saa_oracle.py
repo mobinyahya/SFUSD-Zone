@@ -31,9 +31,7 @@ class SaaCut:
             coefficient * access[pair] for pair, coefficient in self.coefficients
         )
 
-    def to_choice_cut(
-        self, weight: float = 1.0, group: int | None = None
-    ) -> ChoiceCut:
+    def to_choice_cut(self, weight: float = 1.0, group: int | None = None) -> ChoiceCut:
         """Convert to a solver-agnostic cut, optionally scaled and grouped.
 
         ``weight`` scales the whole affine function, which is how a per-scenario

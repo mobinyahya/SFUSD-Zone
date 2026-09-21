@@ -131,9 +131,7 @@ class PricedAccessChoiceModel(ChoiceModel):
         # Theorem 2 reports, so the smaller of the two is the tighter
         # certificate. ``None`` when the prices came from a source that solves
         # no zone-aware relaxation.
-        self.welfare_bound = (
-            None if welfare_bound is None else float(welfare_bound)
-        )
+        self.welfare_bound = None if welfare_bound is None else float(welfare_bound)
         self.bound_metadata = dict(bound_metadata or {})
 
     @property

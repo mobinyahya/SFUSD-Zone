@@ -472,9 +472,9 @@ def canonical_partition(
     order = sorted(
         members,
         key=lambda part: min(
-            area_id for node in members[part] for area_id in stable_area_ids(
-                parent_G, node
-            )
+            area_id
+            for node in members[part]
+            for area_id in stable_area_ids(parent_G, node)
         ),
     )
     relabelled = {old: new for new, old in enumerate(order)}
@@ -523,8 +523,7 @@ def partition_from_portable(
         if None in parts:
             missing = sorted(a for a in area_ids if a not in part_of_area)
             raise ValueError(
-                f"Partition artifact is missing area ids {missing[:5]} "
-                f"(node {node})."
+                f"Partition artifact is missing area ids {missing[:5]} (node {node})."
             )
         if len(parts) != 1:
             raise ValueError(

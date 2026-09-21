@@ -154,11 +154,15 @@ class RootModel:
         # Contiguity, in the linear form the Boolean model uses:
         # x[z, v] <= sum of x[z, .] over v's supported neighbours.
         supports = contiguity.contiguity_supports(
-            problem.G, problem.centroids, problem.centroid_school_ids,
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
             problem.candidate_zones,
         )
         closer = contiguity.closer_supports(
-            problem.G, problem.centroids, problem.centroid_school_ids,
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
             problem.candidate_zones,
         )
         for (v, z), support in supports.items():
@@ -194,9 +198,7 @@ class RootModel:
         if total_schools:
             for z in range(problem.Z):
                 nodes = [v for v in problem.nodes if z in problem.candidate_zones(v)]
-                terms = gp.quicksum(
-                    self.schools[v] * self.x[(z, v)] for v in nodes
-                )
+                terms = gp.quicksum(self.schools[v] * self.x[(z, v)] for v in nodes)
                 m.addConstr(terms >= max(0.0, total_schools / problem.Z - 1.0))
                 m.addConstr(terms <= self.school_ceiling)
 
@@ -226,21 +228,15 @@ class RootModel:
             "triangle_dis",
         }:
             school_nodes = {v for v, count in self.schools.items() if count}
-            needed |= {
-                (v, u) for v in problem.nodes for u in school_nodes
-            }
-        return {
-            (min(a, b), max(a, b)) for a, b in needed if a is not None and b != a
-        }
+            needed |= {(v, u) for v in problem.nodes for u in school_nodes}
+        return {(min(a, b), max(a, b)) for a, b in needed if a is not None and b != a}
 
     def _access(self) -> None:
         problem, m = self.problem, self.model
         self.a: dict[tuple[int, int], object] = {}
         self.both: dict[tuple[int, int, int], object] = {}
         for u, v in sorted(self._pair_needed()):
-            common = sorted(
-                problem.candidate_zones(u) & problem.candidate_zones(v)
-            )
+            common = sorted(problem.candidate_zones(u) & problem.candidate_zones(v))
             if not common:
                 self.a[(u, v)] = 0.0
                 continue
@@ -273,7 +269,8 @@ class RootModel:
         bounds = cutoff_upper_bounds(market, L)
         self.cutoffs = {
             program.program_id: m.addVar(
-                lb=0.0, ub=min(float(bounds[program.program_id]), float(L) * 40),
+                lb=0.0,
+                ub=min(float(bounds[program.program_id]), float(L) * 40),
                 name=f"P_{program.program_id}",
             )
             for program in market.programs
@@ -376,9 +373,7 @@ class RootModel:
                         if u != v and (min(v, u), max(v, u), z) in self.both
                     )
                     own = self.schools[v]
-                    m.addConstr(
-                        terms <= (self.school_ceiling - own) * self.x[(z, v)]
-                    )
+                    m.addConstr(terms <= (self.school_ceiling - own) * self.x[(z, v)])
                     added["disaggregated"] += 1
 
         if "lower" in self.families or "lower_dis" in self.families:
@@ -451,7 +446,8 @@ class RootModel:
             # to bipartite, and a bipartite graph has no triangles to bind on.
             for v in problem.nodes:
                 row = [
-                    u for u in school_nodes
+                    u
+                    for u in school_nodes
                     if u != v and not isinstance(self._access_of(v, u), float)
                 ]
                 for u, w in itertools.combinations(row, 2):
@@ -471,7 +467,6 @@ class RootModel:
         if self.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"root LP status {self.model.Status}")
         return float(self.model.ObjVal) / self.denominator
-
 
 
 class ZoneDisaggregatedModel:
@@ -502,7 +497,9 @@ class ZoneDisaggregatedModel:
     mass by the membership constraint.
     """
 
-    def __init__(self, problem, market, lottery_scale: int, *, disaggregate_supply=True):
+    def __init__(
+        self, problem, market, lottery_scale: int, *, disaggregate_supply=True
+    ):
         self.problem = problem
         self.market = market
         self.scale = lottery_scale
@@ -521,7 +518,8 @@ class ZoneDisaggregatedModel:
         bounds = cutoff_upper_bounds(market, L)
         self.cutoffs = {
             program.program_id: m.addVar(
-                lb=0.0, ub=min(float(bounds[program.program_id]), float(L) * 40),
+                lb=0.0,
+                ub=min(float(bounds[program.program_id]), float(L) * 40),
                 name=f"P_{program.program_id}",
             )
             for program in market.programs
@@ -555,7 +553,7 @@ class ZoneDisaggregatedModel:
             if key in effective:
                 return effective[key]
             if (zone, node) not in self.x:
-                effective[key] = float(L)      # student cannot be in this zone
+                effective[key] = float(L)  # student cannot be in this zone
                 return effective[key]
             gates = [self.x[(zone, node)]]
             if not program.citywide and program.school_node != node:
@@ -616,9 +614,7 @@ class ZoneDisaggregatedModel:
             per_zone = supply[program.program_id]
             if not per_zone:
                 continue
-            total = gp.quicksum(
-                term for terms in per_zone.values() for term in terms
-            )
+            total = gp.quicksum(term for terms in per_zone.values() for term in terms)
             m.addConstr(total <= float(L) * program.capacity)
             if not self.disaggregate_supply or program.citywide:
                 continue
@@ -641,17 +637,16 @@ class ZoneDisaggregatedModel:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="benchmark/configs/priced_access_seeds.yaml")
+    parser.add_argument(
+        "--config", default="benchmark/configs/priced_access_seeds.yaml"
+    )
     parser.add_argument("--centroids", default="6-zone-3")
     parser.add_argument("--lottery-scale", type=int, default=100)
     parser.add_argument("--output")
     args = parser.parse_args()
 
     problem, market = build_instance(args.config, args.centroids)
-    students = [
-        student
-        for student in getattr(market, "students", ())
-    ]
+    students = [student for student in getattr(market, "students", ())]
     print(
         f"nodes={len(problem.nodes)} Z={problem.Z} programs={len(market.programs)} "
         f"types={len(market.types)} students={market.student_count}",

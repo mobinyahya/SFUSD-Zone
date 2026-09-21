@@ -51,7 +51,9 @@ def _cut_value(cut, zoning: dict[int, int]) -> float:
     return value
 
 
-def _node_truth(utility: PricedAccessUtility, zoning: dict[int, int]) -> dict[int, float]:
+def _node_truth(
+    utility: PricedAccessUtility, zoning: dict[int, int]
+) -> dict[int, float]:
     truth: dict[int, float] = {}
     for index in range(len(utility._student_options)):
         node = utility._student_nodes[index]
@@ -143,7 +145,9 @@ def test_threshold_never_drops_below_an_unrevokable_option():
         MidProgram("NEAR", 200, 10, False, 0),
     ]
     students = [MidStudent(4, ("NEAR", "CITY"), (0, 0), (6.0, 3.0), (600, 300))]
-    utility = PricedAccessUtility(_market(students, programs), problem, {}, cut_levels=4)
+    utility = PricedAccessUtility(
+        _market(students, programs), problem, {}, cut_levels=4
+    )
     anchor = {node: 0 for node in problem.nodes}
     cuts = utility.evaluate_with_cuts(problem, anchor).cuts
     # Cut off from NEAR the student still holds CITY, worth 3.0.

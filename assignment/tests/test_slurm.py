@@ -1030,7 +1030,9 @@ def test_metrics_only_fails_before_evaluation_when_input_is_missing(tmp_path):
 def test_assignment_batches_skips_completed_iterations_when_reuse_true(tmp_path):
     subconfig_dir = tmp_path / "subconfig-1"
     subconfig_dir.mkdir(parents=True)
-    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text(
+        "student,school\n1,101\n", encoding="utf-8"
+    )
 
     plan = {
         "assignment_folder": str(tmp_path),
@@ -1064,7 +1066,9 @@ def test_assignment_batches_skips_completed_iterations_when_reuse_true(tmp_path)
 def test_assignment_batches_does_not_skip_when_reuse_false(tmp_path):
     subconfig_dir = tmp_path / "subconfig-1"
     subconfig_dir.mkdir(parents=True)
-    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text(
+        "student,school\n1,101\n", encoding="utf-8"
+    )
 
     plan = {
         "assignment_folder": str(tmp_path),
@@ -1094,11 +1098,17 @@ def test_assignment_batches_does_not_skip_when_reuse_false(tmp_path):
     assert scheduled_iterations == [0, 1, 2]
 
 
-def test_run_cached_assignment_batch_returns_empty_when_all_iterations_done(tmp_path, monkeypatch):
+def test_run_cached_assignment_batch_returns_empty_when_all_iterations_done(
+    tmp_path, monkeypatch
+):
     subconfig_dir = tmp_path / "subconfig-1"
     subconfig_dir.mkdir(parents=True)
-    (subconfig_dir / "policy_variant_iteration0.csv").write_text("student,school\n1,101\n", encoding="utf-8")
-    (subconfig_dir / "policy_variant_iteration1.csv").write_text("student,school\n1,101\n", encoding="utf-8")
+    (subconfig_dir / "policy_variant_iteration0.csv").write_text(
+        "student,school\n1,101\n", encoding="utf-8"
+    )
+    (subconfig_dir / "policy_variant_iteration1.csv").write_text(
+        "student,school\n1,101\n", encoding="utf-8"
+    )
 
     worker_plan = {
         "assignment_folder": str(tmp_path),

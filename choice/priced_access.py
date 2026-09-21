@@ -159,11 +159,7 @@ class PricedAccessUtility:
             self._student_options.append(tuple(options))
             self._student_floors.append(
                 max(
-                    (
-                        option.value
-                        for option in options
-                        if option.school_node is None
-                    ),
+                    (option.value for option in options if option.school_node is None),
                     default=0.0,
                 )
             )

@@ -43,9 +43,7 @@ def _tightest_bound(
     model_bound: float | None, zoned_bound: float | None
 ) -> float | None:
     """The smaller of two simultaneously valid welfare upper bounds."""
-    candidates = [
-        value for value in (model_bound, zoned_bound) if value is not None
-    ]
+    candidates = [value for value in (model_bound, zoned_bound) if value is not None]
     return min(candidates) if candidates else None
 
 

@@ -505,6 +505,7 @@ def test_config_rejects_bad_stable_cutoff_options(overrides, message):
             levels=["BlockGroup_0"], strategy="stable_cutoff", **overrides
         )
 
+
 def test_dual_bound_is_reported_without_an_incumbent():
     """A run that times out before its first zoning must still say what it proved.
 

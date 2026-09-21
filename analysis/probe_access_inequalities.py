@@ -72,7 +72,9 @@ def main() -> None:
 
     market = build_saa_market(base, dataset.config)
     sample = sample_school_preferences(
-        market, 1, str(options.get("saa_tie_breaking_method", "MTB")).upper(),
+        market,
+        1,
+        str(options.get("saa_tie_breaking_method", "MTB")).upper(),
         int(options.get("seed", 42)),
     )[0]
     oracle = SaaOracle(market, sample, 0, base, workers=args.workers)
@@ -91,10 +93,15 @@ def main() -> None:
         result = oracle.solve(assignment)
         cuts.append(result.cut.to_choice_cut())
         objective = ChoiceObjective(
-            cuts=tuple(cuts), scale=scale, aggregate_cuts=True,
-            total_lower_bound=0.0, total_upper_bound=transport,
+            cuts=tuple(cuts),
+            scale=scale,
+            aggregate_cuts=True,
+            total_lower_bound=0.0,
+            total_upper_bound=transport,
         )
-        problem = dataset.problem_for(target, hint=assignment, choice_objective=objective)
+        problem = dataset.problem_for(
+            target, hint=assignment, choice_objective=objective
+        )
         _configure_problem(problem, options)
         solution = get_solver(
             config.solver, solve_time_limit=args.time_limit, workers=args.workers
@@ -107,10 +114,15 @@ def main() -> None:
     rows = []
     for label, flags in VARIANTS.items():
         objective = ChoiceObjective(
-            cuts=tuple(cuts), scale=scale, aggregate_cuts=True,
-            total_lower_bound=0.0, total_upper_bound=declared,
+            cuts=tuple(cuts),
+            scale=scale,
+            aggregate_cuts=True,
+            total_lower_bound=0.0,
+            total_upper_bound=declared,
         )
-        problem = dataset.problem_for(target, hint=assignment, choice_objective=objective)
+        problem = dataset.problem_for(
+            target, hint=assignment, choice_objective=objective
+        )
         _configure_problem(problem, options)
         start = time.perf_counter()
         solution = get_solver(

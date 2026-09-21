@@ -1079,8 +1079,8 @@ def test_priced_access_closes_with_a_replay_of_its_best_zoning():
             )
 
     monkey = priced_access_module.build_priced_access_choice_model
-    priced_access_module.build_priced_access_choice_model = (
-        lambda *args, **kwargs: _Model()
+    priced_access_module.build_priced_access_choice_model = lambda *args, **kwargs: (
+        _Model()
     )
     try:
         strategy = get_strategy(
