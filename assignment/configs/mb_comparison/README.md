@@ -65,17 +65,26 @@ in which Mission Bay is the only thing that changes.
 
 ## Running
 
-Each cell is `assignment/configs/8-18-real-pref.yaml` **verbatim**, with only
-three things changed: the `data:` block, `paths.assignment-folder`, and
-`output_dir`. Same seed (2023), 25 iterations, same seven subconfigs, real
-preferences (`utility-model.enable: false`). `mb_2324.yaml` differs from the
-original in the two paths alone.
+Each cell is `assignment/configs/8-18-real-pref.yaml` with four things
+changed: the `data:` block, `paths.assignment-folder`, `output_dir`, and
+`neighborhood_assignment_#5` appended to `subconfigs`. Same seed (2023), 25
+iterations, real preferences (`utility-model.enable: false`). The extra
+subconfig is in the five cells only — the shared template is untouched, so
+other runs using it are unaffected.
 
-Each cell plans to 14 Slurm jobs (7 assignment + 7 dependent metrics) at 25
-CPUs each. The repository caps a plan at `MAX_ASSIGNMENT_JOBS = 12` /
-`MAX_METRICS_JOBS = 8` and running jobs at `MAX_RUNNING_SLURM_JOBS = 12`
-(`assignment/slurm_graph.py`), so **submit one cell at a time** — five at once
-would be 70 jobs and 175 concurrent CPUs of assignment work.
+Eight subconfigs means each cell plans to 16 Slurm jobs (8 assignment + 8
+dependent metrics) at 25 CPUs each. The repository caps a plan at
+`MAX_ASSIGNMENT_JOBS = 12` / `MAX_METRICS_JOBS = 8` and running jobs at
+`MAX_RUNNING_SLURM_JOBS = 12` (`assignment/slurm_graph.py`), and the cluster's
+own `soal` QoS is `MaxJobsPU=12, MaxSubmitPU=20`, so **submit one cell at a
+time** — a second concurrent cell would be 32 submitted and rejected.
+
+Re-submitting a cell that has already run is cheap. `reuse_assignments: true`
+plus the launcher's default `--skip-existing` makes `_assignment_batches` drop
+any iteration whose CSV already exists and skip a task with nothing left to do,
+so only genuinely missing work runs. The metrics jobs do recompute, which is
+what rewrites `aggregate_metrics/` across the full subconfig set — that is how
+`neighborhood_assignment_#5` was added without rerunning the other seven.
 
 ```bash
 uv run python -m assignment.run_custom_config --config-path assignment/configs/mb_comparison/nomb_2324.yaml --workers 7
