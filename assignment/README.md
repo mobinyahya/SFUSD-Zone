@@ -179,7 +179,8 @@ listed any special alternative in a selected round.
 `capacity_profile` selects the registered program table. By default,
 `capacity_scenario: programs` uses that table's `capacity` values unchanged. An
 explicit scenario overlays matching school/program/grade capacities from the
-central scenario table.
+central scenario table. The Webster study also has built-in, year-specific
+capacity scenarios documented in `assignment/configs/mb_comparison/README.md`.
 
 Students outside the selected Census district geometry have blank Census
 geography. They are filtered by default; `outside_district_students: include`

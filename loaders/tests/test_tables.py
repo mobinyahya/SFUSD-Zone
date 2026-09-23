@@ -5,6 +5,7 @@ import pytest
 
 from loaders import ResolvedSource, SPECIAL_PROGRAMS
 from loaders.tables import (
+    apply_capacity_scenario,
     load_program_records,
     load_school_records,
     load_student_records,
@@ -14,6 +15,86 @@ from loaders.tables import (
     parse_ranked_schools,
     read_csv_source,
 )
+
+
+def test_mission_bay_webster_capacity_transfer_is_selected_and_conserves_seats(
+    scenario_factory,
+):
+    scenario = scenario_factory(
+        {},
+        {
+            "assignment": {
+                "year": "2627",
+                "include_mission_bay": True,
+                "capacity_scenario": "mission_bay_ge_to_webster_2627",
+            }
+        },
+    )
+    programs = pd.DataFrame(
+        {
+            "school_id": [999, 497, 999],
+            "program_type": ["GE", "GE", "MM"],
+            "capacity": [69, 44, 5],
+        }
+    )
+    result = apply_capacity_scenario(programs, scenario, "assignment")
+    assert result["capacity"].tolist() == [0, 113, 5]
+    assert result["capacity"].sum() == programs["capacity"].sum()
+    assert programs["capacity"].tolist() == [69, 44, 5]
+
+    with pytest.raises(ValueError, match="Expected 69 Mission Bay GE seats"):
+        apply_capacity_scenario(
+            programs.assign(capacity=[68, 44, 5]), scenario, "assignment"
+        )
+
+
+@pytest.mark.parametrize(
+    ("year", "scenario_name", "extra_seats"),
+    [
+        ("2324", "webster_plus_66_ge_2324", 66),
+        ("2425", "webster_plus_69_ge_2425", 69),
+        ("2526", "webster_plus_69_ge_2526", 69),
+    ],
+)
+def test_webster_capacity_additions_use_no_mission_bay_programs(
+    scenario_factory, year, scenario_name, extra_seats
+):
+    scenario = scenario_factory(
+        {},
+        {
+            "assignment": {
+                "year": year,
+                "include_mission_bay": False,
+                "capacity_scenario": scenario_name,
+            }
+        },
+    )
+    programs = pd.DataFrame(
+        {
+            "school_id": [497, 497, 500],
+            "program_type": ["GE", "MM", "GE"],
+            "capacity": [27, 5, 38],
+        }
+    )
+    result = apply_capacity_scenario(programs, scenario, "assignment")
+    assert result["capacity"].tolist() == [27 + extra_seats, 5, 38]
+    assert result["capacity"].sum() == programs["capacity"].sum() + extra_seats
+    assert programs["capacity"].tolist() == [27, 5, 38]
+
+    with pytest.raises(ValueError, match="no Mission Bay programs"):
+        apply_capacity_scenario(
+            pd.concat(
+                [
+                    programs,
+                    pd.DataFrame(
+                        {"school_id": [999], "program_type": ["GE"], "capacity": [0]}
+                    ),
+                ],
+                ignore_index=True,
+            ),
+            scenario,
+            "assignment",
+        )
 
 
 def _student_scenario(

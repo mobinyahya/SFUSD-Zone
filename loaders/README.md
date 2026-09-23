@@ -650,8 +650,16 @@ filters:
 ### Capacity Overlays
 
 When `capacity_scenario` is `programs`, the loader uses the `capacity` values in
-the selected program table and does not read a capacity-overlay source. Any
-other value, such as `A`, requires the source role `<group>.capacity` and reads:
+the selected program table and does not read a capacity-overlay source. The
+assignment study also has built-in scenarios `webster_plus_66_ge_2324`,
+`webster_plus_69_ge_2425`, `webster_plus_69_ge_2526`, and
+`mission_bay_ge_to_webster_2627`; these adjust the selected program table in
+memory. The first three add Webster GE seats because Mission Bay is absent in
+those years. The last moves 69 GE seats from Mission Bay to Webster in 2026-27.
+See `assignment/configs/mb_comparison/README.md` for the study design.
+
+Other explicit values, such as `A`, require the source role `<group>.capacity`
+and read:
 
 | Source column | Meaning |
 |---|---|

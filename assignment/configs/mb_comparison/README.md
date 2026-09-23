@@ -1,95 +1,103 @@
-# Mission Bay comparison study
+# Mission Bay and Webster capacity comparison study
 
-Five assignment run configs split into two families, because Mission Bay ES is
-a different kind of object in each school year and one series cannot hold both.
+The active study has eight assignment cells. All use the same ten policies,
+seed 2023, 25 iterations, real preferences, and the high-income and FRL metric
+reports. The historical `mb_2324.yaml` cell is excluded from the study and run
+plan. Its Mission Bay seats came from a different, hypothetical 2023-24 program
+roster, so it is not a clean counterpart to the no-Mission-Bay baseline.
 
-Mission Bay ES opened **17 August 2026**, the first day of SY26-27 and SFUSD's
-first new school in two decades. That single fact drives the whole split:
+## 2023-24 through 2025-26: no Mission Bay
 
-| Year | Mission Bay in the data | What it is |
-|---|---|---|
-| 2023-24 | `999-GE-KG`, 66 seats | **Counterfactual.** Hard-coded in `programs_statusQuo_2324.csv`. No 2023-24 student ranks it, enrols at it, or is zoned to it |
-| 2024-25 | absent | **Nothing.** No 909/999/1731 row in the capacity file, demographics or post-run |
-| 2025-26 | absent | **Nothing.** Same |
-| 2026-27 | `999-GE-KG` 69, `999-MM-KG` 5, `999-AF-KG` 0 | **Record.** District Main Round capacities; 233 kindergarteners ranked it, 74 enrolled |
+These three baseline cells use each year's real program table, with Mission Bay
+excluded. Their school table is `schools_rehauled_2324.csv` (72 schools).
 
-The district code is `idSchool 1731`, remapped to the repository's placeholder
-`999` by `RAW_SCHOOL_ID_ALIASES` in
-`analysis/data_prep/sfusd_transfer_schema.py`. `909` and `999` are both
-placeholder IDs and appear as two identical school rows.
-
-## Family A — Mission Bay excluded, 2023-24 → 2025-26
-
-`nomb_2324.yaml`, `nomb_2425.yaml`, `nomb_2526.yaml`
-
-Every cell runs `capacity_profile: default` with `include_mission_bay: false`.
-Each year contributes its own real program table and **all three share one
-school table**, so the only thing that moves across the series is the year.
-
-| cell | programs source | programs | students | capacity |
+| Baseline config | Program source | Programs | Students | Total capacity |
 |---|---|---:|---:|---:|
-| `nomb_2324` | `programs_2324.csv` | 164 | 3,953 | 4,268 |
-| `nomb_2425` | `programs_2425.csv` | 166 | 3,852 | 4,099 |
-| `nomb_2526` | `programs_2526.csv` | 166 | 3,717 | 4,202 |
+| `nomb_2324.yaml` | `programs_2324.csv` | 164 | 3,953 | 4,268 |
+| `nomb_2425.yaml` | `programs_2425.csv` | 166 | 3,852 | 4,099 |
+| `nomb_2526.yaml` | `programs_2526.csv` | 166 | 3,717 | 4,202 |
 
-School table for all three: `schools_rehauled_2324.csv` (72 schools, no
-Mission Bay).
+Each has a separate Webster capacity sensitivity cell:
 
-## Family B — Mission Bay included, 2023-24 vs 2026-27
+| Sensitivity config | Capacity scenario | Webster GE seats added | New total capacity |
+|---|---|---:|---:|
+| `nomb_2324_webster_seats.yaml` | `webster_plus_66_ge_2324` | 66 | 4,334 |
+| `nomb_2425_webster_seats.yaml` | `webster_plus_69_ge_2425` | 69 | 4,168 |
+| `nomb_2526_webster_seats.yaml` | `webster_plus_69_ge_2526` | 69 | 4,271 |
 
-`mb_2324.yaml`, `mb_2627.yaml`
+The 66 seats match the hypothetical 2023-24 Mission Bay GE count; the 69 seats
+in each later year match Mission Bay's actual 2026-27 GE count. **These are
+capacity additions, not transfers from a program in those years.** The three
+baseline tables have no Mission Bay seats to remove. Only Webster GE capacity
+changes within each baseline/sensitivity pair; student data, preferences,
+schools, and policies stay the same. The original source tables are unchanged.
 
-| cell | programs source | programs | students | capacity | Mission Bay |
-|---|---|---:|---:|---:|---|
-| `mb_2324` | `programs_statusQuo_2324.csv` | 165 | 3,953 | 4,298 | `999-GE-KG` 66 |
-| `mb_2627` | `programs_withMissionBay_2627.csv` | 162 | 3,855 | 4,306 | 69 / 5 / 0 |
+## 2026-27: real Mission Bay and seat transfer
 
-School table for both: `schools_rehauled_withMissionBay_2324.csv` (73 schools).
+`mb_2627.yaml` uses `programs_withMissionBay_2627.csv` (162 programs, 3,855
+students, 4,306 seats). Mission Bay has 69 GE, five MM, and zero AF seats. Its
+school table is `schools_rehauled_withMissionBay_2324.csv` (73 schools).
 
-## The one trap
+`mb_2627_webster_seats.yaml` uses the same inputs with
+`capacity_scenario: mission_bay_ge_to_webster_2627`. The loader moves Mission
+Bay's 69 GE kindergarten seats to Daniel Webster GE: Mission Bay GE becomes
+zero, Webster GE goes from 27 to 96, Mission Bay MM remains five, and total
+capacity stays 4,306. This is an actual transfer between programs in the
+selected 2026-27 table. The district source table is unchanged.
 
-**The 2023-24 baseline is not the same in the two families.** `status_quo` is
-the only 2023-24 bundle that carries Mission Bay at all, and it is a different
-roster from the `default` table Family A uses: 169 rows vs 164, 32 programs
-with different capacity, 7 programs only in `status_quo`, 2 only in `default`.
+## Policies and metrics
 
-So `nomb_2324` and `mb_2324` differ by more than Mission Bay, and differencing
-a Family A number against a Family B one attributes that whole roster change to
-Mission Bay. Compare **within** a family.
+Each cell includes `no_distance+reserves_05frl_#3` and `#4` alongside
+`distance_05_1_2+reserves_05frl_#3` and `#4`. Within each pair, the sole
+policy change is removal of the distance priority weight and thresholds. Both
+retain the 50/50 FRL soft reserves, zone access, attendance-area rules, and
+lottery. The existing `status_quo+reserves_05frl` policy also has no distance
+priority but changes other rules, so it is not the isolated comparison.
 
-If you want to isolate the Mission Bay effect cleanly, add a sixth cell: 2026-27
-without Mission Bay. That bundle exists (`programs_2627.csv`, 159 programs) and
-is one filter flip — copy `mb_2627.yaml` and set `include_mission_bay: false`.
-`mb_2627` vs that cell is a same-year, same-students, same-preferences contrast
-in which Mission Bay is the only thing that changes.
+All eight configs set `export-aggregate-metrics: true` and
+`export-local-metrics: true`. The metrics pass recomputes the high-income and
+FRL citywide measures, plus program, ZIP, and attendance-area reports from
+both new and reused assignment CSVs. See
+`assignment/docs/ASSIGNMENT_METRICS.md` for metric definitions.
 
-## Running
+## Running on SOAL
 
-Each cell is `assignment/configs/8-18-real-pref.yaml` with four things
-changed: the `data:` block, `paths.assignment-folder`, `output_dir`, and
-`neighborhood_assignment_#5` appended to `subconfigs`. Same seed (2023), 25
-iterations, real preferences (`utility-model.enable: false`). The extra
-subconfig is in the five cells only — the shared template is untouched, so
-other runs using it are unaffected.
+Sync the current study code and configs to the cluster, then run `uv sync`.
+Submit the following eight configs **one at a time**, waiting for the previous
+cell's metrics finalizer to finish successfully before submitting the next:
 
-Eight subconfigs means each cell plans to 16 Slurm jobs (8 assignment + 8
-dependent metrics) at 25 CPUs each. The repository caps a plan at
-`MAX_ASSIGNMENT_JOBS = 12` / `MAX_METRICS_JOBS = 8` and running jobs at
-`MAX_RUNNING_SLURM_JOBS = 12` (`assignment/slurm_graph.py`), and the cluster's
-own `soal` QoS is `MaxJobsPU=12, MaxSubmitPU=20`, so **submit one cell at a
-time** — a second concurrent cell would be 32 submitted and rejected.
+1. `nomb_2324.yaml`
+2. `nomb_2324_webster_seats.yaml`
+3. `nomb_2425.yaml`
+4. `nomb_2425_webster_seats.yaml`
+5. `nomb_2526.yaml`
+6. `nomb_2526_webster_seats.yaml`
+7. `mb_2627.yaml`
+8. `mb_2627_webster_seats.yaml`
 
-Re-submitting a cell that has already run is cheap. `reuse_assignments: true`
-plus the launcher's default `--skip-existing` makes `_assignment_batches` drop
-any iteration whose CSV already exists and skip a task with nothing left to do,
-so only genuinely missing work runs. The metrics jobs do recompute, which is
-what rewrites `aggregate_metrics/` across the full subconfig set — that is how
-`neighborhood_assignment_#5` was added without rerunning the other seven.
+For each file, use the Slurm launcher from the repository root, for example:
 
 ```bash
-uv run python -m assignment.run_custom_config --config-path assignment/configs/mb_comparison/nomb_2324.yaml --workers 7
+uv run python -m assignment.slurm submit --config assignment/configs/mb_comparison/nomb_2324.yaml
 ```
 
-Outputs go to `/soalnas/share/data/school_choice/local_runs/mb_comparison/<cell>/`,
-one directory per cell, so runs do not collide and `reuse_assignments: true` is
-safe.
+Each ten-policy cell plans up to 18 Slurm jobs (ten assignment jobs and eight
+dependent metrics jobs). The cluster's `soal` QoS is `MaxJobsPU=12,
+MaxSubmitPU=20`, so concurrent cell submissions can exceed the limit.
+
+The launcher defaults to `--skip-existing`, and all configs use
+`reuse_assignments: true`. If the earlier eight-policy baseline runs are
+complete and correspond to these configs, the three no-Mission-Bay baselines
+and `mb_2627` each need only the two new no-distance policies (200 new
+assignment iterations total). All four Webster sensitivity cells are new (1,000
+assignment iterations total). Metrics run across all ten policies in all eight
+cells (2,000 policy iterations), including reused assignments. The excluded
+`mb_2324.yaml` is neither submitted nor included in these counts.
+
+Check each final `assignments/aggregate_metrics/manifest.json`, the four
+aggregate CSV reports, and 25 saved assignment iterations per policy. The
+2023-24 through 2025-26 Webster program rows should gain 66, 69, and 69 GE
+seats respectively; the 2026-27 report should show Mission Bay GE at zero and
+Webster GE at 96. Outputs live under
+`/soalnas/share/data/school_choice/local_runs/mb_comparison/<cell>/`, one
+directory per cell.

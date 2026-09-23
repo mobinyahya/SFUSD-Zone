@@ -1,15 +1,14 @@
 data:
-  scenario: assignment-generated-zones-2526
+  scenario: assignment-generated-zones-2627
   overrides:
     filters:
       assignment:
-        capacity_profile: default
-        include_mission_bay: false
+        capacity_scenario: mission_bay_ge_to_webster_2627
 iterations:
   end: 25
   start: 0
 paths:
-  assignment-folder: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526/assignments
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/mb_comparison/mb_2627_webster_seats/assignments
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
@@ -47,4 +46,4 @@ utility-model:
   designate-lp-for-all: false
   enable: false
   list-length: 0.8*round(real_length)
-output_dir: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526/
+output_dir: /soalnas/share/data/school_choice/local_runs/mb_comparison/mb_2627_webster_seats/

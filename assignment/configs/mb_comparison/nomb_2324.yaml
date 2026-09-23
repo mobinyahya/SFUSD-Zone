@@ -39,7 +39,9 @@ subconfigs:
 # - status_quo+reserves_05frl
 # - status_quo+reserves_06frl
 - distance_05_1_2+reserves_05frl_#3
+- no_distance+reserves_05frl_#3
 - distance_05_1_2+reserves_05frl_#4
+- no_distance+reserves_05frl_#4
 - neighborhood_assignment_#5
 utility-model:
   designate-lp-for-all: false

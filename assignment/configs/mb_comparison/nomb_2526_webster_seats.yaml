@@ -4,12 +4,13 @@ data:
     filters:
       assignment:
         capacity_profile: default
+        capacity_scenario: webster_plus_69_ge_2526
         include_mission_bay: false
 iterations:
   end: 25
   start: 0
 paths:
-  assignment-folder: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526/assignments
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526_webster_seats/assignments
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
@@ -47,4 +48,4 @@ utility-model:
   designate-lp-for-all: false
   enable: false
   list-length: 0.8*round(real_length)
-output_dir: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526/
+output_dir: /soalnas/share/data/school_choice/local_runs/mb_comparison/nomb_2526_webster_seats/

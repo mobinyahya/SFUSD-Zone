@@ -80,7 +80,9 @@ Mission Bay variants and never fall back.
 
 The default `capacity_scenario: programs` uses capacities from the program table
 selected by `capacity_profile`. Explicit scenarios overlay matching
-school/program/grade rows from the central scenario table.
+school/program/grade rows from the central scenario table. The Webster study
+also has built-in, year-specific capacity scenarios documented in
+`assignment/configs/mb_comparison/README.md`.
 
 Points outside the selected district Census geometry are not snapped to nearby
 Blocks. Their Census geography remains blank; `outside_district_students: ignore`

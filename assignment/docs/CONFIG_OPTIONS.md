@@ -80,7 +80,10 @@ bundle. Unsupported combinations fail and never fall back.
 market. `capacity_scenario: programs` uses its capacities directly and is the
 default. An explicit scenario overlays matching school/program/grade values from
 the central capacity-scenario table; programs absent from that table retain
-their selected-table capacities.
+their selected-table capacities. The built-in Webster scenarios used by
+`assignment/configs/mb_comparison/` instead adjust Webster GE capacity in the
+selected program table, with the 2026-27 scenario transferring seats from
+Mission Bay; see that study's README for the year-specific seat counts.
 
 Student coordinates outside the selected district Census geometry have blank
 Block, BlockGroup, and Tract values. The default `ignore` policy removes those

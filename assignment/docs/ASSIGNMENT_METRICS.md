@@ -66,6 +66,18 @@ household income at or above the threshold is compared with the district share
 plus or minus 10 or 15 percentage points. Low Income metrics analogously use
 the share at or below the threshold.
 
+The full report also counts schools and GE programs above +10/+15 or below
+-10/-15 percentage points of the assigned district high-income share. The
+program threshold uses the share among assigned students with a recorded
+income; programs without such students are not classified, while the
+proportion denominator remains all GE programs in the selected inventory.
+Counts and shares of students in those schools are reported for every
+full-report group and all eight diagnostic ethnicity groups. Program sheets
+include high-income shares for all assigned,
+designated, and non-designated students, the district reference share, the
+program's percentage-point difference, and a below -15 point indicator. The
+indicator is blank when a program has no assigned student with recorded income.
+
 `Prop AALPI in ... Schools` is the pooled AALPI share among students in the
 selected schools. `Avg Prop AALPI ...` and `Avg Prop FRL ...` are unweighted
 means of the selected schools' composition proportions.

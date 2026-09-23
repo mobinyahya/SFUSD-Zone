@@ -857,6 +857,53 @@ def apply_capacity_scenario(
     result = frame.copy()
     if scenario_name == "programs":
         return result
+    webster_additions = {
+        "webster_plus_66_ge_2324": ("2324", 66),
+        "webster_plus_69_ge_2425": ("2425", 69),
+        "webster_plus_69_ge_2526": ("2526", 69),
+    }
+    if scenario_name in webster_additions:
+        year, extra_seats = webster_additions[scenario_name]
+        if (
+            group != "assignment"
+            or scenario.filter(group, "year") != year
+            or scenario.filter(group, "include_mission_bay")
+        ):
+            raise ValueError(
+                f"{scenario_name} requires {year} assignment data without Mission Bay."
+            )
+        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
+        program_types = result["program_type"].astype(str)
+        webster = school_ids.eq(497) & program_types.eq("GE")
+        if webster.sum() != 1 or school_ids.eq(999).any():
+            raise ValueError(
+                f"{scenario_name} requires one Webster GE program and no "
+                "Mission Bay programs."
+            )
+        result.loc[webster, "capacity"] = (
+            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + extra_seats
+        )
+        return result
+    if scenario_name == "mission_bay_ge_to_webster_2627":
+        if group != "assignment" or scenario.filter(group, "year") != "2627":
+            raise ValueError(
+                "mission_bay_ge_to_webster_2627 requires 2026-27 assignment data."
+            )
+        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
+        mission_bay = school_ids.eq(999) & result["program_type"].eq("GE")
+        webster = school_ids.eq(497) & result["program_type"].eq("GE")
+        if mission_bay.sum() != 1 or webster.sum() != 1:
+            raise ValueError(
+                "Mission Bay/Webster transfer requires one GE program at each school."
+            )
+        seats = pd.to_numeric(result.loc[mission_bay, "capacity"], errors="coerce")
+        if seats.iloc[0] != 69:
+            raise ValueError("Expected 69 Mission Bay GE seats in 2026-27.")
+        result.loc[webster, "capacity"] = (
+            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + 69
+        )
+        result.loc[mission_bay, "capacity"] = 0
+        return result
 
     required_program_columns = {"school_id", "program_type", "capacity"}
     missing = required_program_columns - set(result.columns)

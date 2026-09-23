@@ -224,6 +224,24 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     )
     assert metrics["#Students in schools above +15% district FRL (ET (2024))"] == 0
     assert metrics["#GE programs above +15% district FRL (Non-Designated)"] == 1
+    assert metrics["#Schools below -15% district High Income (95292)"] == 1
+    assert metrics["#GE programs below -15% district High Income (95292)"] == 1
+    assert (
+        metrics["#Students in schools below -15% district High Income (95292) (Black)"]
+        == 1
+    )
+    assert (
+        metrics[
+            "Prop students in schools below -15% district High Income (95292) (Black)"
+        ]
+        == 1
+    )
+    assert pd.isna(
+        metrics[
+            "Prop students in schools below -15% district High Income (95292) (Pacific Islander)"
+        ]
+    )
+    assert metrics["AALPI in GE programs with -15% High Income (95292)"] == 1
     assert metrics["Prop Top 1 choice (All Assigned)"] == 2 / 5
     assert metrics["Prop Top 1 choice (All Assigned) numerator"] == 2
     assert metrics["Prop Top 1 choice (All Assigned) denominator"] == 5
@@ -297,6 +315,10 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     assert zip_94113["Average Utility"] == 0
 
     attendance_metrics = reports["attendance_area"]
+    assert (
+        "Prop students in schools below -15% district High Income (95292) (Black)"
+        in attendance_metrics
+    )
     assert set(attendance_metrics.columns) == {
         "config_name",
         "attendance_area",
@@ -567,6 +589,12 @@ def test_program_report_uses_exact_program_assignments_and_schema():
         "frl_assigned",
         "frl_designated",
         "frl_non_designated",
+        "high_income_assigned",
+        "high_income_designated",
+        "high_income_non_designated",
+        "district_high_income",
+        "high_income_delta_pp",
+        "high_income_below_minus15_district",
         "program_utilization",
         "overage",
         "underage",
@@ -592,6 +620,11 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert program_x["frl_assigned"] == pytest.approx(0.8)
     assert program_x["frl_designated"] == pytest.approx(0.8)
     assert program_x["frl_non_designated"] == pytest.approx(0.8)
+    assert program_x["high_income_assigned"] == 0
+    assert program_x["high_income_designated"] == 0
+    assert program_x["district_high_income"] == pytest.approx(3 / 7)
+    assert program_x["high_income_delta_pp"] == pytest.approx(-300 / 7)
+    assert program_x["high_income_below_minus15_district"] == 1
     assert program_x["program_utilization"] == 1.5
     assert program_x["overage"] == 0.5
     assert program_x["underage"] == 0
@@ -604,6 +637,10 @@ def test_program_report_uses_exact_program_assignments_and_schema():
 
     program_y = by_program.loc["101-Y-KG"]
     assert program_y["assigned"] == 2
+    assert program_y["high_income_assigned"] == 1
+    assert program_y["high_income_designated"] == 1
+    assert program_y["high_income_non_designated"] == 1
+    assert program_y["high_income_below_minus15_district"] == 0
     assert program_y["designated"] == 1
     assert program_y["mean_travel_dist_assigned"] == 8
     assert program_y["mean_travel_dist_designated"] == 7
@@ -628,6 +665,7 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert program_z["overage"] == 0
     assert program_z["underage"] == 0.75
     assert program_z["prop_top_1"] == 0
+    assert pd.isna(by_program.loc["202-V-KG", "high_income_below_minus15_district"])
     assert program_z["prop_top_2"] == 1
     assert program_z["prop_top_3"] == 1
     assert program_z["non_designated_pacific_islander_students"] == 1

@@ -2224,6 +2224,30 @@ class MatchEvaluator:
         programs["frl_assigned"] = program_ids.map(assigned_stats["frl"])
         programs["frl_designated"] = program_ids.map(designated_stats["frl"])
         programs["frl_non_designated"] = program_ids.map(non_designated_stats["frl"])
+        for cohort, stats in (
+            ("assigned", assigned_stats),
+            ("designated", designated_stats),
+            ("non_designated", non_designated_stats),
+        ):
+            programs[f"high_income_{cohort}"] = [
+                self._safe_ratio(high, valid)
+                for high, valid in zip(
+                    program_ids.map(stats["high_income"]).fillna(0),
+                    program_ids.map(stats["income_valid"]).fillna(0),
+                    strict=True,
+                )
+            ]
+        district_high_income = aggregates.high_income_composition[1]
+        programs["district_high_income"] = district_high_income
+        programs["high_income_delta_pp"] = 100 * (
+            programs["high_income_assigned"] - district_high_income
+        )
+        programs["high_income_below_minus15_district"] = (
+            programs["high_income_delta_pp"]
+            .lt(-15)
+            .astype(float)
+            .where(programs["high_income_delta_pp"].notna())
+        )
         programs["program_utilization"] = [
             self._safe_ratio(total, seats)
             for total, seats in zip(assigned, capacity, strict=True)
@@ -2272,6 +2296,12 @@ class MatchEvaluator:
                 "frl_assigned",
                 "frl_designated",
                 "frl_non_designated",
+                "high_income_assigned",
+                "high_income_designated",
+                "high_income_non_designated",
+                "district_high_income",
+                "high_income_delta_pp",
+                "high_income_below_minus15_district",
                 "program_utilization",
                 "overage",
                 "underage",
@@ -2653,8 +2683,12 @@ class MatchEvaluator:
                     "rank",
                     "ethnicity",
                     "frl",
+                    "median_hh_income",
                 ]
             ].copy()
+            income = pd.to_numeric(source["median_hh_income"], errors="coerce")
+            source["income_valid"] = income.notna()
+            source["high_income"] = income.ge(self.medium_income) & income.notna()
             for rank in range(1, 4):
                 source[f"top_{rank}"] = source["rank"] <= rank
             for ethnicity in DIAGNOSTIC_ETHNICITIES:
@@ -2663,6 +2697,8 @@ class MatchEvaluator:
                 count=("studentno", "size"),
                 assignment_dist=("assignment_dist", "mean"),
                 frl=("frl", "mean"),
+                income_valid=("income_valid", "sum"),
+                high_income=("high_income", "sum"),
                 **{f"top_{rank}": (f"top_{rank}", "sum") for rank in range(1, 4)},
                 **{
                     ethnicity: (ethnicity, "sum")
@@ -2972,6 +3008,61 @@ class MatchEvaluator:
 
         high_income_composition = aggregates.high_income_composition
         low_income_composition = aggregates.low_income_composition
+        high_income_school_shares, district_high_income_share = high_income_composition
+        high_income_school_sets = {}
+        ge_income = pd.to_numeric(ge_students["median_hh_income"], errors="coerce")
+        ge_with_income = ge_students[ge_income.notna()]
+        ge_high_income_shares = (
+            ge_with_income.assign(
+                _high_income=ge_income[ge_income.notna()].ge(medium_income)
+            )
+            .groupby("assignment")["_high_income"]
+            .mean()
+        )
+        ge_program_count = int((self.programs["program_type"] == "GE").sum())
+        for points in (10, 15, -10, -15):
+            direction = "above" if points > 0 else "below"
+            threshold_name = (
+                f"{direction} {points:+d}% district High Income ({medium_income})"
+            )
+            selected_schools = self._schools_outside_composition_range(
+                high_income_school_shares, district_high_income_share, points / 100
+            )
+            high_income_school_sets[points] = selected_schools
+            metrics[f"#Schools {threshold_name}"] = len(selected_schools)
+            metrics[f"#Students in schools {threshold_name}"] = int(
+                assigned_students["assigned school"].isin(selected_schools).sum()
+            )
+            selected_programs = self._schools_outside_composition_range(
+                ge_high_income_shares, district_high_income_share, points / 100
+            )
+            metrics[f"#GE programs {threshold_name}"] = len(selected_programs)
+            metrics[f"Proportion of GE programs {threshold_name}"] = self._safe_ratio(
+                len(selected_programs), ge_program_count
+            )
+            metrics[
+                f"AALPI in GE programs with {points:+d}% High Income ({medium_income})"
+            ] = self._safe_ratio(
+                int(ge_aalpi_students["assignment"].isin(selected_programs).sum()),
+                len(ge_aalpi_students),
+            )
+        income_report_groups = dict(aggregates.student_groups)
+        for ethnicity in DIAGNOSTIC_ETHNICITIES:
+            income_report_groups.setdefault(
+                ethnicity,
+                assigned_students[assigned_students["ethnicity"] == ethnicity],
+            )
+        for group, students in income_report_groups.items():
+            for points, schools in high_income_school_sets.items():
+                direction = "above" if points > 0 else "below"
+                label = (
+                    f"{direction} {points:+d}% district High Income ({medium_income})"
+                )
+                count = int(students["assigned school"].isin(schools).sum())
+                metrics[f"#Students in schools {label} ({group})"] = count
+                metrics[f"Prop students in schools {label} ({group})"] = (
+                    self._safe_ratio(count, len(students))
+                )
 
         (
             metrics[f"#Schools with +10% High Income ({medium_income})"],
