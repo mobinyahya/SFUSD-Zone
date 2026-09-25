@@ -886,15 +886,16 @@ def test_the_enrolled_table_is_a_subset_of_the_student_table(
     assert sorted(enrolled["studentno"]) == [1, 2, 4, 5, 6, 7]
 
 
-def test_the_enrolled_table_takes_the_enrolment_record_and_drops_899(
+def test_the_enrolled_table_keeps_only_students_with_an_enrolment_record(
     frames, cleaned_dir, capacities, promotion, transfer, no_geography
 ):
     # The demographics extract records where each student enrolled for the
-    # fall. School 899 is "Central Enrollment": enrolled nowhere, so student 1
-    # leaves the enrolled table even though the post-run seated them. Student
-    # 2 moved after the Main Round, from their 999-GE seat to 420-SE; student
-    # 5 is recorded at Mission Bay under the district's new id 1731; student 4
-    # has a record at another grade, and 6 and 7 none, so they keep the seat.
+    # fall. Only a record at kindergarten, at a real school, counts: student 1
+    # is at 899 ("Central Enrollment", enrolled nowhere), student 4 is recorded
+    # at TK, and 6 and 7 have no record, so the post-run seated all four and
+    # none of them enrolled. Student 2 moved after the Main Round from their
+    # 999-GE seat to 420-SE; student 5 is recorded at Mission Bay under the
+    # district's new id 1731.
     frames["demographics"] = pd.DataFrame(
         {
             "scrambledstudentno": [f"S00000000{n}" for n in (1, 2, 4, 5)],
@@ -912,29 +913,26 @@ def test_the_enrolled_table_takes_the_enrolment_record_and_drops_899(
     enrolled = built.enrolled.set_index("studentno")
     report = built.report
 
-    assert sorted(enrolled.index) == [2, 4, 5, 6, 7]
-    assert 1 in students.index
+    assert sorted(enrolled.index) == [2, 5]
+    assert {1, 4, 6, 7} <= set(students.index)
     assert enrolled.loc[2, ["enrolled_idschool", "enrolled_programcode"]].tolist() == [
         420,
         "SE",
     ]
     assert enrolled.loc[5, "enrolled_idschool"] == 999
-    assert enrolled.loc[4, "enrolled_idschool"] == students.loc[4, "enrolled_idschool"]
-    assert enrolled["enrollment_source"].to_dict() == {
-        2: "fall_record",
-        4: "postrun_other_grade",
-        5: "fall_record",
-        6: "postrun_no_record",
-        7: "postrun_no_record",
-    }
     # The student table, and the Main Round outcome columns of both tables,
     # stay the post-run seat.
     assert students.loc[2, "enrolled_idschool"] == 999
     assert enrolled.loc[2, "final_school"] == students.loc[2, "final_school"]
-    assert report.row_counts["enrolled_KG_seated_not_enrolled_899"] == 1
+    assert report.row_counts["enrolled_KG_seated_at_899"] == 1
+    assert report.row_counts["enrolled_KG_seated_no_record"] == 2
+    assert report.row_counts["enrolled_KG_seated_record_at_other_grade"] == 1
+    assert report.row_counts["enrolled_KG_enrolled"] == 2
 
-    not_enrolled = converter.not_enrolled_students(frames["demographics"], report)
-    assert not_enrolled == {1}
+    recorded = converter.enrolled_at_grade_students(
+        frames["demographics"], "KG", report
+    )
+    assert recorded == {2, 5}
     converter.validate_market(
         built.table,
         built.students,
@@ -942,9 +940,9 @@ def test_the_enrolled_table_takes_the_enrolment_record_and_drops_899(
         frames["postrun"],
         market=built.market,
         report=report,
-        not_enrolled=not_enrolled,
+        recorded=recorded,
     )
-    # Without the exemption the dropped student is an unclaimed seat.
+    # Without the record every seated student is expected.
     with pytest.raises(TransferGapError, match="does not hold"):
         converter.validate_market(
             built.table,

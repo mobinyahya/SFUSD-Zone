@@ -56,8 +56,11 @@ combinations fail rather than falling back.
 
 **Enrolled is not assigned.** School **899** ("Central Enrollment",
 `loaders.tables.NOT_ENROLLED_SCHOOL_ID`) means enrolled nowhere. It is never
-a school. `enrolled_<year>.csv` never holds a student at 899. For 2024-25 on,
-its `enrolled_idschool`/`enrolled_programcode` are the fall enrolment record,
+a school. For 2024-25 on, `enrolled_<year>.csv` holds only seated students
+whose fall enrolment record (demographics `SCHOOL_CODE`/`GRADE`) is at
+kindergarten at a real school. A record at 899, a missing record, or a record
+at another grade all mean not enrolled. Its
+`enrolled_idschool`/`enrolled_programcode` come from that record,
 while `final_school`, `r1_*`, and the student table's `enrolled_idschool`
 stay the Main Round seat. The assignment group's enrolled population also
 drops blank-or-899 rows at load, which is what removes 2023-24's 794

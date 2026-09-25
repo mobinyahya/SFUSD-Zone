@@ -126,9 +126,11 @@ preference round — the main round. One thing is specific to these years:
 because SFUSD auto-promotes TK students into K, the kindergarten applicant pool
 includes students who filed nothing, so the KG rows of `student_<year>.csv` are
 the whole market and `enrolled_<year>.csv` is the subset of them the run
-seated, less those the district records at school 899 (enrolled nowhere),
-with `enrolled_idschool`/`enrolled_programcode` taken from the fall enrolment
-record rather than the Main Round seat. Those students, and the promotion claim an applicant may hold, are
+seated *and* that the district's fall enrolment record puts at a
+kindergarten school. A record at 899, no record at all, or a record at
+another grade all mean not enrolled. `enrolled_idschool` and
+`enrolled_programcode` are taken from that record rather than the Main
+Round seat. Those students, and the promotion claim an applicant may hold, are
 carried in the `mr_applicant`, `promote_eligible`, `feeder_school`,
 `feeder_program` and `pref_source` columns; see
 `analysis/data_prep/TK_PROMOTION_SPEC.md`. `loaders/README.md` has the

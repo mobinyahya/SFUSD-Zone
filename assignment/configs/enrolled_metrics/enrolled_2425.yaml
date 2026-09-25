@@ -1,5 +1,7 @@
-# Metrics for SY24-25 enrolled kindergarteners, treating where they
-# enrolled as the outcome. No mechanism runs; see README.md.
+# SY24-25 enrolled kindergarteners. enrolled_match scores where they
+# enrolled, with no mechanism run; neighborhood_assignment_#5 runs policy 5 on
+# the same students.
+# See README.md.
 data:
   scenario: assignment-generated-zones-2425
   overrides:
@@ -9,7 +11,7 @@ data:
         capacity_profile: default
         include_mission_bay: false
 iterations:
-  end: 1
+  end: 25
   start: 0
 paths:
   assignment-folder: /soalnas/share/data/school_choice/local_runs/enrolled_metrics/2425/assignments
@@ -25,6 +27,7 @@ rounds-merged-options:
 save-assignment: true
 subconfigs:
 - enrolled_match
+- neighborhood_assignment_#5
 utility-model:
   designate-lp-for-all: false
   enable: false
