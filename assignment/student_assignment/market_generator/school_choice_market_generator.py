@@ -4,6 +4,7 @@ import pathlib
 import re
 import shutil
 import tempfile
+import warnings
 from collections.abc import Generator
 from itertools import product
 
@@ -1598,6 +1599,76 @@ class MarketGenerator(SchoolChoiceMarket):
             if rnd_name in df.columns:
                 df["final_program"] = df["final_program"].fillna(df[rnd_name])
 
+    def _enrolled_school_program(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Where each enrolled student enrolled, as ``final_school``/``final_program``.
+
+        ``real-match-source: enrollment`` treats enrollment as the ground-truth
+        outcome instead of the recorded assignment, so it only makes sense on
+        the enrolled population, whose loader has already dropped everyone with
+        no enrolled school (blank or 899). The program is
+        ``enrolled_programcode`` when the table carries it (the transfer
+        years); otherwise, as for 2023-24, the program of the round whose
+        outcome is the enrolled school, then the first program the student
+        ranked there, then GE.
+        """
+        scenario = self.students.data_scenario
+        population = (
+            scenario.filter("assignment", "student_population") if scenario else None
+        )
+        if population != "enrolled":
+            raise ValueError(
+                "real-match-source: enrollment requires the enrolled population; "
+                "set data.overrides.filters.assignment.student_population: "
+                f"enrolled (got {population!r})."
+            )
+        school = pd.to_numeric(df["enrolled_idschool"], errors="coerce")
+        program = (
+            df["enrolled_programcode"].astype(object)
+            if "enrolled_programcode" in df.columns
+            else pd.Series(np.nan, index=df.index, dtype=object)
+        )
+        from_record = int(program.notna().sum())
+        rounds = sorted(
+            int(match.group(1))
+            for column in df.columns
+            if (match := re.fullmatch(r"r(\d+)_idschool", str(column)))
+            and f"r{match.group(1)}_programcode" in df.columns
+        )
+        for round_number in rounds:
+            same = program.isna() & pd.to_numeric(
+                df[f"r{round_number}_idschool"], errors="coerce"
+            ).eq(school)
+            program = program.mask(same, df[f"r{round_number}_programcode"])
+        from_round = int(program.notna().sum()) - from_record
+
+        def ranked_program(row):
+            for ranked_school, ranked in zip(
+                row["selected_ranked_idschool"], row["selected_programs"]
+            ):
+                if ranked_school == row["_school"]:
+                    return ranked
+            return np.nan
+
+        missing = program.isna() & school.notna()
+        if missing.any():
+            ranked = df.loc[missing].assign(_school=school[missing])
+            program.loc[missing] = ranked.apply(ranked_program, axis=1)
+        from_list = int(program.notna().sum()) - from_record - from_round
+        defaulted = int((program.isna() & school.notna()).sum())
+        program = program.mask(program.isna() & school.notna(), "GE")
+        if from_round or from_list or defaulted:
+            warnings.warn(
+                "Enrolled programs: "
+                f"{from_record} from enrolled_programcode, {from_round} from the "
+                f"round whose outcome is the enrolled school, {from_list} from "
+                f"the student's ranked list, {defaulted} defaulted to GE.",
+                stacklevel=3,
+            )
+        return pd.DataFrame(
+            {"final_school": school.astype("Int64"), "final_program": program},
+            index=df.index,
+        )
+
     def _get_real_match(self, preferences: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Read the real match from the student data file (DA is not run).
 
@@ -1607,10 +1678,19 @@ class MarketGenerator(SchoolChoiceMarket):
         Returns:
             Tuple[np.ndarray, np.ndarray]: matched program array and rank of assigned program array
         """
-        self._get_final_program(self.students.student_data)
-        assignment = self.students.student_data[
-            ["final_school", "final_program"]
-        ].copy()
+        source = self.config.get("real-match-source", "assignment")
+        if source == "enrollment":
+            assignment = self._enrolled_school_program(self.students.student_data)
+        elif source == "assignment":
+            self._get_final_program(self.students.student_data)
+            assignment = self.students.student_data[
+                ["final_school", "final_program"]
+            ].copy()
+        else:
+            raise ValueError(
+                "real-match-source must be 'assignment' or 'enrollment', not "
+                f"{source!r}."
+            )
         assignment["programcodes"] = assignment.apply(
             lambda x: (
                 f"{x.final_school}-{x.final_program}-{self.config['grade']}"
@@ -1623,6 +1703,15 @@ class MarketGenerator(SchoolChoiceMarket):
             lambda x: self.programs.index(x) if x in self.programs.indices else 0
         )
         match = assignment.programno.to_numpy()
+        if source == "enrollment":
+            unmatched = assignment.programcodes.notna() & (assignment.programno == 0)
+            if unmatched.any():
+                warnings.warn(
+                    f"{int(unmatched.sum())} enrolled students are at programs "
+                    "absent from the program table and count as unassigned: "
+                    f"{assignment.programcodes[unmatched].value_counts().to_dict()}.",
+                    stacklevel=2,
+                )
 
         # calculate rank according to preferences in first round of participation
         ranks = np.zeros(len(match))

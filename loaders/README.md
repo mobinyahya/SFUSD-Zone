@@ -385,11 +385,43 @@ student's preference list is reconstructed rather than transcribed, as below.
 No other grade is treated this way: grades 6 and 9 are out of scope, so their
 rows are Main Round applicants only.
 
-`enrolled_<year>.csv` is then the subset of those rows the post-run seats, so
-`enrolled` is a subset of `applicant` by construction. In all three transfer
-years every market student takes a seat, so at `grades: [KG]` the two
-coincide; that is a fact about these years rather than an invariant, and a
-market student the run seated nowhere would appear in `applicant` alone.
+`enrolled_<year>.csv` is then the subset of those rows the post-run seats,
+less anyone the district records at school **899**, so `enrolled` is a subset
+of `applicant` by construction. In all three transfer years every market
+student takes a seat, so without the 899 rule the two would coincide at
+`grades: [KG]`; that is a fact about these years rather than an invariant, and
+a market student the run seated nowhere would appear in `applicant` alone.
+
+**Assigned is not enrolled, and 899 means enrolled nowhere.** The post-run's
+`idNextSchool` is the Main Round *assignment*. Where a student actually
+enrolled for the fall is the demographics extract's `SCHOOL_CODE`, `GRADE` and
+`ENR_PATHWAY`, and `SCHOOL_CODE` 899 ("Central Enrollment",
+`loaders.tables.NOT_ENROLLED_SCHOOL_ID`) is the district's placeholder for a
+student with no school. The converter therefore builds the enrolled table from
+the enrolment record:
+
+| Year | Seated at KG | At 899, dropped | Enrolled | From the record | Moved from their seat | No record, seat kept |
+|---|---:|---:|---:|---:|---:|---:|
+| 2024-25 | 3,875 | 45 | 3,830 | 3,149 | 485 | 675 (+6 recorded at another grade) |
+| 2025-26 | 3,980 | 465 | 3,515 | 3,278 | 477 | 226 (+11) |
+| 2026-27 | 3,996 | 19 | 3,977 | 3,233 | 447 | 734 (+10) |
+
+In `enrolled_<year>.csv`, `enrolled_idschool` and `enrolled_programcode` are
+where the student enrolled and `enrollment_source` says where that came from
+(`fall_record`, `postrun_no_record`, `postrun_other_grade`). Everywhere else,
+the Main Round outcome is unchanged: `final_school` and the `r1_*` outcome
+columns in both tables, and `enrolled_idschool` in `student_<year>.csv`, are
+still the post-run seat. So the two tables' `enrolled_idschool` differ for
+the ~450-490 students a year who moved. 899 also appears as the post-run's
+`idCurrentSchool` for applicants with no current SFUSD school. That is the same
+placeholder at an earlier date, not a school.
+
+The 2023-24 `enrolled_2324.csv` predates the converter. It is every KG
+applicant, and a blank `enrolled_idschool` (794 of 4,304) marks one who did
+not enroll. So the **assignment** group's enrolled population drops, at load
+time, every row whose `enrolled_idschool` is blank or 899, in any year.
+Optimization's enrolled population keeps those rows, as it always has, and
+weights them out of the GE population through `enrolled_students` instead.
 
 **Capacity is gross, and no seat is reserved anywhere in the data.** The
 capacity file publishes both `TotalSeats` and `OpenSeatsPreRun`, the latter net

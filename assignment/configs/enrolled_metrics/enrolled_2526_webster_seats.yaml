@@ -1,0 +1,34 @@
+# Metrics for SY25-26 enrolled kindergarteners, treating where they
+# enrolled as the outcome, with Webster's GE capacity raised by Mission Bay's
+# 69 GE seats (webster_plus_69_ge_2526). No mechanism runs; see README.md.
+data:
+  scenario: assignment-generated-zones-2526
+  overrides:
+    filters:
+      assignment:
+        student_population: enrolled
+        capacity_profile: default
+        capacity_scenario: webster_plus_69_ge_2526
+        include_mission_bay: false
+iterations:
+  end: 1
+  start: 0
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/enrolled_metrics/2526_webster_seats/assignments
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: false
+
+r1-only: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- enrolled_match
+utility-model:
+  designate-lp-for-all: false
+  enable: false
+  list-length: 0.8*round(real_length)
+output_dir: /soalnas/share/data/school_choice/local_runs/enrolled_metrics/2526_webster_seats/

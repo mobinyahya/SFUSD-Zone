@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
+import pandas as pd
 import pytest
 import yaml
 
@@ -101,3 +103,45 @@ def test_reconfigure_replaces_zone_dependent_state():
     assert market._guardrail_setup_cache == {}
     assert market._active_policy_cache_context is None
     market._set_up_save_folder.assert_called_once_with("assignments", write_config=True)
+
+
+def _enrollment_market(population, frame):
+    market = MarketGenerator.__new__(MarketGenerator)
+    scenario = Mock()
+    scenario.filter.return_value = population
+    market.students = SimpleNamespace(data_scenario=scenario, student_data=frame)
+    return market
+
+
+def test_enrollment_real_match_reads_where_students_enrolled():
+    frame = pd.DataFrame(
+        {
+            # 1 carries its enrolled program; 2 enrolled where round 2 placed
+            # it; 3 enrolled at a school it ranked; 4 at one it never saw.
+            "enrolled_idschool": [420, 413, 500, 600],
+            "enrolled_programcode": ["SE", np.nan, np.nan, np.nan],
+            "r1_idschool": [420, 420, 420, 420],
+            "r1_programcode": ["GE", "GE", "GE", "GE"],
+            "r2_idschool": [np.nan, 413, np.nan, np.nan],
+            "r2_programcode": [np.nan, "CE", np.nan, np.nan],
+            "selected_ranked_idschool": [[420], [420], [420, 500], [420]],
+            "selected_programs": [["GE"], ["GE"], ["GE", "SB"], ["GE"]],
+        }
+    )
+    market = _enrollment_market("enrolled", frame)
+
+    with pytest.warns(UserWarning, match="1 defaulted to GE"):
+        match = market._enrolled_school_program(frame)
+
+    assert match["final_school"].tolist() == [420, 413, 500, 600]
+    assert match["final_program"].tolist() == ["SE", "CE", "SB", "GE"]
+    # The recorded assignment is left alone.
+    assert frame["r1_idschool"].tolist() == [420, 420, 420, 420]
+
+
+def test_enrollment_real_match_requires_the_enrolled_population():
+    frame = pd.DataFrame({"enrolled_idschool": [420]})
+    market = _enrollment_market("applicant", frame)
+
+    with pytest.raises(ValueError, match="requires the enrolled population"):
+        market._enrolled_school_program(frame)

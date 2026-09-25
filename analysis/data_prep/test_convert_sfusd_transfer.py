@@ -844,7 +844,11 @@ def _tables(frames, cleaned_dir, capacities, promotion, transfer, report=None):
     )
     students = converter.apply_market_columns(students, table, grade="KG")
     enrolled = converter.build_enrolled_table(
-        students, frames["postrun"], market=market, report=report
+        students,
+        frames["postrun"],
+        frames["demographics"],
+        market=market,
+        report=report,
     )
     return SimpleNamespace(
         students=students,
@@ -880,6 +884,76 @@ def test_the_enrolled_table_is_a_subset_of_the_student_table(
     assert len(enrolled) <= int((students["grade"] == "KG").sum())
     # Every market student here takes a seat, so the two coincide.
     assert sorted(enrolled["studentno"]) == [1, 2, 4, 5, 6, 7]
+
+
+def test_the_enrolled_table_takes_the_enrolment_record_and_drops_899(
+    frames, cleaned_dir, capacities, promotion, transfer, no_geography
+):
+    # The demographics extract records where each student enrolled for the
+    # fall. School 899 is "Central Enrollment": enrolled nowhere, so student 1
+    # leaves the enrolled table even though the post-run seated them. Student
+    # 2 moved after the Main Round, from their 999-GE seat to 420-SE; student
+    # 5 is recorded at Mission Bay under the district's new id 1731; student 4
+    # has a record at another grade, and 6 and 7 none, so they keep the seat.
+    frames["demographics"] = pd.DataFrame(
+        {
+            "scrambledstudentno": [f"S00000000{n}" for n in (1, 2, 4, 5)],
+            "Race_Ethnicity": ["Chinese", None, None, None],
+            "HISPANIC_INDICATOR": ["N", "Y", "N", "N"],
+            "HLS1__Language_First_Learn": ["Cantonese", "Spanish", None, None],
+            "Home_Zip": [94121, 94158, None, None],
+            "SCHOOL_CODE": [899, 420, 413, 1731],
+            "GRADE": ["K", "K", "TK", "K"],
+            "ENR_PATHWAY": ["GE", "SE", "GE", "GE"],
+        }
+    )
+    built = _tables(frames, cleaned_dir, capacities, promotion, transfer)
+    students = built.students.set_index("studentno")
+    enrolled = built.enrolled.set_index("studentno")
+    report = built.report
+
+    assert sorted(enrolled.index) == [2, 4, 5, 6, 7]
+    assert 1 in students.index
+    assert enrolled.loc[2, ["enrolled_idschool", "enrolled_programcode"]].tolist() == [
+        420,
+        "SE",
+    ]
+    assert enrolled.loc[5, "enrolled_idschool"] == 999
+    assert enrolled.loc[4, "enrolled_idschool"] == students.loc[4, "enrolled_idschool"]
+    assert enrolled["enrollment_source"].to_dict() == {
+        2: "fall_record",
+        4: "postrun_other_grade",
+        5: "fall_record",
+        6: "postrun_no_record",
+        7: "postrun_no_record",
+    }
+    # The student table, and the Main Round outcome columns of both tables,
+    # stay the post-run seat.
+    assert students.loc[2, "enrolled_idschool"] == 999
+    assert enrolled.loc[2, "final_school"] == students.loc[2, "final_school"]
+    assert report.row_counts["enrolled_KG_seated_not_enrolled_899"] == 1
+
+    not_enrolled = converter.not_enrolled_students(frames["demographics"], report)
+    assert not_enrolled == {1}
+    converter.validate_market(
+        built.table,
+        built.students,
+        built.enrolled,
+        frames["postrun"],
+        market=built.market,
+        report=report,
+        not_enrolled=not_enrolled,
+    )
+    # Without the exemption the dropped student is an unclaimed seat.
+    with pytest.raises(TransferGapError, match="does not hold"):
+        converter.validate_market(
+            built.table,
+            built.students,
+            built.enrolled,
+            frames["postrun"],
+            market=built.market,
+            report=report,
+        )
 
 
 def test_a_market_student_with_no_seat_is_in_the_applicant_pool_only(

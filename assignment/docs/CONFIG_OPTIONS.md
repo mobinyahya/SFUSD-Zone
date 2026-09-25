@@ -204,6 +204,7 @@ Validated against `configs/policy_configs/policy.schema.yaml`.
 |-----|---------|
 | `assignment-algorithm` | `DA` (deferred acceptance). |
 | `policies` | List of zone policies to simulate; each must be a key of `assignment.zones`, or `real_match` to read the historical assignment instead of running DA. |
+| `real-match-source` | What `real_match` reads. `assignment` (default) is the recorded Main Round assignment (`r1_idschool` under `r1-only`, else `final_school`). `enrollment` is where each student enrolled (`enrolled_idschool`/`enrolled_programcode`), and requires `student_population: enrolled`. See `policy_configs/enrolled_match.yaml` and `configs/enrolled_metrics/`. |
 | `zone-building-blocks` | Geounit type of the zone files: `attendance_area`, `block_group`, `block`, `tract`, or `home_based` (JSON studentno → program list). |
 | `ctip-options` | Equity tie-breaker variants: `0` (none), `1` (CTIP1), `5` (5-level CTIP types), `new_ctip`, `new_ctip_blockgroup`, `"<n>D"` (HOCidx1 quantile categories), or a map (`column`, `num_categories`/`thresholds`, `lower_disadvantaged`) for a custom tiebreaker. One simulation per option. |
 | `ties-options` | Lottery variants: `STB` (single), `MTB` (multiple), `STB_REAL` / `MTB_REAL` (historical selected first-participating random numbers), `STBcoordinated` (shared per block group). One simulation per option. |

@@ -40,6 +40,13 @@ _ROUND_PREFERENCE_COLUMN = re.compile(
     r"designation_randomnumber)"
 )
 _MISSION_BAY_SCHOOL_IDS = {909, 999}
+#: SFUSD's placeholder school for a student on record with no school -- the
+#: district names it "Central Enrollment". A student recorded as enrolled at it
+#: is not enrolled anywhere, so no enrolled population ever contains one; see
+#: ``filter_not_enrolled_students``. It is also the post-run's
+#: ``idCurrentSchool`` for an applicant with no current SFUSD school, which is
+#: the same fact at an earlier date.
+NOT_ENROLLED_SCHOOL_ID = 899
 SPECIAL_PROGRAMS = frozenset({"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"})
 _FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
 
@@ -251,6 +258,35 @@ def filter_outside_district_students(
     return filtered
 
 
+def _enrolled_mask(
+    frame: pd.DataFrame, scenario: DataScenario, group: str
+) -> pd.Series | None:
+    """Rows of an assignment enrolled population that did enroll somewhere.
+
+    A student with a blank ``enrolled_idschool`` or one at
+    ``NOT_ENROLLED_SCHOOL_ID`` did not enroll, whatever table they appear in:
+    the checked-in 2023-24 ``enrolled_2324.csv`` is every KG applicant, 794 of
+    them with no enrolled school. The transfer years' converter already drops
+    its 899 students, so there this removes only the handful of seated
+    students with neither an enrolment record nor a post-run school.
+
+    ``None`` outside the assignment group's enrolled population. Optimization's
+    enrolled population keeps these rows and weights them out of the GE
+    population through ``enrolled_students`` instead; filtering them there
+    would change every existing optimization graph for 2023-24.
+    """
+    if group != "assignment" or (
+        scenario.filter(group, "student_population") != "enrolled"
+    ):
+        return None
+    if "enrolled_idschool" not in frame.columns:
+        raise ValueError(
+            "The enrolled student population requires column 'enrolled_idschool'."
+        )
+    school = pd.to_numeric(frame["enrolled_idschool"], errors="coerce")
+    return school.notna() & school.ne(NOT_ENROLLED_SCHOOL_ID)
+
+
 def _validate_student_identities(frame: pd.DataFrame) -> None:
     if "studentno" not in frame.columns:
         raise ValueError("Student data is missing required column 'studentno'.")
@@ -401,6 +437,17 @@ def normalize_student_records(
     grade_mask = normalized_grades.isin(grades)
     frame, source_rows = _filter_student_rows(frame, source_rows, grade_mask)
     frame["grade"] = normalized_grades.loc[frame.index]
+    # Before any Mission Bay blanking, which would make a Mission Bay
+    # enrollee look like a student with no enrolled school.
+    enrolled = _enrolled_mask(frame, scenario, group)
+    if enrolled is not None and not enrolled.all():
+        warnings.warn(
+            f"{int((~enrolled).sum())} of {len(frame)} students in the enrolled "
+            "population have no enrolled school (blank or "
+            f"{NOT_ENROLLED_SCHOOL_ID}) and are excluded as not enrolled.",
+            stacklevel=2,
+        )
+        frame, source_rows = _filter_student_rows(frame, source_rows, enrolled)
     _validate_student_identities(frame)
 
     school_rounds = {

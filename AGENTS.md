@@ -54,6 +54,15 @@ uses canonical `year`, a `grades` list, `student_population`, `rounds`,
 requires exactly one year and grade per market. Unsupported registry
 combinations fail rather than falling back.
 
+**Enrolled is not assigned.** School **899** ("Central Enrollment",
+`loaders.tables.NOT_ENROLLED_SCHOOL_ID`) means enrolled nowhere. It is never
+a school. `enrolled_<year>.csv` never holds a student at 899. For 2024-25 on,
+its `enrolled_idschool`/`enrolled_programcode` are the fall enrolment record,
+while `final_school`, `r1_*`, and the student table's `enrolled_idschool`
+stay the Main Round seat. The assignment group's enrolled population also
+drops blank-or-899 rows at load, which is what removes 2023-24's 794
+non-enrollees. Optimization keeps them. See `loaders/README.md`.
+
 `capacity_scenario` defaults to `programs` for both groups. Assignment uses the
 capacity values in its year/profile-selected program table; optimization uses
 the current 2023-24 program table. Explicit scenarios such as `A` through `D`

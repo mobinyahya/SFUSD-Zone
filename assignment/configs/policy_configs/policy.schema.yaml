@@ -27,6 +27,7 @@ citywide-reserve-ratios: list(num(), required=False)  # Reserve ratios for cityw
 
 zone-building-blocks: str()
 policies: list(str())
+real-match-source: enum('assignment', 'enrollment', required=False)  # What real_match reads: the recorded assignment (default) or where the enrolled population enrolled
 citywide-or-lp: list(str(), required=False)
 
 ctip-options: list(int(), str(), map())

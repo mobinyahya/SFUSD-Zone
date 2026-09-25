@@ -117,7 +117,7 @@ from analysis.data_prep.tk_promotion import (  # noqa: E402
 )
 from loaders import load_scenario  # noqa: E402
 from loaders.geography import match_points_to_census  # noqa: E402
-from loaders.tables import normalize_grade  # noqa: E402
+from loaders.tables import NOT_ENROLLED_SCHOOL_ID, normalize_grade  # noqa: E402
 
 _NULL_TOKENS = frozenset({"NULL", "null", "n/a", "N/A", "", "NaN", "nan", "None"})
 
@@ -1380,22 +1380,86 @@ def add_market_students(
     return combined
 
 
+#: Where an enrolled row's ``enrolled_idschool`` and ``enrolled_programcode``
+#: came from, in ``enrolled_<year>.csv``'s ``enrollment_source`` column.
+#: ``fall_record`` is the demographics extract's enrolment record at the
+#: grade; the other two fall back to the post-run seat because there is no
+#: such record -- no demographics row at all, or a record at another grade.
+ENROLLMENT_SOURCES: tuple[str, ...] = (
+    "fall_record",
+    "postrun_no_record",
+    "postrun_other_grade",
+)
+
+
+def _fall_enrollment(
+    demographics: pd.DataFrame | None, report: Report
+) -> pd.DataFrame | None:
+    """Each student's enrolment record, indexed by student, or ``None``.
+
+    The demographics extract's ``SCHOOL_CODE``, ``GRADE`` and ``ENR_PATHWAY``
+    are the district's record of where the student is enrolled for the fall
+    the transfer year starts (``nextEnterDate``), which is not the post-run's
+    ``idNextSchool``: a student can take a different seat after the Main Round,
+    or none. ``SCHOOL_CODE`` 899 ("Central Enrollment") is the district's
+    placeholder for a student with no school.
+    """
+    if demographics is None or not {"SCHOOL_CODE", "GRADE"} <= set(
+        demographics.columns
+    ):
+        return None
+    frame = _collapse_demographics(demographics, report, record=False)
+    school = _school_ids(frame["SCHOOL_CODE"], "Demographics SCHOOL_CODE")
+    return pd.DataFrame(
+        {
+            "school": school.replace(RAW_SCHOOL_ID_ALIASES).astype("Int64"),
+            "grade": frame["GRADE"].map(normalize_grade),
+            "program": (
+                frame["ENR_PATHWAY"]
+                if "ENR_PATHWAY" in frame.columns
+                else pd.Series(pd.NA, index=frame.index, dtype=object)
+            ),
+        },
+        index=frame.index,
+    )
+
+
+def not_enrolled_students(
+    demographics: pd.DataFrame | None, report: Report
+) -> set[int]:
+    """Students whose enrolment record puts them at no school (code 899)."""
+    record = _fall_enrollment(demographics, report)
+    if record is None:
+        return set()
+    return set(record.index[record["school"].eq(NOT_ENROLLED_SCHOOL_ID).fillna(False)])
+
+
 def build_enrolled_table(
     students: pd.DataFrame,
     postrun: pd.DataFrame,
+    demographics: pd.DataFrame | None = None,
     *,
     market: Market,
     report: Report,
 ) -> pd.DataFrame:
-    """Select the seated cohort out of the student table.
+    """Select the enrolled cohort out of the student table.
 
-    ``enrolled_<year>.csv`` is the students the post-run seats at ``grade``.
-    Since :func:`add_market_students` puts the whole market in the student
-    table, this is a filter of it rather than a second construction, which is
-    what makes the enrolled population a subset of the applicant one. Through
-    2023-24 the checked-in ``enrolled_*`` file was exactly the KG rows of
-    ``student_*``; the two coincide again here whenever every market student
-    takes a seat, which is true of all three transfer years.
+    ``enrolled_<year>.csv`` is the market students the post-run seats at
+    ``grade``, less those the district's enrolment record puts at school 899,
+    which means enrolled nowhere. Since :func:`add_market_students` puts the
+    whole market in the student table, this is a filter of it rather than a
+    second construction, which is what makes the enrolled population a subset
+    of the applicant one.
+
+    The enrolled table's ``enrolled_idschool`` and ``enrolled_programcode``
+    are where the student actually enrolled, from the demographics extract
+    whenever it holds a record at the grade, and the post-run seat otherwise
+    (``enrollment_source`` says which). The student table's
+    ``enrolled_idschool`` stays the post-run seat, and ``final_school`` and
+    the ``r1_*`` outcome columns stay the Main Round assignment in both, so
+    the two tables disagree on ``enrolled_idschool`` for anyone who moved
+    after the Main Round. Through 2023-24 the checked-in ``enrolled_*`` file
+    was exactly the KG rows of ``student_*``, not-enrolled students included.
     """
     grade = market.grade
     outcomes = _postrun_outcomes(postrun)
@@ -1407,11 +1471,17 @@ def build_enrolled_table(
             "student_<year>.csv: the post-run has no NextGrade column, so "
             "which of them took a seat cannot be determined."
         )
-        return at_grade.reset_index(drop=True)
-
-    enrolled = at_grade.loc[at_grade["studentno"].isin(seated.index)]
-    enrolled = enrolled.sort_values("studentno", kind="stable").reset_index(drop=True)
-    unseated = len(at_grade) - len(enrolled)
+        enrolled = at_grade.reset_index(drop=True)
+    else:
+        enrolled = at_grade.loc[at_grade["studentno"].isin(seated.index)]
+        enrolled = enrolled.sort_values("studentno", kind="stable").reset_index(
+            drop=True
+        )
+    seated_count = len(enrolled)
+    enrolled = _apply_fall_enrollment(enrolled, demographics, grade, report)
+    if seated is None:
+        return enrolled
+    unseated = len(at_grade) - seated_count
 
     report.row_counts[f"enrolled_{grade}_total"] = len(enrolled)
     report.row_counts[f"enrolled_{grade}_main_round_applicants"] = int(
@@ -1420,12 +1490,92 @@ def build_enrolled_table(
     report.row_counts[f"enrolled_{grade}_market_students_with_no_seat"] = unseated
     report.note(
         f"enrolled_<year>.csv is the grade-{grade} subset of "
-        f"student_<year>.csv that the post-run seats: {len(enrolled):,} of "
+        f"student_<year>.csv that the post-run seats and that is not recorded "
+        f"at school {NOT_ENROLLED_SCHOOL_ID}: {len(enrolled):,} of "
         f"{len(at_grade):,} market students, "
         f"{int(enrolled['mr_applicant'].sum()):,} of whom filed a Main Round "
-        f"request. {unseated:,} market students took no seat at the grade."
+        f"request. {unseated:,} market students took no seat at the grade, and "
+        f"{seated_count - len(enrolled):,} seated ones are recorded at "
+        f"{NOT_ENROLLED_SCHOOL_ID}."
     )
     return enrolled
+
+
+def _apply_fall_enrollment(
+    enrolled: pd.DataFrame,
+    demographics: pd.DataFrame | None,
+    grade: str,
+    report: Report,
+) -> pd.DataFrame:
+    """Point the enrolled rows at where each student actually enrolled.
+
+    Drops every student recorded at school 899 and sets ``enrolled_idschool``,
+    ``enrolled_programcode`` and ``enrollment_source``; see
+    :func:`build_enrolled_table`.
+    """
+    enrolled = enrolled.copy()
+    postrun_school = enrolled["enrolled_idschool"].astype("Int64")
+    postrun_program = enrolled["r1_programcode"].astype(object)
+    record = _fall_enrollment(demographics, report)
+    if record is None:
+        report.note(
+            "The demographics extract has no SCHOOL_CODE/GRADE enrolment "
+            "record, so enrolled_<year>.csv takes every student's enrolled "
+            "school from the post-run seat and drops nobody as unenrolled."
+        )
+        enrolled["enrolled_programcode"] = postrun_program
+        enrolled["enrollment_source"] = "postrun_no_record"
+        return enrolled
+
+    record = record.reindex(enrolled["studentno"].to_numpy())
+    school = pd.Series(record["school"].to_numpy(), index=enrolled.index, dtype="Int64")
+    record_grade = pd.Series(record["grade"].to_numpy(), index=enrolled.index)
+    program = pd.Series(
+        record["program"].to_numpy(), index=enrolled.index, dtype=object
+    )
+    not_enrolled = school.eq(NOT_ENROLLED_SCHOOL_ID).fillna(False).astype(bool)
+    has_record = school.notna() & ~not_enrolled
+    at_grade = has_record & record_grade.eq(grade)
+    # A record without a pathway at the post-run school keeps the post-run
+    # program; at any other school the program is unknown.
+    program = program.where(
+        program.notna() | school.ne(postrun_school).fillna(True),
+        postrun_program,
+    )
+
+    enrolled["enrolled_idschool"] = school.where(at_grade, postrun_school)
+    enrolled["enrolled_programcode"] = program.where(at_grade, postrun_program)
+    enrolled["enrollment_source"] = np.select(
+        [at_grade, has_record],
+        ["fall_record", "postrun_other_grade"],
+        default="postrun_no_record",
+    )
+    moved = at_grade & school.ne(postrun_school).fillna(True)
+    counts = {
+        f"enrolled_{grade}_seated_not_enrolled_{NOT_ENROLLED_SCHOOL_ID}": int(
+            not_enrolled.sum()
+        ),
+        f"enrolled_{grade}_fall_record": int(at_grade.sum()),
+        f"enrolled_{grade}_fall_record_moved_from_postrun_seat": int(moved.sum()),
+        f"enrolled_{grade}_postrun_other_grade": int((has_record & ~at_grade).sum()),
+        f"enrolled_{grade}_postrun_no_record": int(school.isna().sum()),
+    }
+    report.row_counts.update(counts)
+    report.note(
+        f"Of the students the post-run seats at grade {grade}, "
+        f"{counts[f'enrolled_{grade}_seated_not_enrolled_{NOT_ENROLLED_SCHOOL_ID}']:,} "
+        f"are recorded in the demographics extract at school "
+        f"{NOT_ENROLLED_SCHOOL_ID} (Central Enrollment, i.e. enrolled nowhere) "
+        "and are dropped from enrolled_<year>.csv. Of the rest, "
+        f"{counts[f'enrolled_{grade}_fall_record']:,} take enrolled_idschool and "
+        "enrolled_programcode from their enrolment record "
+        f"({counts[f'enrolled_{grade}_fall_record_moved_from_postrun_seat']:,} "
+        "at a different school from their post-run seat), and "
+        f"{counts[f'enrolled_{grade}_postrun_no_record']:,} with no record and "
+        f"{counts[f'enrolled_{grade}_postrun_other_grade']:,} with a record at "
+        "another grade keep the post-run seat."
+    )
+    return enrolled.loc[~not_enrolled].reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -2275,6 +2425,7 @@ def validate_market(
     *,
     market: Market,
     report: Report,
+    not_enrolled: Iterable[int] = (),
 ) -> None:
     """Fail the build when the emitted tables do not reconcile with the market.
 
@@ -2289,7 +2440,8 @@ def validate_market(
     * the ``k_list`` students are exactly the Main Round applicants, and
       exactly the ``mr_applicant`` rows;
     * the enrolled table is a subset of the market and holds every market
-      student the post-run seats.
+      student the post-run seats, except those in ``not_enrolled`` -- the
+      students the enrolment record puts at school 899.
 
     The numbers those gates come out at are pinned in the converter's tests
     against the real transfer, not asserted here: this checks that the parts
@@ -2345,7 +2497,8 @@ def validate_market(
     seated = seated_at_grade(_postrun_outcomes(postrun), grade)
     if seated is not None:
         unclaimed = sorted(
-            set(seated.index) & set(table.index) - set(enrolled["studentno"])
+            set(seated.index)
+            & set(table.index) - set(enrolled["studentno"]) - set(not_enrolled)
         )
         if unclaimed:
             raise TransferGapError(
@@ -2520,8 +2673,18 @@ def convert_year(
 
     # The enrolled table is a filter of the student table, so the enrolled
     # population is a subset of the applicant one by construction.
-    enrolled = build_enrolled_table(students, postrun, market=market, report=report)
-    validate_market(table, students, enrolled, postrun, market=market, report=report)
+    enrolled = build_enrolled_table(
+        students, postrun, demographics, market=market, report=report
+    )
+    validate_market(
+        table,
+        students,
+        enrolled,
+        postrun,
+        market=market,
+        report=report,
+        not_enrolled=not_enrolled_students(demographics, report),
+    )
 
     # Counted after the market is written on, so the promotion columns are
     # included and the kindergarten preference columns are the emitted ones.

@@ -303,6 +303,42 @@ def test_students_who_rank_nothing_are_dropped_with_a_warning(
     assert loaded["studentno"].tolist() == [1]
 
 
+def test_the_enrolled_population_drops_students_with_no_enrolled_school(
+    tmp_path, scenario_factory
+):
+    # A blank enrolled_idschool, and SFUSD's placeholder 899, both mean
+    # "enrolled nowhere". Mission Bay (999) is a real school and must survive
+    # even in a run that excludes it, so the filter runs before the blanking.
+    rows = [
+        {
+            "studentno": number,
+            "grade": "KG",
+            "enrolled_idschool": school,
+            **_round_columns(1, [20], ["GE"]),
+        }
+        for number, school in [(1, 20.0), (2, None), (3, 899.0), (4, 999.0)]
+    ]
+    students = pd.DataFrame(rows)
+    path = tmp_path / "students.csv"
+    students.to_csv(path, index=False)
+
+    def load(group, population):
+        scenario = scenario_factory(
+            {f"{group}.students": {"path": str(path)}},
+            {group: {"grades": ["KG"], "student_population": population}},
+        )
+        return normalize_student_records(students.copy(), scenario, group)
+
+    with pytest.warns(UserWarning, match="2 of 4 students in the enrolled"):
+        enrolled = load("assignment", "enrolled")
+    assert enrolled["studentno"].tolist() == [1, 4]
+    assert enrolled.attrs["source_rows"] == [0, 3]
+    # The applicant population, and optimization's enrolled population, keep
+    # every row.
+    assert load("assignment", "applicant")["studentno"].tolist() == [1, 2, 3, 4]
+    assert load("optimization", "enrolled")["studentno"].tolist() == [1, 2, 3, 4]
+
+
 def test_the_promotion_claim_is_filtered_and_aliased_like_any_program_list(
     tmp_path, scenario_factory
 ):

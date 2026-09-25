@@ -208,6 +208,7 @@ DEMOGRAPHICS_OPTIONAL: tuple[str, ...] = (
     "Home_Zip",
     "GRADE",
     "ENR_PATHWAY",
+    "SCHOOL_CODE",
 )
 
 # --------------------------------------------------------------------------- #
