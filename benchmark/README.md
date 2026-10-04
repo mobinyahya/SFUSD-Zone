@@ -40,8 +40,14 @@ uv run python -m benchmark.slurm submit --config path/to/sweep.yaml
 Each sweep task is one optimization job using the config's `workers` count. A
 one-core metrics job runs after it and safely updates `summary.csv` and
 `stages.csv`. Recursive and iterative strategy stages stay within one
-optimization job. Slurm mode rejects enabled `matching` and assignment-based
-`choice_metrics`; local capacity and worker-pool settings are not used.
+optimization job. Local capacity and worker-pool settings are not used.
+
+With `matching.enabled`, assignment jobs for every run's root zoning are
+submitted behind the optimization jobs. Runs that already finished without
+matching get their `assignment_zones.csv` (or skip marker) rebuilt from the
+saved `solution_<level>.json` and `zone_dict_area_<level>.json` at plan time,
+so matching can be turned on after a sweep and resubmitted; only root
+targets can be added that way, not `compute_stage_assignments`.
 
 Plans, scripts, and logs are written beneath
 `<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition

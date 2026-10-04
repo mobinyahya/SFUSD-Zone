@@ -173,6 +173,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         tasks = all_tasks
     assignment_plan_path = None
     if sweep.matching.enabled:
+        _prepare_completed_targets(all_tasks, tasks, sweep.matching)
         from assignment.run_custom_config import load_custom_config
         from assignment.slurm import build_generated_zone_slurm_plan
 
@@ -590,6 +591,40 @@ def _plan_allocations(plan: SlurmPlan) -> list[SlurmAllocation]:
                 )
             )
     return allocations
+
+
+def _prepare_completed_targets(
+    all_tasks: list[BenchmarkTask],
+    pending: list[BenchmarkTask],
+    matching: MatchingRunConfig,
+) -> None:
+    """Give finished runs the zone file their assignment jobs read.
+
+    Pending tasks write their own targets when they run; a task skipped as
+    already complete may predate matching, so its root target is rebuilt from
+    the saved solution here.
+    """
+    from assignment.generated_zones import (
+        GENERATED_ZONE_FILENAME,
+        SKIP_MARKER_FILENAME,
+    )
+    from benchmark.assignment import prepare_completed_run_target
+
+    pending_ids = {task.task_id for task in pending}
+    for task in all_tasks:
+        if task.task_id in pending_ids:
+            continue
+        root = Path(task.output_dir)
+        if (root / GENERATED_ZONE_FILENAME).is_file() or (
+            root / SKIP_MARKER_FILENAME
+        ).is_file():
+            continue
+        if matching.compute_stage_assignments:
+            raise ValueError(
+                f"Task {task.task_id} finished without matching; stage "
+                "assignments cannot be added afterwards, only root ones."
+            )
+        prepare_completed_run_target(root, str(task.config["levels"][-1]))
 
 
 def _assignment_targets(

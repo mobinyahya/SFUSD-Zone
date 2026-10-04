@@ -108,3 +108,11 @@ metrics:
 visualization:
   enabled: false
   stages: final
+
+# Assignment for every feasible zoning: small_zones+no_reserves and
+# medium_zones+reserves_05frl on the 2026-27 applicants, special programs
+# excluded. Infeasible runs get a skip marker instead.
+matching:
+  enabled: true
+  config: ../../assignment/configs/benchmark_capacity_match_assignment.yaml
+  compute_stage_assignments: false

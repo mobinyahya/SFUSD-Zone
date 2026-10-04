@@ -362,3 +362,36 @@ def test_write_generated_zones_uses_stable_zone_rows(tmp_path):
 
     assert mapping == {4: 0, 8: 1}
     assert path.read_text(encoding="utf-8") == "1000,1001\n1002\n"
+
+
+def test_completed_run_target_is_rebuilt_from_saved_files(tmp_path):
+    import json
+
+    from assignment.generated_zones import (
+        GENERATED_ZONE_FILENAME,
+        SKIP_MARKER_FILENAME,
+    )
+    from benchmark.assignment import prepare_completed_run_target
+
+    feasible = tmp_path / "feasible"
+    feasible.mkdir()
+    (feasible / "solution_Block_0.json").write_text(
+        json.dumps({"status": "FEASIBLE", "metadata": {}}), encoding="utf-8"
+    )
+    (feasible / "zone_dict_area_Block_0.json").write_text(
+        json.dumps({"11": 1, "10": 0, "12": 1}), encoding="utf-8"
+    )
+    unknown = tmp_path / "unknown"
+    unknown.mkdir()
+    (unknown / "solution_Block_0.json").write_text(
+        json.dumps({"status": "UNKNOWN", "metadata": {}}), encoding="utf-8"
+    )
+
+    assert prepare_completed_run_target(feasible, "Block_0") is True
+    rows = (feasible / GENERATED_ZONE_FILENAME).read_text().splitlines()
+    assert rows == ["10", "11,12"]
+    assert not (feasible / SKIP_MARKER_FILENAME).exists()
+
+    assert prepare_completed_run_target(unknown, "Block_0") is False
+    assert (unknown / SKIP_MARKER_FILENAME).is_file()
+    assert not (unknown / GENERATED_ZONE_FILENAME).exists()

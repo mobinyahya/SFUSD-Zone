@@ -85,6 +85,39 @@ def process_solution_assignments(
     return targets
 
 
+def prepare_completed_run_target(output_dir: str | Path, final_level: str) -> bool:
+    """Write the root assignment target of a run that finished without matching.
+
+    The optimization worker only writes ``assignment_zones.csv`` (or the skip
+    marker) when matching was enabled for that run, so turning matching on
+    after a sweep has finished leaves nothing for the assignment jobs to read.
+    This rebuilds the root target from the saved files alone -- the final
+    level's ``solution_<level>.json`` for status and the portable
+    ``zone_dict_area_<level>.json`` for the zoning -- with the same
+    eligibility rule as :func:`process_solution_assignments`, without
+    rebuilding any graph. Returns whether the run is eligible.
+    """
+    import json
+
+    root = Path(output_dir).expanduser().resolve()
+    zone_file = root / GENERATED_ZONE_FILENAME
+    skip_marker = root / SKIP_MARKER_FILENAME
+    with (root / f"solution_{final_level}.json").open(encoding="utf-8") as stream:
+        saved = json.load(stream)
+    eligible = saved.get("status") in ("OPTIMAL", "FEASIBLE") and not (
+        saved.get("metadata") or {}
+    ).get("partial_assignment")
+    if not eligible:
+        zone_file.unlink(missing_ok=True)
+        skip_marker.write_text("ineligible optimization solution\n", encoding="utf-8")
+        return False
+    with (root / f"zone_dict_area_{final_level}.json").open(encoding="utf-8") as stream:
+        area_assignment = {int(k): int(v) for k, v in json.load(stream).items()}
+    skip_marker.unlink(missing_ok=True)
+    write_generated_zones(area_assignment, zone_file)
+    return True
+
+
 def run_assignments_for_existing_runs(
     root_folder: str,
     matching: MatchingRunConfig,

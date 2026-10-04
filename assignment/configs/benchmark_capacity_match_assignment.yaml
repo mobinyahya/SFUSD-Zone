@@ -1,0 +1,44 @@
+# Assignment for every feasible zoning of benchmark_capacity_match_v1.
+#
+# Same 2026-27 kindergarten applicant market the optimization's capacity_match
+# objective scored (year 2627, round 1, 2020 geography, updated_2526 FRL), with
+# every special program excluded. Each subconfig's own zone map is replaced by
+# the run's zoning (generated-zones, Block building blocks), so the two
+# policies differ only in their reserves.
+#
+# utility-model is off: no choice estimate covers 2026-27 students (see
+# sfusd_2627.yaml), so students keep their submitted lists.
+#
+# Used as the `matching.config` of
+# benchmark/configs/benchmark_capacity_match.yaml.
+
+data:
+  scenario: assignment-generated-zones-2627
+  overrides:
+    filters:
+      assignment:
+        student_population: applicant
+        special_programs: exclude_any_special
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/dummy/
+# replaced per run by the benchmark Slurm planner
+
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: true
+
+r1-only: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- small_zones+no_reserves
+- medium_zones+reserves_05frl
+utility-model:
+  enable: false
+  list-length: "7"   # required by the schema; inert while disabled
