@@ -38,3 +38,9 @@ def normalize_complementary_slackness_slack(value: object) -> float | str:
     if not math.isfinite(number) or number < 0:
         raise ValueError(message)
     return number
+
+
+# Where MID preferences come from: the fitted per-student choice estimate, or
+# each student's own submitted list (scored length - rank, so only the order
+# carries meaning). The estimate covers only the cohort it was fitted on.
+MID_PREFERENCE_SOURCES = ("estimate", "stated")

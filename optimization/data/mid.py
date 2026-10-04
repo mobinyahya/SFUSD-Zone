@@ -23,6 +23,7 @@ from assignment.student_assignment.market_generator.priority_generator import (
     PriorityGenerator,
 )
 from assignment.student_assignment.market_generator.utility_model import UtilityModel
+from optimization.mid_options import MID_PREFERENCE_SOURCES
 from optimization.problem import ZoneProblem
 from optimization.solvers.cpsat import CP_SAT_SCALE
 
@@ -191,10 +192,15 @@ def build_mid_student_market(
         zone_priority_matrix=_attendance_area_priority_matrix(assignment_market),
     )
 
-    utility = _load_utility_table(
+    source = getattr(optimization_config, "mid_preference_source", "estimate")
+    if source not in MID_PREFERENCE_SOURCES:
+        raise ValueError(f"Unknown MID preference source {source!r}.")
+    load = _load_utility_table if source == "estimate" else _stated_utility_table
+    utility = load(
         optimization_config.data_scenario,
         assignment_market.students.student_data.index,
         assignment_market.programs.program_df["program_id"],
+        assignment_market,
     )
     program_rows = assignment_market.programs.program_df.copy()
     available_programs = sorted(set(program_rows["program_id"]) & set(utility.columns))
@@ -544,7 +550,38 @@ def _attendance_area_priority_matrix(market) -> np.ndarray:
     return matrix
 
 
-def _load_utility_table(data, student_ids, program_ids) -> pd.DataFrame:
+def _stated_utility_table(data, student_ids, program_ids, market) -> pd.DataFrame:
+    """Score each student's submitted list ``length - rank``; unranked is -inf.
+
+    Students who ranked nothing get no row, so they stay outside-only exactly as
+    a student missing from a fitted estimate does.
+    """
+    del data
+    program_ids = [str(value) for value in program_ids]
+    by_index = {
+        int(index): str(code) for code, index in market.programs.indices.items()
+    }
+    prefs = market.students.selected_preferences(market.programs.index_list)
+    column = {program_id: position for position, program_id in enumerate(program_ids)}
+    rows, labels = [], []
+    for student_id, ranked in zip(student_ids, prefs, strict=True):
+        listed = [by_index[int(index)] for index in ranked if int(index) > 0]
+        if not listed:
+            continue
+        row = np.full(len(program_ids), -np.inf)
+        for rank, program_id in enumerate(listed):
+            if program_id in column and not np.isfinite(row[column[program_id]]):
+                row[column[program_id]] = float(len(listed) - rank)
+        rows.append(row)
+        labels.append(_identity_text(student_id))
+    return pd.DataFrame(
+        np.asarray(rows).reshape(len(rows), len(program_ids)),
+        index=pd.Index(labels, name="studentno"),
+        columns=program_ids,
+    )
+
+
+def _load_utility_table(data, student_ids, program_ids, market=None) -> pd.DataFrame:
     source = data.source("choice.estimate")
     UtilityModel._validate_csv_header(source.path)
     frame = read_csv_source(source, dtype={"studentno": "string"})

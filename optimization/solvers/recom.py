@@ -117,6 +117,9 @@ class _State:
     boundary_pairs: dict[tuple[int, int], int]
     boundary_costs: dict[tuple[int, int], int]
     boundary_cost: int
+    # Unweighted cut-edge count, which is what ``boundary_prop`` caps even when
+    # ``boundary_cost`` is measured in metres.
+    cut_edges: int = 0
 
     @property
     def feasible(self) -> bool:
@@ -132,6 +135,7 @@ class _State:
             boundary_pairs=dict(self.boundary_pairs),
             boundary_costs=dict(self.boundary_costs),
             boundary_cost=self.boundary_cost,
+            cut_edges=self.cut_edges,
         )
 
 
@@ -146,6 +150,7 @@ class _CutCandidate:
     violations_b: tuple[float, ...]
     global_violations: tuple[float, ...]
     boundary_cost: int
+    cut_edges: int = 0
 
     @property
     def pair_feasible(self) -> bool:
@@ -170,6 +175,7 @@ class _Move:
     violations_b: tuple[float, ...]
     global_violations: tuple[float, ...]
     boundary_cost: int
+    cut_edges: int = 0
 
     @property
     def globally_feasible(self) -> bool:
@@ -181,6 +187,7 @@ class _Snapshot:
     assignment: tuple[int, ...]
     violations: tuple[float, ...]
     boundary_cost: int
+    cut_edges: int = 0
 
     @property
     def feasible(self) -> bool:
@@ -286,6 +293,13 @@ class _ReComContext:
             for node in self.nodes
         )
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
+        # The cut-edge cap mirrors the CP/MIP models and ``check_zoning``: an
+        # unweighted count against a floored proportion of the edge count.
+        self.cut_limit = (
+            math.floor(problem.boundary_prop * problem.G.number_of_edges())
+            if problem.boundary_prop >= 0
+            else None
+        )
 
         total_schools = sum(self.schools)
         if total_schools > 0:
@@ -319,9 +333,35 @@ class _ReComContext:
             allowed.append(zones)
         self.allowed = tuple(allowed)
 
+    # The violation vector is the per-zone rows (balance and school count),
+    # summed over zones, followed by the global rows that only exist for the
+    # whole partition -- today just the cut-edge cap.  Every consumer (Adam,
+    # the normalizer, the Lagrangian, the progress log) treats each row alike,
+    # so a constraint added here is penalized everywhere without special cases.
+    @property
+    def zone_row_count(self) -> int:
+        return len(self.balance_rows) + (2 if self.school_bounds else 0)
+
+    @property
+    def cut_row(self) -> int | None:
+        """Index of the cut-edge cap in the violation vector, if it is enabled."""
+        return self.zone_row_count if self.cut_limit is not None else None
+
     @property
     def violation_count(self) -> int:
-        return len(self.balance_rows) + (2 if self.school_bounds else 0)
+        return self.zone_row_count + (1 if self.cut_limit is not None else 0)
+
+    def global_violations(
+        self, zone_totals: tuple[float, ...] | list[float], cut_edges: int
+    ) -> tuple[float, ...]:
+        """Append the global rows to already-summed per-zone violations."""
+
+        if self.cut_limit is None:
+            return tuple(zone_totals)
+        excess = max(0.0, float(cut_edges - self.cut_limit))
+        if self.normalize_fractional:
+            excess = excess / max(self.cut_limit, 1) * 100.0
+        return (*zone_totals, excess)
 
     def violation_labels(self) -> tuple[str, ...]:
         """Name every entry of the aggregated violation vector.
@@ -357,6 +397,8 @@ class _ReComContext:
         ]
         if self.school_bounds is not None:
             labels.extend(["schools_lower", "schools_upper"])
+        if self.cut_limit is not None:
+            labels.append("boundary")
         if len(labels) != self.violation_count:
             raise ValueError(
                 "Violation labels do not match the violation vector length."
@@ -439,9 +481,13 @@ class _ReComContext:
             for zone in range(self.zone_count)
         ]
         zone_violations = [self.zone_violations(stats) for stats in zone_stats]
-        violations = tuple(
-            sum(zone_values[idx] for zone_values in zone_violations)
-            for idx in range(self.violation_count)
+        cut_edges = sum(boundary_pairs.values())
+        violations = self.global_violations(
+            [
+                sum(zone_values[idx] for zone_values in zone_violations)
+                for idx in range(self.zone_row_count)
+            ],
+            cut_edges,
         )
         return _State(
             assignment=assignment,
@@ -452,6 +498,7 @@ class _ReComContext:
             boundary_pairs=boundary_pairs,
             boundary_costs=boundary_costs,
             boundary_cost=boundary_cost,
+            cut_edges=cut_edges,
         )
 
     def assignment_dict(
@@ -531,7 +578,7 @@ class _ReComKernel:
         state: _State,
         selector: str,
         *,
-        lagrangian_weights: tuple[float, ...] | None = None,
+        lagrangian: "_Lagrangian | None" = None,
         temperature: float = 1.0,
         pair_selector: str = "uniform",
     ) -> _Move:
@@ -543,15 +590,15 @@ class _ReComKernel:
         if pair_selector == "uniform":
             zone_a, zone_b = self.rng.choice(adjacent_pairs)
         elif pair_selector == "lagrangian_softmax":
-            if lagrangian_weights is None:
+            if lagrangian is None:
                 raise ValueError(
-                    "lagrangian_weights must be supplied for the "
+                    "A lagrangian must be supplied for the "
                     "lagrangian_softmax pair selector."
                 )
             zone_a, zone_b = self._select_zone_pair(
                 state,
                 adjacent_pairs,
-                weights=lagrangian_weights,
+                lagrangian=lagrangian,
                 temperature=temperature,
             )
         else:  # pragma: no cover - guarded by config/class callers
@@ -581,13 +628,11 @@ class _ReComKernel:
             probabilities = self._relaxed_probabilities(pool)
             selected = self.rng.choices(pool, weights=probabilities, k=1)[0]
         elif selector == "adaptive":
-            if lagrangian_weights is None:
-                raise ValueError(
-                    "lagrangian_weights must be supplied for adaptive selector."
-                )
+            if lagrangian is None:
+                raise ValueError("A lagrangian must be supplied for adaptive selector.")
             probabilities = self._adaptive_probabilities(
                 candidates,
-                weights=lagrangian_weights,
+                lagrangian=lagrangian,
                 temperature=temperature,
             )
             selected = self.rng.choices(candidates, weights=probabilities, k=1)[0]
@@ -606,6 +651,7 @@ class _ReComKernel:
             violations_b=selected.violations_b,
             global_violations=selected.global_violations,
             boundary_cost=selected.boundary_cost,
+            cut_edges=selected.cut_edges,
         )
 
     def apply(self, state: _State, move: _Move) -> None:
@@ -662,6 +708,7 @@ class _ReComKernel:
         state.zone_violations[zone_b] = move.violations_b
         state.violations = move.global_violations
         state.boundary_cost = move.boundary_cost
+        state.cut_edges = move.cut_edges
 
     def _pair_graph(
         self, union: set[int]
@@ -821,6 +868,7 @@ class _ReComKernel:
         total_illegal_b = illegal_b[0]
         pair_edge_count = len(pair_edges)
         old_pair_cost = state.boundary_costs.get(_zone_pair(zone_a, zone_b), 0)
+        old_pair_count = state.boundary_pairs.get(_zone_pair(zone_a, zone_b), 0)
         candidates: list[_CutCandidate] = []
 
         for idx in range(1, count):
@@ -853,6 +901,7 @@ class _ReComKernel:
                 frl_value=total_frl - subtree_frl[idx],
             )
             boundary_cost = state.boundary_cost - old_pair_cost + crossing_cost
+            cut_edges = state.cut_edges - old_pair_count + crossing
 
             if illegal_a[idx] == 0 and total_illegal_b - illegal_b[idx] == 0:
                 candidates.append(
@@ -866,6 +915,7 @@ class _ReComKernel:
                         stats_sub,
                         stats_other,
                         boundary_cost,
+                        cut_edges,
                     )
                 )
             if illegal_b[idx] == 0 and total_illegal_a - illegal_a[idx] == 0:
@@ -880,6 +930,7 @@ class _ReComKernel:
                         stats_other,
                         stats_sub,
                         boundary_cost,
+                        cut_edges,
                     )
                 )
         return candidates
@@ -895,19 +946,23 @@ class _ReComKernel:
         stats_a: _ZoneStats,
         stats_b: _ZoneStats,
         boundary_cost: int,
+        cut_edges: int,
     ) -> _CutCandidate:
         violations_a = self.context.zone_violations(stats_a)
         violations_b = self.context.zone_violations(stats_b)
-        global_violations = tuple(
-            max(
-                0.0,
-                state.violations[idx]
-                - state.zone_violations[zone_a][idx]
-                - state.zone_violations[zone_b][idx]
-                + violations_a[idx]
-                + violations_b[idx],
-            )
-            for idx in range(self.context.violation_count)
+        global_violations = self.context.global_violations(
+            [
+                max(
+                    0.0,
+                    state.violations[idx]
+                    - state.zone_violations[zone_a][idx]
+                    - state.zone_violations[zone_b][idx]
+                    + violations_a[idx]
+                    + violations_b[idx],
+                )
+                for idx in range(self.context.zone_row_count)
+            ],
+            cut_edges,
         )
         return _CutCandidate(
             tin=tin,
@@ -919,6 +974,7 @@ class _ReComKernel:
             violations_b=violations_b,
             global_violations=global_violations,
             boundary_cost=boundary_cost,
+            cut_edges=cut_edges,
         )
 
     def _relaxed_probabilities(self, candidates: list[_CutCandidate]) -> list[float]:
@@ -964,39 +1020,15 @@ class _ReComKernel:
     def _adaptive_probabilities(
         self,
         candidates: list[_CutCandidate],
-        weights: tuple[float, ...],
+        lagrangian: "_Lagrangian",
         temperature: float = 1.0,
     ) -> list[float]:
         temp = max(_EPS, float(temperature))
         return _softmax(
             [
-                -(
-                    float(c.boundary_cost)
-                    + sum(w * (v**2) for w, v in zip(weights, c.global_violations))
-                )
-                / temp
+                -lagrangian.candidate(c.boundary_cost, c.global_violations) / temp
                 for c in candidates
             ]
-        )
-
-    def _zone_lagrangian_score(
-        self,
-        state: _State,
-        zone: int,
-        weights: tuple[float, ...],
-    ) -> float:
-        """Score one zone the way the cut selector scores a whole solution.
-
-        Objective plus weighted squared violations, both restricted to this
-        zone: the cut edges it touches, and its own constraint residuals.
-        """
-        return float(
-            sum(cost for pair, cost in state.boundary_costs.items() if zone in pair)
-        ) + sum(
-            weight * (violation**2)
-            for weight, violation in zip(
-                weights, state.zone_violations[zone], strict=True
-            )
         )
 
     def _select_zone_pair(
@@ -1004,14 +1036,14 @@ class _ReComKernel:
         state: _State,
         adjacent_pairs: list[tuple[int, int]],
         *,
-        weights: tuple[float, ...],
+        lagrangian: "_Lagrangian",
         temperature: float,
     ) -> tuple[int, int]:
         """Draw the zone to repair by softmax, then one of its neighbors uniformly."""
         temp = max(_EPS, float(temperature))
         zones = sorted({zone for pair in adjacent_pairs for zone in pair})
         probabilities = _softmax(
-            [self._zone_lagrangian_score(state, zone, weights) / temp for zone in zones]
+            [lagrangian.zone(self.context, state, zone) / temp for zone in zones]
         )
         zone = self.rng.choices(zones, weights=probabilities, k=1)[0]
         neighbors = sorted(
@@ -1069,6 +1101,158 @@ class _AdamOptimizer:
                 0.0, self.eta[idx] + lr * m_hat / (math.sqrt(v_hat) + eps)
             )
         return tuple(self.eta)
+
+
+@dataclass(frozen=True)
+class _Lagrangian:
+    """The penalized objective adaptive proposals are drawn against.
+
+    ``objective_weight * boundary_cost + sum_k weights[k] * violation_k**2``
+    over every row of the context's violation vector.  The first term is the
+    burst objective's proposal-level share: the boundary cost when cut edges
+    are the objective, and nothing for objectives too costly to score once per
+    candidate cut.  Constraints enter only through their rows, the cut-edge cap
+    among them, so cut edges reach the Lagrangian as the objective, as a
+    constraint, as both, or not at all, each independently of the other.
+    """
+
+    weights: tuple[float, ...]
+    objective_weight: float = 1.0
+
+    def candidate(self, boundary_cost: float, violations: tuple[float, ...]) -> float:
+        return self.objective_weight * float(boundary_cost) + sum(
+            weight * (violation**2)
+            for weight, violation in zip(self.weights, violations, strict=True)
+        )
+
+    def zone(self, context: _ReComContext, state: _State, zone: int) -> float:
+        """Score one zone the way ``candidate`` scores a whole partition.
+
+        Per-zone rows are charged to their own zone.  A global row has no
+        owner, so its penalty is shared out: the cut-edge cap in proportion to
+        the cut edges each zone touches.  Every cut edge touches two zones, so
+        the shares sum back to the global penalty.
+        """
+
+        zone_rows = context.zone_row_count
+        score = sum(
+            weight * (violation**2)
+            for weight, violation in zip(
+                self.weights[:zone_rows], state.zone_violations[zone], strict=True
+            )
+        )
+        if self.objective_weight:
+            score += self.objective_weight * float(
+                sum(cost for pair, cost in state.boundary_costs.items() if zone in pair)
+            )
+        cut_row = context.cut_row
+        if cut_row is not None and state.cut_edges > 0:
+            violation = state.violations[cut_row]
+            if violation > 0:
+                touched = sum(
+                    count
+                    for pair, count in state.boundary_pairs.items()
+                    if zone in pair
+                )
+                score += (
+                    self.weights[cut_row]
+                    * (violation**2)
+                    * touched
+                    / (2 * state.cut_edges)
+                )
+        return score
+
+
+# What adaptive short bursts minimize among feasible partitions.  ``cut_edges``
+# is the boundary cost (metres under ``weight_edges``); ``welfare`` is the
+# discrete MID program welfare; ``capacity_match`` is the weighted count of
+# students left unassigned or designated once the MID match is run.
+ADAPTIVE_OBJECTIVES = ("cut_edges", "welfare", "capacity_match")
+
+
+class _BurstObjective:
+    """Feasible-partition objective for adaptive short bursts, as a cost.
+
+    The boundary cost is already known for every candidate, so the cut-edge
+    objective is ``local``: it also enters the proposal Lagrangian.  Choice
+    objectives need a full matching per partition, so they are scored in one
+    batch per burst on its feasible samples only, and never inside a proposal.
+    """
+
+    def __init__(
+        self,
+        kind: str,
+        scorer: ShortBurstBatchScorer | None = None,
+        *,
+        maximize: bool = False,
+    ) -> None:
+        if (scorer is None) != (kind == "cut_edges"):
+            raise ValueError("Only the cut_edges objective is scored without a scorer.")
+        self.kind = kind
+        self.scorer = scorer
+        self.sign = -1.0 if maximize else 1.0
+        self._values: dict[tuple[int, ...], float] = {}
+
+    @property
+    def local(self) -> bool:
+        return self.scorer is None
+
+    def prime(
+        self,
+        context: _ReComContext,
+        snapshots: tuple["_Snapshot", ...] | list["_Snapshot"],
+        base: "_Snapshot | None" = None,
+    ) -> None:
+        """Score every feasible, not yet scored snapshot in one batch."""
+
+        if self.scorer is None:
+            return
+        pending = tuple(
+            dict.fromkeys(
+                snapshot.assignment
+                for snapshot in snapshots
+                if snapshot.feasible and snapshot.assignment not in self._values
+            )
+        )
+        if not pending:
+            return
+        values = self.scorer(
+            tuple(context.assignment_dict(assignment) for assignment in pending),
+            None if base is None else context.assignment_dict(base.assignment),
+        )
+        if len(values) != len(pending):
+            raise ValueError(
+                "Burst objective scorer returned the wrong number of scores."
+            )
+        for assignment, value in zip(pending, values, strict=True):
+            if not math.isfinite(value):
+                raise ValueError("Burst objective scorer returned a non-finite score.")
+            self._values[assignment] = float(value)
+
+    def value(self, snapshot: "_Snapshot") -> float:
+        """The objective in its own units (welfare is reported positive)."""
+
+        if self.scorer is None:
+            return float(snapshot.boundary_cost)
+        return self._values[snapshot.assignment]
+
+    def cost(self, snapshot: "_Snapshot") -> float:
+        return self.sign * self.value(snapshot)
+
+    def details(
+        self, context: _ReComContext, snapshot: "_Snapshot"
+    ) -> dict[str, object]:
+        """Whatever breakdown the scorer can give of one scored partition."""
+
+        describe = getattr(self.scorer, "describe", None)
+        if describe is None:
+            return {}
+        return dict(describe(context.assignment_dict(snapshot.assignment)))
+
+    def close(self) -> None:
+        close = getattr(self.scorer, "close", None)
+        if close is not None:
+            close()
 
 
 class _ReComSolverBase(Solver):
@@ -1194,6 +1378,7 @@ class _ReComSolverBase(Solver):
             assignment=tuple(state.assignment),
             violations=tuple(state.violations),
             boundary_cost=state.boundary_cost,
+            cut_edges=state.cut_edges,
         )
 
     def _sample_burst(
@@ -1281,16 +1466,23 @@ class _ReComSolverBase(Solver):
         start: float,
         best: _Snapshot | None,
         metadata: dict[str, object],
+        objective: "_BurstObjective | None" = None,
     ) -> ZoneSolution:
         if best is None:
             status = "UNKNOWN"
             assignment = {}
-            objective = None
+            objective_value = None
         else:
             status = "FEASIBLE"
             assignment = context.assignment_dict(best.assignment)
-            objective = float(best.boundary_cost)
-        if problem.weight_edges:
+            objective_value = (
+                float(best.boundary_cost)
+                if objective is None
+                else objective.value(best)
+            )
+        if objective is not None and not objective.local:
+            metadata = {**metadata, "objective_kind": objective.kind}
+        elif problem.weight_edges:
             metadata = {
                 **metadata,
                 "objective_kind": "weighted_boundary_length",
@@ -1300,16 +1492,23 @@ class _ReComSolverBase(Solver):
             problem=problem,
             assignment=assignment,
             status=status,
-            objective=objective,
+            objective=objective_value,
             wall_time=time.monotonic() - start,
             metadata={"solver": self.name, **metadata},
         )
 
     @staticmethod
-    def _better_feasible(candidate: _Snapshot, best: _Snapshot | None) -> bool:
-        return candidate.feasible and (
-            best is None or candidate.boundary_cost < best.boundary_cost
-        )
+    def _better_feasible(
+        candidate: _Snapshot,
+        best: _Snapshot | None,
+        cost: Callable[[_Snapshot], float] | None = None,
+    ) -> bool:
+        if not candidate.feasible:
+            return False
+        if best is None:
+            return True
+        cost = cost or _boundary_cost
+        return cost(candidate) < cost(best)
 
     @staticmethod
     def _check_choice_objective(problem: ZoneProblem, solver_name: str) -> None:
@@ -1732,7 +1931,34 @@ class ShortBurstsSolver(_ReComSolverBase):
 @register("adaptive_short_bursts")
 @register("adapative_short_bursts")
 class AdaptiveShortBurstsSolver(_ReComSolverBase):
-    """Adaptive Lagrangian ReCom walks with short-burst restarts and Adam-tuned dual multipliers."""
+    """Adaptive Lagrangian ReCom walks with short-burst restarts and Adam-tuned dual multipliers.
+
+    ``adaptive_short_bursts_objective`` picks what feasible partitions are
+    ranked by (see ``ADAPTIVE_OBJECTIVES``).  Every enabled constraint -- the
+    balance rows, the school count, and the ``boundary_prop`` cut-edge cap --
+    is one row of the violation vector with its own Adam multiplier, whatever
+    the objective is.
+    """
+
+    def _objective_kind(self) -> str:
+        kind = str(self.options.get("adaptive_short_bursts_objective", "cut_edges"))
+        if kind not in ADAPTIVE_OBJECTIVES:
+            raise ValueError(
+                "adaptive_short_bursts_objective must be one of: "
+                f"{', '.join(ADAPTIVE_OBJECTIVES)}."
+            )
+        return kind
+
+    def _make_objective(self, problem: ZoneProblem, kind: str) -> _BurstObjective:
+        if kind == "cut_edges":
+            return _BurstObjective(kind)
+        from optimization.solvers.burst_objectives import mid_burst_scorer
+
+        return _BurstObjective(
+            kind,
+            mid_burst_scorer(problem, kind, self.options),
+            maximize=kind == "welfare",
+        )
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         self._check_choice_objective(problem, self.name)
@@ -1774,28 +2000,61 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 "adaptive_short_bursts_pair_selector must be one of: "
                 f"{', '.join(_PAIR_SELECTORS)}."
             )
+        objective_kind = self._objective_kind()
 
+        # Built after the hint, inside the budget: a choice objective's market
+        # is part of what this solve costs under wall-clock accounting.
+        objective = self._make_objective(problem, objective_kind)
+        try:
+            return self._solve(
+                problem,
+                setup,
+                start,
+                objective,
+                burst_length=burst_length,
+                adam=_AdamOptimizer(
+                    size=setup.context.violation_count,
+                    lr=adam_lr,
+                    beta1=adam_beta1,
+                    beta2=adam_beta2,
+                    eps=adam_eps,
+                    initial_eta=initial_eta,
+                ),
+                initial_eta=initial_eta,
+                temperature=temperature,
+                pair_selector=pair_selector,
+            )
+        finally:
+            objective.close()
+
+    def _solve(
+        self,
+        problem: ZoneProblem,
+        setup: _Setup,
+        start: float,
+        objective: _BurstObjective,
+        *,
+        burst_length: int,
+        adam: _AdamOptimizer,
+        initial_eta: float,
+        temperature: float,
+        pair_selector: str,
+    ) -> ZoneSolution:
         context = setup.context
         current = setup.state
         kernel = _ReComKernel(context, setup.rng, setup.deadline)
         normalizer = _DynamicMaxNormalizer(context.violation_count)
-        adam = _AdamOptimizer(
-            size=context.violation_count,
-            lr=adam_lr,
-            beta1=adam_beta1,
-            beta2=adam_beta2,
-            eps=adam_eps,
-            initial_eta=initial_eta,
-        )
+        # Cut edges sit in the proposal Lagrangian as an objective only when
+        # they are the objective; as a constraint they have their own row.
+        objective_weight = 1.0 if objective.local else 0.0
 
         initial = self._snapshot(current)
         normalizer.observe(initial.violations)
+        objective.prime(context, (initial,))
         best_feasible = initial if initial.feasible else None
         time_to_first_feasible = 0.0 if initial.feasible else None
         stop_on_feasible = bool(self.options.get("stop_on_feasible", False))
         verbose = bool(self.options.get("verbose", False))
-        if stop_on_feasible and best_feasible is not None:
-            stop_reason = "initial_feasible"
 
         # Start each constraint violation having a weight of 1
         weights = [1.0] * context.violation_count
@@ -1810,8 +2069,9 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 "pair_selector": pair_selector,
                 "short_bursts_length": burst_length,
                 "softmax_temperature": temperature,
-                "adam_lr": adam_lr,
+                "adam_lr": adam.lr,
                 "initial_eta": initial_eta,
+                "adaptive_short_bursts_objective": objective.kind,
             },
         )
         if log is not None:
@@ -1843,6 +2103,7 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
             remaining = burst_length
             if setup.max_iterations is not None:
                 remaining = min(remaining, setup.max_iterations - attempted)
+            lagrangian = _Lagrangian(tuple(weights), objective_weight)
 
             deadline_reached = False
             no_adjacent_pairs = False
@@ -1857,7 +2118,7 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                     move = kernel.propose(
                         walk,
                         "adaptive",
-                        lagrangian_weights=tuple(weights),
+                        lagrangian=lagrangian,
                         temperature=temperature,
                         pair_selector=pair_selector,
                     )
@@ -1885,12 +2146,17 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                         iteration=attempted,
                         extra={"burst": completed_bursts},
                     )
-                if self._better_feasible(snapshot, best_feasible):
-                    if time_to_first_feasible is None and snapshot.feasible:
-                        time_to_first_feasible = time.monotonic() - start
-                    best_feasible = snapshot
-                    if stop_on_feasible:
-                        break
+                if snapshot.feasible and time_to_first_feasible is None:
+                    time_to_first_feasible = time.monotonic() - start
+                if snapshot.feasible and stop_on_feasible:
+                    break
+
+            # One batch per burst scores its feasible samples; a no-op for cut
+            # edges, whose cost every snapshot already carries.
+            objective.prime(context, samples, base)
+            for sample in samples:
+                if self._better_feasible(sample, best_feasible, objective.cost):
+                    best_feasible = sample
 
             if stop_on_feasible and best_feasible is not None:
                 stop_reason = "feasible_found"
@@ -1899,14 +2165,16 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
             # Evaluate best candidate in the burst using current short bursts method
             selected = base
             for sample in samples:
-                if _burst_better(sample, selected, normalizer):
+                if _burst_better(sample, selected, normalizer, objective.cost):
                     selected = sample
-            if _burst_better(selected, base, normalizer):
+            if _burst_better(selected, base, normalizer, objective.cost):
                 current = context.build_state(list(selected.assignment))
                 selected_improvements += 1
 
-            # Update eta using Adam and update constraint weights: objective + eta * violation^2
-            obj = float(selected.boundary_cost)
+            # Update eta using Adam and update constraint weights:
+            # objective + eta * violation^2, where the objective term is the
+            # Lagrangian's own (zero unless cut edges are the objective).
+            obj = objective_weight * float(selected.boundary_cost)
             grads = tuple(v**2 for v in selected.violations)
             eta = list(adam.step(grads))
             weights = [
@@ -1923,10 +2191,11 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
             if verbose and (completed_bursts % 5 == 0 or best_feasible is not None):
                 elapsed_s = time.monotonic() - start
                 feas = best_feasible is not None
-                obj_s = f"{best_feasible.boundary_cost}" if feas else "None"
+                obj_s = f"{objective.value(best_feasible):g}" if feas else "None"
                 print(
                     f"[Burst {completed_bursts}] elapsed={elapsed_s:.1f}s, attempted={attempted}, "
-                    f"feasible={feas}, best_obj={obj_s}, total_violation={sum(selected.violations):.2f}",
+                    f"feasible={feas}, best_{objective.kind}={obj_s}, "
+                    f"total_violation={sum(selected.violations):.2f}",
                     flush=True,
                 )
 
@@ -1960,14 +2229,25 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
             "cut_selector": "adaptive_lagrangian",
             "pair_selector": pair_selector,
             "tree_sampler": "wilson_uniform",
+            "adaptive_short_bursts_objective": objective.kind,
+            "violation_labels": context.violation_labels(),
             "final_weights": tuple(float(w) for w in weights),
             "final_eta": tuple(float(e) for e in eta),
             "stop_reason": stop_reason,
             "initial_feasible": initial.feasible,
             "time_to_first_feasible": time_to_first_feasible,
+            **(
+                {}
+                if best_feasible is None
+                else {
+                    "best_boundary_cost": best_feasible.boundary_cost,
+                    "best_cut_edges": best_feasible.cut_edges,
+                    **objective.details(context, best_feasible),
+                }
+            ),
             **self._progress_log_metadata(log),
         }
-        return self._result(problem, context, start, best_feasible, metadata)
+        return self._result(problem, context, start, best_feasible, metadata, objective)
 
 
 def _softmax(log_weights: list[float]) -> list[float]:
@@ -2036,15 +2316,22 @@ def _lca(node_a: int, node_b: int, depth: list[int], up: list[list[int]]) -> int
     return up[0][node_a]
 
 
+def _boundary_cost(snapshot: _Snapshot) -> float:
+    return float(snapshot.boundary_cost)
+
+
 def _burst_better(
     candidate: _Snapshot,
     incumbent: _Snapshot,
     normalizer: _DynamicMaxNormalizer,
+    cost: Callable[[_Snapshot], float] = _boundary_cost,
 ) -> bool:
+    """Feasible beats infeasible; then lower ``cost``, else lower penalty."""
+
     if candidate.feasible != incumbent.feasible:
         return candidate.feasible
     if candidate.feasible:
-        return candidate.boundary_cost < incumbent.boundary_cost
+        return cost(candidate) < cost(incumbent)
     return normalizer.penalty(candidate.violations) < (
         normalizer.penalty(incumbent.violations) - _EPS
     )

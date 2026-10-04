@@ -1,0 +1,110 @@
+# Capacity-match adaptive short bursts on Block_0, warm-started from the
+# fewest-cut-edge 13- and 18-zone maps of benchmark_v1_8.
+#
+# Zoning data pools four kindergarten applicant cohorts (2023-24 through
+# 2026-27); the MID market that capacity_match scores is the 2026-27 applicant
+# pool (the scenario's assignment year). Only frl_dev constrains the zoning.
+# The fitted choice estimate only covers 2023-24 students, so that market is
+# built from each applicant's submitted round-1 list (ordinal), which is all
+# capacity_match needs. Designation targets free GE seats in the student's zone.
+#
+# Cut edges are capped per centroid list at 1.15x the hint's own Block_0
+# cut-edge count (boundary_prop = 1.15 * hint cut edges / 21,696 edges).
+#
+# Hints: for each centroid list, the feasible benchmark_v1_8 run with the
+# fewest Block_0 cut edges among its recursive cp_bool and single
+# adaptive_short_bursts runs. Every winner was recursive cp_bool. The hint is
+# read from the cluster share by census area id, so this sweep must be
+# generated where /soalnas/share is mounted (task ids hash the hint's bytes).
+#
+# Run: uv run python -m benchmark.run benchmark/configs/benchmark_capacity_match.yaml
+
+name: benchmark_capacity_match_v1
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: sfusd-2425-2627
+    overrides:
+      filters:
+        optimization:
+          years: ["2324", "2425", "2526", "2627"]
+  levels: ['Block_0']
+  strategy: single
+  solver: adaptive_short_bursts
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+
+  frl_dev: 0.15
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  # boundary_prop is set per task: 1.15 x the hint's own cut-edge share.
+
+  adaptive_short_bursts_objective: capacity_match
+  adaptive_short_bursts_unassigned_weight: 1.0
+  adaptive_short_bursts_designated_weight: 1.0
+  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
+  adaptive_short_bursts_temperature: 1.1
+  short_bursts_length: 25
+  mid_lottery_scale: 20
+  mid_preference_source: stated   # utility.2324.exp8 covers no 2026-27 student
+
+  hints: voronoi            # fallback only; hint_zoning below takes precedence
+  recom_iterations: -1
+  solve_time_limits: [600]
+  workers: 1                # MID scoring process pool
+
+sweep:
+  seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40]
+
+tasks:
+  # 1502 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_450-150_c75576b9 (seed4)
+  - centroids_type: '13-zone-2'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/13-zone-2/seed4/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_450-150_c75576b9/zone_dict_area_Block_0.json'
+    boundary_prop: 0.079614   # cap 1727 cut edges = 1.15 x hint's 1502 of 21696
+  # 1502 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_450-150_464f192e (seed1)
+  - centroids_type: '13-zone-3'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/13-zone-3/seed1/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_450-150_464f192e/zone_dict_area_Block_0.json'
+    boundary_prop: 0.079614   # cap 1727 cut edges = 1.15 x hint's 1502 of 21696
+  # 1450 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_943f0709 (seed2)
+  - centroids_type: '13-zone-6'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/13-zone-6/seed2/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_943f0709/zone_dict_area_Block_0.json'
+    boundary_prop: 0.076858   # cap 1667 cut edges = 1.15 x hint's 1450 of 21696
+  # 1391 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_5ecb86d6 (seed10)
+  - centroids_type: '13-zone-7'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/13-zone-7/seed10/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_5ecb86d6/zone_dict_area_Block_0.json'
+    boundary_prop: 0.073731   # cap 1599 cut edges = 1.15 x hint's 1391 of 21696
+  # 1910 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_a06a3c17 (seed3)
+  - centroids_type: '18-zone-1'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/18-zone-1/seed3/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_a06a3c17/zone_dict_area_Block_0.json'
+    boundary_prop: 0.10124   # cap 2196 cut edges = 1.15 x hint's 1910 of 21696
+  # 2033 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_5f47b90b (seed7)
+  - centroids_type: '18-zone-5'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/18-zone-5/seed7/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_5f47b90b/zone_dict_area_Block_0.json'
+    boundary_prop: 0.10776   # cap 2337 cut edges = 1.15 x hint's 2033 of 21696
+  # 1835 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_a9b084e4 (seed5)
+  - centroids_type: '18-zone-7'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/18-zone-7/seed5/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_a9b084e4/zone_dict_area_Block_0.json'
+    boundary_prop: 0.097265   # cap 2110 cut edges = 1.15 x hint's 1835 of 21696
+  # 2036 Block_0 cut edges: recursive_cp_bool_Block_2-Block_0_tl_1350-450_a843fd08 (seed4)
+  - centroids_type: '18-zone-8'
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8/18-zone-8/seed4/frl0.15_racial1/overage0.2_shortage0.2/recursive_cp_bool_Block_2-Block_0_tl_1350-450_a843fd08/zone_dict_area_Block_0.json'
+    boundary_prop: 0.107919   # cap 2341 cut edges = 1.15 x hint's 2036 of 21696
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_capacity_match_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final

@@ -49,6 +49,9 @@ enumerated_solutions: -1       # positive: cp_bool/cp_int single strategy, no ob
 recom_iterations: -1
 short_bursts_length: 25
 short_bursts_method: recom      # recom | relaxed_recom
+adaptive_short_bursts_objective: cut_edges   # cut_edges | welfare | capacity_match (MID-based, need program_population All)
+adaptive_short_bursts_unassigned_weight: 1.0  # capacity_match: cost per unassigned student
+adaptive_short_bursts_designated_weight: 1.0  # capacity_match: cost per designated student
 # --- strategy-specific ---
 boundary_radius: 2            # recursive: graph-hop width around projected borders
 looseness: 1.0              # recursive: multiply constraints per configured coarser stage

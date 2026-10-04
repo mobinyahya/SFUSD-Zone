@@ -18,6 +18,7 @@ from optimization.solvers.recom import (
     _AdamOptimizer,
     _CutCandidate,
     _DynamicMaxNormalizer,
+    _Lagrangian,
     _ReComContext,
     _ReComKernel,
     _State,
@@ -551,7 +552,9 @@ def test_adaptive_cut_probabilities_softmax() -> None:
     context = _ReComContext(problem)
     kernel = _ReComKernel(context, random.Random(42), deadline=None)
 
-    probs = kernel._adaptive_probabilities([c1, c2], weights=(1.0,), temperature=1.0)
+    probs = kernel._adaptive_probabilities(
+        [c1, c2], lagrangian=_Lagrangian((1.0,)), temperature=1.0
+    )
     assert len(probs) == 2
     assert probs[0] > probs[1]
     assert sum(probs) == pytest.approx(1.0)
@@ -643,6 +646,13 @@ def _pair_selection_state(
     )
 
 
+class _TwoRowContext:
+    """Just the row layout ``_Lagrangian.zone`` reads: two zone rows, no cap."""
+
+    zone_row_count = 2
+    cut_row = None
+
+
 def _test_kernel(seed: int) -> _ReComKernel:
     return _ReComKernel(
         _ReComContext(make_grid_problem(2, 2)), random.Random(seed), None
@@ -650,20 +660,18 @@ def _test_kernel(seed: int) -> _ReComKernel:
 
 
 def test_zone_lagrangian_score_scores_weighted_violations_and_own_cut_edges() -> None:
-    kernel = _test_kernel(0)
     state = _pair_selection_state(
         [(1.0, 0.0), (3.0, 2.0), (0.0, 0.0)],
         {(0, 1): 4, (1, 2): 5},
     )
-    weights = (2.0, 1.0)
+    lagrangian = _Lagrangian((2.0, 1.0))
+    context = _TwoRowContext()
 
     # Each zone pays for the cut pairs it touches plus its own weighted squared
     # violations: zone 1 sits between both cuts, zone 2 only touches one.
-    assert kernel._zone_lagrangian_score(state, 0, weights) == pytest.approx(4 + 2.0)
-    assert kernel._zone_lagrangian_score(state, 1, weights) == pytest.approx(
-        9 + 2.0 * 9 + 4.0
-    )
-    assert kernel._zone_lagrangian_score(state, 2, weights) == pytest.approx(5.0)
+    assert lagrangian.zone(context, state, 0) == pytest.approx(4 + 2.0)
+    assert lagrangian.zone(context, state, 1) == pytest.approx(9 + 2.0 * 9 + 4.0)
+    assert lagrangian.zone(context, state, 2) == pytest.approx(5.0)
 
 
 def test_zone_pair_softmax_targets_the_worst_zone_with_a_random_neighbor() -> None:
@@ -676,7 +684,9 @@ def test_zone_pair_softmax_targets_the_worst_zone_with_a_random_neighbor() -> No
     adjacent_pairs = sorted(state.boundary_pairs)
 
     pairs = [
-        kernel._select_zone_pair(state, adjacent_pairs, weights=(1.0,), temperature=1.0)
+        kernel._select_zone_pair(
+            state, adjacent_pairs, lagrangian=_Lagrangian((1.0,)), temperature=1.0
+        )
         for _ in range(100)
     ]
 
@@ -695,7 +705,10 @@ def test_zone_pair_softmax_spreads_out_at_high_temperature() -> None:
 
     pairs = {
         kernel._select_zone_pair(
-            state, sorted(state.boundary_pairs), weights=(1.0,), temperature=1e6
+            state,
+            sorted(state.boundary_pairs),
+            lagrangian=_Lagrangian((1.0,)),
+            temperature=1e6,
         )
         for _ in range(200)
     }
@@ -710,7 +723,7 @@ def test_propose_requires_weights_for_the_lagrangian_softmax_pair_selector() -> 
     state = context.build_state(context.validate_hint(problem.hint or {}))
     kernel = _ReComKernel(context, random.Random(0), None)
 
-    with pytest.raises(ValueError, match="lagrangian_weights"):
+    with pytest.raises(ValueError, match="lagrangian"):
         kernel.propose(state, "uniform", pair_selector="lagrangian_softmax")
 
 

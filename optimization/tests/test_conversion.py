@@ -107,3 +107,68 @@ def test_load_block_to_blockgroup_uses_scenario_role(tmp_path, scenario_factory)
     crosswalk = conversion._load_block_to_blockgroup(scenario)
 
     assert crosswalk == {1001: 100, 1002: 100}
+
+
+def _area_grid():
+    from optimization.tests.synthetic import make_grid_graph
+
+    return make_grid_graph(3, 3)
+
+
+def test_area_file_level_reads_benchmark_names():
+    assert conversion.area_file_level(
+        "/x/zone_dict_area_Block_0.json", "BlockGroup_0"
+    ) == LevelSpec("Block", 0)
+    assert conversion.area_file_level(
+        "/x/zone_dict_area_BlockGroup_1_0007.json", "Block_0"
+    ) == LevelSpec("BlockGroup", 1)
+    assert conversion.area_file_level("/x/hint.json", "Block_2") == LevelSpec(
+        "Block", 2
+    )
+
+
+def test_area_hint_round_trips_through_a_saved_file(tmp_path):
+    import json
+
+    G = _area_grid()
+    zoning = {node: int(node % 3 >= 1) for node in G.nodes}  # columns 0 | 1-2
+    path = tmp_path / "zone_dict_area_Block_0.json"
+    path.write_text(
+        json.dumps({str(G.nodes[n]["area_id"]): z for n, z in zoning.items()})
+    )
+
+    hint = conversion.hint_from_area_assignment(
+        conversion.load_area_assignment(str(path)),
+        conversion.area_file_level(str(path), "Block_0"),
+        G,
+        "Block_0",
+        [0, 8],
+    )
+
+    assert hint == zoning
+
+
+def test_area_hint_fills_uncovered_nodes_and_repairs_fragments():
+    # 3x3 grid, zone 0 = left column, zone 1 = the rest, centroids 0 and 8.
+    G = _area_grid()
+    area = {G.nodes[n]["area_id"]: int(n % 3 >= 1) for n in G.nodes}
+    del area[G.nodes[4]["area_id"]]  # the centre is not covered
+    area[G.nodes[2]["area_id"]] = 0  # a zone-0 island in zone 1's corner
+
+    hint = conversion.hint_from_area_assignment(area, "Block_0", G, "Block_0", [0, 8])
+
+    assert set(hint) == set(G.nodes)
+    assert hint[2] == 1  # the island rejoins the zone around it
+    for zone in (0, 1):
+        nodes = [n for n, z in hint.items() if z == zone]
+        assert nx.is_connected(G.subgraph(nodes))
+
+
+def test_area_hint_rejects_zone_labels_beyond_the_centroids():
+    import pytest
+
+    G = _area_grid()
+    area = {G.nodes[n]["area_id"]: 5 for n in G.nodes}
+
+    with pytest.raises(ValueError, match="different number of zones"):
+        conversion.hint_from_area_assignment(area, "Block_0", G, "Block_0", [0, 8])

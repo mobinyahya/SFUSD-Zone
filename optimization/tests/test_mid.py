@@ -1139,3 +1139,33 @@ def test_mid_real_data_feasible_hint_complementary_slackness():
     zero_count = sum(1 for v in cutoffs.values() if v == 0)
     # In SFUSD real market, majority of programs are undersubscribed and forced to 0
     assert zero_count > len(cutoffs) // 2
+
+
+def test_stated_preferences_score_each_list_by_its_order() -> None:
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from optimization.data.mid import _stated_utility_table
+
+    indices = {"100-GE-KG": 1, "200-GE-KG": 2, "300-SE-KG": 3}
+    market = SimpleNamespace(
+        programs=SimpleNamespace(indices=indices, index_list=None),
+        students=SimpleNamespace(
+            selected_preferences=lambda _: np.array([[2, 1, 0], [0, 0, 0], [3, 0, 0]])
+        ),
+    )
+
+    table = _stated_utility_table(None, ["s1", "s2", "s3"], list(indices), market)
+
+    # The student who ranked nothing gets no row and so stays outside-only.
+    assert list(table.index) == ["s1", "s3"]
+    assert table.loc["s1"].tolist() == [1.0, 2.0, -np.inf]
+    assert table.loc["s3"].tolist() == [-np.inf, -np.inf, 1.0]
+
+
+def test_config_rejects_an_unknown_mid_preference_source() -> None:
+    from optimization.config import OptimizationConfig
+
+    with pytest.raises(ValueError, match="mid_preference_source"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_preference_source="bad")

@@ -272,3 +272,47 @@ def test_simulation_sweep_supports_auto_max_distance(tmp_path):
         assert task.config["max_distance"] == "auto"
         opt_cfg = task.optimization_config()
         assert opt_cfg.max_distance == "auto"
+
+
+def _with_optimization(sweep_path: Path, **values) -> None:
+    raw = yaml.safe_load(sweep_path.read_text(encoding="utf-8"))
+    raw["optimization_defaults"].update(values)
+    sweep_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+
+
+def test_task_identity_follows_hint_zoning_bytes_not_its_path(tmp_path):
+    sweep_path, _, _, _ = _write_custom_sweep(tmp_path)
+    first_hint = tmp_path / "a" / "zone_dict_area_Block_0.json"
+    moved_hint = tmp_path / "b" / "zone_dict_area_Block_0.json"
+    for path in (first_hint, moved_hint):
+        path.parent.mkdir()
+        path.write_text('{"1": 0}', encoding="utf-8")
+
+    _with_optimization(sweep_path, hint_zoning=str(first_hint))
+    first = SimulationSweep.from_yaml(str(sweep_path)).generate_tasks()[0]
+    _with_optimization(sweep_path, hint_zoning=str(moved_hint))
+    moved = SimulationSweep.from_yaml(str(sweep_path)).generate_tasks()[0]
+    moved_hint.write_text('{"1": 1}', encoding="utf-8")
+    rewritten = SimulationSweep.from_yaml(str(sweep_path)).generate_tasks()[0]
+
+    assert first.config_hash == moved.config_hash
+    assert rewritten.config_hash != moved.config_hash
+
+
+def test_adaptive_choice_objectives_hash_the_assignment_market(tmp_path):
+    """Their MID market reads assignment programs, as the matching strategies do."""
+
+    sweep_path, _, _, _ = _write_custom_sweep(tmp_path)
+    programs = sweep_path.parent / "inputs/assignment-programs.csv"
+    _with_optimization(
+        sweep_path,
+        solver="adaptive_short_bursts",
+        adaptive_short_bursts_objective="capacity_match",
+    )
+    sweep = SimulationSweep.from_yaml(str(sweep_path))
+
+    first = sweep.generate_tasks()[0]
+    programs.write_text("assignment-programs-v2", encoding="utf-8")
+    second = sweep.generate_tasks()[0]
+
+    assert first.config_hash != second.config_hash

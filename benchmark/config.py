@@ -272,6 +272,8 @@ class SimulationSweep:
                 config.strategy,
                 config.capacity_scenario,
                 config.dw_objective,
+                config.solver,
+                config.adaptive_short_bursts_objective,
             )
             source_manifest = source_manifests.get(manifest_key)
             if source_manifest is None:
@@ -355,6 +357,15 @@ def optimization_config_hash(
         semantic.pop("enumerated_solutions", None)
     if semantic.get("hints") != "feasible":
         semantic.pop("feasible_hint_time_limit", None)
+    if semantic.get("hint_zoning") is None:
+        semantic.pop("hint_zoning", None)
+    else:
+        # Name the zoning by content, so a moved or re-mounted file keeps its
+        # task id and a rewritten one does not.
+        with open(semantic["hint_zoning"], "rb") as f:
+            semantic["hint_zoning"] = hashlib.blake2b(
+                f.read(), digest_size=16
+            ).hexdigest()
     if source_manifest is None:
         source_manifest = _benchmark_source_manifest(resolved)
     return stable_hash(
@@ -375,15 +386,24 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     ):
         roles.append("optimization.capacity")
     filter_groups = ["optimization"]
-    matching_strategy = config.strategy in {
-        "mid",
-        "mid_decomp",
-        "saa",
-        "short_bursts_choice",
-    } or (
-        # Both DW welfare objectives read the assignment-side market; the
-        # boundary objective needs no market at all.
-        config.strategy == "dantzig_wolfe" and config.dw_objective != "boundary"
+    matching_strategy = (
+        config.strategy
+        in {
+            "mid",
+            "mid_decomp",
+            "saa",
+            "short_bursts_choice",
+        }
+        or (
+            # Both DW welfare objectives read the assignment-side market; the
+            # boundary objective needs no market at all.
+            config.strategy == "dantzig_wolfe" and config.dw_objective != "boundary"
+        )
+        or (
+            # So do the adaptive short bursts' choice objectives, under any strategy.
+            config.solver == "adaptive_short_bursts"
+            and config.adaptive_short_bursts_objective != "cut_edges"
+        )
     )
     roles.extend(
         role

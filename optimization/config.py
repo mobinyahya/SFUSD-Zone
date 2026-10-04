@@ -20,7 +20,10 @@ import yaml
 from loaders import DataScenario, anchor_data_config, load_scenario
 from optimization.dw_options import DW_MASTER_METHODS, DW_OBJECTIVES
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
-from optimization.mid_options import normalize_complementary_slackness_slack
+from optimization.mid_options import (
+    MID_PREFERENCE_SOURCES,
+    normalize_complementary_slackness_slack,
+)
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
@@ -66,6 +69,10 @@ class OptimizationConfig:
     budget_accounting: str = "wall_clock"
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     hints: str = "voronoi"
+    # Path to a saved ``{area_id: zone}`` zoning (a benchmark
+    # ``zone_dict_area_<level>.json``). When set it is projected onto every
+    # level by area id and becomes the problem's hint, ahead of ``hints``.
+    hint_zoning: str | None = None
     feasible_hint_time_limit: float = 60.0
     save_solver_logs: bool = False
     save_solver_progress: bool = False
@@ -84,6 +91,15 @@ class OptimizationConfig:
     adaptive_short_bursts_lr: float = 0.1
     adaptive_short_bursts_temperature: float = 1.0
     adaptive_short_bursts_pair_selector: str = "lagrangian_softmax"
+    # What adaptive short bursts rank feasible partitions by: ``cut_edges``
+    # (boundary cost), ``welfare`` (discrete MID welfare, maximized), or
+    # ``capacity_match`` (weighted unassigned plus designated students,
+    # minimized). The two choice objectives build a MID market and need
+    # program_population='All'. Constraints, including boundary_prop's
+    # cut-edge cap, are penalized in the Lagrangian under every objective.
+    adaptive_short_bursts_objective: str = "cut_edges"
+    adaptive_short_bursts_unassigned_weight: float = 1.0
+    adaptive_short_bursts_designated_weight: float = 1.0
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0
@@ -94,6 +110,10 @@ class OptimizationConfig:
     tolerance: float = 1e-6
     mid_lottery_scale: int = 20
     mid_utility_handling: str = "omit_nonpositive"
+    # Where MID market preferences come from: "estimate" (choice.estimate, a
+    # per-student fit for one cohort) or "stated" (each applicant's submitted
+    # list, ordinal only). Use "stated" for cohorts the estimate does not cover.
+    mid_preference_source: str = "estimate"
     mid_transport_bounds: bool = True
     mid_complementary_slackness: bool = False
     mid_complementary_slackness_slack: float | str = "auto"
@@ -559,8 +579,19 @@ class OptimizationConfig:
                 "budget_accounting must be one of: "
                 f"{', '.join(BUDGET_ACCOUNTING_MODES)}."
             )
+        if self.mid_preference_source not in MID_PREFERENCE_SOURCES:
+            raise ValueError(
+                "mid_preference_source must be one of: "
+                f"{', '.join(MID_PREFERENCE_SOURCES)}."
+            )
         if self.hints not in {"feasible", "voronoi", "none"}:
             raise ValueError("hints must be one of: feasible, voronoi, none.")
+        if self.hint_zoning is not None:
+            if not isinstance(self.hint_zoning, (str, Path)) or not str(
+                self.hint_zoning
+            ):
+                raise ValueError("hint_zoning must be a file path or null.")
+            self.hint_zoning = str(Path(self.hint_zoning).expanduser())
         if isinstance(self.feasible_hint_time_limit, bool):
             raise ValueError("feasible_hint_time_limit must be positive.")
         try:
@@ -593,6 +624,35 @@ class OptimizationConfig:
             raise ValueError(
                 "adaptive_short_bursts_pair_selector must be one of: "
                 "uniform, lagrangian_softmax."
+            )
+        from optimization.solvers.recom import ADAPTIVE_OBJECTIVES
+
+        if self.adaptive_short_bursts_objective not in ADAPTIVE_OBJECTIVES:
+            raise ValueError(
+                "adaptive_short_bursts_objective must be one of: "
+                f"{', '.join(ADAPTIVE_OBJECTIVES)}."
+            )
+        for name in (
+            "adaptive_short_bursts_unassigned_weight",
+            "adaptive_short_bursts_designated_weight",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be finite and non-negative.")
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be finite and non-negative.") from exc
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative.")
+            setattr(self, name, value)
+        if (
+            self.adaptive_short_bursts_objective == "capacity_match"
+            and self.adaptive_short_bursts_unassigned_weight == 0
+            and self.adaptive_short_bursts_designated_weight == 0
+        ):
+            raise ValueError(
+                "capacity_match needs a positive unassigned or designated weight."
             )
 
     # ------------------------------------------------------------------ #
@@ -728,6 +788,13 @@ class OptimizationConfig:
             "adaptive_short_bursts_temperature": self.adaptive_short_bursts_temperature,
             "adaptive_short_bursts_pair_selector": (
                 self.adaptive_short_bursts_pair_selector
+            ),
+            "adaptive_short_bursts_objective": self.adaptive_short_bursts_objective,
+            "adaptive_short_bursts_unassigned_weight": (
+                self.adaptive_short_bursts_unassigned_weight
+            ),
+            "adaptive_short_bursts_designated_weight": (
+                self.adaptive_short_bursts_designated_weight
             ),
             "mid_lottery_scale": self.mid_lottery_scale,
             "mid_utility_handling": self.mid_utility_handling,

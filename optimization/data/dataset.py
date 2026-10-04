@@ -53,6 +53,7 @@ class Dataset:
         self.graph_cache_dir = str(self._graph_namespace.path)
         self._graphs: dict[str, nx.Graph] = {}
         self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
+        self._area_hints: dict[str, dict[int, int]] = {}
         self._closer_neighbor_store = closer_neighbors.CloserNeighborArtifactStore(
             self.data,
             geometry_loader=lambda unit: loaders.load_census_shapefile(unit, self.data),
@@ -148,6 +149,23 @@ class Dataset:
             }
         )
 
+    def area_hint_for(self, level, G: nx.Graph, centroids: list[int]):
+        """``config.hint_zoning`` projected onto ``level`` as a warm start."""
+        from optimization.data import conversion
+
+        level = LevelSpec.parse(level)
+        if level.name not in self._area_hints:
+            path = self.config.hint_zoning
+            self._area_hints[level.name] = conversion.hint_from_area_assignment(
+                conversion.load_area_assignment(path),
+                conversion.area_file_level(path, level),
+                G,
+                level,
+                centroids,
+                converter=conversion.LevelConverter(data=self.data),
+            )
+        return dict(self._area_hints[level.name])
+
     def centroids_for(self, level, school_ids=None) -> list[int]:
         level = LevelSpec.parse(level)
         if school_ids is None:
@@ -222,10 +240,13 @@ class Dataset:
         centroid_school_ids = [int(school_id) for school_id in centroid_school_ids]
         G = self.graph_for(level)
         self._closer_neighbor_store.attach_to_graph(level, G)
+        centroids = self.centroids_for(level, centroid_school_ids)
+        if hint is None and self.config.hint_zoning is not None:
+            hint = self.area_hint_for(level, G, centroids)
         return ZoneProblem(
             G=G,
             level=level,
-            centroids=self.centroids_for(level, centroid_school_ids),
+            centroids=centroids,
             centroid_school_ids=centroid_school_ids,
             program_population=self.config.program_population,
             frl_dev=self.config.frl_dev * constraint_multiplier,

@@ -17,6 +17,8 @@ every depth records the base ids it covers (``area_id`` at depth 0,
 
 from __future__ import annotations
 
+import json
+import re
 from collections import Counter
 from collections.abc import Mapping
 
@@ -197,3 +199,67 @@ class LevelConverter:
             return votes.most_common(1)[0][0] if votes else None
 
         return lookup
+
+
+_AREA_FILE_LEVEL = re.compile(r"zone_dict_area_([A-Za-z]+_\d+)(?:_\d+)?\.json$")
+
+
+def load_area_assignment(path: str) -> dict[int, int]:
+    """Read a saved ``{area_id: zone}`` JSON such as ``zone_dict_area_<level>.json``."""
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, Mapping) or not raw:
+        raise ValueError(f"Area assignment {path!r} must be a non-empty mapping.")
+    return {int(area_id): int(zone) for area_id, zone in raw.items()}
+
+
+def area_file_level(path: str, default: LevelSpec | str) -> LevelSpec:
+    """The level a benchmark ``zone_dict_area_<level>.json`` was written at.
+
+    Only the unit matters, since area files are keyed by the unit's base ids;
+    files without the benchmark name are read as ``default``'s unit.
+    """
+    match = _AREA_FILE_LEVEL.search(str(path))
+    return LevelSpec.parse(match.group(1) if match else default)
+
+
+def hint_from_area_assignment(
+    area_assignment: Mapping[int, int],
+    src_level: LevelSpec | str,
+    G: nx.Graph,
+    level: LevelSpec | str,
+    centroids: list[int],
+    *,
+    converter: LevelConverter | None = None,
+) -> dict[int, int]:
+    """Project a portable zoning onto ``G`` as a complete, contiguous hint.
+
+    Nodes the zoning does not cover take the most common zone among their
+    already-placed neighbors, and fragments cut off from their zone's centroid
+    are reabsorbed (``contiguity.repair``), so the result is a valid warm start
+    even when the zoning came from a different graph or unit.
+    """
+    from optimization.data import contiguity
+
+    zone_count = len(centroids)
+    converter = converter or LevelConverter()
+    hint = converter.from_area_assignment(area_assignment, src_level, G, level)
+    if any(not 0 <= zone < zone_count for zone in hint.values()):
+        raise ValueError(
+            f"Area hint uses zones outside 0..{zone_count - 1}; it was written "
+            "for a different number of zones."
+        )
+    missing = set(G.nodes()) - set(hint)
+    while missing:
+        placed = {}
+        for node in missing:
+            counts = Counter(hint[nb] for nb in G.neighbors(node) if nb in hint)
+            if counts:
+                placed[node] = counts.most_common(1)[0][0]
+        if not placed:
+            raise ValueError(
+                f"{len(missing)} node(s) are unreachable from the area hint."
+            )
+        hint.update(placed)
+        missing -= set(placed)
+    return contiguity.repair(G, hint, centroids)
