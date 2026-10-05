@@ -55,6 +55,16 @@ def main(argv: list[str] | None = None) -> None:
         help="Optional cache-root override for content-addressed geometry artifacts.",
     )
     parser.add_argument(
+        "--shard",
+        type=_parse_shard,
+        default=None,
+        metavar="INDEX/COUNT",
+        help=(
+            "Render only every COUNT-th task starting at INDEX (zero-based), so "
+            "a job array can split one sweep; e.g. $SLURM_ARRAY_TASK_ID/8."
+        ),
+    )
+    parser.add_argument(
         "--fail-fast",
         action="store_true",
         help="Stop after the first run that cannot be loaded or rendered.",
@@ -66,6 +76,7 @@ def main(argv: list[str] | None = None) -> None:
         stages=args.viz_stages,
         artifact_dir=args.artifact_dir,
         fail_fast=args.fail_fast,
+        shard=args.shard,
     )
     print(
         "Visualization complete: "
@@ -85,11 +96,19 @@ def visualize_sweep(
     stages: str | None = None,
     artifact_dir: str | Path | None = None,
     fail_fast: bool = False,
+    shard: tuple[int, int] | None = None,
 ) -> SweepVisualizationSummary:
-    """Render maps for every task output directory declared by a sweep YAML."""
+    """Render maps for every task output directory declared by a sweep YAML.
+
+    ``shard=(index, count)`` keeps every ``count``-th task from ``index``, so
+    ``count`` processes with distinct indices cover the sweep exactly once.
+    """
 
     sweep = SimulationSweep.from_yaml(str(config_path))
     tasks = sweep.generate_tasks()
+    if shard is not None:
+        index, count = shard
+        tasks = tasks[index::count]
     summary = SweepVisualizationSummary(total_runs=len(tasks))
     settings = VisualizationRunConfig(
         enabled=True,
@@ -243,6 +262,17 @@ def visualization_is_current(
             ):
                 return False
     return True
+
+
+def _parse_shard(value: str) -> tuple[int, int]:
+    try:
+        index_text, count_text = value.split("/")
+        index, count = int(index_text), int(count_text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--shard must look like INDEX/COUNT.") from exc
+    if count < 1 or not 0 <= index < count:
+        raise argparse.ArgumentTypeError("--shard needs 0 <= INDEX < COUNT.")
+    return index, count
 
 
 if __name__ == "__main__":
