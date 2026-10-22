@@ -30,7 +30,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.special import logsumexp
 
-from choice.estimation.exp8 import Design
+from choice.estimation.exp8 import Design, inside_utilities
 
 OUTSIDE = -1
 
@@ -159,8 +159,7 @@ class OutsideOptionMNL:
         school_fe, type_fe, beta, gamma = self.unpack(theta)
         a = self.arrays
         fixed = school_fe[a.school_index] + type_fe[a.type_index]
-        inside = fixed[None] + self.data.design.features @ beta
-        inside = np.where(self.data.design.eligible, inside, -np.inf)
+        inside = inside_utilities(self.data.design, fixed, beta)
         return inside, self.data.outside_features @ gamma
 
     def _parts(self, theta: np.ndarray):

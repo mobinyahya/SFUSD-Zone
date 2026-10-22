@@ -78,7 +78,7 @@ def test_design_reproduces_published_2324_utilities(root):
 def test_2526_choice_data_counts(root):
     from choice.estimation.fit_transfer_year import build_choice_data
 
-    data, students, counts = build_choice_data(root, "2526")
+    data, students, counts = build_choice_data("2526")
     assert counts["market_students"] == 3980
     assert len(students) == 3980 - counts["students_dropped_special_seat"]
     decisions = [c for c in data.enrolled if c is not None]

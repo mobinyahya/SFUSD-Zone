@@ -29,6 +29,7 @@ import pandas as pd
 from choice.estimation.exp8 import (
     SPECIAL_PROGRAM_TYPES,
     build_design,
+    published_utilities,
     ranked_program_ids,
 )
 from choice.estimation.fit_transfer_year import (
@@ -37,31 +38,15 @@ from choice.estimation.fit_transfer_year import (
     OUTSIDE_NAMES,
     _data_root,
     _program_id,
+    load_market,
 )
 
-#: Program and school tables per target year, as the assignment registry
-#: selects them for the Mission Bay profile.
-SOURCES = {
-    "2627": (
-        "Data/Cleaned/programs_withMissionBay_2627.csv",
-        "Data/Cleaned/schools_rehauled_withMissionBay_2324.csv",
-    ),
-    "2526": (
-        "Data/Cleaned/programs_2526.csv",
-        "Data/Cleaned/schools_rehauled_2324.csv",
-    ),
-}
 
-
-def predict_year(root: Path, fit_dir: Path, year: str) -> tuple[pd.DataFrame, dict]:
+def predict_year(fit_dir: Path, year: str) -> tuple[pd.DataFrame, dict]:
     weights = pd.read_csv(fit_dir / "weights.csv").set_index("feature")["coefficient"]
-    programs_path, schools_path = SOURCES[year]
-    students = pd.read_csv(root / "Data/Cleaned" / f"student_{year}.csv", low_memory=False)
-    students = students[students["grade"] == GRADE].reset_index(drop=True)
-    programs = pd.read_csv(root / programs_path)
+    students, programs, schools, sources = load_market(year)
     programs = programs[~programs["program_type"].isin(SPECIAL_PROGRAM_TYPES)]
     programs = programs.reset_index(drop=True)
-    schools = pd.read_csv(root / schools_path)
 
     feeders = {
         int(row.studentno): _program_id(row.feeder_school, row.feeder_program)
@@ -86,22 +71,15 @@ def predict_year(root: Path, fit_dir: Path, year: str) -> tuple[pd.DataFrame, di
     imputed = sorted(
         {int(s) for s in design.school_ids if f"school_{s}" not in school_effects}
     )
-    school_fe = np.array(
-        [weights.get(f"school_{s}", school_effects.mean()) for s in design.school_ids]
-    )
     missing_types = sorted(
         {t for t in design.program_types if f"program_type_{t}" not in weights}
     )
-    type_fe = np.array(
-        [weights.get(f"program_type_{t}", 0.0) for t in design.program_types]
-    )
-    beta = np.array([weights[name] for name in design.feature_names])
-    inside = school_fe[None] + type_fe[None] + design.features @ beta
+    inside = published_utilities(design, weights)
 
     promote = students["promote_eligible"].fillna(0).to_numpy(dtype=float)
     outside_features = np.column_stack([design.low_income.astype(float), promote])
     outside = outside_features @ np.array([weights[name] for name in OUTSIDE_NAMES])
-    net = np.where(design.eligible, inside - outside[:, None], -np.inf)
+    net = inside - outside[:, None]
 
     estimates = pd.DataFrame(net, columns=design.program_ids)
     estimates.insert(0, "studentno", [f"{year}-{s}" for s in design.student_ids])
@@ -111,14 +89,16 @@ def predict_year(root: Path, fit_dir: Path, year: str) -> tuple[pd.DataFrame, di
         "year": year,
         "students": len(students),
         "programs": len(programs),
-        "programs_source": programs_path,
-        "schools_source": schools_path,
+        "programs_source": sources["programs"],
+        "schools_source": sources["schools"],
         "schools_with_imputed_effect": imputed,
         "imputed_school_effect": float(school_effects.mean()),
         "program_types_with_reference_effect": missing_types,
         "programs_with_imputed_effects": [
             p
-            for p, sch, t in zip(design.program_ids, design.school_ids, design.program_types)
+            for p, sch, t in zip(
+                design.program_ids, design.school_ids, design.program_types
+            )
             if int(sch) in imputed or t in missing_types
         ],
         "students_unlocated": int((~design.located).sum()),
@@ -145,7 +125,7 @@ def main(argv=None) -> int:
     fit_dir = args.fit_dir or (
         root / "simulation-files/choice-model" / f"ChoiceModel_{args.fit_year}_outside"
     )
-    estimates, report = predict_year(root, fit_dir, args.year)
+    estimates, report = predict_year(fit_dir, args.year)
     estimates.to_csv(fit_dir / f"estimates_{args.year}.csv", index=False)
     (fit_dir / f"prediction_report_{args.year}.json").write_text(
         json.dumps(report, indent=2) + "\n"

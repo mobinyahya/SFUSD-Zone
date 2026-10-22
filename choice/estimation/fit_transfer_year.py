@@ -12,9 +12,10 @@ enrolled:
   with no list of their own (``feeder_only``) ranks the feeder alone. The
   attendance-area program the converter appends for those students, and
   ``aa_only`` students' whole list, are invented, so they are not used.
-* **Enrolment** comes from the demographics extract, as in the converter: a fall
-  record at kindergarten at a real school is enrolled there, and school 899, no
-  record, or a record at another grade is not enrolled. A student who enrolled at
+* **Enrolment** is the year's ``enrolled_<year>.csv``, which the converter builds
+  from the demographics extract: a seated student with a fall record at
+  kindergarten at a real school is in it, at that school, and school 899, no
+  record, or a record at another grade leaves them out. A student who enrolled at
   their post-run seat chose it over the outside option. One who enrolled
   somewhere else chose that program over the seat and the outside option. One
   who never enrolled chose the outside option over the seat.
@@ -42,12 +43,6 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from analysis.data_prep.convert_sfusd_transfer import (
-    Report,
-    _clean_nulls,
-    _fall_enrollment,
-    discover_transfer_files,
-)
 from choice.estimation.exp8 import (
     SPECIAL_PROGRAM_TYPES,
     build_design,
@@ -59,19 +54,72 @@ from choice.estimation.likelihood import (
     FitResult,
     OutsideOptionMNL,
 )
-from loaders import load_scenario
+from loaders import DataScenario, load_scenario, read_csv_source
 from loaders.tables import NOT_ENROLLED_SCHOOL_ID
 
-TRANSFER = "Data/raw_SFUSD_data_downloads/Sep 14 2026 data transfer"
 PUBLISHED_WEIGHTS = "simulation-files/choice-model/ChoiceModel_20240514/weights.csv"
 GRADE = "KG"
 OUTSIDE_NAMES = ("outside_low_income", "outside_promote_eligible")
 #: Applicants this far from every school are moving in; their distances are not used.
 MAX_LOCATED_MILES = 10.0
+#: Mission Bay opened in August 2026; earlier years' Mission Bay tables are
+#: counterfactual, so a year before this one is read without it.
+MISSION_BAY_OPENED = "2627"
 
 
 def _data_root() -> Path:
     return Path(load_scenario({"scenario": "legacy", "overrides": {}}).roots["data"])
+
+
+def transfer_scenario(year: str, population: str = "applicant") -> DataScenario:
+    """The ``sfusd-<year>`` kindergarten market, with Mission Bay where it existed."""
+    filters = {
+        "student_population": population,
+        "include_mission_bay": year >= MISSION_BAY_OPENED,
+    }
+    return load_scenario(
+        {"scenario": f"sfusd-{year}", "overrides": {"filters": {"assignment": filters}}}
+    )
+
+
+def load_market(year: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """``year``'s kindergarten students, programs and schools, and their sources.
+
+    Read whole from the registry-selected tables, without the assignment
+    group's filters: the fit and the prediction select rows themselves.
+    """
+    data = transfer_scenario(year)
+    roles = ("assignment.students", "assignment.programs", "assignment.schools")
+    sources = {role: data.source(role) for role in roles}
+    students, programs, schools = (
+        read_csv_source(sources[role], low_memory=False) for role in roles
+    )
+    students = students[students["grade"] == GRADE].reset_index(drop=True)
+    paths = {role.split(".")[1]: str(source.path) for role, source in sources.items()}
+    return students, programs, schools, paths
+
+
+def load_enrolment(year: str) -> pd.DataFrame:
+    """Where each enrolled kindergartner enrolled, indexed by ``studentno``.
+
+    A student absent from the table did not enroll. Rows at school 899
+    ("Central Enrollment") or with no school, which a pre-2024-25 table can
+    carry, are dropped as not enrolled too.
+    """
+    enrolled = read_csv_source(
+        transfer_scenario(year, "enrolled").source("assignment.students"),
+        low_memory=False,
+    )
+    enrolled = enrolled[enrolled["grade"] == GRADE]
+    school = pd.to_numeric(enrolled["enrolled_idschool"], errors="coerce")
+    enrolled = enrolled[school.notna() & school.ne(NOT_ENROLLED_SCHOOL_ID)]
+    return pd.DataFrame(
+        {
+            "school": enrolled["enrolled_idschool"].astype(int).to_numpy(),
+            "program": enrolled["enrolled_programcode"].to_numpy(),
+        },
+        index=enrolled["studentno"].astype(int).to_numpy(),
+    )
 
 
 def _program_id(school, program) -> str | None:
@@ -80,13 +128,9 @@ def _program_id(school, program) -> str | None:
     return f"{int(school)}-{program}-{GRADE}"
 
 
-def build_choice_data(root: Path, year: str, *, top_k: int = 5):
+def build_choice_data(year: str, *, top_k: int = 5):
     """Assemble the design and observed choices for ``year``'s kindergarten."""
-    cleaned = root / "Data" / "Cleaned"
-    students = pd.read_csv(cleaned / f"student_{year}.csv", low_memory=False)
-    students = students[students["grade"] == GRADE].reset_index(drop=True)
-    programs = pd.read_csv(cleaned / f"programs_{year}.csv")
-    schools = pd.read_csv(cleaned / "schools_rehauled_2324.csv")
+    students, programs, schools, _ = load_market(year)
     counts: Counter[str] = Counter(market_students=len(students))
 
     special = programs["program_type"].isin(SPECIAL_PROGRAM_TYPES)
@@ -100,12 +144,7 @@ def build_choice_data(root: Path, year: str, *, top_k: int = 5):
     counts["students_dropped_special_seat"] = int(seated_special.sum())
     students = students[~seated_special].reset_index(drop=True)
 
-    paths = discover_transfer_files(root / TRANSFER, year)
-    demographics = _clean_nulls(pd.read_csv(paths["demographics"], low_memory=False))
-    record = _fall_enrollment(
-        demographics, Report(year=year, transfer=str(root / TRANSFER))
-    )
-    record = record.reindex(students["studentno"].astype(int).to_numpy())
+    record = load_enrolment(year).reindex(students["studentno"].astype(int).to_numpy())
 
     lists = ranked_program_ids(students, GRADE)
     feeders = {
@@ -133,12 +172,7 @@ def build_choice_data(root: Path, year: str, *, top_k: int = 5):
         seat = _program_id(row.r1_idschool, row.r1_programcode)
         seat = seat if seat in choice_set else None
         school = record["school"].iloc[i]
-        enrolled_here = (
-            pd.notna(school)
-            and school != NOT_ENROLLED_SCHOOL_ID
-            and record["grade"].iloc[i] == GRADE
-        )
-        if not enrolled_here:
+        if pd.isna(school):
             offer, choice = ([seat], OUTSIDE) if seat else ([], None)
             counts["enrol_not_enrolled" if seat else "enrol_skipped_no_seat"] += 1
         else:
@@ -229,7 +263,7 @@ def diagnostics(
     }
 
 
-def compare_published(fit: FitResult, root: Path) -> dict:
+def compare_published(fit: FitResult, root: Path, year: str) -> dict:
     """Correlate the shared coefficients with the published 2023-24 exp8 fit."""
     published = pd.read_csv(root / PUBLISHED_WEIGHTS).set_index("feature")[
         "coefficient"
@@ -244,7 +278,7 @@ def compare_published(fit: FitResult, root: Path) -> dict:
     demeaned = ours[schools] - ours[schools].mean()
     return {
         "non_fe_coefficients": {
-            n: {"2526": float(ours[n]), "2324_published": float(published[n])}
+            n: {year: float(ours[n]), "2324_published": float(published[n])}
             for n in shared
         },
         "school_fe_correlation": float(
@@ -312,7 +346,7 @@ def main(argv=None) -> int:
         / "choice-model"
         / f"ChoiceModel_{args.year}_outside"
     )
-    data, students, counts = build_choice_data(root, args.year, top_k=args.top_k)
+    data, students, counts = build_choice_data(args.year, top_k=args.top_k)
     model = OutsideOptionMNL(data, ridge=args.ridge)
     fit = model.fit()
     report = {
@@ -332,7 +366,7 @@ def main(argv=None) -> int:
         "iterations": fit.iterations,
         "max_abs_gradient": fit.max_abs_gradient,
         "diagnostics": diagnostics(model, fit, students),
-        "vs_2324_exp8": compare_published(fit, root),
+        "vs_2324_exp8": compare_published(fit, root, args.year),
         "utility_convention": (
             f"estimates_{args.year}.csv holds V_ij - V_i0: utility relative to the student's own "
             "outside option, -inf where ineligible. A program is preferred to not enrolling iff "

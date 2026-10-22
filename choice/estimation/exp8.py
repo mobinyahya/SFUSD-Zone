@@ -283,14 +283,31 @@ def build_design(
     )
 
 
+def inside_utilities(design: Design, fixed: np.ndarray, beta: np.ndarray) -> np.ndarray:
+    """``fixed_j + X_ij . beta``, ``-inf`` where ineligible.
+
+    ``fixed`` is each program's school plus program-type effect, one per design
+    column, and ``beta`` is aligned to ``design.feature_names``.
+    """
+    utility = fixed[None] + design.features @ beta
+    return np.where(design.eligible, utility, -np.inf)
+
+
 def published_utilities(design: Design, weights: Mapping[str, float]) -> np.ndarray:
-    """Evaluate a ``weights.csv``-style coefficient table on ``design``."""
+    """Evaluate a ``weights.csv``-style coefficient table on ``design``.
+
+    A school the table never saw gets its mean school effect, which says nothing
+    about it beyond what the other features do; a program type it never saw gets
+    the reference effect, 0.
+    """
+    school_effects = {k: v for k, v in weights.items() if k.startswith("school_")}
+    mean_school = float(np.mean(list(school_effects.values())))
     fixed = np.array(
         [
-            weights[f"school_{s}"] + weights[f"program_type_{t}"]
+            school_effects.get(f"school_{s}", mean_school)
+            + weights.get(f"program_type_{t}", 0.0)
             for s, t in zip(design.school_ids, design.program_types)
         ]
     )
-    beta = np.array([weights.get(name, 0.0) for name in design.feature_names])
-    utility = fixed[None] + design.features @ beta
-    return np.where(design.eligible, utility, -np.inf)
+    beta = np.array([weights[name] for name in design.feature_names])
+    return inside_utilities(design, fixed, beta)
