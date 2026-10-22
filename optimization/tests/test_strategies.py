@@ -473,8 +473,10 @@ def test_config_validates_and_passes_mid_options():
     strategy = config.make_strategy()
 
     assert strategy.options["mid_lottery_scale"] == 40
-    assert strategy.options["mid_utility_handling"] == "exponentiate"
     assert strategy.options["mid_transport_bounds"] is False
+    # Read from the config by the market builder, never from options.
+    assert "mid_utility_handling" not in strategy.options
+    assert "mid_transport_bounds" not in config.make_solver().options
 
 
 @pytest.mark.parametrize("solver", ["cp_bool", "mip"])
@@ -496,7 +498,7 @@ def test_config_validates_and_passes_saa_options(solver):
     strategy = config.make_strategy()
 
     assert strategy.options["max_iterations"] == 7
-    assert strategy.options["mid_utility_handling"] == "exponentiate"
+    assert config.mid_utility_handling == "exponentiate"
     assert strategy.options["saa_num_seeds"] == 9
     assert strategy.options["saa_tie_breaking_method"] == "STB"
 
@@ -589,8 +591,7 @@ def test_config_accepts_valid_mid_complementary_slackness_slack(value, expected)
         mid_complementary_slackness_slack=value,
     )
     assert cfg.mid_complementary_slackness_slack == expected
-    assert cfg.make_solver().options["mid_complementary_slackness"] is True
-    assert cfg.make_solver().options["mid_complementary_slackness_slack"] == expected
+    assert "mid_complementary_slackness" not in cfg.make_solver().options
     assert cfg.make_strategy().options["mid_complementary_slackness"] is True
     assert cfg.make_strategy().options["mid_complementary_slackness_slack"] == expected
 

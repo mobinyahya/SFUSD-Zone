@@ -78,22 +78,11 @@ class MidCpSatSolver(CpBoolSolver):
         if not isinstance(transport_bounds, bool):
             raise ValueError("MID transport_bounds must be a Boolean.")
         self.transport_bounds = transport_bounds
-        cs = complementary_slackness or bool(
-            options.get("mid_complementary_slackness", False)
-        )
-        if not isinstance(cs, bool):
+        if not isinstance(complementary_slackness, bool):
             raise ValueError("MID complementary_slackness must be a Boolean.")
-        self.complementary_slackness = cs
-
-        slack = complementary_slackness_slack
-        if (
-            slack == "auto"
-            and "mid_complementary_slackness_slack" in options
-            and options["mid_complementary_slackness_slack"] is not None
-        ):
-            slack = options["mid_complementary_slackness_slack"]
+        self.complementary_slackness = complementary_slackness
         self.complementary_slackness_slack = normalize_complementary_slackness_slack(
-            slack
+            complementary_slackness_slack
         )
         self.preprocessed = preprocessed
         self._mid_variables: _MidVariables | None = None

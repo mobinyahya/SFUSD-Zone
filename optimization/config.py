@@ -846,11 +846,9 @@ class OptimizationConfig:
             "adaptive_short_bursts_designated_weight": (
                 self.adaptive_short_bursts_designated_weight
             ),
+            # The adaptive short bursts' welfare scorer reads it here; the
+            # MID strategies read their own copy.
             "mid_lottery_scale": self.mid_lottery_scale,
-            "mid_utility_handling": self.mid_utility_handling,
-            "mid_transport_bounds": self.mid_transport_bounds,
-            "mid_complementary_slackness": self.mid_complementary_slackness,
-            "mid_complementary_slackness_slack": self.mid_complementary_slackness_slack,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir
@@ -879,7 +877,6 @@ class OptimizationConfig:
             choice_utility_hints=self.choice_utility_hints,
             tolerance=self.tolerance,
             mid_lottery_scale=self.mid_lottery_scale,
-            mid_utility_handling=self.mid_utility_handling,
             mid_transport_bounds=self.mid_transport_bounds,
             mid_complementary_slackness=self.mid_complementary_slackness,
             mid_complementary_slackness_slack=self.mid_complementary_slackness_slack,
