@@ -819,3 +819,22 @@ def test_config_rejects_invalid_adaptive_short_bursts_pair_selector() -> None:
             solver="adaptive_short_bursts",
             adaptive_short_bursts_pair_selector="bad",
         )
+
+
+def test_school_count_tolerance_zero_penalizes_uneven_school_counts() -> None:
+    problem = make_solver_contract_problem(school_count_tolerance=0.0)
+    context = _ReComContext(problem)
+    assert context.school_bounds == (3.0, 3.0)
+
+    even = context.build_state(context.validate_hint({0: 0, 1: 0, 2: 1, 3: 1}))
+    lopsided = context.build_state(context.validate_hint({0: 0, 1: 1, 2: 1, 3: 1}))
+    assert all(
+        value == pytest.approx(0.0)
+        for zone in range(2)
+        for value in context.zone_violations(even.zone_stats[zone])
+    )
+    assert any(
+        value > 0
+        for zone in range(2)
+        for value in context.zone_violations(lopsided.zone_stats[zone])
+    )

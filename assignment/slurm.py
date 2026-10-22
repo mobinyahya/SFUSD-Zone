@@ -596,6 +596,11 @@ def load_plan(plan_path: str | pathlib.Path) -> tuple[dict, pathlib.Path]:
     return plan, path
 
 
+#: The finalizer holds every metric fragment at once (~575 MB on disk for 640
+#: subconfigs, >8 GB in memory), far more than the 4 GB Slurm gives one CPU.
+FINALIZER_MEMORY = "64G"
+
+
 def _job_script(
     *,
     job_name: str,
@@ -603,6 +608,7 @@ def _job_script(
     command: list[str],
     workspace_root: pathlib.Path,
     cpus: int,
+    memory: str | None = None,
 ) -> str:
     lines = [
         "#!/usr/bin/env bash",
@@ -610,6 +616,7 @@ def _job_script(
         "#SBATCH -p soal",
         "#SBATCH --ntasks=1",
         f"#SBATCH --cpus-per-task={cpus}",
+        *([f"#SBATCH --mem={memory}"] if memory else []),
         f"#SBATCH --job-name={job_name}",
         f"#SBATCH --chdir={workspace_root}",
         f"#SBATCH --output={log_path}",
@@ -674,6 +681,9 @@ def write_slurm_scripts(
                 command=command,
                 workspace_root=workspace_root,
                 cpus=job["cpus"],
+                memory=(
+                    FINALIZER_MEMORY if job["kind"] == "metrics-finalize" else None
+                ),
             ),
             executable=True,
         )
@@ -1242,7 +1252,7 @@ def run_job_worker(plan_path: str | pathlib.Path, job_id: str) -> int:
         elif job["kind"] == "metrics":
             return 1 if _run_metrics_job(plan, absolute_plan_path, job) else 0
         elif job["kind"] == "metrics-finalize":
-            if _run_metrics_job(plan, absolute_plan_path, job):
+            if job["task_indices"] and _run_metrics_job(plan, absolute_plan_path, job):
                 return 1
             run_metrics_finalizer(absolute_plan_path)
             return 0

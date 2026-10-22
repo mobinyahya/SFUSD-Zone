@@ -2,6 +2,12 @@ import numpy as np
 import pandas as pd
 
 
+#: ``utility-model.list-length`` that ranks exactly the programs a student's
+#: drawn utility puts above their drawn outside option. The estimate must be
+#: utility net of the outside option (e.g. ``ChoiceModel_2526_outside``).
+OUTSIDE_OPTION_LIST_LENGTH = "outside_option"
+
+
 class PreferenceGenerator:
     def __init__(self, market):
         self.market = market
@@ -420,7 +426,10 @@ class PreferenceGenerator:
             self.market.umodel.original_preferences, eligible
         )
 
-        num_ranked_array = self.set_number_programs_ranked()
+        if self.market.config["utility-model"].get("list-length") == OUTSIDE_OPTION_LIST_LENGTH:
+            num_ranked_array = self._number_above_outside_option(eligible)
+        else:
+            num_ranked_array = self.set_number_programs_ranked()
         truncated_prefs = np.zeros_like(filtered_preferences)
         students_aa = self.market.students.attendance_area
         grade = self.market.config["grade"]
@@ -443,6 +452,23 @@ class PreferenceGenerator:
                 continue
             truncated_prefs[i, :num_progs] = student_prefs[:num_progs]
         return truncated_prefs
+
+    def _number_above_outside_option(self, eligible: np.ndarray) -> np.ndarray:
+        """Count each student's eligible programs drawn above their outside option.
+
+        The eligible programs are ranked by drawn utility, so ranking this many
+        of them ranks exactly the ones preferred to leaving the district.
+        """
+        outside = self.market.umodel.outside_utilities
+        if outside is None:
+            raise ValueError(
+                "list-length outside_option needs the outside-option draw; "
+                "draw_utility_model_randomness was not asked for it."
+            )
+        utilities = self.market.umodel.original_utilities
+        return np.count_nonzero(
+            eligible.astype(bool) & (utilities > outside[:, None]), axis=1
+        )
 
     def set_number_programs_ranked(self) -> np.ndarray:
         """Set the number of programs ranked for each student based on the config.

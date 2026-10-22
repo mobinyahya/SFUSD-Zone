@@ -12,7 +12,7 @@ from loaders.edge_overrides import apply_block_edge_overrides
 from optimization.data import edge_weights, loaders
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
-from optimization.levels import LEVEL_NODE_TARGETS
+from optimization.levels import LEVEL_NODE_TARGETS, LEVEL_PARENT_DEPTHS
 
 # Node attributes summed when aggregating.
 _SUM_ATTRS = [
@@ -246,6 +246,11 @@ def partition_cache_policy(unit: str, weight_edges: bool = False) -> dict:
             for depth, target in sorted(LEVEL_NODE_TARGETS.get(unit, {}).items())
         },
     }
+    parent_depths = LEVEL_PARENT_DEPTHS.get(unit, {})
+    if parent_depths:
+        policy["parent_depths"] = {
+            str(depth): parent for depth, parent in sorted(parent_depths.items())
+        }
     if weight_edges:
         policy["edge_weighting"] = edge_weights.weighting_policy()
     return policy
@@ -610,11 +615,12 @@ def aggregate_level(
 def build_hierarchy(
     cfg: IngestConfig, *, weight_edges: bool = False
 ) -> dict[int, nx.Graph]:
-    """Build every predefined level sequentially from its immediate parent."""
+    """Build every predefined level from its parent (normally ``depth - 1``)."""
     graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg, weight_edges=weight_edges)}
+    parent_depths = LEVEL_PARENT_DEPTHS.get(cfg.unit, {})
     for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
         graphs[depth] = aggregate_level(
-            graphs[depth - 1], target, cfg.program_population
+            graphs[parent_depths.get(depth, depth - 1)], target, cfg.program_population
         )
     return graphs
 

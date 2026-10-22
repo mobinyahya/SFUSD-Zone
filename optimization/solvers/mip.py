@@ -193,6 +193,13 @@ class MipSolver(Solver):
                     )
                     if m.SolCount > 0:
                         metadata["choice_best_bound"] = float(m.ObjBound)
+                elif problem.compactness_objective == "school_distance":
+                    metadata.update(
+                        {
+                            "objective_kind": "school_distance",
+                            "objective_unit": "mile^2",
+                        }
+                    )
                 elif problem.weight_edges:
                     metadata.update(
                         {
@@ -367,15 +374,15 @@ class MipSolver(Solver):
     def _add_school_count_constraints(
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
-        total = sum(problem.num_schools(n) for n in problem.nodes)
-        if total == 0:
+        bounds = problem.school_count_bounds()
+        if bounds is None:
             return
-        avg = total / problem.Z
+        floor_, ceiling = bounds
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
-            self._add_linear_constraint(m, x, terms, ">=", max(0.0, avg - 1.0))
-            self._add_linear_constraint(m, x, terms, "<=", avg + 1.0)
+            self._add_linear_constraint(m, x, terms, ">=", floor_)
+            self._add_linear_constraint(m, x, terms, "<=", ceiling)
 
     def _add_linear_constraint(
         self,
@@ -424,6 +431,16 @@ class MipSolver(Solver):
         """
 
         if problem.choice_objective is None:
+            if problem.compactness_objective == "school_distance":
+                m.setObjective(
+                    gp.quicksum(
+                        cost * x[key]
+                        for key, cost in problem.school_distance_costs().items()
+                        if key in x
+                    ),
+                    GRB.MINIMIZE,
+                )
+                return False
             self._add_boundary_objective(m, problem, x)
             return False
         self._add_choice_objective(m, problem, x)

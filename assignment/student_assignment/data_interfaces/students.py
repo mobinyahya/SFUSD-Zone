@@ -137,6 +137,10 @@ class Students:
             )
         st_df.reset_index(inplace=True, drop=True)
         self._source_row_positions = source_rows
+        # Held above instead. Left in attrs, the list is deep-copied by every
+        # pandas operation that derives a new frame or row Series from this one.
+        st_df.attrs.pop("source_rows", None)
+        st_df.attrs.pop("source_row_count", None)
         self._validate_student_identities(st_df)
 
         school_rounds = {

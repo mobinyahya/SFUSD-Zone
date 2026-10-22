@@ -42,6 +42,9 @@ from optimization.solvers.balance import (
 from optimization.solvers.base import Solver, register
 
 CP_SAT_SCALE = 100  # integer scaling for float coefficients
+# school_distance costs are w_n * d^2 with sum(w) = 1, so the objective is at
+# most the squared district diameter (~100 miles^2): 1e8 keeps it in int64.
+SCHOOL_DISTANCE_SCALE = 10**8
 
 # Rounding a float coefficient to the nearest integer multiple of 1/CP_SAT_SCALE
 # can go either way, so a solution of the scaled model could break the exact
@@ -453,6 +456,17 @@ class _CpSatSolver(Solver):
                 metadata["choice_best_bound"] = (
                     solver.BestObjectiveBound() / objective_scale
                 )
+        elif problem.compactness_objective == "school_distance":
+            metadata.update(
+                {
+                    "objective_kind": "school_distance",
+                    "objective_unit": "mile^2",
+                    "school_distance_area_weight": problem.school_distance_area_weight,
+                    "school_distance_student_weight": (
+                        problem.school_distance_student_weight
+                    ),
+                }
+            )
         elif problem.weight_edges:
             metadata.update(
                 {
@@ -528,10 +542,29 @@ class _CpSatSolver(Solver):
         y: _ZoneVars,
     ) -> tuple[bool, float]:
         if problem.choice_objective is None:
+            if problem.compactness_objective == "school_distance":
+                self._add_school_distance_objective(m, problem, x)
+                return False, float(SCHOOL_DISTANCE_SCALE)
             self._add_boundary_objective(m, problem, x, y)
             return False, 1.0
         self._add_choice_objective(m, problem, x)
         return True, float(problem.choice_objective.scale)
+
+    def _add_school_distance_objective(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+    ) -> None:
+        # The weights sum to one, so the objective is a mean squared distance
+        # in miles^2; the scale keeps ~1e-8 resolution in integer coefficients.
+        terms = []
+        for (zone, node), cost in problem.school_distance_costs().items():
+            coefficient = int(round(SCHOOL_DISTANCE_SCALE * cost))
+            var = x.get((zone, node))
+            if coefficient and var is not None:
+                terms.append(coefficient * var)
+        m.Minimize(sum(terms))
 
     def _additional_solution_metadata(
         self, solver: cp_model.CpSolver, model: cp_model.CpModel, status: int
@@ -656,15 +689,15 @@ class _CpSatSolver(Solver):
         problem: ZoneProblem,
         x: _AssignmentVars,
     ) -> None:
-        total = sum(problem.num_schools(n) for n in problem.nodes)
-        if total == 0:
+        bounds = problem.school_count_bounds()
+        if bounds is None:
             return
-        avg = total / problem.Z
+        floor_, ceiling = bounds
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
             terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
-            self._add_linear_constraint(m, x, terms, ">=", max(0.0, avg - 1.0))
-            self._add_linear_constraint(m, x, terms, "<=", avg + 1.0)
+            self._add_linear_constraint(m, x, terms, ">=", floor_)
+            self._add_linear_constraint(m, x, terms, "<=", ceiling)
 
     def _add_linear_constraint(
         self,

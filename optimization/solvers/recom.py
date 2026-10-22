@@ -304,10 +304,7 @@ class _ReComContext:
         total_schools = sum(self.schools)
         if total_schools > 0:
             self.average_schools = total_schools / self.zone_count
-            self.school_bounds = (
-                max(0.0, self.average_schools - 1.0),
-                self.average_schools + 1.0,
-            )
+            self.school_bounds = problem.school_count_bounds()
         else:
             self.average_schools = 0.0
             self.school_bounds = None
@@ -1164,19 +1161,22 @@ class _Lagrangian:
 
 
 # What adaptive short bursts minimize among feasible partitions.  ``cut_edges``
-# is the boundary cost (metres under ``weight_edges``); ``welfare`` is the
-# discrete MID program welfare; ``capacity_match`` is the weighted count of
-# students left unassigned or designated once the MID match is run.
-ADAPTIVE_OBJECTIVES = ("cut_edges", "welfare", "capacity_match")
+# is the boundary cost (metres under ``weight_edges``); ``school_distance`` is
+# the weighted squared distance from each node to its zone's school (see
+# ``ZoneProblem.school_distance_weights``); ``welfare`` is the discrete MID
+# program welfare; ``capacity_match`` is the weighted count of students left
+# unassigned or designated once the MID match is run.
+ADAPTIVE_OBJECTIVES = ("cut_edges", "school_distance", "welfare", "capacity_match")
 
 
 class _BurstObjective:
     """Feasible-partition objective for adaptive short bursts, as a cost.
 
     The boundary cost is already known for every candidate, so the cut-edge
-    objective is ``local``: it also enters the proposal Lagrangian.  Choice
-    objectives need a full matching per partition, so they are scored in one
-    batch per burst on its feasible samples only, and never inside a proposal.
+    objective is ``local``: it also enters the proposal Lagrangian.  The other
+    objectives (school distance, and choice objectives, which need a full
+    matching per partition) are scored in one batch per burst on its feasible
+    samples only, and never inside a proposal.
     """
 
     def __init__(
@@ -1952,6 +1952,12 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
     def _make_objective(self, problem: ZoneProblem, kind: str) -> _BurstObjective:
         if kind == "cut_edges":
             return _BurstObjective(kind)
+        if kind == "school_distance":
+            from optimization.solvers.burst_objectives import (
+                school_distance_burst_scorer,
+            )
+
+            return _BurstObjective(kind, school_distance_burst_scorer(problem))
         from optimization.solvers.burst_objectives import mid_burst_scorer
 
         return _BurstObjective(

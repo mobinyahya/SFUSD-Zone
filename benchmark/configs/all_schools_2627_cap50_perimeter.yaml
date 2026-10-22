@@ -1,0 +1,90 @@
+# All-schools (59-zone) 2026-27 study, capacity-balanced, round 5: perimeter.
+#
+# Same constraints as all_schools_2627_cap50_r4.yaml, but the objective counts
+# each cut edge by its shared-boundary length in metres (weight_edges: true)
+# instead of one unit per edge, so a zone pays for its real perimeter and the
+# long ribbons and narrow necks that unit cut edges leave behind cost more.
+# Warm starts are the round-4 cp_bool maps (2,246 and 2,280 unit cut edges),
+# whose zone labels are already in 59-zone order.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50_perimeter.yaml
+#
+name: all_schools_2627_cap50_perimeter
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: sfusd-2627
+    overrides:
+      filters:
+        optimization:
+          student_population: enrolled
+          include_mission_bay: true
+          geography_vintage: "2020"
+  centroids_type: '59-zone'
+  strategy: single
+  levels: ['Block_0']
+  solve_time_limits: [3600]
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+  weight_edges: true
+
+  frl_dev: 0.3
+  racial_dev: -1
+  overage: 0.5
+  shortage: 0.5
+  boundary_prop: -1
+
+  seed: 1
+
+tasks:
+  # --- cp_bool, warm-started from the round-4 maps ---
+  - &cp
+    solver: cp_bool
+    workers: 8
+    hints: voronoi          # fallback only; hint_zoning takes precedence
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_r4/59-zone/seed1/frl0.3_racial1/overage0.5_shortage0.5/single_cp_bool_Block_0_tl_3600_ac312ada/zone_dict_area_Block_0.json'
+  - <<: *cp
+    seed: 2
+  - <<: *cp
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_r4/59-zone/seed1/frl0.3_racial1/overage0.5_shortage0.5/single_cp_bool_Block_0_tl_3600_077a5ef1/zone_dict_area_Block_0.json'
+
+  # --- adaptive short bursts, exactly one school per zone, 1 core ---
+  - &asb
+    solver: adaptive_short_bursts
+    workers: 1
+    school_count_tolerance: 0
+    hints: voronoi
+    recom_iterations: -1
+    adaptive_short_bursts_objective: cut_edges   # metres, since weight_edges is on
+    adaptive_short_bursts_pair_selector: lagrangian_softmax
+    adaptive_short_bursts_temperature: 1.3
+    short_bursts_length: 25
+    hint_zoning: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_r4/59-zone/seed1/frl0.3_racial1/overage0.5_shortage0.5/single_cp_bool_Block_0_tl_3600_ac312ada/zone_dict_area_Block_0.json'
+    seed: 1
+  - <<: *asb
+    seed: 2
+  # from scratch, to see what perimeter does without the unit-cut-edge start
+  - <<: *asb
+    hint_zoning: null
+    seed: 1
+  - <<: *asb
+    hint_zoning: null
+    seed: 2
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_perimeter'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final

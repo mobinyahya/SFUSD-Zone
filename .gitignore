@@ -106,3 +106,7 @@ sfusfd_zone-0.1.0/
 
 runs/
 runs_block2/
+# Local agent state and rendered review figures
+.claude/
+.worktrees/
+/analysis/figures/

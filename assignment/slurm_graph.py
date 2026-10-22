@@ -10,7 +10,8 @@ MAX_CPUS_PER_NODE = 40
 MAX_RUNNING_SLURM_JOBS = 12
 MAX_ASSIGNMENT_JOBS = 12
 MAX_METRICS_JOBS = 8
-MAX_SLURM_JOBS = MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS
+#: The finalizer is its own one-CPU job on top of the metrics jobs.
+MAX_SLURM_JOBS = MAX_ASSIGNMENT_JOBS + MAX_METRICS_JOBS + 1
 SUPPORTED_DEPENDENCIES = {"afterok"}
 _JOB_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
@@ -104,30 +105,41 @@ def build_job_graph(
                 for task_index in task_indices
                 for assignment_index in metric_assignment_dependencies[task_index]
             }
-            assignment_dependencies = [
-                job["id"]
-                for job in assignment_jobs
-                if required_assignment_tasks.intersection(job["task_indices"])
-            ]
-            is_finalizer = index == metric_job_count - 1
-            dependencies = assignment_dependencies
-            if is_finalizer:
-                dependencies = [
-                    *dependencies,
-                    *(job["id"] for job in jobs if job["kind"] == "metrics"),
-                ]
             jobs.append(
                 {
-                    "id": "metrics-finalize" if is_finalizer else f"metrics-{index}",
-                    "kind": "metrics-finalize" if is_finalizer else "metrics",
+                    "id": f"metrics-{index}",
+                    "kind": "metrics",
                     "task_indices": task_indices,
                     "cpus": min(
                         MAX_CPUS_PER_NODE,
                         sum(metric_counts[task_index] for task_index in task_indices),
                     ),
-                    "dependencies": {"afterok": dependencies},
+                    "dependencies": {
+                        "afterok": [
+                            job["id"]
+                            for job in assignment_jobs
+                            if required_assignment_tasks.intersection(
+                                job["task_indices"]
+                            )
+                        ]
+                    },
                 }
             )
+        # The finalizer only combines fragments, so it evaluates nothing itself.
+        # When it also carried a share of the metrics, that share could not
+        # start until every other metrics job had finished, which serialised
+        # the metrics stage (two jobs ran back to back for ~3.5 h each).
+        jobs.append(
+            {
+                "id": "metrics-finalize",
+                "kind": "metrics-finalize",
+                "task_indices": [],
+                "cpus": 1,
+                "dependencies": {
+                    "afterok": [job["id"] for job in jobs if job["kind"] == "metrics"]
+                },
+            }
+        )
     validate_job_graph(
         jobs,
         assignment_count=assignment_count,
@@ -219,7 +231,7 @@ def validate_job_graph(
     max_assignment_jobs: int = MAX_ASSIGNMENT_JOBS,
     max_metrics_jobs: int = MAX_METRICS_JOBS,
 ) -> None:
-    max_jobs = max_assignment_jobs + max_metrics_jobs
+    max_jobs = max_assignment_jobs + max_metrics_jobs + 1
     if not jobs or len(jobs) > max_jobs:
         raise ValueError(f"Slurm plans require between 1 and {max_jobs} jobs.")
 
@@ -247,7 +259,8 @@ def validate_job_graph(
         task_indices = job.get("task_indices")
         if (
             not isinstance(task_indices, list)
-            or not task_indices
+            or (not task_indices and job.get("kind") != "metrics-finalize")
+            or (task_indices and job.get("kind") == "metrics-finalize")
             or any(
                 isinstance(index, bool) or not isinstance(index, int) or index < 0
                 for index in task_indices
@@ -297,7 +310,7 @@ def validate_job_graph(
         raise ValueError("Slurm jobs must cover every metrics task exactly once.")
     if len(assignment_jobs) > max_assignment_jobs:
         raise ValueError("Slurm plan exceeds the assignment job limit.")
-    if len(metrics_jobs) + len(finalizers) > max_metrics_jobs:
+    if len(metrics_jobs) > max_metrics_jobs:
         raise ValueError("Slurm plan exceeds the metrics job limit.")
     if len(finalizers) != int(bool(metrics_count)):
         raise ValueError("Metrics plans require exactly one finalizer job.")
@@ -311,9 +324,13 @@ def validate_job_graph(
                 f"Slurm job {job['id']!r} requires exactly {expected_cpus} CPU(s)."
             )
     for job in [*metrics_jobs, *finalizers]:
-        expected_cpus = min(
-            MAX_CPUS_PER_NODE,
-            sum(metric_counts[index] for index in job["task_indices"]),
+        expected_cpus = (
+            1
+            if job["kind"] == "metrics-finalize"
+            else min(
+                MAX_CPUS_PER_NODE,
+                sum(metric_counts[index] for index in job["task_indices"]),
+            )
         )
         if job["cpus"] != expected_cpus:
             raise ValueError(

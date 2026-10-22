@@ -201,7 +201,9 @@ class LevelConverter:
         return lookup
 
 
-_AREA_FILE_LEVEL = re.compile(r"zone_dict_area_([A-Za-z]+_\d+)(?:_\d+)?\.json$")
+_AREA_FILE_LEVEL = re.compile(
+    r"zone_dict_area_([A-Za-z]+_\d+(?:\.\d+)?)(?:_\d+)?\.json$"
+)
 
 
 def load_area_assignment(path: str) -> dict[int, int]:

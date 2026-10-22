@@ -20,6 +20,7 @@ class UtilityModel:
         self.estimate_path = estimate_path
         self._base_utility_cache_key = None
         self._base_utility_matrix = None
+        self.outside_utilities = None
 
     @staticmethod
     def _index_cache_key(values):
@@ -213,7 +214,15 @@ class UtilityModel:
         rows_to_keep=None,
         cols_to_keep=None,
         gumbel_scale=1.0,
+        outside_option=False,
     ):
+        """Draw each student's utilities, and optionally their outside option.
+
+        With ``outside_option`` the estimate is read as utility relative to each
+        student's outside option (its utility is 0), and ``outside_utilities``
+        gets that option's own Gumbel draw. It is drawn after the program draws,
+        so the program utilities match a run without it under the same seed.
+        """
         mus = self._load_base_utility_matrix(rows_to_keep, cols_to_keep)
 
         if not np.isfinite(gumbel_scale) or gumbel_scale < 0:
@@ -226,6 +235,13 @@ class UtilityModel:
 
         self.original_utilities = utilities
         self.original_preferences = np.argsort(-utilities, axis=1) + 1
+        self.outside_utilities = None
+        if outside_option:
+            self.outside_utilities = (
+                np.zeros(n)
+                if gumbel_scale == 0
+                else np.random.gumbel(0, gumbel_scale, n)
+            )
 
     def save_utility_matrix(self, save_path):
         """Save the computed utility matrix to a file."""

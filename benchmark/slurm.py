@@ -42,7 +42,7 @@ MAX_CPUS_PER_NODE = 40
 MAX_SLURM_JOBS = 12
 MAX_DOWNSTREAM_SLURM_JOBS = 8
 MAX_DOWNSTREAM_ASSIGNMENT_JOBS = 6
-MAX_DOWNSTREAM_METRICS_JOBS = 2
+MAX_DOWNSTREAM_METRICS_JOBS = 6
 SLURM_DIRNAME = ".slurm"
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
@@ -188,7 +188,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
             sweep.matching.config,
             _assignment_targets(all_tasks, sweep.matching),
-            assignment_folder=output_root / "assignments",
+            assignment_folder=output_root / sweep.matching.assignment_dir,
             plan_dir=output_root / SLURM_DIRNAME / "assignment",
             max_assignment_jobs=assignment_jobs,
             max_metrics_jobs=metrics_jobs,

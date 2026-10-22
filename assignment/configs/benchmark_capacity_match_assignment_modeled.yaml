@@ -1,0 +1,48 @@
+# benchmark_capacity_match_assignment.yaml under modeled preferences.
+#
+# Same market, subconfigs and iterations, but every student's list is drawn
+# from the MNL fitted on 2025-26 kindergarten rankings and enrolment and
+# applied to the 2026-27 applicants (utility.2627.from_2526_outside). Its
+# utilities are net of each student's outside option, and list-length
+# outside_option ranks exactly the eligible programs whose drawn utility beats
+# the student's own drawn outside option: no fixed-length truncation, and a
+# student who values nothing above leaving ranks nothing. designate stays on
+# (from the policy configs), so such students are still designated a seat;
+# "Designated below outside option" counts them.
+#
+# Used as the `matching.config` of
+# benchmark/configs/benchmark_capacity_match_modeled.yaml.
+
+data:
+  scenario: assignment-generated-zones-2627
+  overrides:
+    sources:
+      assignment.estimate: utility.2627.from_2526_outside
+    filters:
+      assignment:
+        student_population: applicant
+        special_programs: exclude_any_special
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/dummy/
+# replaced per run by the benchmark Slurm planner
+
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: true
+
+r1-only: true
+rounds-merged-options:
+- 0
+save-assignment: true
+subconfigs:
+- small_zones+no_reserves
+- medium_zones+reserves_05frl
+utility-model:
+  enable: true
+  list-length: outside_option
+  gumbel-scale: 1.0

@@ -346,3 +346,61 @@ def mid_burst_scorer(
         unassigned_weight=unassigned_weight,
         designated_weight=designated_weight,
     )
+
+
+class SchoolDistanceScorer:
+    """``sum_n w_n * d(n, school of n's zone)^2`` for adaptive short bursts.
+
+    ReCom zones are not tied to centroids, so a zone's school is whichever
+    school node it holds; under ``school_count_tolerance: 0`` only partitions
+    with exactly one per zone are scored. Should a zone hold several, each node
+    is charged to the nearest of them, and a zone with none to the nearest
+    school anywhere, so the score stays finite whatever the school rows allow.
+    """
+
+    def __init__(self, problem) -> None:
+        import numpy as np
+
+        self._np = np
+        self.nodes = list(problem.nodes)
+        self._index = {node: i for i, node in enumerate(self.nodes)}
+        self.school_nodes = [n for n in self.nodes if problem.num_schools(n) > 0]
+        if not self.school_nodes:
+            raise ValueError("school_distance needs at least one school node.")
+        weights = problem.school_distance_weights()
+        self._weights = np.array([weights[n] for n in self.nodes])
+        distances = problem.G.graph["distance_dict"]
+        self._d2 = np.array(
+            [
+                [_distance(distances, s, n) ** 2 for n in self.nodes]
+                for s in self.school_nodes
+            ]
+        )
+        self._school_row = {s: i for i, s in enumerate(self.school_nodes)}
+        self._fallback = self._d2.min(axis=0)
+
+    def __call__(self, assignments, base=None) -> tuple[float, ...]:
+        return tuple(self.score(assignment) for assignment in assignments)
+
+    def score(self, assignment) -> float:
+        np = self._np
+        zones = np.array([assignment[n] for n in self.nodes])
+        cost = self._fallback.copy()
+        schools_by_zone: dict[int, list[int]] = defaultdict(list)
+        for s in self.school_nodes:
+            schools_by_zone[assignment[s]].append(self._school_row[s])
+        for zone, rows in schools_by_zone.items():
+            members = zones == zone
+            cost[members] = self._d2[rows][:, members].min(axis=0)
+        return float(np.dot(self._weights, cost))
+
+
+def _distance(distances, school: int, node: int) -> float:
+    row = distances.get(school, {})
+    if node in row:
+        return float(row[node])
+    return float(distances[node][school])
+
+
+def school_distance_burst_scorer(problem) -> SchoolDistanceScorer:
+    return SchoolDistanceScorer(problem)

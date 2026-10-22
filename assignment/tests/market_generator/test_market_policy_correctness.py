@@ -756,6 +756,49 @@ def test_preference_length_real_plus_three_and_ethnicity_means():
     np.testing.assert_array_equal(generator.set_number_programs_ranked(), [3, 3, 9])
 
 
+def test_outside_option_list_length_ranks_only_programs_above_it():
+    market = SimpleNamespace(
+        n=2,
+        num_programs=3,
+        config={"utility-model": {"list-length": "outside_option"}},
+        umodel=SimpleNamespace(
+            original_utilities=np.array([[2.0, -1.0, 0.5], [-3.0, -2.0, -1.0]]),
+            outside_utilities=np.array([0.2, -1.5]),
+        ),
+    )
+    generator = PreferenceGenerator(market)
+    eligible = np.array([[1, 1, 0], [1, 1, 1]])
+
+    # Student 0's 0.5 is above the outside option but ineligible.
+    np.testing.assert_array_equal(
+        generator._number_above_outside_option(eligible), [1, 1]
+    )
+
+    market.umodel.outside_utilities = None
+    with pytest.raises(ValueError, match="outside-option draw"):
+        generator._number_above_outside_option(eligible)
+
+
+def test_outside_option_draw_leaves_program_draws_unchanged():
+    from assignment.student_assignment.market_generator.utility_model import (
+        UtilityModel,
+    )
+
+    model = UtilityModel("unused.npy", programs=None, students=None)
+    model._load_base_utility_matrix = lambda *args: np.zeros((3, 4))
+    np.random.seed(7)
+    model.draw_utility_model_randomness()
+    without = model.original_utilities.copy()
+    assert model.outside_utilities is None
+    np.random.seed(7)
+    model.draw_utility_model_randomness(outside_option=True)
+    np.testing.assert_array_equal(model.original_utilities, without)
+    assert model.outside_utilities.shape == (3,)
+
+    model.draw_utility_model_randomness(gumbel_scale=0, outside_option=True)
+    np.testing.assert_array_equal(model.outside_utilities, np.zeros(3))
+
+
 def test_selective_high_school_offsets_and_missing_programs():
     market = SimpleNamespace(
         n=2,

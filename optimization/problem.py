@@ -80,6 +80,18 @@ class ZoneProblem:
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
+    school_count_tolerance:
+        Every zone holds the district-average school count plus or minus this
+        many schools. ``0`` with one centroid per school means exactly one
+        school per zone.
+    compactness_objective:
+        What CP/MIP solvers minimize when there is no choice objective:
+        ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
+        ``"school_distance"`` (``sum_n w_n * d(n, school of n's zone)^2``, see
+        :meth:`school_distance_weights`).
+    school_distance_area_weight, school_distance_student_weight:
+        Mix of land-area share and student share in each node's
+        ``school_distance`` weight; both in ``[0, 1]`` and summing to one.
     weight_edges:
         Whether boundary objectives use integer-metre shared-boundary weights
         instead of one unit per cut edge.
@@ -109,7 +121,11 @@ class ZoneProblem:
     shortage: float = 0.2
     max_distance: float | str = float("inf")
     boundary_prop: float = -1.0
+    school_count_tolerance: float = 1.0
     weight_edges: bool = False
+    compactness_objective: str = "cut_edges"
+    school_distance_area_weight: float = 0.75
+    school_distance_student_weight: float = 0.25
 
     fixed: Optional[dict[int, int]] = None
     candidates: Optional[dict[int, set[int]]] = None
@@ -204,6 +220,17 @@ class ZoneProblem:
     def num_schools(self, node: int) -> int:
         return int(self.G.nodes[node].get("num_schools", 0))
 
+    def school_count_bounds(self) -> tuple[float, float] | None:
+        """Per-zone ``(floor, ceiling)`` school counts, or ``None`` without schools."""
+        total = sum(self.num_schools(node) for node in self.nodes)
+        if total == 0:
+            return None
+        average = total / self.Z
+        return (
+            max(0.0, average - self.school_count_tolerance),
+            average + self.school_count_tolerance,
+        )
+
     def ethnicity(self, node: int, ethnicity: str) -> float:
         return float(self.G.nodes[node][ethnicity])
 
@@ -228,6 +255,41 @@ class ZoneProblem:
     def distance(self, centroid: int, node: int) -> float:
         """Distance from ``centroid`` to ``node`` (miles)."""
         return float(self.G.graph["distance_dict"][centroid][node])
+
+    def school_distance_weights(self) -> dict[int, float]:
+        """Per-node ``school_distance`` weights, summing to one.
+
+        ``w_n = a * area_n / total_area + s * students_n / total_students`` with
+        ``a`` and ``s`` the area and student weights, so the objective is a
+        weighted mean squared distance (miles^2) to each node's zone school.
+        Area needs ``land_area_m2`` on every node
+        (:func:`optimization.data.node_areas.attach_land_areas`).
+        """
+        area_weight = float(self.school_distance_area_weight)
+        student_weight = float(self.school_distance_student_weight)
+        shares: dict[int, float] = {node: 0.0 for node in self.nodes}
+        for weight, value in (
+            (area_weight, lambda n: float(self.G.nodes[n]["land_area_m2"])),
+            (student_weight, self.students),
+        ):
+            if weight == 0:
+                continue
+            values = {node: value(node) for node in self.nodes}
+            total = sum(values.values())
+            if total <= 0:
+                raise ValueError("school_distance needs a positive area/student total.")
+            for node, v in values.items():
+                shares[node] += weight * v / total
+        return shares
+
+    def school_distance_costs(self) -> dict[tuple[int, int], float]:
+        """``{(zone, node): w_node * distance(centroid_zone, node)^2}`` over candidates."""
+        weights = self.school_distance_weights()
+        return {
+            (zone, node): weights[node] * self.distance(self.centroids[zone], node) ** 2
+            for node in self.nodes
+            for zone in self.candidate_zones(node)
+        }
 
     # ------------------------------------------------------------------ #
     # candidacy

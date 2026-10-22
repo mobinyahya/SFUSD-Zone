@@ -58,19 +58,27 @@ def cumulative_choice_rates(
     if any(value <= 0 for value in thresholds):
         raise ValueError("Choice thresholds must be positive integers.")
 
-    programnos = pd.to_numeric(students["programno"], errors="coerce")
-    designation = pd.to_numeric(students["designation"], errors="coerce")
-    ranks = pd.to_numeric(students[rank_column], errors="coerce")
-    assigned = programnos.gt(0).fillna(False)
-    eligible_assignment = assigned & designation.eq(0).fillna(False)
+    # Plain arrays: this runs ~50 times per residential group in the local
+    # reports, where Series arithmetic overhead dominated the metrics job.
+    # NaN compares false, exactly as the Series .gt/.eq/.le did.
+    programnos = _float_values(students["programno"])
+    designation = _float_values(students["designation"])
+    ranks = _float_values(students[rank_column])
+    eligible_assignment = (programnos > 0) & (designation == 0)
     denominator = len(students)
     return {
         threshold: ChoiceRate(
-            numerator=int((eligible_assignment & ranks.le(threshold)).sum()),
+            numerator=int(np.count_nonzero(eligible_assignment & (ranks <= threshold))),
             denominator=denominator,
         )
         for threshold in thresholds
     }
+
+
+def _float_values(values: pd.Series) -> np.ndarray:
+    if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
+        return values.to_numpy(dtype=float, na_value=np.nan)
+    return pd.to_numeric(values, errors="coerce").to_numpy(dtype=float, na_value=np.nan)
 
 
 def normalize_assignment_ranks(
@@ -133,9 +141,24 @@ def listed_preference_rank_matrix(
     program_by_key, program_by_school_type = _program_by_choice_key(program_indices)
     matrix = np.full((len(student_data), len(program_indices)), np.nan, dtype=float)
 
-    for row_position, (_, student) in enumerate(student_data.iterrows()):
-        schools = _list_value(student[school_column], school_column)
-        program_types = _list_value(student[program_column], program_column)
+    # Plain column arrays, not iterrows: every row Series would deep-copy the
+    # frame's attrs (the loader's ~15k-entry source_rows list), which made this
+    # loop ~10 s per call on a kindergarten market.
+    school_values = student_data[school_column].to_numpy(dtype=object)
+    program_values = student_data[program_column].to_numpy(dtype=object)
+    rank_values = (
+        student_data[rank_column].to_numpy(dtype=object)
+        if rank_column is not None
+        else None
+    )
+    grade_values = (
+        student_data["grade"].to_numpy(dtype=object)
+        if "grade" in student_data
+        else None
+    )
+    for row_position in range(len(student_data)):
+        schools = _list_value(school_values[row_position], school_column)
+        program_types = _list_value(program_values[row_position], program_column)
         if len(schools) != len(program_types):
             raise ValueError(
                 f"{school_column} and {program_column} differ in length at row "
@@ -145,7 +168,7 @@ def listed_preference_rank_matrix(
         if rank_column is None:
             ranks = list(range(1, len(schools) + 1))
         else:
-            ranks = _list_value(student[rank_column], rank_column)
+            ranks = _list_value(rank_values[row_position], rank_column)
             if not ranks and schools:
                 ranks = list(range(1, len(schools) + 1))
             if len(ranks) != len(schools):
@@ -155,7 +178,11 @@ def listed_preference_rank_matrix(
                 )
 
         numeric_ranks = _validated_ranks(ranks, rank_column or "preference position")
-        grade = normalize_grade(student["grade"]) if "grade" in student_data else None
+        grade = (
+            normalize_grade(grade_values[row_position])
+            if grade_values is not None
+            else None
+        )
         if grade == "":
             grade = None
         seen_choices = set()

@@ -27,7 +27,7 @@ from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
 from ..data_interfaces import Zones
 from .policy import Policy
-from .preference_generator import PreferenceGenerator
+from .preference_generator import OUTSIDE_OPTION_LIST_LENGTH, PreferenceGenerator
 from .priority_generator import PriorityGenerator
 from .school_choice_market import SchoolChoiceMarket
 
@@ -1375,6 +1375,8 @@ class MarketGenerator(SchoolChoiceMarket):
                 rows_to_keep=self.students.only_keep_rows,
                 cols_to_keep=self.programs.only_keep_cols,
                 gumbel_scale=self.config["utility-model"].get("gumbel-scale", 1.0),
+                outside_option=self.config["utility-model"].get("list-length")
+                == OUTSIDE_OPTION_LIST_LENGTH,
             )  # re-draw preferences
 
             save_path = self.config["utility-model"].get("save-path")
@@ -1405,6 +1407,8 @@ class MarketGenerator(SchoolChoiceMarket):
                 rows_to_keep=self.students.only_keep_rows,
                 cols_to_keep=self.programs.only_keep_cols,
                 gumbel_scale=self.config["utility-model"].get("gumbel-scale", 1.0),
+                outside_option=self.config["utility-model"].get("list-length")
+                == OUTSIDE_OPTION_LIST_LENGTH,
             )  # re-draw preferences
 
         prefs = self.preference_generator.initialize_real_preferences(designate=False)
@@ -2111,6 +2115,9 @@ class MarketGenerator(SchoolChoiceMarket):
             assignment_df["overage_seat"] = np.asarray(overage_seats, dtype=bool)
         if self.config["utility-model"]["enable"]:
             assignment_df["assigned_utility"] = self._get_match_utilities(match)
+            outside = getattr(self.umodel, "outside_utilities", None)
+            if outside is not None:
+                assignment_df["outside_utility"] = outside
         assignment_df["In-Zone Rank"] = mechanism_rank
         assignment_df = normalize_assignment_ranks(
             assignment_df,

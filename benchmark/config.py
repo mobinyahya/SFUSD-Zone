@@ -129,13 +129,16 @@ class MatchingRunConfig:
     enabled: bool = False
     config: str | None = None
     compute_stage_assignments: bool = False
+    #: Folder under ``execution.output_dir`` the assignments are written to, so
+    #: one sweep's zonings can be matched under several assignment configs.
+    assignment_dir: str = "assignments"
 
     @classmethod
     def from_dict(
         cls, data: Mapping[str, Any] | None, *, base_dir: Path | None = None
     ) -> "MatchingRunConfig":
         raw = dict(data or {})
-        allowed = {"enabled", "config", "compute_stage_assignments"}
+        allowed = {"enabled", "config", "compute_stage_assignments", "assignment_dir"}
         unknown = set(raw) - allowed
         if unknown:
             raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
@@ -149,10 +152,22 @@ class MatchingRunConfig:
         if raw.get("enabled") and config is None:
             raise ValueError("matching.config is required when matching is enabled.")
 
+        assignment_dir = str(raw.get("assignment_dir", "assignments"))
+        if (
+            not assignment_dir
+            or Path(assignment_dir).is_absolute()
+            or len(Path(assignment_dir).parts) != 1
+            or assignment_dir in {".", ".."}
+        ):
+            raise ValueError(
+                "matching.assignment_dir must be a single folder name under "
+                f"execution.output_dir, not {assignment_dir!r}."
+            )
         return cls(
             enabled=bool(raw.get("enabled", False)),
             config=config,
             compute_stage_assignments=bool(raw.get("compute_stage_assignments", False)),
+            assignment_dir=assignment_dir,
         )
 
 
@@ -353,6 +368,18 @@ def optimization_config_hash(
     semantic.pop("data", None)
     if semantic.get("weight_edges") is False:
         semantic.pop("weight_edges")
+    if semantic.get("school_count_tolerance") == 1.0:
+        semantic.pop("school_count_tolerance")
+    # New objective settings drop out at their defaults so existing task ids hold;
+    # the weights only matter once school_distance is selected.
+    if semantic.get("compactness_objective") == "cut_edges":
+        semantic.pop("compactness_objective")
+    if "school_distance" not in (
+        semantic.get("compactness_objective"),
+        semantic.get("adaptive_short_bursts_objective"),
+    ):
+        semantic.pop("school_distance_area_weight", None)
+        semantic.pop("school_distance_student_weight", None)
     if semantic.get("enumerated_solutions", -1) <= 0:
         semantic.pop("enumerated_solutions", None)
     if semantic.get("hints") != "feasible":

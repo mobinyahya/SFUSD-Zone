@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Optional
 import networkx as nx
 
 from loaders import CacheStore
-from optimization.data import closer_neighbors, graph_builder, loaders
+from optimization.data import closer_neighbors, graph_builder, loaders, node_areas
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
@@ -85,7 +85,7 @@ class Dataset:
         targets = LEVEL_NODE_TARGETS.get(level.unit, {})
         if level.depth not in targets:
             raise ValueError(f"No predefined graph size for level {level.name}.")
-        parent = self.graph_for(level.finer())
+        parent = self.graph_for(level.parent())
 
         # KaHIP is only reproducible against its own native build, so the first
         # machine to coarsen a level publishes the membership it found and every
@@ -111,6 +111,12 @@ class Dataset:
                 name, graph_builder.partition_to_portable(parent, membership)
             )
         return G
+
+    def _uses_school_distance(self) -> bool:
+        return (
+            self.config.compactness_objective == "school_distance"
+            or self.config.adaptive_short_bursts_objective == "school_distance"
+        )
 
     @staticmethod
     def _partition_payload(level: LevelSpec) -> str:
@@ -243,6 +249,8 @@ class Dataset:
         centroids = self.centroids_for(level, centroid_school_ids)
         if hint is None and self.config.hint_zoning is not None:
             hint = self.area_hint_for(level, G, centroids)
+        if self._uses_school_distance() and self.config.school_distance_area_weight:
+            node_areas.attach_land_areas(G, level.unit, self.data)
         return ZoneProblem(
             G=G,
             level=level,
@@ -254,7 +262,11 @@ class Dataset:
             overage=self.config.overage * constraint_multiplier,
             shortage=self.config.shortage * constraint_multiplier,
             max_distance=self.config.max_distance,
+            school_count_tolerance=self.config.school_count_tolerance,
             weight_edges=self.config.weight_edges,
+            compactness_objective=self.config.compactness_objective,
+            school_distance_area_weight=self.config.school_distance_area_weight,
+            school_distance_student_weight=self.config.school_distance_student_weight,
             fixed=fixed,
             candidates=candidates,
             hint=hint,

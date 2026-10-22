@@ -53,7 +53,7 @@ LOG_DIRNAME = "solver_logs"
 _FILENAME = re.compile(r"^solver_(?P<index>\d+)_(?P<rest>.+)\.(?:log|jsonl)$")
 # Units may contain underscores (attendance_area), so the level is the longest
 # prefix that still ends in ``_<depth>``.
-_LEVEL_AND_SOLVER = re.compile(r"^(?P<level>.+_\d+)_(?P<solver>.+)$")
+_LEVEL_AND_SOLVER = re.compile(r"^(?P<level>.+_\d+(?:\.\d+)?)_(?P<solver>.+)$")
 
 _NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 _GUROBI_FINAL = re.compile(

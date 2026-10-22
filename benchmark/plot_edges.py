@@ -658,9 +658,9 @@ def prepare_trajectory(events: pd.DataFrame, *, skip_initial: int = 0) -> pd.Dat
     return frame.drop_duplicates("elapsed_seconds", keep="last").reset_index(drop=True)
 
 
-def _level_key(level: str) -> tuple[str, int]:
+def _level_key(level: str) -> tuple[str, float]:
     unit, _, depth = level.rpartition("_")
-    return unit, -int(depth)
+    return unit, -float(depth)
 
 
 def visible_trajectories(

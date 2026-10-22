@@ -707,6 +707,25 @@ class MatchEvaluator:
         self.assignments["designation"] = designation
         self.assignments["programcodes"] = program_codes.fillna("").astype(str)
 
+    def _source_rank_matrix(self) -> np.ndarray:
+        """The submitted-list rank matrix, built once per source table.
+
+        ``update_assignments`` rebuilds ``student_data`` from the same
+        ``_base_student_data`` for every assignment, and the matrix depends only
+        on its preference columns, so recomputing it per iteration was pure cost.
+        """
+        base = getattr(self, "_base_student_data", None)
+        cached = getattr(self, "_source_rank_matrix_cache", None)
+        if base is not None and cached is not None and cached[0] is base:
+            return cached[1]
+        matrix = listed_preference_rank_matrix(
+            self.student_data,
+            self._program_number_by_id,
+        )
+        if base is not None and len(base) == len(self.student_data):
+            self._source_rank_matrix_cache = (base, matrix)
+        return matrix
+
     def _full_source_submitted_ranks(self) -> pd.Series | None:
         columns = set(self.student_data.columns)
         has_selected = {
@@ -717,10 +736,7 @@ class MatchEvaluator:
         if not has_selected and not has_first_round:
             return None
 
-        rank_matrix = listed_preference_rank_matrix(
-            self.student_data,
-            self._program_number_by_id,
-        )
+        rank_matrix = self._source_rank_matrix()
         matches = (
             self.assignments.set_index("studentno")["programno"]
             .reindex(self.student_data["studentno"])
@@ -1009,8 +1025,9 @@ class MatchEvaluator:
 
     @classmethod
     def _utility_metrics(cls, student_data):
+        below = cls._designated_below_outside_option(student_data)
         if "assigned_utility" not in student_data:
-            return {"Total Utility": np.nan, "Average Utility": np.nan}
+            return {"Total Utility": np.nan, "Average Utility": np.nan, **below}
 
         utilities = pd.to_numeric(student_data["assigned_utility"], errors="coerce")
         utilities = utilities.where(cls._assigned_mask(student_data), 0.0)
@@ -1021,6 +1038,31 @@ class MatchEvaluator:
         return {
             "Total Utility": total_utility,
             "Average Utility": average_utility,
+            **below,
+        }
+
+    @classmethod
+    def _designated_below_outside_option(cls, student_data):
+        """Students designated to a program they value below leaving the district.
+
+        Needs the ``outside_utility`` draw that ``list-length: outside_option``
+        saves; every other run, real preferences included, reports NaN. The
+        proportion is over all students in the group. An assigned utility that
+        is missing or ``-inf`` (a program the estimate rules out) counts as below.
+        """
+        name = "Designated below outside option"
+        if "outside_utility" not in student_data or "assigned_utility" not in student_data:
+            return {name: np.nan, f"{name} numerator": np.nan, f"{name} denominator": np.nan}
+        utility = pd.to_numeric(student_data["assigned_utility"], errors="coerce")
+        outside = pd.to_numeric(student_data["outside_utility"], errors="coerce")
+        designated = pd.to_numeric(student_data["designation"], errors="coerce").eq(1)
+        below = designated & cls._assigned_mask(student_data) & ~(utility >= outside)
+        count = int(below.sum())
+        total = len(student_data)
+        return {
+            name: count / total if total else np.nan,
+            f"{name} numerator": count,
+            f"{name} denominator": total,
         }
 
     @staticmethod

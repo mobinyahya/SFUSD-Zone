@@ -281,9 +281,9 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
                     },
                 )
             )
-    total = sum(problem.num_schools(node) for node in problem.nodes)
-    if total:
-        average = total / problem.Z
+    bounds = problem.school_count_bounds()
+    if bounds is not None:
+        floor_, ceiling = bounds
         coefficients = {
             node: int(round(CP_SAT_SCALE * problem.num_schools(node)))
             for node in sorted(nodes)
@@ -292,7 +292,7 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
             IntegerRow(
                 kind="schools_lower",
                 sense=">=",
-                rhs=int(round(CP_SAT_SCALE * max(0.0, average - 1.0))),
+                rhs=int(round(CP_SAT_SCALE * floor_)),
                 coefficients=coefficients,
             )
         )
@@ -300,7 +300,7 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
             IntegerRow(
                 kind="schools_upper",
                 sense="<=",
-                rhs=int(round(CP_SAT_SCALE * (average + 1.0))),
+                rhs=int(round(CP_SAT_SCALE * ceiling)),
                 coefficients=coefficients,
             )
         )

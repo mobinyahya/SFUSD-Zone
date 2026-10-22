@@ -285,7 +285,7 @@ def test_saa_assignment_targets_mark_unproduced_iterations(tmp_path):
         ).is_file()
 
 
-def test_generated_assignment_slurm_plan_uses_eight_jobs(tmp_path):
+def test_generated_assignment_slurm_plan_uses_nine_jobs(tmp_path):
     target = tmp_path / "run"
     plan, _ = build_generated_zone_slurm_plan(
         ASSIGNMENT_CONFIG,
@@ -304,7 +304,8 @@ def test_generated_assignment_slurm_plan_uses_eight_jobs(tmp_path):
         max_metrics_jobs=2,
     )
 
-    assert len(plan["jobs"]) == 8
+    # 6 assignment + 2 metrics + the separate one-CPU finalizer.
+    assert len(plan["jobs"]) == 9
     assert len(plan["assignment_tasks"]) == len(plan["subconfigs"])
     assert all("iteration" not in task for task in plan["assignment_tasks"])
     assert plan["assignment_folder"] == str(tmp_path.resolve())
@@ -312,7 +313,7 @@ def test_generated_assignment_slurm_plan_uses_eight_jobs(tmp_path):
         tuple(MarketGenerator.AGGREGATE_METRIC_FILES)
     }
     assert len([job for job in plan["jobs"] if job["kind"] == "assignment"]) == 6
-    assert len([job for job in plan["jobs"] if job["kind"].startswith("metrics")]) == 2
+    assert len([job for job in plan["jobs"] if job["kind"] == "metrics"]) == 2
     assert plan["job_limits"] == {"assignment": 6, "metrics": 2}
 
 

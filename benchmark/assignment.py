@@ -175,7 +175,7 @@ def run_assignments_for_existing_runs(
         run_generated_zone_assignments(
             matching.config,
             targets,
-            assignment_folder=Path(root_folder) / "assignments",
+            assignment_folder=Path(root_folder) / matching.assignment_dir,
             workers=workers,
         )
         result.successful += prepared_runs

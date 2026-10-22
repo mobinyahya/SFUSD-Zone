@@ -87,3 +87,32 @@ def test_write_outputs_keeps_only_approved_rows_and_visualizations(tmp_path: Pat
     assert (output / "viz" / "yes.png").read_bytes() == b"yes"
     assert not (output / "viz" / "no.png").exists()
     assert not stale.exists()
+
+
+def test_write_feasible_outputs_lists_only_approved_plans(tmp_path: Path):
+    feasible = pd.DataFrame(
+        [{"task_id": "yes", "path": "/runs/yes"}, {"task_id": "no", "path": "/runs/no"}]
+    )
+
+    approved = review.write_feasible_outputs(
+        feasible, {"yes": True, "no": False}, tmp_path
+    )
+
+    assert approved["task_id"].tolist() == ["yes"]
+    written = pd.read_csv(tmp_path / "feasible.csv")
+    assert written.columns.tolist() == review.FEASIBLE_COLUMNS
+    assert written["task_id"].tolist() == ["yes"]
+    assert not (tmp_path / "viz").exists()
+
+
+def test_load_image_dir_strips_root_suffix(tmp_path: Path):
+    (tmp_path / "abc123-root.png").write_bytes(b"png")
+    (tmp_path / "def456-root.png").write_bytes(b"png")
+
+    frame = review.load_image_dir(tmp_path)
+
+    assert frame["task_id"].tolist() == ["abc123", "def456"]
+    assert frame["path"].tolist() == [
+        str((tmp_path / "abc123-root.png").resolve()),
+        str((tmp_path / "def456-root.png").resolve()),
+    ]

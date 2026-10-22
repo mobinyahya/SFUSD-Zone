@@ -45,7 +45,7 @@ def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     assert sorted(
         index for job in assignment_jobs for index in job["task_indices"]
     ) == list(range(19))
-    metrics_jobs = [job for job in plan["jobs"] if job["kind"].startswith("metrics")]
+    metrics_jobs = [job for job in plan["jobs"] if job["kind"] == "metrics"]
     assert len(metrics_jobs) == MAX_METRICS_JOBS
     assert {job["cpus"] for job in metrics_jobs} == {MAX_CPUS_PER_NODE}
     assert sorted(
@@ -67,11 +67,18 @@ def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
         actual_assignment_ids = set(job["dependencies"]["afterok"]) & assignment_job_ids
         assert actual_assignment_ids == expected_assignment_ids
         assert actual_assignment_ids != assignment_job_ids
-    finalizer = metrics_jobs[-1]
+    # The finalizer evaluates nothing, so the metrics jobs all run at once.
+    (finalizer,) = [job for job in plan["jobs"] if job["kind"] == "metrics-finalize"]
     assert finalizer["id"] == "metrics-finalize"
-    assert set(finalizer["dependencies"]["afterok"]) >= {
-        job["id"] for job in metrics_jobs[:-1]
+    assert finalizer["task_indices"] == []
+    assert finalizer["cpus"] == 1
+    assert finalizer["dependencies"] == {
+        "afterok": [job["id"] for job in metrics_jobs]
     }
+    assert all(
+        not set(job["dependencies"]["afterok"]) & {m["id"] for m in metrics_jobs}
+        for job in metrics_jobs
+    )
     assert pathlib.Path(plan["assignment_folder"]).is_absolute()
     assert plan_path.is_absolute()
     assert pathlib.Path(plan["provenance_path"]).is_file()
@@ -92,8 +99,11 @@ def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     assert "gurobi_licenses/gurobi.lic" in submit_script
     assert "sbatch" not in submit_script
     assert len(list(submit_path.parent.glob("assignment-*.sh"))) == 12
-    assert len(list(submit_path.parent.glob("metrics-*.sh"))) == 8
-    assert (submit_path.parent / "metrics-finalize.sh").is_file()
+    assert len(list(submit_path.parent.glob("metrics-*.sh"))) == 9
+    finalizer_script = (submit_path.parent / "metrics-finalize.sh").read_text()
+    assert "#SBATCH --cpus-per-task=1" in finalizer_script
+    assert "#SBATCH --mem=64G" in finalizer_script
+    assert "--mem" not in (submit_path.parent / "metrics-0.sh").read_text()
     subprocess.run(["bash", "-n", str(submit_path)], check=True)
 
 
@@ -140,7 +150,7 @@ def test_submission_persists_ids_wires_dependencies_and_cancels_on_failure(
             return subprocess.CompletedProcess(command, 0, f"{job_id}\n", "")
         return subprocess.CompletedProcess(command, 1, "", "scheduler unavailable")
 
-    with pytest.raises(RuntimeError, match="metrics-finalize"):
+    with pytest.raises(RuntimeError, match="metrics-0"):
         assignment_slurm.submit_slurm_plan(
             plan_path, script_dir=submit_path.parent, runner=fake_run
         )

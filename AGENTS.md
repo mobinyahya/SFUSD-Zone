@@ -89,6 +89,11 @@ inherit geography from their school.
 
 The optimization uses NetworkX undirected graphs. Nodes are geographic areas and edges are adjacency. `optimization/data/graph_builder.py` creates these predefined hierarchies:
 - **Block_0** - Direct Census Block units
+- **Block_0.5** - Up to 3,000 nodes, built from Block_0 (KaHIP returns ~1,850 nodes,
+  no aggregate above ~17 students against Block_1's ~46). Block_1 is still built
+  from Block_0, so the two are not nested. Parents other than `depth - 1` are
+  declared in `LEVEL_PARENT_DEPTHS` (`optimization/levels.py`) and read through
+  `LevelSpec.parent()`.
 - **Block_1** - Up to 1,200 nodes, built from Block_0
 - **Block_2** - Up to 579 nodes, built from Block_1
 - **Block_3** - Up to 250 nodes, built from Block_2
@@ -142,7 +147,7 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 
 `optimization/data/graph_builder.py` builds multi-level graphs:
 1. `build_base_graph()` creates depth 0 directly from the selected census units.
-2. Each coarser level uses its immediate finer parent rather than repartitioning level 0.
+2. Each coarser level uses its parent (the immediate finer level, unless `LEVEL_PARENT_DEPTHS` says otherwise) rather than repartitioning level 0.
 3. School nodes are removed and retained as singleton vertices. KaHIP strong mode partitions the remaining nodes using the population selected by `program_population`; imbalance starts at 0.8 and doubles until validation passes.
 4. `aggregate()` sums node attributes, flattens base area IDs, recomputes distances, and derives every child edge from crossing parent edges. This also reconnects school nodes to every aggregate containing one of their former neighbors.
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.

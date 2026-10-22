@@ -199,8 +199,12 @@ from the 2023-24 scenario:
   on any zoned assignment run.
 * `year` selects the transfer year.
 
-The choice-model utility estimate stays `utility.2324.exp8` for all three,
-because none has been fitted on transfer-year preferences.
+The choice-model utility estimate stays `utility.2324.exp8` for all three
+scenarios. A 2025-26 kindergarten fit with an outside option estimated from
+enrolment exists under `simulation-files/choice-model/ChoiceModel_2526_outside/`
+(`uv run python -m choice.estimation.fit_transfer_year --year 2526`), but it is
+not registered in the catalog yet. Its utilities are relative to each student's
+outside option, not to the exp8 ridge level.
 
 ## External Source Layout
 

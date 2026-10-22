@@ -61,6 +61,9 @@ class OptimizationConfig:
     racial_dev: float = 0.3
     overage: float = 0.8
     shortage: float = 0.2
+    # Zones hold the average school count +/- this many schools; 0 = exactly one
+    # school per zone when every school is a centroid.
+    school_count_tolerance: float = 1.0
     looseness: float = 1.0
     max_distance: float | str = float("inf")
     centroid_neighbor_radius: int = 0
@@ -78,6 +81,14 @@ class OptimizationConfig:
     save_solver_progress: bool = False
     secondary_objective: bool = False
     weight_edges: bool = False
+    # CP/MIP objective without a choice model: "cut_edges" (boundary cost) or
+    # "school_distance" (weighted squared distance from each node to its
+    # zone's school; ReCom solvers use adaptive_short_bursts_objective instead).
+    compactness_objective: str = "cut_edges"
+    # school_distance node weight = area share * this + student share * that;
+    # both in [0, 1] and summing to one.
+    school_distance_area_weight: float = 0.75
+    school_distance_student_weight: float = 0.25
     seed: int = 42
     workers: int = 8
     linearization_level: int | None = None
@@ -287,6 +298,7 @@ class OptimizationConfig:
                 raise ValueError("enumerated_solutions requires strategy='single'.")
         if not isinstance(self.weight_edges, bool):
             raise ValueError("weight_edges must be a Boolean.")
+        self._validate_school_distance()
         if isinstance(self.boundary_prop, bool):
             raise ValueError("boundary_prop must be at most 1; negative disables it.")
         try:
@@ -653,6 +665,40 @@ class OptimizationConfig:
         ):
             raise ValueError(
                 "capacity_match needs a positive unassigned or designated weight."
+            )
+
+    def _validate_school_distance(self) -> None:
+        if self.compactness_objective not in {"cut_edges", "school_distance"}:
+            raise ValueError(
+                "compactness_objective must be one of: cut_edges, school_distance."
+            )
+        if self.compactness_objective != "cut_edges" and self.solver in {
+            "recom",
+            "relaxed_recom",
+            "short_bursts",
+            "adaptive_short_bursts",
+        }:
+            raise ValueError(
+                "compactness_objective applies to CP/MIP solvers; ReCom solvers "
+                "take adaptive_short_bursts_objective: school_distance instead."
+            )
+        weights = []
+        for name in ("school_distance_area_weight", "school_distance_student_weight"):
+            value = getattr(self, name)
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be a number in [0, 1].")
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be a number in [0, 1].") from exc
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be a number in [0, 1].")
+            setattr(self, name, value)
+            weights.append(value)
+        if not math.isclose(sum(weights), 1.0, abs_tol=1e-9):
+            raise ValueError(
+                "school_distance_area_weight and school_distance_student_weight "
+                f"must sum to 1, got {sum(weights):g}."
             )
 
     # ------------------------------------------------------------------ #

@@ -78,7 +78,7 @@ def test_submission_script_has_required_directives(tmp_path):
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 
-def test_submission_script_queues_eight_dependent_assignment_jobs(tmp_path):
+def test_submission_script_queues_nine_dependent_assignment_jobs(tmp_path):
     from assignment.slurm import build_generated_zone_slurm_plan
 
     assignment_config = (
@@ -112,10 +112,10 @@ def test_submission_script_queues_eight_dependent_assignment_jobs(tmp_path):
 
     script = submission_script(plan, tmp_path / "benchmark-plan.json")
 
-    assert len(assignment_plan["jobs"]) == 8
+    assert len(assignment_plan["jobs"]) == 9
     assert '--upstream-job-id "${benchmark_job_0}"' in script
     scripts = assignment_plan_path.parent / "scripts"
-    assert len(list(scripts.glob("*.sh"))) == 9
+    assert len(list(scripts.glob("*.sh"))) == 10
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 

@@ -25,7 +25,8 @@ Every check here is implied by the constraints the solvers post, never stricter:
   consumer actually requires.
 * balance -- the ``frl`` / ``capacity`` / ``racial`` rows of
   :func:`optimization.solvers.balance.balance_constraints`
-* school count -- every zone within one school of the district average
+* school count -- every zone within ``school_count_tolerance`` schools of the
+  district average (one, by default)
 * boundary -- cut edges within ``boundary_prop`` of the graph's edge count,
   counted unweighted, as :meth:`_add_boundary_constraint` posts it
 
@@ -259,11 +260,10 @@ def _school_count_violations(
     zones: list[list[int]],
     tolerance: float,
 ) -> list[FeasibilityViolation]:
-    total = sum(problem.num_schools(node) for node in problem.nodes)
-    if total == 0:
+    bounds = problem.school_count_bounds()
+    if bounds is None:
         return []
-    average = total / problem.Z
-    floor_, ceiling = max(0.0, average - 1.0), average + 1.0
+    floor_, ceiling = bounds
     violations: list[FeasibilityViolation] = []
     for zone, nodes in enumerate(zones):
         schools = float(sum(problem.num_schools(node) for node in nodes))

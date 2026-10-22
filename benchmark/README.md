@@ -48,6 +48,9 @@ matching get their `assignment_zones.csv` (or skip marker) rebuilt from the
 saved `solution_<level>.json` and `zone_dict_area_<level>.json` at plan time,
 so matching can be turned on after a sweep and resubmitted; only root
 targets can be added that way, not `compute_stage_assignments`.
+`matching.assignment_dir` (default `assignments`) names the folder under
+`execution.output_dir` they are written to, so the same zonings can be matched
+again under a different assignment config without overwriting the first set.
 
 Plans, scripts, and logs are written beneath
 `<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition

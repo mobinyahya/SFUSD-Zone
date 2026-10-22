@@ -1,0 +1,75 @@
+# All-schools (59-zone) 2026-27 study, capacity-balanced (see
+# all_schools_2627_cap50.yaml), adaptive short bursts with exactly one school
+# per zone.
+#
+# ReCom solvers do not pin zones to centroids, so under the default school-count
+# rule (average +/- 1, i.e. 0-2 schools) adaptive short bursts produced 20 empty
+# zones and 20 two-school zones. school_count_tolerance: 0 makes the rule
+# "exactly one school per zone", which the walk penalizes like any other row;
+# which school a zone holds is left free.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50_asb.yaml
+#
+name: all_schools_2627_cap50_asb_v1
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: sfusd-2627
+    overrides:
+      filters:
+        optimization:
+          student_population: enrolled
+          include_mission_bay: true
+          geography_vintage: "2020"
+  centroids_type: '59-zone'
+  strategy: single
+  solver: adaptive_short_bursts
+  levels: ['Block_0']
+  solve_time_limits: [3600]
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+
+  frl_dev: 0.3
+  racial_dev: -1
+  overage: 0.5
+  shortage: 0.5
+  boundary_prop: -1
+  school_count_tolerance: 0
+
+  hints: voronoi
+  workers: 1
+  recom_iterations: -1
+  adaptive_short_bursts_objective: cut_edges
+  adaptive_short_bursts_pair_selector: lagrangian_softmax
+  adaptive_short_bursts_temperature: 1.15
+  short_bursts_length: 25
+  seed: 1
+
+tasks:
+  - {adaptive_short_bursts_temperature: 1.0, seed: 1}
+  - {adaptive_short_bursts_temperature: 1.0, seed: 2}
+  - {adaptive_short_bursts_temperature: 1.15, seed: 1}
+  - {adaptive_short_bursts_temperature: 1.15, seed: 2}
+  - {adaptive_short_bursts_temperature: 1.3, seed: 1}
+  - {adaptive_short_bursts_temperature: 1.3, seed: 2}
+  - {short_bursts_length: 10}
+  - {short_bursts_length: 50}
+  - {adaptive_short_bursts_lr: 0.3}
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_asb_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final

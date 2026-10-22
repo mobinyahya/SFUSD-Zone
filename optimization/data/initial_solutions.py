@@ -303,6 +303,11 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
             bool(problem.weight_edges),
         ],
     )
+    # Appended only when non-default so every pre-existing key is unchanged.
+    if problem.school_count_tolerance != 1.0:
+        _write(
+            digest, ["school_count_tolerance", float(problem.school_count_tolerance)]
+        )
     _write(
         digest,
         [

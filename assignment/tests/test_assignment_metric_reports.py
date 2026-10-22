@@ -88,7 +88,45 @@ def test_basic_report_preserves_benchmark_contract():
     assert metrics["# Racial majority schools"] == 2
     assert metrics["Total Utility"] == 14
     assert metrics["Average Utility"] == 14 / 3
-    assert len(metrics) == 71
+    # Listed (real-preference) runs carry no outside-option draw.
+    assert np.isnan(metrics["Designated below outside option"])
+    assert len(metrics) == 74
+
+
+def test_designated_below_outside_option_counts_only_designated_students():
+    student_data = pd.DataFrame(
+        {
+            "studentno": [1, 2, 3, 4],
+            "freelunch_prob": [0.9, 0.2, 0.1, 0.5],
+            "reducedlunch_prob": [0.0, 0.0, 0.0, 0.0],
+            "resolved_ethnicity": ["White", "White", "Asian", "Asian"],
+            "SES_category": [3, 1, 1, 2],
+            "grade": ["KG"] * 4,
+            "census_blockgroup": [10, 10, 20, 20],
+        }
+    ).set_index("studentno")
+    assignments = _listed_assignments(
+        [1, 2, 3, 4],
+        [1, 2, 1, 0],
+        ["101-GE-KG", "202-GE-KG", "101-GE-KG", pd.NA],
+        [1, 3, 2, None],
+        [0, 1, 1, 0],
+    ).set_index("studentno")
+    # Student 1 is below their outside option but chose the program, so it
+    # does not count; 2 is designated above it; 3 is designated below it.
+    assignments["assigned_utility"] = [-1.0, 2.0, 0.1, 0.0]
+    assignments["outside_utility"] = [0.5, 1.0, 0.7, 3.0]
+    distances = pd.DataFrame(
+        {"101-GE-KG": [1.0, 1.0, 1.0, 1.0], "202-GE-KG": [2.0, 2.0, 2.0, 2.0]},
+        index=pd.Index([1, 2, 3, 4], name="studentno"),
+    )
+    students = StudentsStub(student_data, np.ones((4, 1), dtype=int))
+
+    metrics = MatchEvaluator(students, assignments, distances).eval_assignment_basic()
+
+    assert metrics["Designated below outside option numerator"] == 1
+    assert metrics["Designated below outside option denominator"] == 4
+    assert metrics["Designated below outside option"] == 0.25
 
 
 def test_full_report_covers_metric_families_without_mutating_inputs(

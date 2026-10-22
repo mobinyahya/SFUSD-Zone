@@ -9,8 +9,14 @@ from optimization.data.feasibility import (
     assert_feasible,
     check_zoning,
 )
-from optimization.data.initial_solutions import initial_solution
-from optimization.tests.synthetic import make_grid_problem
+from optimization.data.initial_solutions import (
+    feasibility_fingerprint,
+    initial_solution,
+)
+from optimization.tests.synthetic import (
+    make_grid_problem,
+    make_solver_contract_problem,
+)
 
 
 def _feasible_grid():
@@ -121,3 +127,32 @@ def test_rejects_a_negative_tolerance():
 
     with pytest.raises(ValueError, match="non-negative"):
         check_zoning(problem, assignment, tolerance=-1.0)
+
+
+def test_school_count_tolerance_sets_the_per_zone_bounds():
+    """Path with schools [2, 1, 1, 2] in two zones: the average is three."""
+    # No distance limit, so every split is structurally valid and only the
+    # numeric rows can reject one.
+    default = make_solver_contract_problem(max_distance=float("inf"))
+    exact = make_solver_contract_problem(
+        max_distance=float("inf"), school_count_tolerance=0.0
+    )
+    assert default.school_count_bounds() == (2.0, 4.0)
+    assert exact.school_count_bounds() == (3.0, 3.0)
+
+    # {0} | {1, 2, 3} holds 2 and 4 schools: inside +/-1, outside +/-0.
+    lopsided = {0: 0, 1: 1, 2: 1, 3: 1}
+    school_rows = {"schools_lower", "schools_upper"}
+    default_kinds = {v.kind for v in check_zoning(default, lopsided).violations}
+    exact_kinds = {v.kind for v in check_zoning(exact, lopsided).violations}
+    assert not default_kinds & school_rows
+    assert school_rows <= exact_kinds
+
+
+def test_default_school_count_tolerance_keeps_hint_fingerprints():
+    default = make_solver_contract_problem()
+    explicit = make_solver_contract_problem(school_count_tolerance=1.0)
+    exact = make_solver_contract_problem(school_count_tolerance=0.0)
+
+    assert feasibility_fingerprint(default) == feasibility_fingerprint(explicit)
+    assert feasibility_fingerprint(default) != feasibility_fingerprint(exact)

@@ -12,7 +12,7 @@ from Config.Constants import AREA_ETHNICITIES
 from optimization.config import OptimizationConfig
 from optimization.data import graph_builder
 from optimization.data.dataset import Dataset
-from optimization.levels import LEVEL_NODE_TARGETS
+from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 
 
 pytestmark = [
@@ -126,8 +126,9 @@ def _assert_valid_child(parent: nx.Graph, child: nx.Graph, target: int) -> None:
 
 @pytest.mark.parametrize("unit", ["Block", "BlockGroup"])
 def test_real_graph_hierarchy_is_nested_and_school_preserving(unit):
-    parent = _real_base_graph(unit)
-    for _, target in sorted(LEVEL_NODE_TARGETS[unit].items()):
+    graphs = {0: _real_base_graph(unit)}
+    for depth, target in sorted(LEVEL_NODE_TARGETS[unit].items()):
+        parent = graphs[LevelSpec(unit, depth).parent().depth]
         child = graph_builder.aggregate_level(parent, target, "GE")
         _assert_valid_child(parent, child, target)
-        parent = child
+        graphs[depth] = child

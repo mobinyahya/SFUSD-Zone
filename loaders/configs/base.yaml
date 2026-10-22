@@ -724,6 +724,18 @@ files:
     path: simulation-files/choice-model/estimates_2324_exp8_0604_closure.csv
     root: data
     classification: restricted
+  # Net of each student's outside option (> 0 = preferred to not enrolling);
+  # use with utility-model list-length: outside_option. Fitted on 2025-26 KG
+  # rankings and enrolment by choice/estimation/fit_transfer_year.py.
+  utility.2526.outside:
+    path: simulation-files/choice-model/ChoiceModel_2526_outside/estimates_2526.csv
+    root: data
+    classification: restricted
+  # The 2025-26 fit applied to the 2026-27 applicants (choice/estimation/predict.py).
+  utility.2627.from_2526_outside:
+    path: simulation-files/choice-model/ChoiceModel_2526_outside/estimates_2627.csv
+    root: data
+    classification: restricted
   utility.grade06.2223:
     path: simulation-files/choice-model/estimates_06_student_2223.npy
     root: data
