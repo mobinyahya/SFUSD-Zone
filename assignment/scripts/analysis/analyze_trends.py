@@ -67,7 +67,7 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
             assignment_path,
             _student_data_path,
             _schools_data_path,
-            new_ctip_path,
+            _new_ctip_path,
             data_config,
         ) = args
         file_assignment = pd.read_csv(assignment_path)
@@ -77,8 +77,7 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
             "medium_income": 95292,
             "high_income": 110850,
         }
-        if new_ctip_path is not None:
-            evaluator_kwargs["new_ctip_path"] = new_ctip_path
+        # The scenario's assignment.ctip supplies the equity tie-breaker.
         match_eval = MatchEvaluator.from_scenario(
             data_config,
             file_assignment,

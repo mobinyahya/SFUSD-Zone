@@ -385,6 +385,11 @@ class DataScenario:
         return load_scenario(run_config, base_path=base_path, environ=environ)
 
     @property
+    def roles(self) -> tuple[str, ...]:
+        """Every resolved source role, sorted."""
+        return tuple(sorted(self._source_values))
+
+    @property
     def cache_root(self) -> Path:
         try:
             return self.roots["cache"]
@@ -1317,6 +1322,55 @@ def _validate_student_frl_source_vintages(
             )
 
 
+def _converted_geography_sources(
+    filters: Mapping[str, Mapping[str, Any]],
+    source_values: Mapping[str, Any],
+    geographies: Mapping[str, Any],
+    catalog: Mapping[str, Any],
+    roots: Mapping[str, Path],
+    base_dir: Path,
+) -> dict[str, ResolvedSource]:
+    """Resolve the other vintages' Blocks that an assignment source declares.
+
+    A GEOID-keyed source in another vintage is compared in its own vintage,
+    which matches student coordinates to that vintage's Blocks. Those layers
+    become ``assignment.geography.<vintage>.blocks`` and ``.crosswalk``.
+    """
+    if "assignment" not in filters:
+        return {}
+    selected = filters["assignment"]["geography_vintage"]
+    declared: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, ResolvedSource):
+            if value.geography_vintage is not None:
+                declared.add(value.geography_vintage)
+        elif isinstance(value, Mapping):
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, tuple):
+            for child in value:
+                visit(child)
+
+    for role, value in source_values.items():
+        if role.startswith("assignment.") and not role.startswith(
+            "assignment.geography."
+        ):
+            visit(value)
+    generated = {}
+    for vintage in sorted(declared - {selected}):
+        bundle = geographies.get(vintage)
+        if bundle is None:
+            continue
+        for key in ("blocks", "crosswalk"):
+            role = f"assignment.geography.{vintage}.{key}"
+            if role not in source_values:  # a run override takes precedence
+                generated[role] = _resolve_direct_source(
+                    catalog[bundle[key]], roots, base_dir, catalog_id=bundle[key]
+                )
+    return generated
+
+
 def load_scenario(
     run_config: str | os.PathLike[str] | Mapping[str, Any],
     *,
@@ -1392,6 +1446,16 @@ def load_scenario(
         for role, source in sources.items()
     }
     _validate_student_frl_source_vintages(filters, source_values)
+    source_values.update(
+        _converted_geography_sources(
+            filters,
+            source_values,
+            base["geographies"],
+            base["files"],
+            roots,
+            base_file.parent,
+        )
+    )
     return DataScenario(
         id=scenario["id"],
         schema_version=base["schema_version"],

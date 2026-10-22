@@ -5,7 +5,13 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from loaders import CacheStore, DataScenario, SPECIAL_PROGRAMS, identity_fingerprint
+from loaders import (
+    CacheStore,
+    DataScenario,
+    SPECIAL_PROGRAMS,
+    identity_fingerprint,
+    in_geoid_set,
+)
 
 from ..choice_ranks import listed_preference_rank_matrix
 from ..definitions.constants import LANGUAGE_PATHWAY_PRIORITIES
@@ -80,6 +86,7 @@ class Students:
         self._selected_rank_matrix = None
         self._sibling = None
         self._prek = None
+        self._equity_tiebreakers = {}
 
     def _build_student_data(self, student_data: pd.DataFrame) -> pd.DataFrame:
         """Copy the loader's table and detach its source-row metadata."""
@@ -391,6 +398,7 @@ class Students:
         """Rebind cache storage to a scenario with the same source tables."""
         previous_cache = self.distance_cache
         self.data_scenario = data_scenario
+        self._equity_tiebreakers = {}
         namespace = self._distance_cache_namespace()
         self.distance_cache = namespace
         if namespace is None or (
@@ -460,36 +468,32 @@ class Students:
         vec = self.student_data["ctip1"].fillna(value=0).astype("int64").to_numpy()
         return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
 
+    def _equity_tiebreaker(self, key: str, unit: str) -> np.ndarray:
+        """(students x programs) 1 where the student lives in an ETB area.
+
+        The ``assignment.ctip`` array is compared in the Census vintage it
+        declares, matching each student's coordinates to that vintage when it
+        is not the selected one.
+        """
+        if key not in self._equity_tiebreakers:
+            source = self.data_scenario.source_map("assignment.ctip")[key]
+            member = in_geoid_set(
+                self.student_data, self.data_scenario, "assignment", source, unit=unit
+            )
+            self._equity_tiebreakers[key] = np.outer(
+                member.to_numpy(dtype=int), np.ones(self.num_programs)
+            )
+        return self._equity_tiebreakers[key]
+
     @property
     def new_ctip(self):
-        """Return an array of length n containing 1 when the student has new_CTIP1
-        priority, 0 otherwise (0 for missing data as well).
-        """
-        new_ctip = np.load(self.data_scenario.source_map("assignment.ctip")["block"].path)
-        self.student_data["new_ctip1"] = self.student_data["census_block"].apply(
-            lambda x: 1 if x in new_ctip else 0
-        )
-        vec = self.student_data["new_ctip1"].fillna(value=0).astype("int64").to_numpy()
-        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+        """Return a (students x programs) array, 1 in an ETB Block, else 0."""
+        return self._equity_tiebreaker("block", "Block")
 
     @property
     def new_ctip_blockgroup(self):
-        """Return an array of length n containing 1 when the student has new_CTIP1 (Blockgroup solution)
-        priority, 0 otherwise (0 for missing data as well).
-        """
-        new_ctip_bg = np.load(
-            self.data_scenario.source_map("assignment.ctip")["blockgroup"].path
-        )
-        self.student_data["new_ctip_blockgroup1"] = self.student_data[
-            "census_blockgroup"
-        ].apply(lambda x: 1 if x in new_ctip_bg else 0)
-        vec = (
-            self.student_data["new_ctip_blockgroup1"]
-            .fillna(value=0)
-            .astype("int64")
-            .to_numpy()
-        )
-        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+        """Return a (students x programs) array, 1 in an ETB Block Group, else 0."""
+        return self._equity_tiebreaker("blockgroup", "BlockGroup")
 
     @property
     def language_designation(self):

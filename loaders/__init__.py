@@ -14,10 +14,13 @@ from loaders.edge_overrides import (
 from loaders.geography import (
     GEOGRAPHY_COLUMNS,
     GEOGRAPHY_UNITS,
+    census_ids,
+    in_geoid_set,
     load_census_geometry,
     load_geography_crosswalk,
     match_points_to_census,
     normalize_census_geography,
+    require_geography_vintage,
     selected_geography_vintage,
 )
 from loaders.tables import (
@@ -51,8 +54,10 @@ __all__ = [
     "apply_capacity_scenario",
     "apply_student_frl_estimate",
     "apply_block_edge_overrides",
+    "census_ids",
     "filter_outside_district_students",
     "identity_fingerprint",
+    "in_geoid_set",
     "load_block_edge_overrides",
     "load_census_geometry",
     "load_geography_crosswalk",
@@ -70,6 +75,7 @@ __all__ = [
     "parse_ranked_schools",
     "read_csv",
     "read_csv_source",
+    "require_geography_vintage",
     "school_id_aliases",
     "selected_geography_vintage",
 ]

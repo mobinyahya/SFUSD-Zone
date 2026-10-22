@@ -703,14 +703,18 @@ files:
     path: Data/program_codes.csv
     root: data
     classification: internal
+  # Equity tie-breaker (ETB) areas: arrays of 2010 Census Block and Block
+  # Group GEOIDs, compared against students in that vintage.
   ctip.array.block.2024:
     path: Data/Tie-breakers/ETB_2024.npy
     root: data
     classification: internal
+    geography_vintage: "2010"
   ctip.array.blockgroup.2024:
     path: Data/Tie-breakers/ETB_2024_BlockGroup.npy
     root: data
     classification: internal
+    geography_vintage: "2010"
 
   utility.2324.exp8:
     path: simulation-files/choice-model/estimates_2324_exp8_0514.csv

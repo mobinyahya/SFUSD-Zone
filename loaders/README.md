@@ -119,6 +119,15 @@ Vintage is evaluated for the entire flattened role: different non-null vintages
 within one role fail, while one non-null vintage applies to the concatenated
 table even if some sources in that role are untagged.
 
+A set of GEOIDs, such as the `assignment.ctip` equity tie-breaker arrays, must
+declare its vintage: `loaders.in_geoid_set` compares rows against it in that
+vintage, matching their coordinates to the generated
+`assignment.geography.<vintage>.*` layers when it is not the selected one, and
+`loaders.require_geography_vintage` rejects an untagged or mismatched set. The
+checked-in ETB arrays are 2010 GEOIDs. A zone file used with Census zone
+building blocks is compared in the selected vintage, so a tagged zone file of
+another vintage fails.
+
 ## Base Catalog
 
 `loaders/configs/base.yaml` has this top-level shape:
@@ -741,7 +750,7 @@ Selectors generate these roles from the base registries:
 | Filter group | Generated roles |
 |---|---|
 | `optimization` | `optimization.students`, `optimization.census`, `optimization.crosswalk`, `optimization.adjacency`, `optimization.manual_edges`, and optional `optimization.geography.blockgroups` / `optimization.geography.tracts` |
-| `assignment` | `assignment.students`, `assignment.programs`, optional `assignment.programs.catalog`, `assignment.schools`, `assignment.school_coordinates`, and available `assignment.geography.blocks`, `assignment.geography.blockgroups`, `assignment.geography.tracts`, `assignment.geography.crosswalk` |
+| `assignment` | `assignment.students`, `assignment.programs`, optional `assignment.programs.catalog`, `assignment.schools`, `assignment.school_coordinates`, and available `assignment.geography.blocks`, `assignment.geography.blockgroups`, `assignment.geography.tracts`, `assignment.geography.crosswalk`, and, for each other vintage an assignment source declares, `assignment.geography.<vintage>.blocks` and `.crosswalk` |
 
 Source precedence, from lowest to highest, is:
 

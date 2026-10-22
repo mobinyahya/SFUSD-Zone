@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import pathlib
+import re
 
 import numpy as np
 from loaders import (
@@ -48,12 +49,13 @@ def assignment_source_identity(data_scenario) -> str:
         roles.append("assignment.capacity")
     if data_scenario.filter("assignment", "frl_estimate") is not None:
         roles.append("assignment.frl_estimate")
-    for role in ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES:
-        try:
-            data_scenario.resolved(role)
-        except KeyError:
-            continue
-        roles.append(role)
+    roles.extend(
+        role
+        for role in data_scenario.roles
+        if role in ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES
+        # Other vintages' Blocks, to which the equity tie-breaker is matched.
+        or re.fullmatch(r"assignment\.geography\.\d{4}\.(blocks|crosswalk)", role)
+    )
     # The manifest carries every filter, the assignment selectors included.
     encoded = json.dumps(
         data_scenario.source_manifest(roles), sort_keys=True, separators=(",", ":")

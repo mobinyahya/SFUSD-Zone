@@ -21,6 +21,7 @@ import pandas as pd
 from loaders import (
     DataScenario,
     SPECIAL_PROGRAMS,
+    in_geoid_set,
     load_program_records,
     load_scenario,
     load_school_records,
@@ -229,10 +230,12 @@ class MatchEvaluator:
                 )
 
         self._prepare_reference_data()
-        equity_blocks = set(new_ctip_list.tolist())
-        self.student_data["et2"] = (
-            self.student_data["census_block"].isin(equity_blocks).astype(int)
-        )
+        if "et2" not in self.student_data:
+            # A standalone table compares new_ctip_path in its own vintage.
+            equity_blocks = set(new_ctip_list.tolist())
+            self.student_data["et2"] = (
+                self.student_data["census_block"].isin(equity_blocks).astype(int)
+            )
         self.student_data["frl"] = pd.to_numeric(
             self.student_data["freelunch_prob"], errors="coerce"
         ).fillna(0) + pd.to_numeric(
@@ -390,14 +393,19 @@ class MatchEvaluator:
             on="school_id",
             how="left",
         )
-        if kwargs.get("new_ctip_path") is None:
-            try:
-                new_ctip_path = scenario.source_map("assignment.ctip")["block"].path
-            except KeyError:
-                pass
-            else:
-                if new_ctip_path.is_file():
-                    kwargs["new_ctip_path"] = new_ctip_path
+        if "new_ctip_path" in kwargs:
+            raise ValueError(
+                "Scenario evaluation reads the equity tie-breaker from "
+                "assignment.ctip, not new_ctip_path."
+            )
+        try:
+            equity_blocks = scenario.source_map("assignment.ctip")["block"]
+        except KeyError:
+            equity_blocks = None
+        if equity_blocks is not None and equity_blocks.path.is_file():
+            students["et2"] = in_geoid_set(
+                students, scenario, "assignment", equity_blocks, unit="Block"
+            ).astype(int)
         return cls(
             students,
             assignments,
