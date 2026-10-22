@@ -419,7 +419,6 @@ def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
             started_at="2026-01-01T00:00:00+00:00",
             completed_at="2026-01-01T00:00:01+00:00",
             stages=records,
-            final_stage=stage_names[-1],
             error_message=None,
         ),
     )
@@ -451,6 +450,48 @@ def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     summary, _ = aggregate_results(str(tmp_path))
     assert summary.loc[0, "status"] == "FEASIBLE"
     assert summary.loc[0, "num_zones"] == 2
+
+
+def test_regenerate_metrics_completes_a_metrics_error_run(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    manifest_path = run_dir / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        status="ERROR",
+        phase="metrics_error",
+        error_message="metric failed",
+        traceback="Traceback ...",
+    )
+    write_json(str(manifest_path), manifest)
+
+    result = regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert result.regenerated == 1
+    assert manifest["phase"] == "complete"
+    assert manifest["status"] == "FEASIBLE"
+    assert manifest["error_message"] is None
+    assert "traceback" not in manifest
+    assert manifest["final_stage"] == "stage_00_Block_0"
+
+
+def test_regenerate_metrics_skips_failed_optimizations(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    manifest_path = run_dir / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(status="ERROR", phase="optimization_error")
+    write_json(str(manifest_path), manifest)
+
+    result = regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    assert (result.skipped, result.regenerated) == (1, 0)
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == manifest
 
 
 def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path):
@@ -539,7 +580,6 @@ def _write_synthetic_run(tmp_path):
             started_at="2026-01-01T00:00:00+00:00",
             completed_at="2026-01-01T00:00:01+00:00",
             stages=stage_records,
-            final_stage="stage_00_Block_0",
             error_message=None,
         ),
     )

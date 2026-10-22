@@ -15,10 +15,17 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
     MarketGenerator,
 )
 from benchmark.assignment import (
+    assignment_targets,
+    planned_stage_names,
     process_solution_assignments,
     run_assignments_for_existing_runs,
 )
-from benchmark.config import MatchingRunConfig, SimulationSweep
+from benchmark.config import (
+    BenchmarkTask,
+    MatchingRunConfig,
+    SimulationSweep,
+    optimization_config_to_dict,
+)
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
@@ -283,6 +290,50 @@ def test_saa_assignment_targets_mark_unproduced_iterations(tmp_path):
         assert (
             tmp_path / f"stages/iteration_{index:02d}_BlockGroup_0/.assignment-skipped"
         ).is_file()
+
+
+def test_planned_stage_names_follow_each_strategy():
+    levels = ["BlockGroup_1", "BlockGroup_0"]
+
+    assert planned_stage_names({"strategy": "recursive", "levels": levels}) == [
+        "stage_00_BlockGroup_1",
+        "stage_01_BlockGroup_0",
+    ]
+    assert planned_stage_names({"strategy": "single", "levels": levels}) == [
+        "stage_00_BlockGroup_0"
+    ]
+    assert planned_stage_names(
+        {"strategy": "saa", "levels": levels, "max_iterations": 1}
+    ) == ["iteration_00_BlockGroup_0", "iteration_01_BlockGroup_0"]
+    assert (
+        planned_stage_names(
+            {"strategy": "single", "levels": levels, "enumerated_solutions": 3}
+        )
+        is None
+    )
+    assert (
+        planned_stage_names({"strategy": "iterative_choice", "levels": levels}) is None
+    )
+
+
+def test_stage_targets_reject_unplannable_strategies(tmp_path):
+    config = OptimizationConfig(levels=["BlockGroup_0"], strategy="iterative_choice")
+    task = BenchmarkTask(
+        task_id="task",
+        config_hash="hash",
+        config=optimization_config_to_dict(config),
+        output_dir=str(tmp_path),
+        capacity_slots=1,
+    )
+    matching = MatchingRunConfig(
+        enabled=True, config="assignment.yaml", compute_stage_assignments=True
+    )
+
+    with pytest.raises(ValueError, match="iterative_choice"):
+        assignment_targets([task], matching)
+    assert [
+        target["id"] for target in assignment_targets([task], MatchingRunConfig())
+    ] == ["task-root"]
 
 
 def test_generated_assignment_slurm_plan_uses_nine_jobs(tmp_path):

@@ -173,7 +173,9 @@ def ensure_task_visualizations(
     if visualization_is_current(manifest, run_dir, settings):
         return [], True
 
-    solutions, optimization_config, manifest = load_solutions(str(run_dir))
+    solutions, optimization_config, manifest = load_solutions(
+        str(run_dir), manifest=manifest
+    )
     if not solutions:
         return None, False
     results = render_task_visualizations(

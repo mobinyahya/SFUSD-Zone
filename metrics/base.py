@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field, is_dataclass, asdict
 from functools import cached_property
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from loaders import DataScenario, load_scenario
 from metrics.spatial import SpatialMetrics, compute_spatial_metrics
@@ -154,11 +154,10 @@ class MetricsContext:
 
     @cached_property
     def stage_names(self) -> list[str]:
-        prefix = "iteration" if self._is_iterative_run() else "stage"
-        return [
-            f"{prefix}_{idx:02d}_{sol.level.name}"
-            for idx, sol in enumerate(self.stages)
-        ]
+        return stage_names(
+            [stage.level.name for stage in self.stages],
+            iterative=self._is_iterative_run(),
+        )
 
     @cached_property
     def final_stage_index(self) -> int:
@@ -192,13 +191,23 @@ class MetricsContext:
         return self.stages[-1]
 
     def _is_iterative_run(self) -> bool:
-        strategy = str(self.config.get("strategy", "")).lower()
-        if "iterative" in strategy or strategy == "saa":
-            return True
+        strategy = str(self.config.get("strategy", ""))
         if strategy:
-            return False
+            return is_iterative_strategy(strategy)
         levels = [stage.level.name for stage in self.stages]
         return len(levels) > 1 and len(set(levels)) == 1
+
+
+def is_iterative_strategy(strategy: str) -> bool:
+    """Whether a strategy's stages are attempts at one level, not refinements."""
+    strategy = str(strategy).lower()
+    return "iterative" in strategy or strategy == "saa"
+
+
+def stage_names(levels: Sequence[str], *, iterative: bool) -> list[str]:
+    """Name a run's stages: the folder under ``stages/`` and the metric suffix."""
+    prefix = "iteration" if iterative else "stage"
+    return [f"{prefix}_{index:02d}_{level}" for index, level in enumerate(levels)]
 
 
 def _config_dict(config: Mapping[str, Any] | Any | None) -> dict[str, Any]:

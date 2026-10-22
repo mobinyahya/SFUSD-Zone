@@ -158,7 +158,6 @@ def test_source_stage_regeneration_preserves_constraint_compliance(
             started_at="2026-01-01T00:00:00+00:00",
             completed_at="2026-01-01T00:00:01+00:00",
             stages=stage_records,
-            final_stage="stage_00_BlockGroup_1",
             error_message=None,
         ),
     )

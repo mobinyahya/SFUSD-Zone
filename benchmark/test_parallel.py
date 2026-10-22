@@ -1,4 +1,3 @@
-from benchmark.assignment import AssignmentBatchResult
 from benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
@@ -60,28 +59,33 @@ def test_print_progress_reports_status_counts(capsys) -> None:
     assert "ok=" not in output
 
 
-def test_matching_runs_once_after_all_local_benchmark_tasks(tmp_path, monkeypatch):
+def test_local_matching_evaluates_and_runs_only_the_sweep_targets(
+    tmp_path, monkeypatch
+):
     events = []
     task = BenchmarkTask(
         task_id="task",
         config_hash="hash",
-        config={},
+        config={"workers": 2},
         output_dir=str(tmp_path / "run"),
         capacity_slots=1,
     )
 
+    def plan(tasks, pending, matching):
+        events.append(("plan", tasks, pending))
+        return [{"id": "task-root"}]
+
     def run_task(task, **kwargs):
-        events.append(("benchmark", task.task_id, kwargs))
+        events.append(("benchmark", task.task_id, kwargs["matching"]))
         return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
 
-    def run_matching(root, matching, *, fail_fast):
-        events.append(("matching", root, matching, fail_fast))
-        return AssignmentBatchResult(total=1, successful=1)
+    def run_ready(targets, matching, output_root, *, workers):
+        events.append(("matching", targets, output_root, workers))
+        return len(targets)
 
     monkeypatch.setattr("benchmark.parallel.run_optimization_task", run_task)
-    monkeypatch.setattr(
-        "benchmark.assignment.run_assignments_for_existing_runs", run_matching
-    )
+    monkeypatch.setattr("benchmark.assignment.plan_assignment_targets", plan)
+    monkeypatch.setattr("benchmark.assignment.run_ready_assignments", run_ready)
     matching = MatchingRunConfig(enabled=True, config="assignment.yaml")
 
     run_tasks(
@@ -95,6 +99,8 @@ def test_matching_runs_once_after_all_local_benchmark_tasks(tmp_path, monkeypatc
         matching=matching,
     )
 
-    assert [event[0] for event in events] == ["benchmark", "matching"]
-    assert "matching" not in events[0][2]
-    assert events[1][1:] == (str(tmp_path), matching, False)
+    assert events == [
+        ("plan", [task], [task]),
+        ("benchmark", "task", matching),
+        ("matching", [{"id": "task-root"}], str(tmp_path), 2),
+    ]

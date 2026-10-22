@@ -23,6 +23,7 @@ from benchmark.config import (
     optimization_config_from_dict,
 )
 from metrics import MetricsCalculator
+from metrics.base import is_iterative_strategy, stage_names
 
 
 SCHEMA_VERSION = 1
@@ -30,57 +31,39 @@ MANIFEST_FILENAME = "benchmark_manifest.json"
 RESULT_FILENAME = "result.json"
 
 
-def valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:
-    """Check if task output contains a valid completed manifest and result."""
-    manifest_path = os.path.join(os.path.expanduser(task.output_dir), MANIFEST_FILENAME)
-    result_path = os.path.join(os.path.expanduser(task.output_dir), RESULT_FILENAME)
-    if not os.path.exists(manifest_path) or not os.path.exists(result_path):
-        return False
+def _saved_manifest(task: BenchmarkTask) -> dict[str, Any] | None:
+    """Return the task's saved manifest when its result belongs to this task."""
+    output_dir = os.path.expanduser(task.output_dir)
+    if not os.path.exists(os.path.join(output_dir, RESULT_FILENAME)):
+        return None
     try:
-        manifest = load_manifest(task.output_dir)
+        manifest = load_manifest(output_dir)
     except Exception:
-        return False
-    if manifest.get("config_hash") != task.config_hash:
-        return False
-    if manifest.get("schema_version") != SCHEMA_VERSION:
-        return False
-    if manifest.get("phase") == "optimization":
-        return False
-    if manifest.get("status") == "ERROR" and execution.rerun_failed:
-        return False
-    return True
+        return None
+    if (
+        manifest.get("config_hash") != task.config_hash
+        or manifest.get("schema_version") != SCHEMA_VERSION
+    ):
+        return None
+    return manifest
 
 
-_valid_existing_result = valid_existing_result
+def valid_existing_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:
+    """Check if task output contains a valid evaluated manifest and result."""
+    manifest = _saved_manifest(task)
+    if manifest is None or manifest.get("phase") == "optimization":
+        return False
+    return not (manifest.get("status") == "ERROR" and execution.rerun_failed)
 
 
 def valid_optimization_result(task: BenchmarkTask, execution: ExecutionConfig) -> bool:
     """Check if task output already contains a valid completed optimization phase."""
-    manifest_path = os.path.join(os.path.expanduser(task.output_dir), MANIFEST_FILENAME)
-    result_path = os.path.join(os.path.expanduser(task.output_dir), RESULT_FILENAME)
-    if not os.path.exists(manifest_path) or not os.path.exists(result_path):
+    manifest = _saved_manifest(task)
+    if manifest is None:
         return False
-    try:
-        manifest = load_manifest(task.output_dir)
-    except Exception:
-        return False
-    if manifest.get("config_hash") != task.config_hash:
-        return False
-    if manifest.get("schema_version") != SCHEMA_VERSION:
-        return False
-    if manifest.get("phase") in {
-        "optimization_error",
-        "metrics_error",
-        "visualization_error",
-    }:
-        if execution.rerun_failed:
-            return False
     if manifest.get("status") == "ERROR" and execution.rerun_failed:
         return False
     return manifest.get("phase") in {"optimization", "complete"}
-
-
-_valid_optimization_result = valid_optimization_result
 
 
 @dataclass(frozen=True)
@@ -101,55 +84,32 @@ def run_optimization_task(
     matching: MatchingRunConfig | None = None,
     visualization: VisualizationRunConfig | None = None,
 ) -> TaskResult:
-    """Run optimization and metrics together for local execution."""
+    """Run optimization and evaluate its in-memory stages."""
 
-    phase_result, loaded = _execute_optimization_phase(task)
-    if loaded is None:
+    phase_result, solutions, manifest = _execute_optimization_phase(task)
+    if solutions is None:
         return phase_result
-    return _evaluate_optimization_task(
+    return evaluate_optimization_task(
         task,
         strict_metrics=strict_metrics,
         compute_stage_metrics=compute_stage_metrics,
         matching=matching,
         visualization=visualization,
-        loaded=loaded,
+        manifest=manifest,
+        solutions=solutions,
     )
 
 
 def run_optimization_phase(task: BenchmarkTask) -> TaskResult:
     """Run and persist optimization stages without calculating benchmark metrics."""
 
-    result, _ = _execute_optimization_phase(task)
+    result, _, _ = _execute_optimization_phase(task)
     return result
-
-
-def evaluate_optimization_task(
-    task: BenchmarkTask,
-    *,
-    strict_metrics: bool = True,
-    compute_stage_metrics: bool = False,
-    matching: MatchingRunConfig | None = None,
-    visualization: VisualizationRunConfig | None = None,
-    dataset=None,
-) -> TaskResult:
-    """Reconstruct and evaluate one previously persisted optimization task."""
-
-    return _evaluate_optimization_task(
-        task,
-        strict_metrics=strict_metrics,
-        compute_stage_metrics=compute_stage_metrics,
-        matching=matching,
-        visualization=visualization,
-        dataset=dataset,
-    )
 
 
 def _execute_optimization_phase(
     task: BenchmarkTask,
-) -> tuple[
-    TaskResult,
-    tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]] | None,
-]:
+) -> tuple[TaskResult, list[ZoneSolution] | None, dict[str, Any] | None]:
     output_dir = os.path.expanduser(task.output_dir)
     os.makedirs(output_dir, exist_ok=True)
     started_at = _now()
@@ -164,20 +124,10 @@ def _execute_optimization_phase(
         solutions = strategy.run(dataset, solver)
         if not solutions:
             raise ValueError("Optimization strategy returned no solutions.")
-        stage_names = stage_names_for(solutions, config)
-        stage_records = save_stage_artifacts(solutions, output_dir, stage_names)
-        final_solution = solutions[-1]
-        status = str(final_solution.status or "UNKNOWN")
-        total_wall_time = sum(
-            float(stage.get("wall_time") or 0.0) for stage in stage_records
+        stage_records = save_stage_artifacts(
+            solutions, output_dir, stage_names_for(solutions, config)
         )
-        payload = optimization_result_payload_for(
-            config=config,
-            solutions=solutions,
-            task=task,
-            status=status,
-            total_wall_time=total_wall_time,
-        )
+        status = str(solutions[-1].status or "UNKNOWN")
         manifest = manifest_for(
             task=task,
             config=config,
@@ -185,21 +135,26 @@ def _execute_optimization_phase(
             started_at=started_at,
             completed_at=_now(),
             stages=stage_records,
-            final_stage=None,
             error_message=None,
             phase="optimization",
         )
+        payload = _result_payload(
+            {"metrics": {}, "zone_data": {}, "run": {"phase": "optimization"}},
+            task=task,
+            config=config,
+            levels=[solution.level.name for solution in solutions],
+            status=status,
+            total_wall_time=manifest["total_wall_time"],
+        )
         write_json(os.path.join(output_dir, RESULT_FILENAME), payload)
         write_json(os.path.join(output_dir, MANIFEST_FILENAME), manifest)
-        return (
-            TaskResult(
-                task_id=task.task_id,
-                output_dir=output_dir,
-                status=status,
-                total_wall_time=total_wall_time,
-            ),
-            (solutions, config, manifest),
+        result = TaskResult(
+            task_id=task.task_id,
+            output_dir=output_dir,
+            status=status,
+            total_wall_time=manifest["total_wall_time"],
         )
+        return result, solutions, manifest
     except Exception as exc:
         if solutions and not stage_records:
             try:
@@ -210,7 +165,7 @@ def _execute_optimization_phase(
                 )
             except Exception:
                 pass
-        return _save_error_result(
+        result = _save_error_result(
             task,
             config,
             output_dir,
@@ -218,43 +173,52 @@ def _execute_optimization_phase(
             stage_records,
             exc,
             phase="optimization_error",
-        ), None
+        )
+        return result, None, None
 
 
-def _evaluate_optimization_task(
+def evaluate_optimization_task(
     task: BenchmarkTask,
     *,
-    strict_metrics: bool,
-    compute_stage_metrics: bool,
-    matching: MatchingRunConfig | None,
-    visualization: VisualizationRunConfig | None,
+    strict_metrics: bool = True,
+    compute_stage_metrics: bool = False,
+    matching: MatchingRunConfig | None = None,
+    visualization: VisualizationRunConfig | None = None,
+    manifest: dict[str, Any] | None = None,
+    solutions: list[ZoneSolution] | None = None,
     dataset=None,
-    loaded: tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]] | None = None,
 ) -> TaskResult:
+    """Evaluate one persisted optimization task: metrics, matching, and maps.
+
+    ``manifest`` and ``solutions`` default to what is saved under the task's
+    output directory, and ``dataset`` to the one its config builds. A task
+    whose optimization failed is reported, not evaluated.
+    """
+
     output_dir = os.path.expanduser(task.output_dir)
     started_at = _now()
-    manifest: dict[str, Any] = {}
     config = task.optimization_config()
     failure_phase = "metrics_error"
 
     try:
-        if loaded is None:
+        if manifest is None:
             manifest = load_manifest(output_dir)
-            if manifest.get("config_hash") != task.config_hash:
-                raise ValueError(
-                    f"Manifest config hash does not match task {task.task_id}."
-                )
-            if manifest.get("phase") == "optimization_error":
-                return TaskResult(
-                    task_id=task.task_id,
-                    output_dir=output_dir,
-                    status="ERROR",
-                    total_wall_time=float(manifest.get("total_wall_time") or 0.0),
-                    error_message=manifest.get("error_message"),
-                )
-            solutions, config, manifest = load_solutions(output_dir, dataset=dataset)
-        else:
-            solutions, config, manifest = loaded
+        if manifest.get("config_hash") != task.config_hash:
+            raise ValueError(
+                f"Manifest config hash does not match task {task.task_id}."
+            )
+        if manifest.get("phase") == "optimization_error":
+            return TaskResult(
+                task_id=task.task_id,
+                output_dir=output_dir,
+                status="ERROR",
+                total_wall_time=float(manifest.get("total_wall_time") or 0.0),
+                error_message=manifest.get("error_message"),
+            )
+        if solutions is None:
+            solutions, config, manifest = load_solutions(
+                output_dir, dataset=dataset, manifest=manifest
+            )
         if not solutions:
             raise ValueError(
                 "No saved optimization stages are available for evaluation."
@@ -327,13 +291,13 @@ def _evaluate_optimization_task(
             total_wall_time=float(result_payload.get("total_wall_time") or 0.0),
         )
     except Exception as exc:
-        stage_records = list(manifest.get("stages") or [])
+        manifest = manifest or {}
         return _save_error_result(
             task,
             config,
             output_dir,
             str(manifest.get("started_at") or started_at),
-            stage_records,
+            list(manifest.get("stages") or []),
             exc,
             phase=failure_phase,
             manifest=manifest,
@@ -344,8 +308,6 @@ def save_stage_artifacts(
     solutions: Sequence[ZoneSolution],
     output_dir: str,
     stage_names: Sequence[str],
-    *,
-    compute_stage_metrics: bool = False,
 ) -> list[dict[str, Any]]:
     stages_dir = Path(output_dir) / "stages"
     stages_dir.mkdir(parents=True, exist_ok=True)
@@ -354,16 +316,7 @@ def save_stage_artifacts(
         stage_dir = stages_dir / stage_name
         stage_dir.mkdir(parents=True, exist_ok=True)
         solution.save(str(stage_dir))
-        records.append(
-            stage_record(
-                solution,
-                idx,
-                stage_name,
-                stage_dir,
-                output_dir,
-                compute_stage_metrics=compute_stage_metrics,
-            )
-        )
+        records.append(stage_record(solution, idx, stage_name, stage_dir, output_dir))
     return records
 
 
@@ -373,15 +326,7 @@ def stage_record(
     stage_name: str,
     stage_dir: Path,
     output_dir: str,
-    *,
-    compute_stage_metrics: bool = False,
 ) -> dict[str, Any]:
-    contiguous = None
-    if compute_stage_metrics and solution.assignment and solution.feasible:
-        try:
-            contiguous = solution.is_contiguous()
-        except Exception:
-            contiguous = None
     return {
         "name": stage_name,
         "index": index,
@@ -391,7 +336,8 @@ def stage_record(
         "objective": solution.objective,
         "wall_time": solution.wall_time,
         "num_zones": solution.problem.Z,
-        "contiguous": contiguous,
+        # Filled in from the evaluated stage metrics, when they are computed.
+        "contiguous": None,
         "metadata": dict(solution.metadata),
     }
 
@@ -403,43 +349,36 @@ def result_payload_for(
     solutions: Sequence[ZoneSolution],
     task: BenchmarkTask,
 ) -> dict[str, Any]:
-    payload = metrics.to_full_dict()
-    run = payload.get("run", {})
-    payload.update(
-        {
-            "status": run.get("final_status"),
-            "error_message": None,
-            "total_wall_time": run.get("total_wall_time", 0.0),
-            "levels": [solution.level.name for solution in solutions],
-            "config": config_snapshot(config),
-            "benchmark": {
-                "schema_version": SCHEMA_VERSION,
-                "task_id": task.task_id,
-                "config_hash": task.config_hash,
-            },
-        }
+    """Build the evaluated ``result.json`` payload from computed metrics."""
+    body = metrics.to_full_dict()
+    run = body.get("run", {})
+    return _result_payload(
+        body,
+        task=task,
+        config=config,
+        levels=[solution.level.name for solution in solutions],
+        status=run.get("final_status"),
+        total_wall_time=run.get("total_wall_time", 0.0),
     )
-    return payload
 
 
-def optimization_result_payload_for(
+def _result_payload(
+    body: dict[str, Any],
     *,
-    config: OptimizationConfig,
-    solutions: Sequence[ZoneSolution],
     task: BenchmarkTask,
-    status: str,
+    config: OptimizationConfig,
+    levels: Sequence[str],
+    status: str | None,
     total_wall_time: float,
+    error_message: str | None = None,
 ) -> dict[str, Any]:
-    """Build the valid, metrics-free result saved by the optimization phase."""
-
+    """Wrap a metrics/zone_data/run body in the shared ``result.json`` fields."""
     return {
+        **body,
         "status": status,
-        "error_message": None,
+        "error_message": error_message,
         "total_wall_time": total_wall_time,
-        "metrics": {},
-        "zone_data": {},
-        "run": {"phase": "optimization"},
-        "levels": [solution.level.name for solution in solutions],
+        "levels": list(levels),
         "config": config_snapshot(config),
         "benchmark": {
             "schema_version": SCHEMA_VERSION,
@@ -457,7 +396,6 @@ def manifest_for(
     started_at: str,
     completed_at: str,
     stages: Sequence[dict[str, Any]],
-    final_stage: str | None,
     error_message: str | None,
     phase: str = "complete",
 ) -> dict[str, Any]:
@@ -476,7 +414,8 @@ def manifest_for(
         "capacity_slots": task.capacity_slots,
         "config": config_snapshot(config),
         "stages": list(stages),
-        "final_stage": final_stage,
+        # Set by evaluation, which selects the final stage.
+        "final_stage": None,
         "result_path": RESULT_FILENAME,
     }
 
@@ -484,26 +423,28 @@ def manifest_for(
 def stage_names_for(
     solutions: Sequence[ZoneSolution], config: OptimizationConfig | dict[str, Any]
 ) -> list[str]:
-    strategy = _config_value(config, "strategy", "")
-    normalized = str(strategy).lower()
-    prefix = (
-        "iteration" if "iterative" in normalized or normalized == "saa" else "stage"
+    strategy = (
+        config.get("strategy", "")
+        if isinstance(config, dict)
+        else getattr(config, "strategy", "")
     )
-    return [
-        f"{prefix}_{idx:02d}_{solution.level.name}"
-        for idx, solution in enumerate(solutions)
-    ]
+    return stage_names(
+        [solution.level.name for solution in solutions],
+        iterative=is_iterative_strategy(strategy),
+    )
 
 
 def load_solutions(
     output_dir: str,
     *,
     dataset=None,
+    manifest: dict[str, Any] | None = None,
 ) -> tuple[list[ZoneSolution], OptimizationConfig, dict[str, Any]]:
     """Reconstruct saved stage solutions for metric regeneration."""
 
     output_dir = os.path.expanduser(output_dir)
-    manifest = load_manifest(output_dir)
+    if manifest is None:
+        manifest = load_manifest(output_dir)
     config = optimization_config_from_dict(manifest["config"])
     dataset = dataset or config.make_dataset()
     solutions: list[ZoneSolution] = []
@@ -633,31 +574,24 @@ def _save_error_result(
             started_at=started_at,
             completed_at=_now(),
             stages=stage_records,
-            final_stage=None,
             error_message=error_message,
             phase=phase,
         )
     )
     error_manifest["traceback"] = traceback.format_exc()
-    total_wall_time = float(error_manifest.get("total_wall_time") or 0.0)
+    total_wall_time = error_manifest["total_wall_time"]
     write_json(os.path.join(output_dir, MANIFEST_FILENAME), error_manifest)
     write_json(
         os.path.join(output_dir, RESULT_FILENAME),
-        {
-            "status": "ERROR",
-            "error_message": error_message,
-            "total_wall_time": total_wall_time,
-            "metrics": {},
-            "zone_data": {},
-            "run": {"phase": phase},
-            "levels": [stage["level"] for stage in stage_records],
-            "config": config_snapshot(config),
-            "benchmark": {
-                "schema_version": SCHEMA_VERSION,
-                "task_id": task.task_id,
-                "config_hash": task.config_hash,
-            },
-        },
+        _result_payload(
+            {"metrics": {}, "zone_data": {}, "run": {"phase": phase}},
+            task=task,
+            config=config,
+            levels=[stage["level"] for stage in stage_records],
+            status="ERROR",
+            total_wall_time=total_wall_time,
+            error_message=error_message,
+        ),
     )
     return TaskResult(
         task_id=task.task_id,
@@ -683,9 +617,3 @@ def _merge_stage_contiguity(
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _config_value(config: OptimizationConfig | dict[str, Any], key: str, default=None):
-    if isinstance(config, dict):
-        return config.get(key, default)
-    return getattr(config, key, default)

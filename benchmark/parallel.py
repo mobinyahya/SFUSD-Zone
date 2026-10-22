@@ -6,6 +6,8 @@ import os
 import time
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
+from functools import partial
+from typing import Callable
 
 from benchmark.config import (
     BenchmarkTask,
@@ -17,8 +19,8 @@ from benchmark.config import (
 )
 from benchmark.runner import (
     TaskResult,
-    _valid_existing_result,
     run_optimization_task,
+    valid_existing_result,
 )
 
 
@@ -94,7 +96,7 @@ def run_tasks(
     pending: list[BenchmarkTask] = []
 
     for task in tasks:
-        if execution.skip_existing and _valid_existing_result(task, execution):
+        if execution.skip_existing and valid_existing_result(task, execution):
             if visualization and visualization.enabled:
                 try:
                     from benchmark.visualize import ensure_task_visualizations
@@ -123,35 +125,47 @@ def run_tasks(
         else:
             pending.append(task)
 
-    if execution.sequential:
-        for task in pending:
-            result = run_optimization_task(
-                task,
-                strict_metrics=metrics.strict,
-                compute_stage_metrics=metrics.compute_stage_metrics,
-                visualization=visualization,
-            )
-            batch.add(result)
-            _print_progress(batch)
-            if result.status == "ERROR" and execution.fail_fast:
-                break
-        _run_matching_batch(execution, matching)
-        batch.total_wall_time = time.time() - start
-        return batch
+    matching = matching if matching and matching.enabled else None
+    if matching:
+        from benchmark.assignment import (
+            plan_assignment_targets,
+            run_ready_assignments,
+        )
 
-    _run_parallel(pending, execution, metrics, visualization, batch)
-    _run_matching_batch(execution, matching)
+    # Planned before any task runs, so an unplannable sweep fails up front.
+    targets = plan_assignment_targets(tasks, pending, matching) if matching else []
+    run = partial(
+        run_optimization_task,
+        strict_metrics=metrics.strict,
+        compute_stage_metrics=metrics.compute_stage_metrics,
+        matching=matching,
+        visualization=visualization,
+    )
+    _run_pending(pending, execution, run, batch)
+    if matching:
+        assigned = run_ready_assignments(
+            targets,
+            matching,
+            os.path.expanduser(execution.output_dir),
+            workers=max(int(task.config.get("workers") or 1) for task in tasks),
+        )
+        print(f"Assigned {assigned}/{len(targets)} target(s).", flush=True)
     batch.total_wall_time = time.time() - start
     return batch
 
 
-def _run_parallel(
+def _run_pending(
     pending: list[BenchmarkTask],
     execution: ExecutionConfig,
-    metrics: MetricsRunConfig,
-    visualization: VisualizationRunConfig | None,
+    run: Callable[[BenchmarkTask], TaskResult],
     batch: BatchResult,
 ) -> None:
+    """Run every pending task, in-process when ``sequential`` and else in a pool."""
+    if execution.sequential:
+        for task in pending:
+            if _record(batch, run(task), execution):
+                return
+        return
     if not pending:
         return
     max_workers = _max_workers(execution, len(pending))
@@ -173,13 +187,7 @@ def _run_parallel(
                 if idx is None:
                     break
                 task = pending.pop(idx)
-                future = executor.submit(
-                    _worker_run_task,
-                    task,
-                    metrics.strict,
-                    metrics.compute_stage_metrics,
-                    visualization,
-                )
+                future = executor.submit(run, task)
                 futures[future] = (task, _effective_slots(task, capacity))
                 running_slots += _effective_slots(task, capacity)
                 made_progress = True
@@ -202,26 +210,17 @@ def _run_parallel(
                         status="ERROR",
                         error_message=str(exc) or exc.__class__.__name__,
                     )
-                batch.add(result)
-                _print_progress(batch)
-                if result.status == "ERROR" and execution.fail_fast:
+                if _record(batch, result, execution):
                     for remaining in futures:
                         remaining.cancel()
                     return
 
 
-def _worker_run_task(
-    task: BenchmarkTask,
-    strict_metrics: bool,
-    compute_stage_metrics: bool,
-    visualization: VisualizationRunConfig | None,
-) -> TaskResult:
-    return run_optimization_task(
-        task,
-        strict_metrics=strict_metrics,
-        compute_stage_metrics=compute_stage_metrics,
-        visualization=visualization,
-    )
+def _record(batch: BatchResult, result: TaskResult, execution: ExecutionConfig) -> bool:
+    """Add one finished task; return whether the sweep should stop."""
+    batch.add(result)
+    _print_progress(batch)
+    return result.status == "ERROR" and execution.fail_fast
 
 
 def _first_task_that_fits(
@@ -246,25 +245,6 @@ def _max_workers(execution: ExecutionConfig, task_count: int) -> int:
     cpu_count = os.cpu_count() or 1
     capacity = execution.capacity or cpu_count
     return max(1, min(task_count, cpu_count, int(capacity)))
-
-
-def _run_matching_batch(
-    execution: ExecutionConfig, matching: MatchingRunConfig | None
-) -> None:
-    if not matching or not matching.enabled:
-        return
-    from benchmark.assignment import run_assignments_for_existing_runs
-
-    result = run_assignments_for_existing_runs(
-        execution.output_dir,
-        matching,
-        fail_fast=execution.fail_fast,
-    )
-    print(
-        f"Assigned {result.successful}/{result.total}; "
-        f"failed={result.failed}, skipped={result.skipped}",
-        flush=True,
-    )
 
 
 def _print_progress(batch: BatchResult) -> None:
