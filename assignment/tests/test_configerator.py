@@ -125,6 +125,15 @@ def test_from_config_creates_an_isolated_policy_loader(monkeypatch):
     assert configurator.load_next_subconfig() is False
 
 
+@pytest.mark.parametrize("value", [0, 12, 123])
+def test_removed_rounds_merged_options_is_rejected(value):
+    config = _valid_config()
+    config["rounds-merged-options"] = value
+
+    with pytest.raises(ValueError, match="'rounds-merged-options' was removed"):
+        Configerator.from_config(config)
+
+
 @pytest.mark.parametrize("legacy_key", ["year", "grade", "remove-special-lps"])
 def test_old_top_level_data_fields_are_rejected(legacy_key):
     config = _valid_config()
