@@ -13,6 +13,7 @@ from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import make_grid_problem
 from metrics import MetricsCalculator
 from metrics import choice as choice_metrics
+from metrics import distance as distance_metrics
 from metrics import programs as program_metrics
 from metrics.spatial import compute_spatial_metrics
 
@@ -136,6 +137,20 @@ def test_program_metrics_read_the_run_program_table(tmp_path):
     assert result.zone_data[0]["programs"] == {"GE": 1, "SB": 1}
     assert result.zone_data[1]["programs"] == {"SA": 1}
     assert result.metrics["avg_total_programs_per_zone"] == 1.5
+
+
+def test_nearby_ge_schools_weight_by_the_problem_population():
+    problem = _problem()
+    problem.program_population = "All"
+    problem.G.nodes[0]["all_prog_students"] = 3.0
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+
+    result = MetricsCalculator(solution, modules=[distance_metrics.compute]).compute()
+
+    # Only node 0 is within half a mile of zone 0's school: 3 of 6 students.
+    assert result.zone_data[0]["ge_schools_within_half_mile"] == 0.5
 
 
 def test_shape_metrics_use_block0_geometry_after_conversion():

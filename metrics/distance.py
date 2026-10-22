@@ -134,7 +134,9 @@ def _student_weighted_nearby_ge(
     for node in nodes:
         if node not in distance_dict:
             continue
-        students = float(context.G.nodes[node].get("ge_students", 0.0))
+        students = float(
+            context.G.nodes[node].get(context.problem.student_attribute, 0.0)
+        )
         nearby = 0
         for school_id in ge_in_zone:
             if school_id not in school_to_node:
