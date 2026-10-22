@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, is_dataclass, asdict
 from functools import cached_property
 from typing import Any, Callable, Mapping
 
+from loaders import DataScenario, load_scenario
 from optimization.solution import ZoneSolution
 
 MetricValue = float | int | str | bool | None
@@ -80,6 +81,8 @@ class MetricsContext:
             )
 
         self.config = _config_dict(config)
+        # An OptimizationConfig already holds its loaded scenario; reuse it.
+        self._data_scenario = getattr(config, "data_scenario", None)
         self.solution = final_solution or self._select_final_solution()
         self.compute_stage_metrics = bool(compute_stage_metrics)
 
@@ -98,6 +101,21 @@ class MetricsContext:
     @property
     def level_name(self) -> str:
         return self.solution.level.name
+
+    @cached_property
+    def data_scenario(self) -> DataScenario | None:
+        """The run's data scenario, or ``None`` when the config names no data."""
+        if self._data_scenario is not None:
+            return self._data_scenario
+        data = self.config.get("data")
+        return None if data is None else load_scenario(data)
+
+    @cached_property
+    def school_programs(self) -> dict[int, list[str]]:
+        """Sorted program types offered by each school."""
+        from metrics.programs import school_programs
+
+        return school_programs(self)
 
     @cached_property
     def zone_nodes(self) -> dict[int, list[int]]:

@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import functools
-import os
 from collections.abc import Iterable
 from typing import Any
 
-import pandas as pd
-
-from Config.Constants import PROGRAM_CATEGORIES, SFUSD_DATA_ROOT
+from Config.Constants import PROGRAM_CATEGORIES
 from Config.metrics_config import MetricColumns
+from loaders.tables import load_program_records
 from metrics.base import MetricOutput, MetricsContext
+from optimization.data.loaders import PROGRAM_ROLE
 
 LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
 SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])
 
 
 def compute(context: MetricsContext) -> MetricOutput:
-    programs_by_school = school_programs(context)
+    programs_by_school = context.school_programs
     zone_data: dict[int, dict[str, Any]] = {}
     total_counts: list[int] = []
     language_counts: list[int] = []
@@ -65,7 +63,7 @@ def compute(context: MetricsContext) -> MetricOutput:
 
 
 def ge_schools(context: MetricsContext) -> set[int]:
-    programs = school_programs(context)
+    programs = context.school_programs
     if programs:
         return {sid for sid, values in programs.items() if "GE" in values}
 
@@ -81,14 +79,27 @@ def ge_schools(context: MetricsContext) -> set[int]:
 
 
 def school_programs(context: MetricsContext) -> dict[int, list[str]]:
+    """Program types per school, from the graph or the run's program table.
+
+    Real graphs carry no program columns, so the run's own
+    ``optimization.programs`` table is read with the optimization selectors --
+    the same table that sized the graph's capacities.
+    """
     from_graph = _programs_from_graph(context.G.graph.get("school_data", {}))
-    if from_graph:
+    if from_graph or context.data_scenario is None:
         return from_graph
 
-    path = context.config.get("programs_path") or _default_programs_path()
-    if not path:
-        return {}
-    return _load_programs_csv(os.path.expanduser(path))
+    programs = load_program_records(
+        context.data_scenario,
+        PROGRAM_ROLE,
+        filter_group="optimization",
+        low_memory=False,
+    )
+    programs = programs.dropna(subset=["school_id", "program_type"])
+    return {
+        int(school_id): sorted(set(group.astype(str)))
+        for school_id, group in programs.groupby("school_id")["program_type"]
+    }
 
 
 def _programs_from_graph(school_data: dict) -> dict[int, list[str]]:
@@ -111,32 +122,6 @@ def _normalize_programs(value) -> list[str]:
     if isinstance(value, Iterable):
         return [str(v) for v in value if v is not None]
     return [str(value)]
-
-
-@functools.lru_cache(maxsize=8)
-def _load_programs_csv(path: str) -> dict[int, list[str]]:
-    try:
-        df = pd.read_csv(path)
-    except (FileNotFoundError, OSError):
-        return {}
-    if "school_id" not in df.columns or "program_type" not in df.columns:
-        return {}
-
-    out: dict[int, list[str]] = {}
-    for _, row in df.iterrows():
-        try:
-            school_id = int(row["school_id"])
-        except (TypeError, ValueError):
-            continue
-        program = row["program_type"]
-        if pd.isna(program):
-            continue
-        out.setdefault(school_id, []).append(str(program))
-    return {sid: sorted(set(programs)) for sid, programs in out.items()}
-
-
-def _default_programs_path() -> str:
-    return f"{SFUSD_DATA_ROOT}/Data/Cleaned/programs_withMissionBay_2324.csv"
 
 
 def _zone_average(values: list[int], num_zones: int) -> float:

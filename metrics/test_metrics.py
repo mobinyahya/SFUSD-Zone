@@ -13,6 +13,7 @@ from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import make_grid_problem
 from metrics import MetricsCalculator
 from metrics import choice as choice_metrics
+from metrics import programs as program_metrics
 from metrics.spatial import compute_spatial_metrics
 
 
@@ -98,6 +99,43 @@ def test_optimization_metrics_on_single_solution():
     assert set(result.zone_data) == {0, 1}
     assert result.zone_data[0]["ge_students"] == 4.0
     assert result.zone_data[0]["avg_math_score"] == 2500.0
+
+
+def test_program_metrics_read_the_run_program_table(tmp_path):
+    programs = tmp_path / "programs.csv"
+    pd.DataFrame(
+        {
+            "school_id": [100, 100, 100, 200, 200],
+            "program_type": ["GE", "SB", "CE", "SA", "GE"],
+            "program_id": [
+                "100-GE-KG",
+                "100-SB-KG",
+                "100-CE-06",
+                "200-SA-KG",
+                "200-GE-06",
+            ],
+            "capacity": [1, 1, 1, 1, 1],
+        }
+    ).to_csv(programs, index=False)
+    problem = _problem()
+    for data in problem.G.graph["school_data"].values():
+        del data["program_types"]
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+    data = {
+        "scenario": "legacy",
+        "overrides": {"sources": {"optimization.programs": {"path": str(programs)}}},
+    }
+
+    result = MetricsCalculator(
+        solution, config={"data": data}, modules=[program_metrics.compute]
+    ).compute()
+
+    # Only the KG rows the run selects: 100 offers GE and SB, 200 only SA.
+    assert result.zone_data[0]["programs"] == {"GE": 1, "SB": 1}
+    assert result.zone_data[1]["programs"] == {"SA": 1}
+    assert result.metrics["avg_total_programs_per_zone"] == 1.5
 
 
 def test_shape_metrics_use_block0_geometry_after_conversion():
