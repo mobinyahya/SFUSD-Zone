@@ -25,7 +25,6 @@ from ..choice_ranks import (
 from ..configerator import Configerator
 from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
-from ..data_interfaces import Zones
 from .policy import Policy
 from .preference_generator import OUTSIDE_OPTION_LIST_LENGTH, PreferenceGenerator
 from .priority_generator import PriorityGenerator
@@ -148,17 +147,6 @@ class MarketGenerator(SchoolChoiceMarket):
         self._active_policy_cache_context = None
         if previous_source_identity != self.source_identity:
             self._aggregate_metric_evaluator = None
-
-    def _reset_zones(self):
-        aa_schools = self.schools.school_df.loc[
-            self.schools.school_df.category == "Attendance"
-        ]
-        self.zones = Zones(
-            self.config,
-            attendance_area_schools=aa_schools,
-            programs=self.programs,
-            students=self.students,
-        )
 
     def simulate(self) -> dict[str, pd.DataFrame] | None:
         """Load and execute every configured policy subconfig."""
@@ -1521,7 +1509,7 @@ class MarketGenerator(SchoolChoiceMarket):
         in_zone_rank = in_zone_rank.copy()
         enrollment = np.bincount(match, minlength=len(capacities) + 1)
         attendance_areas = self.students.attendance_area
-        grade = self.config["grade"]
+        grade = self.grade
 
         for student_idx in np.flatnonzero(match == 0):
             studentno = self.students.idx2studentno[student_idx]
@@ -1682,7 +1670,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         assignment["programcodes"] = assignment.apply(
             lambda x: (
-                f"{x.final_school}-{x.final_program}-{self.config['grade']}"
+                f"{x.final_school}-{x.final_program}-{self.grade}"
                 if not pd.isna(x.final_school)
                 else np.nan
             ),
@@ -2016,11 +2004,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 if policy == "real_match"
                 else self.config["zone-building-blocks"]
             )
-            zone_file = (
-                ""
-                if policy == "real_match"
-                else self.config["paths"]["zone-files"][policy]
-            )
+            zone_file = "" if policy == "real_match" else self.zone_file(policy)
             heatmap_data = evaluator.eval_heatmap_data(config_name, building_block)
             heatmap_data.insert(1, "policy", policy)
             heatmap_data.insert(2, "building_block", building_block)
@@ -2139,6 +2123,15 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         return assignment_df
 
+    def _zone_signature(self, policy: str) -> str | None:
+        """The configured zone file path of a policy, or None when it has none."""
+        try:
+            zones = self.data_scenario.source_map("assignment.zones")
+        except KeyError:
+            return None
+        source = zones.get(policy)
+        return None if source is None else str(source.path)
+
     def _get_assignment_save_name(
         self, policy_data: Policy, iteration: int | None
     ) -> str:
@@ -2153,7 +2146,7 @@ class MarketGenerator(SchoolChoiceMarket):
             str: unique name for assignment file
         """
         if policy_data.name == "real_match":
-            gr = "" if self.config["grade"] == "KG" else f"{self.config['grade']}_"
+            gr = "" if self.grade == "KG" else f"{self.grade}_"
             return f"Assignment_{gr}real_match.csv"
 
         restrict = self.config["restrict-zone"]
@@ -2177,9 +2170,7 @@ class MarketGenerator(SchoolChoiceMarket):
 
         option_state = {
             "policy": policy_data.name,
-            "zone_file": self.config.get("paths", {})
-            .get("zone-files", {})
-            .get(policy_data.name),
+            "zone_file": self._zone_signature(policy_data.name),
             "ctip": policy_data.ctip,
             "tiebreaker": policy_data.tiebreaker,
             "guard_rails": guard_rails,

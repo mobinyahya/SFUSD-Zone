@@ -522,6 +522,19 @@ class DataScenario:
         """Fingerprint all resolved source paths and current file contents."""
         return _fingerprint(self.source_manifest())
 
+    def provenance(self) -> dict[str, Any]:
+        """Describe the resolved scenario for a run record."""
+        manifest = self.source_manifest()
+        return {
+            "scenario": self.id,
+            "schema_version": self.schema_version,
+            "roots": _plain(self.roots),
+            "filters": _plain(self.filters),
+            "sources": manifest["sources"],
+            "semantic_fingerprint": self.semantic_fingerprint,
+            "source_fingerprint": _fingerprint(manifest),
+        }
+
 
 def _selected_roles(
     sources: Mapping[str, Any], roles: str | Iterable[str] | None

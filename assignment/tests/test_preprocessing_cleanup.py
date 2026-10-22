@@ -152,8 +152,7 @@ def test_build_estimates_uses_configured_student_order_and_normalized_grade(tmp_
     converter._student_records = pd.read_csv(student_path)[["studentno"]]
     converter._model_path = str(tmp_path)
     converter._distance_weight = None
-    converter._grade = "06"
-    converter._year = 22
+    converter._year = "2223"
     converter._students = SimpleNamespace(n=2, idx2studentno={0: 11, 1: 22})
     converter._programs = SimpleNamespace(num_programs=1)
     initial = pd.DataFrame(

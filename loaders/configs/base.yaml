@@ -703,10 +703,6 @@ files:
     path: Data/program_codes.csv
     root: data
     classification: internal
-  ctip.workbook.2013:
-    path: Data/SF 2010 blks 022119 with field descriptions (1).xlsx
-    root: data
-    classification: internal
   ctip.array.block.2024:
     path: Data/Tie-breakers/ETB_2024.npy
     root: data

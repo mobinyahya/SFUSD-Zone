@@ -42,8 +42,8 @@ data:
         classification: restricted
 ```
 
-Other assignment roles are `program_codes`, `block_data`, `new_ctip`,
-`new_ctip_blockgroup`, and optional `lotteries`. Dynamic generated plans use
+Other assignment roles are `program_codes`, `ctip` (named `block` and
+`blockgroup` equity tie-breaker arrays), and optional `lotteries`. Dynamic generated plans use
 `data.overrides.sources.assignment.zones` with the same named-map shape.
 
 Direct paths in checked-in experiment configs preserve their original source

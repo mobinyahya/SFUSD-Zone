@@ -11,6 +11,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from loaders import lowell_selective
 
 from .policy import Policy
 
@@ -40,8 +41,7 @@ class PriorityGenerator:
             repr(ctip),
             policy,
             self.market.config.get("subconfig-name"),
-            self.market.config.get("grade"),
-            self.market.config.get("year"),
+            getattr(self.market, "source_identity", None),
             repr(self.market.config.get("priority-weights")),
             repr(self.market.config.get("distance-priority")),
             repr(self.market.config.get("distance-boost")),
@@ -54,14 +54,7 @@ class PriorityGenerator:
         Args:
             policy (str): The policy name for the current simulation and zones.
         """
-        zone_files = self.market.config["paths"]["zone-files"]
-        if policy not in zone_files:
-            available = ", ".join(sorted(zone_files))
-            raise KeyError(
-                f"Zone policy {policy!r} is not configured. Available zone "
-                f"policies: {available or '(none)'}"
-            )
-        zone_file = pathlib.Path(zone_files[policy]).expanduser().resolve()
+        zone_file = pathlib.Path(self.market.zone_file(policy)).expanduser().resolve()
         if not zone_file.is_file():
             raise FileNotFoundError(
                 f"Zone file for policy {policy!r} does not exist: {zone_file}"
@@ -134,12 +127,12 @@ class PriorityGenerator:
         if cache_key in self._policy_priorities_cache:
             return self._policy_priorities_cache[cache_key]
 
-        if self.market.config["grade"] == "06":
+        if self.market.grade == "06":
             priorities = self._sixth_grade_priorities()
             priorities += self._get_attendance_area_priorities()
             self._policy_priorities_cache[cache_key] = priorities
             return priorities
-        if self.market.config["grade"] == "09":
+        if self.market.grade == "09":
             priorities = self._ninth_grade_priorities()
             priorities += self._get_attendance_area_priorities()
             self._policy_priorities_cache[cache_key] = priorities
@@ -161,13 +154,15 @@ class PriorityGenerator:
                 priorities += v * self.market.zones.zone_priority_matrix
             elif k == "peng":
                 try:
-                    path = self.market.config["paths"]["peng-boosts"][policy]
+                    source = self.market.data_scenario.source_map(
+                        "assignment.peng_boosts"
+                    )[policy]
                 except KeyError as exc:
                     raise ValueError(
                         "PENG priority requires "
                         "data.overrides.sources.assignment.peng_boosts."
                     ) from exc
-                boost_matrix = np.load(str(path))
+                boost_matrix = np.load(source.path)
                 priorities += boost_matrix
             elif k == "distance":
                 # Check if distance boost settings are configured
@@ -286,7 +281,7 @@ class PriorityGenerator:
             return priorities
 
         attendance_areas = self.market.students.attendance_area
-        grade = self.market.config["grade"]
+        grade = self.market.grade
         for student_idx, studentno in self.market.students.idx2studentno.items():
             attendance_area = attendance_areas.get(studentno, 0)
             program_idx = self.market.programs.indices.get(
@@ -449,13 +444,6 @@ class PriorityGenerator:
             classes_matrix = self.market.students.new_ctip_blockgroup
         elif "D" in str(ctip):
             classes_matrix = self._set_diversity_category_priority(ctip)
-        elif ctip == 5:
-            CTIPtypes = np.array(self.market.students.student_data["CTIPtype"]).reshape(
-                (self.market.n, 1)
-            )
-            classes_matrix = 5 * np.ones(
-                (self.market.n, self.market.num_programs)
-            ) - np.matmul(CTIPtypes, np.ones([1, self.market.num_programs]))
         elif ctip == 0:
             classes_matrix = np.zeros((self.market.n, self.market.num_programs))
         else:
@@ -712,8 +700,7 @@ class PriorityGenerator:
         if sota is not None:
             priority[:, sota - 1] = (1 - self.market.students.sota_eligible) * -500
 
-        # lowell not selective in 2021-22 or 2022-23
-        if self.market.config["year"] not in [21, 22]:
+        if lowell_selective(self.market.data_scenario.filter("assignment", "year")):
             lowell = self.market.programs.indices.get("697-GE-09")
             if lowell is not None:
                 priority[:, lowell - 1] = (
@@ -778,11 +765,8 @@ class PriorityGenerator:
                 raise ValueError(
                     "An iteration is required when read-lotteries is enabled."
                 )
-            path = (
-                self.market.config["paths"]["lotteries-path"]
-                + tiebreaker
-                + str(iteration)
-            )
+            prefix = self.market.data_scenario.source("assignment.lotteries").path
+            path = f"{prefix}{tiebreaker}{iteration}"
             A = np.array(pd.read_csv(path))
             lottery = A[:, 1:]
             return lottery

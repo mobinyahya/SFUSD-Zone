@@ -96,7 +96,6 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
     ) = args
     student_data = pd.read_csv(student_data_path)
     file_assignment = pd.read_csv(assignment_path)
-    me_year = int(f"{year}{year + 1}")
     match_eval = MatchEvaluator(
         student_data,
         file_assignment,
@@ -105,8 +104,6 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
         low_income=95292,
         medium_income=95292,
         high_income=110850,
-        grade=None,
-        year=me_year,
         no_special_program=True,
         program_file=program_file,
         schools_latlon_path=schools_data_path,

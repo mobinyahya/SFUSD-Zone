@@ -14,6 +14,8 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
     MarketGenerator,
 )
 
+from ..utils_for_tests import fake_scenario
+
 
 def _preference_market(config, initial_preferences):
     program_indices = {
@@ -37,6 +39,7 @@ def _preference_market(config, initial_preferences):
     return SimpleNamespace(
         n=3,
         num_programs=4,
+        grade="KG",
         config=config,
         students=students,
         programs=programs,
@@ -473,6 +476,7 @@ def test_aa_boost_applies_only_to_attendance_area_ge_program():
     market = SimpleNamespace(
         n=3,
         num_programs=4,
+        grade="KG",
         config=config,
         students=students,
         programs=SimpleNamespace(
@@ -522,6 +526,7 @@ def test_overscribe_aa_defaults_to_false():
 def test_overscribe_aa_only_assigns_unassigned_students_to_aa_ge():
     market = MarketGenerator.__new__(MarketGenerator)
     market.config = {"grade": "KG", "overscribe_aa": True}
+    market.data_scenario = fake_scenario()
     market.students = SimpleNamespace(
         attendance_area=pd.Series({10: 101, 11: 102, 12: 999}),
         idx2studentno={0: 10, 1: 11, 2: 12},
@@ -550,6 +555,7 @@ def test_overscribe_aa_allows_enrollment_above_capacity():
         "grade": "KG",
         "overscribe_aa": True,
     }
+    market.data_scenario = fake_scenario()
     market.students = SimpleNamespace(
         attendance_area=pd.Series({10: 101, 11: 101}),
         idx2studentno={0: 10, 1: 11},

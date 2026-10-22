@@ -93,7 +93,8 @@ def test_reconfigure_replaces_zone_dependent_state():
         "policy"
     ]["path"].endswith("zones.csv")
     assert market.config is not config
-    assert market.config["paths"]["zone-files"]["policy"].endswith("zones.csv")
+    assert str(market.zone_file("policy")).endswith("zones.csv")
+    assert set(market.config["paths"]) == {"assignment-folder"}
     assert market.configurator.config is not market.config
     market._initialize_market_data.assert_called_once_with()
     market._initialize_utility_model.assert_called_once_with()

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 from click.testing import CliRunner
+from loaders import ResolvedSource
 
 from assignment.student_assignment.cli import cli
 from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
@@ -23,6 +24,8 @@ from assignment.student_assignment.market_generator.school_choice_market import 
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
+
+from ..utils_for_tests import fake_scenario
 
 
 def _runtime_config(**overrides):
@@ -50,11 +53,16 @@ def test_runtime_config_rejects_removed_execution_modes(override, message):
         SchoolChoiceMarket._validate_config(config)
 
 
+def _zone_market(zones, **filters):
+    market = SchoolChoiceMarket.__new__(SchoolChoiceMarket)
+    market.config = {"zone-building-blocks": "block_group"}
+    market.data_scenario = fake_scenario({"assignment.zones": zones}, **filters)
+    return market
+
+
 def test_zone_policy_reports_missing_file_path(tmp_path):
     zone_file = tmp_path / "missing-zones.csv"
-    market = SimpleNamespace(
-        config={"paths": {"zone-files": {"18zone_2": str(zone_file)}}}
-    )
+    market = _zone_market({"18zone_2": zone_file})
 
     with pytest.raises(FileNotFoundError) as error:
         PriorityGenerator(market).generate_base_priorities("18zone_2")
@@ -64,14 +72,22 @@ def test_zone_policy_reports_missing_file_path(tmp_path):
 
 
 def test_zone_policy_reports_available_aliases():
-    market = SimpleNamespace(
-        config={"paths": {"zone-files": {"18zone_2": "zones.csv"}}}
-    )
+    market = _zone_market({"18zone_2": "zones.csv"})
 
     with pytest.raises(KeyError, match="not configured") as error:
         PriorityGenerator(market).generate_base_priorities("unknown")
 
     assert "18zone_2" in str(error.value)
+
+
+def test_zone_file_rejects_census_ids_of_another_vintage():
+    zones = {"bg": ResolvedSource(Path("zones.csv"), geography_vintage="2020")}
+
+    assert _zone_market(zones, geography_vintage="2020").zone_file("bg") == Path(
+        "zones.csv"
+    )
+    with pytest.raises(ValueError, match="Census 2020 GEOIDs"):
+        _zone_market(zones).zone_file("bg")
 
 
 def test_simulate_executes_every_configured_subconfig():
@@ -131,8 +147,8 @@ def test_assignment_names_cover_all_policy_option_dimensions():
         "restrict-zone": True,
         "citywide-or-lp": [],
         "priority-weights": {"sibling": 1},
-        "paths": {"zone-files": {"zones": "zones.csv"}},
     }
+    market.data_scenario = fake_scenario({"assignment.zones": {"zones": "zones.csv"}})
     baseline_policy = Policy("zones", 1, "MTB")
     baseline = market._get_assignment_save_name(baseline_policy, 3)
 
@@ -803,7 +819,8 @@ def test_selective_high_school_offsets_and_missing_programs():
     market = SimpleNamespace(
         n=2,
         num_programs=2,
-        config={"year": 20},
+        config={},
+        data_scenario=fake_scenario(year="2021"),
         programs=SimpleNamespace(indices={"815-GE-09": 1, "100-GE-09": 2}),
         students=SimpleNamespace(
             sota_eligible=np.array([0, 1]),
@@ -858,10 +875,7 @@ def test_unknown_tiebreakers_and_missing_lottery_iteration_are_fatal():
     with pytest.raises(ValueError, match="Unknown tiebreaker"):
         generator._set_tiebreaker("unknown")
 
-    market.config = {
-        "read-lotteries": True,
-        "paths": {"lotteries-path": "lottery_"},
-    }
+    market.config = {"read-lotteries": True}
     with pytest.raises(ValueError, match="iteration is required"):
         generator._set_tiebreaker("MTB")
 

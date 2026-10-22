@@ -84,7 +84,7 @@ class PreferenceGenerator:
         """
         collapsed = np.zeros_like(prefs)
         attendance_areas = self.market.students.attendance_area
-        grade = self.market.config["grade"]
+        grade = self.market.grade
 
         for student_idx, studentno in self.market.students.idx2studentno.items():
             attendance_area = attendance_areas.get(studentno, 0)
@@ -104,7 +104,7 @@ class PreferenceGenerator:
         combined_prefs = prefs.copy()
         pref_lengths = np.count_nonzero(combined_prefs, axis=1)
         attendance_areas = self.market.students.attendance_area
-        grade = self.market.config["grade"]
+        grade = self.market.grade
 
         for student_idx, studentno in self.market.students.idx2studentno.items():
             attendance_area = attendance_areas.get(studentno, 0)
@@ -129,7 +129,7 @@ class PreferenceGenerator:
         truncated_prefs = prefs.copy()
         pref_lengths = np.count_nonzero(truncated_prefs, axis=1)
         attendance_areas = self.market.students.attendance_area
-        grade = self.market.config["grade"]
+        grade = self.market.grade
 
         for student_idx, studentno in self.market.students.idx2studentno.items():
             attendance_area = attendance_areas.get(studentno, 0)
@@ -432,7 +432,7 @@ class PreferenceGenerator:
             num_ranked_array = self.set_number_programs_ranked()
         truncated_prefs = np.zeros_like(filtered_preferences)
         students_aa = self.market.students.attendance_area
-        grade = self.market.config["grade"]
+        grade = self.market.grade
         truncate_at_aa = self.market.config.get("truncate-at-AA-GE", False)
         for i, student_prefs in enumerate(filtered_preferences):
             num_progs = int(min(num_eligible[i], num_ranked_array[i]))

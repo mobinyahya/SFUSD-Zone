@@ -93,6 +93,7 @@ def _market(
     return SimpleNamespace(
         n=2,
         num_programs=3,
+        grade=config["grade"],
         config=config,
         students=students,
         schools=SimpleNamespace(citywide_schools=[102]),

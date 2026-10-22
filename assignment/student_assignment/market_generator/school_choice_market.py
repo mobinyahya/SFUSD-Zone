@@ -2,16 +2,17 @@ import copy
 import hashlib
 import json
 import pathlib
-from collections.abc import Mapping
 
 import numpy as np
 from loaders import (
+    DataScenario,
     ResolvedSource,
     load_program_records,
     load_scenario,
     load_school_records,
     load_student_records,
     read_csv_source,
+    selected_geography_vintage,
 )
 
 from ..configerator import Configerator
@@ -26,9 +27,7 @@ ASSIGNMENT_IMMUTABLE_SOURCE_ROLES = (
     "assignment.school_coordinates",
     "assignment.program_codes",
     "assignment.estimate",
-    "assignment.block_data",
-    "assignment.new_ctip",
-    "assignment.new_ctip_blockgroup",
+    "assignment.ctip",
     "assignment.geography.blocks",
     "assignment.geography.crosswalk",
 )
@@ -37,26 +36,9 @@ ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES = (
     "assignment.geography.blockgroups",
     "assignment.geography.tracts",
 )
-
-
-def _plain(value):
-    if isinstance(value, Mapping):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_plain(item) for item in value]
-    if isinstance(value, pathlib.Path):
-        return str(value)
-    return value
-
-
-def _resolved_paths(value):
-    if isinstance(value, ResolvedSource):
-        return str(value.path)
-    if isinstance(value, Mapping):
-        return {str(key): _resolved_paths(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_resolved_paths(item) for item in value]
-    raise TypeError(f"Unsupported resolved assignment source {value!r}.")
+#: Zone building blocks whose zone files list Census GEOIDs, compared against
+#: the students' IDs in the selected vintage.
+_CENSUS_ZONE_BUILDING_BLOCKS = {"block", "block_group", "tract"}
 
 
 def assignment_source_identity(data_scenario) -> str:
@@ -72,12 +54,65 @@ def assignment_source_identity(data_scenario) -> str:
         except KeyError:
             continue
         roles.append(role)
-    payload = {
-        "assignment_filters": _plain(data_scenario.filters["assignment"]),
-        "sources": data_scenario.source_manifest(roles),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    # The manifest carries every filter, the assignment selectors included.
+    encoded = json.dumps(
+        data_scenario.source_manifest(roles), sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def load_market_data(
+    data_scenario: DataScenario,
+) -> tuple[Programs, Schools, Students]:
+    """Load one assignment market's programs, schools, and students."""
+    program_data = load_program_records(
+        data_scenario, "assignment.programs", filter_group="assignment"
+    )
+    program_codes = (
+        None
+        if "programno" in program_data.columns
+        else read_csv_source(data_scenario.source("assignment.program_codes"))
+    )
+    programs = Programs(program_data, program_codes)
+    schools = Schools(
+        load_school_records(
+            data_scenario, "assignment.schools", filter_group="assignment"
+        ),
+        programs,
+    )
+    students = Students(
+        load_student_records(
+            data_scenario,
+            "assignment.students",
+            filter_group="assignment",
+            low_memory=False,
+        ),
+        programs,
+        load_school_records(
+            data_scenario,
+            "assignment.school_coordinates",
+            filter_group="assignment",
+        ),
+        data_scenario.filter("assignment", "grade"),
+        data_scenario,
+    )
+    return programs, schools, students
+
+
+def _named_source(
+    data_scenario: DataScenario, role: str, name: str
+) -> ResolvedSource:
+    sources = data_scenario.source_map(role)
+    if name not in sources:
+        available = ", ".join(sorted(sources))
+        raise KeyError(
+            f"{name!r} is not configured under data.overrides.sources.{role}; "
+            f"available: {available or '(none)'}."
+        )
+    source = sources[name]
+    if not isinstance(source, ResolvedSource):
+        raise ValueError(f"Source {role}.{name} must be one file.")
+    return source
 
 
 class SchoolChoiceMarket:
@@ -121,65 +156,43 @@ class SchoolChoiceMarket:
         self._initialize_utility_model()
 
     def _materialize_config(self, external_config: dict) -> None:
-        """Resolve strict external data config into internal policy conveniences."""
-        validated = Configerator.from_config(external_config)
-        self.external_config = copy.deepcopy(validated.config)
-        self.data_scenario = load_scenario(self.external_config["data"])
+        """Adopt a validated config, loading its data scenario only when it changed."""
+        self.external_config = copy.deepcopy(external_config)
+        data = self.external_config["data"]
+        if data != getattr(self, "_data_config", None):
+            self.data_scenario = load_scenario(data)
+            self._data_config = copy.deepcopy(data)
         self.source_identity = assignment_source_identity(self.data_scenario)
-        assignment_filters = self.data_scenario.filters["assignment"]
 
         config = copy.deepcopy(self.external_config)
-        config["year"] = int(assignment_filters["year"][:2])
-        config["grade"] = assignment_filters["grade"]
-        config["special_programs"] = assignment_filters["special_programs"]
-
-        paths = copy.deepcopy(config.get("paths", {}))
-        scalar_roles = {
-            "assignment.students": "student-data",
-            "assignment.programs": "program-data",
-            "assignment.schools": "school-data",
-            "assignment.school_coordinates": "school-coordinate-data",
-            "assignment.program_codes": "program-codes",
-            "assignment.estimate": "estimate-path",
-            "assignment.block_data": "block-data",
-            "assignment.new_ctip": "new-ctip-path",
-            "assignment.new_ctip_blockgroup": "new-ctip-blockgroup-path",
-        }
-        for role, path_key in scalar_roles.items():
-            paths[path_key] = str(self.data_scenario.source(role).path)
-
-        paths["zone-files"] = _resolved_paths(
-            self.data_scenario.source_map("assignment.zones")
-        )
-        paths["citywide-or-lp-zones"] = _resolved_paths(
-            self.data_scenario.source_map("assignment.citywide_zones")
-        )
-        try:
-            paths["lotteries-path"] = str(
-                self.data_scenario.source("assignment.lotteries").path
-            )
-        except KeyError:
-            pass
-        try:
-            paths["peng-boosts"] = _resolved_paths(
-                self.data_scenario.source_map("assignment.peng_boosts")
-            )
-        except KeyError:
-            pass
-        config["paths"] = paths
-
-        provenance = {
-            "scenario": self.data_scenario.id,
-            "schema_version": self.data_scenario.schema_version,
-            "roots": _plain(self.data_scenario.roots),
-            "filters": _plain(self.data_scenario.filters),
-            "sources": self.data_scenario.source_manifest()["sources"],
-            "semantic_fingerprint": self.data_scenario.semantic_fingerprint,
-            "source_fingerprint": self.data_scenario.source_fingerprint,
-        }
-        config["data-provenance"] = provenance
+        config["data-provenance"] = self.data_scenario.provenance()
         self.config = config
         self.resolved_config = copy.deepcopy(self.external_config)
+
+    @property
+    def grade(self) -> str:
+        """The market's canonical grade, the suffix of its program IDs."""
+        return self.data_scenario.filter("assignment", "grade")
+
+    def zone_file(self, policy: str) -> pathlib.Path:
+        """Return the zone file configured for a zone policy.
+
+        A zone file of Census GEOIDs is compared against the students' IDs in
+        the selected vintage, so one declaring another vintage is rejected.
+        """
+        source = _named_source(self.data_scenario, "assignment.zones", policy)
+        vintage = selected_geography_vintage(self.data_scenario, "assignment")
+        if self.config.get(
+            "zone-building-blocks"
+        ) in _CENSUS_ZONE_BUILDING_BLOCKS and source.geography_vintage not in {
+            None,
+            vintage,
+        }:
+            raise ValueError(
+                f"Zone policy {policy!r} lists Census {source.geography_vintage} "
+                f"GEOIDs, but assignment.geography_vintage is {vintage!r}."
+            )
+        return source.path
 
     @staticmethod
     def _validate_config(config: dict) -> None:
@@ -193,10 +206,7 @@ class SchoolChoiceMarket:
                 f"Assignment algorithm '{algorithm}' not recognized; only 'DA' is supported."
             )
 
-    def _initialize_market_data(self):
-        """Initialize data interface objects."""
-        self._initialize_schools_and_programs()
-        self._initialize_students()
+    def _reset_zones(self) -> None:
         aa_schools = self.schools.school_df.loc[
             self.schools.school_df.category == "Attendance"
         ]
@@ -205,57 +215,23 @@ class SchoolChoiceMarket:
             attendance_area_schools=aa_schools,
             programs=self.programs,
             students=self.students,
+            grade=self.grade,
         )
 
-    def _initialize_schools_and_programs(self):
-        """Initialize schools and programs data interfaces."""
-        program_data = load_program_records(
-            self.data_scenario,
-            "assignment.programs",
-            filter_group="assignment",
-        )
-        program_codes = None
-        if "programno" not in program_data.columns:
-            program_codes = read_csv_source(
-                self.data_scenario.source("assignment.program_codes")
-            )
-        school_data = load_school_records(
-            self.data_scenario,
-            "assignment.schools",
-            filter_group="assignment",
-        )
-        self.programs = Programs(program_data, program_codes)
-        self.schools = Schools(school_data, self.programs)
-
-    def _initialize_students(self):
-        """Initialize students data interface."""
-        student_data = load_student_records(
-            self.data_scenario,
-            "assignment.students",
-            filter_group="assignment",
-            low_memory=False,
-        )
-        school_locations = load_school_records(
-            self.data_scenario,
-            "assignment.school_coordinates",
-            filter_group="assignment",
-        )
-        self.students = Students(
-            student_data_file=student_data,
-            programs=self.programs,
-            school_data_file=school_locations,
-            block_data_file=self.data_scenario.source("assignment.block_data").path,
-            config=self.config,
-            data_scenario=self.data_scenario,
+    def _initialize_market_data(self):
+        """Load the market's programs, schools, and students."""
+        self.programs, self.schools, self.students = load_market_data(
+            self.data_scenario
         )
         self.n = self.students.n
         self.num_programs = self.students.num_programs
+        self._reset_zones()
 
     def _initialize_utility_model(self):
-        """Initialize the utility model from its materialized scenario role."""
+        """Initialize the utility model from its scenario role."""
         if self.config["utility-model"]["enable"]:
             self.umodel = UtilityModel(
-                self.config["paths"]["estimate-path"],
+                self.data_scenario.source("assignment.estimate").path,
                 self.programs,
                 self.students,
             )
@@ -265,18 +241,10 @@ class SchoolChoiceMarket:
 
     def _reuse_market_data(self) -> None:
         """Rebind immutable interfaces to a new policy/output configuration."""
-        self.students.reconfigure_context(self.config, self.data_scenario)
+        self.students.reconfigure_context(self.data_scenario)
         self.n = self.students.n
         self.num_programs = self.students.num_programs
-        aa_schools = self.schools.school_df.loc[
-            self.schools.school_df.category == "Attendance"
-        ]
-        self.zones = Zones(
-            self.config,
-            attendance_area_schools=aa_schools,
-            programs=self.programs,
-            students=self.students,
-        )
+        self._reset_zones()
 
     def _reuse_utility_model(self) -> None:
         if not self.config["utility-model"]["enable"]:
@@ -296,15 +264,7 @@ class SchoolChoiceMarket:
         Returns:
             list: list of paths for supplemental zones
         """
-        paths = []
-        supplemental_zones = self.config["paths"]["citywide-or-lp-zones"]
-
-        for zone_name in self.config.get("citywide-or-lp", []):
-            if zone_name not in supplemental_zones:
-                raise ValueError(
-                    f"Citywide zone {zone_name} is not configured under "
-                    "data.overrides.sources.assignment.citywide_zones."
-                )
-            paths.append(pathlib.Path(supplemental_zones[zone_name]).expanduser())
-
-        return paths
+        return [
+            _named_source(self.data_scenario, "assignment.citywide_zones", name).path
+            for name in self.config.get("citywide-or-lp", [])
+        ]

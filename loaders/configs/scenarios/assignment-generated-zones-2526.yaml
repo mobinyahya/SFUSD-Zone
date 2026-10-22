@@ -44,10 +44,7 @@ sources:
   assignment.program_codes: assignment.program_codes
   assignment.capacity: capacity.stanford.scenarios_abcd
   assignment.estimate: utility.2324.exp8
-  assignment.block_data: ctip.workbook.2013
   assignment.attendance_areas: assignment.attendance_areas.2013
-  assignment.new_ctip: ctip.array.block.2024
-  assignment.new_ctip_blockgroup: ctip.array.blockgroup.2024
   assignment.zones:
     10zone: {path: Data/assignment/zones_2020/10-zone-11_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
     13zone: {path: Data/assignment/zones_2020/13-zone-7_BG_2020.csv, root: data, classification: public, geography_vintage: "2020"}
@@ -344,7 +341,6 @@ sources:
   assignment.citywide_zones:
     18zone_1_2-BG-0point3miles: zones.citywide.18_bg_0point3miles
   assignment.ctip:
-    workbook: ctip.workbook.2013
     block: ctip.array.block.2024
     blockgroup: ctip.array.blockgroup.2024
 

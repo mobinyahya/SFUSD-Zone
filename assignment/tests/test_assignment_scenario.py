@@ -247,18 +247,20 @@ def test_scenario_grade_and_round_filters_are_materialized(tmp_path):
         )
     )
 
-    assert market.config["year"] == 21
-    assert market.config["grade"] == "KG"
-    assert market.config["special_programs"] == "include"
+    assert market.grade == "KG"
+    assert market.students.grade == "KG"
     assert market.students.student_data.index.tolist() == [1]
     assert market.students.rounds == 1
     assert market.students.only_keep_rows.tolist() == [0]
     assert "r2_ranked_idschool" not in market.students.student_data.columns
-    assert market.config["paths"]["student-data"] == str(sources[0])
+    # Inputs stay in the scenario; config["paths"] holds only outputs.
+    assert set(market.config["paths"]) == {"assignment-folder"}
     assert market.config["data-provenance"]["scenario"] == "legacy"
+    assert market.config["data-provenance"]["sources"]["assignment.students"][
+        "path"
+    ] == str(sources[0])
     assert "data-provenance" not in market.resolved_config
-    assert "year" not in market.resolved_config
-    assert "student-data" not in market.resolved_config["paths"]
+    assert not {"year", "grade", "special_programs"} & set(market.config)
 
 
 def test_mission_bay_alias_is_derived_from_the_scenario_filter(tmp_path):

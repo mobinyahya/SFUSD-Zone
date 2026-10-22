@@ -340,13 +340,10 @@ def test_legacy_exposes_assignment_integration_roles_and_default_cache_root():
     assert scenario.source("assignment.estimate").path == Path(
         "/soalnas/share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy"
     )
-    assert scenario.source("assignment.block_data").path.name == (
-        "SF 2010 blks 022119 with field descriptions (1).xlsx"
-    )
-    assert scenario.source("assignment.new_ctip").path.name == "ETB_2024.npy"
-    assert scenario.source("assignment.new_ctip_blockgroup").path.name == (
-        "ETB_2024_BlockGroup.npy"
-    )
+    ctip = scenario.source_map("assignment.ctip")
+    assert set(ctip) == {"block", "blockgroup"}
+    assert ctip["block"].path.name == "ETB_2024.npy"
+    assert ctip["blockgroup"].path.name == "ETB_2024_BlockGroup.npy"
     assert scenario.source("assignment.school_coordinates") == scenario.source(
         "assignment.schools"
     )
@@ -434,9 +431,6 @@ def test_2324_scenarios_are_coherent_and_preserve_optimization_inputs():
         "assignment.school_coordinates",
         "assignment.program_codes",
         "assignment.estimate",
-        "assignment.block_data",
-        "assignment.new_ctip",
-        "assignment.new_ctip_blockgroup",
         "assignment.zones",
         "assignment.citywide_zones",
         "assignment.ctip",
