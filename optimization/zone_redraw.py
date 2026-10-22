@@ -517,23 +517,18 @@ class ZoneRedraw:
             # of this pair's perimeter that faces them, so the district cap
             # becomes an exact row on the pair rather than a priced term.
             others = sum(
-                column.perimeter
+                column.cut_edges
                 for label, column in by_label.items()
                 if label not in pair
             )
-            budget = 2 * int(boundary_limit(problem)) - others
+            budget = 2 * boundary_limit(problem) - others
             if budget < 0:
                 built.infeasible = True
                 return built
-            variables = []
-            coefficients = []
-            for label in pair:
-                for _, weight, variable in cut_terms[label]:
-                    variables.append(variable)
-                    coefficients.append(int(weight))
-            model.Add(
-                cp_model.LinearExpr.WeightedSum(variables, coefficients) <= budget
-            )
+            variables = [
+                variable for label in pair for _, _, variable in cut_terms[label]
+            ]
+            model.Add(sum(variables) <= budget)
 
         model.Maximize(sum(welfare))
         for label in pair:

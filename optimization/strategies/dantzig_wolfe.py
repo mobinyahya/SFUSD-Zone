@@ -41,7 +41,7 @@ from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.solvers.recom import ReComSolver
 from optimization.strategies.base import Strategy, register
-from optimization.zone_columns import ZonePool, boundary_limit
+from optimization.zone_columns import ZonePool
 from optimization.zone_family import build_zone_family
 from optimization.zone_redraw import ZoneRedraw
 from optimization.zone_welfare import (
@@ -115,12 +115,8 @@ class DantzigWolfeStrategy(Strategy):
             nonlocal incumbent, incumbent_score
             if columns is None:
                 return
-            if problem.boundary_prop >= 0 and sum(
-                c.perimeter for c in columns
-            ) / 2 > boundary_limit(problem):
-                return
             score = sum(c.score for c in columns)
-            if score > incumbent_score:
+            if score > incumbent_score and pool.tiles(columns):
                 incumbent, incumbent_score = tuple(columns), score
 
         hint_metadata: dict = {}

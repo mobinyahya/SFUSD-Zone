@@ -47,18 +47,19 @@ import networkx as nx
 from optimization.data import contiguity
 from optimization.problem import ZoneProblem
 from optimization.solvers.balance import balance_constraints
-from optimization.solvers.cpsat import CP_SAT_SCALE
+from optimization.solvers.cpsat import scaled_row
 
 
 @dataclass(frozen=True)
 class IntegerRow:
     """One label's balance or school-count row, in integer arithmetic.
 
-    ``cp_bool`` scales every float coefficient by ``CP_SAT_SCALE`` and rounds,
-    so that is the row this repo actually solves. Reproducing the rounding
-    here -- rather than re-deriving the float row and allowing a slack -- is
-    what makes the family's membership test and the pricing model agree
-    exactly.
+    ``cp_bool`` scales every float coefficient by ``CP_SAT_SCALE`` and rounds
+    it away from feasibility, so that is the row this repo actually solves.
+    Reading it from the same :func:`~optimization.solvers.cpsat.scaled_row`
+    -- rather than re-deriving the float row and allowing a slack -- is what
+    makes the family's membership test, the pricing model and ``cp_bool``
+    agree exactly.
     """
 
     kind: str
@@ -78,23 +79,27 @@ class IntegerRow:
         return total >= self.rhs if self.sense == ">=" else total <= self.rhs
 
 
-def boundary_limit(problem: ZoneProblem) -> float:
-    """The district boundary budget, in the units ``b(A)`` is measured in.
+def boundary_limit(problem: ZoneProblem) -> int:
+    """The district cut-edge budget, ``floor(boundary_prop * |E|)``.
 
-    ``b(A)`` is *half* the cut weight of ``A``, so summing it over a partition
-    counts each cut edge once and the master's boundary row is directly
-    comparable to ``cp_bool``'s cut-edge count. With unit weights the two are
-    the same number; with ``weight_edges`` this is the weighted total, which is
-    what the paper's boundary cap means and what the perimeter it is compared
-    against measures.
+    Unweighted whatever ``weight_edges`` says, as every other backend and
+    :func:`~optimization.data.feasibility.check_zoning` count it: edge weights
+    enter the boundary *objective* (:func:`perimeter`), never the cap. ``b(A)``
+    in the master's boundary row is half of :func:`cut_edges`, so summing it
+    over a partition counts each cut edge once.
     """
 
-    total = sum(problem.boundary_weight(u, v) for u, v in problem.G.edges)
-    return math.floor(problem.boundary_prop * total)
+    return math.floor(problem.boundary_prop * problem.G.number_of_edges())
+
+
+def cut_edges(problem: ZoneProblem, nodes) -> int:
+    """How many edges leave ``nodes``, unweighted -- what the cap counts."""
+
+    return sum(1 for u, v in problem.G.edges if (u in nodes) != (v in nodes))
 
 
 def perimeter(problem: ZoneProblem, nodes) -> int:
-    """The cut weight leaving ``nodes``; ``b(A)`` is half of this."""
+    """The cut weight leaving ``nodes``, which the boundary objective prices."""
 
     return sum(
         problem.boundary_weight(u, v)
@@ -254,54 +259,29 @@ def build_zone_family(
 def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
     """The label's balance and school-count rows, scaled exactly as CP-SAT does."""
 
+    nodes = sorted(nodes)
     rows: list[IntegerRow] = []
+
+    def add(kind, sense, values, rhs):
+        coefficients, bound = scaled_row(values, sense, rhs)
+        rows.append(IntegerRow(kind, sense, bound, dict(zip(nodes, coefficients))))
+
     for constraint in balance_constraints(problem):
-        for sense, ratio in (
-            (">=", constraint.lower_ratio),
-            ("<=", constraint.upper_ratio),
+        for sense, bound, ratio in (
+            (">=", "lower", constraint.lower_ratio),
+            ("<=", "upper", constraint.upper_ratio),
         ):
             if ratio is None:
                 continue
-            rows.append(
-                IntegerRow(
-                    kind=f"{constraint.kind}_{'lower' if sense == '>=' else 'upper'}",
-                    sense=sense,
-                    rhs=0,
-                    coefficients={
-                        node: int(
-                            round(
-                                CP_SAT_SCALE
-                                * (
-                                    constraint.value(node)
-                                    - ratio * problem.students(node)
-                                )
-                            )
-                        )
-                        for node in sorted(nodes)
-                    },
-                )
-            )
+            values = [
+                constraint.value(node) - ratio * problem.students(node)
+                for node in nodes
+            ]
+            add(f"{constraint.kind}_{bound}", sense, values, 0.0)
     bounds = problem.school_count_bounds()
     if bounds is not None:
         floor_, ceiling = bounds
-        coefficients = {
-            node: int(round(CP_SAT_SCALE * problem.num_schools(node)))
-            for node in sorted(nodes)
-        }
-        rows.append(
-            IntegerRow(
-                kind="schools_lower",
-                sense=">=",
-                rhs=int(round(CP_SAT_SCALE * floor_)),
-                coefficients=coefficients,
-            )
-        )
-        rows.append(
-            IntegerRow(
-                kind="schools_upper",
-                sense="<=",
-                rhs=int(round(CP_SAT_SCALE * ceiling)),
-                coefficients=coefficients,
-            )
-        )
+        values = [float(problem.num_schools(node)) for node in nodes]
+        add("schools_lower", ">=", values, floor_)
+        add("schools_upper", "<=", values, ceiling)
     return tuple(rows)

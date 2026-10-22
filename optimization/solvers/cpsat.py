@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import networkx as nx
@@ -62,7 +63,6 @@ SCHOOL_DISTANCE_SCALE = 10**8
 # what the old arithmetic produced instead of re-serving it.
 COEFFICIENT_ROUNDING = "conservative"
 _SCALE_SNAP = 1e-9  # absorbs float noise so exact multiples are not nudged
-_SENSE = {"<=", ">=", "=="}
 _CP_SAT_INT_PARAMETERS = (
     "linearization_level",
     "cp_model_probing_level",
@@ -707,22 +707,15 @@ class _CpSatSolver(Solver):
         sense: str,
         rhs: float,
     ) -> None:
-        if sense not in _SENSE:
-            raise ValueError(f"Bad sense {sense!r}.")
+        live = [(c, z, i) for (c, z, i) in terms if (z, i) in x]
+        coefficients, bound = scaled_row([c for c, _, _ in live], sense, rhs)
+        expr = sum(a * x[(z, i)] for a, (_, z, i) in zip(coefficients, live))
         if sense == "<=":
-            # Over-state the left side and under-state the bound, so satisfying
-            # the scaled row implies satisfying the exact one.
-            expr = _scaled_expr(x, terms, _ceil_scaled)
-            m.Add(expr <= _floor_scaled(rhs))
+            m.Add(expr <= bound)
         elif sense == ">=":
-            expr = _scaled_expr(x, terms, _floor_scaled)
-            m.Add(expr >= _ceil_scaled(rhs))
+            m.Add(expr >= bound)
         else:
-            # An equality has no conservative rounding: tightening either side
-            # moves the only feasible hyperplane. Accept it only when the scale
-            # represents every coefficient exactly.
-            expr = _scaled_expr(x, terms, _exact_scaled)
-            m.Add(expr == _exact_scaled(rhs))
+            m.Add(expr == bound)
 
     def _candidate_nodes(self, problem: ZoneProblem, zone: int) -> list[int]:
         return [n for n in problem.nodes if zone in problem.candidate_zones(n)]
@@ -1344,14 +1337,29 @@ def _scaled_ceil(value: float, scale: float) -> int:
     return math.ceil(float(value) * scale)
 
 
-def _scaled_expr(
-    x: _AssignmentVars,
-    terms: list[_Term],
-    scale_coefficient,
-) -> Any:
-    """Build ``sum(scale_coefficient(c) * x[z][i])`` over the live variables."""
+def scaled_row(
+    coefficients: Sequence[float], sense: str, rhs: float
+) -> tuple[list[int], int]:
+    """The integer row CP-SAT solves for ``sum(c * x) <sense> rhs``.
 
-    return sum(scale_coefficient(c) * x[(z, i)] for (c, z, i) in terms if (z, i) in x)
+    Every consumer that must accept exactly what ``cp_bool`` accepts -- the
+    Dantzig--Wolfe zone family, its pricer and its redraws -- reads its rows
+    from here. Each side is rounded away from feasibility (see
+    ``COEFFICIENT_ROUNDING``): a ``<=`` row over-states the left side and
+    under-states the bound, a ``>=`` row the reverse, so satisfying the scaled
+    row implies satisfying the exact one.
+    """
+
+    if sense == "<=":
+        return [_ceil_scaled(c) for c in coefficients], _floor_scaled(rhs)
+    if sense == ">=":
+        return [_floor_scaled(c) for c in coefficients], _ceil_scaled(rhs)
+    if sense == "==":
+        # An equality has no conservative rounding: tightening either side
+        # moves the only feasible hyperplane. Accept it only when the scale
+        # represents every coefficient exactly.
+        return [_exact_scaled(c) for c in coefficients], _exact_scaled(rhs)
+    raise ValueError(f"Bad sense {sense!r}.")
 
 
 def _checked(value: float) -> float:

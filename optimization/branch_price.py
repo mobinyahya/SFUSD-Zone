@@ -112,7 +112,6 @@ import time
 from dataclasses import dataclass
 
 from optimization.zone_columns import (
-    boundary_limit,
     overlap_limit,
     smooth,
     solve_master,
@@ -261,17 +260,8 @@ def _search(
 
     def consider(columns):
         nonlocal best, lower
-        if len(columns) != p.Z or {c.zone for c in columns} != set(range(p.Z)):
-            return
-        if sum(len(c.nodes) for c in columns) != p.A:
-            return
-        if frozenset().union(*(c.nodes for c in columns)) != pool.nodes:
-            return
-        if p.boundary_prop >= 0:
-            if sum(c.perimeter for c in columns) / 2 > boundary_limit(p):
-                return
         value = sum(c.score for c in columns)
-        if value > lower:
+        if value > lower and pool.tiles(columns):
             best, lower = tuple(columns), value
 
     def harvest(lp, point, results):
