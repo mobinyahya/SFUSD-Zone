@@ -6,13 +6,23 @@ import math
 import warnings
 from dataclasses import dataclass
 from collections.abc import Iterable
-from typing import Any
 
 import numpy as np
 import pandas as pd
-from loaders import DataScenario, load_student_records, read_csv_source
+from loaders import DataScenario, load_student_records
+from scipy.special import logsumexp
 
-from choice.objective import ChoiceCut, ChoiceEvaluation, ChoiceTerm
+from choice.estimate import (
+    area_key,
+    identity_text,
+    load_estimate,
+    node_area_ids,
+    program_school,
+    school_to_node,
+    student_area_column,
+)
+from choice.objective import ChoiceCut, ChoiceEvaluation, ChoiceModel, ChoiceTerm
+from optimization.data import loaders as optimization_loaders
 from optimization.problem import ZoneProblem
 
 
@@ -30,7 +40,7 @@ class _PreassignmentUtility:
     total: float
 
 
-class MNLZoningUtility:
+class MNLChoiceModel(ChoiceModel):
     """Evaluate MNL welfare for a zoning and build Benders-style cuts.
 
     The utility matrix is student-by-program. A zone offers every program whose
@@ -44,6 +54,12 @@ class MNLZoningUtility:
     entirely rather than being available everywhere. Pass the set when
     ``include_citywide_choice_opt`` is on; the empty default reproduces the
     zone-located-only behaviour.
+
+    Both utilities are submodular in the offered set, so the cuts are the
+    Nemhauser-Wolsey upper bounds around a reference set. Their ground set is
+    the schools some zoning can offer -- node-hosted ones plus the citywide
+    ones -- and a citywide school, offered whatever the zoning, is in every
+    reference set and carries no co-zoning gradient even when it sits on a node.
     """
 
     def __init__(
@@ -64,12 +80,12 @@ class MNLZoningUtility:
         self.area_column = area_column
         self.empty_utility = float(empty_utility)
         self.citywide_schools = frozenset(
-            _school_key(school_id) for school_id in citywide_schools
+            int(school_id) for school_id in citywide_schools
         )
 
         self.utility_df: pd.DataFrame | None = None
         self.student_df: pd.DataFrame | None = None
-        self.school_to_cols: dict[str, list[str]] = {}
+        self.school_to_cols: dict[int, list[str]] = {}
 
     def evaluate(self, problem: ZoneProblem, assignment: dict[int, int]) -> float:
         return self.preassignment_utility(problem, assignment)
@@ -113,33 +129,15 @@ class MNLZoningUtility:
             return ()
 
         self._ensure_loaded()
-        assert self.utility_df is not None
-        assert self.student_df is not None
+        student_area_col = self._student_area_col(problem)
+        merged = self._merged()
+        merged["_area_key"] = merged[student_area_col].map(area_key)
 
-        student_area_col = self.area_column or _student_area_column(problem)
-        if student_area_col not in self.student_df.columns:
-            raise ValueError(f"MNL student file lacks {student_area_col!r}.")
-
-        merged = self.student_df.merge(self.utility_df, on="studentno").copy()
-        merged["_area_key"] = merged[student_area_col].map(_area_key)
-
-        school_to_node = _school_to_node(problem)
-        school_cols = {
-            sid: [col for col in self.school_to_cols.get(sid, []) if col in merged]
-            for sid in school_to_node
-        }
-        school_items = sorted(
-            (sid, school_node)
-            for sid, school_node in school_to_node.items()
-            if school_cols.get(sid)
-        )
+        school_items = sorted(self._zoned_schools(problem).items())
         if not school_items:
             return ()
-        all_cols = [
-            col
-            for sid, _school_node in school_items
-            for col in school_cols.get(sid, [])
-        ]
+        citywide_cols = self._cols(self.citywide_schools)
+        all_cols = self._cols(sid for sid, _ in school_items) + citywide_cols
 
         def summed_utility(frame: pd.DataFrame, cols: list[str]) -> float:
             if frame.empty:
@@ -150,7 +148,7 @@ class MNLZoningUtility:
         cuts: list[ChoiceCut] = []
         empty_frame = merged.iloc[0:0]
         for node in problem.nodes:
-            block_ids = set(_node_area_ids(problem.G.nodes[node]))
+            block_ids = set(node_area_ids(problem.G.nodes[node]))
             group = (
                 merged[merged["_area_key"].isin(block_ids)]
                 if block_ids and not merged.empty
@@ -167,27 +165,21 @@ class MNLZoningUtility:
                     ),
                 )[:schools_per_zone]
             }
-            baseline_cols = [
-                col for sid in nearest_schools for col in school_cols.get(sid, [])
-            ]
-            baseline_col_set = set(baseline_cols)
+            baseline_cols = self._cols(nearest_schools) + citywide_cols
             baseline_value = summed_utility(group, baseline_cols)
             full_value = summed_utility(group, all_cols)
             constant = baseline_value
             coeffs: dict[int, float] = {}
 
             for sid, school_node in school_items:
-                sid_cols = school_cols.get(sid, [])
-                sid_col_set = set(sid_cols)
+                sid_cols = set(self._cols([sid]))
                 if sid in nearest_schools:
-                    remaining_cols = [col for col in all_cols if col not in sid_col_set]
+                    remaining_cols = [col for col in all_cols if col not in sid_cols]
                     grad = full_value - summed_utility(group, remaining_cols)
                     constant -= grad
                 else:
-                    added_cols = baseline_cols + [
-                        col for col in sid_cols if col not in baseline_col_set
-                    ]
-                    grad = summed_utility(group, added_cols) - baseline_value
+                    grad = summed_utility(group, baseline_cols + sorted(sid_cols))
+                    grad -= baseline_value
                 grad = finite_or(grad)
                 if grad:
                     coeffs[school_node] = coeffs.get(school_node, 0.0) + grad
@@ -223,22 +215,6 @@ class MNLZoningUtility:
         if self.utility_df is not None and self.student_df is not None:
             return
 
-        utility_source = self.data.source("choice.estimate")
-        student_sources = self.data.sources("assignment.students")
-        utility_df = read_csv_source(utility_source)
-        if "studentno" not in utility_df.columns:
-            raise ValueError(
-                f"MNL utility file {utility_source.path} lacks studentno column."
-            )
-        utility_df["studentno"] = _normalize_studentno(utility_df["studentno"])
-
-        school_to_cols: dict[str, list[str]] = {}
-        for col in utility_df.columns:
-            if col == "studentno":
-                continue
-            school_id = str(col).split("-", 1)[0]
-            school_to_cols.setdefault(school_id, []).append(str(col))
-
         student_df = load_student_records(
             self.data,
             "assignment.students",
@@ -246,18 +222,25 @@ class MNLZoningUtility:
             low_memory=False,
         )
         if "studentno" not in student_df.columns:
-            paths = [str(source.path) for source in student_sources]
+            paths = [
+                str(source.path) for source in self.data.sources("assignment.students")
+            ]
             raise ValueError(f"MNL student files {paths} lack studentno column.")
-        student_df["studentno"] = _normalize_studentno(student_df["studentno"])
+        student_df["studentno"] = student_df["studentno"].map(identity_text)
+        utility_df = load_estimate(self.data, student_df["studentno"])
 
-        self.utility_df = utility_df.dropna(subset=["studentno"])
-        self.student_df = student_df.dropna(subset=["studentno"])
+        school_to_cols: dict[int, list[str]] = {}
+        for col in utility_df.columns:
+            school_to_cols.setdefault(program_school(col), []).append(col)
+
+        self.utility_df = utility_df
+        self.student_df = student_df
         self.school_to_cols = school_to_cols
-        self._warn_on_estimate_coverage(utility_source)
+        self._warn_on_estimate_coverage()
 
     _COVERAGE_WARNING_THRESHOLD = 0.5
 
-    def _warn_on_estimate_coverage(self, utility_source: Any) -> None:
+    def _warn_on_estimate_coverage(self) -> None:
         """Warn when the estimate covers few of the students being scored.
 
         The estimate is a per-student utility matrix, and ``_prepare`` inner-
@@ -272,18 +255,18 @@ class MNLZoningUtility:
         """
         assert self.utility_df is not None
         assert self.student_df is not None
-        students = set(self.student_df["studentno"].dropna())
+        students = len(self.student_df)
         if not students:
             return
-        covered = len(students & set(self.utility_df["studentno"].dropna()))
-        fraction = covered / len(students)
+        covered = len(self.utility_df)
+        fraction = covered / students
         if fraction >= self._COVERAGE_WARNING_THRESHOLD:
             return
         detail = (
-            f"MNL utility estimate {utility_source.path} covers {covered} of "
-            f"{len(students)} selected students ({fraction:.1%}). Utilities for "
-            "the rest are absent, not zero-valued, so every MNL and choice "
-            "metric derived from this estimate understates welfare"
+            f"MNL utility estimate {self.data.source('choice.estimate').path} "
+            f"covers {covered} of {students} selected students ({fraction:.1%}). "
+            "Utilities for the rest are absent, not zero-valued, so every MNL and "
+            "choice metric derived from this estimate understates welfare"
         )
         if covered == 0:
             detail += (
@@ -293,25 +276,46 @@ class MNLZoningUtility:
             )
         warnings.warn(detail + ".", stacklevel=2)
 
+    def _merged(self) -> pd.DataFrame:
+        """Selected students joined to their estimate rows (inner join)."""
+        assert self.utility_df is not None
+        assert self.student_df is not None
+        return self.student_df.join(self.utility_df, on="studentno", how="inner")
+
+    def _student_area_col(self, problem: ZoneProblem) -> str:
+        assert self.student_df is not None
+        column = self.area_column or student_area_column(problem)
+        if column not in self.student_df.columns:
+            raise ValueError(f"MNL student file lacks {column!r}.")
+        return column
+
+    def _cols(self, schools: Iterable[int]) -> list[str]:
+        return [
+            col for sid in sorted(schools) for col in self.school_to_cols.get(sid, [])
+        ]
+
+    def _zoned_schools(self, problem: ZoneProblem) -> dict[int, int]:
+        """Schools a zoning can give or take away: on a node, estimated, not citywide."""
+        return {
+            sid: node
+            for sid, node in school_to_node(problem).items()
+            if sid in self.school_to_cols and sid not in self.citywide_schools
+        }
+
     def _prepare(
         self, problem: ZoneProblem, assignment: dict[int, int]
     ) -> _PreparedZoningData:
         self._ensure_loaded()
-        assert self.utility_df is not None
-        assert self.student_df is not None
+        student_area_col = self._student_area_col(problem)
 
-        student_area_col = self.area_column or _student_area_column(problem)
-        if student_area_col not in self.student_df.columns:
-            raise ValueError(f"MNL student file lacks {student_area_col!r}.")
-
-        zone_to_schools: dict[int, set[str]] = {z: set() for z in range(problem.Z)}
+        zone_to_schools: dict[int, set[int]] = {z: set() for z in range(problem.Z)}
         area_to_zone: dict[str, int] = {}
         for node, zone in assignment.items():
             attrs = problem.G.nodes[node]
             zone_to_schools.setdefault(zone, set()).update(
-                _school_key(sid) for sid in attrs.get("school_ids", [])
+                int(sid) for sid in attrs.get("school_ids", [])
             )
-            for area_id in _node_area_ids(attrs):
+            for area_id in node_area_ids(attrs):
                 area_to_zone[area_id] = zone
         # Held by every zone, so no zoning can take them away. Added after the
         # per-node pass because a citywide school may sit on a node too, when
@@ -319,8 +323,8 @@ class MNLZoningUtility:
         for schools in zone_to_schools.values():
             schools.update(self.citywide_schools)
 
-        merged = self.student_df.merge(self.utility_df, on="studentno").copy()
-        merged["_area_key"] = merged[student_area_col].map(_area_key)
+        merged = self._merged()
+        merged["_area_key"] = merged[student_area_col].map(area_key)
         merged["assigned_zone"] = merged["_area_key"].map(area_to_zone)
         merged = merged.dropna(subset=["assigned_zone"]).copy()
         if merged.empty:
@@ -328,12 +332,9 @@ class MNLZoningUtility:
         merged["assigned_zone"] = merged["assigned_zone"].astype(int)
         merged.reset_index(drop=True, inplace=True)
 
-        zone_to_cols: dict[int, list[str]] = {}
-        for zone, schools in zone_to_schools.items():
-            cols: list[str] = []
-            for sid in schools:
-                cols.extend(self.school_to_cols.get(sid, []))
-            zone_to_cols[zone] = [col for col in cols if col in merged.columns]
+        zone_to_cols = {
+            zone: self._cols(schools) for zone, schools in zone_to_schools.items()
+        }
         return _PreparedZoningData(merged, zone_to_cols, student_area_col)
 
     def _student_utilities(
@@ -350,12 +351,11 @@ class MNLZoningUtility:
     def _utilities_for_cols(self, frame: pd.DataFrame, cols: list[str]) -> np.ndarray:
         if not cols:
             return np.full(len(frame), self.empty_utility, dtype=float)
-        data = frame[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-        data = np.nan_to_num(data, nan=-np.inf, posinf=np.inf, neginf=-np.inf)
+        data = frame[cols].to_numpy(dtype=float)
         if self.method == "max":
             utilities = np.max(data, axis=1)
         else:
-            utilities = _logsumexp(data, axis=1)
+            utilities = logsumexp(data, axis=1)
         return _finite_array(utilities, self.empty_utility)
 
     def _block_utilities(
@@ -363,7 +363,7 @@ class MNLZoningUtility:
     ) -> pd.Series:
         if merged.empty:
             return pd.Series(dtype=float)
-        block_keys = merged[student_area_col].map(_area_key)
+        block_keys = merged[student_area_col].map(area_key)
         return pd.Series(utilities, index=block_keys).groupby(level=0).sum()
 
     def _block_impacts(
@@ -373,36 +373,26 @@ class MNLZoningUtility:
         merged: pd.DataFrame,
         zone_to_cols: dict[int, list[str]],
         student_area_col: str,
-    ) -> dict[str, dict[str, dict[str, float]]]:
-        school_to_current_zone: dict[str, int] = {}
-        for node, zone in assignment.items():
-            for sid in problem.G.nodes[node].get("school_ids", []):
-                school_to_current_zone[_school_key(sid)] = zone
+    ) -> dict[str, dict[int, dict[str, float]]]:
+        zoned = self._zoned_schools(problem)
+        school_to_current_zone = {
+            sid: assignment[node] for sid, node in zoned.items() if node in assignment
+        }
 
-        impacts: dict[str, dict[str, dict[str, float]]] = {}
+        impacts: dict[str, dict[int, dict[str, float]]] = {}
         if merged.empty:
             return impacts
-        all_schools = sorted(self.school_to_cols)
+        full_cols = self._cols(zoned) + self._cols(self.citywide_schools)
 
         for zone, group in merged.groupby("assigned_zone"):
             zone = int(zone)
             cols = zone_to_cols.get(zone, [])
             baseline = self._utilities_for_cols(group, cols)
-            full_cols = [
-                col
-                for sid in all_schools
-                for col in self.school_to_cols[sid]
-                if col in group.columns
-            ]
             full_baseline = self._utilities_for_cols(group, full_cols)
-            block_keys = group[student_area_col].map(_area_key).to_numpy()
+            block_keys = group[student_area_col].map(area_key).to_numpy()
 
-            for sid in all_schools:
-                sid_cols = [
-                    col for col in self.school_to_cols[sid] if col in group.columns
-                ]
-                if not sid_cols:
-                    continue
+            for sid in sorted(zoned):
+                sid_cols = self.school_to_cols[sid]
                 sid_col_set = set(sid_cols)
                 full_remaining_cols = [
                     col for col in full_cols if col not in sid_col_set
@@ -434,12 +424,8 @@ class MNLZoningUtility:
                     type_map = school_map.setdefault(
                         sid, {"add": 0.0, "remove": 0.0, "full_remove": 0.0}
                     )
-                    type_map[impact_type] = type_map.get(impact_type, 0.0) + float(
-                        impact
-                    )
-                    type_map["full_remove"] = type_map.get("full_remove", 0.0) + float(
-                        full_remove
-                    )
+                    type_map[impact_type] += float(impact)
+                    type_map["full_remove"] += float(full_remove)
         return impacts
 
     def _build_cuts(
@@ -447,20 +433,19 @@ class MNLZoningUtility:
         problem: ZoneProblem,
         assignment: dict[int, int],
         block_utilities: pd.Series,
-        block_impacts: dict[str, dict[str, dict[str, float]]],
+        block_impacts: dict[str, dict[int, dict[str, float]]],
     ) -> list[ChoiceCut]:
-        school_to_node = _school_to_node(problem)
-        zone_current_schools: dict[int, set[str]] = {z: set() for z in range(problem.Z)}
-        for node, zone in assignment.items():
-            zone_current_schools.setdefault(zone, set()).update(
-                _school_key(sid) for sid in problem.G.nodes[node].get("school_ids", [])
-            )
+        zoned = self._zoned_schools(problem)
+        zone_current_schools: dict[int, set[int]] = {z: set() for z in range(problem.Z)}
+        for sid, node in zoned.items():
+            if node in assignment:
+                zone_current_schools.setdefault(assignment[node], set()).add(sid)
 
         cuts: list[ChoiceCut] = []
         for node in problem.nodes:
-            block_ids = _node_area_ids(problem.G.nodes[node])
+            block_ids = node_area_ids(problem.G.nodes[node])
             value = 0.0
-            total_impacts: dict[str, dict[str, float]] = {}
+            total_impacts: dict[int, dict[str, float]] = {}
             has_data = False
 
             for block_id in block_ids:
@@ -471,9 +456,8 @@ class MNLZoningUtility:
                     target = total_impacts.setdefault(
                         sid, {"add": 0.0, "remove": 0.0, "full_remove": 0.0}
                     )
-                    target["add"] += float(by_type.get("add", 0.0))
-                    target["remove"] += float(by_type.get("remove", 0.0))
-                    target["full_remove"] += float(by_type.get("full_remove", 0.0))
+                    for key in target:
+                        target[key] += float(by_type.get(key, 0.0))
 
             assigned_zone = assignment.get(node)
             current_schools = zone_current_schools.get(assigned_zone, set())
@@ -481,14 +465,12 @@ class MNLZoningUtility:
             coeffs: dict[int, float] = {}
 
             for sid, by_type in total_impacts.items():
-                school_node = school_to_node.get(sid)
-                if school_node is None:
-                    continue
+                school_node = zoned[sid]
                 if sid in current_schools:
-                    grad = float(by_type.get("full_remove", 0.0))
+                    grad = by_type["full_remove"]
                     constant -= grad
                 else:
-                    grad = float(by_type.get("add", 0.0))
+                    grad = by_type["add"]
                 if grad:
                     coeffs[school_node] = coeffs.get(school_node, 0.0) + grad
 
@@ -518,72 +500,22 @@ class MNLZoningUtility:
         return cuts
 
 
-def _student_area_column(problem: ZoneProblem) -> str:
-    unit = problem.level.unit
-    if unit == "BlockGroup":
-        return "census_blockgroup"
-    if unit == "Block":
-        return "census_block"
-    if unit == "attendance_area":
-        return "attendance_area"
-    return f"census_{unit.lower()}"
+def build_mnl_choice_model(
+    data: DataScenario,
+    *,
+    method: str = "logsum",
+) -> MNLChoiceModel:
+    """Build the sole supported zoning choice model.
 
+    Resolves ``include_citywide_choice_opt`` from the scenario rather than
+    taking it as an argument, so every caller -- the strategy, the metrics, the
+    offline replays -- gets the same answer for the same scenario.
+    """
 
-def _normalize_studentno(values: pd.Series) -> pd.Series:
-    as_text = values.astype(str).str.split("-").str[-1]
-    return pd.to_numeric(as_text, errors="coerce").astype("Int64")
-
-
-def _area_key(value: Any) -> str | None:
-    if pd.isna(value):
-        return None
-    try:
-        return str(int(float(value)))
-    except (TypeError, ValueError):
-        text = str(value).strip()
-        return text or None
-
-
-def _school_key(value: Any) -> str:
-    try:
-        return str(int(float(value)))
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def _node_area_ids(attrs: dict[str, Any]) -> list[str]:
-    if "block_ids" in attrs:
-        return [key for key in (_area_key(v) for v in attrs["block_ids"]) if key]
-    if "area_id" in attrs:
-        key = _area_key(attrs["area_id"])
-        return [key] if key else []
-    return []
-
-
-def _school_to_node(problem: ZoneProblem) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for node, attrs in problem.G.nodes(data=True):
-        for sid in attrs.get("school_ids", []):
-            out[_school_key(sid)] = node
-    return out
-
-
-def _logsumexp(values: np.ndarray, axis: int) -> np.ndarray:
-    max_values = np.max(values, axis=axis)
-    finite_max = np.isfinite(max_values)
-    safe_max = np.where(finite_max, max_values, 0.0)
-    expanded = np.expand_dims(safe_max, axis=axis)
-    summed = np.sum(np.exp(values - expanded), axis=axis)
-    safe_summed = np.where(finite_max & (summed > 0), summed, 1.0)
-    return np.where(finite_max, safe_max + np.log(safe_summed), -np.inf)
-
-
-def _log1pexp(values: np.ndarray) -> np.ndarray:
-    out = np.empty_like(values, dtype=float)
-    positive = values > 0
-    out[positive] = values[positive] + np.log1p(np.exp(-values[positive]))
-    out[~positive] = np.log1p(np.exp(values[~positive]))
-    return out
+    citywide: frozenset[int] = frozenset()
+    if data.filter("optimization", "include_citywide_choice_opt", False):
+        citywide = optimization_loaders.citywide_school_ids(data)
+    return MNLChoiceModel(data=data, method=method, citywide_schools=citywide)
 
 
 def _finite_array(values: np.ndarray, replacement: float) -> np.ndarray:

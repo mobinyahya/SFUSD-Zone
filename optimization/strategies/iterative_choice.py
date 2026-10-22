@@ -17,7 +17,7 @@ from optimization.solution import ZoneSolution
 from optimization.solvers.base import Solver
 from optimization.strategies.base import Strategy, register
 from optimization.strategies.budget import Budget, make_budget
-from optimization.strategies.choice_model import build_mnl_choice_model
+from choice.models import build_mnl_choice_model
 
 
 def _budget_metadata(budget: Budget, evaluation_seconds: float) -> dict:

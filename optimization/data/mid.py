@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,10 +18,15 @@ from loaders import (
 )
 
 from assignment.student_assignment.data_interfaces import Programs, Schools, Students
+from choice.estimate import area_key as _area_key
+from choice.estimate import area_to_node as _area_to_node
+from choice.estimate import identity_text as _identity_text
+from choice.estimate import load_estimate
+from choice.estimate import school_to_node as _school_to_node
+from choice.estimate import student_area_column as _student_area_column
 from assignment.student_assignment.market_generator.priority_generator import (
     PriorityGenerator,
 )
-from assignment.student_assignment.market_generator.utility_model import UtilityModel
 from optimization.mid_options import MID_PREFERENCE_SOURCES
 from optimization.problem import ZoneProblem
 from optimization.solvers.cpsat import CP_SAT_SCALE
@@ -582,66 +586,8 @@ def _stated_utility_table(data, student_ids, program_ids, market) -> pd.DataFram
 
 
 def _load_utility_table(data, student_ids, program_ids, market=None) -> pd.DataFrame:
-    source = data.source("choice.estimate")
-    UtilityModel._validate_csv_header(source.path)
-    frame = read_csv_source(source, dtype={"studentno": "string"})
-    student_keys = [_identity_text(value) for value in student_ids]
-    program_keys = [_identity_text(value) for value in program_ids]
-    if len(student_keys) != len(set(student_keys)):
-        raise ValueError(
-            "Assignment student identities are ambiguous after normalization."
-        )
-    if len(program_keys) != len(set(program_keys)):
-        raise ValueError(
-            "Assignment program identities are ambiguous after normalization."
-        )
-    required_students = set(student_keys)
-    required_programs = set(program_keys)
-
-    student_labels = [
-        _normalize_labeled_identity(value, required_students)
-        for value in frame.pop("studentno")
-    ]
-    if len(student_labels) != len(set(student_labels)):
-        raise ValueError("Choice utility CSV has duplicate student rows.")
-    frame.index = pd.Index(student_labels, name="studentno")
-
-    program_labels = [
-        _normalize_labeled_identity(value, required_programs) for value in frame.columns
-    ]
-    if len(program_labels) != len(set(program_labels)):
-        raise ValueError("Choice utility CSV has duplicate program columns.")
-    frame.columns = program_labels
-    selected_programs = sorted(required_programs & set(program_labels))
-    selected_students = sorted(required_students & set(student_labels))
-    numeric = frame.loc[selected_students, selected_programs].apply(
-        pd.to_numeric, errors="coerce"
-    )
-    values = numeric.to_numpy(dtype=float)
-    if np.isnan(values).any() or np.isposinf(values).any():
-        raise ValueError("Choice utility CSV contains NaN or positive infinity.")
-    return numeric
-
-
-def _identity_text(value) -> str:
-    if pd.isna(value):
-        raise ValueError("MID identities cannot be null.")
-    if isinstance(value, (int, np.integer)):
-        return str(int(value))
-    if isinstance(value, (float, np.floating)) and float(value).is_integer():
-        return str(int(value))
-    value = str(value).strip()
-    if not value:
-        raise ValueError("MID identities cannot be empty.")
-    return value
-
-
-def _normalize_labeled_identity(value, required: set[str]) -> str:
-    identity = _identity_text(value)
-    if identity in required:
-        return identity
-    match = re.fullmatch(r"(?:\d{2}|\d{4})-(.+)", identity)
-    return match.group(1) if match else identity
+    del market
+    return load_estimate(data, student_ids, program_ids)
 
 
 def _integer(value, label: str) -> int:
@@ -654,40 +600,3 @@ def _integer(value, label: str) -> int:
     if not math.isfinite(numeric) or not numeric.is_integer():
         raise ValueError(f"MID {label} must be an integer.")
     return int(numeric)
-
-
-def _student_area_column(problem: ZoneProblem) -> str:
-    return {
-        "Block": "census_block",
-        "BlockGroup": "census_blockgroup",
-        "Tract": "census_tract",
-    }.get(problem.level.unit, f"census_{problem.level.unit.lower()}")
-
-
-def _area_key(value) -> str | None:
-    if pd.isna(value):
-        return None
-    try:
-        return str(int(float(value)))
-    except (TypeError, ValueError):
-        value = str(value).strip()
-        return value or None
-
-
-def _area_to_node(problem: ZoneProblem) -> dict[str, int]:
-    result = {}
-    for node, attrs in problem.G.nodes(data=True):
-        values = attrs.get("block_ids", [attrs.get("area_id")])
-        for value in values:
-            key = _area_key(value)
-            if key is not None:
-                result[key] = int(node)
-    return result
-
-
-def _school_to_node(problem: ZoneProblem) -> dict[int, int]:
-    return {
-        int(school_id): int(node)
-        for node, attrs in problem.G.nodes(data=True)
-        for school_id in attrs.get("school_ids", [])
-    }

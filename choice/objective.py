@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import math
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # ``optimization.problem`` imports this module.
+    from optimization.problem import ZoneProblem
 
 
 AccessPair = tuple[int, int]
@@ -179,3 +185,34 @@ class ChoiceEvaluation:
 
     utility: float
     cuts: tuple[ChoiceCut, ...] = field(default_factory=tuple)
+
+
+class ChoiceModel(ABC):
+    """A welfare model an iterative zoning strategy evaluates and linearizes."""
+
+    # A zoning-independent upper bound on attainable welfare, when the model
+    # happens to compute one, plus whatever provenance the strategy should
+    # report with it. Most models compute neither; declaring them here keeps
+    # the strategies free of attribute probing.
+    welfare_bound: float | None = None
+    bound_metadata: dict = {}
+
+    @abstractmethod
+    def evaluate_with_cuts(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> ChoiceEvaluation:
+        """Real utility and linearization cuts at ``assignment``."""
+
+    def evaluate(self, problem: ZoneProblem, assignment: dict[int, int]) -> float:
+        return self.preassignment_utility(problem, assignment)
+
+    def preassignment_utility(
+        self, problem: ZoneProblem, assignment: dict[int, int]
+    ) -> float:
+        return self.evaluate_with_cuts(problem, assignment).utility
+
+    def utility_bounds(self, problem: ZoneProblem) -> tuple[float, float]:
+        return (-1_000_000_000.0, 1_000_000_000.0)
+
+    def choice_utility_hint_cuts(self, problem: ZoneProblem) -> tuple[ChoiceCut, ...]:
+        return ()
