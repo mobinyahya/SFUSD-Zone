@@ -26,6 +26,7 @@ from .run_custom_config import _write_provenance_config, load_custom_config
 from .slurm_graph import (
     MAX_ASSIGNMENT_JOBS,
     MAX_METRICS_JOBS,
+    task_batches,
     build_job_graph,
     topological_jobs,
     validate_job_graph,
@@ -102,31 +103,6 @@ def _write_text_atomic(path: pathlib.Path, text: str, *, executable=False) -> No
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
-
-
-def _data_provenance(config: dict) -> dict:
-    scenario = load_scenario(config["data"])
-    return {
-        "scenario": scenario.id,
-        "schema_version": scenario.schema_version,
-        "roots": scenario.roots,
-        "filters": scenario.filters,
-        "sources": scenario.source_manifest()["sources"],
-        "semantic_fingerprint": scenario.semantic_fingerprint,
-        "source_fingerprint": scenario.source_fingerprint,
-    }
-
-
-def _task_batches(task_count: int, batch_count: int) -> list[list[int]]:
-    batch_count = min(task_count, batch_count)
-    quotient, remainder = divmod(task_count, batch_count)
-    batches = []
-    start = 0
-    for index in range(batch_count):
-        size = quotient + (index < remainder)
-        batches.append(list(range(start, start + size)))
-        start += size
-    return batches
 
 
 def _metrics_iterations(config: dict) -> list[int | None]:
@@ -355,7 +331,7 @@ def build_slurm_plan(
         "source_config": str(source_path),
         "source_config_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
         "resolved_config": config,
-        "data": _data_provenance(config),
+        "data": load_scenario(config["data"]).provenance(),
     }
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,
@@ -475,7 +451,7 @@ def build_generated_zone_slurm_plan(
         "source_config": str(source_path),
         "source_config_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
         "resolved_config": base_config,
-        "data": _data_provenance(base_config),
+        "data": load_scenario(base_config["data"]).provenance(),
         "targets": resolved_targets,
     }
     plan = {
@@ -1016,7 +992,7 @@ def _assignment_batches(plan: dict, job: dict) -> list[tuple[int, list[int]]]:
     for (task_index, iterations), batch_count in zip(work, batch_counts, strict=True):
         batches.extend(
             (task_index, [iterations[index] for index in indices])
-            for indices in _task_batches(len(iterations), batch_count)
+            for indices in task_batches(len(iterations), batch_count)
         )
     return batches
 
@@ -1105,7 +1081,7 @@ def _run_metrics_job(plan: dict, plan_path: pathlib.Path, job: dict) -> bool:
         return False
     work_batches = [
         [work_items[index] for index in indices]
-        for indices in _task_batches(len(work_items), min(job["cpus"], len(work_items)))
+        for indices in task_batches(len(work_items), min(job["cpus"], len(work_items)))
     ]
     payloads = defaultdict(dict)
     failed_tasks = set()
