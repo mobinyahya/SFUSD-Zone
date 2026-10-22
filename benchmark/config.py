@@ -439,6 +439,10 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
     ):
         roles.append("assignment.capacity")
     if matching_strategy:
+        from assignment.student_assignment.market_generator.school_choice_market import (
+            vintage_geography_roles,
+        )
+
         roles.extend(
             role
             for role in (
@@ -450,6 +454,7 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
             )
             if _scenario_has_role(scenario, role)
         )
+        roles.extend(vintage_geography_roles(scenario))
 
     manifest = scenario.source_manifest(dict.fromkeys(roles))
     filters = manifest["filters"]
