@@ -178,9 +178,9 @@ class OptimizationConfig:
     save_solver_progress: bool = False
     secondary_objective: bool = False
     weight_edges: bool = False
-    # CP/MIP objective without a choice model: "cut_edges" (boundary cost) or
-    # "school_distance" (weighted squared distance from each node to its
-    # zone's school; ReCom solvers use adaptive_short_bursts_objective instead).
+    # Legacy CP/MIP cost selector: cut_edges, school_distance (squared), or
+    # average_distance (student-weighted linear distance). Pipelines select
+    # named objectives through ``objective`` instead.
     compactness_objective: str = "cut_edges"
     # school_distance node weight = area share * this + student share * that;
     # both in [0, 1] and summing to one.
@@ -633,9 +633,13 @@ class OptimizationConfig:
             setattr(self, name, value)
 
     def _validate_school_distance(self) -> None:
-        if self.compactness_objective not in {"cut_edges", "school_distance"}:
+        if self.compactness_objective not in {
+            "cut_edges",
+            "school_distance",
+            "average_distance",
+        }:
             raise ValueError(
-                "compactness_objective must be one of: cut_edges, school_distance."
+                "compactness_objective must be one of: cut_edges, school_distance, average_distance."
             )
         if self.compactness_objective != "cut_edges" and self.solver in {
             "recom",
@@ -673,6 +677,17 @@ class OptimizationConfig:
         if len(units) != 1:
             raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
         return units.pop()
+
+    @property
+    def graph_weight_edges(self) -> bool:
+        """Load boundary lengths once if any step needs them.
+
+        A weighted graph can also serve unit-cut and distance objectives. The
+        legacy ``weight_edges`` flag still controls each problem's edge cost.
+        """
+        return self.weight_edges or any(
+            step.objective == "boundary_perimeter" for step in self.steps
+        )
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings

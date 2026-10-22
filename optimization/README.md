@@ -58,6 +58,9 @@ uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
 | Objective | cp_bool | cp_int | mip | All four ReCom/burst methods |
 |---|---|---|---|---|
 | `cut_edges` | yes | yes | yes | yes |
+| `boundary_perimeter` | yes | yes | yes | yes |
+| `average_distance` | yes | yes | yes | yes |
+| `average_squared_distance` | yes | yes | yes | yes |
 | `school_distance` | yes | yes | yes | yes |
 | `matching_welfare` | yes | yes | — | yes |
 | `saa_welfare` | yes | yes | yes | yes |
@@ -78,8 +81,40 @@ unassigned and designated student counts. Matching/SAA/capacity objectives need
 `data.overrides.filters.optimization.program_population: All` and matching
 optimization/assignment geography vintages.
 
-`school_distance` uses the same centroid-school squared-distance cost for every
-method, with configurable land-area/student weights. Pipeline methods enforce
+`average_distance` minimizes the student-weighted mean distance to each node's
+assigned centroid school: `sum_n students_n * d(n, centroid_zone(n)) / total_students`,
+reported in miles. It does not load land areas and is distinct from the reporting
+metric that averages distances to all GE schools in a zone.
+
+`average_squared_distance` minimizes `sum_n w_n * d(n, centroid_zone(n))^2`,
+reported in miles squared. It reuses the existing `school_distance` objective,
+which remains accepted for compatibility. The weights default to 75% land-area
+share and 25% student share, controlled by `school_distance_area_weight` and
+`school_distance_student_weight`. Set them to `0` and `1` for a purely
+student-weighted squared mean. All methods use the same cost coefficients.
+
+`boundary_perimeter` reuses the existing integer-metre shared-boundary cost:
+each edge crossing between zones is charged once by its boundary length.
+This is a perimeter proxy, with the existing rounding, point-touch minimum,
+and synthetic-bridge weights. Exact total zone perimeter differs by twice the
+internal boundary length plus the fixed district exterior. Boundary lengths
+are loaded automatically when any step needs them; other steps still use their
+own objectives. No `weight_edges: true` flag is needed. The legacy flag remains
+supported and continues to make `cut_edges` use weighted lengths when explicitly set.
+
+For example, this sequence counts edges, reduces boundary length, then reduces
+student travel distance, with each step hinted from its predecessor:
+
+```yaml
+steps:
+  - {name: counts, level: Block_1, method: cp_int, objective: cut_edges}
+  - {name: perimeter, level: Block_0, method: cp_bool, objective: boundary_perimeter}
+  - {name: distance, level: Block_0, method: adaptive_short_bursts, objective: average_distance}
+  - {name: squared, level: Block_0, method: cp_int, objective: average_squared_distance,
+     options: {school_distance_area_weight: 0, school_distance_student_weight: 1}}
+```
+
+Pipeline methods enforce
 centroid anchors, distance candidate domains, explicit hard assignments, and
 centroid neighborhoods. CP's monotone closer-neighbor contiguity model and
 ReCom's connected-zone walks retain their respective formulations.

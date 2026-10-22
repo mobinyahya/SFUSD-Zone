@@ -193,13 +193,11 @@ class MipSolver(Solver):
                     )
                     if m.SolCount > 0:
                         metadata["choice_best_bound"] = float(m.ObjBound)
-                elif problem.compactness_objective == "school_distance":
-                    metadata.update(
-                        {
-                            "objective_kind": "school_distance",
-                            "objective_unit": "mile^2",
-                        }
-                    )
+                elif problem.compactness_objective in {
+                    "school_distance",
+                    "average_distance",
+                }:
+                    metadata.update(problem.distance_objective_metadata())
                 elif problem.weight_edges:
                     metadata.update(
                         {
@@ -431,11 +429,11 @@ class MipSolver(Solver):
         """
 
         if problem.choice_objective is None:
-            if problem.compactness_objective == "school_distance":
+            if problem.compactness_objective in {"school_distance", "average_distance"}:
                 m.setObjective(
                     gp.quicksum(
                         cost * x[key]
-                        for key, cost in problem.school_distance_costs().items()
+                        for key, cost in problem.distance_objective_costs().items()
                         if key in x
                     ),
                     GRB.MINIMIZE,

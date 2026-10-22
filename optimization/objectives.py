@@ -35,11 +35,33 @@ class Objective:
     methods: frozenset[str]
     maximize: bool = False
     reads_assignment_market: bool = False
+    compactness_objective: str = "cut_edges"
+    unit: str | None = None
 
 
 _OBJECTIVES = {
     "cut_edges": Objective("cut_edges", frozenset(METHODS)),
-    "school_distance": Objective("school_distance", frozenset(METHODS)),
+    "boundary_perimeter": Objective(
+        "boundary_perimeter", frozenset(METHODS), unit="meter"
+    ),
+    "average_distance": Objective(
+        "average_distance",
+        frozenset(METHODS),
+        compactness_objective="average_distance",
+        unit="mile",
+    ),
+    "average_squared_distance": Objective(
+        "average_squared_distance",
+        frozenset(METHODS),
+        compactness_objective="school_distance",
+        unit="mile^2",
+    ),
+    "school_distance": Objective(
+        "school_distance",
+        frozenset(METHODS),
+        compactness_objective="school_distance",
+        unit="mile^2",
+    ),
     "matching_welfare": Objective(
         "matching_welfare", _HEURISTICS | {"cp_bool", "cp_int"}, True, True
     ),
@@ -81,11 +103,17 @@ def validate_method_objective(method: str, objective: str) -> None:
 
 def heuristic_scorer(problem: ZoneProblem, objective: str, options: Mapping[str, Any]):
     """A batch scorer in the objective's own units; cut edges need no scorer."""
-    objective = get_objective(objective).name
-    if objective == "cut_edges":
+    spec = get_objective(objective)
+    objective = spec.name
+    if objective in {"cut_edges", "boundary_perimeter"}:
         return None
-    if objective == "school_distance":
-        return _CentroidDistanceScorer(problem)
+    if spec.compactness_objective in {
+        "school_distance",
+        "average_distance",
+    }:
+        return _CentroidDistanceScorer(
+            replace(problem, compactness_objective=spec.compactness_objective)
+        )
     if objective in {"choice_welfare", "saa_welfare"}:
         from optimization.solvers.welfare_scorers import (
             ChoiceWelfareScorer,
@@ -107,7 +135,7 @@ class _CentroidDistanceScorer:
     """The exact CP/MIP school-distance cost, evaluated over whole partitions."""
 
     def __init__(self, problem: ZoneProblem):
-        self.costs = problem.school_distance_costs()
+        self.costs = problem.distance_objective_costs()
 
     def __call__(self, assignments, base=None) -> tuple[float, ...]:
         return tuple(
@@ -207,9 +235,8 @@ def solve_objective(
     # objective; the graph, candidate domains and source config stay shared.
     problem = replace(
         problem,
-        compactness_objective=(
-            objective if objective in {"cut_edges", "school_distance"} else "cut_edges"
-        ),
+        weight_edges=problem.weight_edges or objective == "boundary_perimeter",
+        compactness_objective=spec.compactness_objective,
         candidates=(
             _heuristic_domains(problem, options)
             if method in _HEURISTICS
@@ -226,16 +253,19 @@ def solve_objective(
         solution = solve_welfare_objective(problem, method, objective, options)
     elif objective == "matching_welfare" and method in {"cp_bool", "cp_int"}:
         solution = _welfare_solver(problem, method, options).solve(problem)
-    elif method == "adaptive_short_bursts" and objective == "cut_edges":
+    elif method == "adaptive_short_bursts" and objective in {
+        "cut_edges",
+        "boundary_perimeter",
+    }:
         solver = get_solver(
             method,
             **{
                 **options,
-                "adaptive_short_bursts_objective": objective,
+                "adaptive_short_bursts_objective": "cut_edges",
             },
         )
         solution = solver.solve(problem)
-    elif method in _HEURISTICS and objective != "cut_edges":
+    elif method in _HEURISTICS and objective not in {"cut_edges", "boundary_perimeter"}:
         scorer = heuristic_scorer(problem, objective, options)
         try:
             solution = get_solver(method, **options).solve_with_scorer(
@@ -256,6 +286,10 @@ def solve_objective(
     solution.metadata.update(
         method=method, objective=objective, objective_maximize=spec.maximize
     )
+    if spec.compactness_objective in {"school_distance", "average_distance"}:
+        solution.metadata.update(problem.distance_objective_metadata())
+    if spec.unit is not None:
+        solution.metadata.update(objective_kind=objective, objective_unit=spec.unit)
     if spec.reads_assignment_market:
         solution.metadata.update(
             aggregate_capacity_overage_disabled=problem.overage < 0,

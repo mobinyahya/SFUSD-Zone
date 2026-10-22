@@ -88,7 +88,9 @@ class ZoneProblem:
         What CP/MIP solvers minimize when there is no choice objective:
         ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
         ``"school_distance"`` (``sum_n w_n * d(n, school of n's zone)^2``, see
-        :meth:`school_distance_weights`).
+        :meth:`school_distance_weights`), or ``"average_distance"`` (student-
+        weighted mean distance in miles). Pipeline objective names are resolved
+        to these shared model costs before solving.
     school_distance_area_weight, school_distance_student_weight:
         Mix of land-area share and student share in each node's
         ``school_distance`` weight; both in ``[0, 1]`` and summing to one.
@@ -290,6 +292,38 @@ class ZoneProblem:
             for node in self.nodes
             for zone in self.candidate_zones(node)
         }
+
+    def average_distance_costs(self) -> dict[tuple[int, int], float]:
+        """Student-weighted mean distance to the assigned centroid, in miles."""
+        students = {node: self.students(node) for node in self.nodes}
+        total = sum(students.values())
+        if total <= 0:
+            raise ValueError("average_distance needs a positive student total.")
+        return {
+            (zone, node): count / total * self.distance(self.centroids[zone], node)
+            for node, count in students.items()
+            for zone in self.candidate_zones(node)
+        }
+
+    def distance_objective_costs(self) -> dict[tuple[int, int], float]:
+        """Shared assignment coefficients for the linear and squared objectives."""
+        return (
+            self.average_distance_costs()
+            if self.compactness_objective == "average_distance"
+            else self.school_distance_costs()
+        )
+
+    def distance_objective_metadata(self) -> dict:
+        metadata = {"objective_kind": self.compactness_objective}
+        if self.compactness_objective == "average_distance":
+            metadata.update(objective_unit="mile", distance_weighting="student_share")
+        else:
+            metadata.update(
+                objective_unit="mile^2",
+                school_distance_area_weight=self.school_distance_area_weight,
+                school_distance_student_weight=self.school_distance_student_weight,
+            )
+        return metadata
 
     # ------------------------------------------------------------------ #
     # candidacy

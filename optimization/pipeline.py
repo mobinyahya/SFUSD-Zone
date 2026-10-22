@@ -256,6 +256,9 @@ def step_config(
     limits = config.solve_time_limits
     gaps = config.gap_limits
     objective = step.objective
+    from optimization.objectives import get_objective
+
+    objective_spec = get_objective(objective)
     if objective in {"choice_welfare", "saa_welfare"}:
         import math
 
@@ -287,13 +290,15 @@ def step_config(
         strategy="single",
         levels=[step.level],
         solver=step.method,
-        compactness_objective=objective
-        if objective in {"cut_edges", "school_distance"}
-        and step.method in {"cp_bool", "cp_int", "mip"}
+        weight_edges=config.weight_edges or objective == "boundary_perimeter",
+        compactness_objective=objective_spec.compactness_objective
+        if step.method in {"cp_bool", "cp_int", "mip"}
         else "cut_edges",
         adaptive_short_bursts_objective=(
             "welfare"
             if objective in {"matching_welfare", "welfare"}
+            else "school_distance"
+            if objective_spec.compactness_objective == "school_distance"
             else objective
             if objective in {"cut_edges", "school_distance", "capacity_match"}
             else "cut_edges"

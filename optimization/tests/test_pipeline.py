@@ -37,6 +37,10 @@ class MemoryDataset:
             shortage=config.shortage,
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
+            weight_edges=config.weight_edges,
+            compactness_objective=config.compactness_objective,
+            school_distance_area_weight=config.school_distance_area_weight,
+            school_distance_student_weight=config.school_distance_student_weight,
             optimization_config=config,
             **kwargs,
         )

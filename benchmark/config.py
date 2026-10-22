@@ -396,7 +396,10 @@ def optimization_config_hash(
     # the weights only matter once school_distance is selected.
     if semantic.get("compactness_objective") == "cut_edges":
         semantic.pop("compactness_objective")
-    if not _contains_value(semantic, "school_distance"):
+    if not any(
+        _contains_value(semantic, name)
+        for name in ("school_distance", "average_squared_distance")
+    ):
         semantic.pop("school_distance_area_weight", None)
         semantic.pop("school_distance_student_weight", None)
     if semantic.get("enumerated_solutions", -1) <= 0:

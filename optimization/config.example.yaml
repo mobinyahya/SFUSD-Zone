@@ -52,7 +52,8 @@ steps:
   #   inputs: [{source: refine, mode: hint}]
 
 # Methods: cp_bool, cp_int, mip, recom, relaxed_recom, short_bursts,
-# adaptive_short_bursts. Objectives: cut_edges, school_distance,
+# adaptive_short_bursts. Objectives: cut_edges, boundary_perimeter,
+# average_distance, average_squared_distance, school_distance (legacy name),
 # matching_welfare, saa_welfare, choice_welfare, capacity_match.
 # Supported combinations are documented in optimization/README.md.
 

@@ -82,7 +82,9 @@ def main() -> int:
     for task in tasks:
         config = task.optimization_config()
         data_key = json.dumps(
-            (config.data, config.unit, config.weight_edges), sort_keys=True, default=str
+            (config.data, config.unit, config.graph_weight_edges),
+            sort_keys=True,
+            default=str,
         )
         if data_key not in datasets:
             datasets[data_key] = config.make_dataset()

@@ -314,11 +314,11 @@ def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
     assert problem.candidate_zones(1) == {0}
 
 
-def _pipeline_dataset(tmp_path, monkeypatch):
+def _pipeline_dataset(tmp_path, monkeypatch, **overrides):
     graph = nx.path_graph(2)
     for node, school_id in enumerate((100, 200)):
         graph.nodes[node].update(school_ids=[school_id], area_id=1000 + node)
-    dataset = Dataset(_config(tmp_path))
+    dataset = Dataset(_config(tmp_path, **overrides))
     dataset._graphs["Block_0"] = graph
     attached = []
     monkeypatch.setattr(
@@ -327,6 +327,76 @@ def _pipeline_dataset(tmp_path, monkeypatch):
         lambda level, graph: attached.append(graph),
     )
     return dataset, graph, attached
+
+
+def test_perimeter_and_unit_cut_steps_reuse_weighted_graph_data(tmp_path, monkeypatch):
+    from optimization.pipeline import step_config
+
+    dataset, graph, attached = _pipeline_dataset(
+        tmp_path,
+        monkeypatch,
+        steps=[
+            {"level": "Block_0", "objective": "boundary_perimeter"},
+            {"level": "Block_0", "objective": "cut_edges"},
+        ],
+    )
+    config = dataset.config
+    problems = [
+        dataset.problem_for(
+            step.level,
+            centroid_school_ids=[100],
+            config=step_config(config, step, index),
+        )
+        for index, step in enumerate(config.steps)
+    ]
+    assert problems[0].G is problems[1].G is graph
+    assert [problem.weight_edges for problem in problems] == [True, False]
+    assert attached == [graph]
+    assert dataset._graph_namespace.parameters["partition_policy"]["edge_weighting"]
+    assert (
+        dataset._graph_cache_namespace()
+        != Dataset(_config(tmp_path))._graph_cache_namespace()
+    )
+    generated = []
+    monkeypatch.setattr(
+        "optimization.data.graph_builder.build_base_graph",
+        lambda ingest, **kwargs: generated.append(kwargs) or graph,
+    )
+    assert dataset._generate(LevelSpec.parse("Block_0")) is graph
+    assert generated == [{"weight_edges": True}]
+
+
+@pytest.mark.parametrize(
+    "objective,needs_areas",
+    [("average_distance", False), ("average_squared_distance", True)],
+)
+def test_named_heuristic_distance_objectives_load_only_needed_geometry(
+    tmp_path, monkeypatch, objective, needs_areas
+):
+    from optimization.pipeline import step_config
+
+    dataset, graph, _ = _pipeline_dataset(
+        tmp_path,
+        monkeypatch,
+        steps=[
+            {
+                "level": "Block_0",
+                "method": "adaptive_short_bursts",
+                "objective": objective,
+            }
+        ],
+    )
+    attachments = []
+    monkeypatch.setattr(
+        "optimization.data.node_areas.attach_land_areas",
+        lambda *args: attachments.append(args),
+    )
+    config = step_config(dataset.config, dataset.config.steps[0])
+    for _ in range(2):
+        dataset.problem_for("Block_0", centroid_school_ids=[100], config=config)
+    assert len(attachments) == int(needs_areas)
+    if needs_areas:
+        assert attachments[0] == (graph, "Block", dataset.data)
 
 
 def test_pipeline_problems_share_graph_and_honor_effective_constraints(

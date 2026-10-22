@@ -418,8 +418,12 @@ separate columns; `method` distinguishes recursive series in aggregates.
 Exact end-to-end timing would require stage-start timestamps, since work between
 solve calls is not represented by the stage durations.
 
-The `optimization_defaults.weight_edges: true` setting enables integer-metre
-shared-boundary costs for all these methods.
+Pipeline `objective: boundary_perimeter` automatically loads integer-metre
+shared-boundary costs, and can share a run with `cut_edges`, `average_distance`,
+or `average_squared_distance` steps. Distance objectives report miles or miles
+squared; each stage retains its own objective name and units. The legacy
+`optimization_defaults.weight_edges: true` setting also enables boundary costs
+for all these methods.
 Aggregation sums crossing parent-edge weights, so a coarse zoning and its
 unchanged projection onto a finer graph have exactly the same weighted cost.
 Unweighted cut counts count different adjacency graphs, so unweighted recursive
