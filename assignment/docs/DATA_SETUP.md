@@ -13,9 +13,9 @@ data:
   overrides: {}
 ```
 
-`Configerator` validates this block for both YAML-loaded and in-memory configs
-and calls `load_scenario` immediately. Top-level data selectors and all input
-keys under `paths` are errors.
+`Configerator` checks this block's shape and override filters for both
+YAML-loaded and in-memory configs; the market loads the scenario, once, when it
+starts. Top-level data selectors and all input keys under `paths` are errors.
 
 `paths.assignment-folder` remains an output setting. Local and cluster path
 configs contain output paths only; there is no hostname-based source selection.

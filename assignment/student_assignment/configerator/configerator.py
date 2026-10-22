@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yamale
 import yaml
-from loaders import anchor_data_config, load_scenario
+from loaders import anchor_data_config
 
 from ..definitions import (
     BASE_CONFIG_NAME,
@@ -55,9 +55,7 @@ class Configerator:
             self._path = None
 
             if config is None:
-                # Load main config
                 self._load_config()
-                # self._validate_rules(ruleset) # KLM commented out because moved sibling access to policy config
             else:
                 self._config = self._anchor_config(config, declaring_path)
                 self._original_config = copy.deepcopy(self._config)
@@ -86,7 +84,11 @@ class Configerator:
             return anchored
 
         def _validate_execution_config(self, config):
-            """Apply the same strict external validation to every config source."""
+            """Apply the same strict external validation to every config source.
+
+            The data map is checked for shape only: selectors are validated
+            once, by the loader, when the market loads the scenario.
+            """
             if not isinstance(config, dict):
                 raise ValueError("Assignment configuration must be a map.")
 
@@ -140,12 +142,6 @@ class Configerator:
             iterations = config["iterations"]
             if iterations["start"] < 0 or iterations["end"] <= iterations["start"]:
                 raise ValueError("Assignment iterations must satisfy 0 <= start < end.")
-            scenario = load_scenario(data)
-            year = scenario.filter("assignment", "year")
-            if not isinstance(year, str) or len(year) != 4 or not year.isdigit():
-                raise ValueError(
-                    "data assignment year must be a canonical four-digit string."
-                )
 
         def _load_config(self):
             """Find config file located at ../../configs/{$USER}.config.yaml
@@ -207,13 +203,6 @@ class Configerator:
         def _validate_schema(self, data, schema_path, *, strict=True):
             schema = yamale.make_schema(schema_path)
             yamale.validate(schema, data, strict=strict)
-
-        def _validate_rules(self, rules):
-            rule_outcomes = map(lambda f: f(self.config), rules)
-            failed_rules = [i for i, b in enumerate(rule_outcomes) if not b]
-            assert not failed_rules, (
-                f"Your configuration does not match rules: {failed_rules}."
-            )
 
         def dynamic_config(self, func):
             """Update the config values, given a function which can derive values
