@@ -458,6 +458,7 @@ def load_solutions(
         manifest = load_manifest(output_dir)
     config = optimization_config_from_dict(manifest["config"])
     dataset = dataset or config.make_dataset()
+    pipeline = config.make_strategy() if config.strategy == "pipeline" else None
     solutions: list[ZoneSolution] = []
     for stage in manifest.get("stages", []):
         level = stage["level"]
@@ -478,10 +479,13 @@ def load_solutions(
             and metadata.get("centroid_school_id") is not None
         ):
             centroid_school_ids = [metadata["centroid_school_id"]]
-        problem = dataset.problem_for(
-            level,
-            centroid_school_ids=centroid_school_ids,
-        )
+        if pipeline is not None:
+            problem = pipeline.problem_for_stage(dataset, metadata)
+        else:
+            problem = dataset.problem_for(
+                level,
+                centroid_school_ids=centroid_school_ids,
+            )
         saved_fingerprint = info.get("graph_fingerprint")
         if saved_fingerprint != graph_fingerprint(problem.G):
             if not os.path.exists(area_dict_path):

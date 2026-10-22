@@ -124,8 +124,8 @@ class SaaStrategy(Strategy):
 
     def run(self, dataset, solver):
         backend = getattr(solver, "name", None)
-        if backend not in {"cp_bool", "mip"}:
-            raise ValueError("saa requires solver='cp_bool' or solver='mip'.")
+        if backend not in {"cp_bool", "cp_int", "mip"}:
+            raise ValueError("saa requires solver='cp_bool', 'cp_int', or 'mip'.")
         if dataset.config.program_population != "All":
             raise ValueError("saa requires program_population='All'.")
 
@@ -155,10 +155,14 @@ class SaaStrategy(Strategy):
         recourse_seconds = 0.0
 
         base_problem = self.problem_for(dataset, target)
-        hint = initial_solution(
-            base_problem,
-            self.options.get("hints", "voronoi"),
-            solver_options=solver.options,
+        hint = (
+            initial_solution(
+                base_problem,
+                self.options.get("hints", "voronoi"),
+                solver_options=solver.options,
+            )
+            if base_problem.hint is None
+            else None
         )
         if hint is not None:
             base_problem.hint = hint.assignment

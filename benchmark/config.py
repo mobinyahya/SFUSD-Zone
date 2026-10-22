@@ -23,6 +23,7 @@ SEQUENCE_OPTIMIZATION_FIELDS = {
     "levels",
     "solve_time_limits",
     "gap_limits",
+    "steps",
 }
 SPECIAL_FLOATS = {"Infinity": math.inf, "-Infinity": -math.inf}
 OPTIMIZATION_SOURCE_ROLES = (
@@ -274,7 +275,7 @@ class SimulationSweep:
             explicit_tasks.extend(expanded if expanded else [task])
         tasks: list[BenchmarkTask] = []
         scenarios: dict[str, DataScenario] = {}
-        source_manifests: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        source_manifests: dict[str, dict[str, Any]] = {}
         for sweep_values, task_values in product(overrides, explicit_tasks):
             config_data = dict(self.optimization_defaults)
             config_data.update(sweep_values)
@@ -287,17 +288,18 @@ class SimulationSweep:
             )
             scenarios.setdefault(data_key, config.data_scenario)
             config_dict = optimization_config_to_dict(config)
-            manifest_key = (
-                data_key,
-                config.strategy,
-                config.capacity_scenario,
-                config.dw_objective,
-                config.solver,
-                config.adaptive_short_bursts_objective,
+            # Market dependencies may occur in any pipeline step. Runs with
+            # the same source requirements share this expensive resolution,
+            # even when their methods, seeds or time limits differ.
+            reads_market = _reads_assignment_market(config)
+            manifest_key = stable_hash(
+                (data_key, config.capacity_scenario, reads_market)
             )
             source_manifest = source_manifests.get(manifest_key)
             if source_manifest is None:
-                source_manifest = _benchmark_source_manifest(config)
+                source_manifest = _benchmark_source_manifest(
+                    config, reads_market=reads_market
+                )
                 source_manifests[manifest_key] = source_manifest
             config_hash = optimization_config_hash(
                 config, source_manifest=source_manifest
@@ -346,8 +348,13 @@ def optimization_config_to_dict(
 
 
 def config_snapshot(config: OptimizationConfig | Mapping[str, Any]) -> dict[str, Any]:
-    optimization = optimization_config_to_dict(config)
-    cfg = optimization_config_from_dict(optimization)
+    # Typed configs are already normalized. Reusing them avoids rereading the
+    # source catalog and revalidating every step whenever an artifact is saved.
+    cfg = (
+        config
+        if isinstance(config, OptimizationConfig)
+        else optimization_config_from_dict(optimization_config_to_dict(config))
+    )
     snapshot = optimization_config_to_dict(cfg)
     snapshot["unit"] = cfg.unit
     return snapshot
@@ -371,6 +378,16 @@ def optimization_config_hash(
     )
     semantic = copy.deepcopy(optimization_config_to_dict(resolved))
     semantic.pop("data", None)
+    # Empty pipeline fields add no semantics to a legacy run. Keep the task
+    # identity it had before pipeline configuration was introduced.
+    for name, default in {
+        "method": None,
+        "objective": None,
+        "steps": [],
+        "constraints": {},
+    }.items():
+        if semantic.get(name) == default:
+            semantic.pop(name, None)
     if semantic.get("weight_edges") is False:
         semantic.pop("weight_edges")
     if semantic.get("school_count_tolerance") == 1.0:
@@ -379,15 +396,12 @@ def optimization_config_hash(
     # the weights only matter once school_distance is selected.
     if semantic.get("compactness_objective") == "cut_edges":
         semantic.pop("compactness_objective")
-    if "school_distance" not in (
-        semantic.get("compactness_objective"),
-        semantic.get("adaptive_short_bursts_objective"),
-    ):
+    if not _contains_value(semantic, "school_distance"):
         semantic.pop("school_distance_area_weight", None)
         semantic.pop("school_distance_student_weight", None)
     if semantic.get("enumerated_solutions", -1) <= 0:
         semantic.pop("enumerated_solutions", None)
-    if semantic.get("hints") != "feasible":
+    if not _contains_value(semantic, "feasible"):
         semantic.pop("feasible_hint_time_limit", None)
     if semantic.get("hint_zoning") is None:
         semantic.pop("hint_zoning", None)
@@ -408,7 +422,25 @@ def optimization_config_hash(
     )
 
 
-def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
+def _contains_value(value: Any, target: str) -> bool:
+    """Include nested step settings when deciding which defaults matter."""
+    if isinstance(value, Mapping):
+        return any(_contains_value(item, target) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_value(item, target) for item in value)
+    return value == target
+
+
+def _reads_assignment_market(config: OptimizationConfig) -> bool:
+    return config.make_strategy().reads_assignment_market or (
+        config.solver == "adaptive_short_bursts"
+        and config.adaptive_short_bursts_objective != "cut_edges"
+    )
+
+
+def _benchmark_source_manifest(
+    config: OptimizationConfig, *, reads_market: bool | None = None
+) -> dict[str, Any]:
     scenario = config.data_scenario
     roles = [
         role for role in OPTIMIZATION_SOURCE_ROLES if _scenario_has_role(scenario, role)
@@ -419,9 +451,8 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         roles.append("optimization.capacity")
     # Each strategy declares whether it reads the assignment-side market; so
     # do the adaptive short bursts' choice objectives, under any strategy.
-    matching_strategy = config.make_strategy().reads_assignment_market or (
-        config.solver == "adaptive_short_bursts"
-        and config.adaptive_short_bursts_objective != "cut_edges"
+    matching_strategy = (
+        _reads_assignment_market(config) if reads_market is None else reads_market
     )
     roles.extend(
         role
@@ -506,7 +537,17 @@ def json_ready(value: Any) -> Any:
 def capacity_slots(config: Mapping[str, Any], execution: ExecutionConfig) -> int:
     if execution.task_capacity is not None:
         return max(1, int(execution.task_capacity))
-    return max(1, int(config.get("workers", 1) or 1))
+    return max(1, optimization_worker_count(config))
+
+
+def optimization_worker_count(config: Mapping[str, Any]) -> int:
+    """Peak threads used by sequential optimization steps."""
+    default = int(config.get("workers", 1))
+    # Steps execute sequentially: only the largest effective demand matters.
+    return max(
+        int((step.get("options") or {}).get("workers", default))
+        for step in config.get("steps") or [{}]
+    )
 
 
 def format_output_path(

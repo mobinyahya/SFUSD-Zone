@@ -38,6 +38,7 @@ from optimization.data.initial_solutions import (
     feasibility_fingerprint,
     feasible_initial_solution,
 )
+from optimization.pipeline import step_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,9 +81,28 @@ def main() -> int:
     failures = 0
     for task in tasks:
         config = task.optimization_config()
-        data_key = json.dumps(config.data, sort_keys=True, default=str)
+        data_key = json.dumps(
+            (config.data, config.unit, config.weight_edges), sort_keys=True, default=str
+        )
         if data_key not in datasets:
             datasets[data_key] = config.make_dataset()
+        if config.strategy == "pipeline":
+            # Independent steps can be warmed up front. A dependent step's
+            # hard assignments are only known after its source has run; warming
+            # an unrestricted problem would address a different feasible set.
+            for index, step in enumerate(config.steps):
+                if step.inputs:
+                    continue
+                effective = step_config(config, step, index)
+                problem = datasets[data_key].problem_for(step.level, config=effective)
+                key = (
+                    feasibility_fingerprint(problem),
+                    effective.centroid_neighbor_radius,
+                )
+                if key not in warmed:
+                    warmed.add(key)
+                    failures += _warm(problem, effective, args)
+            continue
         level, multiplier = config.levels[-1], 1.0
         if config.strategy == "recursive":
             level = config.levels[0]

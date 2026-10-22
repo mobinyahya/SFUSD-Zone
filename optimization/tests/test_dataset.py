@@ -1,4 +1,5 @@
 from pathlib import Path
+from copy import copy
 
 import networkx as nx
 import pandas as pd
@@ -311,3 +312,131 @@ def test_problem_for_resolves_auto_max_distance(tmp_path, monkeypatch):
     assert problem.centroids == [0, 2]
     assert problem.max_distance == 3.0
     assert problem.candidate_zones(1) == {0}
+
+
+def _pipeline_dataset(tmp_path, monkeypatch):
+    graph = nx.path_graph(2)
+    for node, school_id in enumerate((100, 200)):
+        graph.nodes[node].update(school_ids=[school_id], area_id=1000 + node)
+    dataset = Dataset(_config(tmp_path))
+    dataset._graphs["Block_0"] = graph
+    attached = []
+    monkeypatch.setattr(
+        dataset._closer_neighbor_store,
+        "attach_to_graph",
+        lambda level, graph: attached.append(graph),
+    )
+    return dataset, graph, attached
+
+
+def test_pipeline_problems_share_graph_and_honor_effective_constraints(
+    tmp_path, monkeypatch
+):
+    dataset, graph, attached = _pipeline_dataset(tmp_path, monkeypatch)
+    first = dataset.problem_for("Block_0", centroid_school_ids=[100])
+    step_config = copy(dataset.config)
+    step_config.frl_dev = 0.1
+    step_config.racial_dev = 0.2
+    step_config.overage = -1.0
+    step_config.boundary_prop = 0.4
+    step_config.max_distance = 3.0
+    step_config.solver = "cp_bool"
+
+    second = dataset.problem_for(
+        "Block_0", centroid_school_ids=[100], config=step_config
+    )
+
+    assert first.G is second.G is graph
+    assert attached == [graph]
+    assert first.frl_dev == 0.3
+    assert second.frl_dev == 0.1
+    assert second.racial_dev == 0.2
+    assert second.overage == -1.0
+    assert second.shortage == first.shortage
+    assert second.boundary_prop == 0.4
+    assert second.max_distance == 3.0
+    assert second.optimization_config is step_config
+    assert second.optimization_config.data_scenario is dataset.data
+
+
+def test_pipeline_school_distance_attaches_areas_only_when_needed(
+    tmp_path, monkeypatch
+):
+    dataset, graph, _ = _pipeline_dataset(tmp_path, monkeypatch)
+    attachments = []
+    monkeypatch.setattr(
+        "optimization.data.node_areas.attach_land_areas",
+        lambda graph, unit, data: attachments.append((graph, unit, data)),
+    )
+    dataset.problem_for("Block_0", centroid_school_ids=[100])
+    assert attachments == []
+    step_config = copy(dataset.config)
+    step_config.compactness_objective = "school_distance"
+    for _ in range(2):
+        problem = dataset.problem_for(
+            "Block_0", centroid_school_ids=[100], config=step_config
+        )
+        assert problem.compactness_objective == "school_distance"
+    assert attachments == [(graph, "Block", dataset.data)]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"data_filters": {"include_k8": True}},
+        {"weight_edges": True},
+        {"levels": ["BlockGroup_0"]},
+    ],
+)
+def test_pipeline_problem_rejects_changed_dataset_inputs(
+    tmp_path, monkeypatch, overrides
+):
+    dataset, _, attached = _pipeline_dataset(tmp_path, monkeypatch)
+    changed = _config(tmp_path, **overrides)
+    with pytest.raises(ValueError, match="dataset"):
+        dataset.problem_for("Block_0", centroid_school_ids=[100], config=changed)
+    assert attached == []
+
+
+def test_pipeline_centroid_definition_loaded_once(tmp_path, monkeypatch):
+    dataset, _, _ = _pipeline_dataset(tmp_path, monkeypatch)
+    loaded = []
+
+    def load(centroids_type, data):
+        loaded.append((centroids_type, data))
+        return [100]
+
+    monkeypatch.setattr(loaders, "load_centroid_schools", load)
+    assert dataset.centroids_for("Block_0") == [0]
+    assert dataset.problem_for("Block_0").centroids == [0]
+    assert dataset.problem_for("Block_0").centroid_school_ids == [100]
+    assert loaded == [(dataset.config.centroids_type, dataset.data)]
+
+
+def test_pipeline_area_hint_cache_accounts_for_file_and_centroids(
+    tmp_path, monkeypatch
+):
+    dataset, graph, _ = _pipeline_dataset(tmp_path, monkeypatch)
+    loaded = []
+    projected = []
+
+    def load(path):
+        loaded.append(path)
+        return {1000: 0, 1001: 0}
+
+    def project(assignment, source_level, graph, level, centroids, **kwargs):
+        projected.append((level.name, tuple(centroids)))
+        return {0: 0, 1: 0}
+
+    monkeypatch.setattr("optimization.data.conversion.load_area_assignment", load)
+    monkeypatch.setattr(
+        "optimization.data.conversion.hint_from_area_assignment", project
+    )
+    for centroids in ([0], [1], [0]):
+        hint = dataset.area_hint_for("Block_0", graph, centroids, path="first.json")
+        hint[0] = 99
+    assert loaded == ["first.json"]
+    assert projected == [("Block_0", (0,)), ("Block_0", (1,))]
+    assert dataset.area_hint_for("Block_0", graph, [0], path="first.json")[0] == 0
+    dataset.area_hint_for("Block_0", graph, [0], path="second.json")
+    assert loaded == ["first.json", "second.json"]

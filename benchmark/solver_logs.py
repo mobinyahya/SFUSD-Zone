@@ -41,6 +41,7 @@ import json
 import math
 import os
 import re
+from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 import pandas as pd
@@ -359,18 +360,31 @@ def parse_run_dir(
             manifest = {}
 
     rows: list[dict[str, Any]] = []
-    for filename in sorted(os.listdir(log_dir)):
-        if not filename.endswith((".log", ".jsonl")):
+    for path in sorted(Path(log_dir).rglob("*")):
+        if not path.is_file() or path.suffix not in {".log", ".jsonl"}:
             continue
+        step_metadata = {}
+        if path.parent.name.startswith("step_") and path.parent.name[5:].isdigit():
+            index = int(path.parent.name[5:])
+            steps = manifest.get("config", {}).get("steps", [])
+            step_metadata["pipeline_step_index"] = index
+            if index < len(steps):
+                step_metadata.update(
+                    pipeline_step=steps[index]["name"],
+                    method=steps[index]["method"],
+                    objective_kind=steps[index]["objective"],
+                )
         for row in parse_log(
-            os.path.join(log_dir, filename),
+            str(path),
             cpsat_objective_scale=cpsat_objective_scale,
         ):
             rows.append(
                 {
                     "task_id": manifest.get("task_id"),
                     "config_hash": manifest.get("config_hash"),
+                    **step_metadata,
                     **row,
+                    "log_file": os.path.relpath(path, log_dir),
                 }
             )
     return rows
@@ -396,7 +410,12 @@ def collect(
     if not frame.empty:
         sort_keys = [
             key
-            for key in ("rel_path", "log_index", "elapsed_seconds")
+            for key in (
+                "rel_path",
+                "pipeline_step_index",
+                "log_index",
+                "elapsed_seconds",
+            )
             if key in frame.columns
         ]
         frame = frame.sort_values(sort_keys, kind="stable").reset_index(drop=True)

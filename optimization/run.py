@@ -46,10 +46,17 @@ def main(argv: list[str] | None = None) -> None:
     solver = config.make_solver(output_dir=args.output)
     strategy = config.make_strategy()
 
-    print(
-        f"Running strategy={config.strategy} solver={config.solver} "
-        f"levels={config.levels} centroids={config.centroids_type}"
-    )
+    if config.strategy == "pipeline":
+        description = " -> ".join(
+            f"{step.name}:{step.method}/{step.objective}@{step.level}"
+            for step in config.steps
+        )
+        print(f"Running pipeline {description} centroids={config.centroids_type}")
+    else:
+        print(
+            f"Running strategy={config.strategy} solver={config.solver} "
+            f"levels={config.levels} centroids={config.centroids_type}"
+        )
     solutions = strategy.run(dataset, solver)
 
     stage_prefix = (

@@ -1526,6 +1526,23 @@ class ReComSolver(_ReComSolverBase):
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
         return self._solve_chain(problem, selector="uniform", reject_infeasible=True)
 
+    def solve_with_scorer(
+        self,
+        problem: ZoneProblem,
+        scorer: ShortBurstBatchScorer,
+        *,
+        objective_kind: str,
+        maximize: bool = True,
+    ) -> ZoneSolution:
+        """Walk the same chain and retain its best feasible scored partition."""
+        relaxed = self.name == "relaxed_recom"
+        return self._solve_chain(
+            problem,
+            selector="relaxed" if relaxed else "uniform",
+            reject_infeasible=not relaxed,
+            objective=_BurstObjective(objective_kind, scorer, maximize=maximize),
+        )
+
     def sample_feasible(self, problem: ZoneProblem, visitor) -> ZoneSolution:
         """Visit the initial and every accepted feasible partition, including
         non-improving states. Return False from the visitor to stop sampling.
@@ -1542,6 +1559,7 @@ class ReComSolver(_ReComSolverBase):
         selector: str,
         reject_infeasible: bool,
         visitor=None,
+        objective: _BurstObjective | None = None,
     ) -> ZoneSolution:
         self._check_choice_objective(problem, self.name)
         start = time.monotonic()
@@ -1553,6 +1571,8 @@ class ReComSolver(_ReComSolverBase):
         state = setup.state
         kernel = _ReComKernel(setup.context, setup.rng, setup.deadline)
         initial = self._snapshot(state)
+        if objective is not None:
+            objective.prime(setup.context, (initial,))
         best = initial if initial.feasible else None
         log = self._open_progress_log(
             problem,
@@ -1606,7 +1626,11 @@ class ReComSolver(_ReComSolverBase):
                     violations=snapshot.violations,
                     iteration=attempted,
                 )
-            if self._better_feasible(snapshot, best):
+            if objective is not None:
+                objective.prime(setup.context, (snapshot,), base=best)
+            if self._better_feasible(
+                snapshot, best, None if objective is None else objective.cost
+            ):
                 best = snapshot
             if snapshot.feasible and visitor is not None:
                 if visitor(setup.context.assignment_dict(snapshot.assignment)) is False:
@@ -1638,7 +1662,7 @@ class ReComSolver(_ReComSolverBase):
             "tree_count_approximation": "exp_cycle_rank",
             **self._progress_log_metadata(log),
         }
-        return self._result(problem, setup.context, start, best, metadata)
+        return self._result(problem, setup.context, start, best, metadata, objective)
 
 
 @register("relaxed_recom")
@@ -1789,6 +1813,7 @@ class ShortBurstsSolver(_ReComSolverBase):
         scorer: ShortBurstBatchScorer,
         *,
         objective_kind: str,
+        maximize: bool = True,
     ) -> ZoneSolution:
         """Run feasible short bursts and select each restart using ``scorer``."""
 
@@ -1823,6 +1848,9 @@ class ShortBurstsSolver(_ReComSolverBase):
         kernel = _ReComKernel(context, setup.rng, setup.deadline)
         initial_assignment = context.assignment_dict(initial.assignment)
         initial_score = scorer((initial_assignment,), None)[0]
+        if not math.isfinite(initial_score):
+            raise ValueError("Short-burst scorer returned a non-finite score.")
+        sign = 1.0 if maximize else -1.0
         best_feasible = initial
         best_score = initial_score
         current_score = initial_score
@@ -1869,15 +1897,15 @@ class ShortBurstsSolver(_ReComSolverBase):
             for sample, score in zip(unique_samples, scores, strict=True):
                 if not math.isfinite(score):
                     raise ValueError("Short-burst scorer returned a non-finite score.")
-                if score > selected_score:
+                if sign * score > sign * selected_score:
                     selected = sample
                     selected_score = score
 
-            if selected_score > current_score:
+            if sign * selected_score > sign * current_score:
                 current = context.build_state(list(selected.assignment))
                 current_score = selected_score
                 selected_improvements += 1
-                if selected_score > best_score:
+                if sign * selected_score > sign * best_score:
                     best_feasible = selected
                     best_score = selected_score
 
@@ -1950,23 +1978,45 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
         return kind
 
     def _make_objective(self, problem: ZoneProblem, kind: str) -> _BurstObjective:
-        if kind == "cut_edges":
-            return _BurstObjective(kind)
+        from optimization.objectives import get_objective, heuristic_scorer
+
+        # The legacy adaptive entrypoint allows unanchored school identities.
+        # Pipeline dispatch supplies an explicit scorer using anchored costs.
         if kind == "school_distance":
             from optimization.solvers.burst_objectives import (
                 school_distance_burst_scorer,
             )
 
             return _BurstObjective(kind, school_distance_burst_scorer(problem))
-        from optimization.solvers.burst_objectives import mid_burst_scorer
-
         return _BurstObjective(
             kind,
-            mid_burst_scorer(problem, kind, self.options),
-            maximize=kind == "welfare",
+            heuristic_scorer(problem, kind, self.options),
+            maximize=get_objective(kind).maximize,
         )
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        return self._run(
+            problem, lambda: self._make_objective(problem, self._objective_kind())
+        )
+
+    def solve_with_scorer(
+        self,
+        problem: ZoneProblem,
+        scorer: ShortBurstBatchScorer,
+        *,
+        objective_kind: str,
+        maximize: bool = True,
+    ) -> ZoneSolution:
+        """Use the same adaptive walk with an externally owned batch scorer."""
+        return self._run(
+            problem,
+            lambda: _BurstObjective(objective_kind, scorer, maximize=maximize),
+            close_objective=False,
+        )
+
+    def _run(
+        self, problem: ZoneProblem, objective_factory, *, close_objective=True
+    ) -> ZoneSolution:
         self._check_choice_objective(problem, self.name)
         start = time.monotonic()
         try:
@@ -2006,11 +2056,9 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 "adaptive_short_bursts_pair_selector must be one of: "
                 f"{', '.join(_PAIR_SELECTORS)}."
             )
-        objective_kind = self._objective_kind()
-
         # Built after the hint, inside the budget: a choice objective's market
         # is part of what this solve costs under wall-clock accounting.
-        objective = self._make_objective(problem, objective_kind)
+        objective = objective_factory()
         try:
             return self._solve(
                 problem,
@@ -2031,7 +2079,8 @@ class AdaptiveShortBurstsSolver(_ReComSolverBase):
                 pair_selector=pair_selector,
             )
         finally:
-            objective.close()
+            if close_objective:
+                objective.close()
 
     def _solve(
         self,

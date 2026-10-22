@@ -1,0 +1,90 @@
+# Run from the project root:
+# uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
+# Four tasks: two pipelines crossed with two seeds. No graphs or markets load
+# until the concrete tasks execute.
+name: pipeline-comparison
+mode: run
+
+optimization_defaults:
+  centroids_type: 5-zone-AF
+  workers: 4
+  hints: voronoi
+  carry_over_compute: true
+  constraints:
+    frl_dev: 0.3
+    racial_dev: 0.3
+    overage: 0.8
+    shortage: 0.2
+    max_distance: 5
+  data:
+    scenario: legacy
+    overrides:
+      filters:
+        optimization:
+          years: ["2324"]
+          grades: [KG]
+          student_population: enrolled
+          program_population: All  # Required by matching and SAA welfare.
+          geography_vintage: "2020"
+          include_citywide_zoning: false
+          include_citywide_choice_opt: true
+          include_mission_bay: false
+        assignment:
+          year: "2324"
+          grade: KG
+          student_population: applicant
+          capacity_profile: default
+          geography_vintage: "2020"  # Must match optimization for welfare.
+          include_mission_bay: false
+
+sweep:
+  seed: [1, 2]
+
+tasks:
+  - steps:
+      - name: shape
+        level: BlockGroup_1
+        method: cp_int
+        objective: cut_edges
+        time_limit: 30
+      - name: refine
+        level: BlockGroup_0
+        method: cp_bool
+        objective: cut_edges
+        time_limit: 60
+        inputs:
+          - {source: shape, mode: assign, select: interior, radius: 1}
+          - {source: shape, mode: hint, select: boundary, radius: 1}
+
+  - steps:
+      - name: shape
+        level: BlockGroup_1
+        method: cp_int
+        objective: cut_edges
+        time_limit: 30
+      - name: access
+        level: BlockGroup_0
+        method: cp_bool
+        objective: matching_welfare
+        time_limit: 60
+        inputs:
+          - {source: shape, mode: hint}
+
+execution:
+  output_dir: ./benchmark_pipeline_output
+  capacity: 8
+  max_workers: 2
+  skip_existing: true
+
+metrics:
+  compute_stage_metrics: true
+  summary_csv: summary.csv
+  stages_csv: stages.csv
+
+# Optional downstream assignment simulation. This is independent of the
+# assignment-market selectors above, which define the optimization objective.
+# Paths here are relative to this YAML file.
+# matching:
+#   enabled: true
+#   config: ../assignment/configs/8-19-choice.yaml
+#   compute_stage_assignments: true

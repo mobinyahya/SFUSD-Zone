@@ -30,6 +30,7 @@ def test_only_supported_strategies_are_registered():
         "iterative_choice",
         "mid",
         "mid_decomp",
+        "pipeline",
         "priced_access",
         "recursive",
         "saa",
@@ -504,10 +505,12 @@ def test_config_validates_and_passes_saa_options(solver):
 
 
 def test_config_rejects_incompatible_saa_solver():
-    with pytest.raises(ValueError, match="solver='cp_bool' or solver='mip'"):
+    with pytest.raises(
+        ValueError, match="saa requires solver='cp_bool', 'cp_int', or 'mip'"
+    ):
         OptimizationConfig(
             levels=["BlockGroup_0"],
-            solver="cp_int",
+            solver="recom",
             strategy="saa",
             data={
                 "scenario": "legacy",

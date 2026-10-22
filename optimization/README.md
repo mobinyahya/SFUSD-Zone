@@ -1,4 +1,124 @@
-# Zoning Optimization Optimization
+# Zoning optimization
+
+## Composable runs
+
+The primary API is a sequence of named solves. Each step independently chooses
+a graph level, method, and objective. The run owns its data scenario and default
+constraints; steps override constraints and search options locally. A shared
+`Dataset` loads graphs, centroid definitions, geometry, and saved hint files
+once and reuses them throughout the sequence.
+
+```yaml
+method: cp_bool
+objective: cut_edges
+constraints: {frl_dev: 0.3, racial_dev: 0.3, max_distance: 5}
+steps:
+  - name: coarse
+    level: Block_1
+    time_limit: 30
+  - name: refine
+    level: Block_0
+    method: cp_int
+    time_limit: 60
+    inputs:
+      - {source: coarse, mode: hint}
+      - {source: coarse, mode: assign, select: interior, radius: 2}
+```
+
+`hint` supplies a warm start. `assign` fixes selected units to their projected
+zones. Inputs project through base-area IDs, so the sequence can move between
+non-nested levels or revisit a previously used level. All levels in a run use
+one Census unit and the same data selectors and graph weighting.
+
+An input's `select` is `all` (default), `interior`, or `boundary`. A boundary
+band contains both endpoints of every cut edge and all units within `radius`
+additional adjacency hops. `interior` fixes units outside that band, leaving
+the band free to change zones. Optional `nodes: [1, 4, 10]` intersects the
+selection with target graph node indices. Multiple inputs can draw from any
+earlier named step or `previous`; contradictory hard assignments fail clearly.
+Hard inputs must satisfy the target step's candidate constraints.
+
+Omitting `inputs` hints from the previous step. `inputs: []` starts a step
+independently. Hints never impose constraints, and hard assignments never
+silently soften. A failed solve stops the sequence and remains a saved stage.
+Each successful step emits one `ZoneSolution`; the last is the run's result.
+
+For a single solve, omit `steps` and specify `levels: [Block_0]`, `method`, and
+`objective`. Full examples are in [config.example.yaml](config.example.yaml)
+and [the benchmark pipeline sweep](../benchmark/sweep.pipeline.example.yaml).
+The CLI is unchanged:
+
+```bash
+uv run python -m optimization.run optimization/config.example.yaml -o ./out
+uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
+```
+
+### Objectives and methods
+
+| Objective | cp_bool | cp_int | mip | All four ReCom/burst methods |
+|---|---|---|---|---|
+| `cut_edges` | yes | yes | yes | yes |
+| `school_distance` | yes | yes | yes | yes |
+| `matching_welfare` | yes | yes | — | yes |
+| `saa_welfare` | yes | yes | yes | yes |
+| `choice_welfare` | yes | yes | yes | yes |
+| `capacity_match` | — | — | — | yes |
+
+Unsupported combinations fail during configuration, before loading graphs.
+Methods are `cp_bool`, `cp_int`, `mip`, `recom`, `relaxed_recom`, `short_bursts`,
+and `adaptive_short_bursts`. There is no implicit substitution of methods.
+SAA's recourse LPs require Gurobi even when the zoning search uses CP or ReCom.
+
+`matching_welfare` is finite-grid MID program welfare, using a joint CP model
+or matching oracle. `saa_welfare` is expected stable matching welfare across
+sampled lotteries. `choice_welfare` is MNL school-availability utility (`logsum`
+by default, or `choice_model_method: max`). These remain distinct objectives in
+saved results and benchmark tables. `capacity_match` minimizes weighted
+unassigned and designated student counts. Matching/SAA/capacity objectives need
+`data.overrides.filters.optimization.program_population: All` and matching
+optimization/assignment geography vintages.
+
+`school_distance` uses the same centroid-school squared-distance cost for every
+method, with configurable land-area/student weights. Pipeline methods enforce
+centroid anchors, distance candidate domains, explicit hard assignments, and
+centroid neighborhoods. CP's monotone closer-neighbor contiguity model and
+ReCom's connected-zone walks retain their respective formulations.
+
+Capacity bands stay configured across **all** objectives. To disable them for
+welfare, explicitly set `overage: -1, shortage: -1` at run or step scope.
+Step `constraints` accepts FRL/racial deviations, overage/shortage,
+school-count tolerance, maximum distance, boundary proportion, and centroid
+neighborhood radius. Step `options` accepts validated search and objective
+settings such as `workers`, `hints`, `short_bursts_length`, `mid_lottery_scale`,
+`saa_num_seeds`, and `max_iterations`; unknown keys are errors.
+
+`time_limit` and `gap_limit` override the run's indexed `solve_time_limits`
+and `gap_limits` defaults. Limits apply to a solve or a welfare objective's
+internal cut loop; pipeline metadata separately records total elapsed time.
+`carry_over_compute: true` transfers time left after the entire previous step.
+Each step has its own log directory, preventing repeated levels from overwriting
+solver logs. Welfare cut loops retain iteration diagnostics and return the best
+evaluated incumbent, with certification only when established.
+
+Each stage records its name, method, objective, effective constraints, and hard
+assignments. Benchmarks reconstruct those constraints for metrics-only runs,
+reserve the largest worker count requested by any step, and fingerprint nested
+settings plus every welfare market's sources. Root and per-stage area assignment
+files continue to feed assignment simulations, including repeated graph levels.
+
+### Extending the pipeline
+
+`optimization/pipeline.py` contains the serializable `SolveStep` and
+`SolutionInput` values. `strategies/pipeline.py` handles dependency projection,
+selection, and execution. `objectives.py` owns the capability table and dispatch;
+`welfare_objectives.py` adapts existing cut loops to one constrained problem.
+Solvers consume `ZoneProblem` and return `ZoneSolution` throughout. New objective
+evaluators use a shared batch-score interface for all heuristic methods.
+
+## Existing strategy API
+
+Existing `solver`/`strategy` configurations remain supported. The sections below
+describe those standalone entrypoints; new composable runs use the API above.
 
 A standalone, three-layer rewrite of the zone-generation optimizer. Every layer
 is swappable in isolation, levels are first-class, and graph generation, level

@@ -93,7 +93,7 @@ def test_saa_recourse_enforces_sampled_school_priorities():
     assert second_student_wins.welfare == pytest.approx(3.0)
 
 
-@pytest.mark.parametrize("backend", ["cp_bool", "mip"])
+@pytest.mark.parametrize("backend", ["cp_bool", "cp_int", "mip"])
 def test_saa_strategy_optimizes_expected_welfare(monkeypatch, backend):
     problem = make_grid_problem(2, 2, program_population="All")
     dataset = FakeDataset(problem)
@@ -211,6 +211,19 @@ def test_saa_preserves_feasible_hint_when_master_has_no_solution(monkeypatch):
 def test_config_rejects_invalid_saa_num_seeds(value):
     with pytest.raises(ValueError, match="saa_num_seeds"):
         OptimizationConfig(levels=["BlockGroup_0"], saa_num_seeds=value)
+
+
+def test_saa_config_accepts_integer_assignment_backend():
+    config = OptimizationConfig(
+        strategy="saa",
+        solver="cp_int",
+        levels=["BlockGroup_0"],
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+    assert config.make_solver().name == "cp_int"
 
 
 @pytest.mark.parametrize("value", ["random", 1, None])

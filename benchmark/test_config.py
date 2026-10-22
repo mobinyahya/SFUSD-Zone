@@ -377,3 +377,49 @@ def test_adaptive_choice_objectives_hash_the_assignment_market(tmp_path):
     second = sweep.generate_tasks()[0]
 
     assert first.config_hash != second.config_hash
+
+
+@pytest.mark.parametrize(
+    "objective, method",
+    [
+        ("matching_welfare", "cp_bool"),
+        ("saa_welfare", "mip"),
+        ("choice_welfare", "mip"),
+    ],
+)
+def test_pipeline_hashes_assignment_sources_used_only_by_later_steps(
+    tmp_path, objective, method
+):
+    sweep_path, _, _, _ = _write_custom_sweep(tmp_path)
+    raw = yaml.safe_load(sweep_path.read_text(encoding="utf-8"))
+    raw["optimization_defaults"]["data"]["overrides"].setdefault("filters", {})[
+        "optimization"
+    ] = {"program_population": "All"}
+    raw["optimization_defaults"]["steps"] = [
+        {
+            "name": "shape",
+            "level": "BlockGroup_0",
+            "method": "cp_int",
+            "objective": "cut_edges",
+        },
+        {
+            "name": "access",
+            "level": "BlockGroup_0",
+            "method": method,
+            "objective": objective,
+        },
+    ]
+    steps = raw["optimization_defaults"]["steps"]
+    raw["sweep"] = {"steps": [steps[:1], steps]}
+    sweep_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    sweep = SimulationSweep.from_yaml(str(sweep_path))
+
+    first = sweep.generate_tasks()
+    (sweep_path.parent / "inputs/assignment-programs.csv").write_text(
+        "assignment-programs-v2", encoding="utf-8"
+    )
+    second = sweep.generate_tasks()
+
+    assert first[0].config_hash == second[0].config_hash
+    assert first[1].config_hash != second[1].config_hash
+    assert len(first[1].config["steps"]) == 2
