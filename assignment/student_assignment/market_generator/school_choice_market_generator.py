@@ -1544,50 +1544,52 @@ class MarketGenerator(SchoolChoiceMarket):
 
         return match, in_zone_rank, overage_seats
 
-    def _get_final_program(self, df: pd.DataFrame):
-        """Modify dataframe in place to add final program column.
+    def _assigned_school_program(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Each student's recorded assignment as ``final_school``/``final_program``.
 
-        Args:
-            df (pd.DataFrame): student data
+        The program is the latest round's ``r<k>_programcode``. ``r1-only``
+        reads the Main Round seat instead: ``r1_idschool`` where the student
+        holds one, and only ``r1_programcode``. The student table is not
+        modified.
         """
-        if self.config["year"] == 18:
+        r1_only = self.config.get("r1-only", False)
+        programcodes = {
+            round_number: df[f"r{round_number}_programcode"]
+            for round_number in range(1, 2 if r1_only else 6)
+            if f"r{round_number}_programcode" in df.columns
+        }
+        if (
+            not r1_only
+            and 2 not in programcodes
+            and {"r2_ranked_idschool", "r2_programs"} <= set(df.columns)
+        ):
+            # 2018-19 records no r2_programcode: read the round 2 program the
+            # student ranked at the school they enrolled in.
+            def round_2_program(row):
+                schools = row["r2_ranked_idschool"]
+                if np.any(pd.isna(schools)) or row["enrolled_idschool"] not in schools:
+                    return np.nan
+                return row["r2_programs"][schools.index(row["enrolled_idschool"])]
 
-            def fn(x):
-                return (
-                    x["r2_programs"][
-                        x["r2_ranked_idschool"].index(x["enrolled_idschool"])
-                    ]
-                    if not np.any(pd.isna(x["r2_ranked_idschool"]))
-                    and x["enrolled_idschool"] in x["r2_ranked_idschool"]
-                    else np.nan
-                )
+            programcodes[2] = df.apply(round_2_program, axis=1)
 
-            df["r2_programcode"] = df.apply(fn, axis=1)
-
-        df["final_program"] = np.nan
-        f_s_copy = df["final_school"].copy()
-        last_iteration = 6
-
-        if self.config["r1-only"]:
-            last_iteration = 2
-            # Update 'final_school' based on the condition
-            # Corrected Code with Nullable Integer Type
-
-            df["final_school"] = np.where(
-                df["r1_idschool"].notna(),  # Check if 'r1_idschool' is not NaN
-                df["r1_idschool"]
-                .fillna(0)
-                .astype(
-                    int
-                ),  # Fill NaN with 0 temporarily, then convert valid entries to int
-                f_s_copy,  # Otherwise, retain the original 'final_school' value
+        final_program = pd.Series(np.nan, index=df.index, dtype=object)
+        for round_number in sorted(programcodes, reverse=True):
+            final_program = final_program.fillna(programcodes[round_number])
+        final_school = df["final_school"]
+        if r1_only:
+            final_school = pd.Series(
+                np.where(
+                    df["r1_idschool"].notna(),
+                    df["r1_idschool"].fillna(0).astype(int),
+                    df["final_school"],
+                ),
+                index=df.index,
             )
-
-        # TODO final_school is not correct for non R1 case.
-        for rnd in reversed(range(1, last_iteration)):
-            rnd_name = f"r{rnd}_programcode"
-            if rnd_name in df.columns:
-                df["final_program"] = df["final_program"].fillna(df[rnd_name])
+        return pd.DataFrame(
+            {"final_school": final_school, "final_program": final_program},
+            index=df.index,
+        )
 
     def _enrolled_school_program(self, df: pd.DataFrame) -> pd.DataFrame:
         """Where each enrolled student enrolled, as ``final_school``/``final_program``.
@@ -1672,10 +1674,7 @@ class MarketGenerator(SchoolChoiceMarket):
         if source == "enrollment":
             assignment = self._enrolled_school_program(self.students.student_data)
         elif source == "assignment":
-            self._get_final_program(self.students.student_data)
-            assignment = self.students.student_data[
-                ["final_school", "final_program"]
-            ].copy()
+            assignment = self._assigned_school_program(self.students.student_data)
         else:
             raise ValueError(
                 "real-match-source must be 'assignment' or 'enrollment', not "

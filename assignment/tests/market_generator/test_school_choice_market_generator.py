@@ -144,3 +144,40 @@ def test_enrollment_real_match_requires_the_enrolled_population():
 
     with pytest.raises(ValueError, match="requires the enrolled population"):
         market._enrolled_school_program(frame)
+
+
+def _recorded_assignment_frame():
+    return pd.DataFrame(
+        {
+            "final_school": [420, 413, 500],
+            "enrolled_idschool": [420, 413, 500],
+            "r1_idschool": [420, np.nan, 600],
+            "r1_programcode": ["GE", np.nan, "SB"],
+            # The 2018-19 shape: round 2 lists but no r2_programcode.
+            "r2_ranked_idschool": [[], [413, 500], [500]],
+            "r2_programs": [[], ["CE", "GE"], ["SN"]],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("config", "schools", "programs"),
+    [
+        # r1-only is optional: omitted, the latest recorded round wins.
+        ({}, [420, 413, 500], ["GE", "CE", "SN"]),
+        ({"r1-only": True}, [420, 413, 600], ["GE", None, "SB"]),
+    ],
+)
+def test_recorded_assignment_does_not_mutate_students(config, schools, programs):
+    market = MarketGenerator.__new__(MarketGenerator)
+    market.config = config
+    frame = _recorded_assignment_frame()
+    original = frame.copy()
+
+    assignment = market._assigned_school_program(frame)
+
+    assert assignment["final_school"].tolist() == schools
+    assert [
+        None if pd.isna(program) else program for program in assignment["final_program"]
+    ] == programs
+    pd.testing.assert_frame_equal(frame, original)
