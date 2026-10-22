@@ -1,0 +1,22 @@
+
+utility-model:
+  enable: true
+  list-length: "7"
+
+save-assignment: true
+export-aggregate-metrics: false
+export-local-metrics: false
+export_heatmaps: false
+reuse_assignments: true
+random-seed: 2023
+data:
+  scenario: legacy
+  overrides: {}
+paths:
+  assignment-folder: ./assignment_output/assignments/
+iterations:
+  start: 0
+  end: 15
+
+subconfigs:
+  - zones+reserves

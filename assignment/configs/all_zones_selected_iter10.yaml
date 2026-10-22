@@ -1,0 +1,22 @@
+data:
+  scenario: assignment-generated-zones-2324
+  overrides:
+    sources:
+      assignment.estimate:
+        path: <SFUSD_CHOICE_PATH>/local_outputs/models/selected_2223_k1_prog_gesplit/estimates_2324.csv
+        classification: restricted
+iterations:
+  end: 11
+  start: 10
+paths:
+  assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_selected_iter10/
+r1-only: true
+random-seed: 2023
+save-assignment: true
+subconfigs:
+- status_quo
+utility-model:
+  designate-lp-for-all: false
+  enable: true
+  list-length: 0.8*round(real_length)
+  save-path: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_selected_iter10/utility_matrix_iter10.csv

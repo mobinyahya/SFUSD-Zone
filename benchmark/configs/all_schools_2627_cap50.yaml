@@ -1,0 +1,124 @@
+# All-schools (59-zone) 2026-27 study with capacity balance; see
+# all_schools_2627.yaml for the unbalanced first round.
+#
+# Without a capacity row the first round was degenerate: 46-54 of 59 zones
+# were just the school's own block (<5 students) and a handful of giant zones
+# held everyone, which is what minimised cut edges. Here every zone must hold
+# seats within 50% of its students (overage = shortage = 0.5), plus the school
+# count, contiguity, and FRL within 0.30.
+#
+# Block_1 is infeasible for this band on the local graph even at looseness 2.0:
+# its population-balanced aggregates carry ~46 students, too lumpy for zones
+# that hold 9-228 students. The two recursive tasks below probe the cluster's
+# Block_1 graph; if Block_1 is infeasible the strategy falls back to an
+# unrestricted Block_0 solve.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50.yaml
+#
+name: all_schools_2627_cap50_v1
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: sfusd-2627
+    overrides:
+      filters:
+        optimization:
+          student_population: enrolled
+          include_mission_bay: true
+          geography_vintage: "2020"
+  centroids_type: '59-zone'
+  solver: cp_bool
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+
+  frl_dev: 0.3
+  racial_dev: -1
+  overage: 0.5
+  shortage: 0.5
+  boundary_prop: -1
+
+  hints: feasible
+  feasible_hint_time_limit: 900
+  workers: 8
+
+tasks:
+  # --- cp_bool, single level at Block_0 ---
+  - strategy: single
+    levels: ['Block_0']
+    solve_time_limits: [3600]
+    seed: 1
+  - strategy: single
+    levels: ['Block_0']
+    solve_time_limits: [3600]
+    seed: 2
+  - strategy: single
+    levels: ['Block_0']
+    solve_time_limits: [3600]
+    hints: voronoi
+    seed: 1
+
+  # --- cp_bool, recursive Block_1 -> Block_0 (probes; see header) ---
+  - strategy: recursive
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [900, 2700]
+    looseness: 1.1
+    boundary_radius: 1
+    hints: voronoi
+    seed: 1
+  - strategy: recursive
+    levels: ['Block_1', 'Block_0']
+    solve_time_limits: [900, 2700]
+    looseness: 1.5
+    boundary_radius: 3
+    hints: voronoi
+    seed: 1
+
+  # --- adaptive short bursts at Block_0, 1 core ---
+  - &asb
+    strategy: single
+    solver: adaptive_short_bursts
+    levels: ['Block_0']
+    solve_time_limits: [3600]
+    hints: voronoi
+    workers: 1
+    recom_iterations: -1
+    adaptive_short_bursts_objective: cut_edges
+    adaptive_short_bursts_pair_selector: lagrangian_softmax
+    adaptive_short_bursts_temperature: 1.15
+    short_bursts_length: 25
+    seed: 1
+  - <<: *asb
+    seed: 2
+  - <<: *asb
+    adaptive_short_bursts_temperature: 1.0
+    seed: 1
+  - <<: *asb
+    adaptive_short_bursts_temperature: 1.0
+    seed: 2
+  - <<: *asb
+    short_bursts_length: 10
+    seed: 1
+  - <<: *asb
+    short_bursts_length: 50
+    seed: 1
+  - <<: *asb
+    adaptive_short_bursts_lr: 0.3
+    seed: 1
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final

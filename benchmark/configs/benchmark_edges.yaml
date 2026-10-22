@@ -1,0 +1,90 @@
+# Optimization-native benchmark sweep.
+
+name: full_benchmark_v1
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+
+  racial_dev: -1
+  overage: 0.2
+  shortage: 0.2
+  frl_dev: 0.15
+
+  hints: voronoi
+  weight_edges: true
+  gap_limits: [0, 0]
+  workers: 8
+  carry_over_compute: true
+  recom_iterations: -1
+  boundary_radius: 1
+  short_bursts_method: relaxed_recom
+  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
+  adaptive_short_bursts_temperature: 1.1
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
+                    '8-zone-22', '8-zone-24', '8-zone-25', '8-zone-31',
+                    '10-zone-3', '10-zone-9', '10-zone-1', '10-zone-7',
+                    '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
+                    '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8']
+  levels: [['Block_3', 'Block_2'], ['Block_2', 'Block_1'], ['Block_2', 'Block_0']]
+  seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+tasks:
+  - solver: 'cp_bool'
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'mip'
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'recom'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'relaxed_recom'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'short_bursts'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'adaptive_short_bursts'
+    workers: 1
+    solve_time_limits: [[600], [1800]]
+
+  - solver: 'cp_bool'
+    strategy: 'recursive'
+    solve_time_limits: [[450, 150], [1350, 450]]
+
+  - solver: 'mip'
+    strategy: 'recursive'
+    solve_time_limits: [[450, 150], [1350, 450]]
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_v1_8'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final  # final | all
+
+
+matching:
+  enabled: false
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
+  compute_stage_assignments: false

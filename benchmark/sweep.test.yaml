@@ -1,0 +1,64 @@
+# Optimization-native benchmark sweep.
+# Run: uv run python -m benchmark.run benchmark/sweep.test.yaml
+
+name: recursive-blockgroup-sweep
+mode: run  # run | metrics
+
+optimization_defaults:
+  centroids_type: '6-zone-3'
+  levels: ['BlockGroup_1']
+  solver: 'cp_bool'
+  strategy: 'single'
+  frl_dev: 0.3
+  racial_dev: 0.3
+  overage: 0.8
+  shortage: 0.2
+  max_distance: 5
+  solve_time_limits: [45]
+  gap_limits: [0]
+  hints: voronoi
+  seed: 42
+  workers: 8
+  data:
+    scenario: legacy
+    overrides:
+      sources:
+        optimization.schools: optimization.schools.current
+      filters:
+        optimization:
+          years: ["1415", "1516", "1617", "1718", "1819", "2122", "2223"]
+          grades: [KG]
+          student_population: enrolled
+          rounds: all
+          special_programs: include
+          program_population: GE
+          capacity_scenario: A
+          include_k8: false
+          include_citywide_zoning: false
+          include_citywide_choice_opt: false
+          include_mission_bay: true
+          geography_vintage: "2020"
+
+sweep:
+  seed: [42, 12]
+
+execution:
+  output_dir: './optimization_output'
+  capacity: 32              # total solver-thread slots available on the machine
+  max_workers: 5            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+# Optional student assignment.
+# Run assignment independently with:
+#   uv run python -m benchmark.run benchmark/sweep.test.yaml --mode matching
+matching:
+  enabled: true
+  config: ../assignment/configs/8-19-choice.yaml

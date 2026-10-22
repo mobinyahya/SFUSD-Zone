@@ -1,0 +1,39 @@
+# Optimization-native benchmark sweep.
+
+name: one-zone
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
+  strategy: single
+  solve_time_limits: [60]
+  hints: voronoi
+  levels: [Block_0]
+  racial_dev: -1
+  workers: 40
+  centroids_type:  4-zone-rec-3
+  frl_dev: 0.15
+  overage: 0.3
+  shortage: 0.3
+  max_distance: 8
+
+
+tasks:
+  - solver: 'cp_bool'
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/test_6/'
+  capacity: 48             # total solver-thread slots available on the machine
+  max_workers: 8            # max concurrent Python worker processes
+  max_tasks_per_worker: 25  # recycle processes to limit memory growth
+  skip_existing: false
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'

@@ -1,0 +1,1204 @@
+"""Strategy tests using a FakeDataset (no SFUSD data required)."""
+
+import random
+import time
+from types import SimpleNamespace
+
+import pytest
+
+from choice.objective import ChoiceCut, ChoiceEvaluation
+from optimization.config import OptimizationConfig
+from optimization.data.initial_solutions import InitialSolution
+from optimization.problem import DuplicateCentroidError
+from optimization.solution import ZoneSolution
+from optimization.solvers import base as solver_base_module
+from optimization.solvers import get_solver
+from optimization.solvers.base import Solver
+from optimization.strategies import get_strategy
+from optimization.strategies import budget
+from optimization.strategies import iterative_choice as iterative_choice_module
+from optimization.strategies import mid as mid_module
+from optimization.strategies import mid_decomp as mid_decomp_module
+from optimization.strategies.base import available_strategies
+from optimization.tests.synthetic import FakeDataset, FakeSolver, make_grid_problem
+
+
+def test_only_supported_strategies_are_registered():
+    assert available_strategies() == [
+        "dantzig_wolfe",
+        "direct_samples",
+        "iterative_choice",
+        "mid",
+        "mid_decomp",
+        "priced_access",
+        "recursive",
+        "saa",
+        "short_bursts_choice",
+        "single",
+        "stable_cutoff",
+    ]
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        "overlapping",
+        "cutoffs",
+        "welfare",
+        "approximate_welfare",
+        "zoned_column_generation",
+        "zoned_benders",
+    ],
+)
+def test_config_rejects_removed_strategies(strategy):
+    with pytest.raises(ValueError, match="strategy must be one of"):
+        OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy)
+
+
+def test_single_strategy():
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = get_solver("cp_int", solve_time_limit=10, workers=1)
+    strat = get_strategy("single", levels=["BlockGroup_0"], boundary_prop=0.5)
+
+    solutions = strat.run(dataset, solver)
+
+    assert len(solutions) == 1
+    assert solutions[-1].status in ("OPTIMAL", "FEASIBLE")
+    assert solutions[-1].is_contiguous()
+    assert solutions[-1].problem.boundary_prop == 0.5
+
+
+def test_single_strategy_selects_seeded_enumerated_solution_as_final():
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = get_solver("cp_int", solve_time_limit=10, workers=8, seed=5)
+    strat = get_strategy(
+        "single",
+        levels=["BlockGroup_0"],
+        enumerated_solutions=5,
+        seed=5,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    expected_index = random.Random(5).choice(range(5))
+    assert len(solutions) == 5
+    assert solutions[-1].metadata["enumerated_solution_index"] == expected_index
+    assert solutions[-1].metadata["enumerated_solution_selected"] is True
+    assert all(
+        solution.metadata["enumerated_solution_selected"] is False
+        for solution in solutions[:-1]
+    )
+    assert sum(solution.wall_time for solution in solutions) == pytest.approx(
+        solutions[-1].metadata["enumeration_wall_time_seconds"]
+    )
+
+
+def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    solver.name = "cp_int"
+    solver.options["hints"] = "voronoi"
+    hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
+
+    monkeypatch.setattr(
+        solver_base_module,
+        "initial_solution",
+        lambda problem_arg, hints, **kwargs: InitialSolution(
+            assignment=hint,
+            metadata={"hints": hints},
+        ),
+    )
+    strat = get_strategy(
+        "single",
+        levels=["BlockGroup_0"],
+        hints="voronoi",
+    )
+
+    strat.run(dataset, solver)
+
+    assert solver.problems[0].hint == hint
+
+
+class _LimitRecordingSolver(Solver):
+    """A real ``Solver`` that records the limits each solve ran under."""
+
+    name = "recording"
+
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.seen = []
+
+    def solve(self, problem):
+        self.seen.append(
+            (
+                self.options.get("solve_time_limit"),
+                self.options.get("relative_gap_limit"),
+                problem.boundary_prop,
+            )
+        )
+        return ZoneSolution(
+            problem=problem, assignment=_split_assignment(problem), status="OPTIMAL"
+        )
+
+
+def test_with_options_copies_and_leaves_the_solver_alone():
+    solver = get_solver("cp_bool", solve_time_limit=5, workers=1)
+    copy = solver.with_options(solve_time_limit=9)
+    assert copy is not solver and type(copy) is type(solver)
+    assert copy.options["solve_time_limit"] == 9
+    assert solver.options["solve_time_limit"] == 5
+    copy._solve_count += 1
+    assert solver._solve_count == 1  # log numbering is shared
+
+
+@pytest.mark.parametrize("strategy", ["single", "recursive"])
+def test_strategies_apply_limits_and_boundary_prop_without_mutating_the_solver(
+    strategy,
+):
+    dataset = FakeDataset(make_grid_problem(2, 2))
+    solver = _LimitRecordingSolver(solve_time_limit=1.0, relative_gap_limit=0.5)
+    get_strategy(
+        strategy,
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[3.0, 7.0],
+        gap_limits=[0.2, 0.01],
+        boundary_prop=0.75,
+    ).run(dataset, solver)
+
+    # single solves once, under the final level's limits; recursive once per
+    # level. Both apply boundary_prop at every solve.
+    expected = [(7.0, 0.01, 0.75)]
+    if strategy == "recursive":
+        expected = [(3.0, 0.2, 0.75), *expected]
+    assert solver.seen == expected
+    assert solver.options == {"solve_time_limit": 1.0, "relative_gap_limit": 0.5}
+
+
+def test_welfare_strategies_switch_off_the_capacity_band():
+    problem = make_grid_problem(2, 2)
+    for name in available_strategies():
+        strategy = get_strategy(name, boundary_prop=0.5)
+        configured = strategy.configure_problem(
+            FakeDataset(problem).problem_for("BlockGroup_0")
+        )
+        assert configured.boundary_prop == 0.5
+        welfare = name in {
+            "mid",
+            "mid_decomp",
+            "saa",
+            "direct_samples",
+            "short_bursts_choice",
+            "stable_cutoff",
+        }
+        assert strategy.capacity_balance is not welfare
+        assert (configured.overage, configured.shortage) == (
+            (-1.0, -1.0) if welfare else (problem.overage, problem.shortage)
+        )
+
+
+def test_recursive_carry_over_compute_disabled_by_default():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[1.0, 2.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [5.0, 10.0]
+    assert "effective_time_limit_seconds" not in solutions[0].metadata
+
+
+def test_recursive_carry_over_compute_adds_unused_time_for_feasible_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["FEASIBLE", "OPTIMAL"],
+        wall_times=[1.25, 2.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [5.0, 13.75]
+    assert solutions[0].metadata["configured_time_limit_seconds"] == 5.0
+    assert solutions[0].metadata["effective_time_limit_seconds"] == 5.0
+    assert solutions[0].metadata[
+        "unused_time_carried_forward_seconds"
+    ] == pytest.approx(3.75)
+    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
+        3.75
+    )
+    assert solutions[1].metadata["effective_time_limit_seconds"] == pytest.approx(13.75)
+
+
+def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["INFEASIBLE", "OPTIMAL"],
+        wall_times=[0.5, 1.0],
+        assignments=[{}, None],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[4.0, 7.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.solve_time_limits == [4.0, 10.5]
+    assert solutions[0].metadata[
+        "unused_time_carried_forward_seconds"
+    ] == pytest.approx(3.5)
+    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
+        3.5
+    )
+    assert solver.problems[1].hint is None
+
+
+def test_recursive_skips_nonfinal_duplicate_centroid_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = DuplicateCentroidSequenceSolver([True, False])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[4.0, 7.0],
+        carry_over_compute=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert [solution.status for solution in solutions] == ["SKIPPED", "OPTIMAL"]
+    assert solutions[0].assignment == {}
+    assert solutions[0].metadata["skip_reason"] == "duplicate_centroid"
+    assert solutions[0].metadata["duplicate_centroid_node"] == 23
+    assert solutions[0].metadata["duplicate_centroid_zones"] == [0, 3]
+    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == 4.0
+    assert solver.solve_time_limits == [4.0, 11.0]
+    assert solver.problems[1].hint is None
+
+
+def test_recursive_raises_final_duplicate_centroid_stage():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = DuplicateCentroidSequenceSolver([True])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[4.0],
+    )
+
+    with pytest.raises(
+        DuplicateCentroidError,
+        match="Node 23 is used as multiple centroids",
+    ):
+        strat.run(dataset, solver)
+
+
+def test_recursive_looseness_scales_constraints_by_configured_stage():
+    problem = make_grid_problem(
+        2,
+        2,
+        frl_dev=0.2,
+        racial_dev=0.3,
+        overage=0.4,
+        shortage=0.1,
+    )
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0, 0.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_2", "BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0, 1.0],
+        looseness=1.2,
+    )
+
+    strat.run(dataset, solver)
+
+    multipliers = [1.2**2, 1.2, 1.0]
+    assert [p.level.name for p in solver.problems] == [
+        "BlockGroup_2",
+        "BlockGroup_1",
+        "BlockGroup_0",
+    ]
+    assert [p.frl_dev for p in solver.problems] == pytest.approx(
+        [problem.frl_dev * multiplier for multiplier in multipliers]
+    )
+    assert [p.racial_dev for p in solver.problems] == pytest.approx(
+        [problem.racial_dev * multiplier for multiplier in multipliers]
+    )
+    assert [p.overage for p in solver.problems] == pytest.approx(
+        [problem.overage * multiplier for multiplier in multipliers]
+    )
+    assert [p.shortage for p in solver.problems] == pytest.approx(
+        [problem.shortage * multiplier for multiplier in multipliers]
+    )
+
+
+def test_recursive_looseness_scales_by_configured_stages_when_levels_skip():
+    problem = make_grid_problem(2, 2, frl_dev=0.2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_2", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0],
+        looseness=1.2,
+    )
+
+    strat.run(dataset, solver)
+
+    assert [p.frl_dev for p in solver.problems] == pytest.approx([0.24, 0.2])
+
+
+def test_recursive_rejects_tightening_looseness():
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[1.0],
+        looseness=0.9,
+    )
+
+    with pytest.raises(ValueError, match="looseness"):
+        strat.run(dataset, solver)
+
+
+def test_recursive_anchors_centroids_in_projected_hint():
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    bad_assignment = {node: 1 for node in problem.nodes}
+    solver = TimedSequenceSolver(
+        statuses=["OPTIMAL", "OPTIMAL"],
+        wall_times=[0.0, 0.0],
+        assignments=[bad_assignment, None],
+    )
+    strat = get_strategy(
+        "recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[1.0, 1.0],
+    )
+
+    strat.run(dataset, solver)
+
+    refined = solver.problems[1]
+    assert refined.hint[problem.centroids[0]] == 0
+    assert refined.hint[problem.centroids[1]] == 1
+    assert refined.candidate_zones(problem.centroids[0]) == {0}
+    assert refined.candidate_zones(problem.centroids[1]) == {1}
+
+
+def test_iterative_choice_strategy_terminates(monkeypatch):
+    problem = make_grid_problem(3, 3)
+    dataset = FakeDataset(problem)
+    solver = get_solver("cp_int", solve_time_limit=10, workers=1)
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        boundary_prop=0.5,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert 1 <= len(solutions) <= 3
+    last = solutions[-1]
+    assert "choice_utility" in last.metadata
+    assert solutions[0].metadata["choice_objective_cuts"] == 0
+    assert solutions[0].metadata["choice_cuts_added"] > 0
+    assert last.is_contiguous()
+    assert all(solution.problem.boundary_prop == 0.5 for solution in solutions)
+
+
+def test_config_passes_choice_utility_hints_to_iterative_strategy():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="iterative_choice",
+        choice_utility_hints=True,
+        boundary_prop=0.25,
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["choice_utility_hints"] is True
+    assert strategy.options["boundary_prop"] == 0.25
+
+
+def test_config_validates_and_passes_mid_options():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="cp_bool",
+        strategy="mid",
+        mid_lottery_scale=40,
+        mid_utility_handling="exponentiate",
+        mid_transport_bounds=False,
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["mid_lottery_scale"] == 40
+    assert strategy.options["mid_transport_bounds"] is False
+    # Read from the config by the market builder, never from options.
+    assert "mid_utility_handling" not in strategy.options
+    assert "mid_transport_bounds" not in config.make_solver().options
+
+
+@pytest.mark.parametrize("solver", ["cp_bool", "mip"])
+def test_config_validates_and_passes_saa_options(solver):
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver=solver,
+        strategy="saa",
+        max_iterations=7,
+        mid_utility_handling="exponentiate",
+        saa_num_seeds=9,
+        saa_tie_breaking_method="stb",
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+
+    strategy = config.make_strategy()
+
+    assert strategy.options["max_iterations"] == 7
+    assert config.mid_utility_handling == "exponentiate"
+    assert strategy.options["saa_num_seeds"] == 9
+    assert strategy.options["saa_tie_breaking_method"] == "STB"
+
+
+def test_config_rejects_incompatible_saa_solver():
+    with pytest.raises(ValueError, match="solver='cp_bool' or solver='mip'"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            solver="cp_int",
+            strategy="saa",
+            data={
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"program_population": "All"}}
+                },
+            },
+        )
+
+
+def test_config_passes_feasible_hint_options():
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        hints="feasible",
+        feasible_hint_time_limit=12,
+    )
+
+    assert config.make_solver().options["feasible_hint_time_limit"] == 12
+    assert config.make_strategy().options["feasible_hint_time_limit"] == 12
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), True, "bad"])
+def test_config_rejects_invalid_feasible_hint_time_limit(value):
+    with pytest.raises(ValueError, match="feasible_hint_time_limit"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            feasible_hint_time_limit=value,
+        )
+
+
+@pytest.mark.parametrize("strategy", ["mid", "mid_decomp"])
+def test_config_rejects_incompatible_mid_solver_and_population(strategy):
+    with pytest.raises(ValueError, match="solver='cp_bool'"):
+        OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy)
+    with pytest.raises(ValueError, match="program_population='All'"):
+        OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy, solver="cp_bool")
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, True])
+def test_config_rejects_invalid_mid_lottery_scale(value):
+    with pytest.raises(ValueError, match="mid_lottery_scale"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_lottery_scale=value)
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "false"])
+def test_config_rejects_invalid_mid_transport_bounds(value):
+    with pytest.raises(ValueError, match="mid_transport_bounds"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_transport_bounds=value)
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "false"])
+def test_config_rejects_invalid_mid_complementary_slackness(value):
+    with pytest.raises(ValueError, match="mid_complementary_slackness"):
+        OptimizationConfig(levels=["BlockGroup_0"], mid_complementary_slackness=value)
+
+
+@pytest.mark.parametrize("value", [-1, -0.5, True, "bad", "bad%", "-5%"])
+def test_config_rejects_invalid_mid_complementary_slackness_slack(value):
+    with pytest.raises(ValueError, match="mid_complementary_slackness_slack"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"], mid_complementary_slackness_slack=value
+        )
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("auto", "auto"),
+        ("AUTO", "auto"),
+        ("5%", "5%"),
+        ("10.5%", "10.5%"),
+        (0, 0.0),
+        (1.5, 1.5),
+        ("2.0", 2.0),
+    ],
+)
+def test_config_accepts_valid_mid_complementary_slackness_slack(value, expected):
+    cfg = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        mid_complementary_slackness=True,
+        mid_complementary_slackness_slack=value,
+    )
+    assert cfg.mid_complementary_slackness_slack == expected
+    assert "mid_complementary_slackness" not in cfg.make_solver().options
+    assert cfg.make_strategy().options["mid_complementary_slackness"] is True
+    assert cfg.make_strategy().options["mid_complementary_slackness_slack"] == expected
+
+
+def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeypatch):
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    solver = get_solver("cp_bool", solve_time_limit=1, relative_gap_limit=0.5)
+    captured = {}
+
+    class CapturingMidSolver:
+        def __init__(self, market, lottery_scale, **options):
+            captured.update(
+                market=market,
+                lottery_scale=lottery_scale,
+                options=options,
+            )
+
+        def solve(self, target_problem):
+            captured["problem"] = target_problem
+            return ZoneSolution(
+                problem=target_problem,
+                assignment=_split_assignment(target_problem),
+                status="OPTIMAL",
+            )
+
+    monkeypatch.setattr(mid_module, "build_mid_market", lambda *args: "market")
+    monkeypatch.setattr(mid_module, "initial_solution", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mid_module, "MidCpSatSolver", CapturingMidSolver)
+    strategy = get_strategy(
+        "mid",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[2, 7],
+        gap_limits=[0.2, 0.01],
+        boundary_prop=0.25,
+        mid_lottery_scale=30,
+    )
+
+    solutions = strategy.run(dataset, solver)
+
+    assert solutions[0].level.name == "BlockGroup_0"
+    assert captured["lottery_scale"] == 30
+    assert captured["options"]["solve_time_limit"] == 7
+    assert captured["options"]["relative_gap_limit"] == 0.01
+    assert captured["problem"].overage == -1
+    assert captured["problem"].shortage == -1
+    assert captured["problem"].boundary_prop == 0.25
+
+
+@pytest.mark.parametrize("transport_bounds", [True, False])
+def test_mid_decomp_returns_best_oracle_incumbent_last(monkeypatch, transport_bounds):
+    from optimization.data.mid import MidMarket, MidProgram, MidType
+
+    problem = make_grid_problem(2, 2, program_population="All")
+    dataset = FakeDataset(problem)
+    dataset.config = SimpleNamespace(program_population="All")
+    market = MidMarket(
+        programs=(
+            MidProgram("A", 100, 1, False, 0),
+            MidProgram("B", 200, 1, False, 3),
+        ),
+        types=(
+            MidType(1, 1, ("A", "B"), (0, 0), (2.0, 1.0), (200, 100)),
+            MidType(2, 1, ("B", "A"), (0, 0), (2.0, 1.0), (200, 100)),
+        ),
+        student_count=2,
+        outside_only_student_count=0,
+        utility_student_count=2,
+        utility_handling="omit_nonpositive",
+    )
+    monkeypatch.setattr(mid_decomp_module, "build_mid_market", lambda *args: market)
+    monkeypatch.setattr(
+        mid_decomp_module, "initial_solution", lambda *args, **kwargs: None
+    )
+    solver = get_solver("cp_bool", solve_time_limit=10, workers=1)
+    strategy = get_strategy(
+        "mid_decomp",
+        levels=["BlockGroup_0"],
+        solve_time_limits=[10],
+        gap_limits=[0],
+        max_iterations=4,
+        mid_lottery_scale=20,
+        mid_transport_bounds=transport_bounds,
+    )
+
+    solutions = strategy.run(dataset, solver)
+    final = solutions[-1]
+
+    assert final.objective == 4.0
+    assert final.assignment == {0: 0, 1: 0, 2: 1, 3: 1}
+    assert final.metadata["formulation"] == "mid_generated_utility_decomposition"
+    assert final.metadata["mid_decomp_iteration_count"] >= 1
+    assert final.metadata["mid_decomp_global_lower_bound"] == 4.0
+    assert final.metadata["mid_decomp_global_upper_bound"] >= 4.0
+    assert final.metadata["mid_decomp_incumbent_least_cutoffs"] == {"A": 0, "B": 0}
+    assert final.metadata["mid_continuum_welfare"] == 4.0
+    assert final.metadata["mid_decomp_total_preference_count"] == 4
+    assert final.metadata["mid_transport_bounds"] is transport_bounds
+    assert final.metadata["mid_decomp_activated_preference_count"] <= 4
+    assert all(
+        "activated_preferences_after" in record
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+    assert all(
+        record["remaining_variable_count"] == record["activated_preferences_before"]
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+    if transport_bounds:
+        assert all(
+            record["transport_variable_count"]
+            == final.metadata["mid_decomp_total_preference_count"]
+            - record["activated_preferences_before"]
+            for record in final.metadata["mid_decomp_iterations"]
+        )
+    else:
+        assert all(
+            record["transport_variable_count"] == 0
+            for record in final.metadata["mid_decomp_iterations"]
+        )
+    assert (
+        final.metadata["mid_decomp_budget_policy"]
+        == "linearly_increasing_with_carry_forward"
+    )
+    assert final.metadata["mid_decomp_total_budget_seconds"] == 10
+    assert final.metadata["mid_decomp_budget_accounting"] == "wall_clock"
+    assert all(
+        record["master_time_limit_seconds"] > 0
+        for record in final.metadata["mid_decomp_iterations"]
+    )
+
+
+def test_mid_decomp_splits_remaining_budget_across_iterations():
+    # Shares chosen above the floor, so this tests the distribution alone.
+    assert budget.master_time_limit(6000, 0, 3) == pytest.approx(1000)
+    assert budget.master_time_limit(5000, 1, 3) == pytest.approx(2000)
+    assert budget.master_time_limit(3000, 2, 3) == pytest.approx(3000)
+
+
+@pytest.mark.parametrize(
+    ("remaining", "iteration", "expected"),
+    [
+        # The early shares of a 20-iteration schedule are far under the floor
+        # (3600/210 = 17s), and a master that cannot finish presolve returns
+        # nothing, so the floor is what it gets.
+        (3600.0, 0, budget.MIN_MASTER_SECONDS),
+        (3570.0, 1, budget.MIN_MASTER_SECONDS),
+        # Late enough that the weighted share clears the floor on its own.
+        (3600.0, 18, 3600.0 * 19 / 39),
+        # The floor never overdraws: what is left is the hard cap.
+        (budget.MIN_MASTER_SECONDS, 0, budget.MIN_MASTER_SECONDS),
+        (12.0, 0, 12.0),
+        (0.0, 0, 0.0),
+    ],
+)
+def test_master_budget_floor_respects_remaining_budget(remaining, iteration, expected):
+    assert budget.master_time_limit(remaining, iteration, 20) == pytest.approx(expected)
+
+
+def test_mid_decomp_rounds_large_cp_sat_bounds_outward():
+    assert mid_decomp_module._certified_integer_upper_bound(4000.0, 3000) == 4000
+    assert mid_decomp_module._certified_integer_upper_bound(float(2**53), 0) > 2**53
+
+
+def test_config_rejects_non_boolean_citywide_scenario_filter():
+    with pytest.raises(ValueError, match="include_citywide_zoning"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            data={
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"include_citywide_zoning": 1}}
+                },
+            },
+        )
+
+
+@pytest.mark.parametrize("value", [1.01, float("nan"), True, "invalid"])
+def test_config_rejects_invalid_boundary_prop(value):
+    with pytest.raises(ValueError, match="boundary_prop"):
+        OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=value)
+
+
+@pytest.mark.parametrize("value", [-1, -0.25, 0, 1])
+def test_config_accepts_boundary_prop_and_disabled_values(value):
+    config = OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=value)
+
+    assert config.boundary_prop == float(value)
+
+
+def test_iterative_choice_splits_one_budget_across_iterations(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {"solve_time_limit": 5.0, "relative_gap_limit": 0.5}
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    floor = budget.MIN_MASTER_SECONDS
+    total = 2 * floor
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[total],
+        gap_limits=[0.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+    final = solutions[-1]
+
+    # The first two weighted shares (total/6 and 2*total/5) are below the
+    # floor. This solver returns instantly, so unused time carries forward and
+    # the last solve gets the whole budget.
+    assert solver.solve_time_limits[0] == pytest.approx(floor, rel=1e-2)
+    assert solver.solve_time_limits[1] == pytest.approx(floor, rel=1e-2)
+    assert solver.solve_time_limits[2] == pytest.approx(total, rel=1e-2)
+    assert solver.options["relative_gap_limit"] == 0.0
+    assert final.metadata["choice_total_budget_seconds"] == total
+    assert (
+        final.metadata["choice_budget_policy"]
+        == "linearly_increasing_with_carry_forward"
+    )
+    assert final.metadata["choice_iteration_count"] == 3
+    assert final.metadata["choice_termination_reason"] == "iteration_limit"
+    assert final.metadata["choice_total_master_seconds"] >= 0.0
+    assert final.metadata["choice_total_evaluation_seconds"] >= 0.0
+    assert [
+        solution.metadata["choice_master_time_limit_seconds"] for solution in solutions
+    ] == solver.solve_time_limits
+
+
+def test_iterative_choice_stops_when_budget_is_exhausted(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {"solve_time_limit": 0.0}
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[0.0],
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solutions == []
+    assert solver.calls == 0
+
+
+def test_wall_clock_budget_pays_for_every_kind_of_work():
+    wall_clock = budget.Budget(60.0, 3)
+
+    # Charging solves does not matter: only elapsed real time does.
+    wall_clock.charge(30.0)
+
+    assert wall_clock.remaining_seconds == pytest.approx(60.0, abs=1.0)
+    assert not wall_clock.exhausted()
+    assert wall_clock.metadata("choice")["choice_budget_accounting"] == "wall_clock"
+    assert budget.Budget(0.0, 3).exhausted()
+
+
+def test_solver_time_budget_only_pays_for_charged_solves():
+    floor = budget.MIN_MASTER_SECONDS
+    total = 2 * floor
+    solver_time = budget.Budget(total, 3, "solver_time")
+
+    assert solver_time.iteration_limit(0) == pytest.approx(floor)
+
+    solver_time.charge(floor / 3)
+
+    assert solver_time.remaining_seconds == pytest.approx(total - floor / 3)
+    assert solver_time.iteration_limit(1) == pytest.approx(floor)
+
+    solver_time.charge(total - floor / 3)
+
+    assert solver_time.exhausted()
+
+
+def test_budget_rejects_unknown_accounting():
+    with pytest.raises(ValueError, match="budget_accounting"):
+        budget.Budget(60.0, 3, "cpu_time", label="saa")
+
+
+@pytest.mark.parametrize("accounting", ["wall_clock", "solver_time"])
+def test_config_passes_budget_accounting_to_strategy(accounting):
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        strategy="iterative_choice",
+        budget_accounting=accounting,
+    )
+
+    assert config.make_strategy().options["budget_accounting"] == accounting
+
+
+def test_config_rejects_unknown_budget_accounting():
+    with pytest.raises(ValueError, match="budget_accounting"):
+        OptimizationConfig(levels=["BlockGroup_0"], budget_accounting="cpu_time")
+
+
+@pytest.mark.parametrize(
+    ("accounting", "expected_iterations"),
+    [("wall_clock", 2), ("solver_time", 3)],
+)
+def test_solver_time_accounting_excludes_choice_model_evaluation(
+    monkeypatch, accounting, expected_iterations
+):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 90.0, 80.0])
+    solver.options = {}
+    # Evaluating the choice model costs more than the whole budget, so
+    # wall_clock runs out of time while solver_time never charges for it.
+    model = SleepingRealUtilityModel(0.15)
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=3,
+        solve_time_limits=[0.2],
+        budget_accounting=accounting,
+    )
+
+    solutions = strat.run(dataset, solver)
+    final = solutions[-1]
+
+    assert final.metadata["choice_budget_accounting"] == accounting
+    if accounting == "solver_time":
+        assert len(solutions) == expected_iterations
+        assert final.metadata["choice_termination_reason"] == "iteration_limit"
+    else:
+        assert len(solutions) <= expected_iterations
+        assert final.metadata["choice_termination_reason"] == "time_limit"
+
+
+def test_iterative_choice_seeds_choice_utility_hint_cuts(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
+    model = HintCutModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=1,
+        choice_utility_hints=True,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert solver.problems[0].choice_objective.cuts == model.hint_cuts
+    assert solutions[0].metadata["choice_objective_cuts"] == len(model.hint_cuts)
+    assert solutions[0].metadata["choice_utility_hint_cuts"] == len(model.hint_cuts)
+
+
+def test_iterative_choice_stops_on_absolute_model_objective_change(monkeypatch):
+    problem = make_grid_problem(2, 2)
+    dataset = FakeDataset(problem)
+    solver = ObjectiveSequenceSolver([100.0, 10.0, 9.0, 9.2, 50.0])
+    model = DecreasingRealUtilityModel()
+    monkeypatch.setattr(
+        iterative_choice_module,
+        "build_mnl_choice_model",
+        lambda data, **kwargs: model,
+    )
+    strat = get_strategy(
+        "iterative_choice",
+        levels=["BlockGroup_0"],
+        max_iterations=5,
+        tolerance=0.25,
+    )
+
+    solutions = strat.run(dataset, solver)
+
+    assert [solution.objective for solution in solutions] == [100.0, 10.0, 9.0, 9.2]
+    assert [solution.metadata["choice_utility"] for solution in solutions] == [
+        100.0,
+        99.0,
+        98.0,
+        97.0,
+    ]
+    assert solutions[2].metadata["choice_model_utility_change"] == 1.0
+    assert solutions[3].metadata["choice_model_utility_change"] == pytest.approx(0.2)
+
+
+class ObjectiveSequenceSolver(FakeSolver):
+    def __init__(self, objectives):
+        self.objectives = list(objectives)
+        self.calls = 0
+        self.options = {}
+        self.solve_time_limits = []
+
+    def solve(self, problem):
+        objective = self.objectives[self.calls]
+        self.calls += 1
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
+        assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+        return ZoneSolution(
+            problem=problem,
+            assignment=assignment,
+            status="FEASIBLE",
+            objective=objective,
+            wall_time=0.0,
+        )
+
+
+class TimedSequenceSolver(FakeSolver):
+    def __init__(self, statuses, wall_times, assignments=None):
+        self.statuses = list(statuses)
+        self.wall_times = list(wall_times)
+        self.assignments = list(assignments) if assignments is not None else None
+        self.options = {}
+        self.problems = []
+        self.solve_time_limits = []
+
+    def solve(self, problem):
+        idx = len(self.problems)
+        self.problems.append(problem)
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
+        assignment = None
+        if self.assignments is not None:
+            assignment = self.assignments[idx]
+        if assignment is None:
+            assignment = _split_assignment(problem)
+        return ZoneSolution(
+            problem=problem,
+            assignment=assignment,
+            status=self.statuses[idx],
+            objective=0.0,
+            wall_time=self.wall_times[idx],
+            metadata={"solver": "timed_sequence"},
+        )
+
+
+class DuplicateCentroidSequenceSolver(FakeSolver):
+    def __init__(self, duplicate_by_call):
+        self.duplicate_by_call = list(duplicate_by_call)
+        self.options = {}
+        self.problems = []
+        self.solve_time_limits = []
+
+    def solve(self, problem):
+        idx = len(self.problems)
+        self.problems.append(problem)
+        self.solve_time_limits.append(self.options.get("solve_time_limit"))
+        if self.duplicate_by_call[idx]:
+            raise DuplicateCentroidError(23, {0, 3})
+        return ZoneSolution(
+            problem=problem,
+            assignment=_split_assignment(problem),
+            status="OPTIMAL",
+            objective=0.0,
+            wall_time=1.0,
+            metadata={"solver": "duplicate_centroid_sequence"},
+        )
+
+
+def _split_assignment(problem):
+    nodes = sorted(problem.nodes)
+    midpoint = len(nodes) // 2
+    return {node: 0 if idx < midpoint else 1 for idx, node in enumerate(nodes)}
+
+
+class DecreasingRealUtilityModel:
+    def __init__(self):
+        self.calls = 0
+
+    def utility_bounds(self, problem):
+        return -1_000.0, 1_000.0
+
+    def evaluate_with_cuts(self, problem, assignment):
+        utility = 100.0 - self.calls
+        self.calls += 1
+        cuts = tuple(ChoiceCut(node=node, constant=0.0) for node in problem.nodes)
+        return ChoiceEvaluation(utility=utility, cuts=cuts)
+
+
+class SleepingRealUtilityModel(DecreasingRealUtilityModel):
+    """Choice model whose evaluation dominates the run's wall-clock time."""
+
+    def __init__(self, evaluation_seconds):
+        super().__init__()
+        self.evaluation_seconds = evaluation_seconds
+
+    def evaluate_with_cuts(self, problem, assignment):
+        time.sleep(self.evaluation_seconds)
+        return super().evaluate_with_cuts(problem, assignment)
+
+
+class HintCutModel:
+    def __init__(self):
+        self.hint_cuts = (ChoiceCut(node=0, constant=1.0),)
+
+    def utility_bounds(self, problem):
+        return -1_000.0, 1_000.0
+
+    def choice_utility_hint_cuts(self, problem):
+        return self.hint_cuts
+
+    def evaluate_with_cuts(self, problem, assignment):
+        return ChoiceEvaluation(utility=1.0, cuts=())
+
+
+def test_priced_access_closes_with_a_replay_of_its_best_zoning():
+    """The harness scores the last solution, so the best one must end up there.
+
+    The master's candidate can regress between iterations; without the replay a
+    worse final zoning would be the one reported and scored.
+    """
+    from optimization.solution import ZoneSolution
+    from optimization.strategies import priced_access as priced_access_module
+
+    problem = make_grid_problem(3, 3)
+    utilities = [10.0, 40.0, 20.0]  # best is the middle iteration
+    calls = {"n": 0}
+
+    class _Model:
+        price_constant = 5.0
+        welfare_bound = None
+        bound_metadata: dict = {}
+
+        def utility_bounds(self, _problem):
+            return 0.0, 100.0
+
+        def choice_utility_hint_cuts(self, _problem):
+            return ()
+
+        def evaluate_with_cuts(self, _problem, _assignment):
+            index = min(calls["n"], len(utilities) - 1)
+            calls["n"] += 1
+            return ChoiceEvaluation(
+                utility=utilities[index],
+                cuts=(ChoiceCut(node=index, constant=float(index)),),
+            )
+
+    class _Solver(FakeSolver):
+        options: dict = {}
+
+        def solve(self, solve_problem):
+            return ZoneSolution(
+                problem=solve_problem,
+                assignment={node: 0 for node in solve_problem.nodes},
+                status="FEASIBLE",
+                objective=100.0 - calls["n"],
+                wall_time=1.0,
+                metadata={},
+            )
+
+    monkey = priced_access_module.build_priced_access_choice_model
+    priced_access_module.build_priced_access_choice_model = lambda *args, **kwargs: (
+        _Model()
+    )
+    try:
+        strategy = get_strategy(
+            "priced_access",
+            levels=["BlockGroup_0"],
+            solve_time_limits=[30],
+            max_iterations=3,
+            hints="none",
+        )
+        dataset = FakeDataset(problem)
+        dataset.config = SimpleNamespace()
+        solutions = strategy.run(dataset, _Solver())
+    finally:
+        priced_access_module.build_priced_access_choice_model = monkey
+
+    final = solutions[-1]
+    assert final.metadata["priced_access_is_replay"] is True
+    assert final.wall_time == 0.0
+    assert final.metadata["choice_utility"] == max(utilities)
+
+
+def test_recursive_levels_past_gap_limits_keep_the_last_gap():
+    from optimization.strategies.recursive import RecursiveStrategy
+
+    gaps = [0.05, 0.01]
+    assert RecursiveStrategy._level_limits(None, gaps, 2) == {
+        "relative_gap_limit": 0.01
+    }
+
+
+def test_config_keeps_uncoerced_numbers_as_written():
+    # The benchmark task hash tells 0 from 0.0, so validation must not retype
+    # fields it never retyped before.
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"], strategy="iterative_choice", tolerance=0
+    )
+
+    assert repr(config.tolerance) == "0"
+    assert (
+        repr(OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=0).boundary_prop)
+        == "0.0"
+    )

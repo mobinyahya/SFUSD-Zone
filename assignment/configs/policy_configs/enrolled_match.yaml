@@ -1,0 +1,30 @@
+# Enrollment as the ground-truth outcome. No mechanism runs: `real_match` reads
+# each student's enrolled school and program (`real-match-source: enrollment`)
+# and every metric, local report and heatmap is computed over that match. Needs
+# the enrolled population (`student_population: enrolled`), whose loader drops
+# students with no enrolled school -- blank, or SFUSD's placeholder 899.
+# The remaining keys are copied from real_match.yaml.
+assignment-algorithm: DA
+ctip-options:
+- new_ctip
+- 1
+
+restrict-zone: false
+guard-rails: -1
+
+policies:
+- real_match
+real-match-source: enrollment
+
+priority-weights:
+  promote: 1024
+  ctip: 4
+  sibling: 16
+  zone: 2
+  prek: 8
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB_REAL

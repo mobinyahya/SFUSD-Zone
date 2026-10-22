@@ -1,0 +1,138 @@
+output_dir: metrics/calibrated_extended_2223
+
+runs:
+  - label: small_zones+no_reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/small_zones+no_reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: small_zones+reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/small_zones+reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: small_zones+reserves_05frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/small_zones+reserves_05frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: small_zones+reserves_06frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/small_zones+reserves_06frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: medium_zones+no_reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/medium_zones+no_reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: medium_zones+reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/medium_zones+reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: medium_zones+reserves_05frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/medium_zones+reserves_05frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: medium_zones+reserves_06frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/medium_zones+reserves_06frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: distance_05_1_2+reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/distance_05_1_2+reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: distance_05_1_2+reserves_05frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/distance_05_1_2+reserves_05frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: distance_05_1_2+reserves_06frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/distance_05_1_2+reserves_06frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: status_quo
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: status_quo+guardrails
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/status_quo+guardrails
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: status_quo+reserves
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/status_quo+reserves
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: status_quo+reserves_05frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/status_quo+reserves_05frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+  - label: status_quo+reserves_06frl
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/calibrated_extended_2223/status_quo+reserves_06frl
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+
+single_metrics:
+  - Unassigned
+  - '#Unassigned'
+  - Avg. Distance
+  - Median Distance
+  - '% assigned within 0.5mi'
+  - '% assigned beyond 3mi'
+  - Assigned to 1st choice
+  - Assigned top-3 choice
+  - Capacity
+  - Assigned students
+  - Students
+  - Not assigned
+  - Designated
+  - Empty Seats
+  - '# GE Empty Seats'
+  - '# high-poverty schools'
+  - '# students in high-poverty schools'
+  - '# AALPI students in high-poverty schools'
+  - Total AALPI students
+  - Total AALPI assigned students
+  - Dissimilarity (High FRL)
+  - Black/White exposure to AALPI
+  - Black/White exposure to poverty
+  - Hispanic/White exposure to AALPI
+  - Hispanic/White exposure to poverty
+  - AALPI exposure to high FRL
+  - AALPI exposure to low FRL
+
+group_metrics:
+  - Prop Top 1 choice ({group})
+  - Prop Top 2 choice ({group})
+  - Prop Top 3 choice ({group})
+  - Dissimilarity ({group})
+  - Number of assigned students ({group})
+  - Distance Median ({group})
+  - Distance Av ({group})
+  - Distance < 0.5 ({group})
+  - Distance > 3 ({group})

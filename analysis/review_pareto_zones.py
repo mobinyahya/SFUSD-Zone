@@ -1,0 +1,698 @@
+#!/usr/bin/env python3
+"""Find, review, and export Pareto-optimal benchmark zone plans.
+
+With --all-feasible, review every feasible zone plan instead: no assignment
+metrics are read, no Pareto filter is applied, and the output is only the list
+of approved plans (feasible.csv).
+
+With --images DIR, review a plain folder of exported map PNGs
+(``<task_id>-root.png``) the same way, with no sweep config or run files.
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import os
+import shutil
+import sys
+import threading
+import webbrowser
+from functools import partial
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+import numpy as np
+import pandas as pd
+
+# Maps are rendered off the main thread, which a GUI backend cannot do.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from assignment.run_custom_config import load_custom_config  # noqa: E402
+from benchmark.config import (  # noqa: E402
+    SimulationSweep,
+    VisualizationRunConfig,
+    optimization_config_from_dict,
+)
+from benchmark.results import discover_run_dirs, load_run_result  # noqa: E402
+from benchmark.runner import (  # noqa: E402
+    MANIFEST_FILENAME,
+    load_manifest,
+    load_solutions,
+    write_json,
+)
+from benchmark.visualize import render_task_visualizations  # noqa: E402
+
+
+# True means minimize; False means maximize.
+OBJECTIVES = {
+    "max_reock_score": False,
+    "max_polsby_popper_score": False,
+    "Total Utility": True,
+    "#Schools above 10% district FRL": True,
+    "#Schools above 15% district FRL": True,
+    "Dissimilarity (High FRL)": True,
+    "Dissimilarity (White)": True,
+    "# Racial majority schools": True,
+    "Unassigned": True,
+    "Designated": True,
+    "Prop Top 1 choice (All Students)": False,
+    "Prop Top 3 choice (All Students)": False,
+}
+ZONE_METRICS = ["max_reock_score", "max_polsby_popper_score"]
+ASSIGNMENT_METRICS = [metric for metric in OBJECTIVES if metric not in ZONE_METRICS]
+OUTPUT_COLUMNS = ["task_id", "config_name", "path", *OBJECTIVES]
+FEASIBLE_STATUSES = {"FEASIBLE", "OPTIMAL"}
+DECISIONS_FILENAME = "pareto_reviews.json"
+FEASIBLE_COLUMNS = ["task_id", "path"]
+FEASIBLE_DECISIONS_FILENAME = "feasible_reviews.json"
+
+
+def pareto_front(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return rows not dominated across the configured objectives."""
+    first_objective = next(iter(OBJECTIVES))
+    _require_columns(frame, OBJECTIVES, "Pareto observations")
+    values = frame[list(OBJECTIVES)].apply(pd.to_numeric, errors="coerce")
+    invalid = values.isna().any(axis=1)
+    if invalid.any():
+        names = frame.loc[invalid, "config_name"].astype(str).head(5).tolist()
+        raise ValueError(f"Pareto observations have missing metrics: {names}")
+
+    costs = values.to_numpy(dtype=float, copy=True)
+    maximize = [not minimize for minimize in OBJECTIVES.values()]
+    costs[:, maximize] *= -1
+    dominated = np.zeros(len(costs), dtype=bool)
+    for index, candidate in enumerate(costs):
+        not_worse = (costs <= candidate).all(axis=1)
+        better = (costs < candidate).any(axis=1)
+        dominated[index] = bool((not_worse & better).any())
+
+    return (
+        frame.loc[~dominated, OUTPUT_COLUMNS]
+        .sort_values(
+            [first_objective, "task_id", "config_name"],
+            ascending=[OBJECTIVES[first_objective], True, True],
+        )
+        .reset_index(drop=True)
+    )
+
+
+def load_observations(config_path: str | Path) -> tuple[pd.DataFrame, Path, str | None]:
+    """Load and join optimization and root-level assignment metrics."""
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    if not sweep.matching.enabled or not sweep.matching.config:
+        raise ValueError("The benchmark config must have matching.enabled: true.")
+    assignment_config = load_custom_config(sweep.matching.config)
+    if assignment_config.get("export-aggregate-metrics") is not True:
+        raise ValueError(
+            "The matching config must have export-aggregate-metrics: true."
+        )
+
+    root = Path(sweep.execution.output_dir).expanduser().resolve()
+    zone_metrics, known_task_ids = _load_zone_metrics(root)
+    assignment_metrics = _load_assignment_metrics(root)
+    observations = join_observations(
+        zone_metrics, assignment_metrics, known_task_ids=known_task_ids
+    )
+    return observations, root, sweep.visualization.artifact_dir
+
+
+def load_image_dir(image_dir: Path) -> pd.DataFrame:
+    """List the map PNGs of an exported folder as task_id/path rows."""
+    paths = sorted(Path(image_dir).expanduser().glob("*.png"))
+    if not paths:
+        raise FileNotFoundError(f"No PNG maps found in {image_dir}.")
+    frame = pd.DataFrame(
+        {
+            "task_id": [path.stem.removesuffix("-root") for path in paths],
+            "path": [str(path.resolve()) for path in paths],
+        },
+        columns=FEASIBLE_COLUMNS,
+    )
+    if frame["task_id"].duplicated().any():
+        raise ValueError(f"Duplicate task ids among the PNGs in {image_dir}.")
+    return frame
+
+
+def load_feasible_runs(config_path: str | Path) -> tuple[pd.DataFrame, Path, str | None]:
+    """List every feasible run of a sweep, with no metrics attached."""
+    sweep = SimulationSweep.from_yaml(str(config_path))
+    root = Path(sweep.execution.output_dir).expanduser().resolve()
+    run_dirs = discover_run_dirs(str(root))
+    if not run_dirs:
+        raise FileNotFoundError(f"No benchmark runs found under {root}.")
+    rows = []
+    for run_dir in run_dirs:
+        manifest = load_manifest(run_dir)
+        task_id = str(manifest.get("task_id") or "")
+        if not task_id:
+            raise ValueError(f"Benchmark manifest has no task_id: {run_dir}")
+        result = load_run_result(run_dir)
+        status = str(result.get("status") or manifest.get("status") or "").upper()
+        if status in FEASIBLE_STATUSES:
+            rows.append({"task_id": task_id, "path": str(Path(run_dir).resolve())})
+    if not rows:
+        raise ValueError("The benchmark has no feasible runs to review.")
+    frame = pd.DataFrame(rows, columns=FEASIBLE_COLUMNS)
+    if frame["task_id"].duplicated().any():
+        raise ValueError("Duplicate benchmark task_id among feasible runs.")
+    return frame.sort_values("path").reset_index(drop=True), root, sweep.visualization.artifact_dir
+
+
+def _load_zone_metrics(root: Path) -> tuple[pd.DataFrame, set[str]]:
+    run_dirs = discover_run_dirs(str(root))
+    if not run_dirs:
+        raise FileNotFoundError(f"No benchmark runs found under {root}.")
+
+    rows = []
+    known_task_ids = set()
+    for run_dir in run_dirs:
+        manifest = load_manifest(run_dir)
+        task_id = str(manifest.get("task_id") or "")
+        if not task_id:
+            raise ValueError(f"Benchmark manifest has no task_id: {run_dir}")
+        if task_id in known_task_ids:
+            raise ValueError(f"Duplicate benchmark task_id: {task_id}")
+        known_task_ids.add(task_id)
+
+        result = load_run_result(run_dir)
+        status = str(result.get("status") or manifest.get("status") or "").upper()
+        if status not in FEASIBLE_STATUSES:
+            continue
+        metrics = result.get("metrics") or {}
+        missing = [metric for metric in ZONE_METRICS if metric not in metrics]
+        if missing:
+            raise ValueError(f"Run {task_id} is missing zone metrics: {missing}")
+        rows.append(
+            {
+                "task_id": task_id,
+                "path": str(Path(run_dir).resolve()),
+                **{metric: metrics[metric] for metric in ZONE_METRICS},
+            }
+        )
+
+    if not rows:
+        raise ValueError("The benchmark has no feasible runs to compare.")
+    frame = pd.DataFrame(rows)
+    _require_numeric(frame, ZONE_METRICS, "Zone metrics")
+    return frame, known_task_ids
+
+
+def _load_assignment_metrics(root: Path) -> pd.DataFrame:
+    candidates = [
+        root / "aggregate_metrics" / "metrics_citywide.csv",
+        root / "assignments" / "aggregate_metrics" / "metrics_citywide.csv",
+    ]
+    existing = [path for path in candidates if path.is_file()]
+    if not existing:
+        raise FileNotFoundError(
+            "Could not find matching aggregate metrics at "
+            + " or ".join(str(path) for path in candidates)
+        )
+    if len(existing) > 1:
+        raise ValueError(f"Multiple matching aggregate metric files found: {existing}")
+
+    try:
+        frame = pd.read_csv(existing[0], usecols=["config_name", *ASSIGNMENT_METRICS])
+    except ValueError as exc:
+        raise ValueError(
+            f"Assignment metrics are missing required columns in {existing[0]}: {exc}"
+        ) from exc
+    if frame["config_name"].duplicated().any():
+        duplicates = frame.loc[
+            frame["config_name"].duplicated(keep=False), "config_name"
+        ].head(5)
+        raise ValueError(
+            f"Assignment metrics contain duplicate config_name rows: {duplicates.tolist()}"
+        )
+    _require_numeric(frame, ASSIGNMENT_METRICS, "Assignment metrics")
+    return frame
+
+
+def join_observations(
+    zone_metrics: pd.DataFrame,
+    assignment_metrics: pd.DataFrame,
+    *,
+    known_task_ids: set[str],
+) -> pd.DataFrame:
+    """Join generated-zone assignment rows to their benchmark task."""
+    assignment = assignment_metrics.copy()
+    assignment["task_id"] = (
+        assignment["config_name"]
+        .astype("string")
+        .str.extract(r"^(.+)-root:", expand=False)
+    )
+    assignment = assignment.dropna(subset=["task_id"]).copy()
+    if assignment.empty:
+        raise ValueError("Assignment metrics contain no root generated-zone rows.")
+
+    unknown = sorted(set(assignment["task_id"]) - known_task_ids)
+    if unknown:
+        raise ValueError(
+            f"Assignment metrics reference unknown benchmark tasks: {unknown[:5]}"
+        )
+    missing = sorted(set(zone_metrics["task_id"]) - set(assignment["task_id"]))
+    if missing:
+        raise ValueError(
+            f"Feasible benchmark tasks are missing assignment metrics: {missing[:5]}"
+        )
+
+    joined = assignment.merge(
+        zone_metrics,
+        on="task_id",
+        how="inner",
+        validate="many_to_one",
+    )
+    return joined[OUTPUT_COLUMNS]
+
+
+def ensure_visualizations(
+    frontier: pd.DataFrame,
+    *,
+    artifact_dir: str | None,
+) -> dict[str, Path]:
+    """Return a final PNG for each unique frontier task, rendering if absent."""
+    task_paths = frontier.drop_duplicates("task_id").set_index("task_id")["path"]
+    return {
+        str(task_id): ensure_visualization(Path(str(path)), artifact_dir=artifact_dir)
+        for task_id, path in task_paths.items()
+    }
+
+
+# One closer-neighbor store per data config. Loading its payload is ~7s of a
+# ~10s render, and every run of a sweep would otherwise reload it; the store's
+# own memory cache is keyed by graph and source fingerprints, so sharing it
+# across runs that differ only in seed, centroids, or constraints is exact.
+_CLOSER_NEIGHBOR_STORES: dict[str, object] = {}
+
+
+def _dataset_for(manifest: dict):
+    config = optimization_config_from_dict(manifest["config"])
+    dataset = config.make_dataset()
+    key = json.dumps(manifest["config"].get("data"), sort_keys=True, default=str)
+    store = _CLOSER_NEIGHBOR_STORES.setdefault(key, dataset._closer_neighbor_store)
+    dataset._closer_neighbor_store = store
+    return dataset
+
+
+def ensure_visualization(run_path: Path, *, artifact_dir: str | None) -> Path:
+    """Return one run's final PNG, rendering it if absent."""
+    manifest = load_manifest(str(run_path))
+    image = _existing_visualization(run_path, manifest)
+    if image is not None:
+        return image
+    settings = VisualizationRunConfig(
+        enabled=True, stages="final", artifact_dir=artifact_dir
+    )
+    solutions, config, manifest = load_solutions(
+        str(run_path), dataset=_dataset_for(manifest)
+    )
+    results = render_task_visualizations(
+        solutions, config, run_path, settings, manifest
+    )
+    write_json(str(run_path / MANIFEST_FILENAME), manifest)
+    figures = [path for result in results for path in result.figure_paths]
+    if len(figures) != 1:
+        raise ValueError(
+            f"Expected one final visualization for {run_path}, found {len(figures)}."
+        )
+    return figures[0]
+
+
+class LazyVisualizations:
+    """Task id -> final PNG, rendered on first request rather than up front."""
+
+    def __init__(self, task_paths: dict[str, Path], *, artifact_dir: str | None):
+        self.task_paths = task_paths
+        self.artifact_dir = artifact_dir
+        self._images: dict[str, Path] = {}
+        self._lock = threading.Lock()
+
+    def get(self, task_id: str) -> Path | None:
+        if task_id not in self.task_paths:
+            return None
+        with self._lock:
+            cached = self._images.get(task_id)
+            if cached is None or not cached.is_file():
+                self._images[task_id] = ensure_visualization(
+                    self.task_paths[task_id], artifact_dir=self.artifact_dir
+                )
+            return self._images[task_id]
+
+    def prefetch(self, task_ids: list[str]) -> threading.Thread:
+        """Render task_ids in order on a daemon thread, ahead of the reviewer."""
+
+        def run() -> None:
+            for task_id in task_ids:
+                try:
+                    self.get(task_id)
+                except Exception as exc:  # noqa: BLE001 - retried on request
+                    print(f"Could not pre-render {task_id}: {exc}")
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return thread
+
+
+def _existing_visualization(run_path: Path, manifest: dict) -> Path | None:
+    final_stage = manifest.get("final_stage")
+    if final_stage:
+        expected = run_path / f"visualization_{final_stage}.png"
+        if expected.is_file() and expected.stat().st_size:
+            return expected
+
+    record = manifest.get("visualization") or {}
+    for artifact in record.get("artifacts") or []:
+        if final_stage and artifact.get("stage") != final_stage:
+            continue
+        for figure in artifact.get("figures") or []:
+            path = run_path / str(figure)
+            if path.is_file() and path.stat().st_size:
+                return path
+    return None
+
+
+def load_decisions(path: Path) -> dict[str, bool]:
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as stream:
+        decisions = json.load(stream)
+    if not isinstance(decisions, dict) or any(
+        not isinstance(key, str) or not isinstance(value, bool)
+        for key, value in decisions.items()
+    ):
+        raise ValueError(f"Invalid Pareto review decisions in {path}.")
+    return decisions
+
+
+def save_decisions(path: Path, decisions: dict[str, bool]) -> None:
+    write_json(str(path), decisions)
+
+
+def write_outputs(
+    frontier: pd.DataFrame,
+    decisions: dict[str, bool],
+    images: dict[str, Path],
+    output_dir: Path,
+) -> pd.DataFrame:
+    """Write approved frontier rows and synchronize their PNG copies."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    approved_ids = {task_id for task_id, approved in decisions.items() if approved}
+    approved = frontier[frontier["task_id"].isin(approved_ids)][OUTPUT_COLUMNS].copy()
+
+    csv_path = output_dir / "pareto.csv"
+    temporary = output_dir / f".{csv_path.name}.tmp"
+    approved.to_csv(temporary, index=False)
+    os.replace(temporary, csv_path)
+
+    viz_dir = output_dir / "viz"
+    viz_dir.mkdir(exist_ok=True)
+    expected = {f"{task_id}.png" for task_id in approved["task_id"].unique()}
+    for existing in viz_dir.glob("*.png"):
+        if existing.name not in expected:
+            existing.unlink()
+    for task_id in approved["task_id"].unique():
+        destination = viz_dir / f"{task_id}.png"
+        source = images[str(task_id)]
+        if (
+            not destination.is_file()
+            or destination.stat().st_size != source.stat().st_size
+        ):
+            shutil.copy2(source, destination)
+    return approved
+
+
+def write_feasible_outputs(
+    feasible: pd.DataFrame, decisions: dict[str, bool], output_dir: Path
+) -> pd.DataFrame:
+    """Write the approved feasible plans as task_id/path rows, nothing more."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    approved_ids = {task_id for task_id, approved in decisions.items() if approved}
+    approved = feasible[feasible["task_id"].isin(approved_ids)][FEASIBLE_COLUMNS]
+    csv_path = output_dir / "feasible.csv"
+    temporary = output_dir / f".{csv_path.name}.tmp"
+    approved.to_csv(temporary, index=False)
+    os.replace(temporary, csv_path)
+    return approved
+
+
+class ReviewApp:
+    def __init__(
+        self,
+        frontier: pd.DataFrame,
+        images: dict[str, Path] | LazyVisualizations,
+        output_dir: Path,
+        decisions: dict[str, bool],
+        *,
+        all_feasible: bool = False,
+    ):
+        self.frontier = frontier
+        self.images = images
+        self.output_dir = output_dir
+        self.decisions = decisions
+        self.all_feasible = all_feasible
+        self.tasks = list(dict.fromkeys(frontier["task_id"].astype(str)))
+        if all_feasible:
+            self.config_names = {}
+        else:
+            self.config_names = (
+                frontier.groupby("task_id")["config_name"].apply(list).to_dict()
+            )
+
+    @property
+    def decisions_path(self) -> Path:
+        name = FEASIBLE_DECISIONS_FILENAME if self.all_feasible else DECISIONS_FILENAME
+        return self.output_dir / name
+
+    @property
+    def csv_name(self) -> str:
+        return "feasible.csv" if self.all_feasible else "pareto.csv"
+
+    def next_task(self) -> str | None:
+        return next((task for task in self.tasks if task not in self.decisions), None)
+
+    def record(self, task_id: str, approved: bool) -> None:
+        if task_id not in self.tasks:
+            raise ValueError(f"Unknown Pareto task: {task_id}")
+        self.decisions[task_id] = approved
+        save_decisions(self.decisions_path, self.decisions)
+        if self.all_feasible:
+            write_feasible_outputs(self.frontier, self.decisions, self.output_dir)
+        else:
+            write_outputs(self.frontier, self.decisions, self.images, self.output_dir)
+
+
+class ReviewHandler(BaseHTTPRequestHandler):
+    def __init__(self, *args, app: ReviewApp, **kwargs):
+        self.app = app
+        super().__init__(*args, **kwargs)
+
+    def do_GET(self) -> None:  # noqa: N802
+        route = urlparse(self.path).path
+        if route == "/":
+            self._send(_review_page(self.app).encode(), "text/html; charset=utf-8")
+            return
+        if route == f"/{self.app.csv_name}":
+            self._send(
+                (self.app.output_dir / self.app.csv_name).read_bytes(),
+                "text/csv; charset=utf-8",
+            )
+            return
+        if route.startswith("/image/"):
+            task_id = unquote(route.removeprefix("/image/")).removesuffix(".png")
+            try:
+                image = self.app.images.get(task_id)
+            except Exception as exc:  # noqa: BLE001 - report render failures
+                self.send_error(500, f"Could not render {task_id}: {exc}")
+                return
+            if image is not None:
+                self._send(image.read_bytes(), "image/png")
+                return
+        self.send_error(404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if urlparse(self.path).path != "/decision":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 4096:
+                raise ValueError("Request is too large.")
+            form = parse_qs(self.rfile.read(length).decode())
+            task_id = form["task_id"][0]
+            decision = form["decision"][0]
+            if decision not in {"yes", "no"}:
+                raise ValueError("Decision must be yes or no.")
+            self.app.record(task_id, decision == "yes")
+        except (KeyError, IndexError, UnicodeDecodeError, ValueError) as exc:
+            self.send_error(400, str(exc))
+            return
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.end_headers()
+
+    def _send(self, body: bytes, content_type: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _review_page(app: ReviewApp) -> str:
+    reviewed = sum(task in app.decisions for task in app.tasks)
+    approved = sum(app.decisions.get(task) is True for task in app.tasks)
+    rejected = sum(app.decisions.get(task) is False for task in app.tasks)
+    task_id = app.next_task()
+    if task_id is None:
+        body = (
+            f"<h1>Review complete</h1><p>{approved} approved, {rejected} rejected.</p>"
+            f'<p><a href="/{app.csv_name}">Download {app.csv_name}</a></p>'
+        )
+    else:
+        if app.all_feasible:
+            detail = html.escape(
+                str(app.frontier.set_index("task_id").at[task_id, "path"])
+            )
+        else:
+            detail = f"{len(app.config_names[task_id])} Pareto assignment row(s)"
+        body = f"""
+        <h1>Is this zone plan acceptable?</h1>
+        <p><strong>{html.escape(task_id)}</strong> ({detail})</p>
+        <img src="/image/{html.escape(task_id)}.png" alt="Zone visualization">
+        <form method="post" action="/decision">
+          <input type="hidden" name="task_id" value="{html.escape(task_id)}">
+          <button class="yes" name="decision" value="yes">Yes</button>
+          <button class="no" name="decision" value="no">No</button>
+        </form>
+        """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zone review</title>
+  <style>
+    body {{ font: 16px sans-serif; margin: 20px auto; max-width: 1000px; padding: 0 12px; }}
+    img {{ display: block; max-height: 72vh; max-width: 100%; margin: 16px 0; }}
+    button {{ border: 0; color: white; cursor: pointer; font-size: 22px; margin-right: 12px; padding: 12px 36px; }}
+    .yes {{ background: #287a38; }} .no {{ background: #a52b2b; }}
+  </style>
+</head>
+<body>
+  <p>Reviewed {reviewed} of {len(app.tasks)} zone plans. Yes: {approved}. No: {rejected}.</p>
+  {body}
+</body>
+</html>"""
+
+
+def _require_columns(frame: pd.DataFrame, columns, description: str) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"{description} are missing columns: {missing}")
+
+
+def _require_numeric(frame: pd.DataFrame, columns, description: str) -> None:
+    converted = frame[list(columns)].apply(pd.to_numeric, errors="coerce")
+    if converted.isna().any().any():
+        invalid = converted.columns[converted.isna().any()].tolist()
+        raise ValueError(
+            f"{description} contain missing or non-numeric values: {invalid}"
+        )
+    frame[list(columns)] = converted
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "config", type=Path, nargs="?", help="Benchmark sweep YAML."
+    )
+    parser.add_argument(
+        "--images",
+        type=Path,
+        help=(
+            "Review every PNG in this folder instead of a sweep; decisions and "
+            "feasible.csv are written to <folder>/analysis."
+        ),
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Local HTTP port.")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="Do not open the review page."
+    )
+    parser.add_argument(
+        "--all-feasible",
+        action="store_true",
+        help=(
+            "Review every feasible plan: skip assignment metrics and the Pareto "
+            "filter, and write only the approved list (feasible.csv)."
+        ),
+    )
+    parser.add_argument(
+        "--reset-reviews", action="store_true", help="Discard saved yes/no decisions."
+    )
+    args = parser.parse_args(argv)
+    if (args.config is None) == (args.images is None):
+        parser.error("Give either a sweep config or --images, not both.")
+    if args.images is not None:
+        args.all_feasible = True
+    return args
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    if args.images is not None:
+        frontier = load_image_dir(args.images)
+        root = args.images.expanduser().resolve()
+        images = {row.task_id: Path(row.path) for row in frontier.itertuples()}
+    elif args.all_feasible:
+        frontier, root, artifact_dir = load_feasible_runs(args.config)
+        images = LazyVisualizations(
+            {row.task_id: Path(row.path) for row in frontier.itertuples()},
+            artifact_dir=artifact_dir,
+        )
+    else:
+        observations, root, artifact_dir = load_observations(args.config)
+        frontier = pareto_front(observations)
+        images = ensure_visualizations(frontier, artifact_dir=artifact_dir)
+    output_dir = root / "analysis"
+    app = ReviewApp(
+        frontier, images, output_dir, {}, all_feasible=args.all_feasible
+    )
+    if args.reset_reviews:
+        app.decisions_path.unlink(missing_ok=True)
+    app.decisions = load_decisions(app.decisions_path)
+    if args.all_feasible:
+        write_feasible_outputs(frontier, app.decisions, output_dir)
+    else:
+        write_outputs(frontier, app.decisions, images, output_dir)
+
+    if isinstance(images, LazyVisualizations):
+        images.prefetch([task for task in app.tasks if task not in app.decisions])
+
+    server = HTTPServer(("127.0.0.1", args.port), partial(ReviewHandler, app=app))
+    url = f"http://127.0.0.1:{server.server_port}/"
+    kind = "feasible" if args.all_feasible else "Pareto"
+    print(
+        f"Found {len(frontier)} {kind} rows across {len(app.tasks)} zone plans. "
+        f"Review at {url}"
+    )
+    print(f"Approved outputs are synchronized under {output_dir}.")
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped zone review.")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

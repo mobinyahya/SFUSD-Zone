@@ -1,0 +1,9 @@
+output_dir: metrics/all_prog_gesplit/partial_model_from_drive
+
+runs:
+  - label: "model_from_drive_2324"
+    folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_prog_gesplit_runs/model_from_drive_2324/status_quo
+    year: 23
+    program_data: <STUDENT_ASSIGNMENT_PATH>/local-data/program_filter/programs_without_specialprogs_2324.csv
+    student_data: <STUDENT_ASSIGNMENT_PATH>/local-data/student_filter/student_2324_filtered.csv
+

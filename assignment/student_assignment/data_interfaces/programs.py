@@ -1,0 +1,282 @@
+"""Data interface for programs."""
+
+import warnings
+
+import numpy as np
+import pandas as pd
+
+from ..definitions import LANGUAGE_PATHWAYS
+
+
+class Programs:
+    def __init__(
+        self,
+        program_data: pd.DataFrame,
+        program_codes: pd.DataFrame | None = None,
+    ):
+        """Index loader-normalized programs (``loaders.load_program_records``).
+
+        ``program_codes`` maps ``code`` to ``index`` and is required only when
+        ``program_data`` has no ``programno`` column.
+        """
+        self.program_df = program_data.copy()
+        self.only_keep_cols = None
+        self._set_up_programno(program_codes)
+        self.num_programs = len(self.program_df)
+        self._program_type2indices = None
+        self._school2indices = None
+
+    @staticmethod
+    def _validate_identity_column(df: pd.DataFrame, column: str, source: str) -> None:
+        if column not in df.columns:
+            raise ValueError(f"{source} is missing required column '{column}'.")
+
+        values = df[column]
+        missing = values.isna() | values.astype("string").str.strip().eq("")
+        if missing.fillna(True).any():
+            raise ValueError(f"{source} contains a missing {column} identity.")
+
+        duplicates = values[values.duplicated(keep=False)]
+        if not duplicates.empty:
+            duplicate_values = duplicates.astype(str).unique().tolist()
+            raise ValueError(
+                f"{source} contains duplicate {column} identities: "
+                f"{duplicate_values[:10]}"
+            )
+
+    @staticmethod
+    def _validate_programnos(
+        df: pd.DataFrame, source: str, *, require_contiguous: bool
+    ) -> None:
+        Programs._validate_identity_column(df, "programno", source)
+        numeric = pd.to_numeric(df["programno"], errors="coerce")
+        if (
+            numeric.isna().any()
+            or not np.isfinite(numeric.to_numpy()).all()
+            or not np.equal(numeric, np.floor(numeric)).all()
+            or (numeric <= 0).any()
+        ):
+            raise ValueError(
+                f"{source} contains a non-positive or non-integer programno identity."
+            )
+        if numeric.duplicated().any():
+            duplicate_values = numeric[numeric.duplicated(keep=False)].unique().tolist()
+            raise ValueError(
+                f"{source} contains duplicate programno identities: "
+                f"{duplicate_values[:10]}"
+            )
+        df["programno"] = numeric.astype(int)
+
+        if require_contiguous:
+            expected = list(range(1, len(df) + 1))
+            actual = sorted(df["programno"].tolist())
+            if actual != expected:
+                raise ValueError(
+                    f"{source} programno identities must be exactly 1 through "
+                    f"{len(df)}; found {actual[:10]}."
+                )
+
+    @staticmethod
+    def normalized_programnos(df: pd.DataFrame, source: str) -> pd.Series:
+        """Return contiguous IDs ordered by validated source program numbers."""
+        validated = df.copy()
+        Programs._validate_programnos(validated, source, require_contiguous=False)
+        order = np.argsort(validated["programno"].to_numpy(), kind="stable")
+        normalized = np.empty(len(validated), dtype=int)
+        normalized[order] = np.arange(1, len(validated) + 1)
+        return pd.Series(normalized, index=df.index, dtype=int)
+
+    def _set_program_mappings(self) -> None:
+        self.indices = dict(
+            zip(self.program_df["program_id"], self.program_df["programno"])
+        )
+        self.codes = dict(
+            zip(self.program_df["programno"], self.program_df["program_id"])
+        )
+
+    def _set_up_programno(self, program_codes: pd.DataFrame | None):
+        """Set up program indices and codes as a column in the dataframe.
+
+        Args:
+            program_codes: table mapping program codes to indices
+        """
+        if self.program_df.empty:
+            raise ValueError("Program data contains no programs.")
+        self._validate_identity_column(self.program_df, "program_id", "Program data")
+        self.program_df["program_id"] = self.program_df["program_id"].astype(str)
+
+        if "programno" not in self.program_df.columns:
+            if program_codes is None:
+                raise ValueError(
+                    "Program data has no programno column and no program codes "
+                    "table was provided."
+                )
+            program_codes = program_codes.copy()
+            self._validate_identity_column(program_codes, "code", "Program codes")
+            self._validate_identity_column(program_codes, "index", "Program codes")
+            program_codes = program_codes.rename(columns={"index": "programno"})
+            self._validate_programnos(
+                program_codes, "Program codes", require_contiguous=True
+            )
+            program_codes["code"] = program_codes["code"].astype(str)
+            code_to_index = dict(zip(program_codes["code"], program_codes["programno"]))
+            self.program_df["programno"] = self.program_df["program_id"].map(
+                code_to_index
+            )
+            missing = self.program_df.loc[
+                self.program_df["programno"].isna(), "program_id"
+            ].tolist()
+            if missing:
+                raise ValueError(
+                    "Program codes are missing program IDs required by program "
+                    f"data: {missing[:10]}"
+                )
+
+        self._validate_programnos(
+            self.program_df, "Program data", require_contiguous=False
+        )
+        self.program_df = self.program_df.sort_values("programno").reset_index(
+            drop=True
+        )
+        source_columns = self.program_df["programno"].to_numpy(dtype=int) - 1
+        expected_columns = np.arange(len(self.program_df))
+        if not np.array_equal(source_columns, expected_columns):
+            self.only_keep_cols = source_columns
+        self.program_df["programno"] = expected_columns + 1
+        self._set_program_mappings()
+
+    def index(self, program: str, quiet: bool = False) -> int:
+        """Get program index for a given program code.
+
+        Args:
+            program (str): program code
+            quiet (bool, optional): If True, do not warn when the program code is not found. Defaults to False.
+
+        Returns:
+            int: program index
+        """
+        if program not in self.indices:
+            if not quiet:
+                warnings.warn(
+                    f"Programs.index: no such program: {program}",
+                    stacklevel=2,
+                )
+            return -1
+        return self.indices[program]
+
+    def index_list(self, programs: list) -> list:
+        """Get program indices for a list of program codes.
+
+        Args:
+            programs (list): list of program codes
+
+        Returns:
+            list: list of program indices
+        """
+        unknown = list(dict.fromkeys(x for x in programs if x not in self.indices))
+        if unknown:
+            raise ValueError(f"Unknown program IDs: {unknown[:10]}")
+        return [self.indices[x] for x in programs]
+
+    def set_program_capacities(self, capacities: np.ndarray | pd.Series):
+        """Manually set program capacities.
+
+        Args:
+            capacities (Union[np.ndarray, pd.Series]): array or series with capacities for each program
+        """
+        self.program_df["capacity"] = capacities
+
+    @property
+    def school(self) -> pd.Series:
+        """Return series mapping from each program to the school it is in."""
+        return self.program_df["school_id"]
+
+    @property
+    def capacity(self) -> pd.Series:
+        """Return series mapping from each program to the EPC capacities."""
+        return self.program_df["capacity"].fillna(0)
+
+    @property
+    def capacityRnd2(self) -> pd.Series:
+        """Return series mapping from each program to the EPC capacities."""
+        return self.program_df["r2_capacity"]
+
+    @property
+    def capacityFinal(self) -> pd.Series:
+        """Return series mapping from each program to the EPC capacities."""
+        try:
+            return self.program_df["r3_capacity"]
+        except KeyError:
+            return self.program_df["capacity"]
+
+    @property
+    def program_type(self) -> pd.Series:
+        """Return series mapping from each program to program type."""
+        return self.program_df["program_type"]
+
+    @property
+    def program_type_to_indices(self) -> dict:
+        """Get dictionary of program types to list of all indices of programs of that type.
+
+        Returns:
+            dict: dictionary of program types to list of program indices
+        """
+        if self._program_type2indices is None:
+            self._program_type2indices = dict(
+                self.program_df.groupby("program_type").programno.agg(list)
+            )
+        return self._program_type2indices
+
+    @property
+    def school_to_indices(self) -> dict:
+        """Get dictionary of school ids to list of all indices of programs in that school.
+
+        Returns:
+            dict: dictionary of school ids to list of program indices
+        """
+        if self._school2indices is None:
+            self._school2indices = dict(
+                self.program_df.groupby("school_id").programno.agg(list)
+            )
+        return self._school2indices
+
+    def language_program_indices(self) -> list:
+        """Get list of indices of all language pathways programs.
+
+        Returns:
+            list: list of program indices
+        """
+        lps = LANGUAGE_PATHWAYS.intersection(set(self.program_type_to_indices.keys()))
+        return [x for y in lps for x in self.program_type_to_indices[y]]
+
+    def citywide_program_indices(self, citywide_schools: list) -> list:
+        """Get list of indices of all citywide programs.
+
+        Args:
+            citywide_schools (list): list of school ids that are citywide
+
+        Returns:
+            list: list of program indices at those schools
+        """
+        citywide_schools = [
+            x
+            for x in citywide_schools
+            if x in self.program_df["school_id"].unique().tolist()
+        ]
+        citywide_programs = {
+            y for x in citywide_schools for y in self.school_to_indices[x]
+        }
+        return list(citywide_programs)
+
+    def citywide_language_program_indices(self, citywide_schools: list) -> list:
+        """Get list of indices of all citywide language pathways programs.
+
+        Args:
+            citywide_schools (list): list of school ids that are citywide
+
+        Returns:
+            list: list of program indices at those schools
+        """
+        citywide_programs = set(self.citywide_program_indices(citywide_schools))
+        lps = set(self.language_program_indices())
+        return list(citywide_programs.intersection(lps))

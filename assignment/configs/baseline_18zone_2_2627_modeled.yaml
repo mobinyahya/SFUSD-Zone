@@ -1,0 +1,40 @@
+# Baseline for the benchmark_capacity_match / benchmark_compactness zonings:
+# the existing 18zone_2 map (18-zone-1_2_BG_2020, block groups) on the same
+# 2026-27 kindergarten applicant market, special programs excluded, with
+# lists drawn from the 2025-26 outside-option MNL (utility.2627.from_2526_outside).
+# small_zones+no_reserves and small_zones+reserves_05frl both use 18zone_2;
+# the reserve policy is identical to medium_zones+reserves_05frl apart from
+# the zones, so the two pair with the benchmark runs' policies.
+#
+# Run: uv run python -m assignment.slurm submit --config assignment/configs/baseline_18zone_2_2627_modeled.yaml
+
+data:
+  scenario: assignment-generated-zones-2627
+  overrides:
+    sources:
+      assignment.estimate: utility.2627.from_2526_outside
+    filters:
+      assignment:
+        student_population: applicant
+        special_programs: exclude_any_special
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/baseline_18zone_2_2627/assignments_modeled/
+
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: true
+
+r1-only: true
+save-assignment: true
+subconfigs:
+- small_zones+no_reserves
+- small_zones+reserves_05frl
+utility-model:
+  enable: true
+  list-length: outside_option
+  gumbel-scale: 1.0

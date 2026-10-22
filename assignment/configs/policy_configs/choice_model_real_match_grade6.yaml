@@ -1,0 +1,46 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: -1
+
+#paths:
+#  zone-paths: []
+
+policies:
+- Con0
+#- real_match
+
+priority-weights:
+  brown-ms:
+    sibling: 16
+    bayview-to-brown: 8
+    zip-94124: 4
+    ctip: 2
+
+  bayview-students:
+#    sibling: 16
+#    msf: 8
+    bayview-to-all: 4
+#    ctip: 2
+
+  language-programs:
+    lp-sibling: 32
+    lp: 16
+    sibling: 8
+    msf: 4
+    ctip: 2
+
+  remaining:
+    sibling: 16  #8
+    msf: 8  #4
+    ctip: 2
+
+
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

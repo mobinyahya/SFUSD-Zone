@@ -1,0 +1,22 @@
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: -1
+
+policies:
+- Con0
+
+priority-weights:
+  lp-sibling: 32
+  lp: 16
+  sibling: 8
+  brown-ms-to-hs: 4
+  ctip: 2
+
+sibling-access: true
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

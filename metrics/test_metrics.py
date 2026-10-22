@@ -1,0 +1,395 @@
+import math
+
+import networkx as nx
+import pandas as pd
+import pytest
+from shapely.geometry import box
+
+from optimization.data.contiguity import boundary_edges
+from optimization.levels import LevelSpec
+from optimization.problem import ZoneProblem
+from optimization.solution import ZoneSolution
+from optimization.tests.synthetic import make_grid_problem
+from metrics import MetricsCalculator
+from metrics.columns import MetricColumns
+from metrics import choice as choice_metrics
+from metrics import distance as distance_metrics
+from metrics import programs as program_metrics
+from metrics.spatial import compute_spatial_metrics
+
+
+def _problem():
+    problem = make_grid_problem(3, 3)
+    problem.level = LevelSpec("Block", 0)
+    problem.G.graph["school_data"] = {
+        100: {
+            "program_types": ["GE", "SB"],
+            "math_score": 2500,
+            "english_score": 2450,
+            "ge_capacity": 1,
+            "attendance_area": 100,
+        },
+        200: {
+            "program_types": ["GE", "SA"],
+            "math_score": 2600,
+            "english_score": 2550,
+            "ge_capacity": 1,
+            "attendance_area": 200,
+        },
+    }
+    return problem
+
+
+def _assignment():
+    return {
+        0: 0,
+        1: 0,
+        3: 0,
+        4: 0,
+        2: 1,
+        5: 1,
+        6: 1,
+        7: 1,
+        8: 1,
+    }
+
+
+def _solution(
+    objective=10.0,
+    wall_time=1.5,
+    metadata=None,
+    assignment=None,
+    status="FEASIBLE",
+):
+    return ZoneSolution(
+        problem=_problem(),
+        assignment=_assignment() if assignment is None else assignment,
+        status=status,
+        objective=objective,
+        wall_time=wall_time,
+        metadata=metadata or {"solver": "test"},
+    )
+
+
+def test_optimization_metrics_on_single_solution():
+    solution = _solution(objective=12.0)
+    result = MetricsCalculator(solution, config={"strategy": "single"}).compute()
+
+    expected_cut_edges = boundary_edges(solution.problem.G, solution.assignment)
+    assert result.metrics["num_zones"] == 2
+    assert result.metrics["cut_edges"] == expected_cut_edges
+    assert result.metrics["final_cut_edges"] == expected_cut_edges
+    assert result.metrics["normalized_cut_edges"] == (
+        expected_cut_edges / solution.problem.Z
+    )
+    assert result.metrics["fractional_cut_edges"] == (
+        expected_cut_edges / solution.problem.G.number_of_edges()
+    )
+    assert 0 < result.metrics["avg_reock_score"] <= 1
+    assert result.metrics["avg_reock_score"] <= result.metrics["max_reock_score"] <= 1
+    assert 0 < result.metrics["avg_polsby_popper_score"] <= 1
+    assert (
+        result.metrics["avg_polsby_popper_score"]
+        <= result.metrics["max_polsby_popper_score"]
+        <= 1
+    )
+    assert result.metrics["final_objective"] == 12.0
+    assert result.metrics["contiguous"] == 1
+    assert result.metrics["avg_total_programs_per_zone"] == 2.0
+    assert result.metrics["solution_code"]
+    assert set(result.zone_data) == {0, 1}
+    assert result.zone_data[0]["ge_students"] == 4.0
+    assert result.zone_data[0]["avg_math_score"] == 2500.0
+
+
+def test_program_metrics_read_the_run_program_table(tmp_path):
+    programs = tmp_path / "programs.csv"
+    pd.DataFrame(
+        {
+            "school_id": [100, 100, 100, 200, 200],
+            "program_type": ["GE", "SB", "CE", "SA", "GE"],
+            "program_id": [
+                "100-GE-KG",
+                "100-SB-KG",
+                "100-CE-06",
+                "200-SA-KG",
+                "200-GE-06",
+            ],
+            "capacity": [1, 1, 1, 1, 1],
+        }
+    ).to_csv(programs, index=False)
+    problem = _problem()
+    for data in problem.G.graph["school_data"].values():
+        del data["program_types"]
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+    data = {
+        "scenario": "legacy",
+        "overrides": {"sources": {"optimization.programs": {"path": str(programs)}}},
+    }
+
+    result = MetricsCalculator(
+        solution, config={"data": data}, modules=[program_metrics.compute]
+    ).compute()
+
+    # Only the KG rows the run selects: 100 offers GE and SB, 200 only SA.
+    assert result.zone_data[0]["programs"] == {"GE": 1, "SB": 1}
+    assert result.zone_data[1]["programs"] == {"SA": 1}
+    assert result.metrics["avg_total_programs_per_zone"] == 1.5
+
+
+def test_nearby_ge_schools_weight_by_the_problem_population():
+    problem = _problem()
+    problem.program_population = "All"
+    problem.G.nodes[0]["all_prog_students"] = 3.0
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+
+    result = MetricsCalculator(solution, modules=[distance_metrics.compute]).compute()
+
+    # Only node 0 is within half a mile of zone 0's school: 3 of 6 students.
+    assert result.zone_data[0]["ge_schools_within_half_mile"] == 0.5
+
+
+def test_shape_metrics_use_block0_geometry_after_conversion():
+    block0 = nx.Graph()
+    block0.add_node(0, area_id=10, geometry=box(0, 0, 1, 1))
+    block0.add_node(1, area_id=11, geometry=box(1, 0, 2, 1))
+    block0.add_edge(0, 1)
+
+    coarse = nx.Graph()
+    coarse.add_node(0, block_ids=[10, 11], geometry=box(0, 0, 10, 1))
+
+    expected = compute_spatial_metrics(
+        ZoneSolution(
+            problem=ZoneProblem(block0, LevelSpec("Block", 0), [0], [100]),
+            assignment={0: 0, 1: 0},
+            status="FEASIBLE",
+        ),
+        config={"block0_graph": block0},
+    )
+    actual = compute_spatial_metrics(
+        ZoneSolution(
+            problem=ZoneProblem(coarse, LevelSpec("Block", 1), [0], [100]),
+            assignment={0: 0},
+            status="FEASIBLE",
+        ),
+        config={"block0_graph": block0},
+    )
+
+    assert math.isclose(actual.avg_reock_score, expected.avg_reock_score)
+    assert math.isclose(actual.fractional_cut_edges, expected.fractional_cut_edges)
+    assert math.isclose(
+        actual.avg_polsby_popper_score,
+        expected.avg_polsby_popper_score,
+    )
+
+
+def test_recursive_stage_metrics_default_to_final_only():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(objective=10.0, wall_time=3.0)
+    result = MetricsCalculator(
+        [first, final], config={"strategy": "recursive"}
+    ).compute()
+
+    assert result.run["strategy"] == "recursive"
+    assert result.run["selection"] == "literal_final_stage"
+    assert result.run["final_stage"] == "stage_01_Block_0"
+    assert result.metrics["total_wall_time"] == 5.0
+    assert result.metrics["objective_stage_00_Block_0"] == 20.0
+    assert result.metrics["objective_stage_01_Block_0"] == 10.0
+    assert "cut_edges_stage_01_Block_0" not in result.metrics
+    assert result.run["stages"][1]["cut_edges"] is None
+    assert result.metrics["cut_edges"] > 0
+    assert result.run["final_cut_edges"] == result.metrics["cut_edges"]
+    assert len(result.run["stages"]) == 2
+
+
+def test_recursive_metrics_use_infeasible_literal_final_stage():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(
+        objective=None,
+        wall_time=1.0,
+        assignment={},
+        status="INFEASIBLE",
+    )
+
+    result = MetricsCalculator(
+        [first, final], config={"strategy": "recursive"}
+    ).compute()
+
+    assert result.run["selection"] == "literal_final_stage"
+    assert result.run["final_status"] == "INFEASIBLE"
+    assert result.run["final_stage"] == "stage_01_Block_0"
+    assert result.metrics == {}
+    assert result.zone_data == {}
+
+
+def test_recursive_stage_metrics_skip_infeasible_stages():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(
+        objective=None,
+        wall_time=1.0,
+        assignment={},
+        status="INFEASIBLE",
+    )
+
+    result = MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert result.run["final_status"] == "INFEASIBLE"
+    assert result.run["stages"][0]["cut_edges"] is not None
+    assert result.run["stages"][1]["cut_edges"] is None
+    assert "cut_edges_stage_00_Block_0" in result.metrics
+    assert "cut_edges_stage_01_Block_0" not in result.metrics
+    assert "num_zones" not in result.metrics
+
+
+def test_recursive_stage_metrics_can_be_enabled():
+    first = _solution(objective=20.0, wall_time=2.0)
+    final = _solution(objective=10.0, wall_time=3.0)
+    result = MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert result.metrics["cut_edges_stage_01_Block_0"] > 0
+    assert result.metrics["normalized_cut_edges_stage_01_Block_0"] > 0
+    assert result.metrics["fractional_cut_edges_stage_01_Block_0"] > 0
+    assert result.run["stages"][1]["cut_edges"] > 0
+    assert result.run["stages"][1]["fractional_cut_edges"] > 0
+
+
+def test_stage_metrics_measure_each_stage_once(monkeypatch):
+    import metrics.base
+
+    measured = []
+    original = metrics.base.compute_spatial_metrics
+
+    def counting(solution, config):
+        measured.append(solution)
+        return original(solution, config)
+
+    monkeypatch.setattr(metrics.base, "compute_spatial_metrics", counting)
+    first, final = _solution(), _solution()
+
+    MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert [id(stage) for stage in measured] == [id(first), id(final)]
+
+
+def test_iterative_metrics_select_best_choice_utility():
+    low = _solution(
+        objective=30.0,
+        metadata={"choice_utility": 1.0},
+    )
+    best = _solution(
+        objective=25.0,
+        metadata={"choice_utility": 2.5},
+    )
+    later = _solution(
+        objective=20.0,
+        metadata={"choice_utility": 2.0},
+    )
+
+    result = MetricsCalculator(
+        [low, best, later], config={"strategy": "iterative_choice"}
+    ).compute()
+
+    assert result.run["selection"] == "best_choice_utility"
+    assert result.run["final_stage"] == "iteration_01_Block_0"
+    assert result.metrics["final_objective"] == 25.0
+    assert result.metrics["final_choice_utility"] == 2.5
+    assert result.run["stages"][2]["choice_utility"] == 2.0
+
+
+def test_choice_metric_uses_configured_mnl_method(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "100-GE-KG": [2.0, 1.0],
+            "100-SA-KG": [3.0, 0.0],
+            "200-GE-KG": [0.5, 4.0],
+            "200-SA-KG": [0.2, 5.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2, 3],
+            "census_blockgroup": [1001, 1002, 1001],
+            "grade": ["KG", "KG", "01"],
+            "r1_ranked_idschool": ["[100]", "[200]", "[100]"],
+            "r1_programs": ["['GE']", "['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    solution = ZoneSolution(
+        problem=make_grid_problem(2, 2),
+        assignment={0: 0, 1: 0, 2: 1, 3: 1},
+        status="FEASIBLE",
+    )
+    column = MetricColumns.CHOICE_TOTAL_PREASSIGNMENT_UTILITY
+    data = {
+        "scenario": "legacy",
+        "overrides": {
+            "sources": {
+                "choice.estimate": {
+                    "path": str(utility_path),
+                    "classification": "restricted",
+                },
+                "assignment.students": {
+                    "path": str(student_path),
+                    "classification": "restricted",
+                },
+            },
+            "filters": {
+                "assignment": {
+                    "year": "2324",
+                    "grade": "KG",
+                    "student_population": "applicant",
+                    "rounds": [1],
+                    "special_programs": "include",
+                    "capacity_profile": "status_quo",
+                    "include_mission_bay": True,
+                }
+            },
+        },
+    }
+
+    max_result = MetricsCalculator(
+        solution,
+        config={
+            "choice_model": "mnl",
+            "choice_model_method": "max",
+            "data": data,
+        },
+        modules=[choice_metrics.compute],
+    ).compute()
+    logsum_result = MetricsCalculator(
+        solution,
+        config={
+            "choice_model": "mnl",
+            "choice_model_method": "logsum",
+            "data": data,
+        },
+        modules=[choice_metrics.compute],
+    ).compute()
+
+    expected_logsum = (
+        3.0 + math.log1p(math.exp(-1.0)) + 5.0 + math.log1p(math.exp(-1.0))
+    )
+    assert max_result.metrics[column] == pytest.approx(8.0)
+    assert logsum_result.metrics[column] == pytest.approx(expected_logsum)
+    assert logsum_result.run["choice_preassignment_utility"]["method"] == "logsum"

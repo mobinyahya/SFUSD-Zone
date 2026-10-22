@@ -1,0 +1,49 @@
+# Optimization-native benchmark sweep.
+
+name: solver_comparison
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: legacy
+    overrides: {}
+  save_solver_logs: true
+  save_solver_progress: true
+  strategy: single
+  solve_time_limits: [600]
+  max_distance: 4.52
+  hints: voronoi
+  workers: 1
+  racial_dev: -1
+  frl_dev: 0.15
+  overage: 0.15
+  shortage: 0.15
+  levels: ["Block_1"]
+
+sweep:
+  centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']
+  seed: [1, 2,]
+tasks:
+  - solver: 'cp_int'
+    workers: 8
+  - solver: 'cp_bool'
+    linearization_level: 2
+    workers: 8
+
+
+
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/solver_comparison_5/'
+  capacity: 16         # total solver-thread slots available on the machine
+  max_workers: 20      # max concurrent Python worker processes
+  max_tasks_per_worker: 10   # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'

@@ -1,0 +1,58 @@
+# Policy #5: neighborhood assignment, no choice.
+#
+# Every student's list collapses to their attendance-area GE program, language
+# pathways included, and capacity is ignored -- aa_ge_only leaves exactly one
+# program on the list and overscribe_aa seats whoever DA leaves over. Modelled
+# on the #3/#4 family, which is where the distance priority and the FRL
+# reserves come from; both are inert here, because with one program on every
+# list there is nothing for a priority to reorder.
+#
+# The promotion boost is inert by construction too: a promote only keeps their
+# feeder when the feeder *is* their attendance-area GE program, which is true
+# for 338 of the 1,178 promotion-eligible students in 2026-27 and nobody else.
+# That is the policy's point, not a gap -- a TK seat won through citywide
+# choice a year earlier is not reachable under neighborhood assignment.
+
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: false
+guard-rails: 0
+reserve-settings: {
+  "column": "freelunch_prob",
+  "thresholds": "percentile:50",
+  "lower_disadvantaged": true,
+  "reserve_fraction": [0.5, 0.5]
+  }
+non_designation_boost: 128
+soft_reserve_boost: 64
+
+aa_ge_only: true
+add_aa_schools: true
+drop_below_aa: true
+overscribe_aa: true
+
+policies:
+- Con1
+
+priority-weights:
+  promote: 1024
+  ctip: 8
+  sibling: 16
+  zone: 256
+  distance: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+distance-priority:
+  thresholds: [0.5, 1, 2]
+
+sibling-access: true
+designate: false
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

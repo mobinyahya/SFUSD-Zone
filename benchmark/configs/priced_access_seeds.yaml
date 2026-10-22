@@ -1,0 +1,103 @@
+# Does priced_access's MID-welfare advantage survive replication?
+#
+# On 6-zone-3 seed1 at a 900s local budget, priced_access reached MID welfare
+# 14,839.6 against 14,649.0 for iterative_choice and 14,394.0 for saa at the
+# same budget, and 14,547.5 for the best 1800s cluster baseline. The +292 margin
+# over that baseline sits at the edge of the measured run-to-run noise, so a
+# single seed cannot establish it. This sweep replicates the head-to-head across
+# four seeds and both centroid sets at double the baseline budget.
+#
+# MID welfare is the only metric being compared (see the cross-strategy
+# yardstick note): score the output with
+#   analysis/plots/recompute_mid_welfare.py <output_dir> --level base
+# Everything else in each run's result.json is a per-strategy surrogate and is
+# not comparable across these arms.
+#
+# price_scale is crossed at 0 and 1 because any non-negative price vector keeps
+# the surrogate a valid upper bound, making the scale a free tuning knob: 0
+# reduces it to best-school-in-zone with no congestion charge at all, so the
+# pair measures whether pricing capacity buys any MID welfare.
+
+name: priced_access_seeds
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: true
+  save_solver_progress: true
+  max_distance: auto
+  boundary_prop: 0.18
+  hints: feasible
+  budget_accounting: solver_time
+  feasible_hint_time_limit: 600
+
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  frl_dev: 0.15
+  gap_limits: [0]
+  linearization_level: 1
+
+  carry_over_compute: true
+  recom_iterations: -1
+  short_bursts_method: relaxed_recom
+
+  mid_utility_handling: omit_nonpositive
+  saa_num_seeds: 15
+  saa_tie_breaking_method: STB
+  choice_model_method: 'logsum'
+  choice_utility_scale: 100
+  choice_utility_hints: true
+  mid_lottery_scale: 100
+  mid_transport_bounds: false
+  mid_complementary_slackness_slack: 'auto'
+  saa_relative_gap: false
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9']
+  levels: [['Block_2']]
+
+tasks:
+  # The new strategy, with and without congestion pricing. Its iterations are
+  # cheap -- closed-form cuts, no recourse LP -- so it gets the same 30-iteration
+  # allowance as the baselines and will simply use more of them.
+  - solver: 'cp_bool'
+    strategy: [priced_access]
+    priced_access_price_scale: [0.0, 1.0]
+    workers: 16
+    max_iterations: [30]
+    seed: [1, 2, 3, 4]
+    solve_time_limits: [[3600]]
+
+  # Same instance, same budget, same iteration allowance: the only honest
+  # comparison. saa pays for 15 recourse LPs per iteration on top of the
+  # master budget, which is the cost priced_access removes.
+  - solver: 'cp_bool'
+    strategy: [iterative_choice, saa]
+    workers: 16
+    max_iterations: [30]
+    seed: [1, 2, 3, 4]
+    solve_time_limits: [[3600]]
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/priced_access_seeds'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final
+
+matching:
+  enabled: false
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
+  compute_stage_assignments: false

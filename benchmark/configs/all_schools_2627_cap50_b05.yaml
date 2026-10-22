@@ -1,0 +1,73 @@
+# All-schools (59-zone) 2026-27 study, capacity-balanced (see
+# all_schools_2627_cap50.yaml), multilevel through the new Block_0.5 level.
+#
+# Block_1 is infeasible for the +/-50% capacity band (its aggregates carry ~46
+# students); Block_0.5 (3,000-node target, ~1,850 nodes, <= ~17 students per
+# aggregate) is feasible, and Block_0.5 -> Block_0 at looseness 1.1, radius 2
+# reached 2,481 Block_0 cut edges in 7 local minutes against 3,035-3,271 for the
+# Block_0-only and Block_1-first cp_bool routes.
+#
+# Grid: looseness {1.0, 1.1, 1.2} x boundary radius {1, 2, 3}, plus a second
+# seed and a coarse-heavy time split for the local winner.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50_b05.yaml
+#
+name: all_schools_2627_cap50_b05_v1
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: sfusd-2627
+    overrides:
+      filters:
+        optimization:
+          student_population: enrolled
+          include_mission_bay: true
+          geography_vintage: "2020"
+  centroids_type: '59-zone'
+  solver: cp_bool
+  strategy: recursive
+  levels: ['Block_0.5', 'Block_0']
+  solve_time_limits: [1200, 2400]
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+
+  frl_dev: 0.3
+  racial_dev: -1
+  overage: 0.5
+  shortage: 0.5
+  boundary_prop: -1
+
+  hints: voronoi
+  workers: 8
+  seed: 1
+
+tasks:
+  - {looseness: 1.0, boundary_radius: 1}
+  - {looseness: 1.0, boundary_radius: 2}
+  - {looseness: 1.0, boundary_radius: 3}
+  - {looseness: 1.1, boundary_radius: 1}
+  - {looseness: 1.1, boundary_radius: 2}
+  - {looseness: 1.1, boundary_radius: 3}
+  - {looseness: 1.2, boundary_radius: 1}
+  - {looseness: 1.2, boundary_radius: 2}
+  - {looseness: 1.2, boundary_radius: 3}
+  - {looseness: 1.1, boundary_radius: 2, seed: 2}
+  - {looseness: 1.1, boundary_radius: 2, solve_time_limits: [2400, 1200]}
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_b05_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final

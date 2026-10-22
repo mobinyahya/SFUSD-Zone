@@ -1,0 +1,503 @@
+"""Tests for shared MNL zoning utility helpers."""
+
+import itertools
+import warnings
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from choice.estimate import node_area_ids
+from choice.mnl import MNLChoiceModel, build_mnl_choice_model
+from loaders import load_scenario
+from optimization.tests.synthetic import make_grid_problem
+
+
+ASSIGNMENT_FILTERS = {
+    "year": "2324",
+    "grade": "KG",
+    "student_population": "applicant",
+    "rounds": [1],
+    "special_programs": "include",
+    "capacity_profile": "status_quo",
+    "include_mission_bay": True,
+}
+
+
+def _scenario(utility_path, student_path):
+    return load_scenario(
+        {
+            "scenario": "legacy",
+            "overrides": {
+                "sources": {
+                    "choice.estimate": {"path": str(utility_path)},
+                    "assignment.students": {"path": str(student_path)},
+                },
+                "filters": {"assignment": ASSIGNMENT_FILTERS},
+            },
+        },
+        environ={},
+    )
+
+
+def test_mnl_choice_model_evaluates_and_builds_cuts(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1", "2324-2"],
+            "100-GE-KG": [2.0, 1.0],
+            "200-GE-KG": [0.5, 4.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1002],
+            "grade": ["KG", "KG"],
+            "r1_ranked_idschool": ["[100]", "[200]"],
+            "r1_programs": ["['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    model = MNLChoiceModel(_scenario(utility_path, student_path), method="max")
+
+    evaluated = model.evaluate_with_cuts(problem, assignment)
+
+    assert evaluated.utility == pytest.approx(6.0)
+    assert model.preassignment_utility(problem, assignment) == pytest.approx(
+        evaluated.utility
+    )
+    assert evaluated.cuts
+    assert {cut.node for cut in evaluated.cuts} == set(problem.nodes)
+
+
+def test_mnl_choice_utility_hint_cuts_use_nearest_average_school_count(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "100-GE-KG": [1.0],
+            "200-GE-KG": [2.0],
+            "300-GE-KG": [10.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    problem.G.nodes[1]["school_ids"] = [300]
+    problem.G.nodes[1]["num_schools"] = 1
+    problem.G.graph["school_data"][300] = {}
+    evaluator = MNLChoiceModel(_scenario(utility_path, student_path), method="max")
+
+    cuts = evaluator.choice_utility_hint_cuts(problem)
+
+    cut = next(cut for cut in cuts if cut.node == 1)
+    coeffs = {term.node: term.coefficient for term in cut.terms}
+    assert cut.constant == pytest.approx(2.0)
+    assert set(coeffs) == {1}
+    assert coeffs[1] == pytest.approx(8.0)
+
+
+@pytest.mark.parametrize("method", ["max", "logsum"])
+def test_mnl_block_impacts_match_direct_add_remove_deltas(tmp_path, method):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1"],
+            "100-GE-KG": [2.0],
+            "200-GE-KG": [4.0],
+            "300-GE-KG": [1.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    problem.G.nodes[1]["school_ids"] = [300]
+    problem.G.nodes[1]["num_schools"] = 1
+    problem.G.graph["school_data"][300] = {}
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    evaluator = MNLChoiceModel(_scenario(utility_path, student_path), method=method)
+
+    prepared = evaluator._prepare(problem, assignment)
+    impacts = evaluator._block_impacts(
+        problem,
+        assignment,
+        prepared.merged,
+        prepared.zone_to_cols,
+        prepared.student_area_col,
+    )
+
+    def utility(cols):
+        return float(evaluator._utilities_for_cols(prepared.merged, cols)[0])
+
+    zone_cols = prepared.zone_to_cols[0]
+    school_100_cols = evaluator.school_to_cols[100]
+    school_200_cols = evaluator.school_to_cols[200]
+    baseline = utility(zone_cols)
+    added_cols = zone_cols + [col for col in school_200_cols if col not in zone_cols]
+    remaining_cols = [col for col in zone_cols if col not in school_100_cols]
+
+    assert impacts["1001"][200]["add"] == pytest.approx(utility(added_cols) - baseline)
+    assert impacts["1001"][100]["remove"] == pytest.approx(
+        baseline - utility(remaining_cols)
+    )
+    assert impacts["1001"][100]["remove"] >= 0.0
+
+
+@pytest.mark.parametrize("method", ["max", "logsum"])
+def test_mnl_choice_cuts_upper_bound_substitute_school(tmp_path, method):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1"],
+            "100-GE-KG": [10.0],
+            "200-GE-KG": [9.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    incumbent = {0: 0, 1: 0, 2: 1, 3: 1}
+    alternative = {0: 0, 1: 1, 2: 1, 3: 1}
+    evaluator = MNLChoiceModel(_scenario(utility_path, student_path), method=method)
+
+    evaluated = evaluator.evaluate_with_cuts(problem, incumbent)
+    cut = next(cut for cut in evaluated.cuts if cut.node == 1)
+    rhs = cut.constant + sum(
+        term.coefficient
+        for term in cut.terms
+        if alternative.get(cut.node) == alternative.get(term.node)
+    )
+    true_utility = _node_utility(evaluator, problem, alternative, node=1)
+
+    assert rhs >= true_utility - 1e-9
+    assert rhs == pytest.approx(true_utility)
+
+
+def test_build_mnl_choice_model_returns_mnl(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    utility_path.write_text("studentno\n", encoding="utf-8")
+    student_path.write_text("studentno\n", encoding="utf-8")
+
+    assert isinstance(
+        build_mnl_choice_model(_scenario(utility_path, student_path)),
+        MNLChoiceModel,
+    )
+
+
+def test_mnl_uses_central_assignment_student_selection(tmp_path):
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "100-GE-KG": [3.0, 100.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1001],
+            "grade": ["KG", "01"],
+            "r1_ranked_idschool": ["[100]", "[100]"],
+            "r1_programs": ["['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+    problem = make_grid_problem(2, 2)
+
+    evaluator = MNLChoiceModel(_scenario(utility_path, student_path), method="max")
+
+    assert evaluator.preassignment_utility(
+        problem, {0: 0, 1: 0, 2: 1, 3: 1}
+    ) == pytest.approx(3.0)
+    assert evaluator.student_df["studentno"].tolist() == ["1"]
+
+
+def _node_utility(evaluator, problem, assignment, node: int) -> float:
+    utility = evaluator._preassignment_utility(problem, assignment)
+    return sum(
+        float(utility.block_utilities.loc[block_id])
+        for block_id in node_area_ids(problem.G.nodes[node])
+        if block_id in utility.block_utilities.index
+    )
+
+
+def test_citywide_schools_are_offered_by_every_zone(tmp_path):
+    """A citywide school belongs to no zone's ``school_ids`` but to every zone.
+
+    Availability is read off the graph, and with ``include_citywide_zoning``
+    off a citywide school has no node at all. Before it was passed in
+    explicitly it therefore landed in no zone and vanished from the logsum,
+    which is the opposite of what a citywide school is.
+    """
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": ["2324-1", "2324-2"],
+            "100-GE-KG": [2.0, 1.0],
+            "200-GE-KG": [0.5, 4.0],
+            # School 300 sits on no node of the grid problem below.
+            "300-GE-KG": [9.0, 9.0],
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "census_blockgroup": [1001, 1002],
+            "grade": ["KG", "KG"],
+            "r1_ranked_idschool": ["[100]", "[200]"],
+            "r1_programs": ["['GE']", "['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    scenario = _scenario(utility_path, student_path)
+
+    ignored = MNLChoiceModel(scenario, method="max")
+    offered = MNLChoiceModel(scenario, method="max", citywide_schools=[300])
+
+    # Without it, the unplaced school contributes nothing at all.
+    assert ignored.preassignment_utility(problem, assignment) == pytest.approx(6.0)
+    # With it, both students take the citywide option: 9.0 each.
+    assert offered.preassignment_utility(problem, assignment) == pytest.approx(18.0)
+
+
+def test_citywide_schools_do_not_double_count_when_also_on_a_node(tmp_path):
+    """``include_citywide_zoning`` on puts the school on a node as well."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {"studentno": ["2324-1"], "100-GE-KG": [2.0], "200-GE-KG": [5.0]}
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    scenario = _scenario(utility_path, student_path)
+
+    # School 200 is on node 3, in zone 1; the student is in zone 0. Declaring it
+    # citywide makes it reachable anyway, and declaring it twice changes nothing.
+    plain = MNLChoiceModel(scenario, method="max")
+    citywide = MNLChoiceModel(scenario, method="max", citywide_schools=[200])
+
+    assert plain.preassignment_utility(problem, assignment) == pytest.approx(2.0)
+    assert citywide.preassignment_utility(problem, assignment) == pytest.approx(5.0)
+
+
+def test_build_mnl_choice_model_reads_the_choice_selector(tmp_path, monkeypatch):
+    """The flag is resolved from the scenario, not passed by each caller."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame({"studentno": ["2324-1"], "100-GE-KG": [1.0]}).to_csv(
+        utility_path, index=False
+    )
+    pd.DataFrame(
+        {
+            "studentno": [1],
+            "census_blockgroup": [1001],
+            "grade": ["KG"],
+            "r1_ranked_idschool": ["[100]"],
+            "r1_programs": ["['GE']"],
+        }
+    ).to_csv(student_path, index=False)
+
+    import optimization.data.loaders as opt_loaders
+
+    monkeypatch.setattr(
+        opt_loaders, "citywide_school_ids", lambda data: frozenset({300})
+    )
+    scenario = _scenario(utility_path, student_path)
+
+    # The legacy scenario sets the choice selector off.
+    assert build_mnl_choice_model(scenario).citywide_schools == frozenset()
+
+
+def _coverage_scenario(tmp_path, estimate_ids, student_ids=(1, 2)):
+    """Scenario whose estimate names ``estimate_ids`` and students ``student_ids``."""
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    pd.DataFrame(
+        {
+            "studentno": estimate_ids,
+            "100-GE-KG": [2.0] * len(estimate_ids),
+            "200-GE-KG": [0.5] * len(estimate_ids),
+        }
+    ).to_csv(utility_path, index=False)
+    students = list(student_ids)
+    pd.DataFrame(
+        {
+            "studentno": students,
+            "census_blockgroup": [1001 + index for index in range(len(students))],
+            "grade": ["KG"] * len(students),
+            "r1_ranked_idschool": ["[100]"] * len(students),
+            "r1_programs": ["['GE']"] * len(students),
+        }
+    ).to_csv(student_path, index=False)
+    return _scenario(utility_path, student_path)
+
+
+def test_no_warning_when_the_estimate_covers_the_students(tmp_path):
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-2"]), method="max"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model._ensure_loaded()
+
+
+def test_zero_overlap_warns_that_the_total_is_not_a_measurement(tmp_path):
+    # This is the transfer-year situation: the estimate is a per-student matrix
+    # fitted on a different cohort, so the inner join is empty and the total is
+    # 0.0 rather than an error.
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-9001", "2324-9002"]), method="max"
+    )
+    with pytest.warns(UserWarning, match="covers 0 of 2 selected students"):
+        model._ensure_loaded()
+
+    problem = make_grid_problem(2, 2)
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert model.preassignment_utility(problem, assignment) == pytest.approx(0.0)
+
+
+def test_partial_overlap_below_the_threshold_warns(tmp_path):
+    # 1 of 3 is below the 50% threshold; exactly 50% deliberately does not warn.
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-9001"], student_ids=(1, 2, 3)),
+        method="max",
+    )
+    with pytest.warns(UserWarning, match="covers 1 of 3 selected students"):
+        model._ensure_loaded()
+
+
+def test_coverage_at_the_threshold_does_not_warn(tmp_path):
+    model = MNLChoiceModel(
+        _coverage_scenario(tmp_path, ["2324-1", "2324-9001"]), method="max"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model._ensure_loaded()
+
+
+def _rhs(cut, assignment) -> float:
+    return cut.constant + sum(
+        term.coefficient
+        for term in cut.terms
+        if assignment[cut.node] == assignment[term.node]
+    )
+
+
+@pytest.mark.parametrize("method", ["max", "logsum"])
+@pytest.mark.parametrize("citywide_on_node", [False, True])
+def test_mnl_cuts_upper_bound_every_zoning_with_a_citywide_school(
+    tmp_path, method, citywide_on_node
+):
+    """Every hint and evaluation cut bounds the true node utility everywhere.
+
+    The cuts are submodular upper bounds over the schools a zone offers. A
+    citywide school is offered by every zone whatever the zoning, so it must sit
+    in every baseline and full set and never carry a co-zoning gradient --
+    whether or not ``include_citywide_zoning`` also puts it on a node.
+    """
+    rng = np.random.default_rng(7)
+    rows, cols = 2, 3
+    nodes = range(rows * cols)
+    citywide = 400
+    schools = [100, 200, 300, citywide]
+    utility_path = tmp_path / "utility.csv"
+    student_path = tmp_path / "students.csv"
+    student_nodes = [node for node in nodes for _ in range(2)]
+    pd.DataFrame(
+        {
+            "studentno": [f"2324-{i + 1}" for i in range(len(student_nodes))],
+            **{
+                f"{sid}-GE-KG": rng.normal(0.0, 2.0, len(student_nodes))
+                for sid in schools
+            },
+        }
+    ).to_csv(utility_path, index=False)
+    pd.DataFrame(
+        {
+            "studentno": [i + 1 for i in range(len(student_nodes))],
+            "census_blockgroup": [1000 + node for node in student_nodes],
+            "grade": ["KG"] * len(student_nodes),
+            "r1_ranked_idschool": ["[100]"] * len(student_nodes),
+            "r1_programs": ["['GE']"] * len(student_nodes),
+        }
+    ).to_csv(student_path, index=False)
+
+    problem = make_grid_problem(rows, cols, schools={0: 100, 5: 200})
+    extra = {2: [300]} | ({3: [citywide]} if citywide_on_node else {})
+    for node, sids in extra.items():
+        problem.G.nodes[node]["school_ids"] = sids
+        problem.G.nodes[node]["num_schools"] = len(sids)
+        problem.G.graph["school_data"].update({sid: {} for sid in sids})
+    model = MNLChoiceModel(
+        _scenario(utility_path, student_path),
+        method=method,
+        citywide_schools=[citywide],
+    )
+
+    zonings = [
+        dict(zip(nodes, zones))
+        for zones in itertools.product(
+            *(sorted(problem.candidate_zones(node)) for node in nodes)
+        )
+    ]
+    truth = [
+        {node: _node_utility(model, problem, zoning, node) for node in nodes}
+        for zoning in zonings
+    ]
+    cut_sets = [model.choice_utility_hint_cuts(problem)] + [
+        model.evaluate_with_cuts(problem, zoning).cuts for zoning in zonings
+    ]
+    assert len(zonings) == 16
+    assert all(cut_sets)
+    for cuts in cut_sets:
+        for cut in cuts:
+            for zoning, values in zip(zonings, truth):
+                true = values[cut.node]
+                assert _rhs(cut, zoning) >= true - 1e-9 * max(1.0, abs(true))

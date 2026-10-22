@@ -1,0 +1,28 @@
+utility-model:
+  enable: bool()
+  list-length: str()
+  designate-lp-for-all: bool(required=False)
+  save-path: str(required=False)
+  gumbel-scale: num(required=False)
+
+save-assignment: enum(True)
+export-aggregate-metrics: bool(required=False)
+export-local-metrics: bool(required=False)
+export_heatmaps: bool(required=False)
+reuse_assignments: bool(required=False)
+random-seed: int()
+r1-only: bool(required=False)
+
+read-lotteries: bool(required=False)
+
+iterations:
+  start: int()
+  end: int()
+
+paths:
+  assignment-folder: str()
+
+data:
+  scenario: str()
+  overrides: map()
+subconfigs: list(str())

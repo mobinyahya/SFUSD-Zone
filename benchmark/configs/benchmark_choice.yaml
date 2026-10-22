@@ -1,0 +1,109 @@
+# Optimization-native benchmark sweep.
+
+name: benchmark_choice
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides: {}
+  save_solver_logs: true
+  save_solver_progress: false
+  max_distance: auto
+  boundary_prop: 0.18
+  hints: feasible
+  budget_accounting: solver_time
+  feasible_hint_time_limit: 600
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  frl_dev: 0.15
+  gap_limits: [0]
+  linearization_level: 1
+  carry_over_compute: true
+  recom_iterations: -1
+  mid_utility_handling: omit_nonpositive
+  saa_num_seeds: 10
+
+  saa_multicut: false
+  mid_complementary_slackness: false 
+  saa_tie_breaking_method: STB
+  choice_model_method: 'logsum' # mnl aggregation for iterative choice/metric: logsum | max
+  choice_utility_scale: 100     # CP-SAT integer scaling for choice objective variables
+  choice_utility_hints: true   # iterative_choice: seed initial MNL cuts from nearest schools
+  mid_lottery_scale: 100         # mid/mid_decomp: integer continuum-mass grid
+  mid_transport_bounds: false   
+  mid_complementary_slackness_slack: 'auto' 
+  saa_welfare_bound: zoned_transport_neighbors  # saa: first_choice | transport | zoned_transport_{neighbors,flow}
+  zoned_transport_workers: 1    # gurobi threads for the zoned-transport LP; >1 measured slower
+  priced_access_price_source: zoned_transport_neighbors  # priced_access: transport | none | zoned_transport_neighbors | zoned_transport_flow
+  priced_access_price_scale: 1.0         # priced_access: any non-negative multiplier keeps the bound valid
+  priced_access_cut_levels: 3            # priced_access: thresholds emitted per applicant per iteration
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4']
+  levels: [['Block_2']]
+
+tasks:
+  - solver: 'cp_bool'
+    strategy: [iterative_choice]
+    workers: 16
+    max_iterations: [15]
+    seed: [1]
+    solve_time_limits: [[1800],[3600]]
+
+  - solver: 'cp_bool'
+    strategy: [saa]
+    workers: 16
+    max_iterations: [25]
+    seed: [1,2,3,4]
+    solve_time_limits: [[1800],[3600]]
+
+  - solver: 'cp_bool'
+    saa_num_seeds: [5,10]
+    strategy: [direct_samples]
+    workers: 16
+    seed: [1,2,3,4]
+    solve_time_limits: [[1800],[3600]]
+
+  - solver: 'cp_bool'
+    strategy: [priced_access]
+    workers: 16
+    max_iterations: [25]
+    seed: [1,2,3,4]
+    solve_time_limits: [[1800],[3600]]
+  
+  - solver: 'cp_bool'
+    strategy: [mid, mid_decomp]
+    workers: 16
+    seed: [1,2,3,4]
+    solve_time_limits: [[1800],[3600]]
+
+  - solver: 'short_bursts'
+    strategy: ['short_bursts_choice']
+    workers: 1
+    seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    solve_time_limits: [[1800], [3600]]
+
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_choice_v7'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final  # final | all
+
+
+matching:
+  enabled: false
+  config: ../../assignment/configs/choice-zone-only-for-benchmark.yaml
+  compute_stage_assignments: false

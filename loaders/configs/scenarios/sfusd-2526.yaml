@@ -1,0 +1,109 @@
+# SFUSD 2025-26 transfer
+#
+# Students and program offerings come from the September 2026 SFUSD transfer,
+# converted by analysis/data_prep/convert_sfusd_transfer.py. Read the
+# conversion report written beside the cleaned tables
+# (sfusd_transfer_report_2526.md) before trusting a number from this
+# scenario: the transfer carries no school table and one preference list per
+# student, and its capacity file has been reconciled at kindergarten only,
+# so this scenario inherits
+#
+#   * kindergarten capacities from the transfer's own Main Round capacity
+#     file, but grade 6 and grade 9 capacities from the 2022-23 district
+#     tables, or each program's observed assignment count where those
+#     tables have no such program (see the capacity_source column);
+#   * 2023-24 school coordinates, categories, and ratings; and
+#   * a single preference list per student, emitted as r1_* so
+#     `rounds: all` resolves to [1]. That list is the main round: the district
+#     confirmed the pre-run is the main-round request file, and every student
+#     the post-run seats either holds a pre-run request for the grade or is
+#     flagged byPromote. What the transfer omits is the later-round requests
+#     themselves; see round_participation in the report for how many
+#     applicants also engaged with a later round elsewhere.
+#
+# From 2024-25 SFUSD promotes TK students into kindergarten, so the kindergarten
+# applicant pool is not the set of people who applied. Three consequences are
+# live here. The KG rows of student_<year>.csv are the whole market -- Main
+# Round applicants plus the promoted students, flagged mr_applicant -- and
+# enrolled_<year>.csv is the subset of them the run seated, so enrolled is
+# contained in applicant. Kindergarten capacity is the district's own Main
+# Round capacity file, gross: no seat is reserved anywhere in the data, because
+# the run releases a promote's held seat back into the same market when they
+# win elsewhere. And every kindergarten student carries promote_eligible,
+# feeder_school, feeder_program and pref_source, which is where the promotion
+# claim lives until a policy turns it into a priority.
+# See analysis/data_prep/TK_PROMOTION_SPEC.md.
+#
+# The choice-model utility estimate is still the 2023-24 one; no estimate has
+# been fitted on 2025-26 preferences.
+
+id: sfusd-2526
+
+sources:
+  optimization.schools: optimization.schools.current
+  optimization.programs: assignment.programs.2526.mission_bay
+  optimization.capacity: capacity.stanford.scenarios_abcd
+  optimization.census: census.blocks.2010
+  optimization.crosswalk: census.block_crosswalk
+  optimization.adjacency:
+    block: census.adjacency.block
+    blockgroup: census.adjacency.blockgroup
+  optimization.centroids: bundled.centroids
+  optimization.manual_edges:
+    reviewed: bundled.manual_edges.reviewed
+    additions: bundled.manual_edges.additions
+  assignment.program_codes: assignment.program_codes
+  assignment.capacity: capacity.stanford.scenarios_abcd
+  assignment.estimate: utility.2324.exp8
+  assignment.attendance_areas: assignment.attendance_areas.2013
+  assignment.zones:
+    Medium1: zones.common.medium1
+    Z1: zones.common.z1
+    optGE780873: zones.common.opt_ge_780873
+    Large1: zones.common.large1
+    Con0: zones.common.con0
+    Con1: zones.common.con1
+    Con2: zones.common.con2
+    Con3: zones.common.con3
+    59-zone-1_B: zones.common.59
+    6-zone-1_BG: zones.common.6
+    10-zone-11_BG: zones.common.10
+    13-zone-7_BG: zones.common.13
+    18-zone-1_1_BG: zones.common.18.1
+    18-zone-1_2_BG: zones.common.18.2
+  assignment.citywide_zones:
+    Medium1-citywide: zones.citywide.medium1
+    18zone-BG-0point3miles: zones.citywide.18_bg_0point3miles
+  assignment.ctip:
+    block: ctip.array.block.2024
+    blockgroup: ctip.array.blockgroup.2024
+  choice.estimate: utility.2324.exp8
+
+filters:
+  optimization:
+    years: ["2526"]
+    grades: [KG]
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    program_population: All
+    capacity_scenario: programs
+    include_k8: false
+    include_citywide_zoning: false
+    include_citywide_choice_opt: true
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore
+  assignment:
+    year: "2526"
+    grade: KG
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    capacity_profile: default
+    capacity_scenario: programs
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore

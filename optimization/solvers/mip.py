@@ -1,0 +1,708 @@
+"""Gurobi MIP solver for zoning problems.
+
+The implementation reads :class:`ZoneProblem` directly and builds a native
+Gurobi model with Boolean assignment variables ``x[z, i]``.
+"""
+
+from __future__ import annotations
+
+import math
+import time
+from typing import Any
+
+import gurobipy as gp
+from gurobipy import GRB
+
+from choice.objective import ChoiceCut
+from optimization.access_inequalities import pair_key, plan_access_inequalities
+from optimization.data import contiguity
+from optimization.progress import SolverProgressTracker
+from optimization.problem import ZoneProblem
+from optimization.solution import ZoneSolution
+from optimization.solvers.balance import (
+    balance_constraints,
+    balance_terms,
+)
+from optimization.solvers.base import Solver, register
+
+_SENSE = {"<=", ">=", "=="}
+
+# How connectedness is written. ``neighbors`` is the closer-neighbor support
+# formulation the solvers ship with; ``flow`` is the single-commodity rooted
+# flow description, which forbids no assignment outright and is therefore the
+# variant a relaxation must use when it has to contain every zoning the
+# closer-neighbor master can return. See ``optimization/zoned_transport.py``.
+CONTIGUITY_MODELS = ("neighbors", "flow")
+
+# A term is (coefficient, zone, node), referencing coefficient * x[zone][node].
+_Term = tuple[float, int, int]
+_AssignmentVars = dict[tuple[int, int], gp.Var]
+_ProgressCaptureData = tuple[list[gp.Var], list[tuple[int, int, tuple[int, ...]]]]
+
+
+def add_gurobi_zoning_geography(
+    model: gp.Model,
+    problem: ZoneProblem,
+    *,
+    centroid_neighbor_radius: int = 0,
+    contiguity_model: str = "neighbors",
+) -> _AssignmentVars:
+    """Add the canonical complete-zoning variables and constraints to a model."""
+    builder = MipSolver(
+        centroid_neighbor_radius=centroid_neighbor_radius,
+        contiguity_model=contiguity_model,
+    )
+    assignment = builder._build_assignment_vars(model, problem)
+    builder._add_core_constraints(model, problem, assignment)
+    return assignment
+
+
+def add_flow_contiguity(
+    m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+) -> dict[tuple[int, int, int], gp.Var]:
+    """Rooted single-commodity flow contiguity, one commodity per zone.
+
+    Each zone's centroid supplies one unit to every other vertex the zone
+    holds, and an arc may carry flow only if both endpoints are in the zone, so
+    a component detached from the centroid has demand it cannot be served.
+    Exact for binary ``x``.
+
+    Unlike :func:`optimization.data.contiguity.contiguity_supports` this rules
+    out no ``(node, zone)`` pair a priori, so its feasible set contains every
+    closer-neighbor-feasible zoning.
+    """
+    capacity = float(max(1, problem.A))
+    flows: dict[tuple[int, int, int], gp.Var] = {}
+    for zone in range(problem.Z):
+        centroid = problem.centroids[zone]
+        members = [
+            node for node in problem.nodes if zone in problem.candidate_zones(node)
+        ]
+        member_set = set(members)
+        arcs = [
+            arc
+            for u, v in problem.G.edges()
+            if u in member_set and v in member_set
+            for arc in ((u, v), (v, u))
+        ]
+        inflow: dict[int, list] = {node: [] for node in members}
+        outflow: dict[int, list] = {node: [] for node in members}
+        for tail, head in arcs:
+            flow = m.addVar(lb=0.0, ub=capacity, name=f"flow_{zone}_{tail}_{head}")
+            flows[(zone, tail, head)] = flow
+            m.addConstr(flow <= capacity * x[(zone, tail)])
+            m.addConstr(flow <= capacity * x[(zone, head)])
+            outflow[tail].append(flow)
+            inflow[head].append(flow)
+        for node in members:
+            if node == centroid:
+                continue
+            m.addConstr(
+                gp.quicksum(inflow[node]) - gp.quicksum(outflow[node])
+                == x[(zone, node)]
+            )
+        if centroid in member_set:
+            m.addConstr(
+                gp.quicksum(outflow[centroid]) - gp.quicksum(inflow[centroid])
+                == gp.quicksum(x[(zone, node)] for node in members if node != centroid)
+            )
+    return flows
+
+
+@register("mip")
+class MipSolver(Solver):
+    def solve(self, problem: ZoneProblem) -> ZoneSolution:
+        self._centroid_neighbor_radius()
+        with gp.Env() as env:
+            with gp.Model("zoning", env=env) as m:
+                log_path = self._next_solver_log_path(problem)
+                if log_path:
+                    m.Params.OutputFlag = 1
+                    m.Params.LogToConsole = 0
+                    m.Params.LogFile = log_path
+                else:
+                    m.Params.OutputFlag = int(self.options.get("verbose", 0))
+                m.Params.TimeLimit = float(self.options.get("solve_time_limit", 60))
+                m.Params.MIPGap = float(self.options.get("relative_gap_limit", 0.0))
+                m.Params.Seed = int(self.options.get("seed", 42))
+                if "workers" in self.options:
+                    m.Params.Threads = int(self.options["workers"])
+
+                x = self._build_assignment_vars(m, problem)
+                self._add_core_constraints(m, problem, x)
+
+                maximize = self._add_model_objective(m, problem, x)
+                progress = self._new_solver_progress_tracker(problem, maximize=maximize)
+
+                self._add_hints(problem, x)
+
+                start = time.time()
+                if progress is None:
+                    m.optimize()
+                else:
+                    capture_data = self._progress_capture_data(problem, x)
+
+                    def progress_callback(model, where):
+                        if where == GRB.Callback.MIPSOL:
+                            self._capture_progress(
+                                model,
+                                progress,
+                                capture_data,
+                                start,
+                            )
+
+                    m.optimize(progress_callback)
+                wall = time.time() - start
+
+                if m.Status == GRB.OPTIMAL:
+                    status = "OPTIMAL"
+                elif m.SolCount > 0:
+                    status = "FEASIBLE"
+                elif m.Status == GRB.INFEASIBLE:
+                    status = "INFEASIBLE"
+                else:
+                    status = "UNKNOWN"
+
+                assignment = {}
+                objective = None
+                if m.SolCount > 0:
+                    for i in problem.nodes:
+                        for z in problem.candidate_zones(i):
+                            if x[(z, i)].X > 0.5:
+                                assignment[i] = z
+                                break
+                    objective = m.ObjVal
+
+                metadata = {
+                    "solver": self.name,
+                    **self._solver_log_metadata(log_path),
+                    **self._solver_progress_metadata(progress),
+                }
+                if problem.choice_objective is not None:
+                    metadata.update(
+                        {
+                            "objective_kind": "choice_utility",
+                            "choice_cuts": len(problem.choice_objective.cuts),
+                            **{
+                                f"choice_access_{key}": value
+                                for key, value in getattr(
+                                    self, "_access_inequality_counts", {}
+                                ).items()
+                            },
+                        }
+                    )
+                    if m.SolCount > 0:
+                        metadata["choice_best_bound"] = float(m.ObjBound)
+                elif problem.compactness_objective == "school_distance":
+                    metadata.update(
+                        {
+                            "objective_kind": "school_distance",
+                            "objective_unit": "mile^2",
+                        }
+                    )
+                elif problem.weight_edges:
+                    metadata.update(
+                        {
+                            "objective_kind": "weighted_boundary_length",
+                            "objective_unit": "meter",
+                        }
+                    )
+                metadata.update(self._additional_solution_metadata(m, status))
+                return ZoneSolution(
+                    problem=problem,
+                    assignment=assignment,
+                    status=status,
+                    objective=objective,
+                    wall_time=wall,
+                    metadata=metadata,
+                    solver_progress=list(progress.entries)
+                    if progress is not None
+                    else [],
+                )
+
+    def _progress_capture_data(
+        self, problem: ZoneProblem, x: _AssignmentVars
+    ) -> _ProgressCaptureData:
+        variables: list[gp.Var] = []
+        node_slices: list[tuple[int, int, tuple[int, ...]]] = []
+        for node in problem.nodes:
+            zones = tuple(sorted(problem.candidate_zones(node)))
+            offset = len(variables)
+            for zone in zones:
+                variables.append(x[(zone, node)])
+            node_slices.append((offset, len(zones), zones))
+        return variables, node_slices
+
+    def _capture_progress(
+        self,
+        model: gp.Model,
+        progress: SolverProgressTracker,
+        capture_data: _ProgressCaptureData,
+        start: float,
+    ) -> None:
+        objective = model.cbGet(GRB.Callback.MIPSOL_OBJ)
+        if not progress.is_improvement(objective):
+            return
+
+        variables, node_slices = capture_data
+        values = model.cbGetSolution(variables)
+        assignment = []
+        for offset, count, zones in node_slices:
+            selected = zones[0]
+            best_value = values[offset]
+            for idx in range(1, count):
+                value = values[offset + idx]
+                if value > best_value:
+                    selected = zones[idx]
+                    best_value = value
+            assignment.append(selected)
+        progress.add(objective, time.time() - start, assignment)
+
+    def _build_assignment_vars(
+        self, m: gp.Model, problem: ZoneProblem
+    ) -> _AssignmentVars:
+        x = {}
+        for i in problem.nodes:
+            for z in problem.candidate_zones(i):
+                x[(z, i)] = m.addVar(vtype=GRB.BINARY, name=f"x_{z}_{i}")
+        m.update()
+        return x
+
+    # ------------------------------------------------------------------ #
+    # Core constraints
+    # ------------------------------------------------------------------ #
+    def _add_core_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        self._add_assignment_constraints(m, problem, x)
+        self._add_centroid_constraints(m, problem, x)
+        self._add_contiguity_constraints(m, problem, x)
+        self._add_balance_constraints(m, problem, x)
+        self._add_school_count_constraints(m, problem, x)
+        self._add_boundary_constraint(m, problem, x)
+
+    def _add_boundary_constraint(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        if problem.boundary_prop < 0:
+            return
+
+        boundary_vars = []
+        for u, v in problem.G.edges():
+            boundary = m.addVar(vtype=GRB.BINARY, name=f"boundary_limit_{u}_{v}")
+            for zone in problem.candidate_zones(u) | problem.candidate_zones(v):
+                xu = x.get((zone, u))
+                xv = x.get((zone, v))
+                if xu is not None and xv is not None:
+                    m.addConstr(boundary >= xu - xv)
+                    m.addConstr(boundary >= xv - xu)
+                elif xu is not None:
+                    m.addConstr(boundary >= xu)
+                elif xv is not None:
+                    m.addConstr(boundary >= xv)
+            boundary_vars.append(boundary)
+
+        max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())
+        m.addConstr(gp.quicksum(boundary_vars) <= max_cut_edges)
+
+    def _add_assignment_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        for node in problem.nodes:
+            choices = [(z, node) for z in problem.candidate_zones(node)]
+            if not choices:
+                raise problem.no_candidate_zones_error(node)
+            m.addConstr(gp.quicksum(x[(z, i)] for (z, i) in choices) == 1)
+
+    def _add_centroid_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        for zone, neighborhood in self._centroid_neighborhoods(problem).items():
+            for node in neighborhood:
+                self._fix_assignment(m, zone, node, x)
+                for other_zone in problem.candidate_zones(node) - {zone}:
+                    self._forbid_assignment(m, other_zone, node, x)
+
+    def _contiguity_model(self) -> str:
+        model = self.options.get("contiguity_model", "neighbors")
+        if model not in CONTIGUITY_MODELS:
+            raise ValueError(
+                f"contiguity_model must be one of: {', '.join(CONTIGUITY_MODELS)}."
+            )
+        return model
+
+    def _add_contiguity_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        if self._contiguity_model() == "flow":
+            add_flow_contiguity(m, problem, x)
+            return
+        closer_supports = contiguity.closer_supports(
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
+            problem.candidate_zones,
+        )
+        supports = contiguity.contiguity_supports(
+            problem.G,
+            problem.centroids,
+            problem.centroid_school_ids,
+            problem.candidate_zones,
+        )
+        for (node, z), support_nodes in supports.items():
+            if not closer_supports[(node, z)] or not support_nodes:
+                self._forbid_assignment(m, z, node, x)
+                continue
+
+            terms: list[_Term] = [(1.0, z, node)]
+            terms += [(-1.0, z, n) for n in support_nodes]
+            self._add_linear_constraint(m, x, terms, "<=", 0.0)
+
+    def _add_balance_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        constraints = balance_constraints(problem)
+        for z in range(problem.Z):
+            nodes = self._candidate_nodes(problem, z)
+            for constraint in constraints:
+                lower, upper = balance_terms(problem, constraint, z, nodes)
+                if lower:
+                    self._add_linear_constraint(m, x, lower, ">=", 0.0)
+                if upper:
+                    self._add_linear_constraint(m, x, upper, "<=", 0.0)
+
+    def _add_school_count_constraints(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        bounds = problem.school_count_bounds()
+        if bounds is None:
+            return
+        floor_, ceiling = bounds
+        for z in range(problem.Z):
+            nodes = self._candidate_nodes(problem, z)
+            terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
+            self._add_linear_constraint(m, x, terms, ">=", floor_)
+            self._add_linear_constraint(m, x, terms, "<=", ceiling)
+
+    def _add_linear_constraint(
+        self,
+        m: gp.Model,
+        x: _AssignmentVars,
+        terms: list[_Term],
+        sense: str,
+        rhs: float,
+    ) -> None:
+        if sense not in _SENSE:
+            raise ValueError(f"Bad sense {sense!r}.")
+        expr = gp.quicksum(c * x[(z, i)] for (c, z, i) in terms if (z, i) in x)
+        if sense == "<=":
+            m.addConstr(expr <= rhs)
+        elif sense == ">=":
+            m.addConstr(expr >= rhs)
+        else:
+            m.addConstr(expr == rhs)
+
+    def _fix_assignment(
+        self, m: gp.Model, zone: int, node: int, x: _AssignmentVars
+    ) -> None:
+        if (zone, node) in x:
+            m.addConstr(x[(zone, node)] == 1)
+
+    def _forbid_assignment(
+        self, m: gp.Model, zone: int, node: int, x: _AssignmentVars
+    ) -> None:
+        if (zone, node) in x:
+            m.addConstr(x[(zone, node)] == 0)
+
+    def _candidate_nodes(self, problem: ZoneProblem, zone: int) -> list[int]:
+        return [n for n in problem.nodes if zone in problem.candidate_zones(n)]
+
+    # ------------------------------------------------------------------ #
+    # Objective and hints
+    # ------------------------------------------------------------------ #
+    def _add_model_objective(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> bool:
+        """Attach the objective, returning whether it is a maximization.
+
+        The single seam a subclass overrides to put its own welfare model on the
+        canonical zoning variables, mirroring
+        :meth:`optimization.solvers.cpsat.CpBoolSolver._add_model_objective`.
+        """
+
+        if problem.choice_objective is None:
+            if problem.compactness_objective == "school_distance":
+                m.setObjective(
+                    gp.quicksum(
+                        cost * x[key]
+                        for key, cost in problem.school_distance_costs().items()
+                        if key in x
+                    ),
+                    GRB.MINIMIZE,
+                )
+                return False
+            self._add_boundary_objective(m, problem, x)
+            return False
+        self._add_choice_objective(m, problem, x)
+        return True
+
+    def _additional_solution_metadata(
+        self, m: gp.Model, status: str
+    ) -> dict[str, object]:
+        """Solver-specific metadata, read after ``optimize`` and before disposal."""
+
+        return {}
+
+    def _add_boundary_objective(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        if self.options.get("secondary_objective", False):
+            boundary = []
+            for u, v in problem.G.edges():
+                u_ord, v_ord = (u, v) if u < v else (v, u)
+                b = m.addVar(
+                    vtype=GRB.CONTINUOUS,
+                    lb=0.0,
+                    name=f"bnd_{u_ord}_{v_ord}",
+                )
+
+                z_vars = []
+                all_zones = problem.candidate_zones(u_ord) | problem.candidate_zones(
+                    v_ord
+                )
+                for z in all_zones:
+                    z_var = m.addVar(
+                        vtype=GRB.CONTINUOUS,
+                        lb=0.0,
+                        name=f"z_{u_ord}_{v_ord}_{z}",
+                    )
+                    xu = x.get((z, u_ord))
+                    xv = x.get((z, v_ord))
+                    if xu is not None and xv is not None:
+                        m.addConstr(xu - xv <= z_var)
+                    elif xu is not None:
+                        m.addConstr(xu <= z_var)
+                    elif xv is not None:
+                        m.addConstr(-xv <= z_var)
+                    z_vars.append(z_var)
+
+                m.addConstr(b == gp.quicksum(z_vars))
+                boundary.append(problem.boundary_weight(u, v) * b)
+
+            m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
+            return
+
+        boundary = []
+        for u, v in problem.G.edges():
+            b = m.addVar(vtype=GRB.BINARY, name=f"bnd_{u}_{v}")
+            for z in problem.candidate_zones(u) | problem.candidate_zones(v):
+                xu = x.get((z, u))
+                xv = x.get((z, v))
+                if xu is not None and xv is not None:
+                    m.addConstr(b >= xu - xv)
+                    m.addConstr(b >= xv - xu)
+                elif xu is not None:
+                    m.addConstr(b >= xu)
+                elif xv is not None:
+                    m.addConstr(b >= xv)
+            boundary.append(problem.boundary_weight(u, v) * b)
+        m.setObjective(gp.quicksum(boundary), GRB.MINIMIZE)
+
+    def _add_choice_objective(
+        self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
+    ) -> None:
+        choice = problem.choice_objective
+        total_lb = (
+            float(choice.total_lower_bound)
+            if choice.total_lower_bound is not None
+            else choice.lower_bound * len(problem.nodes)
+        )
+        total_ub = (
+            float(choice.total_upper_bound)
+            if choice.total_upper_bound is not None
+            else choice.upper_bound * len(problem.nodes)
+        )
+        total = m.addVar(
+            lb=total_lb,
+            ub=total_ub,
+            vtype=GRB.CONTINUOUS,
+            name="choice_total_utility",
+        )
+        utilities: dict[int, gp.Var] = {}
+        if not choice.aggregate_cuts:
+            utilities = {
+                node: m.addVar(
+                    lb=choice.lower_bound,
+                    ub=choice.upper_bound,
+                    vtype=GRB.CONTINUOUS,
+                    name=f"choice_u_{node}",
+                )
+                for node in problem.nodes
+            }
+            m.addConstr(total == gp.quicksum(utilities.values()))
+
+        # See the CP-SAT solver for why grouping tightens the relaxation.
+        epigraphs: dict[int, gp.Var] = {}
+        groups = sorted({cut.group for cut in choice.cuts if cut.group is not None})
+        if groups:
+            count = len(groups)
+            epigraphs = {
+                group: m.addVar(
+                    lb=min(0.0, total_lb / count),
+                    ub=total_ub / count,
+                    vtype=GRB.CONTINUOUS,
+                    name=f"choice_total_g{group}",
+                )
+                for group in groups
+            }
+            m.addConstr(total == gp.quicksum(epigraphs.values()))
+
+        access_vars: dict[tuple[int, int], Any] = {}
+        access_joints: dict[tuple[int, int, int], Any] = {}
+        for cut in choice.cuts:
+            self._add_choice_cut(
+                m,
+                problem,
+                x,
+                utilities,
+                epigraphs.get(cut.group, total),
+                access_vars,
+                access_joints,
+                cut,
+            )
+
+        # See the CP-SAT solver: the Lagrangian reward is added to the
+        # objective, and fixed indicators contribute a constant offset.
+        # A fixed indicator comes back as 0 or 1, so the same product covers
+        # both the variable and the constant case.
+        reward = gp.LinExpr(0.0)
+        for pair, coefficient in choice.access_terms:
+            reward += coefficient * self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, pair[0], pair[1]
+            )
+
+        self._add_access_inequalities(m, problem, x, access_vars, access_joints)
+
+        m.setObjective(total + reward, GRB.MAXIMIZE)
+
+    def _add_access_inequalities(
+        self,
+        m: gp.Model,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+    ) -> None:
+        """See :mod:`optimization.access_inequalities` for what these do."""
+
+        plan = plan_access_inequalities(
+            access_vars,
+            problem.candidate_zones,
+            self.options,
+            lambda u, v: self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, u, v
+            ),
+        )
+        self._access_inequality_counts = plan.counts
+        for anchor, members in plan.cliques:
+            m.addConstr(
+                gp.quicksum(access_vars[pair_key(anchor, member)] for member in members)
+                <= 1
+            )
+        for u, v, w in plan.triangles:
+            a_uv = access_vars[pair_key(u, v)]
+            a_vw = access_vars[pair_key(v, w)]
+            a_uw = access_vars[pair_key(u, w)]
+            m.addConstr(a_uv + a_vw - a_uw <= 1)
+            m.addConstr(a_uv + a_uw - a_vw <= 1)
+            m.addConstr(a_uw + a_vw - a_uv <= 1)
+
+    def _get_or_create_access_var(
+        self,
+        m: gp.Model,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+        student_node: int,
+        school_node: int,
+    ) -> Any:
+        if student_node == school_node:
+            return 1
+        pair = (min(student_node, school_node), max(student_node, school_node))
+        if pair in access_vars:
+            return access_vars[pair]
+
+        u, v = pair
+        common_zones = sorted(problem.candidate_zones(u) & problem.candidate_zones(v))
+        if not common_zones:
+            access_vars[pair] = 0
+            return 0
+
+        same_zone = m.addVar(
+            vtype=GRB.BINARY,
+            name=f"choice_access_{u}_{v}",
+        )
+        joints = []
+        for zone in common_zones:
+            joint_key = (u, v, zone)
+            if joint_key in access_joints:
+                both = access_joints[joint_key]
+            else:
+                both = m.addVar(
+                    vtype=GRB.BINARY,
+                    name=f"choice_access_joint_{u}_{v}_{zone}",
+                )
+                m.addConstr(both <= x[(zone, u)])
+                m.addConstr(both <= x[(zone, v)])
+                m.addConstr(both >= x[(zone, u)] + x[(zone, v)] - 1)
+                access_joints[joint_key] = both
+            joints.append(both)
+
+        m.addConstr(same_zone == gp.quicksum(joints))
+        access_vars[pair] = same_zone
+        return same_zone
+
+    def _add_choice_cut(
+        self,
+        m: gp.Model,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        utilities: dict[int, gp.Var],
+        total: gp.Var,
+        access_vars: dict[tuple[int, int], Any],
+        access_joints: dict[tuple[int, int, int], Any],
+        cut: ChoiceCut,
+    ) -> None:
+        const = cut.constant
+        linear_terms = []
+        for term in cut.terms:
+            student = term.student_node if term.student_node is not None else cut.node
+            if student is None:
+                continue
+            school = term.node
+            var = self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, student, school
+            )
+            if isinstance(var, (int, float)):
+                if var == 1:
+                    const += term.coefficient
+            else:
+                linear_terms.append(term.coefficient * var)
+
+        expr = const
+        if linear_terms:
+            expr += gp.quicksum(linear_terms)
+
+        if cut.node is None or cut.node not in utilities:
+            m.addConstr(total <= expr)
+        else:
+            m.addConstr(utilities[cut.node] <= expr)
+
+    def _add_hints(self, problem: ZoneProblem, x: _AssignmentVars) -> None:
+        hint = self.hint_assignment(problem)
+        if not hint:
+            return
+        for (z, i), var in x.items():
+            if i in hint:
+                var.Start = 1 if hint[i] == z else 0

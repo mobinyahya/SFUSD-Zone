@@ -1,0 +1,57 @@
+# Optimization-native benchmark sweep.
+
+name: sfusd_zone_test
+mode: run  # run | metrics
+
+optimization_defaults:
+  data:
+    scenario: legacy
+    overrides:
+      filters:
+        optimization:
+          geography_vintage: "2020"
+  carry_over_compute: true
+  save_solver_logs: true
+  save_solver_progress: true
+  max_distance: 4.52
+  hints: voronoi
+  racial_dev: -1
+  looseness: 1.25
+  gap_limits: [0, 0, 0]
+  workers: 8
+  solver: 'cp_bool'
+
+sweep:
+  centroids_type: ['6-zone-3',  '8-zone-22', '10-zone-3',  '10-zone-9',  '13-zone-6', '18-zone-1', ]
+  frl_dev: [0.15]
+  # ignoring racial deviations
+  overage: [0.15, 0.2, 0.25]
+  shortage: [0.15, 0.2, 0.25]
+
+tasks:
+  - strategy: 'recursive'
+    levels: ['Block_2', 'Block_0']
+    solve_time_limits: [400, 800]
+    boundary_radius: 1
+  
+
+
+execution:
+  output_dir: '/home/kumarc/sfusd/SFUSD-Zone/optimization_output/sfusd_results'
+  capacity: 48              # total solver-thread slots available on the machine
+  max_workers: 10           # max concurrent Python worker processes
+  max_tasks_per_worker: 10  # recycle processes to limit memory growth
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+matching:
+  enabled: true
+  config: ../../assignment/configs/8-19-choice.yaml
+  compute_stage_assignments: false
