@@ -11,8 +11,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field, is_dataclass, asdict
 from functools import cached_property
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
+from loaders import DataScenario, load_scenario
+from metrics.spatial import SpatialMetrics, compute_spatial_metrics
 from optimization.solution import ZoneSolution
 
 MetricValue = float | int | str | bool | None
@@ -42,10 +44,6 @@ class MetricsResult:
         for zone_id, values in output.zone_data.items():
             self.zone_data.setdefault(int(zone_id), {}).update(values)
 
-    def to_flat_dict(self) -> dict[str, MetricValue]:
-        """Flat metrics only, for CSV-like consumers."""
-        return dict(self.metrics)
-
     def to_full_dict(self) -> dict[str, Any]:
         """JSON-serializable metrics, per-zone data, and run metadata."""
         return _jsonable(
@@ -64,7 +62,6 @@ class MetricsContext:
         self,
         solutions: ZoneSolution | list[ZoneSolution],
         config: Mapping[str, Any] | Any | None = None,
-        final_solution: ZoneSolution | None = None,
         compute_stage_metrics: bool = False,
     ):
         if isinstance(solutions, ZoneSolution):
@@ -80,8 +77,11 @@ class MetricsContext:
             )
 
         self.config = _config_dict(config)
-        self.solution = final_solution or self._select_final_solution()
+        # An OptimizationConfig already holds its loaded scenario; reuse it.
+        self._data_scenario = getattr(config, "data_scenario", None)
+        self.solution = self._select_final_solution()
         self.compute_stage_metrics = bool(compute_stage_metrics)
+        self._spatial: dict[int, SpatialMetrics] = {}
 
     @property
     def G(self):
@@ -98,6 +98,28 @@ class MetricsContext:
     @property
     def level_name(self) -> str:
         return self.solution.level.name
+
+    def spatial_metrics(self, solution: ZoneSolution) -> SpatialMetrics:
+        """Block_0 spatial metrics for one stage, computed once per stage."""
+        key = id(solution)
+        if key not in self._spatial:
+            self._spatial[key] = compute_spatial_metrics(solution, self.config)
+        return self._spatial[key]
+
+    @cached_property
+    def data_scenario(self) -> DataScenario | None:
+        """The run's data scenario, or ``None`` when the config names no data."""
+        if self._data_scenario is not None:
+            return self._data_scenario
+        data = self.config.get("data")
+        return None if data is None else load_scenario(data)
+
+    @cached_property
+    def school_programs(self) -> dict[int, list[str]]:
+        """Sorted program types offered by each school."""
+        from metrics.programs import school_programs
+
+        return school_programs(self)
 
     @cached_property
     def zone_nodes(self) -> dict[int, list[int]]:
@@ -132,11 +154,10 @@ class MetricsContext:
 
     @cached_property
     def stage_names(self) -> list[str]:
-        prefix = "iteration" if self._is_iterative_run() else "stage"
-        return [
-            f"{prefix}_{idx:02d}_{sol.level.name}"
-            for idx, sol in enumerate(self.stages)
-        ]
+        return stage_names(
+            [stage.level.name for stage in self.stages],
+            iterative=self._is_iterative_run(),
+        )
 
     @cached_property
     def final_stage_index(self) -> int:
@@ -170,13 +191,23 @@ class MetricsContext:
         return self.stages[-1]
 
     def _is_iterative_run(self) -> bool:
-        strategy = str(self.config.get("strategy", "")).lower()
-        if "iterative" in strategy or strategy == "saa":
-            return True
+        strategy = str(self.config.get("strategy", ""))
         if strategy:
-            return False
+            return is_iterative_strategy(strategy)
         levels = [stage.level.name for stage in self.stages]
         return len(levels) > 1 and len(set(levels)) == 1
+
+
+def is_iterative_strategy(strategy: str) -> bool:
+    """Whether a strategy's stages are attempts at one level, not refinements."""
+    strategy = str(strategy).lower()
+    return "iterative" in strategy or strategy == "saa"
+
+
+def stage_names(levels: Sequence[str], *, iterative: bool) -> list[str]:
+    """Name a run's stages: the folder under ``stages/`` and the metric suffix."""
+    prefix = "iteration" if iterative else "stage"
+    return [f"{prefix}_{index:02d}_{level}" for index, level in enumerate(levels)]
 
 
 def _config_dict(config: Mapping[str, Any] | Any | None) -> dict[str, Any]:

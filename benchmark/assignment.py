@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Mapping
 
 from assignment.generated_zones import (
     GENERATED_ZONE_FILENAME,
@@ -11,11 +12,18 @@ from assignment.generated_zones import (
     run_generated_zone_assignments,
     write_generated_zones,
 )
-from benchmark.config import MatchingRunConfig, optimization_config_from_dict
+from benchmark.config import (
+    BenchmarkTask,
+    MatchingRunConfig,
+    optimization_config_from_dict,
+    optimization_config_to_dict,
+    stable_hash,
+)
 from benchmark.results import discover_run_dirs
 from benchmark.runner import load_solutions
-from metrics.base import MetricsContext
+from metrics.base import MetricsContext, is_iterative_strategy, stage_names
 from optimization.config import OptimizationConfig
+from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 
 
@@ -52,14 +60,15 @@ def process_solution_assignments(
     targets = []
     for solution, target, target_id in solution_targets:
         skip_marker = target / SKIP_MARKER_FILENAME
+        zone_file = target / GENERATED_ZONE_FILENAME
         if not solution.feasible or solution.metadata.get("partial_assignment"):
             target.mkdir(parents=True, exist_ok=True)
+            zone_file.unlink(missing_ok=True)
             skip_marker.write_text(
                 "ineligible optimization solution\n", encoding="utf-8"
             )
             continue
         skip_marker.unlink(missing_ok=True)
-        zone_file = target / GENERATED_ZONE_FILENAME
         write_generated_zones(solution.area_assignment(), zone_file)
         targets.append(
             {
@@ -73,16 +82,137 @@ def process_solution_assignments(
             }
         )
 
-    if matching.compute_stage_assignments and config.strategy == "saa":
-        level = config.levels[-1]
-        for index in range(len(solutions), config.max_iterations + 1):
-            target = root / "stages" / f"iteration_{index:02d}_{level}"
+    if matching.compute_stage_assignments:
+        # Planned assignment jobs wait on every stage the strategy could have
+        # saved; mark the ones this run did not produce.
+        planned = planned_stage_names(optimization_config_to_dict(config)) or []
+        for name in planned[len(solutions) :]:
+            target = root / "stages" / name
             target.mkdir(parents=True, exist_ok=True)
             (target / SKIP_MARKER_FILENAME).write_text(
                 "optimization stage not produced\n", encoding="utf-8"
             )
 
     return targets
+
+
+def planned_stage_names(config: Mapping[str, Any]) -> list[str] | None:
+    """Every stage a task can save, or ``None`` when its solve decides the count.
+
+    ``recursive`` saves one stage per level, plain ``single`` one stage at the
+    finest level, and ``saa`` up to ``max_iterations + 1`` iterations there.
+    """
+    strategy = str(config["strategy"])
+    levels = list(config["levels"])
+    if strategy == "recursive":
+        planned = levels
+    elif strategy == "single" and int(config.get("enumerated_solutions", -1)) <= 0:
+        planned = levels[-1:]
+    elif strategy == "saa":
+        planned = levels[-1:] * (int(config["max_iterations"]) + 1)
+    else:
+        return None
+    return stage_names(planned, iterative=is_iterative_strategy(strategy))
+
+
+def plan_assignment_targets(
+    tasks: list[BenchmarkTask],
+    pending: list[BenchmarkTask],
+    matching: MatchingRunConfig,
+) -> list[dict[str, str]]:
+    """Ready and list the assignment targets of every task in a sweep.
+
+    Pending tasks write their targets when evaluated. A task skipped as
+    already complete may predate matching, so its root target is rebuilt from
+    the saved solution here. Slurm turns the list into assignment jobs behind
+    the optimization jobs; a local sweep runs it once every task is done.
+    """
+    pending_ids = {task.task_id for task in pending}
+    for task in tasks:
+        if task.task_id in pending_ids:
+            continue
+        root = Path(task.output_dir)
+        if (root / GENERATED_ZONE_FILENAME).is_file() or (
+            root / SKIP_MARKER_FILENAME
+        ).is_file():
+            continue
+        if matching.compute_stage_assignments:
+            raise ValueError(
+                f"Task {task.task_id} finished without matching; stage "
+                "assignments cannot be added afterwards, only root ones."
+            )
+        prepare_completed_run_target(root, str(task.config["levels"][-1]))
+    return assignment_targets(tasks, matching)
+
+
+def assignment_targets(
+    tasks: list[BenchmarkTask], matching: MatchingRunConfig
+) -> list[dict[str, str]]:
+    """List each task's root target, and its planned stage targets if asked."""
+    from loaders import load_scenario
+
+    targets = []
+    scenarios = {}
+    for task in tasks:
+        data_key = stable_hash(task.config["data"])
+        scenario = scenarios.get(data_key)
+        if scenario is None:
+            scenario = load_scenario(task.config["data"])
+            scenarios[data_key] = scenario
+        vintage = scenario.filter("optimization", "geography_vintage")
+        unit = zone_building_blocks(LevelSpec.parse(task.config["levels"][0]).unit)
+        folders = [("root", Path(task.output_dir))]
+        if matching.compute_stage_assignments:
+            planned = planned_stage_names(task.config)
+            if planned is None:
+                raise ValueError(
+                    f"Task {task.task_id}: compute_stage_assignments needs a "
+                    "stage count known before the run, which strategy "
+                    f"{task.config['strategy']!r} does not have."
+                )
+            folders.extend(
+                (f"stage-{index}", Path(task.output_dir) / "stages" / name)
+                for index, name in enumerate(planned)
+            )
+        for suffix, folder in folders:
+            targets.append(
+                {
+                    "id": f"{task.task_id}-{suffix}",
+                    "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
+                    "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
+                    "zone_building_blocks": unit,
+                    "geography_vintage": vintage,
+                }
+            )
+    return targets
+
+
+def run_ready_assignments(
+    targets: list[dict[str, str]],
+    matching: MatchingRunConfig,
+    output_root: str | Path,
+    *,
+    workers: int,
+) -> int:
+    """Run the targets whose zone file was written as one local batch.
+
+    Targets marked skipped, or left without a zone file by a failed run, are
+    left out. Returns the number of targets run.
+    """
+    ready = [
+        target
+        for target in targets
+        if Path(target["zone_file"]).is_file()
+        and not Path(target["skip_marker"]).exists()
+    ]
+    if ready:
+        run_generated_zone_assignments(
+            matching.config,
+            ready,
+            assignment_folder=Path(output_root) / matching.assignment_dir,
+            workers=workers,
+        )
+    return len(ready)
 
 
 def prepare_completed_run_target(output_dir: str | Path, final_level: str) -> bool:

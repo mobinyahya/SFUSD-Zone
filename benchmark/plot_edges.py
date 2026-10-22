@@ -32,9 +32,10 @@ from matplotlib.ticker import (
 )
 import numpy as np
 import pandas as pd
-import yaml
 
+from benchmark.config import SimulationSweep
 from benchmark.results import discover_run_dirs
+from benchmark.runner import RESULT_FILENAME, load_manifest
 from benchmark.solver_logs import parse_run_dir
 
 
@@ -480,10 +481,9 @@ def benchmark_root(source: str | Path) -> Path:
     """Resolve a directory, summary.csv, or sweep YAML without loading data."""
     path = Path(source).expanduser().resolve()
     if path.suffix.lower() in {".yaml", ".yml"}:
-        with path.open() as handle:
-            config = yaml.safe_load(handle)
         # The benchmark runner resolves execution.output_dir against the cwd.
-        path = Path(config["execution"]["output_dir"]).expanduser().resolve()
+        output_dir = SimulationSweep.from_yaml(str(path)).execution.output_dir
+        path = Path(output_dir).expanduser().resolve()
     elif path.suffix.lower() == ".csv":
         path = path.parent
     if not path.is_dir():
@@ -512,10 +512,10 @@ def load_trajectories(
     for directory in discover_run_dirs(str(root)):
         run_dir = Path(directory)
         try:
-            manifest = json.loads((run_dir / "benchmark_manifest.json").read_text())
+            manifest = load_manifest(str(run_dir))
             config = manifest.get("config")
             if not config:
-                config = json.loads((run_dir / "result.json").read_text())["config"]
+                config = json.loads((run_dir / RESULT_FILENAME).read_text())["config"]
         except (OSError, ValueError, KeyError) as exc:
             skipped["unreadable config"] += 1
             print(f"SKIP {run_dir}: {exc}")
@@ -782,197 +782,33 @@ def render_figures(
     else:
         for trace in traces.values():
             trace["incumbent"] /= divisor
+    style = dict(
+        skip_initial=skip_initial,
+        aggregate=aggregate,
+        weighted=weighted,
+        length_unit=length_unit,
+        y_frame=y_frame,
+    )
     paths = []
     groups = visible_runs.groupby(["time_limit", "level"], sort=False)
     for budget, level in sorted(
         groups.groups, key=lambda key: (key[0], _level_key(key[1]))
     ):
         page_runs = groups.get_group((budget, level))
-        zone_counts = sorted(page_runs["num_zones"].unique())
-        ncols = min(2, len(zone_counts))
-        nrows = (len(zone_counts) + ncols - 1) // ncols
-        fig, axes = plt.subplots(
-            nrows,
-            ncols,
-            squeeze=False,
-            figsize=(max(9.0, 6.0 * ncols), 3.8 * nrows + 2.0),
-            facecolor="white",
-        )
-        for ax, zones in zip(axes.flat, zone_counts):
-            panel = page_runs[page_runs["num_zones"] == zones]
-            ax.set_facecolor("white")
-            ax.grid(axis="y", color="#e8ecf1", linewidth=0.8)
-            ax.set_axisbelow(True)
-            ax.set_title(
-                f"{zones} zones",
-                loc="left",
-                fontsize=13,
-                fontweight="semibold",
-                color="#182536",
-                pad=13,
+        paths.append(
+            _render_page(
+                page_runs,
+                budget=budget,
+                level=level,
+                lookup=lookup,
+                traces=traces,
+                output_dir=output_dir,
+                dpi=dpi,
+                **style,
             )
-            ax.text(
-                1,
-                1.035,
-                f"{len(panel)} runs",
-                transform=ax.transAxes,
-                ha="right",
-                va="bottom",
-                fontsize=9,
-                color="#788392",
-            )
-            panel_frames = []
-            methods = list(panel["method"].unique())
-            phases = marker_phases(methods)
-            fill_alpha = band_alpha(methods, zoomed=y_frame == "zoom")
-            for method, solver_runs in panel.groupby("method", sort=True):
-                color = METHODS[method][1]
-                alpha = max(0.24, min(0.9, 1.5 / np.sqrt(len(solver_runs))))
-                if aggregate == "median":
-                    summary = lookup[(budget, level, zones, method)]
-                    draw_summary(
-                        ax, summary, method, phase=phases[method], alpha=fill_alpha
-                    )
-                    panel_frames.append(summary)
-                    continue
-                for run in solver_runs.itertuples():
-                    values = traces[run.run_id].dropna(subset=["incumbent"])
-                    # Only changes and the endpoint are needed for a step curve.
-                    keep = values["incumbent"].ne(values["incumbent"].shift())
-                    keep.iloc[-1] = True
-                    values = values[keep]
-                    panel_frames.append(values)
-                    ax.step(
-                        minutes(values["elapsed_seconds"]),
-                        values["incumbent"],
-                        where="post",
-                        color=color,
-                        linewidth=1.65,
-                        linestyle=DASHES[method],
-                        alpha=alpha,
-                        zorder=3,
-                    )
-                    endpoints = values.iloc[[0, -1]].drop_duplicates()
-                    ax.scatter(
-                        minutes(endpoints["elapsed_seconds"]),
-                        endpoints["incumbent"],
-                        color=color,
-                        s=12,
-                        alpha=alpha,
-                        zorder=4,
-                        edgecolors="none",
-                    )
-            endpoint = panel["last_log_seconds"].max()
-            ax.set_xlim(0, minutes(max(float(budget), endpoint) * 1.015))
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
-            ax.yaxis.set_major_locator(
-                MaxNLocator(nbins=6, integer=not weighted or length_unit == "m")
-            )
-            ax.yaxis.set_major_formatter(
-                StrMethodFormatter(
-                    "{x:g}" if weighted and length_unit == "km" else "{x:,.0f}"
-                )
-            )
-            # Applied last: the log frame installs its own ticker.
-            frame_ylim(ax, panel_frames, mode=y_frame)
-            ax.tick_params(axis="both", labelsize=10, colors="#5a6778", length=0, pad=7)
-            ax.spines[["top", "right", "left"]].set_visible(False)
-            ax.spines["bottom"].set_color("#d6dde6")
-        handles = legend_handles(set(page_runs["method"]))
-        spare = list(axes.flat)[len(zone_counts) :]
-        for ax in spare:
-            ax.set_visible(False)
-        # An odd panel count leaves a cell free: a legend there is larger and
-        # closer to the curves than one stranded above the figure.
-        inset_legend = spare[0] if spare else None
-        if inset_legend is not None:
-            inset_legend.set_visible(True)
-            inset_legend.axis("off")
-            inset_legend.legend(
-                handles=handles,
-                loc="upper left",
-                frameon=False,
-                fontsize=11.5,
-                handlelength=2.8,
-                labelspacing=1.05,
-                borderpad=0.0,
-            )
-        fig.text(
-            0.065,
-            0.965,
-            f"{'Cut length' if weighted else 'Cut edges'} over time  /  {level}",
-            fontsize=20,
-            fontweight="semibold",
-            color="#182536",
-            va="top",
         )
-        fig.text(
-            0.065,
-            0.915,
-            f"{minutes(budget):g}-minute budget  ·  Successful runs only  ·  First {skip_initial} feasible improvements omitted",
-            fontsize=10,
-            color="#647286",
-            va="top",
-        )
-        if inset_legend is None:
-            fig.legend(
-                handles=handles,
-                loc="upper left",
-                bbox_to_anchor=(0.057, 0.875),
-                ncol=min(3, len(handles)),
-                frameon=False,
-                fontsize=10,
-                handlelength=2.5,
-                columnspacing=1.9,
-            )
-        fig.supxlabel(
-            "Cumulative solve time (minutes)", fontsize=11, color="#364559", y=0.06
-        )
-        fig.supylabel(
-            f"Cut length ({length_unit})" if weighted else "Cut edges",
-            fontsize=11,
-            color="#364559",
-            x=0.012,
-        )
-        fig.text(
-            0.065,
-            0.017,
-            "\n".join(
-                [
-                    (
-                        "Band: middle 50% of available runs. Solid median starts only once all runs have retained feasible values."
-                        if aggregate == "median"
-                        else "Each line is one seed / centroid run; multi-level curves show best stage-feasible cut length so far."
-                    ),
-                    Y_FRAME_NOTES[y_frame],
-                ]
-                + (
-                    [
-                        "Multi-level curves (dashed) use stage feasibility and cumulative recorded solve durations."
-                    ]
-                    if page_runs["strategy"].eq("recursive").any()
-                    else []
-                )
-            ),
-            fontsize=8,
-            color="#788392",
-        )
-        fig.subplots_adjust(
-            left=0.075,
-            right=0.985,
-            bottom=0.15 if nrows == 1 else 0.12,
-            top=(0.855 if inset_legend is not None else 0.77) if nrows > 1 else 0.71,
-            hspace=0.40,
-            wspace=0.25,
-        )
-        prefix = "weighted_boundary" if weighted else "cut_edges"
-        suffix = "" if y_frame == "log" else f"_{y_frame}"
-        path = output_dir / f"{prefix}_{level}_tl_{budget:g}s_{aggregate}{suffix}.png"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
-        paths.append(path)
         if aggregate == "median":
-            for zones in zone_counts:
+            for zones in sorted(page_runs["num_zones"].unique()):
                 series = {
                     method: lookup[(budget, level, zones, method)]
                     for method in METHODS
@@ -994,6 +830,232 @@ def render_figures(
                 )
 
     return paths
+
+
+def _render_page(
+    page_runs: pd.DataFrame,
+    *,
+    budget: float,
+    level: str,
+    lookup: dict,
+    traces: dict[str, pd.DataFrame],
+    output_dir: Path,
+    dpi: int,
+    skip_initial: int,
+    aggregate: str,
+    weighted: bool,
+    length_unit: str,
+    y_frame: str,
+) -> Path:
+    """Save one budget-and-level figure with a panel per zone count."""
+    zone_counts = sorted(page_runs["num_zones"].unique())
+    ncols = min(2, len(zone_counts))
+    nrows = (len(zone_counts) + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        squeeze=False,
+        figsize=(max(9.0, 6.0 * ncols), 3.8 * nrows + 2.0),
+        facecolor="white",
+    )
+    for ax, zones in zip(axes.flat, zone_counts):
+        _draw_panel(
+            ax,
+            page_runs[page_runs["num_zones"] == zones],
+            budget=budget,
+            series={
+                method: lookup.get((budget, level, zones, method))
+                for method in page_runs["method"].unique()
+            },
+            traces=traces,
+            aggregate=aggregate,
+            weighted=weighted,
+            length_unit=length_unit,
+            y_frame=y_frame,
+        )
+    handles = legend_handles(set(page_runs["method"]))
+    spare = list(axes.flat)[len(zone_counts) :]
+    for ax in spare:
+        ax.set_visible(False)
+    # An odd panel count leaves a cell free: a legend there is larger and
+    # closer to the curves than one stranded above the figure.
+    inset_legend = spare[0] if spare else None
+    if inset_legend is not None:
+        inset_legend.set_visible(True)
+        inset_legend.axis("off")
+        inset_legend.legend(
+            handles=handles,
+            loc="upper left",
+            frameon=False,
+            fontsize=11.5,
+            handlelength=2.8,
+            labelspacing=1.05,
+            borderpad=0.0,
+        )
+    fig.text(
+        0.065,
+        0.965,
+        f"{'Cut length' if weighted else 'Cut edges'} over time  /  {level}",
+        fontsize=20,
+        fontweight="semibold",
+        color="#182536",
+        va="top",
+    )
+    fig.text(
+        0.065,
+        0.915,
+        f"{minutes(budget):g}-minute budget  ·  Successful runs only  ·  First {skip_initial} feasible improvements omitted",
+        fontsize=10,
+        color="#647286",
+        va="top",
+    )
+    if inset_legend is None:
+        fig.legend(
+            handles=handles,
+            loc="upper left",
+            bbox_to_anchor=(0.057, 0.875),
+            ncol=min(3, len(handles)),
+            frameon=False,
+            fontsize=10,
+            handlelength=2.5,
+            columnspacing=1.9,
+        )
+    fig.supxlabel(
+        "Cumulative solve time (minutes)", fontsize=11, color="#364559", y=0.06
+    )
+    fig.supylabel(
+        f"Cut length ({length_unit})" if weighted else "Cut edges",
+        fontsize=11,
+        color="#364559",
+        x=0.012,
+    )
+    fig.text(
+        0.065,
+        0.017,
+        "\n".join(
+            [
+                (
+                    "Band: middle 50% of available runs. Solid median starts only once all runs have retained feasible values."
+                    if aggregate == "median"
+                    else "Each line is one seed / centroid run; multi-level curves show best stage-feasible cut length so far."
+                ),
+                Y_FRAME_NOTES[y_frame],
+            ]
+            + (
+                [
+                    "Multi-level curves (dashed) use stage feasibility and cumulative recorded solve durations."
+                ]
+                if page_runs["strategy"].eq("recursive").any()
+                else []
+            )
+        ),
+        fontsize=8,
+        color="#788392",
+    )
+    fig.subplots_adjust(
+        left=0.075,
+        right=0.985,
+        bottom=0.15 if nrows == 1 else 0.12,
+        top=(0.855 if inset_legend is not None else 0.77) if nrows > 1 else 0.71,
+        hspace=0.40,
+        wspace=0.25,
+    )
+    prefix = "weighted_boundary" if weighted else "cut_edges"
+    suffix = "" if y_frame == "log" else f"_{y_frame}"
+    path = output_dir / f"{prefix}_{level}_tl_{budget:g}s_{aggregate}{suffix}.png"
+    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _draw_panel(
+    ax,
+    panel: pd.DataFrame,
+    *,
+    budget: float,
+    series: dict[str, pd.DataFrame | None],
+    traces: dict[str, pd.DataFrame],
+    aggregate: str,
+    weighted: bool,
+    length_unit: str,
+    y_frame: str,
+) -> None:
+    """Draw one zone count's runs: method medians, or every run's step curve."""
+    zones = panel["num_zones"].iloc[0]
+    ax.set_facecolor("white")
+    ax.grid(axis="y", color="#e8ecf1", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.set_title(
+        f"{zones} zones",
+        loc="left",
+        fontsize=13,
+        fontweight="semibold",
+        color="#182536",
+        pad=13,
+    )
+    ax.text(
+        1,
+        1.035,
+        f"{len(panel)} runs",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        color="#788392",
+    )
+    panel_frames = []
+    methods = list(panel["method"].unique())
+    phases = marker_phases(methods)
+    fill_alpha = band_alpha(methods, zoomed=y_frame == "zoom")
+    for method, solver_runs in panel.groupby("method", sort=True):
+        color = METHODS[method][1]
+        alpha = max(0.24, min(0.9, 1.5 / np.sqrt(len(solver_runs))))
+        if aggregate == "median":
+            summary = series[method]
+            draw_summary(ax, summary, method, phase=phases[method], alpha=fill_alpha)
+            panel_frames.append(summary)
+            continue
+        for run in solver_runs.itertuples():
+            values = traces[run.run_id].dropna(subset=["incumbent"])
+            # Only changes and the endpoint are needed for a step curve.
+            keep = values["incumbent"].ne(values["incumbent"].shift())
+            keep.iloc[-1] = True
+            values = values[keep]
+            panel_frames.append(values)
+            ax.step(
+                minutes(values["elapsed_seconds"]),
+                values["incumbent"],
+                where="post",
+                color=color,
+                linewidth=1.65,
+                linestyle=DASHES[method],
+                alpha=alpha,
+                zorder=3,
+            )
+            endpoints = values.iloc[[0, -1]].drop_duplicates()
+            ax.scatter(
+                minutes(endpoints["elapsed_seconds"]),
+                endpoints["incumbent"],
+                color=color,
+                s=12,
+                alpha=alpha,
+                zorder=4,
+                edgecolors="none",
+            )
+    endpoint = panel["last_log_seconds"].max()
+    ax.set_xlim(0, minutes(max(float(budget), endpoint) * 1.015))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
+    ax.yaxis.set_major_locator(
+        MaxNLocator(nbins=6, integer=not weighted or length_unit == "m")
+    )
+    ax.yaxis.set_major_formatter(
+        StrMethodFormatter("{x:g}" if weighted and length_unit == "km" else "{x:,.0f}")
+    )
+    # Applied last: the log frame installs its own ticker.
+    frame_ylim(ax, panel_frames, mode=y_frame)
+    ax.tick_params(axis="both", labelsize=10, colors="#5a6778", length=0, pad=7)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color("#d6dde6")
 
 
 def main(argv: list[str] | None = None) -> int:

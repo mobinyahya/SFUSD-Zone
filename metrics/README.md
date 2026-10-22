@@ -22,7 +22,7 @@ Use `MetricsCalculator` from `metrics`.
 from metrics import MetricsCalculator
 
 result = MetricsCalculator(solutions, config=config).compute()
-flat_metrics = result.to_flat_dict()
+flat_metrics = result.metrics
 full_payload = result.to_full_dict()
 ```
 
@@ -38,9 +38,8 @@ full_payload = result.to_full_dict()
 | `zone_data` | Per-zone nested data for demographics, programs, distance, and quality. |
 | `run` | Stage metadata, final-stage selection, statuses, objectives, and timings. |
 
-Use `to_flat_dict()` for aggregation tables.
-
-Use `to_full_dict()` for `result.json` payloads.
+Use `metrics` for aggregation tables and `to_full_dict()` for `result.json`
+payloads. Column names are defined once, in `metrics/columns.py`.
 
 ## Final Solution Selection
 

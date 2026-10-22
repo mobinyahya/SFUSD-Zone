@@ -18,6 +18,7 @@ from benchmark.config import (
     VisualizationRunConfig,
     optimization_config_to_dict,
 )
+from benchmark.assignment import assignment_targets
 from benchmark.runner import (
     MANIFEST_FILENAME,
     RESULT_FILENAME,
@@ -28,7 +29,6 @@ from benchmark.runner import (
 from benchmark.slurm import (
     MAX_SLURM_JOBS,
     SlurmPlan,
-    _assignment_targets,
     _build_parser,
     _plan_allocations,
     create_plan,
@@ -138,7 +138,7 @@ def test_saa_slurm_plan_covers_every_possible_iteration(tmp_path):
         capacity_slots=1,
     )
 
-    targets = _assignment_targets(
+    targets = assignment_targets(
         [task],
         MatchingRunConfig(
             enabled=True,
@@ -229,7 +229,8 @@ def test_matching_plan_uses_assignments_subdirectory(tmp_path, monkeypatch):
         "assignment.run_custom_config.load_custom_config", lambda path: {}
     )
     monkeypatch.setattr(
-        "benchmark.slurm._assignment_targets", lambda tasks, matching: [{"id": "task"}]
+        "benchmark.assignment.plan_assignment_targets",
+        lambda tasks, pending, matching: [{"id": "task"}],
     )
 
     def build_assignment_plan(config, targets, **kwargs):

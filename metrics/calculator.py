@@ -47,7 +47,6 @@ class MetricsCalculator:
         solutions: ZoneSolution | Sequence[ZoneSolution],
         config: Mapping[str, Any] | Any | None = None,
         *,
-        final_solution: ZoneSolution | None = None,
         modules: Sequence[MetricFn] | None = None,
         strict: bool = True,
         compute_stage_metrics: bool = False,
@@ -55,7 +54,6 @@ class MetricsCalculator:
         self.context = MetricsContext(
             solutions,
             config=config,
-            final_solution=final_solution,
             compute_stage_metrics=compute_stage_metrics,
         )
         self.modules = tuple(modules or DEFAULT_MODULES)
@@ -84,10 +82,6 @@ class MetricsCalculator:
         if errors:
             result.run.setdefault("metric_errors", errors)
         return result
-
-    def compute_all(self) -> MetricsResult:
-        """Alias for callers that want a calculator-style verb."""
-        return self.compute()
 
 
 def _module_name(module: MetricFn) -> str:

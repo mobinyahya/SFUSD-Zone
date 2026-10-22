@@ -51,6 +51,10 @@ targets can be added that way, not `compute_stage_assignments`.
 `matching.assignment_dir` (default `assignments`) names the folder under
 `execution.output_dir` they are written to, so the same zonings can be matched
 again under a different assignment config without overwriting the first set.
+A local `mode: run` plans the same targets for the sweep's own tasks and runs
+them as one batch after the last task. `compute_stage_assignments` needs every
+stage planned before the run, so it is limited to `recursive`, `single`
+without `enumerated_solutions`, and `saa`; other strategies are rejected.
 
 Plans, scripts, and logs are written beneath
 `<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition
@@ -364,7 +368,9 @@ cannot reconstruct it, and coarse bounds cannot be converted by recounting.
 
 `run` expands the YAML into tasks, executes optimization, writes artifacts, computes final-solution metrics, and writes aggregate CSVs. Recursive/iterative stage objective and timing metadata are always preserved; expensive per-stage cut-edge/compactness metrics run only when `metrics.compute_stage_metrics: true`.
 
-`metrics` discovers existing manifests under `execution.output_dir`, reconstructs saved `ZoneSolution` stages, recomputes metrics, rewrites `result.json`, and writes aggregate CSVs.
+`metrics` discovers existing manifests under `execution.output_dir`, reconstructs saved `ZoneSolution` stages, and re-runs the same evaluation as `run` (metrics, `result.json`, manifest, visualization), then writes aggregate CSVs. Runs whose optimization failed are skipped.
+
+`matching` runs root (and, if enabled, stage) assignments for every saved run under `execution.output_dir`.
 
 ## Public API
 

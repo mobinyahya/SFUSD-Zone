@@ -2,27 +2,23 @@
 
 from __future__ import annotations
 
-from Config.metrics_config import MetricColumns
+from dataclasses import asdict
+
 from metrics.base import MetricOutput, MetricsContext
-from metrics.contiguity import is_contiguous
+from metrics.columns import MetricColumns
 from metrics.solution_code import compute_solution_code
-from metrics.spatial import compute_spatial_metrics
 
 
 def compute(context: MetricsContext) -> MetricOutput:
     num_zones = len(context.zone_nodes)
-    spatial = compute_spatial_metrics(context.solution, context.config)
+    spatial = context.spatial_metrics(context.solution)
     metrics = {
         MetricColumns.NUM_ZONES: num_zones,
-        MetricColumns.CUT_EDGES: spatial.cut_edges,
+        **asdict(spatial),
         MetricColumns.FINAL_CUT_EDGES: spatial.cut_edges,
-        MetricColumns.NORMALIZED_CUT_EDGES: spatial.normalized_cut_edges,
-        MetricColumns.FRACTIONAL_CUT_EDGES: spatial.fractional_cut_edges,
-        MetricColumns.AVG_REOCK_SCORE: spatial.avg_reock_score,
-        MetricColumns.MAX_REOCK_SCORE: spatial.max_reock_score,
-        MetricColumns.AVG_POLSBY_POPPER_SCORE: spatial.avg_polsby_popper_score,
-        MetricColumns.MAX_POLSBY_POPPER_SCORE: spatial.max_polsby_popper_score,
-        MetricColumns.CONTIGUOUS: int(is_contiguous(context)),
+        MetricColumns.CONTIGUOUS: int(
+            bool(context.assignment) and context.solution.is_contiguous()
+        ),
         MetricColumns.SOLUTION_CODE: compute_solution_code(context.area_assignment),
     }
     return MetricOutput(metrics=metrics, run={"final_cut_edges": spatial.cut_edges})

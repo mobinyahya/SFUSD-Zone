@@ -59,7 +59,6 @@ class ExecutionConfig:
     capacity: int | None = None
     max_workers: int | None = None
     max_tasks_per_worker: int | None = 25
-    queue_multiplier: int = 2
     skip_existing: bool = True
     rerun_failed: bool = True
     sequential: bool = False
@@ -98,27 +97,14 @@ class VisualizationRunConfig:
     def from_dict(
         cls, data: Mapping[str, Any] | None, *, base_dir: Path | None = None
     ) -> "VisualizationRunConfig":
-        raw = dict(data or {})
-        allowed = {"enabled", "stages", "artifact_dir"}
-        unknown = set(raw) - allowed
-        if unknown:
-            raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
-
+        raw = _known_keys(cls, data)
         stages = str(raw.get("stages", "final"))
         if stages not in {"final", "all"}:
             raise ValueError("visualization.stages must be 'final' or 'all'.")
-
-        artifact_dir = raw.get("artifact_dir")
-        if artifact_dir is not None:
-            path = Path(str(artifact_dir)).expanduser()
-            if base_dir is not None and not path.is_absolute():
-                path = base_dir / path
-            artifact_dir = str(path.resolve())
-
         return cls(
             enabled=bool(raw.get("enabled", False)),
             stages=stages,
-            artifact_dir=artifact_dir,
+            artifact_dir=_anchored_path(raw.get("artifact_dir"), base_dir),
         )
 
 
@@ -137,18 +123,8 @@ class MatchingRunConfig:
     def from_dict(
         cls, data: Mapping[str, Any] | None, *, base_dir: Path | None = None
     ) -> "MatchingRunConfig":
-        raw = dict(data or {})
-        allowed = {"enabled", "config", "compute_stage_assignments", "assignment_dir"}
-        unknown = set(raw) - allowed
-        if unknown:
-            raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
-
-        config = raw.get("config")
-        if config is not None:
-            path = Path(str(config)).expanduser()
-            if base_dir is not None and not path.is_absolute():
-                path = base_dir / path
-            config = str(path.resolve())
+        raw = _known_keys(cls, data)
+        config = _anchored_path(raw.get("config"), base_dir)
         if raw.get("enabled") and config is None:
             raise ValueError("matching.config is required when matching is enabled.")
 
@@ -183,6 +159,35 @@ class BenchmarkTask:
 
     def optimization_config(self) -> OptimizationConfig:
         return optimization_config_from_dict(self.config)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "BenchmarkTask":
+        """Rebuild a task from its ``asdict`` snapshot, as a Slurm plan saves it."""
+        return cls(
+            task_id=str(value["task_id"]),
+            config_hash=str(value["config_hash"]),
+            config=dict(value["config"]),
+            output_dir=str(value["output_dir"]),
+            capacity_slots=int(value["capacity_slots"]),
+        )
+
+    @classmethod
+    def from_manifest(
+        cls, manifest: Mapping[str, Any], output_dir: str
+    ) -> "BenchmarkTask":
+        """Rebuild the task that wrote ``manifest`` into ``output_dir``."""
+        config = {k: v for k, v in manifest["config"].items() if k != "unit"}
+        return cls(
+            task_id=str(manifest["task_id"]),
+            config_hash=str(
+                manifest.get("config_hash") or optimization_config_hash(config)
+            ),
+            config=config,
+            output_dir=output_dir,
+            capacity_slots=int(
+                manifest.get("capacity_slots") or config.get("workers") or 1
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -567,11 +572,26 @@ def _normalize_sweep_values(key: str, value: Any) -> list[Any]:
 
 
 def _dataclass_from_dict(cls, data: Mapping[str, Any]):
-    field_names = {f.name for f in fields(cls)}
-    unknown = set(data) - field_names
+    return cls(**_known_keys(cls, data))
+
+
+def _known_keys(cls, data: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return ``data`` as a dict, rejecting keys that are not ``cls`` fields."""
+    raw = dict(data or {})
+    unknown = set(raw) - {f.name for f in fields(cls)}
     if unknown:
         raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
-    return cls(**{k: v for k, v in data.items() if k in field_names})
+    return raw
+
+
+def _anchored_path(value: Any, base_dir: Path | None) -> str | None:
+    """Resolve a config path, relative ones against the sweep YAML's folder."""
+    if value is None:
+        return None
+    path = Path(str(value)).expanduser()
+    if base_dir is not None and not path.is_absolute():
+        path = base_dir / path
+    return str(path.resolve())
 
 
 # Config keys that were renamed. Accepted on read and mapped to the current

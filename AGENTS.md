@@ -17,7 +17,7 @@ uv run python -m benchmark.run path/to/sweep.yaml --mode metrics
 
 ## Directory Structure
 
-- `Config/` - centroids.yaml, Constants.py, metrics_config.py
+- `Config/` - centroids.yaml, Constants.py
 - `loaders/` - shared source catalog, scenarios, normalized table readers, and content-addressed caches
 - `optimization/` - config.py, problem.py, solution.py, solvers/, strategies/, data/
 - `assignment/` - student-assignment simulation, policy configs, and assignment analysis

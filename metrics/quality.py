@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from Config.metrics_config import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
+from metrics.columns import MetricColumns
 
 
 def compute(context: MetricsContext) -> MetricOutput:

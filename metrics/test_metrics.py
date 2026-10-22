@@ -5,14 +5,16 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from Config.metrics_config import MetricColumns
 from optimization.data.contiguity import boundary_edges
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import make_grid_problem
 from metrics import MetricsCalculator
+from metrics.columns import MetricColumns
 from metrics import choice as choice_metrics
+from metrics import distance as distance_metrics
+from metrics import programs as program_metrics
 from metrics.spatial import compute_spatial_metrics
 
 
@@ -98,6 +100,57 @@ def test_optimization_metrics_on_single_solution():
     assert set(result.zone_data) == {0, 1}
     assert result.zone_data[0]["ge_students"] == 4.0
     assert result.zone_data[0]["avg_math_score"] == 2500.0
+
+
+def test_program_metrics_read_the_run_program_table(tmp_path):
+    programs = tmp_path / "programs.csv"
+    pd.DataFrame(
+        {
+            "school_id": [100, 100, 100, 200, 200],
+            "program_type": ["GE", "SB", "CE", "SA", "GE"],
+            "program_id": [
+                "100-GE-KG",
+                "100-SB-KG",
+                "100-CE-06",
+                "200-SA-KG",
+                "200-GE-06",
+            ],
+            "capacity": [1, 1, 1, 1, 1],
+        }
+    ).to_csv(programs, index=False)
+    problem = _problem()
+    for data in problem.G.graph["school_data"].values():
+        del data["program_types"]
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+    data = {
+        "scenario": "legacy",
+        "overrides": {"sources": {"optimization.programs": {"path": str(programs)}}},
+    }
+
+    result = MetricsCalculator(
+        solution, config={"data": data}, modules=[program_metrics.compute]
+    ).compute()
+
+    # Only the KG rows the run selects: 100 offers GE and SB, 200 only SA.
+    assert result.zone_data[0]["programs"] == {"GE": 1, "SB": 1}
+    assert result.zone_data[1]["programs"] == {"SA": 1}
+    assert result.metrics["avg_total_programs_per_zone"] == 1.5
+
+
+def test_nearby_ge_schools_weight_by_the_problem_population():
+    problem = _problem()
+    problem.program_population = "All"
+    problem.G.nodes[0]["all_prog_students"] = 3.0
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+
+    result = MetricsCalculator(solution, modules=[distance_metrics.compute]).compute()
+
+    # Only node 0 is within half a mile of zone 0's school: 3 of 6 students.
+    assert result.zone_data[0]["ge_schools_within_half_mile"] == 0.5
 
 
 def test_shape_metrics_use_block0_geometry_after_conversion():
@@ -211,6 +264,28 @@ def test_recursive_stage_metrics_can_be_enabled():
     assert result.metrics["fractional_cut_edges_stage_01_Block_0"] > 0
     assert result.run["stages"][1]["cut_edges"] > 0
     assert result.run["stages"][1]["fractional_cut_edges"] > 0
+
+
+def test_stage_metrics_measure_each_stage_once(monkeypatch):
+    import metrics.base
+
+    measured = []
+    original = metrics.base.compute_spatial_metrics
+
+    def counting(solution, config):
+        measured.append(solution)
+        return original(solution, config)
+
+    monkeypatch.setattr(metrics.base, "compute_spatial_metrics", counting)
+    first, final = _solution(), _solution()
+
+    MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert [id(stage) for stage in measured] == [id(first), id(final)]
 
 
 def test_iterative_metrics_select_best_choice_utility():

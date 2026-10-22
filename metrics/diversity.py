@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from Config.Constants import AALPI_ETHNICITIES, AREA_ETHNICITIES
-from Config.metrics_config import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
+from metrics.columns import MetricColumns
 
 _ETH_MAD_COLUMNS = {
     "Ethnicity_Black_or_African_American": MetricColumns.BLACK_MAD,

@@ -7,6 +7,7 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
+from functools import cached_property
 import os
 from pathlib import Path
 import re
@@ -24,14 +25,13 @@ from benchmark.config import (
     SimulationSweep,
     VisualizationRunConfig,
     json_ready,
-    stable_hash,
 )
 from benchmark.results import aggregate_results
 from benchmark.runner import (
     TaskResult,
-    _valid_existing_result,
     evaluate_optimization_task,
     run_optimization_phase,
+    valid_existing_result,
     valid_optimization_result,
     write_json,
 )
@@ -53,6 +53,14 @@ THREAD_ENVIRONMENT = (
     "OPENBLAS_NUM_THREADS=1",
     "MKL_NUM_THREADS=1",
     "NUMEXPR_NUM_THREADS=1",
+)
+# Prefer a per-host Gurobi license, then the shared one.
+GUROBI_LICENSE_SETUP = (
+    'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then '
+    'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"; '
+    'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then '
+    'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"; '
+    'else export GRB_LICENSE_FILE="$HOME/gurobi.lic"; fi'
 )
 
 
@@ -91,6 +99,11 @@ class SlurmPlan:
             }
         )
 
+    @cached_property
+    def allocations(self) -> list["SlurmAllocation"]:
+        """The plan's Slurm allocations, packed once per loaded plan."""
+        return _plan_allocations(self)
+
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SlurmPlan":
         schema_version = int(value.get("schema_version") or 0)
@@ -99,16 +112,7 @@ class SlurmPlan:
                 f"Unsupported Slurm plan schema {schema_version}; "
                 f"expected {PLAN_SCHEMA_VERSION}."
             )
-        tasks = [
-            BenchmarkTask(
-                task_id=str(task["task_id"]),
-                config_hash=str(task["config_hash"]),
-                config=dict(task["config"]),
-                output_dir=str(task["output_dir"]),
-                capacity_slots=int(task["capacity_slots"]),
-            )
-            for task in value.get("tasks", [])
-        ]
+        tasks = [BenchmarkTask.from_dict(task) for task in value.get("tasks", [])]
         plan = cls(
             schema_version=schema_version,
             name=str(value["name"]),
@@ -167,15 +171,17 @@ def create_plan(config_path: str) -> SlurmPlan:
         tasks = [
             task
             for task in all_tasks
-            if not _valid_existing_result(task, sweep.execution)
+            if not valid_existing_result(task, sweep.execution)
         ]
     else:
         tasks = all_tasks
     assignment_plan_path = None
     if sweep.matching.enabled:
-        _prepare_completed_targets(all_tasks, tasks, sweep.matching)
         from assignment.run_custom_config import load_custom_config
         from assignment.slurm import build_generated_zone_slurm_plan
+        from benchmark.assignment import plan_assignment_targets
+
+        targets = plan_assignment_targets(all_tasks, tasks, sweep.matching)
 
         assignment_config = load_custom_config(sweep.matching.config)
         metrics_enabled = bool(assignment_config.get("export-aggregate-metrics", False))
@@ -187,7 +193,7 @@ def create_plan(config_path: str) -> SlurmPlan:
         metrics_jobs = MAX_DOWNSTREAM_METRICS_JOBS if metrics_enabled else 0
         _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
             sweep.matching.config,
-            _assignment_targets(all_tasks, sweep.matching),
+            targets,
             assignment_folder=output_root / sweep.matching.assignment_dir,
             plan_dir=output_root / SLURM_DIRNAME / "assignment",
             max_assignment_jobs=assignment_jobs,
@@ -250,20 +256,9 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
     """Render benchmark allocations and the dependent assignment graph."""
 
     _validate_plan(plan)
-    allocations = _plan_allocations(plan)
-    lines = [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then',
-        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"',
-        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then',
-        '    export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"',
-        "else",
-        '    export GRB_LICENSE_FILE="$HOME/gurobi.lic"',
-        "fi",
-        "",
-    ]
-    for index, _allocation in enumerate(allocations):
+    allocations = plan.allocations
+    lines = ["#!/usr/bin/env bash", "set -euo pipefail", GUROBI_LICENSE_SETUP, ""]
+    for index in range(len(allocations)):
         command = _sbatch_options(plan, plan_path, index)
         variable = f"benchmark_job_{index}"
         lines.append(f"{variable}=$({_shell_command(command)})")
@@ -298,7 +293,7 @@ def submit_plan(
     _validate_plan(plan)
     _log_dir(plan).mkdir(parents=True, exist_ok=True)
     plan_path = Path(plan_path).expanduser().resolve()
-    allocations = _plan_allocations(plan)
+    allocations = plan.allocations
     submitted: list[SubmittedAllocation] = []
     for index, allocation in enumerate(allocations):
         job_id = _submit(_sbatch_options(plan, plan_path, index, sbatch=sbatch), run)
@@ -366,11 +361,7 @@ def _run_evaluation_task(
     visualization: VisualizationRunConfig,
     execution: ExecutionConfig | None = None,
 ) -> TaskResult:
-    if (
-        execution
-        and execution.skip_existing
-        and _valid_existing_result(task, execution)
-    ):
+    if execution and execution.skip_existing and valid_existing_result(task, execution):
         return TaskResult(
             task_id=task.task_id,
             output_dir=task.output_dir,
@@ -508,7 +499,7 @@ def _validate_plan(plan: SlurmPlan) -> None:
         if not Path(task.output_dir).is_absolute():
             raise ValueError(f"Task {task.task_id} output_dir must be absolute.")
         _optimization_cpus(task)
-    _plan_allocations(plan)
+    plan.allocations  # Packing rejects plans with too many worker counts.
 
 
 def _optimization_cpus(task: BenchmarkTask) -> int:
@@ -593,93 +584,6 @@ def _plan_allocations(plan: SlurmPlan) -> list[SlurmAllocation]:
     return allocations
 
 
-def _prepare_completed_targets(
-    all_tasks: list[BenchmarkTask],
-    pending: list[BenchmarkTask],
-    matching: MatchingRunConfig,
-) -> None:
-    """Give finished runs the zone file their assignment jobs read.
-
-    Pending tasks write their own targets when they run; a task skipped as
-    already complete may predate matching, so its root target is rebuilt from
-    the saved solution here.
-    """
-    from assignment.generated_zones import (
-        GENERATED_ZONE_FILENAME,
-        SKIP_MARKER_FILENAME,
-    )
-    from benchmark.assignment import prepare_completed_run_target
-
-    pending_ids = {task.task_id for task in pending}
-    for task in all_tasks:
-        if task.task_id in pending_ids:
-            continue
-        root = Path(task.output_dir)
-        if (root / GENERATED_ZONE_FILENAME).is_file() or (
-            root / SKIP_MARKER_FILENAME
-        ).is_file():
-            continue
-        if matching.compute_stage_assignments:
-            raise ValueError(
-                f"Task {task.task_id} finished without matching; stage "
-                "assignments cannot be added afterwards, only root ones."
-            )
-        prepare_completed_run_target(root, str(task.config["levels"][-1]))
-
-
-def _assignment_targets(
-    tasks: list[BenchmarkTask], matching: MatchingRunConfig
-) -> list[dict[str, str]]:
-    from assignment.generated_zones import (
-        GENERATED_ZONE_FILENAME,
-        SKIP_MARKER_FILENAME,
-    )
-    from benchmark.assignment import zone_building_blocks
-    from loaders import load_scenario
-    from optimization.levels import LevelSpec
-
-    targets = []
-    scenarios = {}
-    for task in tasks:
-        data_key = stable_hash(task.config["data"])
-        scenario = scenarios.get(data_key)
-        if scenario is None:
-            scenario = load_scenario(task.config["data"])
-            scenarios[data_key] = scenario
-        vintage = scenario.filter("optimization", "geography_vintage")
-        unit = zone_building_blocks(LevelSpec.parse(task.config["levels"][0]).unit)
-        folders = [("root", Path(task.output_dir))]
-        if matching.compute_stage_assignments:
-            strategy = str(task.config["strategy"])
-            normalized = strategy.lower()
-            prefix = (
-                "iteration"
-                if "iterative" in normalized or normalized == "saa"
-                else "stage"
-            )
-            levels = task.config["levels"]
-            if normalized == "saa":
-                levels = [levels[-1]] * (int(task.config["max_iterations"]) + 1)
-            folders.extend(
-                (
-                    f"stage-{index}",
-                    Path(task.output_dir) / "stages" / f"{prefix}_{index:02d}_{level}",
-                )
-                for index, level in enumerate(levels)
-            )
-        for suffix, folder in folders:
-            targets.append(
-                {
-                    "id": f"{task.task_id}-{suffix}",
-                    "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
-                    "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
-                    "zone_building_blocks": unit,
-                    "geography_vintage": vintage,
-                }
-            )
-    return targets
-
-
 def _artifact_path(plan: SlurmPlan, value: str | None, default_name: str) -> Path:
     output_root = Path(plan.output_root).resolve()
     path = Path(value).expanduser() if value else Path(SLURM_DIRNAME) / default_name
@@ -707,14 +611,7 @@ def _sbatch_options(
     sbatch: str = "sbatch",
 ) -> list[str]:
     allocation = _allocation_at(plan, index)
-    license_setup = (
-        'if [ -f "$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)" ]; then '
-        'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.$(hostname -s)"; '
-        'elif [ -n "${SLURMD_NODENAME:-}" ] && [ -f "$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}" ]; then '
-        'export GRB_LICENSE_FILE="$HOME/gurobi_licenses/gurobi.lic.${SLURMD_NODENAME}"; '
-        'else export GRB_LICENSE_FILE="$HOME/gurobi.lic"; fi && '
-    )
-    worker_command = license_setup + shlex.join(
+    worker_command = f"{GUROBI_LICENSE_SETUP} && " + shlex.join(
         [
             "uv",
             "run",
@@ -778,7 +675,7 @@ def _task_at(plan: SlurmPlan, task_index: int) -> BenchmarkTask:
 
 
 def _allocation_at(plan: SlurmPlan, allocation_index: int) -> SlurmAllocation:
-    allocations = _plan_allocations(plan)
+    allocations = plan.allocations
     if allocation_index < 0 or allocation_index >= len(allocations):
         raise IndexError(
             "Allocation index "
@@ -904,14 +801,6 @@ def main(argv: list[str] | None = None) -> int:
                     f"across {len(assignment_plan['jobs'])} Slurm jobs"
                 )
             if args.command == "submit":
-                if not plan.tasks and not plan.assignment_plan_path:
-                    print("All benchmark tasks already completed; no jobs submitted.")
-                    aggregate_results(
-                        plan.output_root,
-                        summary_csv=plan.metrics.summary_csv,
-                        stages_csv=plan.metrics.stages_csv,
-                    )
-                    return 0
                 submitted = submit_plan(plan, plan_path, sbatch=args.sbatch)
                 if not submitted:
                     print("All benchmark tasks already completed; no jobs submitted.")

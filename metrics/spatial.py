@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Mapping
 
 import geopandas as gpd
@@ -33,6 +33,10 @@ class SpatialMetrics:
     max_reock_score: float
     avg_polsby_popper_score: float
     max_polsby_popper_score: float
+
+
+#: Flat metric columns, one per :class:`SpatialMetrics` field.
+SPATIAL_FIELDS = tuple(field.name for field in fields(SpatialMetrics))
 
 
 def compute_spatial_metrics(
