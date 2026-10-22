@@ -30,6 +30,11 @@ from ..definitions import (
 )
 
 _LEGACY_TOP_LEVEL_DATA_KEYS = {"grade", "remove-special-lps", "year"}
+#: Removed options, rejected so an old config fails rather than silently
+#: running without them.
+_REMOVED_KEYS = {
+    "rounds-merged-options": "rounds are always assigned in order",
+}
 _LEGACY_INPUT_PATH_KEYS = {
     "citywide-or-lp-zones",
     "estimate-path",
@@ -98,6 +103,12 @@ class Configerator:
                     "Assignment data filters must be configured under "
                     "data.overrides.filters.assignment; forbidden top-level keys: "
                     f"{legacy_keys}."
+                )
+
+            for key in sorted(_REMOVED_KEYS.keys() & config.keys()):
+                raise ValueError(
+                    f"Assignment option {key!r} was removed ({_REMOVED_KEYS[key]}); "
+                    "delete it from the configuration."
                 )
 
             paths = config.get("paths", {})

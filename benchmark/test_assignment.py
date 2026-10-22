@@ -17,9 +17,12 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
 from benchmark.assignment import (
     assignment_targets,
     planned_stage_names,
+    prepare_assignment_targets,
     process_solution_assignments,
     run_assignments_for_existing_runs,
+    run_ready_assignments,
 )
+from benchmark.runner import MANIFEST_FILENAME, write_json
 from benchmark.config import (
     BenchmarkTask,
     MatchingRunConfig,
@@ -334,6 +337,67 @@ def test_stage_targets_reject_unplannable_strategies(tmp_path):
     assert [
         target["id"] for target in assignment_targets([task], MatchingRunConfig())
     ] == ["task-root"]
+
+
+def test_local_stage_targets_follow_the_saved_stages(tmp_path):
+    config = OptimizationConfig(levels=["BlockGroup_0"], strategy="iterative_choice")
+    task = BenchmarkTask(
+        task_id="task",
+        config_hash="hash",
+        config=optimization_config_to_dict(config),
+        output_dir=str(tmp_path),
+        capacity_slots=1,
+    )
+    matching = MatchingRunConfig(
+        enabled=True, config="assignment.yaml", compute_stage_assignments=True
+    )
+    prepare_assignment_targets([task], [task], matching)
+    write_json(
+        str(tmp_path / MANIFEST_FILENAME),
+        {
+            "stages": [
+                {"index": index, "path": f"stages/iteration_{index:02d}_BlockGroup_0"}
+                for index in range(2)
+            ]
+        },
+    )
+
+    targets = assignment_targets([task], matching, planned_stages=False)
+
+    assert [target["id"] for target in targets] == [
+        "task-root",
+        "task-stage-0",
+        "task-stage-1",
+    ]
+    assert targets[2]["zone_file"] == str(
+        (tmp_path / "stages/iteration_01_BlockGroup_0/assignment_zones.csv").resolve()
+    )
+
+
+def test_pending_tasks_drop_zone_files_of_a_previous_run(tmp_path):
+    config = OptimizationConfig(levels=["BlockGroup_0"], strategy="recursive")
+    task = BenchmarkTask(
+        task_id="task",
+        config_hash="hash",
+        config=optimization_config_to_dict(config),
+        output_dir=str(tmp_path),
+        capacity_slots=1,
+    )
+    matching = MatchingRunConfig(
+        enabled=True, config="assignment.yaml", compute_stage_assignments=True
+    )
+    stale = [
+        tmp_path / "assignment_zones.csv",
+        tmp_path / "stages/stage_00_BlockGroup_0/assignment_zones.csv",
+    ]
+    for zone_file in stale:
+        write_generated_zones({1: 0}, zone_file)
+
+    targets = assignment_targets([task], matching)
+    prepare_assignment_targets([task], [task], matching)
+
+    assert not any(zone_file.exists() for zone_file in stale)
+    assert run_ready_assignments(targets, matching, tmp_path, workers=1) == 0
 
 
 def test_generated_assignment_slurm_plan_uses_nine_jobs(tmp_path):

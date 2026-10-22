@@ -20,7 +20,7 @@ from benchmark.config import (
     stable_hash,
 )
 from benchmark.results import discover_run_dirs
-from benchmark.runner import load_solutions
+from benchmark.runner import MANIFEST_FILENAME, load_manifest, load_solutions
 from metrics.base import MetricsContext, is_iterative_strategy, stage_names
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
@@ -122,16 +122,33 @@ def plan_assignment_targets(
 ) -> list[dict[str, str]]:
     """Ready and list the assignment targets of every task in a sweep.
 
-    Pending tasks write their targets when evaluated. A task skipped as
-    already complete may predate matching, so its root target is rebuilt from
-    the saved solution here. Slurm turns the list into assignment jobs behind
-    the optimization jobs; a local sweep runs it once every task is done.
+    Slurm turns the list into assignment jobs behind the optimization jobs, so
+    every stage target is planned before the run.
+    """
+    prepare_assignment_targets(tasks, pending, matching)
+    return assignment_targets(tasks, matching)
+
+
+def prepare_assignment_targets(
+    tasks: list[BenchmarkTask],
+    pending: list[BenchmarkTask],
+    matching: MatchingRunConfig,
+) -> None:
+    """Ready every task's assignment targets before a sweep runs.
+
+    Pending tasks write their targets when evaluated, so any zone file a
+    previous run left is removed: a rerun that fails must not be matched on
+    the old zoning. A task skipped as already complete may predate matching,
+    so its root target is rebuilt from the saved solution here.
     """
     pending_ids = {task.task_id for task in pending}
     for task in tasks:
-        if task.task_id in pending_ids:
-            continue
         root = Path(task.output_dir)
+        if task.task_id in pending_ids:
+            (root / GENERATED_ZONE_FILENAME).unlink(missing_ok=True)
+            for zone_file in root.glob(f"stages/*/{GENERATED_ZONE_FILENAME}"):
+                zone_file.unlink()
+            continue
         if (root / GENERATED_ZONE_FILENAME).is_file() or (
             root / SKIP_MARKER_FILENAME
         ).is_file():
@@ -142,13 +159,20 @@ def plan_assignment_targets(
                 "assignments cannot be added afterwards, only root ones."
             )
         prepare_completed_run_target(root, str(task.config["levels"][-1]))
-    return assignment_targets(tasks, matching)
 
 
 def assignment_targets(
-    tasks: list[BenchmarkTask], matching: MatchingRunConfig
+    tasks: list[BenchmarkTask],
+    matching: MatchingRunConfig,
+    *,
+    planned_stages: bool = True,
 ) -> list[dict[str, str]]:
-    """List each task's root target, and its planned stage targets if asked."""
+    """List each task's root target, and its stage targets if asked.
+
+    Stage targets are every stage the task can save when ``planned_stages``,
+    as Slurm needs them before the run, and otherwise the stages its saved
+    manifest records.
+    """
     from loaders import load_scenario
 
     targets = []
@@ -161,8 +185,9 @@ def assignment_targets(
             scenarios[data_key] = scenario
         vintage = scenario.filter("optimization", "geography_vintage")
         unit = zone_building_blocks(LevelSpec.parse(task.config["levels"][0]).unit)
-        folders = [("root", Path(task.output_dir))]
-        if matching.compute_stage_assignments:
+        root = Path(task.output_dir)
+        folders = [("root", root)]
+        if matching.compute_stage_assignments and planned_stages:
             planned = planned_stage_names(task.config)
             if planned is None:
                 raise ValueError(
@@ -171,8 +196,15 @@ def assignment_targets(
                     f"{task.config['strategy']!r} does not have."
                 )
             folders.extend(
-                (f"stage-{index}", Path(task.output_dir) / "stages" / name)
+                (f"stage-{index}", root / "stages" / name)
                 for index, name in enumerate(planned)
+            )
+        elif (
+            matching.compute_stage_assignments and (root / MANIFEST_FILENAME).is_file()
+        ):
+            folders.extend(
+                (f"stage-{stage['index']}", root / stage["path"])
+                for stage in load_manifest(root).get("stages", [])
             )
         for suffix, folder in folders:
             targets.append(
@@ -196,8 +228,8 @@ def run_ready_assignments(
 ) -> int:
     """Run the targets whose zone file was written as one local batch.
 
-    Targets marked skipped, or left without a zone file by a failed run, are
-    left out. Returns the number of targets run.
+    Targets marked skipped, or left without a zone file by a failed run (see
+    :func:`prepare_assignment_targets`), are left out. Returns the number of targets run.
     """
     ready = [
         target
@@ -270,8 +302,6 @@ def run_assignments_for_existing_runs(
         try:
             dataset = None
             if dataset_factory is not None:
-                from benchmark.runner import load_manifest
-
                 manifest = load_manifest(run_dir)
                 config = optimization_config_from_dict(manifest["config"])
                 dataset = dataset_factory(config, manifest)

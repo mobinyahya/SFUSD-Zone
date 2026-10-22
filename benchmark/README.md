@@ -51,10 +51,13 @@ targets can be added that way, not `compute_stage_assignments`.
 `matching.assignment_dir` (default `assignments`) names the folder under
 `execution.output_dir` they are written to, so the same zonings can be matched
 again under a different assignment config without overwriting the first set.
-A local `mode: run` plans the same targets for the sweep's own tasks and runs
-them as one batch after the last task. `compute_stage_assignments` needs every
-stage planned before the run, so it is limited to `recursive`, `single`
-without `enumerated_solutions`, and `saa`; other strategies are rejected.
+A local `mode: run` runs the same targets for the sweep's own tasks as one
+batch after the last task, with stage targets taken from the stages each task
+saved. Slurm needs every stage planned before the run, so there
+`compute_stage_assignments` is limited to `recursive`, `single` without
+`enumerated_solutions`, and `saa`; other strategies are rejected. Tasks about
+to run lose any zone file a previous run left, so a rerun that fails is not
+matched on its old zoning.
 
 Plans, scripts, and logs are written beneath
 `<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition

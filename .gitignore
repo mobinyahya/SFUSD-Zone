@@ -33,7 +33,6 @@ local_runs/*
 # Scratch notebooks (not part of the library)
 *.ipynb
 /Cleaned_new
-/assignment/configs/policy_configs/2405-SFUSD-simulations
 run_commands.txt
 /soalnas/share
 r1_filter_student_without_specialprogs_2324.numbers

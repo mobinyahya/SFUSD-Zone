@@ -128,12 +128,13 @@ def run_tasks(
     matching = matching if matching and matching.enabled else None
     if matching:
         from benchmark.assignment import (
-            plan_assignment_targets,
+            assignment_targets,
+            prepare_assignment_targets,
             run_ready_assignments,
         )
 
-    # Planned before any task runs, so an unplannable sweep fails up front.
-    targets = plan_assignment_targets(tasks, pending, matching) if matching else []
+        # Before any task runs, so an unpreparable sweep fails up front.
+        prepare_assignment_targets(tasks, pending, matching)
     run = partial(
         run_optimization_task,
         strict_metrics=metrics.strict,
@@ -143,6 +144,9 @@ def run_tasks(
     )
     _run_pending(pending, execution, run, batch)
     if matching:
+        # Stage targets are the stages each task saved, so a strategy whose
+        # solve decides its stage count needs no plan.
+        targets = assignment_targets(tasks, matching, planned_stages=False)
         assigned = run_ready_assignments(
             targets,
             matching,

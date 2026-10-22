@@ -37,7 +37,8 @@ from benchmark.runner import (
 )
 
 
-PLAN_SCHEMA_VERSION = 3
+# 4: execution.queue_multiplier removed.
+PLAN_SCHEMA_VERSION = 4
 MAX_CPUS_PER_NODE = 40
 MAX_SLURM_JOBS = 12
 MAX_DOWNSTREAM_SLURM_JOBS = 8
@@ -110,7 +111,8 @@ class SlurmPlan:
         if schema_version != PLAN_SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported Slurm plan schema {schema_version}; "
-                f"expected {PLAN_SCHEMA_VERSION}."
+                f"expected {PLAN_SCHEMA_VERSION}. Regenerate the plan with "
+                "`python -m benchmark.slurm generate`."
             )
         tasks = [BenchmarkTask.from_dict(task) for task in value.get("tasks", [])]
         plan = cls(

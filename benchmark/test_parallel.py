@@ -71,8 +71,11 @@ def test_local_matching_evaluates_and_runs_only_the_sweep_targets(
         capacity_slots=1,
     )
 
-    def plan(tasks, pending, matching):
-        events.append(("plan", tasks, pending))
+    def prepare(tasks, pending, matching):
+        events.append(("prepare", tasks, pending))
+
+    def targets(tasks, matching, *, planned_stages):
+        events.append(("targets", tasks, planned_stages))
         return [{"id": "task-root"}]
 
     def run_task(task, **kwargs):
@@ -84,7 +87,8 @@ def test_local_matching_evaluates_and_runs_only_the_sweep_targets(
         return len(targets)
 
     monkeypatch.setattr("benchmark.parallel.run_optimization_task", run_task)
-    monkeypatch.setattr("benchmark.assignment.plan_assignment_targets", plan)
+    monkeypatch.setattr("benchmark.assignment.prepare_assignment_targets", prepare)
+    monkeypatch.setattr("benchmark.assignment.assignment_targets", targets)
     monkeypatch.setattr("benchmark.assignment.run_ready_assignments", run_ready)
     matching = MatchingRunConfig(enabled=True, config="assignment.yaml")
 
@@ -100,7 +104,8 @@ def test_local_matching_evaluates_and_runs_only_the_sweep_targets(
     )
 
     assert events == [
-        ("plan", [task], [task]),
+        ("prepare", [task], [task]),
         ("benchmark", "task", matching),
+        ("targets", [task], False),
         ("matching", [{"id": "task-root"}], str(tmp_path), 2),
     ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from benchmark.config import BenchmarkTask, VisualizationRunConfig
 from benchmark.results import discover_run_dirs
@@ -15,6 +15,7 @@ class RegenerationResult:
     regenerated: int = 0
     skipped: int = 0
     failed: int = 0
+    errors: dict[str, str] = field(default_factory=dict)
 
 
 def regenerate_metrics(
@@ -30,8 +31,10 @@ def regenerate_metrics(
 
     Runs the same evaluation as a sweep, so a regenerated run ends exactly as a
     freshly evaluated one would. Runs whose optimization failed or saved no
-    stage are skipped. ``dataset_factory(config, manifest)`` supplies the
-    dataset the stages are rebuilt on, in place of the configured data.
+    stage are skipped. A run that fails to regenerate keeps its saved files
+    and is reported in ``errors``. ``dataset_factory(config, manifest)``
+    supplies the dataset the stages are rebuilt on, in place of the
+    configured data.
     """
 
     result = RegenerationResult()
@@ -50,23 +53,20 @@ def regenerate_metrics(
                 if dataset_factory is not None
                 else None
             )
-            evaluated = evaluate_optimization_task(
+            evaluate_optimization_task(
                 task,
                 strict_metrics=strict,
                 compute_stage_metrics=compute_stage_metrics,
                 visualization=visualization,
                 manifest=manifest,
                 dataset=dataset,
+                regenerating=True,
             )
-        except Exception:
+        except Exception as exc:
             result.failed += 1
+            result.errors[str(run_dir)] = str(exc) or exc.__class__.__name__
             if fail_fast:
                 raise
             continue
-        if evaluated.status == "ERROR":
-            result.failed += 1
-            if fail_fast:
-                raise RuntimeError(f"{run_dir}: {evaluated.error_message}")
-        else:
-            result.regenerated += 1
+        result.regenerated += 1
     return result

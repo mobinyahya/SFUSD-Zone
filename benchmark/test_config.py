@@ -198,6 +198,33 @@ def test_saa_manifest_hashes_matching_policy_files():
     }
 
 
+@pytest.mark.parametrize("strategy, reads_market", [("saa", True), ("single", False)])
+def test_market_manifest_tracks_other_vintage_blocks(strategy, reads_market):
+    vintage = {"geography_vintage": "2020"}
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="mip",
+        strategy=strategy,
+        data={
+            "scenario": "legacy",
+            "overrides": {
+                "filters": {
+                    "optimization": {"program_population": "All", **vintage},
+                    "assignment": vintage,
+                }
+            },
+        },
+    )
+
+    sources = _benchmark_source_manifest(config)["sources"]
+
+    other_vintage = {
+        "assignment.geography.2010.blocks",
+        "assignment.geography.2010.crosswalk",
+    }
+    assert (other_vintage <= set(sources)) is reads_market
+
+
 @pytest.mark.parametrize("objective", ["mid", "stable_matching", "boundary"])
 def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
     config = OptimizationConfig(

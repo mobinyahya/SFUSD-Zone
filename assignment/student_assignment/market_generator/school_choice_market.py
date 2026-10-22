@@ -43,6 +43,15 @@ ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES = (
 _CENSUS_ZONE_BUILDING_BLOCKS = {"block", "block_group", "tract"}
 
 
+def vintage_geography_roles(data_scenario) -> list[str]:
+    """Other vintages' Blocks roles, to which the equity tie-breaker is matched."""
+    return [
+        role
+        for role in data_scenario.roles
+        if re.fullmatch(r"assignment\.geography\.\d{4}\.(blocks|crosswalk)", role)
+    ]
+
+
 def assignment_source_identity(data_scenario) -> str:
     """Fingerprint immutable assignment inputs without loading their tables."""
     roles = list(ASSIGNMENT_IMMUTABLE_SOURCE_ROLES)
@@ -54,9 +63,8 @@ def assignment_source_identity(data_scenario) -> str:
         role
         for role in data_scenario.roles
         if role in ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES
-        # Other vintages' Blocks, to which the equity tie-breaker is matched.
-        or re.fullmatch(r"assignment\.geography\.\d{4}\.(blocks|crosswalk)", role)
     )
+    roles.extend(vintage_geography_roles(data_scenario))
     # The manifest carries every filter, the assignment selectors included.
     encoded = json.dumps(
         data_scenario.source_manifest(roles), sort_keys=True, separators=(",", ":")

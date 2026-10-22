@@ -452,6 +452,45 @@ def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     assert summary.loc[0, "num_zones"] == 2
 
 
+def test_regenerate_metrics_keeps_completed_at(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    manifest_path = run_dir / MANIFEST_FILENAME
+    completed_at = json.loads(manifest_path.read_text(encoding="utf-8"))["completed_at"]
+
+    regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["completed_at"] == completed_at
+    assert manifest["metrics_regenerated_at"]
+
+
+def test_regenerate_metrics_failure_leaves_saved_files(tmp_path):
+    run_dir, problem = _write_synthetic_run(tmp_path)
+    regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: FakeDataset(problem),
+    )
+    manifest_path = run_dir / MANIFEST_FILENAME
+    result_path = run_dir / RESULT_FILENAME
+    saved = (manifest_path.read_bytes(), result_path.read_bytes())
+
+    class BrokenDataset(FakeDataset):
+        def problem_for(self, *args, **kwargs):
+            raise RuntimeError("source missing")
+
+    result = regenerate_metrics(
+        str(tmp_path),
+        dataset_factory=lambda config, manifest: BrokenDataset(problem),
+    )
+
+    assert (result.failed, result.regenerated) == (1, 0)
+    assert list(result.errors.values()) == ["source missing"]
+    assert (manifest_path.read_bytes(), result_path.read_bytes()) == saved
+
+
 def test_regenerate_metrics_completes_a_metrics_error_run(tmp_path):
     run_dir, problem = _write_synthetic_run(tmp_path)
     manifest_path = run_dir / MANIFEST_FILENAME

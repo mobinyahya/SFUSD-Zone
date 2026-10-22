@@ -187,12 +187,15 @@ def evaluate_optimization_task(
     manifest: dict[str, Any] | None = None,
     solutions: list[ZoneSolution] | None = None,
     dataset=None,
+    regenerating: bool = False,
 ) -> TaskResult:
     """Evaluate one persisted optimization task: metrics, matching, and maps.
 
     ``manifest`` and ``solutions`` default to what is saved under the task's
     output directory, and ``dataset`` to the one its config builds. A task
-    whose optimization failed is reported, not evaluated.
+    whose optimization failed is reported, not evaluated. ``regenerating``
+    re-evaluates a finished run: a failure is raised rather than saved over
+    its result, and its ``completed_at`` is kept.
     """
 
     output_dir = os.path.expanduser(task.output_dir)
@@ -275,12 +278,15 @@ def evaluate_optimization_task(
                 "status": result_payload.get("status") or "UNKNOWN",
                 "phase": "complete",
                 "error_message": None,
-                "completed_at": _now(),
                 "total_wall_time": result_payload.get("total_wall_time", 0.0),
                 "final_stage": metrics.run.get("final_stage"),
                 "metrics_evaluated_at": _now(),
             }
         )
+        if regenerating:
+            manifest["metrics_regenerated_at"] = _now()
+        else:
+            manifest["completed_at"] = _now()
         manifest.pop("traceback", None)
         _merge_stage_contiguity(manifest, result_payload)
         write_json(os.path.join(output_dir, MANIFEST_FILENAME), manifest)
@@ -291,6 +297,8 @@ def evaluate_optimization_task(
             total_wall_time=float(result_payload.get("total_wall_time") or 0.0),
         )
     except Exception as exc:
+        if regenerating:
+            raise
         manifest = manifest or {}
         return _save_error_result(
             task,
