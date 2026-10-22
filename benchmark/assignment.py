@@ -148,6 +148,10 @@ def prepare_assignment_targets(
         if task.task_id in pending_ids:
             continue
         root = Path(task.output_dir)
+        manifest_path = root / MANIFEST_FILENAME
+        if manifest_path.is_file() and load_manifest(root).get("status") == "ERROR":
+            # Kept as complete under rerun_failed: false; nothing to match.
+            continue
         if not _has_target(root):
             if matching.compute_stage_assignments:
                 raise ValueError(
@@ -157,7 +161,7 @@ def prepare_assignment_targets(
             prepare_completed_run_target(root, str(task.config["levels"][-1]))
         elif matching.compute_stage_assignments:
             missing = [
-                stage["name"]
+                stage.get("name", stage["path"])
                 for stage in load_manifest(root).get("stages", [])
                 if not _has_target(root / stage["path"])
             ]

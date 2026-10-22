@@ -436,6 +436,17 @@ def test_skipped_tasks_missing_stage_targets_are_rejected(tmp_path):
     prepare_assignment_targets([task], [], matching)
 
 
+def test_failed_runs_kept_as_complete_have_nothing_to_prepare(tmp_path):
+    task = _recursive_task(tmp_path)
+    write_json(str(tmp_path / MANIFEST_FILENAME), {"status": "ERROR", "stages": []})
+
+    prepare_assignment_targets(
+        [task], [], MatchingRunConfig(enabled=True, config="assignment.yaml")
+    )
+
+    assert not (tmp_path / "assignment_zones.csv").exists()
+
+
 def test_reusable_assignments_are_keyed_on_the_zone_file_contents(tmp_path):
     from loaders.config import ResolvedSource
 
