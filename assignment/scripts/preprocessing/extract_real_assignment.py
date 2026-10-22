@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from loaders import normalize_grade
 
 from assignment.student_assignment.choice_ranks import (
     ASSIGNMENT_SCHEMA_VERSION,
@@ -24,20 +25,6 @@ from assignment.student_assignment.choice_ranks import (
     promotion_first_choice_ranks,
     ranks_for_matches,
 )
-
-
-def _normalize_grade(value) -> str:
-    """Normalize numeric grades to the two-character program suffix."""
-    if pd.isna(value):
-        return ""
-    text = str(value).strip().upper()
-    try:
-        number = float(text)
-    except ValueError:
-        return text
-    if np.isfinite(number) and number.is_integer():
-        return str(int(number)).zfill(2)
-    return text
 
 
 def extract_real_assignment(
@@ -112,7 +99,7 @@ def extract_real_assignment(
     assigned = school_ids.fillna(0) > 0
 
     program_types = df_students["r1_programcode"].astype("string").str.strip()
-    grades = df_students["grade"].map(_normalize_grade)
+    grades = df_students["grade"].map(normalize_grade)
     missing_assigned_parts = assigned & (
         program_types.isna()
         | program_types.eq("").fillna(False)
