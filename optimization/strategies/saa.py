@@ -16,7 +16,6 @@ from optimization.mid_oracle import finite_grid_oracle
 from optimization.saa_oracle import SaaOracle, aggregate_saa_cuts
 from optimization.solution import ZoneSolution
 from choice.objective import ChoiceObjective
-from optimization.solvers import get_solver
 from optimization.strategies.base import Strategy, register
 from optimization.strategies.budget import Budget, make_budget
 from optimization.welfare_bounds import (
@@ -239,7 +238,6 @@ class SaaStrategy(Strategy):
                 },
             )
 
-        base_options = dict(solver.options)
         for iteration in range(max_iterations):
             if budget.exhausted():
                 termination_reason = "time_limit"
@@ -263,13 +261,10 @@ class SaaStrategy(Strategy):
                 ),
                 choice_objective=choice_objective,
             )
-            master_options = {
-                **base_options,
-                "solve_time_limit": iteration_time_limit,
-                "relative_gap_limit": relative_tolerance,
-            }
-            master_solver = get_solver(backend, **master_options)
-            master_solver._solve_count = iteration
+            master_solver = solver.with_options(
+                solve_time_limit=iteration_time_limit,
+                relative_gap_limit=relative_tolerance,
+            )
             master_start = time.perf_counter()
             solution = master_solver.solve(problem)
             budget.charge(time.perf_counter() - master_start)

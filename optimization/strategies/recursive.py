@@ -163,8 +163,8 @@ class RecursiveStrategy(Strategy):
         limits = {}
         if time_limit is not None:
             limits["solve_time_limit"] = time_limit
-        if gap_limits and i < len(gap_limits):
-            limits["relative_gap_limit"] = gap_limits[i]
+        if gap_limits:
+            limits["relative_gap_limit"] = gap_limits[min(i, len(gap_limits) - 1)]
         return limits
 
     @staticmethod

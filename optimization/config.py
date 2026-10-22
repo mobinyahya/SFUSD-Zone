@@ -92,14 +92,17 @@ _NUMBERS = {
         "must be positive",
         {"minimum": 0.0, "open_minimum": True, "finite": True},
     ),
-    "priced_access_price_scale": ("must be non-negative", {"minimum": 0.0}),
+    "priced_access_price_scale": (
+        "must be non-negative",
+        {"minimum": 0.0, "coerce": False},
+    ),
     "adaptive_short_bursts_lr": (
         "must be positive",
-        {"minimum": 0.0, "open_minimum": True},
+        {"minimum": 0.0, "open_minimum": True, "coerce": False},
     ),
     "adaptive_short_bursts_temperature": (
         "must be positive",
-        {"minimum": 0.0, "open_minimum": True},
+        {"minimum": 0.0, "open_minimum": True, "coerce": False},
     ),
     "adaptive_short_bursts_unassigned_weight": (
         "must be finite and non-negative",
@@ -111,7 +114,7 @@ _NUMBERS = {
     ),
     "dw_recom_time_limit": (
         "must be finite and nonnegative",
-        {"minimum": 0.0, "finite": True},
+        {"minimum": 0.0, "finite": True, "coerce": False},
     ),
     "dw_dual_smoothing": (
         "must lie in (0, 1]",
@@ -401,6 +404,7 @@ class OptimizationConfig:
                 f"must be finite and non-negative for {self.strategy}",
                 minimum=0.0,
                 finite=True,
+                coerce=self.strategy == "saa",
             )
 
         if self.strategy == "recursive" and self.looseness < 1.0:
@@ -528,14 +532,20 @@ class OptimizationConfig:
         maximum: float = math.inf,
         open_minimum: bool = False,
         finite: bool = False,
+        coerce: bool = True,
     ) -> None:
-        """Coerce ``name`` to a float within its bounds, or raise ``message``."""
+        """Check ``name`` is a number within its bounds, or raise ``message``.
 
-        value = getattr(self, name)
+        ``coerce`` stores the value as a float. Fields that never stored it so
+        keep their YAML spelling, since the benchmark task hash sees ``0``
+        and ``0.0`` as different configs.
+        """
+
+        raw = getattr(self, name)
         try:
-            if isinstance(value, bool):
+            if isinstance(raw, bool):
                 raise TypeError
-            value = float(value)
+            value = float(raw)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{name} {message}.") from exc
         if (
@@ -545,7 +555,8 @@ class OptimizationConfig:
             or (open_minimum and value == minimum)
         ):
             raise ValueError(f"{name} {message}.")
-        setattr(self, name, value)
+        if coerce:
+            setattr(self, name, value)
 
     def _validate_school_distance(self) -> None:
         if self.compactness_objective not in {"cut_edges", "school_distance"}:

@@ -133,9 +133,6 @@ def test_saa_positive_tolerance_does_not_claim_exact_optimality(monkeypatch):
     dataset.config = SimpleNamespace(program_population="All")
     monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
     monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        saa_module, "get_solver", lambda *args, **kwargs: _BoundedMaster()
-    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -146,7 +143,7 @@ def test_saa_positive_tolerance_does_not_claim_exact_optimality(monkeypatch):
         saa_num_seeds=1,
     )
 
-    final = strategy.run(dataset, SimpleNamespace(name="mip", options={}))[-1]
+    final = strategy.run(dataset, _BoundedMaster())[-1]
 
     assert final.status == "FEASIBLE"
     assert final.metadata["saa_absolute_gap"] == pytest.approx(2.0)
@@ -160,9 +157,6 @@ def test_saa_rounding_gap_does_not_claim_exact_optimality(monkeypatch):
     dataset.config = SimpleNamespace(program_population="All")
     monkeypatch.setattr(saa_module, "build_saa_market", lambda *args: _market())
     monkeypatch.setattr(saa_module, "initial_solution", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        saa_module, "get_solver", lambda *args, **kwargs: _NearBoundMaster()
-    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -173,7 +167,7 @@ def test_saa_rounding_gap_does_not_claim_exact_optimality(monkeypatch):
         saa_num_seeds=1,
     )
 
-    final = strategy.run(dataset, SimpleNamespace(name="mip", options={}))[-1]
+    final = strategy.run(dataset, _NearBoundMaster())[-1]
 
     assert final.status == "FEASIBLE"
     assert final.metadata["saa_absolute_gap"] == pytest.approx(5e-8)
@@ -194,9 +188,6 @@ def test_saa_preserves_feasible_hint_when_master_has_no_solution(monkeypatch):
             metadata={"hints": "feasible", "hint_solver": "cp_bool"},
         ),
     )
-    monkeypatch.setattr(
-        saa_module, "get_solver", lambda *args, **kwargs: _UnknownMaster()
-    )
     monkeypatch.setattr(saa_module, "SaaOracle", _LowWelfareOracle)
     strategy = get_strategy(
         "saa",
@@ -206,7 +197,7 @@ def test_saa_preserves_feasible_hint_when_master_has_no_solution(monkeypatch):
         saa_num_seeds=1,
     )
 
-    final = strategy.run(dataset, SimpleNamespace(name="mip", options={}))[-1]
+    final = strategy.run(dataset, _UnknownMaster())[-1]
 
     assert final.status == "FEASIBLE"
     assert final.assignment == hint
@@ -254,10 +245,17 @@ class _LowWelfareOracle:
         )
 
 
-class _BoundedMaster:
-    def __init__(self, *args, **kwargs):
-        self._solve_count = 0
+class _FakeMaster:
+    """A MIP master whose per-iteration copies are itself."""
 
+    name = "mip"
+    options: dict = {}
+
+    def with_options(self, **overrides):
+        return self
+
+
+class _BoundedMaster(_FakeMaster):
     def solve(self, problem):
         return ZoneSolution(
             problem=problem,
@@ -269,10 +267,7 @@ class _BoundedMaster:
         )
 
 
-class _UnknownMaster:
-    def __init__(self, *args, **kwargs):
-        self._solve_count = 0
-
+class _UnknownMaster(_FakeMaster):
     def solve(self, problem):
         return ZoneSolution(
             problem=problem,

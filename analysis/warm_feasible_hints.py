@@ -28,6 +28,7 @@ the sweep would miss the cache.
 from __future__ import annotations
 
 import argparse
+import json
 import time
 
 from benchmark.config import SimulationSweep
@@ -70,20 +71,26 @@ def main() -> int:
     if not tasks:
         raise SystemExit(f"No task in {args.sweep} uses centroid {args.centroid!r}.")
 
-    # The strategy's hook is what varies the feasible set across a centroid's
-    # tasks, so one representative per strategy and boundary_prop covers them;
-    # the fingerprint then merges any whose sets agree.
-    configs = {}
-    for task in tasks:
-        config = task.optimization_config()
-        configs.setdefault((config.strategy, config.boundary_prop), config)
+    # The cache keys a hint on the feasible set and the centroid radius, so
+    # build every task's problem and warm each distinct key once. Recursive
+    # runs search for their first feasible zoning at the coarsest level, under
+    # that level's loosened constraints.
+    datasets = {}
     warmed = set()
     failures = 0
-    for config in configs.values():
+    for task in tasks:
+        config = task.optimization_config()
+        data_key = json.dumps(config.data, sort_keys=True, default=str)
+        if data_key not in datasets:
+            datasets[data_key] = config.make_dataset()
+        level, multiplier = config.levels[-1], 1.0
+        if config.strategy == "recursive":
+            level = config.levels[0]
+            multiplier = float(config.looseness) ** (len(config.levels) - 1)
         problem = config.make_strategy().problem_for(
-            config.make_dataset(), config.levels[-1]
+            datasets[data_key], level, constraint_multiplier=multiplier
         )
-        key = feasibility_fingerprint(problem)
+        key = (feasibility_fingerprint(problem), config.centroid_neighbor_radius)
         if key not in warmed:
             warmed.add(key)
             failures += _warm(problem, config, args)

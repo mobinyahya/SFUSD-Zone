@@ -1179,3 +1179,26 @@ def test_priced_access_closes_with_a_replay_of_its_best_zoning():
     assert final.metadata["priced_access_is_replay"] is True
     assert final.wall_time == 0.0
     assert final.metadata["choice_utility"] == max(utilities)
+
+
+def test_recursive_levels_past_gap_limits_keep_the_last_gap():
+    from optimization.strategies.recursive import RecursiveStrategy
+
+    gaps = [0.05, 0.01]
+    assert RecursiveStrategy._level_limits(None, gaps, 2) == {
+        "relative_gap_limit": 0.01
+    }
+
+
+def test_config_keeps_uncoerced_numbers_as_written():
+    # The benchmark task hash tells 0 from 0.0, so validation must not retype
+    # fields it never retyped before.
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"], strategy="iterative_choice", tolerance=0
+    )
+
+    assert repr(config.tolerance) == "0"
+    assert (
+        repr(OptimizationConfig(levels=["BlockGroup_0"], boundary_prop=0).boundary_prop)
+        == "0.0"
+    )
