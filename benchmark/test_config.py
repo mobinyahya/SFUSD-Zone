@@ -213,6 +213,40 @@ def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
     assert ("matching_policy" in manifest) == (objective != "boundary")
 
 
+@pytest.mark.parametrize(
+    "strategy, reads_market",
+    [
+        ("single", False),
+        ("recursive", False),
+        ("iterative_choice", False),
+        ("mid", True),
+        ("mid_decomp", True),
+        ("saa", True),
+        ("direct_samples", True),
+        ("short_bursts_choice", True),
+        ("priced_access", True),
+        ("stable_cutoff", True),
+        ("dantzig_wolfe", True),
+    ],
+)
+def test_manifest_hashes_the_assignment_market_for_strategies_that_read_it(
+    strategy, reads_market
+):
+    solver = {"stable_cutoff": "mip", "short_bursts_choice": "short_bursts"}
+    config = OptimizationConfig(
+        strategy=strategy,
+        solver=solver.get(strategy, "cp_bool"),
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+    assert config.make_strategy().reads_assignment_market is reads_market
+    manifest = _benchmark_source_manifest(config)
+    assert ("matching_policy" in manifest) is reads_market
+    assert "assignment" in manifest["filters"]
+
+
 def test_visualization_config_anchors_shared_artifact_dir(tmp_path):
     config_path = tmp_path / "configs" / "sweep.yaml"
     config_path.parent.mkdir()

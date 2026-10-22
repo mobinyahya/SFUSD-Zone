@@ -412,25 +412,11 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         scenario, "optimization.capacity"
     ):
         roles.append("optimization.capacity")
-    filter_groups = ["optimization"]
-    matching_strategy = (
-        config.strategy
-        in {
-            "mid",
-            "mid_decomp",
-            "saa",
-            "short_bursts_choice",
-        }
-        or (
-            # Both DW welfare objectives read the assignment-side market; the
-            # boundary objective needs no market at all.
-            config.strategy == "dantzig_wolfe" and config.dw_objective != "boundary"
-        )
-        or (
-            # So do the adaptive short bursts' choice objectives, under any strategy.
-            config.solver == "adaptive_short_bursts"
-            and config.adaptive_short_bursts_objective != "cut_edges"
-        )
+    # Each strategy declares whether it reads the assignment-side market; so
+    # do the adaptive short bursts' choice objectives, under any strategy.
+    matching_strategy = config.make_strategy().reads_assignment_market or (
+        config.solver == "adaptive_short_bursts"
+        and config.adaptive_short_bursts_objective != "cut_edges"
     )
     roles.extend(
         role
@@ -447,7 +433,6 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         _scenario_has_role(scenario, "assignment.capacity")
     ):
         roles.append("assignment.capacity")
-    filter_groups.append("assignment")
     if matching_strategy:
         roles.extend(
             role
@@ -462,12 +447,13 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         )
 
     manifest = scenario.source_manifest(dict.fromkeys(roles))
-    manifest["filters"] = {"optimization": json_ready(scenario.filters["optimization"])}
-    if "assignment" in filter_groups:
-        manifest["filters"]["assignment"] = {
+    manifest["filters"] = {
+        "optimization": json_ready(scenario.filters["optimization"]),
+        "assignment": {
             key: json_ready(scenario.filters["assignment"][key])
             for key in MNL_ASSIGNMENT_FILTERS
-        }
+        },
+    }
     if matching_strategy:
         root = Path(__file__).resolve().parents[1]
         policy_files = (
