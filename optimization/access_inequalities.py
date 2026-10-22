@@ -34,7 +34,8 @@ Cardinality
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from dataclasses import dataclass, field
 from itertools import combinations
 
 AccessPair = tuple[int, int]
@@ -152,3 +153,75 @@ def transitivity_triples(
                 return
             produced += 1
             yield (anchor, first, second)
+
+
+@dataclass
+class AccessInequalities:
+    """The rows one master gets, in terms of its access-variable pairs.
+
+    Backend-neutral: each solver turns ``cliques`` into ``sum(a) <= 1`` rows
+    and ``triangles`` into the three rotations of ``a_uv + a_vw - a_uw <= 1``,
+    and reports ``counts`` as ``choice_access_*`` metadata.
+    """
+
+    cliques: list[tuple[int, tuple[int, ...]]] = field(default_factory=list)
+    triangles: list[tuple[int, int, int]] = field(default_factory=list)
+    counts: dict[str, int] = field(
+        default_factory=lambda: dict.fromkeys(
+            ("cardinality", "triangle", "pairs", "completed"), 0
+        )
+    )
+
+
+def plan_access_inequalities(
+    access_vars: Mapping[AccessPair, object],
+    candidate_zones: Callable[[int], set[int]],
+    options: Mapping[str, object],
+    create: Callable[[int, int], object],
+) -> AccessInequalities:
+    """Which inequalities the ``choice_access_*`` options ask for.
+
+    Only pairs with a variable are constrained; a pair the linearization fixed
+    to a constant carries no slack to remove. ``create(u, v)`` is the solver's
+    own get-or-create for an access variable, called for each completion pair
+    and returning the variable or a constant.
+    """
+
+    plan = AccessInequalities()
+    want_cardinality = bool(options.get("choice_access_cardinality", False))
+    want_triangle = bool(options.get("choice_access_triangle", False))
+    if not (want_cardinality or want_triangle):
+        return plan
+    variable_pairs = [
+        pair for pair, var in access_vars.items() if not isinstance(var, (int, float))
+    ]
+    plan.counts["pairs"] = len(variable_pairs)
+    if not variable_pairs:
+        return plan
+
+    if want_triangle and bool(options.get("choice_access_complete", False)):
+        # Create the missing side of each near-triangle so transitivity has
+        # something to bind on. Each new pair also brings per-zone conjunction
+        # variables, so the limit is a real cost control.
+        created = completion_pairs(
+            variable_pairs,
+            candidate_zones,
+            limit=int(options.get("choice_access_completion_limit", 20_000)),
+        )
+        for first, second in created:
+            if not isinstance(create(first, second), (int, float)):
+                variable_pairs.append(pair_key(first, second))
+        plan.counts["completed"] = len(created)
+
+    if want_cardinality:
+        plan.cliques = cardinality_cliques(variable_pairs, candidate_zones)
+        plan.counts["cardinality"] = len(plan.cliques)
+    if want_triangle:
+        plan.triangles = list(
+            transitivity_triples(
+                variable_pairs,
+                limit=int(options.get("choice_access_triangle_limit", 200_000)),
+            )
+        )
+        plan.counts["triangle"] = len(plan.triangles)
+    return plan

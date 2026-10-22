@@ -25,12 +25,7 @@ import networkx as nx
 from ortools.sat.python import cp_model
 
 from choice.objective import ChoiceCut
-from optimization.access_inequalities import (
-    cardinality_cliques,
-    completion_pairs,
-    pair_key,
-    transitivity_triples,
-)
+from optimization.access_inequalities import pair_key, plan_access_inequalities
 from optimization.data import contiguity
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
@@ -820,67 +815,26 @@ class _CpSatSolver(Solver):
         access_vars: dict[tuple[int, int], Any],
         access_joints: dict[tuple[int, int, int], Any],
     ) -> None:
-        """Tighten the relaxation of the co-zoning indicators.
+        """Tighten the relaxation of the co-zoning indicators."""
 
-        Only variables are constrained; a pair the linearization already fixed
-        to a constant carries no slack to remove.
-        """
-        self._access_inequality_counts = {
-            "cardinality": 0,
-            "triangle": 0,
-            "pairs": 0,
-            "completed": 0,
-        }
-        want_cardinality = bool(self.options.get("choice_access_cardinality", False))
-        want_triangle = bool(self.options.get("choice_access_triangle", False))
-        if not (want_cardinality or want_triangle):
-            return
-        variable_pairs = [
-            pair
-            for pair, var in access_vars.items()
-            if not isinstance(var, (int, float))
-        ]
-        self._access_inequality_counts["pairs"] = len(variable_pairs)
-        if not variable_pairs:
-            return
-
-        if want_triangle and bool(self.options.get("choice_access_complete", False)):
-            # Create the missing side of each near-triangle so transitivity has
-            # something to bind on. Each new pair also brings per-zone
-            # conjunction variables, so the limit is a real cost control.
-            created = completion_pairs(
-                variable_pairs,
-                problem.candidate_zones,
-                limit=int(self.options.get("choice_access_completion_limit", 20_000)),
-            )
-            for first, second in created:
-                var = self._get_or_create_access_var(
-                    m, problem, x, access_vars, access_joints, first, second
-                )
-                if not isinstance(var, (int, float)):
-                    variable_pairs.append(pair_key(first, second))
-            self._access_inequality_counts["completed"] = len(created)
-
-        if want_cardinality:
-            for anchor, members in cardinality_cliques(
-                variable_pairs, problem.candidate_zones
-            ):
-                m.Add(
-                    sum(access_vars[pair_key(anchor, member)] for member in members)
-                    <= 1
-                )
-                self._access_inequality_counts["cardinality"] += 1
-
-        if want_triangle:
-            limit = int(self.options.get("choice_access_triangle_limit", 200_000))
-            for u, v, w in transitivity_triples(variable_pairs, limit=limit):
-                self._access_inequality_counts["triangle"] += 1
-                a_uv = access_vars[pair_key(u, v)]
-                a_vw = access_vars[pair_key(v, w)]
-                a_uw = access_vars[pair_key(u, w)]
-                m.Add(a_uv + a_vw - a_uw <= 1)
-                m.Add(a_uv + a_uw - a_vw <= 1)
-                m.Add(a_uw + a_vw - a_uv <= 1)
+        plan = plan_access_inequalities(
+            access_vars,
+            problem.candidate_zones,
+            self.options,
+            lambda u, v: self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, u, v
+            ),
+        )
+        self._access_inequality_counts = plan.counts
+        for anchor, members in plan.cliques:
+            m.Add(sum(access_vars[pair_key(anchor, member)] for member in members) <= 1)
+        for u, v, w in plan.triangles:
+            a_uv = access_vars[pair_key(u, v)]
+            a_vw = access_vars[pair_key(v, w)]
+            a_uw = access_vars[pair_key(u, w)]
+            m.Add(a_uv + a_vw - a_uw <= 1)
+            m.Add(a_uv + a_uw - a_vw <= 1)
+            m.Add(a_uw + a_vw - a_uv <= 1)
 
     def _get_or_create_access_var(
         self,
