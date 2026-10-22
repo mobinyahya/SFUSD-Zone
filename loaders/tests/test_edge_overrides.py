@@ -3,11 +3,15 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
-from loaders import edge_overrides
+from loaders.config import PACKAGE_CONFIG_ROOT
 from loaders.edge_overrides import (
     apply_block_edge_overrides,
-    block_edge_override_fingerprint,
     load_block_edge_overrides,
+)
+
+PACKAGED_EDGE_FILES = (
+    PACKAGE_CONFIG_ROOT / "manual_block_edges.yaml",
+    PACKAGE_CONFIG_ROOT / "manual_block_edge_additions.yaml",
 )
 
 EXPECTED_EDGES = [
@@ -31,26 +35,23 @@ EXPECTED_EDGES = [
 ]
 
 
-def test_default_manual_edges_are_all_17_canonical_edges():
-    assert load_block_edge_overrides() == EXPECTED_EDGES
-    assert len(load_block_edge_overrides()) == 17
-    assert len(block_edge_override_fingerprint()) == 12
+def _packaged_edges() -> list[tuple[int, int]]:
+    return sorted(
+        {
+            edge
+            for path in PACKAGED_EDGE_FILES
+            for edge in load_block_edge_overrides(path)
+        }
+    )
+
+
+def test_packaged_2010_manual_edges_are_all_17_canonical_edges():
+    assert _packaged_edges() == EXPECTED_EDGES
 
 
 def test_missing_explicit_manual_edge_file_is_fatal(tmp_path):
     with pytest.raises(FileNotFoundError, match="Required manual Block edge file"):
         load_block_edge_overrides(tmp_path / "missing.yaml")
-
-
-def test_missing_default_manual_edge_file_is_fatal(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        edge_overrides,
-        "DEFAULT_BLOCK_EDGE_OVERRIDES",
-        tmp_path / "missing-default.yaml",
-    )
-
-    with pytest.raises(FileNotFoundError, match="missing-default.yaml"):
-        load_block_edge_overrides()
 
 
 def test_present_empty_manual_edge_file_is_valid(tmp_path):
@@ -67,12 +68,9 @@ def test_apply_manual_edges_preserves_graph_metadata():
         (index, {"area_id": area_id}) for index, area_id in enumerate(area_ids)
     )
 
-    applied = apply_block_edge_overrides(graph)
+    applied = apply_block_edge_overrides(graph, _packaged_edges())
 
     assert applied == EXPECTED_EDGES
     assert graph.number_of_edges() == 17
     assert graph.graph["manual_block_edges"] == EXPECTED_EDGES
-    assert (
-        graph.graph["manual_block_edge_fingerprint"]
-        == block_edge_override_fingerprint()
-    )
+    assert len(graph.graph["manual_block_edge_fingerprint"]) == 12

@@ -1,5 +1,3 @@
-rounds-merged-options:
-  - 0
 
 utility-model:
   enable: true

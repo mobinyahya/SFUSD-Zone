@@ -8,7 +8,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from loaders.config import DataScenario
+from loaders.config import DataScenario, ResolvedSource
 from loaders.tables import read_csv
 
 GEOGRAPHY_UNITS = ("Block", "BlockGroup", "Tract")
@@ -43,7 +43,12 @@ def selected_geography_vintage(scenario: DataScenario, group: str) -> str:
     return str(scenario.filter(group, "geography_vintage"))
 
 
-def _geography_role(group: str, suffix: str) -> str:
+def _geography_role(
+    scenario: DataScenario, group: str, suffix: str, vintage: str | None = None
+) -> str:
+    if vintage is not None and vintage != selected_geography_vintage(scenario, group):
+        # Another vintage's geography, generated for sources that declare it.
+        return f"{group}.geography.{vintage}.{suffix}"
     if group == "optimization" and suffix == "blocks":
         return "optimization.census"
     if group == "optimization" and suffix == "crosswalk":
@@ -98,9 +103,11 @@ def _water_only_mask(geometry: gpd.GeoDataFrame, vintage: str) -> pd.Series:
 def load_geography_crosswalk(
     scenario: DataScenario,
     group: str,
+    vintage: str | None = None,
 ) -> pd.DataFrame:
-    """Load and validate the selected Block-to-parent geography crosswalk."""
-    role = _geography_role(group, "crosswalk")
+    """Load and validate a Block-to-parent crosswalk, by default the selected one."""
+    vintage = vintage or selected_geography_vintage(scenario, group)
+    role = _geography_role(scenario, group, "crosswalk", vintage)
     crosswalk = read_csv(scenario, role, low_memory=False)
     required = set(GEOGRAPHY_UNITS)
     missing = required - set(crosswalk.columns)
@@ -126,7 +133,7 @@ def load_geography_crosswalk(
             "Census crosswalk contains duplicate Block GEOIDs, including "
             f"{duplicates[:5].tolist()}."
         )
-    if selected_geography_vintage(scenario, group) == "2020":
+    if vintage == "2020":
         expected_bg = result["Block"].astype(str).str.zfill(15).str[:12].astype("int64")
         expected_tract = (
             result["Block"].astype(str).str.zfill(15).str[:11].astype("int64")
@@ -167,19 +174,23 @@ def load_census_geometry(
     scenario: DataScenario,
     group: str,
     unit: str,
+    vintage: str | None = None,
 ) -> gpd.GeoDataFrame:
-    """Load one official Census layer, deriving legacy parents when necessary."""
+    """Load one official Census layer, deriving legacy parents when necessary.
+
+    ``vintage`` defaults to the group's selected vintage.
+    """
     if unit not in GEOGRAPHY_UNITS:
         raise ValueError(f"Unsupported census unit {unit!r}.")
-    vintage = selected_geography_vintage(scenario, group)
-    role = _geography_role(group, GEOMETRY_ROLE_KEYS[unit])
+    vintage = vintage or selected_geography_vintage(scenario, group)
+    role = _geography_role(scenario, group, GEOMETRY_ROLE_KEYS[unit], vintage)
     try:
         source = scenario.source(role)
     except KeyError:
         if unit == "Block":
             raise
-        blocks = load_census_geometry(scenario, group, "Block")
-        crosswalk = load_geography_crosswalk(scenario, group)
+        blocks = load_census_geometry(scenario, group, "Block", vintage)
+        crosswalk = load_geography_crosswalk(scenario, group, vintage)
         derived = blocks.merge(crosswalk[["Block", unit]], on="Block", validate="1:1")
         return derived.dissolve(by=unit, as_index=False)[[unit, "geometry"]]
 
@@ -202,7 +213,7 @@ def load_census_geometry(
     result = result.loc[~_water_only_mask(geometry, vintage)].copy()
 
     if unit == "Block":
-        crosswalk = load_geography_crosswalk(scenario, group)
+        crosswalk = load_geography_crosswalk(scenario, group, vintage)
         missing = set(crosswalk["Block"]) - source_geoids
         if missing:
             raise ValueError(
@@ -221,8 +232,12 @@ def match_points_to_census(
     latitude_column: str,
     longitude_column: str,
     row_mask: pd.Series | np.ndarray | None = None,
+    vintage: str | None = None,
 ) -> pd.DataFrame:
-    """Map WGS84 points inside the selected Blocks to their Census GEOIDs."""
+    """Map WGS84 points inside a vintage's Blocks to their Census GEOIDs.
+
+    ``vintage`` defaults to the group's selected vintage.
+    """
     required = {latitude_column, longitude_column}
     missing = required - set(frame.columns)
     if missing:
@@ -250,8 +265,8 @@ def match_points_to_census(
     if not valid.any():
         return result
 
-    blocks = load_census_geometry(scenario, group, "Block")
-    crosswalk = load_geography_crosswalk(scenario, group)
+    blocks = load_census_geometry(scenario, group, "Block", vintage)
+    crosswalk = load_geography_crosswalk(scenario, group, vintage)
     block_parents = crosswalk.set_index("Block")[["BlockGroup", "Tract"]]
     positions = np.flatnonzero(valid.to_numpy())
     points = gpd.GeoDataFrame(
@@ -364,6 +379,80 @@ def normalize_census_geography(
     return result
 
 
+def require_geography_vintage(
+    source: ResolvedSource, vintage: str | None, label: str
+) -> str:
+    """Return the Census vintage a GEOID-keyed source declares.
+
+    A set of GEOIDs is meaningless without its vintage: a Block ID names
+    different land in 2010 and 2020. Fails when the source declares none, or
+    when ``vintage`` is given and the source declares another.
+    """
+    declared = source.geography_vintage
+    if declared is None:
+        raise ValueError(
+            f"{label} ({source.path}) lists Census GEOIDs but declares no "
+            "geography_vintage."
+        )
+    if vintage is not None and declared != vintage:
+        raise ValueError(
+            f"{label} lists Census {declared} GEOIDs, but is compared against "
+            f"Census {vintage} GEOIDs."
+        )
+    return declared
+
+
+def census_ids(
+    frame: pd.DataFrame,
+    scenario: DataScenario,
+    group: str,
+    *,
+    unit: str,
+    vintage: str,
+    style: str = "student",
+) -> pd.Series:
+    """Return each row's ``unit`` GEOID in ``vintage``.
+
+    The selected vintage's IDs are the table's own columns; another vintage's
+    are matched from the row coordinates, so a row outside that vintage's
+    Blocks, or without coordinates, has none.
+    """
+    if unit not in GEOGRAPHY_UNITS:
+        raise ValueError(f"Unsupported census unit {unit!r}.")
+    if vintage == selected_geography_vintage(scenario, group):
+        column = GEOGRAPHY_COLUMNS[style][unit]
+        return pd.to_numeric(frame[column], errors="coerce").astype("Int64")
+    latitude_column, longitude_column = COORDINATE_COLUMNS[style]
+    return match_points_to_census(
+        frame,
+        scenario,
+        group,
+        latitude_column=latitude_column,
+        longitude_column=longitude_column,
+        vintage=vintage,
+    )[unit]
+
+
+def in_geoid_set(
+    frame: pd.DataFrame,
+    scenario: DataScenario,
+    group: str,
+    source: ResolvedSource,
+    *,
+    unit: str,
+    style: str = "student",
+) -> pd.Series:
+    """Whether each row's ``unit`` lies in a ``.npy`` array of GEOIDs.
+
+    The array is compared in the vintage it declares (see
+    ``require_geography_vintage``), never in whichever vintage the run selects.
+    """
+    vintage = require_geography_vintage(source, None, f"GEOID set {source.path.name}")
+    geoids = set(np.load(source.path).astype("int64").tolist())
+    ids = census_ids(frame, scenario, group, unit=unit, vintage=vintage, style=style)
+    return ids.isin(geoids).fillna(False).astype(bool)
+
+
 def source_geography_vintage(source: Any) -> str | None:
     """Return optional source-vintage metadata without coupling callers to type."""
     value = getattr(source, "geography_vintage", None)
@@ -373,10 +462,13 @@ def source_geography_vintage(source: Any) -> str | None:
 __all__ = [
     "GEOGRAPHY_COLUMNS",
     "GEOGRAPHY_UNITS",
+    "census_ids",
+    "in_geoid_set",
     "load_census_geometry",
     "load_geography_crosswalk",
     "match_points_to_census",
     "normalize_census_geography",
+    "require_geography_vintage",
     "selected_geography_vintage",
     "source_geography_vintage",
 ]

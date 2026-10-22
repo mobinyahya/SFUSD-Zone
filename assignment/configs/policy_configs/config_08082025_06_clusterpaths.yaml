@@ -52,7 +52,7 @@ data:
     filters:
       assignment:
         year: "2324"
-        grades: [KG]
+        grade: KG
         student_population: applicant
         rounds:
         - 1
@@ -67,8 +67,6 @@ paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/choice_08082025_06/
 r1-only: true
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - small_zones+no_reserves

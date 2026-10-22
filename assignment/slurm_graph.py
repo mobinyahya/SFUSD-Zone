@@ -16,7 +16,7 @@ SUPPORTED_DEPENDENCIES = {"afterok"}
 _JOB_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
-def _task_batches(task_count: int, batch_count: int) -> list[list[int]]:
+def task_batches(task_count: int, batch_count: int) -> list[list[int]]:
     if task_count < 0 or batch_count < 1:
         raise ValueError("Task and batch counts must be positive.")
     batch_count = min(task_count, batch_count)
@@ -78,7 +78,7 @@ def build_job_graph(
         metrics_count=metrics_count,
     )
 
-    assignment_batches = _task_batches(
+    assignment_batches = task_batches(
         assignment_count, min(assignment_count, max_assignment_jobs)
     )
     jobs = [
@@ -98,7 +98,7 @@ def build_job_graph(
     assignment_jobs = list(jobs)
     if metrics_count:
         metric_job_count = min(metrics_count, max_metrics_jobs)
-        metric_batches = _task_batches(metrics_count, metric_job_count)
+        metric_batches = task_batches(metrics_count, metric_job_count)
         for index, task_indices in enumerate(metric_batches):
             required_assignment_tasks = {
                 assignment_index

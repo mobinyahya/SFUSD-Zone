@@ -44,7 +44,7 @@ def test_config_deep_merge_and_root_override_precedence(tmp_path):
             "filters": {
                 "assignment": {
                     "year": "1819",
-                    "grades": ["KG"],
+                    "grade": "KG",
                     "student_population": "applicant",
                     "rounds": [1, 2],
                     "special_programs": "include",
@@ -82,7 +82,7 @@ def test_config_deep_merge_and_root_override_precedence(tmp_path):
     assert source.classification == "restricted"
     assert scenario.cache_root == explicit_cache.resolve()
     assert scenario.filter("assignment", "rounds") == (2,)
-    assert scenario.filter("assignment", "grades") == ("KG",)
+    assert scenario.filter("assignment", "grade") == "KG"
 
 
 def test_environment_roots_override_base_when_no_explicit_override(tmp_path):
@@ -340,13 +340,10 @@ def test_legacy_exposes_assignment_integration_roles_and_default_cache_root():
     assert scenario.source("assignment.estimate").path == Path(
         "/soalnas/share/data/school_choice/simulation-files/choice-model/Oct1estimates.npy"
     )
-    assert scenario.source("assignment.block_data").path.name == (
-        "SF 2010 blks 022119 with field descriptions (1).xlsx"
-    )
-    assert scenario.source("assignment.new_ctip").path.name == "ETB_2024.npy"
-    assert scenario.source("assignment.new_ctip_blockgroup").path.name == (
-        "ETB_2024_BlockGroup.npy"
-    )
+    ctip = scenario.source_map("assignment.ctip")
+    assert set(ctip) == {"block", "blockgroup"}
+    assert ctip["block"].path.name == "ETB_2024.npy"
+    assert ctip["blockgroup"].path.name == "ETB_2024_BlockGroup.npy"
     assert scenario.source("assignment.school_coordinates") == scenario.source(
         "assignment.schools"
     )
@@ -434,9 +431,6 @@ def test_2324_scenarios_are_coherent_and_preserve_optimization_inputs():
         "assignment.school_coordinates",
         "assignment.program_codes",
         "assignment.estimate",
-        "assignment.block_data",
-        "assignment.new_ctip",
-        "assignment.new_ctip_blockgroup",
         "assignment.zones",
         "assignment.citywide_zones",
         "assignment.ctip",
@@ -444,7 +438,7 @@ def test_2324_scenarios_are_coherent_and_preserve_optimization_inputs():
     for scenario in (historical, mission_bay):
         assert required_assignment_roles <= set(scenario.source_manifest()["sources"])
         assert scenario.filter("assignment", "year") == "2324"
-        assert scenario.filter("assignment", "grades") == ("KG",)
+        assert scenario.filter("assignment", "grade") == "KG"
         assert scenario.filter("assignment", "rounds") == (1,)
     assert historical.filter("assignment", "special_programs") == (
         "exclude_any_special"
@@ -596,6 +590,45 @@ def test_base_schema_two_registry_is_strict_and_catalog_backed(tmp_path):
         )
 
 
+def test_capacity_scenario_registry_is_strict_and_joins_the_manifest(tmp_path):
+    def load(capacity_scenario, base_path=None):
+        return load_scenario(
+            {
+                "scenario": "sfusd-2627",
+                "overrides": {
+                    "filters": {"assignment": {"capacity_scenario": capacity_scenario}}
+                },
+            },
+            base_path=base_path,
+            environ={},
+        )
+
+    plain = load("programs")
+    assert plain.capacity_adjustments("assignment") is None
+    assert "capacity_scenarios" not in plain.source_manifest([])
+
+    moved = load("mission_bay_ge_to_webster_2627")
+    assert moved.capacity_adjustments("assignment")["adjust"][0] == {
+        "school_id": 999,
+        "program_type": "GE",
+        "expect": 69,
+        "set": 0,
+    }
+    manifest = moved.source_manifest([])["capacity_scenarios"]
+    assert set(manifest) == {"assignment"}
+    assert manifest["assignment"]["year"] == "2627"
+
+    base = yaml.safe_load(BASE_CONFIG_PATH.read_text(encoding="utf-8"))
+    base["capacity_scenarios"]["bad"] = {
+        "year": "2627",
+        "adjust": [{"school_id": 497, "program_type": "GE", "add": 1, "set": 2}],
+    }
+    invalid_path = tmp_path / "base.yaml"
+    invalid_path.write_text(yaml.safe_dump(base), encoding="utf-8")
+    with pytest.raises(ValueError, match="exactly one of add or set"):
+        load("programs", base_path=invalid_path)
+
+
 def test_geography_vintage_selects_complete_2020_bundles():
     scenario = load_scenario(
         {
@@ -727,7 +760,8 @@ def test_noncanonical_school_year_values_are_rejected(year):
             {"outside_district_students": "drop"},
             "must be ignore or include",
         ),
-        ("assignment", {"grades": []}, "grades must be a non-empty list"),
+        ("assignment", {"grade": ["KG"]}, "grade must be a canonical grade"),
+        ("assignment", {"grades": ["KG"]}, "Unknown assignment filter keys"),
         (
             "assignment",
             {"special_programs": "remove"},
@@ -837,7 +871,7 @@ def test_assignment_secondary_bundles_resolve_only_when_both_sources_exist(year,
     scenario = load_scenario(
         {
             "scenario": "legacy",
-            "overrides": {"filters": {"assignment": {"year": year, "grades": [grade]}}},
+            "overrides": {"filters": {"assignment": {"year": year, "grade": grade}}},
         },
         environ={},
     )
@@ -854,8 +888,7 @@ def test_assignment_secondary_bundles_resolve_only_when_both_sources_exist(year,
     ("overrides", "error"),
     [
         ({"year": "1415"}, "no program/school bundle"),
-        ({"year": "2324", "grades": ["06"]}, "available grades.*KG"),
-        ({"grades": ["KG", "06"]}, "requires exactly one grade"),
+        ({"year": "2324", "grade": "06"}, "available grades.*KG"),
         (
             {"include_mission_bay": True},
             "capacity profile 'default'.*Mission Bay included",

@@ -5,47 +5,26 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from ..definitions import (
-    K8S,
-    LANGUAGE_PATHWAYS,
-)
+from ..definitions import LANGUAGE_PATHWAYS
 
 
 class Programs:
     def __init__(
         self,
-        program_data_file: str | pd.DataFrame,
-        program_codes_file: str | pd.DataFrame | None,
-        config: dict,
+        program_data: pd.DataFrame,
+        program_codes: pd.DataFrame | None = None,
     ):
-        self._config = config
-        self.program_df = (
-            program_data_file.copy()
-            if isinstance(program_data_file, pd.DataFrame)
-            else pd.read_csv(program_data_file)
-        )
+        """Index loader-normalized programs (``loaders.load_program_records``).
+
+        ``program_codes`` maps ``code`` to ``index`` and is required only when
+        ``program_data`` has no ``programno`` column.
+        """
+        self.program_df = program_data.copy()
         self.only_keep_cols = None
-        self._set_up_programno(program_codes_file)
+        self._set_up_programno(program_codes)
         self.num_programs = len(self.program_df)
         self._program_type2indices = None
         self._school2indices = None
-        grade = self._normalize_grade(config["grade"])
-        if grade == "06":
-            self.fix_k8_capacities()
-        elif grade == "09":
-            self._selective_hs_capacities()
-
-    @staticmethod
-    def _normalize_grade(value) -> str:
-        """Normalize numeric grades to their two-character program suffix."""
-        text = str(value).strip().upper()
-        try:
-            number = float(text)
-        except ValueError:
-            return text
-        if np.isfinite(number) and number.is_integer():
-            return str(int(number)).zfill(2)
-        return text
 
     @staticmethod
     def _validate_identity_column(df: pd.DataFrame, column: str, source: str) -> None:
@@ -115,11 +94,11 @@ class Programs:
             zip(self.program_df["programno"], self.program_df["program_id"])
         )
 
-    def _set_up_programno(self, program_codes_file: str):
+    def _set_up_programno(self, program_codes: pd.DataFrame | None):
         """Set up program indices and codes as a column in the dataframe.
 
         Args:
-            program_codes_file (str): path to file mapping program codes to indices
+            program_codes: table mapping program codes to indices
         """
         if self.program_df.empty:
             raise ValueError("Program data contains no programs.")
@@ -127,16 +106,12 @@ class Programs:
         self.program_df["program_id"] = self.program_df["program_id"].astype(str)
 
         if "programno" not in self.program_df.columns:
-            if not program_codes_file:
+            if program_codes is None:
                 raise ValueError(
                     "Program data has no programno column and no program codes "
-                    "file was provided."
+                    "table was provided."
                 )
-            program_codes = (
-                program_codes_file.copy()
-                if isinstance(program_codes_file, pd.DataFrame)
-                else pd.read_csv(program_codes_file)
-            )
+            program_codes = program_codes.copy()
             self._validate_identity_column(program_codes, "code", "Program codes")
             self._validate_identity_column(program_codes, "index", "Program codes")
             program_codes = program_codes.rename(columns={"index": "programno"})
@@ -202,33 +177,6 @@ class Programs:
         if unknown:
             raise ValueError(f"Unknown program IDs: {unknown[:10]}")
         return [self.indices[x] for x in programs]
-
-    def fix_k8_capacities(self):
-        """Fix K8 capacities to be equal to round 1 assignments.
-
-        For 6th grade, the capacity files give the full school capacity at K8s, but most of those seats are already occupied by students continuing from 5th grade. We use round 1 assignments as a proxy for the number of seats that are actually free for 6th grade assignment.
-        """
-        self.program_df.loc[self.program_df.school_id.isin(K8S), "capacity"] = (
-            self.program_df.loc[
-                self.program_df.school_id.isin(K8S), "r1_assigned"
-            ].fillna(0)
-        )
-        self.program_df.loc[self.program_df.school_id.isin(K8S), "r2_capacity"] = (
-            self.program_df.loc[
-                self.program_df.school_id.isin(K8S), "r1_assigned"
-            ].fillna(0)
-        )
-
-    def _selective_hs_capacities(self):
-        """Adjust capacities at selective HS, who accept all eligible students who propose."""
-        self.program_df.loc[self.program_df.program_id == "815-GE-09", "capacity"] = (
-            10000  # SOTA
-        )
-        # lowell not selective in 2021-22 or 2022-23
-        if self._config["year"] not in [21, 22]:
-            self.program_df.loc[
-                self.program_df.program_id == "697-GE-09", "capacity"
-            ] = 10000  # Lowell
 
     def set_program_capacities(self, capacities: np.ndarray | pd.Series):
         """Manually set program capacities.

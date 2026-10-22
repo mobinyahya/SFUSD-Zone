@@ -10,23 +10,19 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import yaml
-from loaders import (
-    load_program_records,
-    load_school_records,
-    load_student_records,
-    read_csv_source,
-)
 
-from assignment.student_assignment.data_interfaces import Programs, Schools, Students
+from assignment.student_assignment.market_generator.priority_generator import (
+    PriorityGenerator,
+)
+from assignment.student_assignment.market_generator.school_choice_market import (
+    load_market_data,
+)
 from choice.estimate import area_key as _area_key
 from choice.estimate import area_to_node as _area_to_node
 from choice.estimate import identity_text as _identity_text
 from choice.estimate import load_estimate
 from choice.estimate import school_to_node as _school_to_node
 from choice.estimate import student_area_column as _student_area_column
-from assignment.student_assignment.market_generator.priority_generator import (
-    PriorityGenerator,
-)
 from optimization.mid_options import MID_PREFERENCE_SOURCES
 from optimization.problem import ZoneProblem
 from optimization.solvers.cpsat import CP_SAT_SCALE
@@ -488,48 +484,11 @@ def _assignment_market(optimization_config):
     ) as stream:
         config.update(yaml.safe_load(stream))
     data = optimization_config.data_scenario
-    filters = data.filters["assignment"]
-    config["year"] = int(filters["year"][:2])
-    config["grade"] = filters["grades"][0]
-    config["special_programs"] = filters["special_programs"]
-
-    ctip_sources = data.source_map("assignment.ctip")
-    config.setdefault("paths", {}).update(
-        {
-            "new-ctip-path": str(ctip_sources["block"].path),
-            "new-ctip-blockgroup-path": str(ctip_sources["blockgroup"].path),
-        }
-    )
-    program_data = load_program_records(
-        data, "assignment.programs", filter_group="assignment"
-    )
-    program_codes = None
-    if "programno" not in program_data:
-        program_codes = read_csv_source(data.source("assignment.program_codes"))
-    programs = Programs(program_data, program_codes, config)
-    schools = Schools(
-        load_school_records(data, "assignment.schools", filter_group="assignment"),
-        programs,
-    )
-    students = Students(
-        student_data_file=load_student_records(
-            data,
-            "assignment.students",
-            filter_group="assignment",
-            low_memory=False,
-        ),
-        programs=programs,
-        school_data_file=load_school_records(
-            data,
-            "assignment.school_coordinates",
-            filter_group="assignment",
-        ),
-        block_data_file=ctip_sources["workbook"].path,
-        config=config,
-        data_scenario=data,
-    )
+    programs, schools, students = load_market_data(data)
     return SimpleNamespace(
         config=config,
+        data_scenario=data,
+        grade=data.filter("assignment", "grade"),
         programs=programs,
         schools=schools,
         students=students,
@@ -542,7 +501,7 @@ def _assignment_market(optimization_config):
 def _attendance_area_priority_matrix(market) -> np.ndarray:
     """Build the status-quo singleton attendance-area GE priority component."""
     matrix = np.zeros((market.n, market.num_programs), dtype=int)
-    grade = market.config["grade"]
+    grade = market.grade
     for student_id, row in market.students.student_data.iterrows():
         school_id = row.get("idschoolattendance")
         if pd.isna(school_id):

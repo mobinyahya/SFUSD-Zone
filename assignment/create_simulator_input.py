@@ -32,8 +32,7 @@ class ConvertEstimates:
         self._market = SchoolChoiceMarket(configurator=self._configurator)
         self._config = self._market.config
 
-        self._grade = self._config["grade"]
-        self._year = self._config["year"]
+        self._year = self._market.data_scenario.filter("assignment", "year")
         (
             self._weights,
             self._features_df,
@@ -122,7 +121,7 @@ class ConvertEstimates:
             values="utility", columns="program_id", index="studentno"
         )
         new_order = [
-            f"{self._year}{self._year + 1}-{self._students.idx2studentno[i]}"
+            f"{self._year}-{self._students.idx2studentno[i]}"
             for i in sorted(self._students.idx2studentno.keys())
         ]
         estimates_df = estimates_df.reindex(new_order)
@@ -164,7 +163,7 @@ class ConvertEstimates:
             estimates_df, on="studentno", how="left"
         )
         estimates_df["studentno"] = estimates_df["studentno"].apply(
-            lambda x: f"{self._year}{self._year + 1}-{x}"
+            lambda x: f"{self._year}-{x}"
         )
         estimates_df = estimates_df.set_index("studentno")
 

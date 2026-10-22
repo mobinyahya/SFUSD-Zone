@@ -22,8 +22,6 @@ export_heatmaps: true
 reuse_assignments: false
 
 r1-only: true
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - enrolled_match

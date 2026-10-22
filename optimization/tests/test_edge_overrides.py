@@ -30,24 +30,6 @@ def test_load_block_edge_overrides_rejects_self_edges(tmp_path):
         edge_overrides.load_block_edge_overrides(path)
 
 
-def test_default_block_edge_overrides_merge_reviewed_and_explicit_files(
-    tmp_path, monkeypatch
-):
-    reviewed = tmp_path / "reviewed.yaml"
-    additions = tmp_path / "additions.yaml"
-    reviewed.write_text("edges:\n  - [1000, 1002]\n", encoding="utf-8")
-    additions.write_text(
-        "edges:\n  - [1002, 1000]\n  - [1001, 1002]\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_OVERRIDES", reviewed)
-    monkeypatch.setattr(edge_overrides, "DEFAULT_BLOCK_EDGE_ADDITIONS", additions)
-
-    assert edge_overrides.load_block_edge_overrides() == [
-        (1000, 1002),
-        (1001, 1002),
-    ]
-
-
 def test_apply_block_edge_overrides_resolves_stable_area_ids():
     G = nx.Graph()
     G.add_node(20, area_id=1000)

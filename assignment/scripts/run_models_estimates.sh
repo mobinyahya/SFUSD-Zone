@@ -234,7 +234,7 @@ ${estimate_override}
     filters:
       assignment:
         year: '${TEST_YEAR}'
-        grades: ['${GRADE}']
+        grade: '${GRADE}'
         student_population: applicant
         rounds: [1]
         special_programs: exclude_any_special
@@ -248,8 +248,6 @@ paths:
   assignment-folder: ${run_folder}/
 r1-only: true
 random-seed: ${RANDOM_SEED}
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - ${SUBCONFIG}

@@ -44,7 +44,7 @@ def main():
         assignment_filters.update(
             {
                 "year": year_str,
-                "grades": ["KG"],
+                "grade": "KG",
                 "student_population": "applicant",
                 "rounds": [1],
                 "special_programs": "exclude_any_special",

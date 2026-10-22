@@ -13,9 +13,9 @@ data:
   overrides: {}
 ```
 
-`Configerator` validates this block for both YAML-loaded and in-memory configs
-and calls `load_scenario` immediately. Top-level data selectors and all input
-keys under `paths` are errors.
+`Configerator` checks this block's shape and override filters for both
+YAML-loaded and in-memory configs; the market loads the scenario, once, when it
+starts. Top-level data selectors and all input keys under `paths` are errors.
 
 `paths.assignment-folder` remains an output setting. Local and cluster path
 configs contain output paths only; there is no hostname-based source selection.
@@ -42,8 +42,8 @@ data:
         classification: restricted
 ```
 
-Other assignment roles are `program_codes`, `block_data`, `new_ctip`,
-`new_ctip_blockgroup`, and optional `lotteries`. Dynamic generated plans use
+Other assignment roles are `program_codes`, `ctip` (named `block` and
+`blockgroup` equity tie-breaker arrays), and optional `lotteries`. Dynamic generated plans use
 `data.overrides.sources.assignment.zones` with the same named-map shape.
 
 Direct paths in checked-in experiment configs preserve their original source
@@ -63,7 +63,7 @@ data:
     filters:
       assignment:
         year: "2324"
-        grades: [KG]             # assignment execution requires exactly one
+        grade: KG
         student_population: applicant  # applicant | enrolled
         rounds: [1]                    # or all
         special_programs: include     # include | exclude_only_special | exclude_any_special

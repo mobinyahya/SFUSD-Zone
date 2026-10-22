@@ -703,18 +703,18 @@ files:
     path: Data/program_codes.csv
     root: data
     classification: internal
-  ctip.workbook.2013:
-    path: Data/SF 2010 blks 022119 with field descriptions (1).xlsx
-    root: data
-    classification: internal
+  # Equity tie-breaker (ETB) areas: arrays of 2010 Census Block and Block
+  # Group GEOIDs, compared against students in that vintage.
   ctip.array.block.2024:
     path: Data/Tie-breakers/ETB_2024.npy
     root: data
     classification: internal
+    geography_vintage: "2010"
   ctip.array.blockgroup.2024:
     path: Data/Tie-breakers/ETB_2024_BlockGroup.npy
     root: data
     classification: internal
+    geography_vintage: "2010"
 
   utility.2324.exp8:
     path: simulation-files/choice-model/estimates_2324_exp8_0514.csv
@@ -891,6 +891,34 @@ geographies:
 
 student_frl_estimates:
   updated_2526: student_frl.updated_2526
+
+# Named in-memory adjustments to the selected assignment program table, chosen
+# by `capacity_scenario`. Each names one program by school and program type.
+# The Mission Bay comparison study (assignment/configs/mb_comparison/README.md):
+# without Mission Bay, Webster (497) takes the GE seats Mission Bay would have
+# held; in 2026-27, Mission Bay's 69 GE seats move to Webster.
+capacity_scenarios:
+  webster_plus_66_ge_2324:
+    year: "2324"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 66}
+  webster_plus_69_ge_2425:
+    year: "2425"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 69}
+  webster_plus_69_ge_2526:
+    year: "2526"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 69}
+  mission_bay_ge_to_webster_2627:
+    year: "2627"
+    include_mission_bay: true
+    adjust:
+      - {school_id: 999, program_type: GE, expect: 69, set: 0}
+      - {school_id: 497, program_type: GE, add: 69}
 
 school_years:
   "1415":

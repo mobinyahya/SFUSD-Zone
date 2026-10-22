@@ -1,12 +1,17 @@
 """Data interface for students."""
 
-import pathlib
 import re
 import warnings
 
 import numpy as np
 import pandas as pd
-from loaders import CacheStore, DataScenario, SPECIAL_PROGRAMS, identity_fingerprint
+from loaders import (
+    CacheStore,
+    DataScenario,
+    SPECIAL_PROGRAMS,
+    identity_fingerprint,
+    in_geoid_set,
+)
 
 from ..choice_ranks import listed_preference_rank_matrix
 from ..definitions.constants import LANGUAGE_PATHWAY_PRIORITIES
@@ -27,32 +32,31 @@ class Students:
 
     def __init__(
         self,
-        student_data_file: pathlib.Path | pd.DataFrame,
+        student_data: pd.DataFrame,
         programs,
-        school_data_file: pathlib.Path | pd.DataFrame,
-        block_data_file: pathlib.Path,
-        config,
+        school_data: pd.DataFrame,
+        grade: str,
         data_scenario: DataScenario | None = None,
     ):
+        """Index loader-normalized students (``loaders.load_student_records``).
+
+        Args:
+            student_data: the selected students of one market.
+            programs: the market's ``Programs``.
+            school_data: school coordinates keyed by ``school_id``.
+            grade: the market's canonical grade, the suffix of its program IDs.
+            data_scenario: the scenario the tables came from. It keys the
+                distance cache and resolves the equity tie-breaker sources.
+        """
         self.programs = programs
         self.program_df = programs.program_df
-        self.school_data_file = school_data_file
-        self.school_data = (
-            school_data_file.copy()
-            if isinstance(school_data_file, pd.DataFrame)
-            else pd.read_csv(school_data_file)
-        )
-        self.student_data_file = student_data_file
-        self.block_data_file = block_data_file
-        self.config = config
+        self.school_data = school_data.copy()
+        self.grade = grade
         self.data_scenario = data_scenario
-
-        self.year = self.config["year"]
-        self.grade = self._normalize_grade(self.config["grade"])
         self.num_programs = programs.num_programs
         self.qualified_program_dict = None
 
-        self.student_data = self._build_student_data()
+        self.student_data = self._build_student_data(student_data)
         identity_rows = np.arange(len(self.student_data))
         self.only_keep_rows = (
             None
@@ -69,11 +73,6 @@ class Students:
         self._round_participation = self._calc_round_participation()
         self.distance_data = self.get_distances()
 
-        # subset students (note: student data needs to be indexed by studentno)
-        self.student_data.set_index("studentno", inplace=True)
-
-        # create idx2studentno and studentno2idx functions (note: student data needs to be indexed by student no)
-        self.student_data.reset_index(inplace=True)
         self.idx2studentno = dict(
             zip(self.student_data.index, self.student_data["studentno"])
         )
@@ -87,81 +86,23 @@ class Students:
         self._selected_rank_matrix = None
         self._sibling = None
         self._prek = None
+        self._equity_tiebreakers = {}
 
-    @staticmethod
-    def _normalize_grade(value) -> str:
-        """Normalize numeric grades so values such as 6 and '06' compare."""
-        if pd.isna(value):
-            return ""
-        text = str(value).strip().upper()
-        try:
-            number = float(text)
-        except ValueError:
-            return text
-        if np.isfinite(number) and number.is_integer():
-            return str(int(number)).zfill(2)
-        return text
-
-    @staticmethod
-    def _validate_student_identities(df: pd.DataFrame) -> None:
-        if "studentno" not in df.columns:
-            raise ValueError("Student data is missing required column 'studentno'.")
-        values = df["studentno"]
-        missing = values.isna() | values.astype("string").str.strip().eq("")
-        if missing.fillna(True).any():
-            raise ValueError("Student data contains a missing studentno identity.")
-        duplicates = values[values.duplicated(keep=False)]
-        if not duplicates.empty:
-            duplicate_values = duplicates.astype(str).unique().tolist()
-            raise ValueError(
-                "Student data contains duplicate studentno identities: "
-                f"{duplicate_values[:10]}"
-            )
-
-    def _build_student_data(
-        self,
-    ):
-        """Load student data table and student location data."""
-        st_df = (
-            self.student_data_file.copy()
-            if isinstance(self.student_data_file, pd.DataFrame)
-            else pd.read_csv(self.student_data_file, low_memory=False)
-        )
+    def _build_student_data(self, student_data: pd.DataFrame) -> pd.DataFrame:
+        """Copy the loader's table and detach its source-row metadata."""
+        st_df = student_data.copy()
         self._source_row_count = int(st_df.attrs.get("source_row_count", len(st_df)))
-        source_rows = np.asarray(
+        self._source_row_positions = np.asarray(
             st_df.attrs.get("source_rows", np.arange(len(st_df))), dtype=int
         )
-        if len(source_rows) != len(st_df):
-            raise ValueError(
-                "Student source_rows metadata must align with the normalized rows."
-            )
         st_df.reset_index(inplace=True, drop=True)
-        self._source_row_positions = source_rows
         # Held above instead. Left in attrs, the list is deep-copied by every
         # pandas operation that derives a new frame or row Series from this one.
         st_df.attrs.pop("source_rows", None)
         st_df.attrs.pop("source_row_count", None)
-        self._validate_student_identities(st_df)
 
-        school_rounds = {
-            int(match.group(1))
-            for column in st_df.columns
-            if (match := re.fullmatch(r"r(\d+)_ranked_idschool", column))
-        }
-        program_rounds = {
-            int(match.group(1))
-            for column in st_df.columns
-            if (match := re.fullmatch(r"r(\d+)_programs", column))
-        }
-        if school_rounds != program_rounds:
-            raise ValueError(
-                "Ranked school/program columns must occur in pairs; "
-                f"missing school rounds={sorted(program_rounds - school_rounds)}, "
-                f"missing program rounds={sorted(school_rounds - program_rounds)}."
-            )
-        self.round_labels = tuple(sorted(school_rounds))
-        self.rounds = len(self.round_labels)
         required = {
+            "studentno",
             "first_participating_round",
             "first_participating_round_ordinal",
             "selected_ranked_idschool",
@@ -172,35 +113,15 @@ class Students:
             raise ValueError(
                 f"Student data is not loader-normalized; missing columns: {missing}."
             )
-        if not self.round_labels:
-            raise ValueError("Student data contains no selected preference rounds.")
-        ordinals = pd.to_numeric(
-            st_df["first_participating_round_ordinal"], errors="coerce"
-        )
-        actual_rounds = pd.to_numeric(
-            st_df["first_participating_round"], errors="coerce"
-        )
-        invalid_rounds = (
-            ordinals.isna()
-            | (ordinals % 1 != 0)
-            | (ordinals < 0)
-            | (ordinals >= self.rounds)
-            | actual_rounds.isna()
-            | (actual_rounds % 1 != 0)
-            | ~actual_rounds.isin(self.round_labels)
-            | ~st_df["selected_ranked_idschool"].map(bool)
-        )
-        if invalid_rounds.any():
-            raise ValueError(
-                "Every normalized student must have a valid first participating "
-                "round and a nonempty selected preference list."
+        # The loader keeps exactly the selected rounds' preference columns.
+        self.round_labels = tuple(
+            sorted(
+                int(match.group(1))
+                for column in st_df.columns
+                if (match := re.fullmatch(r"r(\d+)_ranked_idschool", str(column)))
             )
-        expected_rounds = ordinals.astype(int).map(self.round_labels.__getitem__)
-        if not expected_rounds.eq(actual_rounds.astype(int)).all():
-            raise ValueError(
-                "First participating round labels and chronological ordinals do "
-                "not align."
-            )
+        )
+        self.rounds = len(self.round_labels)
         return st_df
 
     def _str_to_list(self, value):
@@ -433,7 +354,6 @@ class Students:
             self.DISTANCE_CACHE_ARTIFACT,
             {
                 "algorithm_version": self.DISTANCE_ALGORITHM_VERSION,
-                "assignment_filters": self.data_scenario.filters["assignment"],
                 "student_count": len(student_identities),
                 "student_identity_fingerprint": identity_fingerprint(
                     student_identities
@@ -474,13 +394,11 @@ class Students:
             namespace.save_pickle(self.DISTANCE_CACHE_PAYLOAD, aligned)
         return aligned
 
-    def reconfigure_context(self, config: dict, data_scenario: DataScenario) -> None:
-        """Rebind policy paths and cache storage without reloading source tables."""
+    def reconfigure_context(self, data_scenario: DataScenario) -> None:
+        """Rebind cache storage to a scenario with the same source tables."""
         previous_cache = self.distance_cache
-        self.config = config
         self.data_scenario = data_scenario
-        self.year = config["year"]
-        self.grade = self._normalize_grade(config["grade"])
+        self._equity_tiebreakers = {}
         namespace = self._distance_cache_namespace()
         self.distance_cache = namespace
         if namespace is None or (
@@ -550,36 +468,32 @@ class Students:
         vec = self.student_data["ctip1"].fillna(value=0).astype("int64").to_numpy()
         return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
 
+    def _equity_tiebreaker(self, key: str, unit: str) -> np.ndarray:
+        """(students x programs) 1 where the student lives in an ETB area.
+
+        The ``assignment.ctip`` array is compared in the Census vintage it
+        declares, matching each student's coordinates to that vintage when it
+        is not the selected one.
+        """
+        if key not in self._equity_tiebreakers:
+            source = self.data_scenario.source_map("assignment.ctip")[key]
+            member = in_geoid_set(
+                self.student_data, self.data_scenario, "assignment", source, unit=unit
+            )
+            self._equity_tiebreakers[key] = np.outer(
+                member.to_numpy(dtype=int), np.ones(self.num_programs)
+            )
+        return self._equity_tiebreakers[key]
+
     @property
     def new_ctip(self):
-        """Return an array of length n containing 1 when the student has new_CTIP1
-        priority, 0 otherwise (0 for missing data as well).
-        """
-        new_ctip_path = self.config["paths"]["new-ctip-path"]
-        new_ctip = np.load(new_ctip_path)
-        self.student_data["new_ctip1"] = self.student_data["census_block"].apply(
-            lambda x: 1 if x in new_ctip else 0
-        )
-        vec = self.student_data["new_ctip1"].fillna(value=0).astype("int64").to_numpy()
-        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+        """Return a (students x programs) array, 1 in an ETB Block, else 0."""
+        return self._equity_tiebreaker("block", "Block")
 
     @property
     def new_ctip_blockgroup(self):
-        """Return an array of length n containing 1 when the student has new_CTIP1 (Blockgroup solution)
-        priority, 0 otherwise (0 for missing data as well).
-        """
-        new_ctip_bg_path = self.config["paths"]["new-ctip-blockgroup-path"]
-        new_ctip_bg = np.load(new_ctip_bg_path)
-        self.student_data["new_ctip_blockgroup1"] = self.student_data[
-            "census_blockgroup"
-        ].apply(lambda x: 1 if x in new_ctip_bg else 0)
-        vec = (
-            self.student_data["new_ctip_blockgroup1"]
-            .fillna(value=0)
-            .astype("int64")
-            .to_numpy()
-        )
-        return np.ones((self.n, self.num_programs)) * vec[:, np.newaxis]
+        """Return a (students x programs) array, 1 in an ETB Block Group, else 0."""
+        return self._equity_tiebreaker("blockgroup", "BlockGroup")
 
     @property
     def language_designation(self):
@@ -669,7 +583,7 @@ class Students:
             )
             if prek_id:
                 program_idx = (
-                    self.programs.index(f"{prek_id[0]}-GE-{self.config['grade']}") - 1
+                    self.programs.index(f"{prek_id[0]}-GE-{self.grade}") - 1
                 )
                 st_idx = self.studentno2idx[studentno]
                 prek[st_idx, program_idx] = 1
@@ -695,7 +609,7 @@ class Students:
                     continue
                 school = row["selected_ranked_idschool"][idx]
                 program = row["selected_programs"][idx]
-                program_id = f"{school}-{program}-{self.config['grade']}"
+                program_id = f"{school}-{program}-{self.grade}"
                 if program_id in program_id2index:
                     language_pathway[
                         self.studentno2idx[studentno],
@@ -764,7 +678,11 @@ class Students:
         if "program_types" not in self.student_data.columns:
             self.student_data = self._make_program_type_lists(self.student_data)
 
-        homelang = "homelang" if self.year >= 21 else "homelang_desc"
+        # Tables from 2021-22 on record the language code; earlier ones its
+        # description. homelang2prog maps both.
+        homelang = (
+            "homelang" if "homelang" in self.student_data.columns else "homelang_desc"
+        )
         homelang2prog = {
             "CC-Chinese Cantonese": ["CN", "CB", "CT", "NC"],
             "CM-Chinese Mandarin": ["MN"],
@@ -807,24 +725,6 @@ class Students:
 
         return self.qualified_program_dict
 
-    def get_5_ctip_types(self) -> None:
-        CTIPtypes = np.ones(
-            [self.n]
-        )  # CTIPtypes[i] is CTIP status of student i, from 1 to 5, 1 being highest priority
-        block_data = pd.read_excel(self.block_data_file, sheet_name="block database")
-        block_data_list = list(block_data["Block"])
-        for i in range(self.n):
-            if self.student_data["census_block"].iloc[i] > -1:  # eliminates NaN values
-                census_block = int(self.student_data["census_block"].iloc[i])
-                if census_block in block_data_list:
-                    row = block_data_list.index(census_block)
-                    CTIP = block_data["CTIP_2013 assignment"].iloc[
-                        row
-                    ]  # String in the form 'CTIPX', where X is a number
-                    CTIPnum = int(CTIP[4])
-                    CTIPtypes[i] = CTIPnum
-        self.student_data["CTIPtype"] = CTIPtypes
-
     def get_diversity_categories(self):
         """Create Diversity Categories from 2020 policy based on HOCidx1."""
         HOCidx1 = self.student_data.HOCidx1
@@ -838,15 +738,3 @@ class Students:
         classes5 = np.searchsorted(quantiles5, HOCidx1)
         self.student_data["Diversity_Category3"] = classes3
         self.student_data["Diversity_Category5"] = classes5
-
-    def get_ses_score(self):
-        self.student_data["SES_score"] = (
-            0.25 * self.student_data["N'hood SES Score"]
-            + 0.25 * self.student_data["FRL Score"]
-        )
-        thresh33, thresh66 = np.percentile(
-            self.student_data["SES_score"].dropna(), [33, 66]
-        )
-        self.student_data["SES_category"] = self.student_data["SES_score"].apply(
-            lambda x: 1 if x < thresh33 else (2 if x < thresh66 else 3)
-        )

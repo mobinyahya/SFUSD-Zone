@@ -6,9 +6,11 @@ Last modified: November 27th, 2023
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+from loaders import ResolvedSource
 
 YEAR = 21
 LP_TYPE = "CB"
@@ -26,6 +28,31 @@ SF_ZIPCODES = list(range(94102, 94135)) + [94158]
 TEMP_STUDENT_FILE = f"{CLEANED_FOLDER_PATH}student_{YEAR_PREFIX}.csv"
 TEMP_PROGRAMS_FILE = CLEANED_FOLDER_PATH + "programs_{}" + f"_{YEAR_PREFIX}.csv"
 TEMP_SCHOOL_FILE = CLEANED_FOLDER_PATH + "schools_rehauled_{}" + f"_{YEAR_PREFIX}.csv"
+
+
+def fake_scenario(sources=None, **filters):
+    """Stand in for a DataScenario's assignment filters and resolved sources.
+
+    ``sources`` maps a role to a path or ``ResolvedSource`` (read with
+    ``source``) or to a ``{name: path or ResolvedSource}`` map (``source_map``).
+    """
+    values = {"grade": "KG", "year": "2223", "geography_vintage": "2010", **filters}
+
+    def resolve(value):
+        return value if isinstance(value, ResolvedSource) else ResolvedSource(Path(value))
+
+    def resolved(role):
+        if role not in (sources or {}):
+            raise KeyError(f"Unknown source role {role!r}.")
+        return sources[role]
+
+    return SimpleNamespace(
+        filter=lambda group, key, *default: values[key],
+        source=lambda role: resolve(resolved(role)),
+        source_map=lambda role: {
+            name: resolve(value) for name, value in resolved(role).items()
+        },
+    )
 
 
 def configure_synthetic_assignment_data(config, grade, cache_root):
@@ -70,7 +97,7 @@ def configure_synthetic_assignment_data(config, grade, cache_root):
             "filters": {
                 "assignment": {
                     "year": YEAR_PREFIX,
-                    "grades": [grade],
+                    "grade": grade,
                     "student_population": "applicant",
                     "rounds": "all",
                     "special_programs": "include",

@@ -12,8 +12,6 @@ paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/new_policy/
 r1-only: true
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - new_policy_03_11

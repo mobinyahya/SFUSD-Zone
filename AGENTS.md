@@ -48,10 +48,9 @@ owns a citywide school, but every student may still choose one, which the
 markets model with `school_node=None` and every oracle reads as reachable from
 every zone. Both groups
 also select an optional `frl_estimate`. Assignment
-uses canonical `year`, a `grades` list, `student_population`, `rounds`,
+uses canonical `year`, a scalar `grade`, `student_population`, `rounds`,
 `special_programs`, `capacity_profile`, `capacity_scenario`, and
-`include_mission_bay`; execution
-requires exactly one year and grade per market. Unsupported registry
+`include_mission_bay`: one year and one grade per market. Unsupported registry
 combinations fail rather than falling back.
 
 **Enrolled is not assigned.** School **899** ("Central Enrollment",

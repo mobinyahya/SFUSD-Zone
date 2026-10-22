@@ -30,6 +30,7 @@ _BASE_KEYS = {
     "student_frl_estimates",
     "school_years",
 }
+_OPTIONAL_BASE_KEYS = {"capacity_scenarios"}
 _SCENARIO_KEYS = {"id", "sources", "filters"}
 _SOURCE_KEYS = {
     "path",
@@ -64,7 +65,7 @@ _FILTER_KEYS = {
     },
     "assignment": {
         "year",
-        "grades",
+        "grade",
         "student_population",
         "rounds",
         "special_programs",
@@ -98,6 +99,8 @@ _OPTIMIZATION_YEAR_KEYS = {"students"}
 _ASSIGNMENT_YEAR_KEYS = {"students", "grades"}
 _ASSIGNMENT_GRADE_KEYS = {"profiles"}
 _ASSIGNMENT_VARIANT_KEYS = {"programs", "programs_catalog", "schools"}
+_CAPACITY_SCENARIO_KEYS = {"year", "include_mission_bay", "adjust"}
+_CAPACITY_ADJUSTMENT_KEYS = {"school_id", "program_type", "expect", "add", "set"}
 _GEOGRAPHY_KEYS = {
     "blocks",
     "blockgroups",
@@ -125,6 +128,20 @@ def _freeze(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
     return value
+
+
+def _identity_filters(filters: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """Return filters in the form every existing cache key was built from.
+
+    The assignment group's scalar ``grade`` was once a one-element ``grades``
+    list. Manifests and fingerprints hash it in that original form, so the
+    rename re-keys nothing.
+    """
+    plain = _plain(filters)
+    assignment = plain.get("assignment")
+    if assignment is not None and "grade" in assignment:
+        assignment["grades"] = [assignment.pop("grade")]
+    return plain
 
 
 def _plain(value: Any) -> Any:
@@ -353,6 +370,9 @@ class DataScenario:
     roots: Mapping[str, Path]
     filters: Mapping[str, Mapping[str, Any]]
     _source_values: Mapping[str, Any]
+    #: The base ``capacity_scenarios`` registry: named in-memory capacity
+    #: adjustments that a group's ``capacity_scenario`` filter can select.
+    capacity_scenarios: Mapping[str, Any] = MappingProxyType({})
 
     @classmethod
     def load(
@@ -363,6 +383,11 @@ class DataScenario:
         environ: Mapping[str, str] | None = None,
     ) -> Self:
         return load_scenario(run_config, base_path=base_path, environ=environ)
+
+    @property
+    def roles(self) -> tuple[str, ...]:
+        """Every resolved source role, sorted."""
+        return tuple(sorted(self._source_values))
 
     @property
     def cache_root(self) -> Path:
@@ -428,6 +453,12 @@ class DataScenario:
                 return default
             raise KeyError(f"Filter {group}.{key} is not configured.") from None
 
+    def capacity_adjustments(self, group: str) -> Mapping[str, Any] | None:
+        """Return the registered capacity scenario a group selects, if any."""
+        return self.capacity_scenarios.get(
+            self.filter(group, "capacity_scenario", "programs")
+        )
+
     def source_manifest(
         self, roles: str | Iterable[str] | None = None
     ) -> dict[str, Any]:
@@ -443,12 +474,23 @@ class DataScenario:
                 return [build(child) for child in value]
             raise TypeError(f"Unsupported resolved source value {value!r}.")
 
-        return {
+        manifest = {
             "schema_version": self.schema_version,
             "scenario": self.id,
-            "filters": _plain(self.filters),
+            "filters": _identity_filters(self.filters),
             "sources": {role: build(self._source_values[role]) for role in selected},
         }
+        # A registered capacity scenario is input data, like a source, so its
+        # definition joins the identity of everything derived under it. It is
+        # omitted when no group selects one, leaving every other key unchanged.
+        adjustments = {
+            group: _plain(definition)
+            for group in self.filters
+            if (definition := self.capacity_adjustments(group)) is not None
+        }
+        if adjustments:
+            manifest["capacity_scenarios"] = adjustments
+        return manifest
 
     @property
     def semantic_fingerprint(self) -> str:
@@ -476,7 +518,7 @@ class DataScenario:
                 "sources": {
                     role: describe(value) for role, value in self._source_values.items()
                 },
-                "filters": _plain(self.filters),
+                "filters": _identity_filters(self.filters),
             }
         )
 
@@ -484,6 +526,19 @@ class DataScenario:
     def source_fingerprint(self) -> str:
         """Fingerprint all resolved source paths and current file contents."""
         return _fingerprint(self.source_manifest())
+
+    def provenance(self) -> dict[str, Any]:
+        """Describe the resolved scenario for a run record."""
+        manifest = self.source_manifest()
+        return {
+            "scenario": self.id,
+            "schema_version": self.schema_version,
+            "roots": _plain(self.roots),
+            "filters": _plain(self.filters),
+            "sources": manifest["sources"],
+            "semantic_fingerprint": self.semantic_fingerprint,
+            "source_fingerprint": _fingerprint(manifest),
+        }
 
 
 def _selected_roles(
@@ -599,6 +654,10 @@ def _validate_filters(
                 raise ValueError(f"{label}.{group}.years cannot contain duplicates.")
         if "year" in values:
             values["year"] = _canonical_year(values["year"], f"{label}.{group}.year")
+        if "grade" in values:
+            values["grade"] = _canonical_grade(
+                values["grade"], f"{label}.{group}.grade"
+            )
         if "grades" in values:
             grades = values["grades"]
             if not isinstance(grades, list) or not grades:
@@ -862,8 +921,43 @@ def _validate_student_frl_estimates(value: Any, files: Mapping[str, Any]) -> Non
         _validate_catalog_reference(source, f"Base student_frl_estimates.{name}", files)
 
 
+def _validate_capacity_scenarios(value: Any) -> None:
+    scenarios = _require_map(value, "Base capacity_scenarios")
+    for name, entry_value in scenarios.items():
+        _nonempty_string(name, "Base capacity_scenarios key")
+        if name == "programs":
+            raise ValueError("Base capacity_scenarios cannot redefine 'programs'.")
+        label = f"Base capacity_scenarios.{name}"
+        entry = _require_map(entry_value, label)
+        _unknown_keys(entry, _CAPACITY_SCENARIO_KEYS, f"capacity_scenarios.{name}")
+        if "year" not in entry or "adjust" not in entry:
+            raise ValueError(f"{label} must define year and adjust.")
+        _canonical_year(entry["year"], f"{label}.year")
+        if "include_mission_bay" in entry and not isinstance(
+            entry["include_mission_bay"], bool
+        ):
+            raise ValueError(f"{label}.include_mission_bay must be a boolean.")
+        adjustments = entry["adjust"]
+        if not isinstance(adjustments, list) or not adjustments:
+            raise ValueError(f"{label}.adjust must be a non-empty list.")
+        for index, adjustment_value in enumerate(adjustments):
+            item = f"{label}.adjust[{index}]"
+            adjustment = _require_map(adjustment_value, item)
+            _unknown_keys(adjustment, _CAPACITY_ADJUSTMENT_KEYS, item)
+            school_id = adjustment.get("school_id")
+            if isinstance(school_id, bool) or not isinstance(school_id, int):
+                raise ValueError(f"{item}.school_id must be an integer.")
+            _nonempty_string(adjustment.get("program_type"), f"{item}.program_type")
+            if ("add" in adjustment) == ("set" in adjustment):
+                raise ValueError(f"{item} must define exactly one of add or set.")
+            for key in ("expect", "add", "set"):
+                number = adjustment.get(key, 0)
+                if isinstance(number, bool) or not isinstance(number, int | float):
+                    raise ValueError(f"{item}.{key} must be a number.")
+
+
 def _validate_base(payload: dict[str, Any], path: Path) -> None:
-    _unknown_keys(payload, _BASE_KEYS, "base")
+    _unknown_keys(payload, _BASE_KEYS | _OPTIONAL_BASE_KEYS, "base")
     missing = sorted(_BASE_KEYS - set(payload))
     if missing:
         raise ValueError(f"Base configuration {path} is missing keys: {missing}.")
@@ -897,6 +991,7 @@ def _validate_base(payload: dict[str, Any], path: Path) -> None:
     _validate_geographies(payload["geographies"], files)
     _validate_student_frl_estimates(payload["student_frl_estimates"], files)
     _validate_school_years(payload["school_years"], files)
+    _validate_capacity_scenarios(payload.get("capacity_scenarios", {}))
 
 
 def _validate_scenario(payload: dict[str, Any], path: Path) -> None:
@@ -1079,13 +1174,7 @@ def _assignment_sources(
     filters: Mapping[str, Any], school_years: Mapping[str, Any]
 ) -> dict[str, Any]:
     year = filters["year"]
-    grades = filters["grades"]
-    if len(grades) != 1:
-        raise ValueError(
-            "Assignment source resolution requires exactly one grade; selected "
-            f"grades are {list(grades)}."
-        )
-    grade = grades[0]
+    grade = filters["grade"]
     entry = school_years.get(year)
     assignment = entry.get("assignment") if isinstance(entry, Mapping) else None
     if not isinstance(assignment, Mapping):
@@ -1233,6 +1322,55 @@ def _validate_student_frl_source_vintages(
             )
 
 
+def _converted_geography_sources(
+    filters: Mapping[str, Mapping[str, Any]],
+    source_values: Mapping[str, Any],
+    geographies: Mapping[str, Any],
+    catalog: Mapping[str, Any],
+    roots: Mapping[str, Path],
+    base_dir: Path,
+) -> dict[str, ResolvedSource]:
+    """Resolve the other vintages' Blocks that an assignment source declares.
+
+    A GEOID-keyed source in another vintage is compared in its own vintage,
+    which matches student coordinates to that vintage's Blocks. Those layers
+    become ``assignment.geography.<vintage>.blocks`` and ``.crosswalk``.
+    """
+    if "assignment" not in filters:
+        return {}
+    selected = filters["assignment"]["geography_vintage"]
+    declared: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, ResolvedSource):
+            if value.geography_vintage is not None:
+                declared.add(value.geography_vintage)
+        elif isinstance(value, Mapping):
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, tuple):
+            for child in value:
+                visit(child)
+
+    for role, value in source_values.items():
+        if role.startswith("assignment.") and not role.startswith(
+            "assignment.geography."
+        ):
+            visit(value)
+    generated = {}
+    for vintage in sorted(declared - {selected}):
+        bundle = geographies.get(vintage)
+        if bundle is None:
+            continue
+        for key in ("blocks", "crosswalk"):
+            role = f"assignment.geography.{vintage}.{key}"
+            if role not in source_values:  # a run override takes precedence
+                generated[role] = _resolve_direct_source(
+                    catalog[bundle[key]], roots, base_dir, catalog_id=bundle[key]
+                )
+    return generated
+
+
 def load_scenario(
     run_config: str | os.PathLike[str] | Mapping[str, Any],
     *,
@@ -1308,12 +1446,23 @@ def load_scenario(
         for role, source in sources.items()
     }
     _validate_student_frl_source_vintages(filters, source_values)
+    source_values.update(
+        _converted_geography_sources(
+            filters,
+            source_values,
+            base["geographies"],
+            base["files"],
+            roots,
+            base_file.parent,
+        )
+    )
     return DataScenario(
         id=scenario["id"],
         schema_version=base["schema_version"],
         roots=MappingProxyType(roots),
         filters=_freeze(filters),
         _source_values=MappingProxyType(source_values),
+        capacity_scenarios=_freeze(base.get("capacity_scenarios", {})),
     )
 
 

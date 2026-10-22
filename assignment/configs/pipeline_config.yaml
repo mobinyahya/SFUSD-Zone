@@ -42,7 +42,7 @@ data:
     filters:
       assignment:
         year: "${year}"
-        grades: [KG]
+        grade: KG
         student_population: applicant
         rounds:
         - 1
@@ -64,5 +64,3 @@ iterations:
   start: 0
   end: 10
 save-assignment: true
-rounds-merged-options:
-- 0

@@ -25,7 +25,6 @@ from ..choice_ranks import (
 from ..configerator import Configerator
 from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
-from ..data_interfaces import Zones
 from .policy import Policy
 from .preference_generator import OUTSIDE_OPTION_LIST_LENGTH, PreferenceGenerator
 from .priority_generator import PriorityGenerator
@@ -148,17 +147,6 @@ class MarketGenerator(SchoolChoiceMarket):
         self._active_policy_cache_context = None
         if previous_source_identity != self.source_identity:
             self._aggregate_metric_evaluator = None
-
-    def _reset_zones(self):
-        aa_schools = self.schools.school_df.loc[
-            self.schools.school_df.category == "Attendance"
-        ]
-        self.zones = Zones(
-            self.config,
-            attendance_area_schools=aa_schools,
-            programs=self.programs,
-            students=self.students,
-        )
 
     def simulate(self) -> dict[str, pd.DataFrame] | None:
         """Load and execute every configured policy subconfig."""
@@ -329,12 +317,7 @@ class MarketGenerator(SchoolChoiceMarket):
         specs = []
         for policy in self.config["policies"]:
             if policy == "real_match":
-                policy_data = Policy(
-                    name="real_match",
-                    ctip=None,
-                    rounds_merged=None,
-                    tiebreaker=None,
-                )
+                policy_data = Policy(name="real_match", ctip=None, tiebreaker=None)
                 specs.append(
                     (
                         self._assignment_save_path(policy_data, None),
@@ -1391,9 +1374,7 @@ class MarketGenerator(SchoolChoiceMarket):
         Returns:
             pd.DataFrame: saved historical student assignments
         """
-        policy_data = Policy(
-            name="real_match", ctip=None, rounds_merged=None, tiebreaker=None
-        )
+        policy_data = Policy(name="real_match", ctip=None, tiebreaker=None)
         reusable = self._load_reusable_assignment(policy_data, None)
         if reusable is not None:
             return reusable
@@ -1477,16 +1458,9 @@ class MarketGenerator(SchoolChoiceMarket):
 
     def _policy_data_options(self, policy):
         return [
-            Policy(
-                name=policy,
-                ctip=ctip,
-                rounds_merged=rounds_merged,
-                tiebreaker=ties,
-            )
-            for ctip, rounds_merged, ties in product(
-                self.config["ctip-options"],
-                self.config["rounds-merged-options"],
-                self.config["ties-options"],
+            Policy(name=policy, ctip=ctip, tiebreaker=ties)
+            for ctip, ties in product(
+                self.config["ctip-options"], self.config["ties-options"]
             )
         ]
 
@@ -1535,7 +1509,7 @@ class MarketGenerator(SchoolChoiceMarket):
         in_zone_rank = in_zone_rank.copy()
         enrollment = np.bincount(match, minlength=len(capacities) + 1)
         attendance_areas = self.students.attendance_area
-        grade = self.config["grade"]
+        grade = self.grade
 
         for student_idx in np.flatnonzero(match == 0):
             studentno = self.students.idx2studentno[student_idx]
@@ -1558,50 +1532,52 @@ class MarketGenerator(SchoolChoiceMarket):
 
         return match, in_zone_rank, overage_seats
 
-    def _get_final_program(self, df: pd.DataFrame):
-        """Modify dataframe in place to add final program column.
+    def _assigned_school_program(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Each student's recorded assignment as ``final_school``/``final_program``.
 
-        Args:
-            df (pd.DataFrame): student data
+        The program is the latest round's ``r<k>_programcode``. ``r1-only``
+        reads the Main Round seat instead: ``r1_idschool`` where the student
+        holds one, and only ``r1_programcode``. The student table is not
+        modified.
         """
-        if self.config["year"] == 18:
+        r1_only = self.config.get("r1-only", False)
+        programcodes = {
+            round_number: df[f"r{round_number}_programcode"]
+            for round_number in range(1, 2 if r1_only else 6)
+            if f"r{round_number}_programcode" in df.columns
+        }
+        if (
+            not r1_only
+            and 2 not in programcodes
+            and {"r2_ranked_idschool", "r2_programs"} <= set(df.columns)
+        ):
+            # 2018-19 records no r2_programcode: read the round 2 program the
+            # student ranked at the school they enrolled in.
+            def round_2_program(row):
+                schools = row["r2_ranked_idschool"]
+                if np.any(pd.isna(schools)) or row["enrolled_idschool"] not in schools:
+                    return np.nan
+                return row["r2_programs"][schools.index(row["enrolled_idschool"])]
 
-            def fn(x):
-                return (
-                    x["r2_programs"][
-                        x["r2_ranked_idschool"].index(x["enrolled_idschool"])
-                    ]
-                    if not np.any(pd.isna(x["r2_ranked_idschool"]))
-                    and x["enrolled_idschool"] in x["r2_ranked_idschool"]
-                    else np.nan
-                )
+            programcodes[2] = df.apply(round_2_program, axis=1)
 
-            df["r2_programcode"] = df.apply(fn, axis=1)
-
-        df["final_program"] = np.nan
-        f_s_copy = df["final_school"].copy()
-        last_iteration = 6
-
-        if self.config["r1-only"]:
-            last_iteration = 2
-            # Update 'final_school' based on the condition
-            # Corrected Code with Nullable Integer Type
-
-            df["final_school"] = np.where(
-                df["r1_idschool"].notna(),  # Check if 'r1_idschool' is not NaN
-                df["r1_idschool"]
-                .fillna(0)
-                .astype(
-                    int
-                ),  # Fill NaN with 0 temporarily, then convert valid entries to int
-                f_s_copy,  # Otherwise, retain the original 'final_school' value
+        final_program = pd.Series(np.nan, index=df.index, dtype=object)
+        for round_number in sorted(programcodes, reverse=True):
+            final_program = final_program.fillna(programcodes[round_number])
+        final_school = df["final_school"]
+        if r1_only:
+            final_school = pd.Series(
+                np.where(
+                    df["r1_idschool"].notna(),
+                    df["r1_idschool"].fillna(0).astype(int),
+                    df["final_school"],
+                ),
+                index=df.index,
             )
-
-        # TODO final_school is not correct for non R1 case.
-        for rnd in reversed(range(1, last_iteration)):
-            rnd_name = f"r{rnd}_programcode"
-            if rnd_name in df.columns:
-                df["final_program"] = df["final_program"].fillna(df[rnd_name])
+        return pd.DataFrame(
+            {"final_school": final_school, "final_program": final_program},
+            index=df.index,
+        )
 
     def _enrolled_school_program(self, df: pd.DataFrame) -> pd.DataFrame:
         """Where each enrolled student enrolled, as ``final_school``/``final_program``.
@@ -1686,10 +1662,7 @@ class MarketGenerator(SchoolChoiceMarket):
         if source == "enrollment":
             assignment = self._enrolled_school_program(self.students.student_data)
         elif source == "assignment":
-            self._get_final_program(self.students.student_data)
-            assignment = self.students.student_data[
-                ["final_school", "final_program"]
-            ].copy()
+            assignment = self._assigned_school_program(self.students.student_data)
         else:
             raise ValueError(
                 "real-match-source must be 'assignment' or 'enrollment', not "
@@ -1697,7 +1670,7 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         assignment["programcodes"] = assignment.apply(
             lambda x: (
-                f"{x.final_school}-{x.final_program}-{self.config['grade']}"
+                f"{x.final_school}-{x.final_program}-{self.grade}"
                 if not pd.isna(x.final_school)
                 else np.nan
             ),
@@ -2031,11 +2004,7 @@ class MarketGenerator(SchoolChoiceMarket):
                 if policy == "real_match"
                 else self.config["zone-building-blocks"]
             )
-            zone_file = (
-                ""
-                if policy == "real_match"
-                else self.config["paths"]["zone-files"][policy]
-            )
+            zone_file = "" if policy == "real_match" else self.zone_file(policy)
             heatmap_data = evaluator.eval_heatmap_data(config_name, building_block)
             heatmap_data.insert(1, "policy", policy)
             heatmap_data.insert(2, "building_block", building_block)
@@ -2154,6 +2123,15 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         return assignment_df
 
+    def _zone_signature(self, policy: str) -> str | None:
+        """The configured zone file path of a policy, or None when it has none."""
+        try:
+            zones = self.data_scenario.source_map("assignment.zones")
+        except KeyError:
+            return None
+        source = zones.get(policy)
+        return None if source is None else str(source.path)
+
     def _get_assignment_save_name(
         self, policy_data: Policy, iteration: int | None
     ) -> str:
@@ -2168,7 +2146,7 @@ class MarketGenerator(SchoolChoiceMarket):
             str: unique name for assignment file
         """
         if policy_data.name == "real_match":
-            gr = "" if self.config["grade"] == "KG" else f"{self.config['grade']}_"
+            gr = "" if self.grade == "KG" else f"{self.grade}_"
             return f"Assignment_{gr}real_match.csv"
 
         restrict = self.config["restrict-zone"]
@@ -2192,11 +2170,8 @@ class MarketGenerator(SchoolChoiceMarket):
 
         option_state = {
             "policy": policy_data.name,
-            "zone_file": self.config.get("paths", {})
-            .get("zone-files", {})
-            .get(policy_data.name),
+            "zone_file": self._zone_signature(policy_data.name),
             "ctip": policy_data.ctip,
-            "rounds_merged": policy_data.rounds_merged,
             "tiebreaker": policy_data.tiebreaker,
             "guard_rails": guard_rails,
             "reserve_settings": self.config.get("reserve-settings", {}),
@@ -2225,7 +2200,6 @@ class MarketGenerator(SchoolChoiceMarket):
         code_folder = (
             f"{safe_token(zone_policy)}_{restrict_label}Restrict_"
             f"{reserve_label}Reserve_{safe_token(ctip)}_{sibling}Sibling_"
-            f"rounds{safe_token(policy_data.rounds_merged)}_"
             f"ties{safe_token(policy_data.tiebreaker)}_{signature}"
         )
         return f"{code_folder}/{code_folder}_iteration{iteration}.csv"

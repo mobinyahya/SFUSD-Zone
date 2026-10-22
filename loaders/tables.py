@@ -43,11 +43,19 @@ _MISSION_BAY_SCHOOL_IDS = {909, 999}
 #: SFUSD's placeholder school for a student on record with no school -- the
 #: district names it "Central Enrollment". A student recorded as enrolled at it
 #: is not enrolled anywhere, so no enrolled population ever contains one; see
-#: ``filter_not_enrolled_students``. It is also the post-run's
+#: ``_enrolled_mask``. It is also the post-run's
 #: ``idCurrentSchool`` for an applicant with no current SFUSD school, which is
 #: the same fact at an earlier date.
 NOT_ENROLLED_SCHOOL_ID = 899
 SPECIAL_PROGRAMS = frozenset({"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"})
+#: K-8 schools. At grade 6 most of their published seats are held by students
+#: continuing from grade 5, so the seats open to sixth-grade applicants are
+#: approximated by the program's Main Round assignment count, ``r1_assigned``.
+K8_SCHOOL_IDS = frozenset({618, 449, 676, 479, 760, 796, 493, 485})
+SOTA_PROGRAM_ID = "815-GE-09"
+LOWELL_PROGRAM_ID = "697-GE-09"
+#: Capacity of a selective high school, which admits every eligible applicant.
+UNCAPPED_CAPACITY = 10000
 _FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
 
 
@@ -178,6 +186,16 @@ def _filter_group(role: str, filter_group: str | None) -> str:
             f"Cannot infer filters from role {role!r}; pass filter_group explicitly."
         )
     return prefix
+
+
+def _selected_grades(scenario: DataScenario, group: str) -> tuple[str, ...]:
+    """Return the canonical grades a filter group selects.
+
+    Optimization selects a list; an assignment market is exactly one grade.
+    """
+    if group == "assignment":
+        return (scenario.filter(group, "grade"),)
+    return tuple(scenario.filter(group, "grades"))
 
 
 def school_id_aliases(scenario: DataScenario, group: str) -> dict[int, int]:
@@ -432,7 +450,7 @@ def normalize_student_records(
         raise ValueError("Student source_rows metadata must align with the table rows.")
     if "grade" not in frame.columns:
         raise ValueError("Student data is missing required column 'grade'.")
-    grades = tuple(scenario.filter(group, "grades"))
+    grades = _selected_grades(scenario, group)
     normalized_grades = frame["grade"].map(normalize_grade)
     grade_mask = normalized_grades.isin(grades)
     frame, source_rows = _filter_student_rows(frame, source_rows, grade_mask)
@@ -869,7 +887,7 @@ def _program_grades(frame: pd.DataFrame, label: str) -> pd.Series:
 def _filter_program_records(
     frame: pd.DataFrame, scenario: DataScenario, group: str, label: str
 ) -> pd.DataFrame:
-    grades = tuple(scenario.filter(group, "grades"))
+    grades = _selected_grades(scenario, group)
     program_grades = _program_grades(frame, label)
     available = set(program_grades) - {""}
     missing = sorted(set(grades) - available)
@@ -894,6 +912,116 @@ def _filter_program_records(
     return frame.reset_index(drop=True)
 
 
+def lowell_selective(year: str) -> bool:
+    """Whether Lowell admits by eligibility in a canonical school year.
+
+    Lowell ran an ordinary lottery in 2021-22 and 2022-23.
+    """
+    return year not in {"2122", "2223"}
+
+
+def _k8_continuation_capacity(frame: pd.DataFrame, year: str) -> pd.DataFrame:
+    rows = pd.to_numeric(frame["school_id"], errors="coerce").isin(K8_SCHOOL_IDS)
+    if not rows.any():
+        return frame
+    if "r1_assigned" not in frame.columns:
+        raise ValueError(
+            "Grade 06 programs at K-8 schools require column 'r1_assigned'."
+        )
+    open_seats = frame.loc[rows, "r1_assigned"].fillna(0)
+    frame.loc[rows, "capacity"] = open_seats
+    frame.loc[rows, "r2_capacity"] = open_seats
+    return frame
+
+
+def _selective_high_school_capacity(frame: pd.DataFrame, year: str) -> pd.DataFrame:
+    selective = [
+        SOTA_PROGRAM_ID,
+        *([LOWELL_PROGRAM_ID] if lowell_selective(year) else []),
+    ]
+    frame.loc[frame["program_id"].astype(str).isin(selective), "capacity"] = (
+        UNCAPPED_CAPACITY
+    )
+    return frame
+
+
+#: Capacity rules that hold for every assignment market at a grade. They model
+#: the grade's admissions, so they precede any ``capacity_scenario``, which can
+#: still override the rows they touch.
+_ASSIGNMENT_GRADE_CAPACITY_RULES = {
+    "06": _k8_continuation_capacity,
+    "09": _selective_high_school_capacity,
+}
+
+
+def _apply_grade_capacity_rules(
+    frame: pd.DataFrame, scenario: DataScenario, group: str
+) -> pd.DataFrame:
+    if group != "assignment":
+        return frame
+    rule = _ASSIGNMENT_GRADE_CAPACITY_RULES.get(scenario.filter(group, "grade"))
+    if rule is None:
+        return frame
+    return rule(frame.copy(), scenario.filter(group, "year"))
+
+
+def _apply_capacity_adjustments(
+    frame: pd.DataFrame,
+    scenario: DataScenario,
+    group: str,
+    definition: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Apply one registered ``capacity_scenarios`` entry from ``base.yaml``.
+
+    Each adjustment names exactly one selected program by school and program
+    type, optionally checks its current capacity, then adds to or sets it.
+    """
+    name = scenario.filter(group, "capacity_scenario")
+    year = definition["year"]
+    include_mission_bay = definition.get("include_mission_bay")
+    if (
+        group != "assignment"
+        or scenario.filter(group, "year") != year
+        or (
+            include_mission_bay is not None
+            and scenario.filter(group, "include_mission_bay") != include_mission_bay
+        )
+    ):
+        policy = {None: "", True: " with Mission Bay", False: " without Mission Bay"}
+        raise ValueError(
+            f"{name} requires {year} assignment data{policy[include_mission_bay]}."
+        )
+    school_ids = pd.to_numeric(frame["school_id"], errors="coerce")
+    if include_mission_bay is False and school_ids.isin(_MISSION_BAY_SCHOOL_IDS).any():
+        raise ValueError(f"{name} requires no Mission Bay programs.")
+    program_types = frame["program_type"].astype(str)
+    result = frame.copy()
+    for adjustment in definition["adjust"]:
+        school_id, program_type = adjustment["school_id"], adjustment["program_type"]
+        rows = school_ids.eq(school_id) & program_types.eq(program_type)
+        if rows.sum() != 1:
+            raise ValueError(
+                f"{name} requires exactly one {program_type} program at school "
+                f"{school_id}; found {int(rows.sum())}."
+            )
+        if "expect" in adjustment:
+            current = pd.to_numeric(frame.loc[rows, "capacity"], errors="coerce")
+            if current.iloc[0] != adjustment["expect"]:
+                raise ValueError(
+                    f"{name} expects {adjustment['expect']} seats in the "
+                    f"{program_type} program at school {school_id}; found "
+                    f"{current.iloc[0]}."
+                )
+        if "set" in adjustment:
+            result.loc[rows, "capacity"] = adjustment["set"]
+        else:
+            result.loc[rows, "capacity"] = (
+                pd.to_numeric(frame.loc[rows, "capacity"], errors="raise")
+                + adjustment["add"]
+            )
+    return result
+
+
 def apply_capacity_scenario(
     frame: pd.DataFrame,
     scenario: DataScenario,
@@ -904,53 +1032,9 @@ def apply_capacity_scenario(
     result = frame.copy()
     if scenario_name == "programs":
         return result
-    webster_additions = {
-        "webster_plus_66_ge_2324": ("2324", 66),
-        "webster_plus_69_ge_2425": ("2425", 69),
-        "webster_plus_69_ge_2526": ("2526", 69),
-    }
-    if scenario_name in webster_additions:
-        year, extra_seats = webster_additions[scenario_name]
-        if (
-            group != "assignment"
-            or scenario.filter(group, "year") != year
-            or scenario.filter(group, "include_mission_bay")
-        ):
-            raise ValueError(
-                f"{scenario_name} requires {year} assignment data without Mission Bay."
-            )
-        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
-        program_types = result["program_type"].astype(str)
-        webster = school_ids.eq(497) & program_types.eq("GE")
-        if webster.sum() != 1 or school_ids.eq(999).any():
-            raise ValueError(
-                f"{scenario_name} requires one Webster GE program and no "
-                "Mission Bay programs."
-            )
-        result.loc[webster, "capacity"] = (
-            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + extra_seats
-        )
-        return result
-    if scenario_name == "mission_bay_ge_to_webster_2627":
-        if group != "assignment" or scenario.filter(group, "year") != "2627":
-            raise ValueError(
-                "mission_bay_ge_to_webster_2627 requires 2026-27 assignment data."
-            )
-        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
-        mission_bay = school_ids.eq(999) & result["program_type"].eq("GE")
-        webster = school_ids.eq(497) & result["program_type"].eq("GE")
-        if mission_bay.sum() != 1 or webster.sum() != 1:
-            raise ValueError(
-                "Mission Bay/Webster transfer requires one GE program at each school."
-            )
-        seats = pd.to_numeric(result.loc[mission_bay, "capacity"], errors="coerce")
-        if seats.iloc[0] != 69:
-            raise ValueError("Expected 69 Mission Bay GE seats in 2026-27.")
-        result.loc[webster, "capacity"] = (
-            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + 69
-        )
-        result.loc[mission_bay, "capacity"] = 0
-        return result
+    adjustments = scenario.capacity_adjustments(group)
+    if adjustments is not None:
+        return _apply_capacity_adjustments(result, scenario, group, adjustments)
 
     required_program_columns = {"school_id", "program_type", "capacity"}
     missing = required_program_columns - set(result.columns)
@@ -979,7 +1063,7 @@ def apply_capacity_scenario(
     keys = ["school_id", "program_type"]
     if "Grade" in overrides.columns:
         overrides["_capacity_grade"] = overrides["Grade"].map(normalize_grade)
-        selected_grades = set(scenario.filter(group, "grades"))
+        selected_grades = set(_selected_grades(scenario, group))
         overrides = overrides.loc[
             overrides["_capacity_grade"].isin(selected_grades)
         ].copy()
@@ -1105,6 +1189,7 @@ def load_program_records(
         else:
             catalog["capacity"] = mapped
         selected = catalog
+    selected = _apply_grade_capacity_rules(selected, scenario, group)
     selected = apply_capacity_scenario(selected, scenario, group)
     return _attach_program_geography(selected, scenario, group)
 
@@ -1163,10 +1248,12 @@ def load_school_records(
 
 
 __all__ = [
+    "K8_SCHOOL_IDS",
     "SPECIAL_PROGRAMS",
     "load_program_records",
     "load_school_records",
     "load_student_records",
+    "lowell_selective",
     "normalize_school_records",
     "normalize_student_records",
     "normalize_grade",

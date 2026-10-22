@@ -303,7 +303,7 @@ pre-run and made 53 choice assignments).
 
 ### 4.3 Real data — a sanity band, not an equality
 
-Mark `real_data`. After a DA run on `sfusd-2627`, `grades: [KG]`:
+Mark `real_data`. After a DA run on `sfusd-2627`, `grade: KG`:
 
 * every student with a non-empty `promote` who is assigned at all is assigned
   **either** to their `promote` program **or** to something they ranked above

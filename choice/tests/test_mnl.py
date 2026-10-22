@@ -15,7 +15,7 @@ from optimization.tests.synthetic import make_grid_problem
 
 ASSIGNMENT_FILTERS = {
     "year": "2324",
-    "grades": ["KG"],
+    "grade": "KG",
     "student_population": "applicant",
     "rounds": [1],
     "special_programs": "include",

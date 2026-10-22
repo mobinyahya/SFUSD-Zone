@@ -141,8 +141,8 @@ Scenarios own invariant sources and complete selector defaults. Run filter
 overrides select canonical years/grades, applicant or enrolled students,
 preference rounds, special-program behavior, capacity variants, and school
 inclusion policy. Optimization additionally selects program population and K-8
-and citywide inclusion. Assignment executes exactly one registered year and one
-grade per market; optimization accepts multiple years and grades where the
+and citywide inclusion. Assignment selects exactly one registered `year` and one
+`grade` per market; optimization accepts multiple years and grades where the
 underlying data path supports them.
 
 Both groups default `capacity_scenario` to `programs`. Assignment uses the

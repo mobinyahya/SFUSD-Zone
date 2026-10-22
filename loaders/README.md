@@ -83,9 +83,9 @@ Lists and named maps may contain any other source-reference form recursively.
 `DataScenario.sources(role)` flattens them in configured order, while
 `DataScenario.source_map(role)` preserves a top-level named map.
 
-Named-map keys must be non-empty strings. The five direct-source field names
-(`path`, `root`, `companions`, `classification`, and `geography_vintage`) are
-reserved: any map containing one of them is parsed as a direct source object,
+Named-map keys must be non-empty strings. The six direct-source field names
+(`path`, `root`, `companions`, `classification`, `geography_vintage`, and
+`identity`) are reserved: any map containing one of them is parsed as a direct source object,
 not a named map. Empty lists and maps pass configuration validation but resolve
 to no files and are not usable by consumers that require one or more sources.
 
@@ -98,6 +98,7 @@ to no files and are not usable by consumers that require one or more sources.
 | `companions` | List of path strings | No | `[]` | Files that participate in source identity with `path`. Paths use the same root as `path`. |
 | `classification` | String | No | `unspecified` | Data-classification metadata included in manifests and cache identity. Values such as `public`, `internal`, and `restricted` are conventions, not a validated enum. |
 | `geography_vintage` | Four-digit string | No | None | Census vintage already represented by a location-bearing source, such as `"2010"`. |
+| `identity` | `path_and_checksum` or `checksum` | No | `path_and_checksum` | How the source enters cache identity. `checksum` omits the absolute path, so a file shipped inside the repository keys the same from any checkout. |
 
 For a Shapefile `path`, `.dbf`, `.shx`, and `.prj` files are added to
 `companions` automatically. Rootless direct paths are relative to the YAML that
@@ -119,6 +120,15 @@ Vintage is evaluated for the entire flattened role: different non-null vintages
 within one role fail, while one non-null vintage applies to the concatenated
 table even if some sources in that role are untagged.
 
+A set of GEOIDs, such as the `assignment.ctip` equity tie-breaker arrays, must
+declare its vintage: `loaders.in_geoid_set` compares rows against it in that
+vintage, matching their coordinates to the generated
+`assignment.geography.<vintage>.*` layers when it is not the selected one, and
+`loaders.require_geography_vintage` rejects an untagged or mismatched set. The
+checked-in ETB arrays are 2010 GEOIDs. A zone file used with Census zone
+building blocks is compared in the selected vintage, so a tagged zone file of
+another vintage fails.
+
 ## Base Catalog
 
 `loaders/configs/base.yaml` has this top-level shape:
@@ -130,9 +140,10 @@ files: {}
 geographies: {}
 student_frl_estimates: {}
 school_years: {}
+capacity_scenarios: {}
 ```
 
-All six fields are required.
+The first six fields are required; `capacity_scenarios` is optional.
 
 | Field | Type | Description |
 |---|---|---|
@@ -142,6 +153,7 @@ All six fields are required.
 | `geographies` | Non-empty map | Census-vintage geography source bundles. |
 | `student_frl_estimates` | Non-empty map | Selectable student FRL count sources. |
 | `school_years` | Non-empty map | Annual optimization and assignment source registry. |
+| `capacity_scenarios` | Map | Named in-memory capacity adjustments; see [Capacity Overlays](#capacity-overlays). |
 
 ### Roots
 
@@ -168,7 +180,7 @@ relative run overrides are resolved from the run YAML.
 
 Each key below `files` is an arbitrary non-empty catalog ID. Each value must be
 a complete direct source object using only `path`, `root`, `companions`,
-`classification`, and `geography_vintage`. A catalog entry cannot alias another
+`classification`, `geography_vintage`, and `identity`. A catalog entry cannot alias another
 catalog ID or contain a list or named map.
 
 Source files do not have to exist while configuration is resolved. Missing
@@ -542,7 +554,7 @@ Fields shared by both groups follow these rules:
 
 | Field | Accepted values and behavior |
 |---|---|
-| `grades` | Non-empty, duplicate-free list containing `PK`, `TK`, `KG`, or zero-padded `"01"` through `"12"`. Student and program rows are restricted to these grades. |
+| `grades` / `grade` | Optimization `grades` is a non-empty, duplicate-free list and assignment `grade` a single value, each `PK`, `TK`, `KG`, or zero-padded `"01"` through `"12"`. Student and program rows are restricted to the selected grades. |
 | `student_population` | `applicant` or `enrolled`; selects that population from the school-year registry. |
 | `rounds` | `all` or a non-empty, duplicate-free list of positive integers. Explicit lists are sorted and every requested round must exist in the student table. |
 | `special_programs` | `include`, `exclude_only_special`, or `exclude_any_special`. `exclude_only_special` removes special-program preferences; `exclude_any_special` removes students listing a special program in a selected round. Both exclusion modes remove special program rows. |
@@ -657,7 +669,7 @@ by the selected source data.
 filters:
   assignment:
     year: "2324"
-    grades: [KG]
+    grade: KG
     student_population: applicant
     rounds: [1]
     special_programs: include
@@ -672,7 +684,7 @@ filters:
 | Field | Type / values | Required | Description |
 |---|---|---:|---|
 | `year` | Four-digit school-year string | Yes | Selects one assignment registry year. |
-| `grades` | Canonical grade list | Yes | The schema accepts a list, but assignment source resolution requires exactly one grade per market. |
+| `grade` | Canonical grade | Yes | The one grade of the market. Manifests and fingerprints hash it as the one-element `grades` list it replaced, so existing cache keys are unchanged. |
 | `student_population` | `applicant` or `enrolled` | Yes | Shared population selector described above. |
 | `rounds` | `all` or positive-integer list | Yes | Shared preference-round selector described above. |
 | `special_programs` | Supported special-program mode | Yes | Shared special-program selector described above. |
@@ -686,13 +698,34 @@ filters:
 ### Capacity Overlays
 
 When `capacity_scenario` is `programs`, the loader uses the `capacity` values in
-the selected program table and does not read a capacity-overlay source. The
-assignment study also has built-in scenarios `webster_plus_66_ge_2324`,
-`webster_plus_69_ge_2425`, `webster_plus_69_ge_2526`, and
-`mission_bay_ge_to_webster_2627`; these adjust the selected program table in
-memory. The first three add Webster GE seats because Mission Bay is absent in
-those years. The last moves 69 GE seats from Mission Bay to Webster in 2026-27.
-See `assignment/configs/mb_comparison/README.md` for the study design.
+the selected program table and does not read a capacity-overlay source.
+
+A name registered under base `capacity_scenarios` adjusts the selected
+assignment program table in memory instead:
+
+```yaml
+capacity_scenarios:
+  mission_bay_ge_to_webster_2627:
+    year: "2627"
+    include_mission_bay: true
+    adjust:
+      - {school_id: 999, program_type: GE, expect: 69, set: 0}
+      - {school_id: 497, program_type: GE, add: 69}
+```
+
+| Field | Required | Description |
+|---|---:|---|
+| `year` | Yes | The assignment `year` the scenario requires. |
+| `include_mission_bay` | No | The assignment `include_mission_bay` the scenario requires. When false, the selected programs must contain no Mission Bay school. |
+| `adjust` | Yes | Non-empty list. Each item names exactly one selected program by integer `school_id` and `program_type`, may check its current capacity with `expect`, and gives exactly one of `add` or `set`. |
+
+A selected registry entry's definition joins `DataScenario.source_manifest`
+under `capacity_scenarios`, so editing one re-keys what was derived under it.
+The checked-in registry holds the Mission Bay comparison study's
+`webster_plus_66_ge_2324`, `webster_plus_69_ge_2425`, `webster_plus_69_ge_2526`
+(Webster gains the GE seats Mission Bay would have held), and
+`mission_bay_ge_to_webster_2627`. See
+`assignment/configs/mb_comparison/README.md` for the study design.
 
 Other explicit values, such as `A`, require the source role `<group>.capacity`
 and read:
@@ -718,7 +751,7 @@ Selectors generate these roles from the base registries:
 | Filter group | Generated roles |
 |---|---|
 | `optimization` | `optimization.students`, `optimization.census`, `optimization.crosswalk`, `optimization.adjacency`, `optimization.manual_edges`, and optional `optimization.geography.blockgroups` / `optimization.geography.tracts` |
-| `assignment` | `assignment.students`, `assignment.programs`, optional `assignment.programs.catalog`, `assignment.schools`, `assignment.school_coordinates`, and available `assignment.geography.blocks`, `assignment.geography.blockgroups`, `assignment.geography.tracts`, `assignment.geography.crosswalk` |
+| `assignment` | `assignment.students`, `assignment.programs`, optional `assignment.programs.catalog`, `assignment.schools`, `assignment.school_coordinates`, and available `assignment.geography.blocks`, `assignment.geography.blockgroups`, `assignment.geography.tracts`, `assignment.geography.crosswalk`, and, for each other vintage an assignment source declares, `assignment.geography.<vintage>.blocks` and `.crosswalk` |
 
 Source precedence, from lowest to highest, is:
 

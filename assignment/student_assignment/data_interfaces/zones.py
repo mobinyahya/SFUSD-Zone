@@ -29,6 +29,8 @@ class Zones:
         attendance_area_schools: pd.DataFrame,
         programs: Programs,
         students: Students,
+        *,
+        grade: str,
     ):
         """Create object to handle zone data.
 
@@ -38,7 +40,9 @@ class Zones:
                 attendance area.
             programs (Programs): program data interface.
             students (Students): student data interface.
+            grade (str): the market's canonical grade.
         """
+        self.grade = grade
         self.programs = programs
         self.aa_schools = attendance_area_schools
         self.aa_schools.index.name = "school_id"
@@ -365,7 +369,7 @@ class Zones:
                     school_list_of_lists.append(self.area2school_id[area])
             school_list = [x for sublist in school_list_of_lists for x in sublist]
             area_id2program_id[area_id] = [
-                f"{school_id}-GE-{self._normalize_grade(self.config['grade'])}"
+                f"{school_id}-GE-{self.grade}"
                 for school_id in school_list
             ]
 
@@ -404,21 +408,15 @@ class Zones:
                 if program not in self.area_id2prog_list[area_id]:
                     self.area_id2prog_list[area_id].append(program)
 
-    def set_zone(self, concept: int | str):
-        """Set the current zones to a preexisting concept (0, 1, 2, 3) or the zone file passed.
+    def set_zone(self, zone_file: str | os.PathLike):
+        """Set the current zones from a zone file.
 
         Args:
-            concept (int or str): Either integers 0, 1, 2, or 3, or a file path to a zone csv file
+            zone_file: path to a zone CSV (or a home-based JSON) file
         """
-        if concept == "real_match":
-            self.area2zone, self.zone2area_list = self._create_zone(
-                os.path.expanduser(self.config["paths"]["zone-files"]["Con1"]),
-                concept=1,
-            )
-        else:
-            self.area2zone, self.zone2area_list = self._create_zone(
-                os.path.expanduser(concept)
-            )
+        self.area2zone, self.zone2area_list = self._create_zone(
+            os.path.expanduser(zone_file)
+        )
         if self.config["zone-building-blocks"] in [
             "attendance_area",
             "block_group",
@@ -464,17 +462,6 @@ class Zones:
                 )
             area2zone_id.update({area: i for area in areas})
         return area2zone_id
-
-    @staticmethod
-    def _normalize_grade(value) -> str:
-        text = str(value).strip().upper()
-        try:
-            number = float(text)
-        except ValueError:
-            return text
-        if np.isfinite(number) and number.is_integer():
-            return str(int(number)).zfill(2)
-        return text
 
     def get_studentno_to_zone_dict(self, student_data):
         if self.config["zone-building-blocks"] == "attendance_area":

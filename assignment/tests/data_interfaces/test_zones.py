@@ -32,7 +32,6 @@ PROGRAM_PREFIX = "-GE-" + GRADE
 def aa_config():
     config = {}
     config["zone-building-blocks"] = "attendance_area"
-    config["grade"] = GRADE
     return config
 
 
@@ -40,7 +39,6 @@ def aa_config():
 def bg_config():
     config = {}
     config["zone-building-blocks"] = "block_group"
-    config["grade"] = GRADE
     return config
 
 
@@ -48,7 +46,6 @@ def bg_config():
 def home_based_config():
     config = {}
     config["zone-building-blocks"] = "home_based"
-    config["grade"] = GRADE
     return config
 
 
@@ -164,7 +161,7 @@ def generate_programs_with_area2programs(
         }
     )
     dists_df.to_csv(TEMP_FILE_NAME, index=False)
-    programs_obj = Programs(TEMP_FILE_NAME, "", {"grade": GRADE})
+    programs_obj = Programs(pd.read_csv(TEMP_FILE_NAME))
 
     if return_indices:
         return programs_obj, {program_ids[i]: i for i in range(len(program_ids))}
@@ -208,7 +205,7 @@ def test_create_zone(random_area2zone_zone_list, aa_config):
     with open(TEMP_FILE_NAME, "w") as f:
         f.write("\n".join(f_rows))
 
-    z = Zones(aa_config, pd.DataFrame(data={}), None, None)
+    z = Zones(aa_config, pd.DataFrame(data={}), None, None, grade=GRADE)
 
     dict_zone, zone_list = z._create_zone(TEMP_FILE_NAME)
     assert dict_zone == expected_area2zone
@@ -219,7 +216,7 @@ def test_create_zone_dictionary(aa_config):
     """
     Test creating attendance_area based zone dictionary from a input zone list.
     """
-    z = Zones(aa_config, pd.DataFrame(data={}), None, None)
+    z = Zones(aa_config, pd.DataFrame(data={}), None, None, grade=GRADE)
     actual = z._create_zone_dictionary([[1, 2, 3], [4, 5]])
     expected = {1: 0, 2: 0, 3: 0, 4: 1, 5: 1}
     assert actual == expected
@@ -236,7 +233,7 @@ def test_create_zone_dictionary(aa_config):
 def test_invalid_zone_definitions_are_fatal(tmp_path, aa_config, contents, message):
     zone_file = tmp_path / "zones.csv"
     zone_file.write_text(contents)
-    zones = Zones(aa_config, pd.DataFrame(), None, None)
+    zones = Zones(aa_config, pd.DataFrame(), None, None, grade=GRADE)
 
     with pytest.raises(ValueError, match=message):
         zones._create_zone(zone_file)
@@ -252,7 +249,7 @@ def test_create_zone_home_based(home_based_config, random_area2zone_zone_list):
     with open(TEMP_FILE_NAME, "w") as f:
         json.dump(area2program, f)
 
-    z = Zones(home_based_config, pd.DataFrame(data={}), None, None)
+    z = Zones(home_based_config, pd.DataFrame(data={}), None, None, grade=GRADE)
     student2programs, zone_list = z._create_zone(TEMP_FILE_NAME)
     assert len(zone_list) == 0
 
@@ -271,7 +268,7 @@ def test_get_area_id2program_id_dict(random_area2zone_zone_list, aa_config):
     aa_schools = pd.DataFrame(
         data={"attendance_area": [x for row in zone_list for x in row]}
     )
-    z = Zones(aa_config, aa_schools, None, None)
+    z = Zones(aa_config, aa_schools, None, None, grade=GRADE)
     z.area2zone = area2zone
     z.get_area_id2ge_program_id_dict()
 
@@ -282,9 +279,9 @@ def test_get_area_id2program_id_dict(random_area2zone_zone_list, aa_config):
 
 
 def test_ge_program_ids_use_configured_non_kg_grade():
-    config = {"zone-building-blocks": "attendance_area", "grade": "06"}
+    config = {"zone-building-blocks": "attendance_area"}
     schools = pd.DataFrame({"attendance_area": [101, 202, 303]})
-    zones = Zones(config, schools, None, None)
+    zones = Zones(config, schools, None, None, grade="06")
     zones.area2zone = {101: 0, 202: 0, 303: 1}
 
     zones.get_area_id2ge_program_id_dict()
@@ -319,7 +316,7 @@ def test_set_zone_aa_dict(random_area2zone_zone_list, aa_config):
     with open(TEMP_FILE_NAME, "w") as f:
         f.write(str(area_random_programs))
 
-    z = Zones(aa_config, aa_schools, programs, None)
+    z = Zones(aa_config, aa_schools, programs, None, grade=GRADE)
     z.area2zone = area2zone
 
     lp_zone_list = [TEMP_FILE_NAME]
@@ -340,7 +337,7 @@ def test_supplemental_zone_expression_is_not_executed(tmp_path, aa_config):
         f"__import__('pathlib').Path({str(marker)!r}).write_text('owned')",
         encoding="utf-8",
     )
-    zones = Zones(aa_config, pd.DataFrame(), None, None)
+    zones = Zones(aa_config, pd.DataFrame(), None, None, grade=GRADE)
     zones.get_area_id2ge_program_id_dict = lambda: None
 
     with pytest.raises(ValueError, match="safely parse"):
@@ -372,7 +369,7 @@ def test_set_zone_aa_dict_2zones(random_area2zone_zone_list, aa_config):
         with open(temp_file, "w") as f:
             f.write(str(area_rand_programs_list[i]))
 
-    z = Zones(aa_config, aa_schools, programs, None)
+    z = Zones(aa_config, aa_schools, programs, None, grade=GRADE)
     z.area2zone = area2zone
     z.set_area_id2prog_list_dict(lp_zone_path_list=TEMP_FILE_NAMES)
 
@@ -398,7 +395,7 @@ def test_get_area2school_id_block_groups(bg_config):
     school_ids = np.arange(100, 100 + num_schools)
     bg_schools = pd.DataFrame(data={"BlockGroup": block_groups}, index=school_ids)
 
-    z = Zones(bg_config, bg_schools, None, None)
+    z = Zones(bg_config, bg_schools, None, None, grade=GRADE)
 
     expected_area2school_id = {
         6e10 + i: [100 + i * schools_per_bg + j for j in range(schools_per_bg)]
@@ -422,7 +419,7 @@ def test_get_area2school_id_attendance_areas(aa_config):
     rand_aa = np.arange(100, 201)
     aa_schools = pd.DataFrame(data={"attendance_area": rand_aa})
 
-    z = Zones(aa_config, aa_schools, None, None)
+    z = Zones(aa_config, aa_schools, None, None, grade=GRADE)
     expected_area2school_id = {x: [x] for x in rand_aa}
     expected_school_id2area = {x: x for x in rand_aa}
     # We only add city wide schools to school_id2area dict.
@@ -444,7 +441,7 @@ def test_programs_for_area_id_home_based(home_based_config, random_area2zone_zon
     programs, indices = generate_programs_with_area2programs(
         [area2program], return_indices=True
     )
-    z = Zones(home_based_config, pd.DataFrame(data={}), programs, None)
+    z = Zones(home_based_config, pd.DataFrame(data={}), programs, None, grade=GRADE)
 
     with open(TEMP_FILE_NAME, "w") as f:
         json.dump(area2program, f)
@@ -489,6 +486,7 @@ def test_zone_eligibility_does_not_mutate_zone_priority(aa_config):
         pd.DataFrame(),
         SimpleNamespace(num_programs=3),
         students,
+        grade=GRADE,
     )
     zones.programs_for_area_id = lambda _aa, _bg, _block, studentno: base_priority[
         students.studentno2idx[studentno]

@@ -93,6 +93,7 @@ def _market(
     return SimpleNamespace(
         n=2,
         num_programs=3,
+        grade=config["grade"],
         config=config,
         students=students,
         schools=SimpleNamespace(citywide_schools=[102]),
@@ -124,7 +125,7 @@ def _assignment_for(market):
     generator.programs = market.programs
     generator.preference_generator = market.preference_generator
     priorities = PriorityGenerator(market).get_priorities_without_lottery(
-        Policy("Con1", 1, 0, "MTB"), PREFERENCES
+        Policy("Con1", 1, "MTB"), PREFERENCES
     )
     match, _, _, _ = generator._generate_assignment(PREFERENCES, priorities)
     return match

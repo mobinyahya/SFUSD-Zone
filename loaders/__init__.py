@@ -9,16 +9,18 @@ from loaders.config import (
 )
 from loaders.edge_overrides import (
     apply_block_edge_overrides,
-    block_edge_override_fingerprint,
     load_block_edge_overrides,
 )
 from loaders.geography import (
     GEOGRAPHY_COLUMNS,
     GEOGRAPHY_UNITS,
+    census_ids,
+    in_geoid_set,
     load_census_geometry,
     load_geography_crosswalk,
     match_points_to_census,
     normalize_census_geography,
+    require_geography_vintage,
     selected_geography_vintage,
 )
 from loaders.tables import (
@@ -29,6 +31,7 @@ from loaders.tables import (
     load_program_records,
     load_school_records,
     load_student_records,
+    lowell_selective,
     normalize_school_records,
     normalize_student_records,
     normalize_grade,
@@ -51,9 +54,10 @@ __all__ = [
     "apply_capacity_scenario",
     "apply_student_frl_estimate",
     "apply_block_edge_overrides",
-    "block_edge_override_fingerprint",
+    "census_ids",
     "filter_outside_district_students",
     "identity_fingerprint",
+    "in_geoid_set",
     "load_block_edge_overrides",
     "load_census_geometry",
     "load_geography_crosswalk",
@@ -61,6 +65,7 @@ __all__ = [
     "load_scenario",
     "load_school_records",
     "load_student_records",
+    "lowell_selective",
     "match_points_to_census",
     "normalize_census_geography",
     "normalize_school_records",
@@ -70,6 +75,7 @@ __all__ = [
     "parse_ranked_schools",
     "read_csv",
     "read_csv_source",
+    "require_geography_vintage",
     "school_id_aliases",
     "selected_geography_vintage",
 ]

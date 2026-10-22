@@ -51,24 +51,17 @@ def cleanup(request):
 
 def get_students(config):
     scenario = load_scenario(config["data"], environ={})
-    runtime_config = {
-        **config,
-        "grade": scenario.filter("assignment", "grades")[0],
-        "year": int(scenario.filter("assignment", "year")[:2]),
-        "special_programs": scenario.filter("assignment", "special_programs"),
-    }
     students = Students(
         load_student_records(
             scenario, "assignment.students", filter_group="assignment"
         ),
-        get_programs(runtime_config),
+        get_programs(config),
         load_school_records(
             scenario,
             "assignment.school_coordinates",
             filter_group="assignment",
         ),
-        None,
-        runtime_config,
+        scenario.filter("assignment", "grade"),
         data_scenario=scenario,
     )
 
@@ -77,14 +70,8 @@ def get_students(config):
 
 def get_programs(config):
     scenario = load_scenario(config["data"], environ={})
-    grade = scenario.filter("assignment", "grades")[0]
-    runtime_config = {**config, "grade": grade, "year": YEAR}
     programs = Programs(
-        load_program_records(
-            scenario, "assignment.programs", filter_group="assignment"
-        ),
-        None,
-        runtime_config,
+        load_program_records(scenario, "assignment.programs", filter_group="assignment")
     )
     return programs
 
@@ -261,9 +248,8 @@ def _minimal_student_inputs(tmp_path, student_rows):
     student_frame["selected_programs"] = student_frame["r1_programs"].map(list)
     student_frame.attrs["source_rows"] = list(range(len(student_frame)))
     student_frame.attrs["source_row_count"] = len(student_frame)
-    config = {"grade": "06", "year": 21}
-    programs = Programs(program_file, None, config)
-    return student_frame, school_file, programs, config
+    programs = Programs(pd.read_csv(program_file))
+    return student_frame, pd.read_csv(school_file), programs, "06"
 
 
 def _student_row(studentno=1, schools="[101]", programs="['GE']"):
@@ -281,7 +267,7 @@ def _student_row(studentno=1, schools="[101]", programs="['GE']"):
 def test_normalized_preferences_are_used_without_reparsing(tmp_path):
     inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[101, ]")])
 
-    students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+    students = Students(inputs[0], inputs[2], inputs[1], inputs[3])
 
     assert students.student_data.loc[1, "selected_ranked_idschool"] == [101]
     np.testing.assert_array_equal(
@@ -296,7 +282,7 @@ def test_old_distance_cache_files_are_ignored(tmp_path):
         cache_file, index=False
     )
 
-    students = Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+    students = Students(inputs[0], inputs[2], inputs[1], inputs[3])
 
     assert students.distance_data.index.tolist() == [1]
     assert students.distance_data.columns.tolist() == ["101-GE-06"]
@@ -306,18 +292,12 @@ def test_unknown_ranked_program_is_fatal(tmp_path):
     inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[999]")])
 
     with pytest.raises(ValueError, match="unknown program IDs.*999-GE-06"):
-        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+        Students(inputs[0], inputs[2], inputs[1], inputs[3])
 
 
 def test_ranked_school_program_lengths_must_match(tmp_path):
     inputs = _minimal_student_inputs(tmp_path, [_student_row(schools="[101, 102]")])
 
     with pytest.raises(ValueError, match="2 ranked schools but 1 ranked programs"):
-        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])
+        Students(inputs[0], inputs[2], inputs[1], inputs[3])
 
-
-def test_duplicate_student_identities_are_fatal(tmp_path):
-    inputs = _minimal_student_inputs(tmp_path, [_student_row(), _student_row()])
-
-    with pytest.raises(ValueError, match="duplicate studentno"):
-        Students(inputs[0], inputs[2], inputs[1], None, inputs[3])

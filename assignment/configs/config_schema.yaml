@@ -13,7 +13,6 @@ reuse_assignments: bool(required=False)
 random-seed: int()
 r1-only: bool(required=False)
 
-rounds-merged-options: list(int(), str())
 read-lotteries: bool(required=False)
 
 iterations:

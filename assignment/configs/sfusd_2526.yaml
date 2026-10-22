@@ -14,8 +14,6 @@ iterations:
 paths:
   assignment-folder: ./assignment_output/assignments/sfusd_2526/
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - distance_05_1_2+reserves_05frl_#3
