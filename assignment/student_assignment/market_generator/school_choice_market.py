@@ -130,7 +130,7 @@ class SchoolChoiceMarket:
 
         config = copy.deepcopy(self.external_config)
         config["year"] = int(assignment_filters["year"][:2])
-        config["grade"] = assignment_filters["grades"][0]
+        config["grade"] = assignment_filters["grade"]
         config["special_programs"] = assignment_filters["special_programs"]
 
         paths = copy.deepcopy(config.get("paths", {}))
@@ -224,7 +224,7 @@ class SchoolChoiceMarket:
             "assignment.schools",
             filter_group="assignment",
         )
-        self.programs = Programs(program_data, program_codes, self.config)
+        self.programs = Programs(program_data, program_codes)
         self.schools = Schools(school_data, self.programs)
 
     def _initialize_students(self):
@@ -265,7 +265,6 @@ class SchoolChoiceMarket:
 
     def _reuse_market_data(self) -> None:
         """Rebind immutable interfaces to a new policy/output configuration."""
-        self.programs._config = self.config
         self.students.reconfigure_context(self.config, self.data_scenario)
         self.n = self.students.n
         self.num_programs = self.students.num_programs

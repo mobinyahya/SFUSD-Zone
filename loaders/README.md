@@ -544,7 +544,7 @@ Fields shared by both groups follow these rules:
 
 | Field | Accepted values and behavior |
 |---|---|
-| `grades` | Non-empty, duplicate-free list containing `PK`, `TK`, `KG`, or zero-padded `"01"` through `"12"`. Student and program rows are restricted to these grades. |
+| `grades` / `grade` | Optimization `grades` is a non-empty, duplicate-free list and assignment `grade` a single value, each `PK`, `TK`, `KG`, or zero-padded `"01"` through `"12"`. Student and program rows are restricted to the selected grades. |
 | `student_population` | `applicant` or `enrolled`; selects that population from the school-year registry. |
 | `rounds` | `all` or a non-empty, duplicate-free list of positive integers. Explicit lists are sorted and every requested round must exist in the student table. |
 | `special_programs` | `include`, `exclude_only_special`, or `exclude_any_special`. `exclude_only_special` removes special-program preferences; `exclude_any_special` removes students listing a special program in a selected round. Both exclusion modes remove special program rows. |
@@ -659,7 +659,7 @@ by the selected source data.
 filters:
   assignment:
     year: "2324"
-    grades: [KG]
+    grade: KG
     student_population: applicant
     rounds: [1]
     special_programs: include
@@ -674,7 +674,7 @@ filters:
 | Field | Type / values | Required | Description |
 |---|---|---:|---|
 | `year` | Four-digit school-year string | Yes | Selects one assignment registry year. |
-| `grades` | Canonical grade list | Yes | The schema accepts a list, but assignment source resolution requires exactly one grade per market. |
+| `grade` | Canonical grade | Yes | The one grade of the market. Manifests and fingerprints hash it as the one-element `grades` list it replaced, so existing cache keys are unchanged. |
 | `student_population` | `applicant` or `enrolled` | Yes | Shared population selector described above. |
 | `rounds` | `all` or positive-integer list | Yes | Shared preference-round selector described above. |
 | `special_programs` | Supported special-program mode | Yes | Shared special-program selector described above. |

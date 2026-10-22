@@ -59,7 +59,7 @@ data:
     filters:
       assignment:
         year: "2324"
-        grades: [KG]
+        grade: KG
         student_population: applicant  # applicant | enrolled
         rounds: [1]                    # or all
         special_programs: include     # include | exclude_only_special | exclude_any_special
@@ -70,9 +70,9 @@ data:
         outside_district_students: ignore  # ignore | include
 ```
 
-Assignment execution requires exactly one canonical year and one grade per
-market, even though `grades` is a list and optimization supports multiple years
-and grades where available. The registry must contain the requested student
+Assignment executes exactly one canonical `year` and one `grade` per market,
+while optimization supports multiple years and grades where available. The
+registry must contain the requested student
 population and the year/grade/capacity-profile/Mission Bay program-school
 bundle. Unsupported combinations fail and never fall back.
 
@@ -115,7 +115,7 @@ an in-memory mapping have no declaring file, so they resolve those paths from
 the current working directory. Saved run configs contain the anchored `data`
 map and can therefore be reloaded from another working directory.
 
-Assignment filters own the canonical school year, grades list,
+Assignment filters own the canonical school year, grade,
 applicant/enrolled population, selected round labels, special-program mode,
 capacity profile, and Mission Bay inclusion. `include_mission_bay` centrally
 derives the `909 -> 999` alias across tables; users do not configure an alias

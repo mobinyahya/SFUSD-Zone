@@ -70,7 +70,7 @@ def configure_synthetic_assignment_data(config, grade, cache_root):
             "filters": {
                 "assignment": {
                     "year": YEAR_PREFIX,
-                    "grades": [grade],
+                    "grade": grade,
                     "student_population": "applicant",
                     "rounds": "all",
                     "special_programs": "include",

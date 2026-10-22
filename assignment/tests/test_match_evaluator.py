@@ -31,8 +31,7 @@ SIMULATED_ASSIGNMENT_FILE = TEST_DATA_FOLDER + "assignments_cols.csv"
 
 @pytest.fixture(scope="module")
 def programs():
-    config = {"grade": "KG", "generator": {"year": 18}}
-    return Programs(PROGRAM_FILE, PROGRAM_CODES_FILE, config)
+    return Programs(pd.read_csv(PROGRAM_FILE), pd.read_csv(PROGRAM_CODES_FILE))
 
 
 @pytest.fixture(scope="module")

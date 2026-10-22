@@ -164,7 +164,7 @@ def generate_programs_with_area2programs(
         }
     )
     dists_df.to_csv(TEMP_FILE_NAME, index=False)
-    programs_obj = Programs(TEMP_FILE_NAME, "", {"grade": GRADE})
+    programs_obj = Programs(pd.read_csv(TEMP_FILE_NAME))
 
     if return_indices:
         return programs_obj, {program_ids[i]: i for i in range(len(program_ids))}

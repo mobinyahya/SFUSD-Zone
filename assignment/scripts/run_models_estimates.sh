@@ -234,7 +234,7 @@ ${estimate_override}
     filters:
       assignment:
         year: '${TEST_YEAR}'
-        grades: ['${GRADE}']
+        grade: '${GRADE}'
         student_population: applicant
         rounds: [1]
         special_programs: exclude_any_special

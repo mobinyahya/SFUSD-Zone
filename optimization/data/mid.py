@@ -486,7 +486,7 @@ def _assignment_market(optimization_config):
     data = optimization_config.data_scenario
     filters = data.filters["assignment"]
     config["year"] = int(filters["year"][:2])
-    config["grade"] = filters["grades"][0]
+    config["grade"] = filters["grade"]
     config["special_programs"] = filters["special_programs"]
 
     ctip_sources = data.source_map("assignment.ctip")
@@ -502,7 +502,7 @@ def _assignment_market(optimization_config):
     program_codes = None
     if "programno" not in program_data:
         program_codes = read_csv_source(data.source("assignment.program_codes"))
-    programs = Programs(program_data, program_codes, config)
+    programs = Programs(program_data, program_codes)
     schools = Schools(
         load_school_records(data, "assignment.schools", filter_group="assignment"),
         programs,

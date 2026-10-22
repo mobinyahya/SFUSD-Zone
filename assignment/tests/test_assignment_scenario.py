@@ -216,7 +216,7 @@ def _config(
                 "filters": {
                     "assignment": {
                         "year": "2324" if include_mission_bay else "2122",
-                        "grades": ["KG"],
+                        "grade": "KG",
                         "student_population": "applicant",
                         "rounds": rounds,
                         "special_programs": special_programs,

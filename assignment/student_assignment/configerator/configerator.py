@@ -146,12 +146,6 @@ class Configerator:
                 raise ValueError(
                     "data assignment year must be a canonical four-digit string."
                 )
-            grades = scenario.filter("assignment", "grades")
-            if len(grades) != 1:
-                raise ValueError(
-                    "Assignment execution requires exactly one grade; "
-                    f"selected grades are {list(grades)}."
-                )
 
         def _load_config(self):
             """Find config file located at ../../configs/{$USER}.config.yaml

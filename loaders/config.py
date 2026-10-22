@@ -65,7 +65,7 @@ _FILTER_KEYS = {
     },
     "assignment": {
         "year",
-        "grades",
+        "grade",
         "student_population",
         "rounds",
         "special_programs",
@@ -128,6 +128,20 @@ def _freeze(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
     return value
+
+
+def _identity_filters(filters: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """Return filters in the form every existing cache key was built from.
+
+    The assignment group's scalar ``grade`` was once a one-element ``grades``
+    list. Manifests and fingerprints hash it in that original form, so the
+    rename re-keys nothing.
+    """
+    plain = _plain(filters)
+    assignment = plain.get("assignment")
+    if assignment is not None and "grade" in assignment:
+        assignment["grades"] = [assignment.pop("grade")]
+    return plain
 
 
 def _plain(value: Any) -> Any:
@@ -436,7 +450,9 @@ class DataScenario:
 
     def capacity_adjustments(self, group: str) -> Mapping[str, Any] | None:
         """Return the registered capacity scenario a group selects, if any."""
-        return self.capacity_scenarios.get(self.filter(group, "capacity_scenario"))
+        return self.capacity_scenarios.get(
+            self.filter(group, "capacity_scenario", "programs")
+        )
 
     def source_manifest(
         self, roles: str | Iterable[str] | None = None
@@ -456,7 +472,7 @@ class DataScenario:
         manifest = {
             "schema_version": self.schema_version,
             "scenario": self.id,
-            "filters": _plain(self.filters),
+            "filters": _identity_filters(self.filters),
             "sources": {role: build(self._source_values[role]) for role in selected},
         }
         # A registered capacity scenario is input data, like a source, so its
@@ -497,7 +513,7 @@ class DataScenario:
                 "sources": {
                     role: describe(value) for role, value in self._source_values.items()
                 },
-                "filters": _plain(self.filters),
+                "filters": _identity_filters(self.filters),
             }
         )
 
@@ -620,6 +636,10 @@ def _validate_filters(
                 raise ValueError(f"{label}.{group}.years cannot contain duplicates.")
         if "year" in values:
             values["year"] = _canonical_year(values["year"], f"{label}.{group}.year")
+        if "grade" in values:
+            values["grade"] = _canonical_grade(
+                values["grade"], f"{label}.{group}.grade"
+            )
         if "grades" in values:
             grades = values["grades"]
             if not isinstance(grades, list) or not grades:
@@ -1136,13 +1156,7 @@ def _assignment_sources(
     filters: Mapping[str, Any], school_years: Mapping[str, Any]
 ) -> dict[str, Any]:
     year = filters["year"]
-    grades = filters["grades"]
-    if len(grades) != 1:
-        raise ValueError(
-            "Assignment source resolution requires exactly one grade; selected "
-            f"grades are {list(grades)}."
-        )
-    grade = grades[0]
+    grade = filters["grade"]
     entry = school_years.get(year)
     assignment = entry.get("assignment") if isinstance(entry, Mapping) else None
     if not isinstance(assignment, Mapping):

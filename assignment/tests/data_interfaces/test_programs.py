@@ -31,7 +31,7 @@ def config():
 
 def get_programs(config):
     program_data_file = TEMP_PROGRAMS_FILE.format(config["grade"])
-    programs = Programs(program_data_file, None, config)
+    programs = Programs(pd.read_csv(program_data_file))
     return programs
 
 
@@ -160,7 +160,7 @@ def test_program_rows_are_sorted_by_programno(tmp_path):
         }
     ).to_csv(program_file, index=False)
 
-    programs = Programs(program_file, None, {"grade": "KG"})
+    programs = Programs(pd.read_csv(program_file))
 
     assert programs.program_df["program_id"].tolist() == [
         "101-GE-KG",
@@ -188,7 +188,7 @@ def test_duplicate_program_identities_are_fatal(tmp_path, duplicate_column):
     pd.DataFrame(data).to_csv(program_file, index=False)
 
     with pytest.raises(ValueError, match=f"duplicate {duplicate_column}"):
-        Programs(program_file, None, {"grade": "KG"})
+        Programs(pd.read_csv(program_file))
 
 
 def test_sparse_program_numbers_are_normalized_and_track_source_columns(tmp_path):
@@ -201,7 +201,7 @@ def test_sparse_program_numbers_are_normalized_and_track_source_columns(tmp_path
         }
     ).to_csv(program_file, index=False)
 
-    programs = Programs(program_file, None, {"grade": "KG"})
+    programs = Programs(pd.read_csv(program_file))
 
     assert programs.program_df["program_id"].tolist() == [
         "101-GE-KG",

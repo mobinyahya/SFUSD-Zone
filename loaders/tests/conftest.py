@@ -37,7 +37,7 @@ def scenario_factory(tmp_path: Path):
             },
             "assignment": {
                 "year": "1819",
-                "grades": ["KG"],
+                "grade": "KG",
                 "student_population": "applicant",
                 "rounds": "all",
                 "special_programs": "include",

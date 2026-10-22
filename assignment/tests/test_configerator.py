@@ -191,7 +191,7 @@ def test_custom_scenario_yaml_is_accepted(tmp_path):
                 "filters": {
                     "assignment": {
                         "year": "2324",
-                        "grades": ["KG"],
+                        "grade": "KG",
                         "student_population": "applicant",
                         "rounds": "all",
                         "special_programs": "include",
@@ -220,7 +220,7 @@ def _write_custom_scenario(path):
                 "filters": {
                     "assignment": {
                         "year": "2324",
-                        "grades": ["KG"],
+                        "grade": "KG",
                         "student_population": "applicant",
                         "rounds": "all",
                         "special_programs": "include",
@@ -296,9 +296,9 @@ def test_programmatic_config_uses_cwd_when_no_declaring_path(tmp_path, monkeypat
 
 def test_assignment_execution_requires_exactly_one_grade():
     config = _valid_config()
-    config["data"]["overrides"] = {"filters": {"assignment": {"grades": ["KG", "01"]}}}
+    config["data"]["overrides"] = {"filters": {"assignment": {"grade": ["KG", "01"]}}}
 
-    with pytest.raises(ValueError, match="exactly one grade"):
+    with pytest.raises(ValueError, match="grade must be a canonical grade"):
         Configerator.from_config(config)
 
 

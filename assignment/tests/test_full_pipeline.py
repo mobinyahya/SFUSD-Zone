@@ -130,7 +130,7 @@ def test_generated_non_kg_grade_remains_a_string(tmp_path):
     config_path = tmp_path / "configs" / f"{EXPECTED_RUN_LABELS[0]}.yaml"
     with config_path.open() as config_file:
         config = yaml.safe_load(config_file)
-    assert config["data"]["overrides"]["filters"]["assignment"]["grades"] == ["06"]
+    assert config["data"]["overrides"]["filters"]["assignment"]["grade"] == "06"
 
 
 def test_full_pipeline_tiny(tmp_path):

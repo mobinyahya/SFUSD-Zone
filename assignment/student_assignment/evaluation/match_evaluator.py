@@ -395,7 +395,7 @@ class MatchEvaluator:
             how="left",
         )
         year = scenario.filter("assignment", "year")
-        grade = scenario.filter("assignment", "grades")[0]
+        grade = scenario.filter("assignment", "grade")
         kwargs.setdefault("year", int(year[:2]))
         kwargs.setdefault("grade", grade)
         if kwargs.get("new_ctip_path") is None:

@@ -352,7 +352,7 @@ sources:
 filters:
   assignment:
     year: "2627"
-    grades: [KG]
+    grade: KG
     student_population: applicant
     rounds: [1]
     special_programs: include

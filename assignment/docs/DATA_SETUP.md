@@ -63,7 +63,7 @@ data:
     filters:
       assignment:
         year: "2324"
-        grades: [KG]             # assignment execution requires exactly one
+        grade: KG
         student_population: applicant  # applicant | enrolled
         rounds: [1]                    # or all
         special_programs: include     # include | exclude_only_special | exclude_any_special

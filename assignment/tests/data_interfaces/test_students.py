@@ -53,7 +53,7 @@ def get_students(config):
     scenario = load_scenario(config["data"], environ={})
     runtime_config = {
         **config,
-        "grade": scenario.filter("assignment", "grades")[0],
+        "grade": scenario.filter("assignment", "grade"),
         "year": int(scenario.filter("assignment", "year")[:2]),
         "special_programs": scenario.filter("assignment", "special_programs"),
     }
@@ -77,14 +77,8 @@ def get_students(config):
 
 def get_programs(config):
     scenario = load_scenario(config["data"], environ={})
-    grade = scenario.filter("assignment", "grades")[0]
-    runtime_config = {**config, "grade": grade, "year": YEAR}
     programs = Programs(
-        load_program_records(
-            scenario, "assignment.programs", filter_group="assignment"
-        ),
-        None,
-        runtime_config,
+        load_program_records(scenario, "assignment.programs", filter_group="assignment")
     )
     return programs
 
@@ -262,7 +256,7 @@ def _minimal_student_inputs(tmp_path, student_rows):
     student_frame.attrs["source_rows"] = list(range(len(student_frame)))
     student_frame.attrs["source_row_count"] = len(student_frame)
     config = {"grade": "06", "year": 21}
-    programs = Programs(program_file, None, config)
+    programs = Programs(pd.read_csv(program_file))
     return student_frame, school_file, programs, config
 
 

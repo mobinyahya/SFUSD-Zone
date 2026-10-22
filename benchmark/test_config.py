@@ -59,7 +59,7 @@ def _write_custom_sweep(tmp_path: Path, location: str = "optimization_defaults")
                     },
                     "assignment": {
                         "year": "2324",
-                        "grades": ["KG"],
+                        "grade": "KG",
                         "student_population": "applicant",
                         "rounds": [1],
                         "special_programs": "include",

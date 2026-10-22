@@ -462,10 +462,11 @@ def _benchmark_source_manifest(config: OptimizationConfig) -> dict[str, Any]:
         )
 
     manifest = scenario.source_manifest(dict.fromkeys(roles))
-    manifest["filters"] = {"optimization": json_ready(scenario.filters["optimization"])}
+    filters = manifest["filters"]
+    manifest["filters"] = {"optimization": json_ready(filters["optimization"])}
     if "assignment" in filter_groups:
         manifest["filters"]["assignment"] = {
-            key: json_ready(scenario.filters["assignment"][key])
+            key: json_ready(filters["assignment"][key])
             for key in MNL_ASSIGNMENT_FILTERS
         }
     if matching_strategy:

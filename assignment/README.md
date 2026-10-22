@@ -150,7 +150,7 @@ data:
     filters:
       assignment:
         year: "2324"
-        grades: [KG]
+        grade: KG
         student_population: applicant  # applicant | enrolled
         rounds: [1]                    # or all
         special_programs: include     # include | exclude_only_special | exclude_any_special
@@ -161,8 +161,8 @@ data:
         outside_district_students: ignore  # ignore | include
 ```
 
-Assignment currently executes exactly one canonical year and one grade per
-market, although `grades` is a list in the shared selector schema. Unsupported
+Assignment executes exactly one canonical `year` and one `grade` per market.
+Unsupported
 year, grade, population, capacity-profile, and Mission Bay combinations fail;
 there is no source fallback. Top-level data selectors and input entries under
 `paths` are rejected. `paths` is reserved for outputs such as

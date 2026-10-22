@@ -118,7 +118,7 @@ def _student_scenario(
         {
             "assignment": {
                 **registry_selection,
-                "grades": ["KG"],
+                "grade": "KG",
                 "rounds": rounds,
                 "special_programs": special_programs,
                 "include_mission_bay": include_mission_bay,
@@ -217,7 +217,7 @@ def test_assignment_uses_exact_frl_counts_with_student_file_fallback(
         },
         {
             "assignment": {
-                "grades": ["KG"],
+                "grade": "KG",
                 "rounds": [1],
                 "geography_vintage": "2020",
                 "frl_estimate": "updated_2526",
@@ -325,7 +325,14 @@ def test_the_enrolled_population_drops_students_with_no_enrolled_school(
     def load(group, population):
         scenario = scenario_factory(
             {f"{group}.students": {"path": str(path)}},
-            {group: {"grades": ["KG"], "student_population": population}},
+            {
+                group: {
+                    "grade" if group == "assignment" else "grades": (
+                        "KG" if group == "assignment" else ["KG"]
+                    ),
+                    "student_population": population,
+                }
+            },
         )
         return normalize_student_records(students.copy(), scenario, group)
 
@@ -615,7 +622,7 @@ def test_program_grade_special_filtering_and_capacity_overlay(
         {
             "assignment": {
                 "year": "2324",
-                "grades": ["KG"],
+                "grade": "KG",
                 "special_programs": "exclude_only_special",
                 "capacity_profile": "status_quo",
                 "include_mission_bay": True,
@@ -664,6 +671,59 @@ def test_explicit_capacity_scenario_overrides_matching_selected_programs(
     assert loaded["capacity"].tolist() == [8, 4]
 
 
+@pytest.mark.parametrize(
+    ("grade", "year", "rows", "expected"),
+    [
+        # K-8 seats at grade 6 are the Main Round assignments; others unchanged.
+        ("06", "1819", [(618, "GE", 90, 7), (500, "GE", 90, 7)], [7, 90]),
+        # SOTA and Lowell admit every eligible applicant ...
+        ("09", "1819", [(815, "GE", 50, 0), (697, "GE", 50, 0)], [10000, 10000]),
+        # ... except Lowell's lottery years.
+        ("09", "2223", [(815, "GE", 50, 0), (697, "GE", 50, 0)], [10000, 50]),
+    ],
+)
+def test_grade_capacity_rules_precede_capacity_overlays(
+    tmp_path, scenario_factory, grade, year, rows, expected
+):
+    programs = tmp_path / "programs.csv"
+    pd.DataFrame(
+        {
+            "program_id": [f"{school}-{kind}-{grade}" for school, kind, *_ in rows],
+            "school_id": [row[0] for row in rows],
+            "program_type": [row[1] for row in rows],
+            "capacity": [row[2] for row in rows],
+            "r1_assigned": [row[3] for row in rows],
+        }
+    ).to_csv(programs, index=False)
+    schools = tmp_path / "schools.csv"
+    pd.DataFrame({"school_id": [row[0] for row in rows]}).to_csv(schools, index=False)
+    sources = {
+        "assignment.programs": {"path": str(programs)},
+        "assignment.schools": {"path": str(schools)},
+    }
+    scenario = scenario_factory(sources, {"assignment": {"year": year, "grade": grade}})
+    loaded = load_program_records(scenario)
+    assert loaded["capacity"].tolist() == expected
+    if grade == "06":
+        assert loaded["r2_capacity"].tolist()[0] == 7
+
+    overlay = tmp_path / "capacity.csv"
+    pd.DataFrame(
+        {
+            "SchNum": [rows[0][0]],
+            "PathwayCode": [rows[0][1]],
+            "Scenario_A_Capacity": [3],
+        }
+    ).to_csv(overlay, index=False)
+    overlaid = load_program_records(
+        scenario_factory(
+            {**sources, "assignment.capacity": {"path": str(overlay)}},
+            {"assignment": {"year": year, "grade": grade, "capacity_scenario": "A"}},
+        )
+    )
+    assert overlaid["capacity"].tolist() == [3, *expected[1:]]
+
+
 def test_program_loading_rejects_unavailable_grade(tmp_path, scenario_factory):
     programs = tmp_path / "programs.csv"
     pd.DataFrame(
@@ -676,7 +736,7 @@ def test_program_loading_rejects_unavailable_grade(tmp_path, scenario_factory):
     ).to_csv(programs, index=False)
     scenario = scenario_factory(
         {"assignment.programs": {"path": str(programs)}},
-        {"assignment": {"grades": ["06"]}},
+        {"assignment": {"grade": "06"}},
     )
 
     with pytest.raises(ValueError, match="requested grades.*06"):

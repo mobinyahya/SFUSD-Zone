@@ -282,7 +282,7 @@ def test_choice_metric_uses_configured_mnl_method(tmp_path):
             "filters": {
                 "assignment": {
                     "year": "2324",
-                    "grades": ["KG"],
+                    "grade": "KG",
                     "student_population": "applicant",
                     "rounds": [1],
                     "special_programs": "include",

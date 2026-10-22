@@ -48,6 +48,14 @@ _MISSION_BAY_SCHOOL_IDS = {909, 999}
 #: the same fact at an earlier date.
 NOT_ENROLLED_SCHOOL_ID = 899
 SPECIAL_PROGRAMS = frozenset({"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "AO"})
+#: K-8 schools. At grade 6 most of their published seats are held by students
+#: continuing from grade 5, so the seats open to sixth-grade applicants are
+#: approximated by the program's Main Round assignment count, ``r1_assigned``.
+K8_SCHOOL_IDS = frozenset({618, 449, 676, 479, 760, 796, 493, 485})
+SOTA_PROGRAM_ID = "815-GE-09"
+LOWELL_PROGRAM_ID = "697-GE-09"
+#: Capacity of a selective high school, which admits every eligible applicant.
+UNCAPPED_CAPACITY = 10000
 _FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
 
 
@@ -178,6 +186,16 @@ def _filter_group(role: str, filter_group: str | None) -> str:
             f"Cannot infer filters from role {role!r}; pass filter_group explicitly."
         )
     return prefix
+
+
+def _selected_grades(scenario: DataScenario, group: str) -> tuple[str, ...]:
+    """Return the canonical grades a filter group selects.
+
+    Optimization selects a list; an assignment market is exactly one grade.
+    """
+    if group == "assignment":
+        return (scenario.filter(group, "grade"),)
+    return tuple(scenario.filter(group, "grades"))
 
 
 def school_id_aliases(scenario: DataScenario, group: str) -> dict[int, int]:
@@ -432,7 +450,7 @@ def normalize_student_records(
         raise ValueError("Student source_rows metadata must align with the table rows.")
     if "grade" not in frame.columns:
         raise ValueError("Student data is missing required column 'grade'.")
-    grades = tuple(scenario.filter(group, "grades"))
+    grades = _selected_grades(scenario, group)
     normalized_grades = frame["grade"].map(normalize_grade)
     grade_mask = normalized_grades.isin(grades)
     frame, source_rows = _filter_student_rows(frame, source_rows, grade_mask)
@@ -869,7 +887,7 @@ def _program_grades(frame: pd.DataFrame, label: str) -> pd.Series:
 def _filter_program_records(
     frame: pd.DataFrame, scenario: DataScenario, group: str, label: str
 ) -> pd.DataFrame:
-    grades = tuple(scenario.filter(group, "grades"))
+    grades = _selected_grades(scenario, group)
     program_grades = _program_grades(frame, label)
     available = set(program_grades) - {""}
     missing = sorted(set(grades) - available)
@@ -892,6 +910,59 @@ def _filter_program_records(
     if frame.empty:
         raise ValueError(f"{label} contains no programs after selector filtering.")
     return frame.reset_index(drop=True)
+
+
+def lowell_selective(year: str) -> bool:
+    """Whether Lowell admits by eligibility in a canonical school year.
+
+    Lowell ran an ordinary lottery in 2021-22 and 2022-23.
+    """
+    return year not in {"2122", "2223"}
+
+
+def _k8_continuation_capacity(frame: pd.DataFrame, year: str) -> pd.DataFrame:
+    rows = pd.to_numeric(frame["school_id"], errors="coerce").isin(K8_SCHOOL_IDS)
+    if not rows.any():
+        return frame
+    if "r1_assigned" not in frame.columns:
+        raise ValueError(
+            "Grade 06 programs at K-8 schools require column 'r1_assigned'."
+        )
+    open_seats = frame.loc[rows, "r1_assigned"].fillna(0)
+    frame.loc[rows, "capacity"] = open_seats
+    frame.loc[rows, "r2_capacity"] = open_seats
+    return frame
+
+
+def _selective_high_school_capacity(frame: pd.DataFrame, year: str) -> pd.DataFrame:
+    selective = [
+        SOTA_PROGRAM_ID,
+        *([LOWELL_PROGRAM_ID] if lowell_selective(year) else []),
+    ]
+    frame.loc[frame["program_id"].astype(str).isin(selective), "capacity"] = (
+        UNCAPPED_CAPACITY
+    )
+    return frame
+
+
+#: Capacity rules that hold for every assignment market at a grade. They model
+#: the grade's admissions, so they precede any ``capacity_scenario``, which can
+#: still override the rows they touch.
+_ASSIGNMENT_GRADE_CAPACITY_RULES = {
+    "06": _k8_continuation_capacity,
+    "09": _selective_high_school_capacity,
+}
+
+
+def _apply_grade_capacity_rules(
+    frame: pd.DataFrame, scenario: DataScenario, group: str
+) -> pd.DataFrame:
+    if group != "assignment":
+        return frame
+    rule = _ASSIGNMENT_GRADE_CAPACITY_RULES.get(scenario.filter(group, "grade"))
+    if rule is None:
+        return frame
+    return rule(frame.copy(), scenario.filter(group, "year"))
 
 
 def _apply_capacity_adjustments(
@@ -992,7 +1063,7 @@ def apply_capacity_scenario(
     keys = ["school_id", "program_type"]
     if "Grade" in overrides.columns:
         overrides["_capacity_grade"] = overrides["Grade"].map(normalize_grade)
-        selected_grades = set(scenario.filter(group, "grades"))
+        selected_grades = set(_selected_grades(scenario, group))
         overrides = overrides.loc[
             overrides["_capacity_grade"].isin(selected_grades)
         ].copy()
@@ -1118,6 +1189,7 @@ def load_program_records(
         else:
             catalog["capacity"] = mapped
         selected = catalog
+    selected = _apply_grade_capacity_rules(selected, scenario, group)
     selected = apply_capacity_scenario(selected, scenario, group)
     return _attach_program_geography(selected, scenario, group)
 
@@ -1176,10 +1248,12 @@ def load_school_records(
 
 
 __all__ = [
+    "K8_SCHOOL_IDS",
     "SPECIAL_PROGRAMS",
     "load_program_records",
     "load_school_records",
     "load_student_records",
+    "lowell_selective",
     "normalize_school_records",
     "normalize_student_records",
     "normalize_grade",

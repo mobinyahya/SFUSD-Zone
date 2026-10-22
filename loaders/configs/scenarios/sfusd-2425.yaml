@@ -101,7 +101,7 @@ filters:
     outside_district_students: ignore
   assignment:
     year: "2425"
-    grades: [KG]
+    grade: KG
     student_population: applicant
     rounds: [1]
     special_programs: include

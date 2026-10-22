@@ -44,7 +44,7 @@ def test_config_deep_merge_and_root_override_precedence(tmp_path):
             "filters": {
                 "assignment": {
                     "year": "1819",
-                    "grades": ["KG"],
+                    "grade": "KG",
                     "student_population": "applicant",
                     "rounds": [1, 2],
                     "special_programs": "include",
@@ -82,7 +82,7 @@ def test_config_deep_merge_and_root_override_precedence(tmp_path):
     assert source.classification == "restricted"
     assert scenario.cache_root == explicit_cache.resolve()
     assert scenario.filter("assignment", "rounds") == (2,)
-    assert scenario.filter("assignment", "grades") == ("KG",)
+    assert scenario.filter("assignment", "grade") == "KG"
 
 
 def test_environment_roots_override_base_when_no_explicit_override(tmp_path):
@@ -444,7 +444,7 @@ def test_2324_scenarios_are_coherent_and_preserve_optimization_inputs():
     for scenario in (historical, mission_bay):
         assert required_assignment_roles <= set(scenario.source_manifest()["sources"])
         assert scenario.filter("assignment", "year") == "2324"
-        assert scenario.filter("assignment", "grades") == ("KG",)
+        assert scenario.filter("assignment", "grade") == "KG"
         assert scenario.filter("assignment", "rounds") == (1,)
     assert historical.filter("assignment", "special_programs") == (
         "exclude_any_special"
@@ -766,7 +766,8 @@ def test_noncanonical_school_year_values_are_rejected(year):
             {"outside_district_students": "drop"},
             "must be ignore or include",
         ),
-        ("assignment", {"grades": []}, "grades must be a non-empty list"),
+        ("assignment", {"grade": ["KG"]}, "grade must be a canonical grade"),
+        ("assignment", {"grades": ["KG"]}, "Unknown assignment filter keys"),
         (
             "assignment",
             {"special_programs": "remove"},
@@ -876,7 +877,7 @@ def test_assignment_secondary_bundles_resolve_only_when_both_sources_exist(year,
     scenario = load_scenario(
         {
             "scenario": "legacy",
-            "overrides": {"filters": {"assignment": {"year": year, "grades": [grade]}}},
+            "overrides": {"filters": {"assignment": {"year": year, "grade": grade}}},
         },
         environ={},
     )
@@ -893,8 +894,7 @@ def test_assignment_secondary_bundles_resolve_only_when_both_sources_exist(year,
     ("overrides", "error"),
     [
         ({"year": "1415"}, "no program/school bundle"),
-        ({"year": "2324", "grades": ["06"]}, "available grades.*KG"),
-        ({"grades": ["KG", "06"]}, "requires exactly one grade"),
+        ({"year": "2324", "grade": "06"}, "available grades.*KG"),
         (
             {"include_mission_bay": True},
             "capacity profile 'default'.*Mission Bay included",
