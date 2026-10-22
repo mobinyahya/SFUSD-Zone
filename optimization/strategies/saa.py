@@ -139,12 +139,7 @@ class SaaStrategy(Strategy):
         tie_breaking_method = str(
             self.options.get("saa_tie_breaking_method", "MTB")
         ).upper()
-        utility_scale = float(
-            self.options.get(
-                "choice_utility_scale",
-                self.options.get("utility_scale", 10_000.0),
-            )
-        )
+        utility_scale = float(self.options.get("choice_utility_scale", 100.0))
         if max_iterations <= 0:
             raise ValueError("saa max_iterations must be positive.")
         if not math.isfinite(tolerance) or tolerance < 0:

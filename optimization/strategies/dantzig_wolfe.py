@@ -127,7 +127,7 @@ class DantzigWolfeStrategy(Strategy):
         try:
             hint = initial_solution(
                 problem,
-                self.options.get("hints", "feasible"),
+                self.options.get("hints", "voronoi"),
                 solver_options=solver.options,
             )
         except FeasibleHintError as exc:
