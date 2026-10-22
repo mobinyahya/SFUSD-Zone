@@ -602,30 +602,37 @@ class _CpSatSolver(Solver):
         for u, v in problem.G.edges():
             boundary = m.NewBoolVar(f"boundary_limit_{u}_{v}")
             self._boundary_limit_vars[(u, v)] = boundary
-            if self.name == "cp_single_zone":
-                m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(boundary)
-                m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(boundary.Not())
-                boundary_vars.append(boundary)
-                continue
-
-            candidates_u = problem.candidate_zones(u)
-            candidates_v = problem.candidate_zones(v)
-            common = candidates_u & candidates_v
-            cost_u = 2 * len(common) + len(candidates_u - candidates_v)
-            cost_v = 2 * len(common) + len(candidates_v - candidates_u)
-            selected, other = (u, v) if cost_u <= cost_v else (v, u)
-            for zone in problem.candidate_zones(selected):
-                selector = x[(zone, selected)]
-                other_zone = x.get((zone, other))
-                if other_zone is None:
-                    m.AddImplication(selector, boundary)
-                    continue
-                m.AddBoolOr([selector.Not(), other_zone, boundary])
-                m.AddBoolOr([selector.Not(), other_zone.Not(), boundary.Not()])
+            self._link_cut_edge(m, problem, x, u, v, boundary)
             boundary_vars.append(boundary)
 
         max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())
         m.Add(sum(boundary_vars) <= max_cut_edges)
+
+    def _link_cut_edge(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        u: int,
+        v: int,
+        boundary: cp_model.IntVar,
+    ) -> None:
+        """Make ``boundary`` true exactly when edge ``(u, v)`` is cut."""
+
+        candidates_u = problem.candidate_zones(u)
+        candidates_v = problem.candidate_zones(v)
+        common = candidates_u & candidates_v
+        cost_u = 2 * len(common) + len(candidates_u - candidates_v)
+        cost_v = 2 * len(common) + len(candidates_v - candidates_u)
+        selected, other = (u, v) if cost_u <= cost_v else (v, u)
+        for zone in problem.candidate_zones(selected):
+            selector = x[(zone, selected)]
+            other_zone = x.get((zone, other))
+            if other_zone is None:
+                m.AddImplication(selector, boundary)
+                continue
+            m.AddBoolOr([selector.Not(), other_zone, boundary])
+            m.AddBoolOr([selector.Not(), other_zone.Not(), boundary.Not()])
 
     def _add_centroid_constraints(
         self,
@@ -1303,6 +1310,18 @@ class CpSingleZoneSolver(CpBoolSolver):
     ) -> dict[int, int]:
         return {node: 0 for node in problem.nodes if solver.Value(x[(0, node)]) == 1}
 
+    def _link_cut_edge(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        u: int,
+        v: int,
+        boundary: cp_model.IntVar,
+    ) -> None:
+        m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(boundary)
+        m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(boundary.Not())
+
     def _add_boundary_objective(
         self,
         m: cp_model.CpModel,
@@ -1313,8 +1332,7 @@ class CpSingleZoneSolver(CpBoolSolver):
         boundary_terms = []
         for u, v in problem.G.edges():
             b = m.NewBoolVar(f"bnd_{u}_{v}")
-            m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(b)
-            m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(b.Not())
+            self._link_cut_edge(m, problem, x, u, v, b)
             boundary_terms.append(problem.boundary_weight(u, v) * b)
         m.Minimize(sum(boundary_terms))
 

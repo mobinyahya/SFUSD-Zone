@@ -37,23 +37,12 @@ class Solver(ABC):
         raise ValueError(f"{self.name} does not support solution enumeration.")
 
     def _centroid_neighbor_radius(self) -> int:
-        radius = self.options.get("centroid_neighbor_radius", 0)
-        if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
-            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-        return radius
+        return checked_centroid_neighbor_radius(
+            self.options.get("centroid_neighbor_radius", 0)
+        )
 
     def _centroid_neighborhoods(self, problem: ZoneProblem) -> dict[int, set[int]]:
-        radius = self._centroid_neighbor_radius()
-        return {
-            zone: set(
-                nx.single_source_shortest_path_length(
-                    problem.G,
-                    centroid,
-                    cutoff=radius,
-                )
-            )
-            for zone, centroid in enumerate(problem.centroids)
-        }
+        return centroid_neighborhoods(problem, self._centroid_neighbor_radius())
 
     def _next_solver_log_path(
         self, problem: ZoneProblem, *, suffix: str = ".log"
@@ -122,6 +111,24 @@ class Solver(ABC):
             "solver_progress_id": progress.progress_id,
             "solver_progress_count": len(progress.entries),
         }
+
+
+def checked_centroid_neighbor_radius(radius) -> int:
+    if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
+        raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+    return radius
+
+
+def centroid_neighborhoods(problem: ZoneProblem, radius: int) -> dict[int, set[int]]:
+    """Each zone's nodes within ``radius`` hops of its centroid, owned outright."""
+
+    radius = checked_centroid_neighbor_radius(radius)
+    return {
+        zone: set(
+            nx.single_source_shortest_path_length(problem.G, centroid, cutoff=radius)
+        )
+        for zone, centroid in enumerate(problem.centroids)
+    }
 
 
 def _safe_filename(value: str) -> str:

@@ -42,11 +42,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-import networkx as nx
-
 from optimization.data import contiguity
 from optimization.problem import ZoneProblem
 from optimization.solvers.balance import balance_constraints
+from optimization.solvers.base import centroid_neighborhoods
 from optimization.solvers.cpsat import scaled_row
 
 
@@ -173,13 +172,7 @@ def build_zone_family(
     pass.
     """
 
-    if (
-        isinstance(centroid_neighbor_radius, bool)
-        or not isinstance(centroid_neighbor_radius, int)
-        or centroid_neighbor_radius < 0
-    ):
-        raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-
+    neighborhoods = centroid_neighborhoods(problem, centroid_neighbor_radius)
     nodes = list(problem.nodes)
     supports = contiguity.contiguity_supports(
         problem.G,
@@ -187,14 +180,6 @@ def build_zone_family(
         problem.centroid_school_ids,
         problem.candidate_zones,
     )
-    neighborhoods = [
-        set(
-            nx.single_source_shortest_path_length(
-                problem.G, centroid, cutoff=centroid_neighbor_radius
-            )
-        )
-        for centroid in problem.centroids
-    ]
 
     candidates: list[frozenset[int]] = []
     forced: list[frozenset[int]] = []
@@ -203,7 +188,7 @@ def build_zone_family(
         anchor = problem.centroids[zone]
         excluded = {
             node
-            for other, ball in enumerate(neighborhoods)
+            for other, ball in neighborhoods.items()
             if other != zone
             for node in ball
         }
