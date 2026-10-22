@@ -399,6 +399,7 @@ def build_generated_zone_slurm_plan(
     for entry in resolved_subconfigs:
         target = targets_by_id[entry["target"]]
         entry["skip_marker"] = str(pathlib.Path(target["skip_marker"]).resolve())
+        entry["zone_file"] = str(pathlib.Path(target["zone_file"]).resolve())
 
     resolved_targets = []
     for target in targets:
@@ -822,11 +823,26 @@ def _entry_is_skipped(entry: dict) -> bool:
 def _is_iteration_assignment_done(
     entry: dict, assignment_folder: str | pathlib.Path, iteration: int
 ) -> bool:
+    """Whether a saved assignment for ``iteration`` postdates the target's zoning.
+
+    This is a shortcut that spares building a market, and the glob cannot tell
+    one zoning's save folder from another's. A rerun rewrites the zone file, so
+    only a CSV written after it can belong to the current zoning; anything
+    older is left for the market, which reuses by exact checksum-keyed path.
+    """
     subconfig_dir = pathlib.Path(assignment_folder) / entry["name"]
     if not subconfig_dir.is_dir():
         return False
-    matches = list(subconfig_dir.glob(f"**/*_iteration{iteration}.csv"))
-    return bool(matches and any(m.is_file() and m.stat().st_size > 0 for m in matches))
+    zone_file = pathlib.Path(entry["zone_file"]) if entry.get("zone_file") else None
+    zoned_at = (
+        zone_file.stat().st_mtime_ns if zone_file and zone_file.is_file() else None
+    )
+    return any(
+        match.is_file()
+        and match.stat().st_size > 0
+        and (zoned_at is None or match.stat().st_mtime_ns >= zoned_at)
+        for match in subconfig_dir.glob(f"**/*_iteration{iteration}.csv")
+    )
 
 
 def _is_real_match_assignment_done(

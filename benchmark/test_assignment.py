@@ -5,6 +5,7 @@ import pytest
 
 from assignment.generated_zones import (
     GENERATED_ZONE_POLICY,
+    SKIP_MARKER_FILENAME,
     resolve_generated_zone_batch_configs,
     resolve_generated_zone_configs,
     run_generated_zone_assignments,
@@ -22,7 +23,7 @@ from benchmark.assignment import (
     run_assignments_for_existing_runs,
     run_ready_assignments,
 )
-from benchmark.runner import MANIFEST_FILENAME, write_json
+from benchmark.runner import MANIFEST_FILENAME, run_optimization_phase, write_json
 from benchmark.config import (
     BenchmarkTask,
     MatchingRunConfig,
@@ -374,15 +375,21 @@ def test_local_stage_targets_follow_the_saved_stages(tmp_path):
     )
 
 
-def test_pending_tasks_drop_zone_files_of_a_previous_run(tmp_path):
+def _recursive_task(tmp_path):
     config = OptimizationConfig(levels=["BlockGroup_0"], strategy="recursive")
-    task = BenchmarkTask(
+    return BenchmarkTask(
         task_id="task",
         config_hash="hash",
         config=optimization_config_to_dict(config),
         output_dir=str(tmp_path),
         capacity_slots=1,
     )
+
+
+def test_a_rerun_drops_zone_files_of_the_previous_run_when_it_starts(
+    tmp_path, monkeypatch
+):
+    task = _recursive_task(tmp_path)
     matching = MatchingRunConfig(
         enabled=True, config="assignment.yaml", compute_stage_assignments=True
     )
@@ -392,12 +399,70 @@ def test_pending_tasks_drop_zone_files_of_a_previous_run(tmp_path):
     ]
     for zone_file in stale:
         write_generated_zones({1: 0}, zone_file)
-
     targets = assignment_targets([task], matching)
-    prepare_assignment_targets([task], [task], matching)
 
+    # Planning only reads: a plan that is never submitted deletes nothing.
+    prepare_assignment_targets([task], [task], matching)
+    assert all(zone_file.exists() for zone_file in stale)
+
+    def fail(self):
+        raise RuntimeError("optimization failed")
+
+    monkeypatch.setattr(OptimizationConfig, "make_dataset", fail)
+    result = run_optimization_phase(task)
+
+    assert result.status == "ERROR"
     assert not any(zone_file.exists() for zone_file in stale)
     assert run_ready_assignments(targets, matching, tmp_path, workers=1) == 0
+
+
+def test_skipped_tasks_missing_stage_targets_are_rejected(tmp_path):
+    task = _recursive_task(tmp_path)
+    matching = MatchingRunConfig(
+        enabled=True, config="assignment.yaml", compute_stage_assignments=True
+    )
+    stage = tmp_path / "stages/stage_00_BlockGroup_0"
+    write_json(
+        str(tmp_path / MANIFEST_FILENAME),
+        {"stages": [{"index": 0, "name": stage.name, "path": f"stages/{stage.name}"}]},
+    )
+    write_generated_zones({1: 0}, tmp_path / "assignment_zones.csv")
+
+    with pytest.raises(ValueError, match=stage.name):
+        prepare_assignment_targets([task], [], matching)
+
+    stage.mkdir(parents=True)
+    (stage / SKIP_MARKER_FILENAME).write_text("ineligible\n", encoding="utf-8")
+    prepare_assignment_targets([task], [], matching)
+
+
+def test_failed_runs_kept_as_complete_have_nothing_to_prepare(tmp_path):
+    task = _recursive_task(tmp_path)
+    write_json(str(tmp_path / MANIFEST_FILENAME), {"status": "ERROR", "stages": []})
+
+    prepare_assignment_targets(
+        [task], [], MatchingRunConfig(enabled=True, config="assignment.yaml")
+    )
+
+    assert not (tmp_path / "assignment_zones.csv").exists()
+
+
+def test_reusable_assignments_are_keyed_on_the_zone_file_contents(tmp_path):
+    from loaders.config import ResolvedSource
+
+    zone_file = tmp_path / "assignment_zones.csv"
+    market = SimpleNamespace(
+        data_scenario=SimpleNamespace(
+            source_map=lambda role: {GENERATED_ZONE_POLICY: ResolvedSource(zone_file)}
+        )
+    )
+    write_generated_zones({1: 0, 2: 1}, zone_file)
+    before = MarketGenerator._zone_signature(market, GENERATED_ZONE_POLICY)
+    write_generated_zones({1: 1, 2: 0}, zone_file)
+    after = MarketGenerator._zone_signature(market, GENERATED_ZONE_POLICY)
+
+    assert before != after
+    assert MarketGenerator._zone_signature(market, "missing") is None
 
 
 def test_generated_assignment_slurm_plan_uses_nine_jobs(tmp_path):

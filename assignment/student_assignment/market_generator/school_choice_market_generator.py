@@ -2123,14 +2123,19 @@ class MarketGenerator(SchoolChoiceMarket):
             )
         return assignment_df
 
-    def _zone_signature(self, policy: str) -> str | None:
-        """The configured zone file path of a policy, or None when it has none."""
+    def _zone_signature(self, policy: str) -> dict | None:
+        """The manifest of a policy's zone file, or None when it has none.
+
+        The manifest carries the file's checksum, so a zoning rewritten in
+        place (a rerun benchmark task) never reuses the old zoning's saved
+        assignments.
+        """
         try:
             zones = self.data_scenario.source_map("assignment.zones")
         except KeyError:
             return None
         source = zones.get(policy)
-        return None if source is None else str(source.path)
+        return None if source is None else source.manifest()
 
     def _get_assignment_save_name(
         self, policy_data: Policy, iteration: int | None

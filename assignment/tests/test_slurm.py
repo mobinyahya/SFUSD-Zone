@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import subprocess
 from unittest.mock import Mock
@@ -74,9 +75,7 @@ def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     assert finalizer["id"] == "metrics-finalize"
     assert finalizer["task_indices"] == []
     assert finalizer["cpus"] == 1
-    assert finalizer["dependencies"] == {
-        "afterok": [job["id"] for job in metrics_jobs]
-    }
+    assert finalizer["dependencies"] == {"afterok": [job["id"] for job in metrics_jobs]}
     assert all(
         not set(job["dependencies"]["afterok"]) & {m["id"] for m in metrics_jobs}
         for job in metrics_jobs
@@ -1150,6 +1149,24 @@ def test_run_cached_assignment_batch_returns_empty_when_all_iterations_done(
 
     result = assignment_slurm._run_cached_assignment_batch(0, [0, 1])
     assert result == []
+
+
+def test_saved_iterations_older_than_a_rewritten_zone_file_are_not_done(tmp_path):
+    zone_file = tmp_path / "run" / "assignment_zones.csv"
+    zone_file.parent.mkdir()
+    zone_file.write_text("zone\n", encoding="utf-8")
+    saved = tmp_path / "task-root:policy" / "old-signature" / "x_iteration0.csv"
+    saved.parent.mkdir(parents=True)
+    saved.write_text("student,school\n1,101\n", encoding="utf-8")
+    entry = {"name": "task-root:policy", "zone_file": str(zone_file)}
+
+    os.utime(zone_file, ns=(1_000, 1_000))
+    os.utime(saved, ns=(2_000, 2_000))
+    assert assignment_slurm._is_iteration_assignment_done(entry, tmp_path, 0)
+
+    # A rerun rewrites the zoning after the saved assignment was written.
+    os.utime(zone_file, ns=(3_000, 3_000))
+    assert not assignment_slurm._is_iteration_assignment_done(entry, tmp_path, 0)
 
 
 def test_inject_generated_zone_preserves_reuse_assignments(tmp_path):

@@ -55,9 +55,13 @@ A local `mode: run` runs the same targets for the sweep's own tasks as one
 batch after the last task, with stage targets taken from the stages each task
 saved. Slurm needs every stage planned before the run, so there
 `compute_stage_assignments` is limited to `recursive`, `single` without
-`enumerated_solutions`, and `saa`; other strategies are rejected. Tasks about
-to run lose any zone file a previous run left, so a rerun that fails is not
-matched on its old zoning.
+`enumerated_solutions`, and `saa`; other strategies are rejected. A task drops
+the zone files and skip markers a previous run left when its optimization
+starts (never at plan time), so a rerun that fails is not matched on its old
+zoning. Saved assignments are keyed on the zone file's checksum, so a rerun
+that changes the zoning never reuses the old one's. A finished task skipped
+with `compute_stage_assignments` on must already have every stage target;
+otherwise planning fails rather than silently matching the root alone.
 
 Plans, scripts, and logs are written beneath
 `<execution.output_dir>/.slurm/`. All jobs use Slurm account and partition
