@@ -29,6 +29,8 @@ from assignment.student_assignment.market_generator.school_choice_market_generat
 
 def test_kumar_plan_uses_one_task_per_run_with_targeted_dependencies(tmp_path):
     config_path = pathlib.Path(__file__).parents[1] / "configs/kumar.config.yaml"
+    if not config_path.exists():
+        pytest.skip("kumar.config.yaml is a local, untracked config")
 
     plan, plan_path = build_slurm_plan(
         config_path,
