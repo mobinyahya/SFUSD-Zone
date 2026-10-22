@@ -311,3 +311,13 @@ def test_max_distance_validation_rejects_invalid(invalid):
         ValueError, match="max_distance must be a non-negative float, 'inf', or 'auto'."
     ):
         OptimizationConfig(levels=["BlockGroup_0"], max_distance=invalid)
+
+
+def test_unit_follows_reassigned_levels():
+    config = OptimizationConfig(levels=["BlockGroup_1", "BlockGroup_0"])
+    assert config.unit == "BlockGroup"
+    config.levels = ["Block_2"]
+    assert config.unit == "Block"
+    assert "unit" not in asdict(config)
+    with pytest.raises(ValueError, match="share one unit"):
+        OptimizationConfig(levels=["Block_1", "BlockGroup_0"])

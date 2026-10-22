@@ -25,12 +25,9 @@ def test_parse_passthrough():
     assert LevelSpec.parse(spec) is spec
 
 
-def test_navigation():
-    spec = LevelSpec("BlockGroup", 2)
-    assert spec.base() == LevelSpec("BlockGroup", 0)
-    assert spec.finer() == LevelSpec("BlockGroup", 1)
-    assert spec.coarser() == LevelSpec("BlockGroup", 3)
+def test_is_base():
     assert LevelSpec("BlockGroup", 0).is_base
+    assert not LevelSpec("BlockGroup", 2).is_base
 
 
 @pytest.mark.parametrize(
@@ -56,8 +53,6 @@ def test_block_0_5_is_coarsened_from_block_0():
     assert spec.parent() == LevelSpec("Block", 0)
     assert LevelSpec("Block", 1).parent() == LevelSpec("Block", 0)
     assert LEVEL_NODE_TARGETS["Block"][1] < LEVEL_NODE_TARGETS["Block"][0.5]
-    with pytest.raises(ValueError):
-        spec.finer()
 
 
 def test_integral_float_depth_is_the_integer_level():

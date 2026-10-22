@@ -261,12 +261,8 @@ class OptimizationConfig:
         self.data = deepcopy(dict(self.data))
         self._data_scenario = _resolved_data_scenario or load_scenario(self.data)
 
-        # All levels in a run share one unit (the base graph is built per unit).
+        self.unit
         specs = [LevelSpec.parse(level) for level in self.levels]
-        units = {level.unit for level in specs}
-        if len(units) != 1:
-            raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
-        self.unit = units.pop()
         unsupported = [
             level.name
             for level in specs
@@ -700,6 +696,14 @@ class OptimizationConfig:
                 "school_distance_area_weight and school_distance_student_weight "
                 f"must sum to 1, got {sum(weights):g}."
             )
+
+    @property
+    def unit(self) -> str:
+        """The one Census unit every level shares (the base graph is per unit)."""
+        units = {LevelSpec.parse(level).unit for level in self.levels}
+        if len(units) != 1:
+            raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
+        return units.pop()
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings

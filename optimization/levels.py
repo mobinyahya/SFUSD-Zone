@@ -98,26 +98,6 @@ class LevelSpec:
         """True if this is the finest (depth 0) graph for its unit."""
         return self.depth == 0
 
-    def base(self) -> "LevelSpec":
-        """The depth-0 level for the same unit."""
-        return LevelSpec(self.unit, 0)
-
-    def coarser(self) -> "LevelSpec":
-        self._require_integer_depth("coarser")
-        return LevelSpec(self.unit, self.depth + 1)
-
-    def finer(self) -> "LevelSpec":
-        self._require_integer_depth("finer")
-        if self.is_base:
-            raise ValueError("Base level has no finer level within its unit.")
-        return LevelSpec(self.unit, self.depth - 1)
-
-    def _require_integer_depth(self, step: str) -> None:
-        if not isinstance(self.depth, int):
-            raise ValueError(
-                f"{self} has a fractional depth; it has no {step} integer neighbor."
-            )
-
     def parent(self) -> "LevelSpec":
         """The level this one is coarsened from (see ``LEVEL_PARENT_DEPTHS``)."""
         if self.is_base:
