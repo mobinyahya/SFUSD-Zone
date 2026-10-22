@@ -37,11 +37,10 @@ from optimization.data.initial_solutions import FeasibleHintError, initial_solut
 from optimization.data.mid import build_mid_market
 from optimization.data.saa import build_saa_market
 from optimization.dw_options import DW_OBJECTIVES
-from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.solvers.recom import ReComSolver
 from optimization.strategies.base import Strategy, register
-from optimization.zone_columns import ZonePool, boundary_limit
+from optimization.zone_columns import ZonePool
 from optimization.zone_family import build_zone_family
 from optimization.zone_redraw import ZoneRedraw
 from optimization.zone_welfare import (
@@ -73,6 +72,11 @@ def build_objective(problem, config, options):
 
 @register("dantzig_wolfe")
 class DantzigWolfeStrategy(Strategy):
+    @property
+    def reads_assignment_market(self) -> bool:
+        # Both welfare objectives build a market; the boundary one needs none.
+        return self.options.get("dw_objective", "mid") != "boundary"
+
     def run(self, dataset, solver):
         if getattr(solver, "name", None) != "cp_bool":
             raise ValueError("dantzig_wolfe requires solver='cp_bool'.")
@@ -101,8 +105,7 @@ class DantzigWolfeStrategy(Strategy):
 
         start = time.monotonic()
         deadline = start + total
-        problem = dataset.problem_for(LevelSpec.parse(self.options["levels"][-1]))
-        problem.boundary_prop = float(self.options.get("boundary_prop", -1))
+        problem = self.problem_for(dataset, self.options["levels"][-1])
         radius = int(solver.options.get("centroid_neighbor_radius", 0))
         family = build_zone_family(problem, centroid_neighbor_radius=radius)
         objective = build_objective(problem, dataset.config, self.options)
@@ -115,12 +118,8 @@ class DantzigWolfeStrategy(Strategy):
             nonlocal incumbent, incumbent_score
             if columns is None:
                 return
-            if problem.boundary_prop >= 0 and sum(
-                c.perimeter for c in columns
-            ) / 2 > boundary_limit(problem):
-                return
             score = sum(c.score for c in columns)
-            if score > incumbent_score:
+            if score > incumbent_score and pool.tiles(columns):
                 incumbent, incumbent_score = tuple(columns), score
 
         hint_metadata: dict = {}
@@ -128,7 +127,7 @@ class DantzigWolfeStrategy(Strategy):
         try:
             hint = initial_solution(
                 problem,
-                self.options.get("hints", "feasible"),
+                self.options.get("hints", "voronoi"),
                 solver_options=solver.options,
             )
         except FeasibleHintError as exc:

@@ -24,8 +24,10 @@ the base zoning model's label-`z` rows -- nothing added, nothing relaxed. A set
    neighbour `u in A` whose geometry is strictly closer to `sigma_z` than `v`'s
    is, drawn from `contiguity.contiguity_supports`;
 5. the FRL, racial and aggregate-capacity balance rows and the school-count
-   band hold, **in the integer-rounded form `cp_bool` writes them** -- each
-   coefficient `round(CP_SAT_SCALE * a_v)` against an integer right-hand side.
+   band hold, **in the integer-rounded form `cp_bool` writes them** -- read
+   from the same `cpsat.scaled_row`, which scales by `CP_SAT_SCALE` and rounds
+   each side away from feasibility (a `>=` row floors its coefficients and
+   ceils its right-hand side, a `<=` row the reverse).
 
 Condition 4 implies `G[A]` is connected, and is strictly stronger: iterating
 the support gives every member a distance-decreasing path to `c_z`, so a zone
@@ -89,27 +91,29 @@ without a market.
 
 ## The master
 
-With `b(A)` as above and an optional district budget `B`:
+With `c(A)` half the *unweighted* number of edges leaving `A` and an optional
+district budget `B`:
 
 ```text
 maximize  sum(z,A) W(A) lambda[z,A]
 subject to
   sum(z,A: v in A) lambda[z,A] = 1        for every v in V
   sum(A in F_z)    lambda[z,A] = 1        for every label z
-  sum(z,A) b(A) lambda[z,A] <= B          optional boundary cap
+  sum(z,A) c(A) lambda[z,A] <= B          optional boundary cap
   lambda[z,A] in {0,1}
 ```
 
-Each cut edge appears in two zone perimeters, so the boundary row is the
-district boundary cost, and `B = floor(boundary_prop * sum_E w)` is the same
-number `cp_bool`'s cut-edge cap uses at unit weights.
+Each cut edge appears in two zone perimeters, so the boundary row counts the
+district's cut edges, and `B = floor(boundary_prop * |E|)` is exactly
+`cp_bool`'s cut-edge cap. Edge weights never enter the cap, under
+`weight_edges` or not; they enter only the `boundary` objective's `b(A)`.
 
 Relax `lambda >= 0`. Let `alpha_v` and `gamma_z` be the free duals of the cover
 and convexity rows and `mu >= 0` the boundary dual. Pricing label `z` maximizes
 the reduced welfare
 
 ```text
-max over A in F_z:  W(A) - sum(v in A) alpha_v - gamma_z - mu b(A).
+max over A in F_z:  W(A) - sum(v in A) alpha_v - gamma_z - mu c(A).
 ```
 
 ### The duals are the interesting part

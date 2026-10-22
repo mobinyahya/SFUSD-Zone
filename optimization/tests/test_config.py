@@ -311,3 +311,44 @@ def test_max_distance_validation_rejects_invalid(invalid):
         ValueError, match="max_distance must be a non-negative float, 'inf', or 'auto'."
     ):
         OptimizationConfig(levels=["BlockGroup_0"], max_distance=invalid)
+
+
+def test_unit_follows_reassigned_levels():
+    config = OptimizationConfig(levels=["BlockGroup_1", "BlockGroup_0"])
+    assert config.unit == "BlockGroup"
+    config.levels = ["Block_2"]
+    assert config.unit == "Block"
+    assert "unit" not in asdict(config)
+    with pytest.raises(ValueError, match="share one unit"):
+        OptimizationConfig(levels=["Block_1", "BlockGroup_0"])
+
+
+def test_solver_name_is_checked_against_the_registry():
+    with pytest.raises(ValueError, match="solver must be one of"):
+        OptimizationConfig(solver="cp_sat")
+
+
+@pytest.mark.parametrize(
+    "strategy", ["iterative_choice", "priced_access", "mid_decomp", "saa"]
+)
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"max_iterations": 0}, "max_iterations must be a positive integer"),
+        ({"max_iterations": 2.5}, "max_iterations must be a positive integer"),
+        ({"tolerance": -1e-3}, "tolerance must be finite and non-negative"),
+        ({"tolerance": float("inf")}, "tolerance must be finite and non-negative"),
+    ],
+)
+def test_every_iterative_strategy_checks_its_loop_settings(
+    strategy, overrides, message
+):
+    with pytest.raises(ValueError, match=message):
+        OptimizationConfig(strategy=strategy, solver="cp_bool", **overrides)
+
+
+def test_recursive_accepts_boundary_prop():
+    config = OptimizationConfig(
+        strategy="recursive", levels=["BlockGroup_1", "BlockGroup_0"], boundary_prop=0.3
+    )
+    assert config.make_strategy().options["boundary_prop"] == 0.3

@@ -369,12 +369,13 @@ class ZonePricer:
                     "A boundary dual was supplied but the pricing model has no "
                     "cut variables; set problem.boundary_prop >= 0."
                 )
-            if price:
-                for _, weight, var in built.cut_terms:
-                    coefficient = math.floor(scale * price * weight / 2)
-                    if coefficient:
-                        variables.append(var)
-                        coefficients.append(-coefficient)
+            # The boundary row counts cut edges unweighted, so every cut
+            # indicator carries the same price whatever its weight.
+            coefficient = math.floor(scale * price / 2)
+            if coefficient:
+                for _, _, var in built.cut_terms:
+                    variables.append(var)
+                    coefficients.append(-coefficient)
         if variables:
             built.model.Maximize(
                 cp_model.LinearExpr.WeightedSum(variables, coefficients)
@@ -563,9 +564,8 @@ def add_cut_indicators(model, problem, x, *, tag=""):
 
     terms = []
     for u, v in problem.G.edges:
+        # Zero-weight edges stay: the boundary cap counts every cut edge.
         weight = problem.boundary_weight(u, v)
-        if not weight:
-            continue
         inside_u, inside_v = x.get(u), x.get(v)
         if inside_u is None and inside_v is None:
             continue

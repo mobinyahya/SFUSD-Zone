@@ -18,20 +18,15 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import networkx as nx
 from ortools.sat.python import cp_model
 
 from choice.objective import ChoiceCut
-from optimization.access_inequalities import (
-    cardinality_cliques,
-    completion_pairs,
-    pair_key,
-    transitivity_triples,
-)
+from optimization.access_inequalities import pair_key, plan_access_inequalities
 from optimization.data import contiguity
-from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
@@ -62,7 +57,6 @@ SCHOOL_DISTANCE_SCALE = 10**8
 # what the old arithmetic produced instead of re-serving it.
 COEFFICIENT_ROUNDING = "conservative"
 _SCALE_SNAP = 1e-9  # absorbs float noise so exact multiples are not nudged
-_SENSE = {"<=", ">=", "=="}
 _CP_SAT_INT_PARAMETERS = (
     "linearization_level",
     "cp_model_probing_level",
@@ -228,24 +222,12 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        hint = self._hint_assignment(problem)
+        hint = self.hint_assignment(problem)
         if not hint:
             return
         for (z, i), var in x.items():
             if i in hint:
                 m.AddHint(var, 1 if hint[i] == z else 0)
-
-    def _hint_assignment(self, problem: ZoneProblem) -> dict[int, int] | None:
-        if problem.hint:
-            return problem.hint
-        if "hints" not in self.options:
-            return None
-        initial = initial_solution(
-            problem,
-            self.options.get("hints"),
-            solver_options=self.options,
-        )
-        return initial.assignment if initial is not None else None
 
     def _add_search_strategy(
         self,
@@ -602,30 +584,37 @@ class _CpSatSolver(Solver):
         for u, v in problem.G.edges():
             boundary = m.NewBoolVar(f"boundary_limit_{u}_{v}")
             self._boundary_limit_vars[(u, v)] = boundary
-            if self.name == "cp_single_zone":
-                m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(boundary)
-                m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(boundary.Not())
-                boundary_vars.append(boundary)
-                continue
-
-            candidates_u = problem.candidate_zones(u)
-            candidates_v = problem.candidate_zones(v)
-            common = candidates_u & candidates_v
-            cost_u = 2 * len(common) + len(candidates_u - candidates_v)
-            cost_v = 2 * len(common) + len(candidates_v - candidates_u)
-            selected, other = (u, v) if cost_u <= cost_v else (v, u)
-            for zone in problem.candidate_zones(selected):
-                selector = x[(zone, selected)]
-                other_zone = x.get((zone, other))
-                if other_zone is None:
-                    m.AddImplication(selector, boundary)
-                    continue
-                m.AddBoolOr([selector.Not(), other_zone, boundary])
-                m.AddBoolOr([selector.Not(), other_zone.Not(), boundary.Not()])
+            self._link_cut_edge(m, problem, x, u, v, boundary)
             boundary_vars.append(boundary)
 
         max_cut_edges = math.floor(problem.boundary_prop * problem.G.number_of_edges())
         m.Add(sum(boundary_vars) <= max_cut_edges)
+
+    def _link_cut_edge(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        u: int,
+        v: int,
+        boundary: cp_model.IntVar,
+    ) -> None:
+        """Make ``boundary`` true exactly when edge ``(u, v)`` is cut."""
+
+        candidates_u = problem.candidate_zones(u)
+        candidates_v = problem.candidate_zones(v)
+        common = candidates_u & candidates_v
+        cost_u = 2 * len(common) + len(candidates_u - candidates_v)
+        cost_v = 2 * len(common) + len(candidates_v - candidates_u)
+        selected, other = (u, v) if cost_u <= cost_v else (v, u)
+        for zone in problem.candidate_zones(selected):
+            selector = x[(zone, selected)]
+            other_zone = x.get((zone, other))
+            if other_zone is None:
+                m.AddImplication(selector, boundary)
+                continue
+            m.AddBoolOr([selector.Not(), other_zone, boundary])
+            m.AddBoolOr([selector.Not(), other_zone.Not(), boundary.Not()])
 
     def _add_centroid_constraints(
         self,
@@ -707,22 +696,15 @@ class _CpSatSolver(Solver):
         sense: str,
         rhs: float,
     ) -> None:
-        if sense not in _SENSE:
-            raise ValueError(f"Bad sense {sense!r}.")
+        live = [(c, z, i) for (c, z, i) in terms if (z, i) in x]
+        coefficients, bound = scaled_row([c for c, _, _ in live], sense, rhs)
+        expr = sum(a * x[(z, i)] for a, (_, z, i) in zip(coefficients, live))
         if sense == "<=":
-            # Over-state the left side and under-state the bound, so satisfying
-            # the scaled row implies satisfying the exact one.
-            expr = _scaled_expr(x, terms, _ceil_scaled)
-            m.Add(expr <= _floor_scaled(rhs))
+            m.Add(expr <= bound)
         elif sense == ">=":
-            expr = _scaled_expr(x, terms, _floor_scaled)
-            m.Add(expr >= _ceil_scaled(rhs))
+            m.Add(expr >= bound)
         else:
-            # An equality has no conservative rounding: tightening either side
-            # moves the only feasible hyperplane. Accept it only when the scale
-            # represents every coefficient exactly.
-            expr = _scaled_expr(x, terms, _exact_scaled)
-            m.Add(expr == _exact_scaled(rhs))
+            m.Add(expr == bound)
 
     def _candidate_nodes(self, problem: ZoneProblem, zone: int) -> list[int]:
         return [n for n in problem.nodes if zone in problem.candidate_zones(n)]
@@ -833,67 +815,26 @@ class _CpSatSolver(Solver):
         access_vars: dict[tuple[int, int], Any],
         access_joints: dict[tuple[int, int, int], Any],
     ) -> None:
-        """Tighten the relaxation of the co-zoning indicators.
+        """Tighten the relaxation of the co-zoning indicators."""
 
-        Only variables are constrained; a pair the linearization already fixed
-        to a constant carries no slack to remove.
-        """
-        self._access_inequality_counts = {
-            "cardinality": 0,
-            "triangle": 0,
-            "pairs": 0,
-            "completed": 0,
-        }
-        want_cardinality = bool(self.options.get("choice_access_cardinality", False))
-        want_triangle = bool(self.options.get("choice_access_triangle", False))
-        if not (want_cardinality or want_triangle):
-            return
-        variable_pairs = [
-            pair
-            for pair, var in access_vars.items()
-            if not isinstance(var, (int, float))
-        ]
-        self._access_inequality_counts["pairs"] = len(variable_pairs)
-        if not variable_pairs:
-            return
-
-        if want_triangle and bool(self.options.get("choice_access_complete", False)):
-            # Create the missing side of each near-triangle so transitivity has
-            # something to bind on. Each new pair also brings per-zone
-            # conjunction variables, so the limit is a real cost control.
-            created = completion_pairs(
-                variable_pairs,
-                problem.candidate_zones,
-                limit=int(self.options.get("choice_access_completion_limit", 20_000)),
-            )
-            for first, second in created:
-                var = self._get_or_create_access_var(
-                    m, problem, x, access_vars, access_joints, first, second
-                )
-                if not isinstance(var, (int, float)):
-                    variable_pairs.append(pair_key(first, second))
-            self._access_inequality_counts["completed"] = len(created)
-
-        if want_cardinality:
-            for anchor, members in cardinality_cliques(
-                variable_pairs, problem.candidate_zones
-            ):
-                m.Add(
-                    sum(access_vars[pair_key(anchor, member)] for member in members)
-                    <= 1
-                )
-                self._access_inequality_counts["cardinality"] += 1
-
-        if want_triangle:
-            limit = int(self.options.get("choice_access_triangle_limit", 200_000))
-            for u, v, w in transitivity_triples(variable_pairs, limit=limit):
-                self._access_inequality_counts["triangle"] += 1
-                a_uv = access_vars[pair_key(u, v)]
-                a_vw = access_vars[pair_key(v, w)]
-                a_uw = access_vars[pair_key(u, w)]
-                m.Add(a_uv + a_vw - a_uw <= 1)
-                m.Add(a_uv + a_uw - a_vw <= 1)
-                m.Add(a_uw + a_vw - a_uv <= 1)
+        plan = plan_access_inequalities(
+            access_vars,
+            problem.candidate_zones,
+            self.options,
+            lambda u, v: self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, u, v
+            ),
+        )
+        self._access_inequality_counts = plan.counts
+        for anchor, members in plan.cliques:
+            m.Add(sum(access_vars[pair_key(anchor, member)] for member in members) <= 1)
+        for u, v, w in plan.triangles:
+            a_uv = access_vars[pair_key(u, v)]
+            a_vw = access_vars[pair_key(v, w)]
+            a_uw = access_vars[pair_key(u, w)]
+            m.Add(a_uv + a_vw - a_uw <= 1)
+            m.Add(a_uv + a_uw - a_vw <= 1)
+            m.Add(a_uw + a_vw - a_uv <= 1)
 
     def _get_or_create_access_var(
         self,
@@ -1136,7 +1077,7 @@ class CpIntSolver(CpBoolSolver):
         x: _AssignmentVars,
         y: _ZoneVars,
     ) -> None:
-        hint = self._hint_assignment(problem)
+        hint = self.hint_assignment(problem)
         if not hint:
             return
         for node, zone in hint.items():
@@ -1310,6 +1251,18 @@ class CpSingleZoneSolver(CpBoolSolver):
     ) -> dict[int, int]:
         return {node: 0 for node in problem.nodes if solver.Value(x[(0, node)]) == 1}
 
+    def _link_cut_edge(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+        u: int,
+        v: int,
+        boundary: cp_model.IntVar,
+    ) -> None:
+        m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(boundary)
+        m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(boundary.Not())
+
     def _add_boundary_objective(
         self,
         m: cp_model.CpModel,
@@ -1320,8 +1273,7 @@ class CpSingleZoneSolver(CpBoolSolver):
         boundary_terms = []
         for u, v in problem.G.edges():
             b = m.NewBoolVar(f"bnd_{u}_{v}")
-            m.Add(x[(0, u)] != x[(0, v)]).OnlyEnforceIf(b)
-            m.Add(x[(0, u)] == x[(0, v)]).OnlyEnforceIf(b.Not())
+            self._link_cut_edge(m, problem, x, u, v, b)
             boundary_terms.append(problem.boundary_weight(u, v) * b)
         m.Minimize(sum(boundary_terms))
 
@@ -1344,14 +1296,29 @@ def _scaled_ceil(value: float, scale: float) -> int:
     return math.ceil(float(value) * scale)
 
 
-def _scaled_expr(
-    x: _AssignmentVars,
-    terms: list[_Term],
-    scale_coefficient,
-) -> Any:
-    """Build ``sum(scale_coefficient(c) * x[z][i])`` over the live variables."""
+def scaled_row(
+    coefficients: Sequence[float], sense: str, rhs: float
+) -> tuple[list[int], int]:
+    """The integer row CP-SAT solves for ``sum(c * x) <sense> rhs``.
 
-    return sum(scale_coefficient(c) * x[(z, i)] for (c, z, i) in terms if (z, i) in x)
+    Every consumer that must accept exactly what ``cp_bool`` accepts -- the
+    Dantzig--Wolfe zone family, its pricer and its redraws -- reads its rows
+    from here. Each side is rounded away from feasibility (see
+    ``COEFFICIENT_ROUNDING``): a ``<=`` row over-states the left side and
+    under-states the bound, a ``>=`` row the reverse, so satisfying the scaled
+    row implies satisfying the exact one.
+    """
+
+    if sense == "<=":
+        return [_ceil_scaled(c) for c in coefficients], _floor_scaled(rhs)
+    if sense == ">=":
+        return [_floor_scaled(c) for c in coefficients], _ceil_scaled(rhs)
+    if sense == "==":
+        # An equality has no conservative rounding: tightening either side
+        # moves the only feasible hyperplane. Accept it only when the scale
+        # represents every coefficient exactly.
+        return [_exact_scaled(c) for c in coefficients], _exact_scaled(rhs)
+    raise ValueError(f"Bad sense {sense!r}.")
 
 
 def _checked(value: float) -> float:

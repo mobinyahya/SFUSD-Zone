@@ -734,3 +734,10 @@ def test_access_inequalities_do_not_change_the_integer_optimum(name, flags):
     assert solution.objective == pytest.approx(10.0)
     assert solution.assignment[1] == 0
     assert solution.assignment[7] == 1
+    # Every backend reports what it added: 1-4 and 4-7 are the variable pairs,
+    # and 1 and 7 cannot share a zone, so anchor 4 caps them as one clique.
+    assert solution.metadata["choice_access_pairs"] == (2 if flags else 0)
+    assert solution.metadata["choice_access_cardinality"] == int(
+        bool(flags.get("choice_access_cardinality"))
+    )
+    assert solution.metadata["choice_access_triangle"] == 0

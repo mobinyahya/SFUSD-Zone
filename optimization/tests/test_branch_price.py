@@ -339,10 +339,15 @@ def test_branching_closes_a_strict_integer_gap_and_reprices_children():
 
         def column(self, zone, nodes):
             score = float(all(n < 3 for n in nodes) or all(n >= 3 for n in nodes))
-            return ZoneColumn(zone, frozenset(nodes), score, 0)
+            return ZoneColumn(zone, frozenset(nodes), score, 0, 0)
 
         def admit(self, zone, nodes):
             return self.column(zone, nodes)
+
+        def tiles(self, columns):
+            return {c.zone for c in columns} == set(range(p.Z)) and sorted(
+                n for c in columns for n in c.nodes
+            ) == sorted(self.nodes)
 
         def add(self, column):
             key = (column.zone, column.nodes)
@@ -457,8 +462,8 @@ def test_a_zone_the_family_rejects_is_skipped_rather_than_raising():
 def test_phase_one_deficits_cannot_hide_overcoverage():
     p = make_grid_problem(2, 2)
     columns = (
-        ZoneColumn(0, frozenset(p.nodes), 0.0, 0),
-        ZoneColumn(1, frozenset(p.nodes), 0.0, 0),
+        ZoneColumn(0, frozenset(p.nodes), 0.0, 0, 0),
+        ZoneColumn(1, frozenset(p.nodes), 0.0, 0, 0),
     )
     lp = solve_master(p, columns, 5, phase_one=True)
     assert lp.status == "OPTIMAL"
@@ -720,9 +725,9 @@ def test_the_search_shrinks_the_budget_rather_than_calling_a_non_tiling_integral
     # Scores stay inside BoundaryZoneObjective's own a-priori bound of zero, so
     # the root node is not closed against the incumbent before it is priced.
     columns = (
-        ZoneColumn(0, frozenset({0, 1, 2}), -1.0, 0),
-        ZoneColumn(1, frozenset({3, 4, 5}), -1.0, 0),
-        ZoneColumn(0, frozenset({0, 1, 2, 3}), -0.001, 0),
+        ZoneColumn(0, frozenset({0, 1, 2}), -1.0, 0, 0),
+        ZoneColumn(1, frozenset({3, 4, 5}), -1.0, 0, 0),
+        ZoneColumn(0, frozenset({0, 1, 2, 3}), -0.001, 0, 0),
     )
 
     def priced_out(pool_, zone, duals, decisions, **kwargs):

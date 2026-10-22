@@ -29,19 +29,108 @@ from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
 
 
-_STRATEGIES = {
-    "single",
-    "recursive",
-    "iterative_choice",
-    "mid",
-    "mid_decomp",
-    "saa",
-    "direct_samples",
-    "short_bursts_choice",
-    "priced_access",
-    "stable_cutoff",
-    "dantzig_wolfe",
+# Strategies that read max_iterations, and those that read tolerance.
+_MAX_ITERATION_STRATEGIES = {"iterative_choice", "priced_access", "mid_decomp", "saa"}
+_TOLERANCE_STRATEGIES = _MAX_ITERATION_STRATEGIES | {"dantzig_wolfe"}
+
+# Field validation tables. ``strategy``, ``solver`` and
+# ``adaptive_short_bursts_objective`` are checked against their registries.
+_CHOICES = {
+    "dw_objective": DW_OBJECTIVES,
+    "dw_master_method": tuple(sorted(DW_MASTER_METHODS)),
+    "mid_utility_handling": ("exponentiate", "omit_nonpositive"),
+    "mid_preference_source": MID_PREFERENCE_SOURCES,
+    "saa_welfare_bound": WELFARE_BOUNDS,
+    "priced_access_price_source": PRICE_SOURCES,
+    "budget_accounting": BUDGET_ACCOUNTING_MODES,
+    "hints": ("feasible", "voronoi", "none"),
+    "short_bursts_method": ("recom", "relaxed_recom"),
+    "adaptive_short_bursts_pair_selector": ("uniform", "lagrangian_softmax"),
 }
+_BOOLEANS = (
+    "weight_edges",
+    "mid_transport_bounds",
+    "mid_complementary_slackness",
+    "saa_relative_gap",
+    "saa_multicut",
+    "stable_cutoff_non_wastefulness",
+    "stable_cutoff_aggregate_stability",
+    "choice_access_triangle",
+    "choice_access_cardinality",
+    "choice_access_complete",
+    "dw_pricing_parallel",
+    "dw_redraw",
+)
+# Integer fields and their minimum (``None``: any integer).
+_INTEGERS = {
+    "enumerated_solutions": None,
+    "recom_iterations": None,
+    "centroid_neighbor_radius": 0,
+    "choice_access_triangle_limit": 0,
+    "choice_access_completion_limit": 0,
+    "dw_recom_samples": 0,
+    "short_bursts_length": 1,
+    "mid_lottery_scale": 1,
+    "saa_num_seeds": 1,
+    "zoned_transport_workers": 1,
+    "stable_cutoff_num_seeds": 1,
+    "priced_access_cut_levels": 1,
+    "dw_recom_chains": 1,
+    "dw_pricing_scale": 1,
+    "dw_pricing_columns_per_call": 1,
+    "dw_redraw_splits_per_call": 1,
+}
+_INTEGER_KINDS = {
+    None: "an integer",
+    0: "a non-negative integer",
+    1: "a positive integer",
+}
+# Numeric fields, coerced to float: the error message and the bounds.
+_NUMBERS = {
+    "boundary_prop": ("must be at most 1; negative disables it", {"maximum": 1.0}),
+    "feasible_hint_time_limit": (
+        "must be positive",
+        {"minimum": 0.0, "open_minimum": True, "finite": True},
+    ),
+    "priced_access_price_scale": ("must be non-negative", {"minimum": 0.0}),
+    "adaptive_short_bursts_lr": (
+        "must be positive",
+        {"minimum": 0.0, "open_minimum": True},
+    ),
+    "adaptive_short_bursts_temperature": (
+        "must be positive",
+        {"minimum": 0.0, "open_minimum": True},
+    ),
+    "adaptive_short_bursts_unassigned_weight": (
+        "must be finite and non-negative",
+        {"minimum": 0.0, "finite": True},
+    ),
+    "adaptive_short_bursts_designated_weight": (
+        "must be finite and non-negative",
+        {"minimum": 0.0, "finite": True},
+    ),
+    "dw_recom_time_limit": (
+        "must be finite and nonnegative",
+        {"minimum": 0.0, "finite": True},
+    ),
+    "dw_dual_smoothing": (
+        "must lie in (0, 1]",
+        {"minimum": 0.0, "maximum": 1.0, "open_minimum": True},
+    ),
+    "dw_pricing_time_limit": (
+        "must be positive or infinity",
+        {"minimum": 0.0, "open_minimum": True},
+    ),
+    "dw_overlap_prop": (
+        "must lie in [0, 1]",
+        {"minimum": 0.0, "maximum": 1.0},
+    ),
+    "dw_redraw_time_limit": ("must be nonnegative or infinity", {"minimum": 0.0}),
+}
+
+
+def _is_integer(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _legacy_data_config() -> dict[str, Any]:
@@ -261,12 +350,8 @@ class OptimizationConfig:
         self.data = deepcopy(dict(self.data))
         self._data_scenario = _resolved_data_scenario or load_scenario(self.data)
 
-        # All levels in a run share one unit (the base graph is built per unit).
+        self.unit
         specs = [LevelSpec.parse(level) for level in self.levels]
-        units = {level.unit for level in specs}
-        if len(units) != 1:
-            raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
-        self.unit = units.pop()
         unsupported = [
             level.name
             for level in specs
@@ -277,18 +362,51 @@ class OptimizationConfig:
             raise ValueError(
                 f"No predefined graph size for levels: {', '.join(unsupported)}."
             )
-        if self.strategy not in _STRATEGIES:
+        import optimization.solvers  # noqa: F401  (registers the solvers)
+        from optimization.solvers.base import available_solvers
+        from optimization.solvers.recom import ADAPTIVE_OBJECTIVES
+        from optimization.strategies.base import available_strategies
+
+        for name, choices in {
+            "strategy": available_strategies(),
+            "solver": available_solvers(),
+            "adaptive_short_bursts_objective": ADAPTIVE_OBJECTIVES,
+            **_CHOICES,
+        }.items():
+            if getattr(self, name) not in choices:
+                raise ValueError(f"{name} must be one of: {', '.join(choices)}.")
+        for name in _BOOLEANS:
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be a Boolean.")
+        for name, minimum in _INTEGERS.items():
+            value = getattr(self, name)
+            if not _is_integer(value) or (minimum is not None and value < minimum):
+                raise ValueError(f"{name} must be {_INTEGER_KINDS[minimum]}.")
+        for name, (message, bounds) in _NUMBERS.items():
+            self._check_number(name, message, **bounds)
+        for name in ("saa_tie_breaking_method", "stable_cutoff_tie_breaking_method"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or value.upper() not in {"MTB", "STB"}:
+                raise ValueError(f"{name} must be one of: MTB, STB.")
+            setattr(self, name, value.upper())
+        if self.strategy in _MAX_ITERATION_STRATEGIES and (
+            not _is_integer(self.max_iterations) or self.max_iterations <= 0
+        ):
             raise ValueError(
-                f"strategy must be one of: {', '.join(sorted(_STRATEGIES))}."
+                f"max_iterations must be a positive integer for {self.strategy}."
             )
+        if self.strategy in _TOLERANCE_STRATEGIES:
+            self._check_number(
+                "tolerance",
+                f"must be finite and non-negative for {self.strategy}",
+                minimum=0.0,
+                finite=True,
+            )
+
         if self.strategy == "recursive" and self.looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
         if self.solver == "cp_single_zone" and self.strategy != "single":
             raise ValueError("cp_single_zone requires strategy='single'.")
-        if isinstance(self.enumerated_solutions, bool) or not isinstance(
-            self.enumerated_solutions, int
-        ):
-            raise ValueError("enumerated_solutions must be an integer.")
         if self.enumerated_solutions > 0:
             if self.solver not in {"cp_bool", "cp_int"}:
                 raise ValueError(
@@ -296,19 +414,7 @@ class OptimizationConfig:
                 )
             if self.strategy != "single":
                 raise ValueError("enumerated_solutions requires strategy='single'.")
-        if not isinstance(self.weight_edges, bool):
-            raise ValueError("weight_edges must be a Boolean.")
         self._validate_school_distance()
-        if isinstance(self.boundary_prop, bool):
-            raise ValueError("boundary_prop must be at most 1; negative disables it.")
-        try:
-            self.boundary_prop = float(self.boundary_prop)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "boundary_prop must be at most 1; negative disables it."
-            ) from exc
-        if math.isnan(self.boundary_prop) or self.boundary_prop > 1:
-            raise ValueError("boundary_prop must be at most 1; negative disables it.")
         if isinstance(self.max_distance, str):
             if self.max_distance.strip().lower() == "auto":
                 self.max_distance = "auto"
@@ -348,69 +454,6 @@ class OptimizationConfig:
         self.include_mission_bay
         self.frl_estimate
         self.outside_district_students
-        if self.dw_objective not in DW_OBJECTIVES:
-            raise ValueError(
-                f"dw_objective must be one of: {', '.join(DW_OBJECTIVES)}."
-            )
-        for name in ("dw_recom_samples", "dw_recom_chains"):
-            value = getattr(self, name)
-            minimum = 0 if name == "dw_recom_samples" else 1
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"{name} must be an integer >= {minimum}.")
-        if (
-            isinstance(self.dw_recom_time_limit, bool)
-            or not math.isfinite(self.dw_recom_time_limit)
-            or self.dw_recom_time_limit < 0
-        ):
-            raise ValueError("dw_recom_time_limit must be finite and nonnegative.")
-        if self.dw_master_method not in DW_MASTER_METHODS:
-            raise ValueError(
-                f"dw_master_method must be one of: "
-                f"{', '.join(sorted(DW_MASTER_METHODS))}."
-            )
-        if (
-            isinstance(self.dw_dual_smoothing, bool)
-            or not isinstance(self.dw_dual_smoothing, (int, float))
-            or not 0.0 < float(self.dw_dual_smoothing) <= 1.0
-        ):
-            raise ValueError("dw_dual_smoothing must lie in (0, 1].")
-        self.dw_dual_smoothing = float(self.dw_dual_smoothing)
-        for name in (
-            "dw_pricing_scale",
-            "dw_pricing_columns_per_call",
-            "dw_redraw_splits_per_call",
-        ):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer.")
-        if not isinstance(self.dw_pricing_parallel, bool):
-            raise ValueError("dw_pricing_parallel must be a Boolean.")
-        if (
-            isinstance(self.dw_pricing_time_limit, bool)
-            or not isinstance(self.dw_pricing_time_limit, (int, float))
-            or math.isnan(self.dw_pricing_time_limit)
-            or self.dw_pricing_time_limit <= 0
-        ):
-            raise ValueError("dw_pricing_time_limit must be positive or infinity.")
-        self.dw_pricing_time_limit = float(self.dw_pricing_time_limit)
-        if (
-            isinstance(self.dw_overlap_prop, bool)
-            or not isinstance(self.dw_overlap_prop, (int, float))
-            or not math.isfinite(self.dw_overlap_prop)
-            or not 0.0 <= float(self.dw_overlap_prop) <= 1.0
-        ):
-            raise ValueError("dw_overlap_prop must lie in [0, 1].")
-        self.dw_overlap_prop = float(self.dw_overlap_prop)
-        if not isinstance(self.dw_redraw, bool):
-            raise ValueError("dw_redraw must be a Boolean.")
-        if (
-            isinstance(self.dw_redraw_time_limit, bool)
-            or not isinstance(self.dw_redraw_time_limit, (int, float))
-            or math.isnan(self.dw_redraw_time_limit)
-            or self.dw_redraw_time_limit < 0
-        ):
-            raise ValueError("dw_redraw_time_limit must be nonnegative or infinity.")
-        self.dw_redraw_time_limit = float(self.dw_redraw_time_limit)
         if self.strategy == "dantzig_wolfe":
             if self.solver != "cp_bool":
                 raise ValueError("dantzig_wolfe requires solver='cp_bool'.")
@@ -421,14 +464,6 @@ class OptimizationConfig:
             if self.budget_accounting != "wall_clock":
                 raise ValueError(
                     "dantzig_wolfe requires budget_accounting='wall_clock'."
-                )
-            if (
-                isinstance(self.tolerance, bool)
-                or not math.isfinite(self.tolerance)
-                or self.tolerance < 0
-            ):
-                raise ValueError(
-                    "tolerance must be finite and non-negative for dantzig_wolfe."
                 )
             if self.dw_objective != "boundary":
                 if self.program_population != "All":
@@ -460,204 +495,21 @@ class OptimizationConfig:
                     f"{self.strategy} requires matching optimization and assignment "
                     "geography_vintage values."
                 )
-        if (
-            isinstance(self.mid_lottery_scale, bool)
-            or not isinstance(self.mid_lottery_scale, int)
-            or self.mid_lottery_scale <= 0
-        ):
-            raise ValueError("mid_lottery_scale must be a positive integer.")
-        if self.mid_utility_handling not in {"omit_nonpositive", "exponentiate"}:
-            raise ValueError(
-                "mid_utility_handling must be one of: exponentiate, omit_nonpositive."
-            )
-        if not isinstance(self.mid_transport_bounds, bool):
-            raise ValueError("mid_transport_bounds must be a Boolean.")
-        if not isinstance(self.mid_complementary_slackness, bool):
-            raise ValueError("mid_complementary_slackness must be a Boolean.")
         self.mid_complementary_slackness_slack = (
             normalize_complementary_slackness_slack(
                 self.mid_complementary_slackness_slack
             )
         )
-        if (
-            isinstance(self.saa_num_seeds, bool)
-            or not isinstance(self.saa_num_seeds, int)
-            or self.saa_num_seeds <= 0
-        ):
-            raise ValueError("saa_num_seeds must be a positive integer.")
-        if not isinstance(self.saa_tie_breaking_method, str):
-            raise ValueError("saa_tie_breaking_method must be one of: MTB, STB.")
-        self.saa_tie_breaking_method = self.saa_tie_breaking_method.upper()
-        if self.saa_tie_breaking_method not in {"MTB", "STB"}:
-            raise ValueError("saa_tie_breaking_method must be one of: MTB, STB.")
-        if self.saa_welfare_bound not in WELFARE_BOUNDS:
-            raise ValueError(
-                f"saa_welfare_bound must be one of: {', '.join(WELFARE_BOUNDS)}."
-            )
-        if (
-            isinstance(self.zoned_transport_workers, bool)
-            or not isinstance(self.zoned_transport_workers, int)
-            or self.zoned_transport_workers <= 0
-        ):
-            raise ValueError("zoned_transport_workers must be a positive integer.")
-        if not isinstance(self.saa_relative_gap, bool):
-            raise ValueError("saa_relative_gap must be a Boolean.")
-        if not isinstance(self.saa_multicut, bool):
-            raise ValueError("saa_multicut must be a Boolean.")
-        if (
-            isinstance(self.stable_cutoff_num_seeds, bool)
-            or not isinstance(self.stable_cutoff_num_seeds, int)
-            or self.stable_cutoff_num_seeds <= 0
-        ):
-            raise ValueError("stable_cutoff_num_seeds must be a positive integer.")
-        if not isinstance(self.stable_cutoff_non_wastefulness, bool):
-            raise ValueError("stable_cutoff_non_wastefulness must be a Boolean.")
-        if not isinstance(self.stable_cutoff_aggregate_stability, bool):
-            raise ValueError("stable_cutoff_aggregate_stability must be a Boolean.")
-        if not isinstance(self.stable_cutoff_tie_breaking_method, str):
-            raise ValueError(
-                "stable_cutoff_tie_breaking_method must be one of: MTB, STB."
-            )
-        self.stable_cutoff_tie_breaking_method = (
-            self.stable_cutoff_tie_breaking_method.upper()
-        )
-        if self.stable_cutoff_tie_breaking_method not in {"MTB", "STB"}:
-            raise ValueError(
-                "stable_cutoff_tie_breaking_method must be one of: MTB, STB."
-            )
-        if (
-            isinstance(self.priced_access_cut_levels, bool)
-            or not isinstance(self.priced_access_cut_levels, int)
-            or self.priced_access_cut_levels <= 0
-        ):
-            raise ValueError("priced_access_cut_levels must be a positive integer.")
-        if self.priced_access_price_source not in PRICE_SOURCES:
-            raise ValueError(
-                f"priced_access_price_source must be one of {PRICE_SOURCES}."
-            )
-        if (
-            not isinstance(self.priced_access_price_scale, (int, float))
-            or isinstance(self.priced_access_price_scale, bool)
-            or self.priced_access_price_scale < 0.0
-        ):
-            raise ValueError("priced_access_price_scale must be non-negative.")
-        if not isinstance(self.choice_access_triangle, bool):
-            raise ValueError("choice_access_triangle must be a Boolean.")
-        if not isinstance(self.choice_access_cardinality, bool):
-            raise ValueError("choice_access_cardinality must be a Boolean.")
-        if (
-            isinstance(self.choice_access_triangle_limit, bool)
-            or not isinstance(self.choice_access_triangle_limit, int)
-            or self.choice_access_triangle_limit < 0
-        ):
-            raise ValueError(
-                "choice_access_triangle_limit must be a non-negative integer."
-            )
-        if not isinstance(self.choice_access_complete, bool):
-            raise ValueError("choice_access_complete must be a Boolean.")
-        if (
-            isinstance(self.choice_access_completion_limit, bool)
-            or not isinstance(self.choice_access_completion_limit, int)
-            or self.choice_access_completion_limit < 0
-        ):
-            raise ValueError(
-                "choice_access_completion_limit must be a non-negative integer."
-            )
-        if self.strategy == "saa":
-            if (
-                isinstance(self.max_iterations, bool)
-                or not isinstance(self.max_iterations, int)
-                or self.max_iterations <= 0
-            ):
-                raise ValueError("max_iterations must be a positive integer for saa.")
-            if isinstance(self.tolerance, bool):
-                raise ValueError("tolerance must be finite and non-negative for saa.")
-            try:
-                self.tolerance = float(self.tolerance)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "tolerance must be finite and non-negative for saa."
-                ) from exc
-            if not math.isfinite(self.tolerance) or self.tolerance < 0:
-                raise ValueError("tolerance must be finite and non-negative for saa.")
-        if (
-            isinstance(self.centroid_neighbor_radius, bool)
-            or not isinstance(self.centroid_neighbor_radius, int)
-            or self.centroid_neighbor_radius < 0
-        ):
-            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-        if self.budget_accounting not in BUDGET_ACCOUNTING_MODES:
-            raise ValueError(
-                "budget_accounting must be one of: "
-                f"{', '.join(BUDGET_ACCOUNTING_MODES)}."
-            )
-        if self.mid_preference_source not in MID_PREFERENCE_SOURCES:
-            raise ValueError(
-                "mid_preference_source must be one of: "
-                f"{', '.join(MID_PREFERENCE_SOURCES)}."
-            )
-        if self.hints not in {"feasible", "voronoi", "none"}:
-            raise ValueError("hints must be one of: feasible, voronoi, none.")
         if self.hint_zoning is not None:
             if not isinstance(self.hint_zoning, (str, Path)) or not str(
                 self.hint_zoning
             ):
                 raise ValueError("hint_zoning must be a file path or null.")
             self.hint_zoning = str(Path(self.hint_zoning).expanduser())
-        if isinstance(self.feasible_hint_time_limit, bool):
-            raise ValueError("feasible_hint_time_limit must be positive.")
-        try:
-            self.feasible_hint_time_limit = float(self.feasible_hint_time_limit)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("feasible_hint_time_limit must be positive.") from exc
-        if (
-            not math.isfinite(self.feasible_hint_time_limit)
-            or self.feasible_hint_time_limit <= 0
-        ):
-            raise ValueError("feasible_hint_time_limit must be positive.")
         if self.recom_iterations < 0 and not self.solve_time_limits:
             raise ValueError(
                 "solve_time_limits must include a value when recom_iterations is negative."
             )
-        if self.short_bursts_length <= 0:
-            raise ValueError("short_bursts_length must be positive.")
-        if self.short_bursts_method not in {"recom", "relaxed_recom"}:
-            raise ValueError(
-                "short_bursts_method must be one of: recom, relaxed_recom."
-            )
-        if self.adaptive_short_bursts_lr <= 0:
-            raise ValueError("adaptive_short_bursts_lr must be positive.")
-        if self.adaptive_short_bursts_temperature <= 0:
-            raise ValueError("adaptive_short_bursts_temperature must be positive.")
-        if self.adaptive_short_bursts_pair_selector not in {
-            "uniform",
-            "lagrangian_softmax",
-        }:
-            raise ValueError(
-                "adaptive_short_bursts_pair_selector must be one of: "
-                "uniform, lagrangian_softmax."
-            )
-        from optimization.solvers.recom import ADAPTIVE_OBJECTIVES
-
-        if self.adaptive_short_bursts_objective not in ADAPTIVE_OBJECTIVES:
-            raise ValueError(
-                "adaptive_short_bursts_objective must be one of: "
-                f"{', '.join(ADAPTIVE_OBJECTIVES)}."
-            )
-        for name in (
-            "adaptive_short_bursts_unassigned_weight",
-            "adaptive_short_bursts_designated_weight",
-        ):
-            value = getattr(self, name)
-            if isinstance(value, bool):
-                raise ValueError(f"{name} must be finite and non-negative.")
-            try:
-                value = float(value)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"{name} must be finite and non-negative.") from exc
-            if not math.isfinite(value) or value < 0:
-                raise ValueError(f"{name} must be finite and non-negative.")
-            setattr(self, name, value)
         if (
             self.adaptive_short_bursts_objective == "capacity_match"
             and self.adaptive_short_bursts_unassigned_weight == 0
@@ -666,6 +518,34 @@ class OptimizationConfig:
             raise ValueError(
                 "capacity_match needs a positive unassigned or designated weight."
             )
+
+    def _check_number(
+        self,
+        name: str,
+        message: str,
+        *,
+        minimum: float = -math.inf,
+        maximum: float = math.inf,
+        open_minimum: bool = False,
+        finite: bool = False,
+    ) -> None:
+        """Coerce ``name`` to a float within its bounds, or raise ``message``."""
+
+        value = getattr(self, name)
+        try:
+            if isinstance(value, bool):
+                raise TypeError
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} {message}.") from exc
+        if (
+            math.isnan(value)
+            or (finite and not math.isfinite(value))
+            or not minimum <= value <= maximum
+            or (open_minimum and value == minimum)
+        ):
+            raise ValueError(f"{name} {message}.")
+        setattr(self, name, value)
 
     def _validate_school_distance(self) -> None:
         if self.compactness_objective not in {"cut_edges", "school_distance"}:
@@ -700,6 +580,14 @@ class OptimizationConfig:
                 "school_distance_area_weight and school_distance_student_weight "
                 f"must sum to 1, got {sum(weights):g}."
             )
+
+    @property
+    def unit(self) -> str:
+        """The one Census unit every level shares (the base graph is per unit)."""
+        units = {LevelSpec.parse(level).unit for level in self.levels}
+        if len(units) != 1:
+            raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
+        return units.pop()
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings
@@ -842,11 +730,9 @@ class OptimizationConfig:
             "adaptive_short_bursts_designated_weight": (
                 self.adaptive_short_bursts_designated_weight
             ),
+            # The adaptive short bursts' welfare scorer reads it here; the
+            # MID strategies read their own copy.
             "mid_lottery_scale": self.mid_lottery_scale,
-            "mid_utility_handling": self.mid_utility_handling,
-            "mid_transport_bounds": self.mid_transport_bounds,
-            "mid_complementary_slackness": self.mid_complementary_slackness,
-            "mid_complementary_slackness_slack": self.mid_complementary_slackness_slack,
         }
         if output_dir is not None:
             options["output_dir"] = output_dir
@@ -875,7 +761,6 @@ class OptimizationConfig:
             choice_utility_hints=self.choice_utility_hints,
             tolerance=self.tolerance,
             mid_lottery_scale=self.mid_lottery_scale,
-            mid_utility_handling=self.mid_utility_handling,
             mid_transport_bounds=self.mid_transport_bounds,
             mid_complementary_slackness=self.mid_complementary_slackness,
             mid_complementary_slackness_slack=self.mid_complementary_slackness_slack,

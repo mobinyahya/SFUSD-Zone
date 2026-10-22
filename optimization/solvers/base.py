@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from abc import ABC, abstractmethod
 
 import networkx as nx
 
+from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
@@ -25,11 +27,56 @@ class Solver(ABC):
 
     def __init__(self, **options):
         self.options = options
-        self._solve_count = 0
-        self._progress_count = 0
+        # Shared with every ``with_options`` copy, so their log and progress
+        # files keep numbering on from this solver's instead of colliding.
+        self._counts = {"solve": 0, "progress": 0}
 
     @abstractmethod
     def solve(self, problem: ZoneProblem) -> ZoneSolution: ...
+
+    def with_options(self, **overrides) -> "Solver":
+        """A copy of this solver with ``overrides`` applied; ``self`` is untouched.
+
+        This is how a strategy gives one solve its own time or gap limit: the
+        solver it was handed is shared, so it is never mutated.
+        """
+
+        solver = copy.copy(self)
+        solver.options = {**self.options, **overrides}
+        return solver
+
+    def hint_assignment(
+        self, problem: ZoneProblem, hints: str | None = None
+    ) -> dict[int, int] | None:
+        """``problem.hint``, else a fresh initial solution of kind ``hints``.
+
+        ``hints`` defaults to this solver's own ``hints`` option; with neither,
+        there is no hint.
+        """
+
+        if problem.hint:
+            return problem.hint
+        hints = self.options.get("hints") if hints is None else hints
+        if hints is None:
+            return None
+        initial = initial_solution(problem, hints, solver_options=self.options)
+        return initial.assignment if initial is not None else None
+
+    @property
+    def _solve_count(self) -> int:
+        return self._counts["solve"]
+
+    @_solve_count.setter
+    def _solve_count(self, value: int) -> None:
+        self._counts["solve"] = value
+
+    @property
+    def _progress_count(self) -> int:
+        return self._counts["progress"]
+
+    @_progress_count.setter
+    def _progress_count(self, value: int) -> None:
+        self._counts["progress"] = value
 
     def enumerate_solutions(
         self, problem: ZoneProblem, limit: int
@@ -37,23 +84,12 @@ class Solver(ABC):
         raise ValueError(f"{self.name} does not support solution enumeration.")
 
     def _centroid_neighbor_radius(self) -> int:
-        radius = self.options.get("centroid_neighbor_radius", 0)
-        if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
-            raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-        return radius
+        return checked_centroid_neighbor_radius(
+            self.options.get("centroid_neighbor_radius", 0)
+        )
 
     def _centroid_neighborhoods(self, problem: ZoneProblem) -> dict[int, set[int]]:
-        radius = self._centroid_neighbor_radius()
-        return {
-            zone: set(
-                nx.single_source_shortest_path_length(
-                    problem.G,
-                    centroid,
-                    cutoff=radius,
-                )
-            )
-            for zone, centroid in enumerate(problem.centroids)
-        }
+        return centroid_neighborhoods(problem, self._centroid_neighbor_radius())
 
     def _next_solver_log_path(
         self, problem: ZoneProblem, *, suffix: str = ".log"
@@ -122,6 +158,24 @@ class Solver(ABC):
             "solver_progress_id": progress.progress_id,
             "solver_progress_count": len(progress.entries),
         }
+
+
+def checked_centroid_neighbor_radius(radius) -> int:
+    if isinstance(radius, bool) or not isinstance(radius, int) or radius < 0:
+        raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+    return radius
+
+
+def centroid_neighborhoods(problem: ZoneProblem, radius: int) -> dict[int, set[int]]:
+    """Each zone's nodes within ``radius`` hops of its centroid, owned outright."""
+
+    radius = checked_centroid_neighbor_radius(radius)
+    return {
+        zone: set(
+            nx.single_source_shortest_path_length(problem.G, centroid, cutoff=radius)
+        )
+        for zone, centroid in enumerate(problem.centroids)
+    }
 
 
 def _safe_filename(value: str) -> str:

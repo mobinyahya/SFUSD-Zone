@@ -25,6 +25,9 @@ from optimization.strategies.budget import Budget, make_budget
 class MidDecompositionStrategy(Strategy):
     """Solve MID welfare by iteratively activating compressed market types."""
 
+    reads_assignment_market = True
+    capacity_balance = False
+
     def run(self, dataset, solver):
         if getattr(solver, "name", None) != "cp_bool":
             raise ValueError("mid_decomp requires solver='cp_bool'.")
@@ -46,10 +49,7 @@ class MidDecompositionStrategy(Strategy):
         )
 
         levels = [LevelSpec.parse(level) for level in self.options["levels"]]
-        problem = dataset.problem_for(levels[-1])
-        problem.overage = -1.0
-        problem.shortage = -1.0
-        problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
+        problem = self.problem_for(dataset, levels[-1])
 
         hint = initial_solution(
             problem,

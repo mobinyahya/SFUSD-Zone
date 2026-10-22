@@ -353,7 +353,7 @@ def test_master_recombines_columns_from_different_seed_partitions():
     p.centroid_school_ids = [100, 150, 200]
     # Scores deliberately isolate master recombination from the welfare oracle.
     columns = [
-        ZoneColumn(z, frozenset(nodes), score, 0)
+        ZoneColumn(z, frozenset(nodes), score, 0, 0)
         for z, nodes, score in (
             (0, (0, 1), 10),
             (1, (2, 4), 0),
@@ -387,9 +387,50 @@ def test_boundary_is_counted_once_and_the_cap_is_enforced():
     assert solve_master(p, columns, 5, integer=True).objective == -2
 
 
+def test_family_rows_round_away_from_feasibility_like_cp_bool():
+    """A fractional FRL count that ``round`` would have let through.
+
+    Node 1's FRL row coefficient is ``0.496 - 0.5 = -0.004``, which scales to
+    ``-0.4``: rounding to nearest makes it 0 and accepts the zone, while
+    ``cp_bool`` floors a ``>=`` row's coefficients and so rejects it, exactly
+    as the float row does.
+    """
+
+    p = make_grid_problem(1, 3, frl_dev=0.0)
+    p.G.nodes[1]["FRL"] = 0.496
+    family = build_zone_family(p)
+    lower = next(row for row in family.rows[0] if row.kind == "frl_lower")
+    assert lower.coefficients[1] == -1
+    assert not family.feasible(0, frozenset({0, 1}))
+    assert not family.feasible(1, frozenset({1, 2}))
+    assert get_solver("cp_bool").solve(p).status == "INFEASIBLE"
+
+
+def test_boundary_cap_counts_cut_edges_unweighted():
+    """``weight_edges`` prices the objective, never the cap.
+
+    The two cut edges weigh 1 against 100 for the uncut ones, so a weighted cap
+    of ``0.25 * 202`` would admit the split; ``cp_bool`` and ``check_zoning``
+    cap the *count* at ``floor(0.25 * 4) = 1`` and reject it.
+    """
+
+    p = make_grid_problem(2, 2, boundary_prop=0.25, weight_edges=True)
+    for u, v in p.G.edges:
+        cut = {u, v} in ({0, 2}, {1, 3})
+        p.G.edges[u, v]["boundary_weight"] = 1 if cut else 100
+    pool = ZonePool(p, BoundaryZoneObjective())
+    columns = pool.add_partition({0: 0, 1: 0, 2: 1, 3: 1})
+    assert boundary_limit(p) == 1
+    assert [c.cut_edges for c in columns] == [2, 2]
+    assert [c.perimeter for c in columns] == [2, 2]
+    assert not pool.tiles(columns)
+    assert solve_master(p, columns, 5).status == "INFEASIBLE"
+    assert get_solver("cp_bool").solve(p).status == "INFEASIBLE"
+
+
 def test_boundary_dual_enters_reduced_cost_with_correct_sign():
     dual = DualPoint({0: 1.0, 1: 2.0}, {0: 3.0}, 4.0)
-    assert dual.reduced_cost(ZoneColumn(0, frozenset({0, 1}), 20.0, 6)) == 2.0
+    assert dual.reduced_cost(ZoneColumn(0, frozenset({0, 1}), 20.0, 6, 6)) == 2.0
 
 
 def test_boundary_row_dual_is_non_negative_on_a_binding_cap():
@@ -427,7 +468,7 @@ def test_smoothing_clamps_the_boundary_multiplier_and_validates_alpha():
 def test_smoothed_duals_still_price_a_column_the_same_way():
     """Smoothing changes where pricing aims, not what a reduced cost means."""
 
-    column = ZoneColumn(0, frozenset({0, 1}), 20.0, 6)
+    column = ZoneColumn(0, frozenset({0, 1}), 20.0, 6, 6)
     raw = DualPoint({0: 1.0, 1: 2.0}, {0: 3.0}, 4.0)
     blended = smooth(raw, DualPoint({0: 3.0, 1: 2.0}, {0: 3.0}, 4.0), 0.5)
     assert blended.reduced_cost(column) == pytest.approx(raw.reduced_cost(column) - 1.0)
@@ -688,11 +729,11 @@ def _collision_instance():
     p.centroids = [0, 2, 5]
     p.centroid_school_ids = [100, 150, 200]
     tiling = [
-        ZoneColumn(0, frozenset({0, 1}), 1.0, 0),
-        ZoneColumn(1, frozenset({2, 3}), 1.0, 0),
-        ZoneColumn(2, frozenset({4, 5}), 1.0, 0),
+        ZoneColumn(0, frozenset({0, 1}), 1.0, 0, 0),
+        ZoneColumn(1, frozenset({2, 3}), 1.0, 0, 0),
+        ZoneColumn(2, frozenset({4, 5}), 1.0, 0, 0),
     ]
-    collides = ZoneColumn(0, frozenset({0, 1, 2}), 100.0, 0)
+    collides = ZoneColumn(0, frozenset({0, 1, 2}), 100.0, 0, 0)
     return p, (*tiling, collides)
 
 

@@ -1,8 +1,9 @@
 """Whole-zone columns and the restricted master they feed.
 
 Everything here is maximized. Boundary scores are minus half a zone's
-perimeter, so summing them over a partition counts each cut edge once and the
-master's boundary row is the district boundary cost.
+weighted perimeter, so summing them over a partition counts each cut edge once
+and gives the district boundary cost. The master's boundary row sums half of
+each zone's *unweighted* cut-edge count, which is the cap every backend posts.
 
 The master is a set-partitioning LP and is therefore massively degenerate:
 many columns can enter with a strictly positive reduced cost and a step length
@@ -67,11 +68,13 @@ from dataclasses import dataclass
 import gurobipy as gp
 from gurobipy import GRB
 
+from optimization.data.feasibility import check_zoning
 from optimization.dw_options import DW_MASTER_METHODS as MASTER_METHODS
 from optimization.zone_family import (
     ZoneFamily,
     boundary_limit,
     build_zone_family,
+    cut_edges as zone_cut_edges,
     perimeter as zone_perimeter,
 )
 from optimization.zone_welfare import BoundaryZoneObjective, ZoneObjective
@@ -121,7 +124,10 @@ class ZoneColumn:
     zone: int
     nodes: frozenset[int]
     score: float
+    # Weighted, for the boundary objective; ``cut_edges`` is the unweighted
+    # count the boundary cap is written in.
     perimeter: int
+    cut_edges: int
 
 
 class ZonePool:
@@ -151,7 +157,7 @@ class ZonePool:
         )
         self.nodes = frozenset(problem.nodes)
         self.columns: dict[tuple[int, frozenset[int]], ZoneColumn] = {}
-        self.scores: dict[frozenset[int], tuple[float, int]] = {}
+        self.scores: dict[frozenset[int], tuple[float, int, int]] = {}
         self.objective.validate(self.nodes)
 
     def feasible(self, zone, nodes) -> bool:
@@ -166,9 +172,8 @@ class ZonePool:
             score = float(self.objective.score(nodes, edge_cut))
             if not math.isfinite(score):
                 raise ValueError("Zone objective returned a non-finite value.")
-            self.scores[nodes] = (score, edge_cut)
-        score, edge_cut = self.scores[nodes]
-        return ZoneColumn(zone, nodes, score, edge_cut)
+            self.scores[nodes] = (score, edge_cut, zone_cut_edges(self.problem, nodes))
+        return ZoneColumn(zone, nodes, *self.scores[nodes])
 
     def admit(self, zone, nodes) -> ZoneColumn | None:
         """The column for ``nodes``, or ``None`` if it is not admissible.
@@ -182,6 +187,25 @@ class ZonePool:
         if not self.feasible(zone, nodes):
             return None
         return self.column(zone, nodes)
+
+    def tiles(self, columns) -> bool:
+        """Do ``columns`` form a zoning the district model accepts?
+
+        One column per label, covering every node once, within the cut-edge
+        cap, and passing :func:`~optimization.data.feasibility.check_zoning`
+        -- the solver-independent gate on every zoning this package reports.
+        """
+
+        p = self.problem
+        if len(columns) != p.Z or {c.zone for c in columns} != set(range(p.Z)):
+            return False
+        if sum(len(c.nodes) for c in columns) != p.A:
+            return False
+        if p.boundary_prop >= 0:
+            if sum(c.cut_edges for c in columns) / 2 > boundary_limit(p):
+                return False
+        assignment = {n: c.zone for c in columns for n in c.nodes}
+        return check_zoning(p, assignment).feasible
 
     def add(self, column) -> bool:
         key = (column.zone, column.nodes)
@@ -250,7 +274,7 @@ class DualPoint:
             (0.0 if self.phase_one else column.score)
             - sum(self.node_duals[n] for n in column.nodes)
             - self.zone_duals[column.zone]
-            - self.boundary_dual * column.perimeter / 2
+            - self.boundary_dual * column.cut_edges / 2
         )
 
     def dual_objective(self, problem, overlap_limit: float = 0.0) -> float:
@@ -413,7 +437,7 @@ def solve_master(
             for n in column.nodes:
                 cover_terms[n].append(variable)
             convexity_terms[column.zone].append(variable)
-            boundary_terms.append((column.perimeter / 2, variable))
+            boundary_terms.append((column.cut_edges / 2, variable))
             if not phase_one:
                 objective.addTerms(float(column.score), variable)
 

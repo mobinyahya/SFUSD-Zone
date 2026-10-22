@@ -71,6 +71,7 @@ from loaders import CacheNamespace, CacheStore, DataScenario
 from optimization.data.initial_solutions import feasibility_fingerprint
 from optimization.problem import ZoneProblem
 from optimization.saa_oracle import access_state
+from optimization.solvers.base import checked_centroid_neighbor_radius
 
 if TYPE_CHECKING:
     from optimization.data.mid import MidProgram, MidStudent
@@ -126,12 +127,7 @@ def zoned_transport_bound(
         )
     if isinstance(workers, bool) or not isinstance(workers, int) or workers <= 0:
         raise ValueError("zoned transport workers must be a positive integer.")
-    if isinstance(centroid_neighbor_radius, bool) or not isinstance(
-        centroid_neighbor_radius, int
-    ):
-        raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
-    if centroid_neighbor_radius < 0:
-        raise ValueError("centroid_neighbor_radius must be a non-negative integer.")
+    checked_centroid_neighbor_radius(centroid_neighbor_radius)
 
     namespace = _namespace(
         problem,

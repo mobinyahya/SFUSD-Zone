@@ -11,15 +11,16 @@ from optimization.config import OptimizationConfig
 from optimization.data.initial_solutions import InitialSolution
 from optimization.problem import DuplicateCentroidError
 from optimization.solution import ZoneSolution
+from optimization.solvers import base as solver_base_module
 from optimization.solvers import get_solver
+from optimization.solvers.base import Solver
 from optimization.strategies import get_strategy
 from optimization.strategies import budget
 from optimization.strategies import iterative_choice as iterative_choice_module
 from optimization.strategies import mid as mid_module
 from optimization.strategies import mid_decomp as mid_decomp_module
-from optimization.strategies import single as single_module
 from optimization.strategies.base import available_strategies
-from optimization.tests.synthetic import FakeDataset, make_grid_problem
+from optimization.tests.synthetic import FakeDataset, FakeSolver, make_grid_problem
 
 
 def test_only_supported_strategies_are_registered():
@@ -103,7 +104,7 @@ def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
 
     monkeypatch.setattr(
-        single_module,
+        solver_base_module,
         "initial_solution",
         lambda problem_arg, hints, **kwargs: InitialSolution(
             assignment=hint,
@@ -119,6 +120,83 @@ def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
     strat.run(dataset, solver)
 
     assert solver.problems[0].hint == hint
+
+
+class _LimitRecordingSolver(Solver):
+    """A real ``Solver`` that records the limits each solve ran under."""
+
+    name = "recording"
+
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.seen = []
+
+    def solve(self, problem):
+        self.seen.append(
+            (
+                self.options.get("solve_time_limit"),
+                self.options.get("relative_gap_limit"),
+                problem.boundary_prop,
+            )
+        )
+        return ZoneSolution(
+            problem=problem, assignment=_split_assignment(problem), status="OPTIMAL"
+        )
+
+
+def test_with_options_copies_and_leaves_the_solver_alone():
+    solver = get_solver("cp_bool", solve_time_limit=5, workers=1)
+    copy = solver.with_options(solve_time_limit=9)
+    assert copy is not solver and type(copy) is type(solver)
+    assert copy.options["solve_time_limit"] == 9
+    assert solver.options["solve_time_limit"] == 5
+    copy._solve_count += 1
+    assert solver._solve_count == 1  # log numbering is shared
+
+
+@pytest.mark.parametrize("strategy", ["single", "recursive"])
+def test_strategies_apply_limits_and_boundary_prop_without_mutating_the_solver(
+    strategy,
+):
+    dataset = FakeDataset(make_grid_problem(2, 2))
+    solver = _LimitRecordingSolver(solve_time_limit=1.0, relative_gap_limit=0.5)
+    get_strategy(
+        strategy,
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[3.0, 7.0],
+        gap_limits=[0.2, 0.01],
+        boundary_prop=0.75,
+    ).run(dataset, solver)
+
+    # single solves once, under the final level's limits; recursive once per
+    # level. Both apply boundary_prop at every solve.
+    expected = [(7.0, 0.01, 0.75)]
+    if strategy == "recursive":
+        expected = [(3.0, 0.2, 0.75), *expected]
+    assert solver.seen == expected
+    assert solver.options == {"solve_time_limit": 1.0, "relative_gap_limit": 0.5}
+
+
+def test_welfare_strategies_switch_off_the_capacity_band():
+    problem = make_grid_problem(2, 2)
+    for name in available_strategies():
+        strategy = get_strategy(name, boundary_prop=0.5)
+        configured = strategy.configure_problem(
+            FakeDataset(problem).problem_for("BlockGroup_0")
+        )
+        assert configured.boundary_prop == 0.5
+        welfare = name in {
+            "mid",
+            "mid_decomp",
+            "saa",
+            "direct_samples",
+            "short_bursts_choice",
+            "stable_cutoff",
+        }
+        assert strategy.capacity_balance is not welfare
+        assert (configured.overage, configured.shortage) == (
+            (-1.0, -1.0) if welfare else (problem.overage, problem.shortage)
+        )
 
 
 def test_recursive_carry_over_compute_disabled_by_default():
@@ -395,8 +473,10 @@ def test_config_validates_and_passes_mid_options():
     strategy = config.make_strategy()
 
     assert strategy.options["mid_lottery_scale"] == 40
-    assert strategy.options["mid_utility_handling"] == "exponentiate"
     assert strategy.options["mid_transport_bounds"] is False
+    # Read from the config by the market builder, never from options.
+    assert "mid_utility_handling" not in strategy.options
+    assert "mid_transport_bounds" not in config.make_solver().options
 
 
 @pytest.mark.parametrize("solver", ["cp_bool", "mip"])
@@ -418,7 +498,7 @@ def test_config_validates_and_passes_saa_options(solver):
     strategy = config.make_strategy()
 
     assert strategy.options["max_iterations"] == 7
-    assert strategy.options["mid_utility_handling"] == "exponentiate"
+    assert config.mid_utility_handling == "exponentiate"
     assert strategy.options["saa_num_seeds"] == 9
     assert strategy.options["saa_tie_breaking_method"] == "STB"
 
@@ -511,8 +591,7 @@ def test_config_accepts_valid_mid_complementary_slackness_slack(value, expected)
         mid_complementary_slackness_slack=value,
     )
     assert cfg.mid_complementary_slackness_slack == expected
-    assert cfg.make_solver().options["mid_complementary_slackness"] is True
-    assert cfg.make_solver().options["mid_complementary_slackness_slack"] == expected
+    assert "mid_complementary_slackness" not in cfg.make_solver().options
     assert cfg.make_strategy().options["mid_complementary_slackness"] is True
     assert cfg.make_strategy().options["mid_complementary_slackness_slack"] == expected
 
@@ -915,7 +994,7 @@ def test_iterative_choice_stops_on_absolute_model_objective_change(monkeypatch):
     assert solutions[3].metadata["choice_model_utility_change"] == pytest.approx(0.2)
 
 
-class ObjectiveSequenceSolver:
+class ObjectiveSequenceSolver(FakeSolver):
     def __init__(self, objectives):
         self.objectives = list(objectives)
         self.calls = 0
@@ -936,7 +1015,7 @@ class ObjectiveSequenceSolver:
         )
 
 
-class TimedSequenceSolver:
+class TimedSequenceSolver(FakeSolver):
     def __init__(self, statuses, wall_times, assignments=None):
         self.statuses = list(statuses)
         self.wall_times = list(wall_times)
@@ -964,7 +1043,7 @@ class TimedSequenceSolver:
         )
 
 
-class DuplicateCentroidSequenceSolver:
+class DuplicateCentroidSequenceSolver(FakeSolver):
     def __init__(self, duplicate_by_call):
         self.duplicate_by_call = list(duplicate_by_call)
         self.options = {}
@@ -1065,7 +1144,7 @@ def test_priced_access_closes_with_a_replay_of_its_best_zoning():
                 cuts=(ChoiceCut(node=index, constant=float(index)),),
             )
 
-    class _Solver:
+    class _Solver(FakeSolver):
         options: dict = {}
 
         def solve(self, solve_problem):

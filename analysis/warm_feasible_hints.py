@@ -16,10 +16,13 @@ in 5 minutes is served to a sweep task configured with 1 worker and 600
 seconds. That is the whole point of warming them separately.
 
 The problem is built from the sweep's own generated tasks rather than
-hand-assembled, and ``boundary_prop`` is applied the way every strategy applies
-it -- after ``problem_for``, which leaves it disabled. Getting that wrong would
-warm a hint for a different, strictly easier feasible set and the sweep would
-miss the cache.
+hand-assembled, through the strategy's own ``Strategy.problem_for``. That hook
+applies what the strategy changes about the feasible set -- ``boundary_prop``,
+which ``Dataset.problem_for`` leaves disabled, and the capacity band the
+welfare strategies switch off -- so the feasible set does vary by strategy,
+and one hint is warmed per distinct set among the centroid's tasks. Building
+the problem any other way would warm a hint for a different feasible set and
+the sweep would miss the cache.
 """
 
 from __future__ import annotations
@@ -31,9 +34,9 @@ from benchmark.config import SimulationSweep
 from optimization.data.feasibility import check_zoning
 from optimization.data.initial_solutions import (
     FeasibleHintError,
+    feasibility_fingerprint,
     feasible_initial_solution,
 )
-from optimization.levels import LevelSpec
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,9 +62,6 @@ def main() -> int:
     args = parse_args()
     sweep = SimulationSweep.from_yaml(args.sweep)
 
-    # Any task at this centroid defines the feasible set: the hint model reads
-    # the problem and the feasibility options, neither of which varies with the
-    # strategy or solver that a task happens to use.
     tasks = [
         task
         for task in sweep.generate_tasks()
@@ -69,17 +69,33 @@ def main() -> int:
     ]
     if not tasks:
         raise SystemExit(f"No task in {args.sweep} uses centroid {args.centroid!r}.")
-    config = tasks[0].optimization_config()
 
-    level = LevelSpec.parse(config.levels[-1])
-    problem = config.make_dataset().problem_for(level)
-    # problem_for leaves boundary_prop at -1.0; every strategy sets it from its
-    # own options, and it is part of the feasible set the hint is keyed on.
-    problem.boundary_prop = float(getattr(config, "boundary_prop", -1.0))
+    # The strategy's hook is what varies the feasible set across a centroid's
+    # tasks, so one representative per strategy and boundary_prop covers them;
+    # the fingerprint then merges any whose sets agree.
+    configs = {}
+    for task in tasks:
+        config = task.optimization_config()
+        configs.setdefault((config.strategy, config.boundary_prop), config)
+    warmed = set()
+    failures = 0
+    for config in configs.values():
+        problem = config.make_strategy().problem_for(
+            config.make_dataset(), config.levels[-1]
+        )
+        key = feasibility_fingerprint(problem)
+        if key not in warmed:
+            warmed.add(key)
+            failures += _warm(problem, config, args)
+    return int(failures > 0)
 
+
+def _warm(problem, config, args) -> int:
     print(
-        f"centroid={args.centroid} level={level} nodes={problem.G.number_of_nodes()} "
+        f"centroid={args.centroid} strategy={config.strategy} "
+        f"level={problem.level} nodes={problem.G.number_of_nodes()} "
         f"zones={problem.Z} boundary_prop={problem.boundary_prop} "
+        f"overage={problem.overage} shortage={problem.shortage} "
         f"frl_dev={problem.frl_dev} max_distance={problem.max_distance}",
         flush=True,
     )
@@ -95,9 +111,7 @@ def main() -> int:
             solver_options={
                 "feasible_hint_time_limit": args.time_limit,
                 "workers": args.workers,
-                "centroid_neighbor_radius": getattr(
-                    config, "centroid_neighbor_radius", 0
-                ),
+                "centroid_neighbor_radius": config.centroid_neighbor_radius,
             },
         )
     except FeasibleHintError as error:

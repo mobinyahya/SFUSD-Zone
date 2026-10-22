@@ -14,14 +14,8 @@ import gurobipy as gp
 from gurobipy import GRB
 
 from choice.objective import ChoiceCut
-from optimization.access_inequalities import (
-    cardinality_cliques,
-    completion_pairs,
-    pair_key,
-    transitivity_triples,
-)
+from optimization.access_inequalities import pair_key, plan_access_inequalities
 from optimization.data import contiguity
-from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
@@ -189,6 +183,12 @@ class MipSolver(Solver):
                         {
                             "objective_kind": "choice_utility",
                             "choice_cuts": len(problem.choice_objective.cuts),
+                            **{
+                                f"choice_access_{key}": value
+                                for key, value in getattr(
+                                    self, "_access_inequality_counts", {}
+                                ).items()
+                            },
                         }
                     )
                     if m.SolCount > 0:
@@ -593,51 +593,29 @@ class MipSolver(Solver):
         access_vars: dict[tuple[int, int], Any],
         access_joints: dict[tuple[int, int, int], Any],
     ) -> None:
-        """See the CP-SAT solver for what these inequalities do and why."""
-        want_cardinality = bool(self.options.get("choice_access_cardinality", False))
-        want_triangle = bool(self.options.get("choice_access_triangle", False))
-        if not (want_cardinality or want_triangle):
-            return
-        variable_pairs = [
-            pair
-            for pair, var in access_vars.items()
-            if not isinstance(var, (int, float))
-        ]
-        if not variable_pairs:
-            return
+        """See :mod:`optimization.access_inequalities` for what these do."""
 
-        if want_triangle and bool(self.options.get("choice_access_complete", False)):
-            for first, second in completion_pairs(
-                variable_pairs,
-                problem.candidate_zones,
-                limit=int(self.options.get("choice_access_completion_limit", 20_000)),
-            ):
-                var = self._get_or_create_access_var(
-                    m, problem, x, access_vars, access_joints, first, second
-                )
-                if not isinstance(var, (int, float)):
-                    variable_pairs.append(pair_key(first, second))
-
-        if want_cardinality:
-            for anchor, members in cardinality_cliques(
-                variable_pairs, problem.candidate_zones
-            ):
-                m.addConstr(
-                    gp.quicksum(
-                        access_vars[pair_key(anchor, member)] for member in members
-                    )
-                    <= 1
-                )
-
-        if want_triangle:
-            limit = int(self.options.get("choice_access_triangle_limit", 200_000))
-            for u, v, w in transitivity_triples(variable_pairs, limit=limit):
-                a_uv = access_vars[pair_key(u, v)]
-                a_vw = access_vars[pair_key(v, w)]
-                a_uw = access_vars[pair_key(u, w)]
-                m.addConstr(a_uv + a_vw - a_uw <= 1)
-                m.addConstr(a_uv + a_uw - a_vw <= 1)
-                m.addConstr(a_uw + a_vw - a_uv <= 1)
+        plan = plan_access_inequalities(
+            access_vars,
+            problem.candidate_zones,
+            self.options,
+            lambda u, v: self._get_or_create_access_var(
+                m, problem, x, access_vars, access_joints, u, v
+            ),
+        )
+        self._access_inequality_counts = plan.counts
+        for anchor, members in plan.cliques:
+            m.addConstr(
+                gp.quicksum(access_vars[pair_key(anchor, member)] for member in members)
+                <= 1
+            )
+        for u, v, w in plan.triangles:
+            a_uv = access_vars[pair_key(u, v)]
+            a_vw = access_vars[pair_key(v, w)]
+            a_uw = access_vars[pair_key(u, w)]
+            m.addConstr(a_uv + a_vw - a_uw <= 1)
+            m.addConstr(a_uv + a_uw - a_vw <= 1)
+            m.addConstr(a_uw + a_vw - a_uv <= 1)
 
     def _get_or_create_access_var(
         self,
@@ -722,21 +700,9 @@ class MipSolver(Solver):
             m.addConstr(utilities[cut.node] <= expr)
 
     def _add_hints(self, problem: ZoneProblem, x: _AssignmentVars) -> None:
-        hint = self._hint_assignment(problem)
+        hint = self.hint_assignment(problem)
         if not hint:
             return
         for (z, i), var in x.items():
             if i in hint:
                 var.Start = 1 if hint[i] == z else 0
-
-    def _hint_assignment(self, problem: ZoneProblem) -> dict[int, int] | None:
-        if problem.hint:
-            return problem.hint
-        if "hints" not in self.options:
-            return None
-        initial = initial_solution(
-            problem,
-            self.options.get("hints"),
-            solver_options=self.options,
-        )
-        return initial.assignment if initial is not None else None
