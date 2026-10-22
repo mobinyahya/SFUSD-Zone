@@ -894,6 +894,63 @@ def _filter_program_records(
     return frame.reset_index(drop=True)
 
 
+def _apply_capacity_adjustments(
+    frame: pd.DataFrame,
+    scenario: DataScenario,
+    group: str,
+    definition: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Apply one registered ``capacity_scenarios`` entry from ``base.yaml``.
+
+    Each adjustment names exactly one selected program by school and program
+    type, optionally checks its current capacity, then adds to or sets it.
+    """
+    name = scenario.filter(group, "capacity_scenario")
+    year = definition["year"]
+    include_mission_bay = definition.get("include_mission_bay")
+    if (
+        group != "assignment"
+        or scenario.filter(group, "year") != year
+        or (
+            include_mission_bay is not None
+            and scenario.filter(group, "include_mission_bay") != include_mission_bay
+        )
+    ):
+        policy = {None: "", True: " with Mission Bay", False: " without Mission Bay"}
+        raise ValueError(
+            f"{name} requires {year} assignment data{policy[include_mission_bay]}."
+        )
+    school_ids = pd.to_numeric(frame["school_id"], errors="coerce")
+    if include_mission_bay is False and school_ids.isin(_MISSION_BAY_SCHOOL_IDS).any():
+        raise ValueError(f"{name} requires no Mission Bay programs.")
+    program_types = frame["program_type"].astype(str)
+    result = frame.copy()
+    for adjustment in definition["adjust"]:
+        school_id, program_type = adjustment["school_id"], adjustment["program_type"]
+        rows = school_ids.eq(school_id) & program_types.eq(program_type)
+        if rows.sum() != 1:
+            raise ValueError(
+                f"{name} requires exactly one {program_type} program at school "
+                f"{school_id}; found {int(rows.sum())}."
+            )
+        if "expect" in adjustment:
+            current = pd.to_numeric(frame.loc[rows, "capacity"], errors="coerce")
+            if current.iloc[0] != adjustment["expect"]:
+                raise ValueError(
+                    f"{name} expects {adjustment['expect']} seats in the "
+                    f"{program_type} program at school {school_id}; found "
+                    f"{current.iloc[0]}."
+                )
+        if "set" in adjustment:
+            result.loc[rows, "capacity"] = adjustment["set"]
+        else:
+            result.loc[rows, "capacity"] = (
+                pd.to_numeric(frame.loc[rows, "capacity"], errors="raise")
+                + adjustment["add"]
+            )
+    return result
+
+
 def apply_capacity_scenario(
     frame: pd.DataFrame,
     scenario: DataScenario,
@@ -904,53 +961,9 @@ def apply_capacity_scenario(
     result = frame.copy()
     if scenario_name == "programs":
         return result
-    webster_additions = {
-        "webster_plus_66_ge_2324": ("2324", 66),
-        "webster_plus_69_ge_2425": ("2425", 69),
-        "webster_plus_69_ge_2526": ("2526", 69),
-    }
-    if scenario_name in webster_additions:
-        year, extra_seats = webster_additions[scenario_name]
-        if (
-            group != "assignment"
-            or scenario.filter(group, "year") != year
-            or scenario.filter(group, "include_mission_bay")
-        ):
-            raise ValueError(
-                f"{scenario_name} requires {year} assignment data without Mission Bay."
-            )
-        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
-        program_types = result["program_type"].astype(str)
-        webster = school_ids.eq(497) & program_types.eq("GE")
-        if webster.sum() != 1 or school_ids.eq(999).any():
-            raise ValueError(
-                f"{scenario_name} requires one Webster GE program and no "
-                "Mission Bay programs."
-            )
-        result.loc[webster, "capacity"] = (
-            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + extra_seats
-        )
-        return result
-    if scenario_name == "mission_bay_ge_to_webster_2627":
-        if group != "assignment" or scenario.filter(group, "year") != "2627":
-            raise ValueError(
-                "mission_bay_ge_to_webster_2627 requires 2026-27 assignment data."
-            )
-        school_ids = pd.to_numeric(result["school_id"], errors="coerce")
-        mission_bay = school_ids.eq(999) & result["program_type"].eq("GE")
-        webster = school_ids.eq(497) & result["program_type"].eq("GE")
-        if mission_bay.sum() != 1 or webster.sum() != 1:
-            raise ValueError(
-                "Mission Bay/Webster transfer requires one GE program at each school."
-            )
-        seats = pd.to_numeric(result.loc[mission_bay, "capacity"], errors="coerce")
-        if seats.iloc[0] != 69:
-            raise ValueError("Expected 69 Mission Bay GE seats in 2026-27.")
-        result.loc[webster, "capacity"] = (
-            pd.to_numeric(result.loc[webster, "capacity"], errors="raise") + 69
-        )
-        result.loc[mission_bay, "capacity"] = 0
-        return result
+    adjustments = scenario.capacity_adjustments(group)
+    if adjustments is not None:
+        return _apply_capacity_adjustments(result, scenario, group, adjustments)
 
     required_program_columns = {"school_id", "program_type", "capacity"}
     missing = required_program_columns - set(result.columns)

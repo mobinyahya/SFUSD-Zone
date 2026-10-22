@@ -892,6 +892,34 @@ geographies:
 student_frl_estimates:
   updated_2526: student_frl.updated_2526
 
+# Named in-memory adjustments to the selected assignment program table, chosen
+# by `capacity_scenario`. Each names one program by school and program type.
+# The Mission Bay comparison study (assignment/configs/mb_comparison/README.md):
+# without Mission Bay, Webster (497) takes the GE seats Mission Bay would have
+# held; in 2026-27, Mission Bay's 69 GE seats move to Webster.
+capacity_scenarios:
+  webster_plus_66_ge_2324:
+    year: "2324"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 66}
+  webster_plus_69_ge_2425:
+    year: "2425"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 69}
+  webster_plus_69_ge_2526:
+    year: "2526"
+    include_mission_bay: false
+    adjust:
+      - {school_id: 497, program_type: GE, add: 69}
+  mission_bay_ge_to_webster_2627:
+    year: "2627"
+    include_mission_bay: true
+    adjust:
+      - {school_id: 999, program_type: GE, expect: 69, set: 0}
+      - {school_id: 497, program_type: GE, add: 69}
+
 school_years:
   "1415":
     optimization:

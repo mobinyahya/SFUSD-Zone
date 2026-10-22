@@ -130,9 +130,10 @@ files: {}
 geographies: {}
 student_frl_estimates: {}
 school_years: {}
+capacity_scenarios: {}
 ```
 
-All six fields are required.
+The first six fields are required; `capacity_scenarios` is optional.
 
 | Field | Type | Description |
 |---|---|---|
@@ -142,6 +143,7 @@ All six fields are required.
 | `geographies` | Non-empty map | Census-vintage geography source bundles. |
 | `student_frl_estimates` | Non-empty map | Selectable student FRL count sources. |
 | `school_years` | Non-empty map | Annual optimization and assignment source registry. |
+| `capacity_scenarios` | Map | Named in-memory capacity adjustments; see [Capacity Overlays](#capacity-overlays). |
 
 ### Roots
 
@@ -686,13 +688,34 @@ filters:
 ### Capacity Overlays
 
 When `capacity_scenario` is `programs`, the loader uses the `capacity` values in
-the selected program table and does not read a capacity-overlay source. The
-assignment study also has built-in scenarios `webster_plus_66_ge_2324`,
-`webster_plus_69_ge_2425`, `webster_plus_69_ge_2526`, and
-`mission_bay_ge_to_webster_2627`; these adjust the selected program table in
-memory. The first three add Webster GE seats because Mission Bay is absent in
-those years. The last moves 69 GE seats from Mission Bay to Webster in 2026-27.
-See `assignment/configs/mb_comparison/README.md` for the study design.
+the selected program table and does not read a capacity-overlay source.
+
+A name registered under base `capacity_scenarios` adjusts the selected
+assignment program table in memory instead:
+
+```yaml
+capacity_scenarios:
+  mission_bay_ge_to_webster_2627:
+    year: "2627"
+    include_mission_bay: true
+    adjust:
+      - {school_id: 999, program_type: GE, expect: 69, set: 0}
+      - {school_id: 497, program_type: GE, add: 69}
+```
+
+| Field | Required | Description |
+|---|---:|---|
+| `year` | Yes | The assignment `year` the scenario requires. |
+| `include_mission_bay` | No | The assignment `include_mission_bay` the scenario requires. When false, the selected programs must contain no Mission Bay school. |
+| `adjust` | Yes | Non-empty list. Each item names exactly one selected program by integer `school_id` and `program_type`, may check its current capacity with `expect`, and gives exactly one of `add` or `set`. |
+
+A selected registry entry's definition joins `DataScenario.source_manifest`
+under `capacity_scenarios`, so editing one re-keys what was derived under it.
+The checked-in registry holds the Mission Bay comparison study's
+`webster_plus_66_ge_2324`, `webster_plus_69_ge_2425`, `webster_plus_69_ge_2526`
+(Webster gains the GE seats Mission Bay would have held), and
+`mission_bay_ge_to_webster_2627`. See
+`assignment/configs/mb_comparison/README.md` for the study design.
 
 Other explicit values, such as `A`, require the source role `<group>.capacity`
 and read:

@@ -596,6 +596,45 @@ def test_base_schema_two_registry_is_strict_and_catalog_backed(tmp_path):
         )
 
 
+def test_capacity_scenario_registry_is_strict_and_joins_the_manifest(tmp_path):
+    def load(capacity_scenario, base_path=None):
+        return load_scenario(
+            {
+                "scenario": "sfusd-2627",
+                "overrides": {
+                    "filters": {"assignment": {"capacity_scenario": capacity_scenario}}
+                },
+            },
+            base_path=base_path,
+            environ={},
+        )
+
+    plain = load("programs")
+    assert plain.capacity_adjustments("assignment") is None
+    assert "capacity_scenarios" not in plain.source_manifest([])
+
+    moved = load("mission_bay_ge_to_webster_2627")
+    assert moved.capacity_adjustments("assignment")["adjust"][0] == {
+        "school_id": 999,
+        "program_type": "GE",
+        "expect": 69,
+        "set": 0,
+    }
+    manifest = moved.source_manifest([])["capacity_scenarios"]
+    assert set(manifest) == {"assignment"}
+    assert manifest["assignment"]["year"] == "2627"
+
+    base = yaml.safe_load(BASE_CONFIG_PATH.read_text(encoding="utf-8"))
+    base["capacity_scenarios"]["bad"] = {
+        "year": "2627",
+        "adjust": [{"school_id": 497, "program_type": "GE", "add": 1, "set": 2}],
+    }
+    invalid_path = tmp_path / "base.yaml"
+    invalid_path.write_text(yaml.safe_dump(base), encoding="utf-8")
+    with pytest.raises(ValueError, match="exactly one of add or set"):
+        load("programs", base_path=invalid_path)
+
+
 def test_geography_vintage_selects_complete_2020_bundles():
     scenario = load_scenario(
         {

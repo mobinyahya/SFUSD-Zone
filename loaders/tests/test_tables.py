@@ -42,7 +42,7 @@ def test_mission_bay_webster_capacity_transfer_is_selected_and_conserves_seats(
     assert result["capacity"].sum() == programs["capacity"].sum()
     assert programs["capacity"].tolist() == [69, 44, 5]
 
-    with pytest.raises(ValueError, match="Expected 69 Mission Bay GE seats"):
+    with pytest.raises(ValueError, match="expects 69 seats"):
         apply_capacity_scenario(
             programs.assign(capacity=[68, 44, 5]), scenario, "assignment"
         )
