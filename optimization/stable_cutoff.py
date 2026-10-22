@@ -5,7 +5,7 @@ MID solver spends one variable per (type, rank) on a finite grid and the SAA
 master recourses through the continuous stable-admissions LP; both hand their
 linear relaxation a continuum, and a fractional co-zoning weight then buys a
 pro-rata slice of an oversubscribed school that no integral zoning could hand
-out. ``analysis/probe_access_convexification`` measured where that leads: a root
+out. ``analysis/probe_access_convexification`` (at tag ``pre-cleanup-v4``) measured where that leads: a root
 relaxation of 17,377 against a best-known zoning of about 14,950, leaking at a
 perfectly consistent co-zoning matrix, so nothing writable in access space cuts
 it off.

@@ -145,7 +145,7 @@ class OptimizationConfig:
     # carries, rather than swapping in the flow description, is also the
     # closer companion to the master. See optimization/welfare_bounds.py,
     # optimization/zoned_transport.py, and Propositions 4, 13 and 14 in
-    # paper.tex.
+    # paper/paper.tex.
     saa_welfare_bound: str = "zoned_transport_neighbors"
     # Gurobi threads for the zoned-transport LP. One, deliberately: Gurobi runs
     # concurrent LP, and on a model this size the racing algorithms mostly just
@@ -167,7 +167,7 @@ class OptimizationConfig:
     # and maximize their sum. Summing the per-scenario cuts of one iteration
     # reproduces the averaged cut, so the multicut master is never looser at
     # the same cut pool -- it is the formulation of record (Proposition 12 in
-    # paper.tex). False recovers the single-cut master, which bounds one
+    # paper/paper.tex). False recovers the single-cut master, which bounds one
     # expected-welfare variable with one averaged hyperplane per iteration and
     # trades that tightness for S times fewer rows; that arm measured *better*
     # on the cluster on 2026-09-05, so a regression is worth checking here

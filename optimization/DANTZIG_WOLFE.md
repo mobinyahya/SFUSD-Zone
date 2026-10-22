@@ -325,7 +325,7 @@ master.
 
 ### Measured on Block_2, 2026-09-14
 
-`analysis/probe_overlap_budget.py`, mid objective, 501 nodes, 4,154 students,
+`analysis/probe_overlap_budget.py` (at tag `pre-cleanup-v4`), mid objective, 501 nodes, 4,154 students,
 constant 16,830.9547. The exact master reproduced the pathology precisely: LP
 pinned at **10,229.7554 for all nine rounds**, 34 columns, `one_tiling = True`.
 

@@ -1,7 +1,7 @@
 """Market preparation and matching replay for the ``direct_samples`` model.
 
 The ``saa`` strategy solves the stable-matching access polytope (the appendix
-"The Stable-Matching Access Polytope" in paper.tex) *outside* the zoning model:
+"The Stable-Matching Access Polytope" in paper/paper.tex) *outside* the zoning model:
 one continuous recourse LP per sampled tie-breaking seed, whose dual becomes a
 cut in the master's access variables. This module is the data half of the other
 arrangement -- put a copy of that polytope, one per seed, *inside* the zoning

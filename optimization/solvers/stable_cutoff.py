@@ -46,7 +46,7 @@ aggregated recurrence's +0.8% and the SAA recourse LP's own +225 mean at the
 same zonings -- i.e. it is a strictly better relaxation of zoned DA than the
 Rothblum rows the ``saa`` strategy recourses through. (The joint root bound is a
 separate matter and is *not* improved; see
-``analysis/probe_cutoff_formulation`` GATE C.)
+``analysis/probe_cutoff_formulation`` (at tag ``pre-cleanup-v4``) GATE C.)
 
 The two strengthenings
 ----------------------
