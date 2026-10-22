@@ -9,27 +9,10 @@ from pathlib import Path
 import networkx as nx
 import yaml
 
-_CONFIG_ROOT = Path(__file__).resolve().parent / "configs"
-DEFAULT_BLOCK_EDGE_OVERRIDES = _CONFIG_ROOT / "manual_block_edges.yaml"
-DEFAULT_BLOCK_EDGE_ADDITIONS = _CONFIG_ROOT / "manual_block_edge_additions.yaml"
 
-
-def load_block_edge_overrides(
-    path: str | Path | None = None,
-) -> list[tuple[int, int]]:
-    """Load normalized undirected edge pairs expressed as Block GEOIDs."""
-    override_paths = (
-        (DEFAULT_BLOCK_EDGE_OVERRIDES, DEFAULT_BLOCK_EDGE_ADDITIONS)
-        if path is None
-        else (Path(path),)
-    )
-    edges: set[tuple[int, int]] = set()
-    for override_path in override_paths:
-        edges.update(_load_block_edge_override_file(override_path))
-    return sorted(edges)
-
-
-def _load_block_edge_override_file(path: Path) -> set[tuple[int, int]]:
+def load_block_edge_overrides(path: str | Path) -> list[tuple[int, int]]:
+    """Load one manual Block-edge file as normalized undirected GEOID pairs."""
+    path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"Required manual Block edge file is missing: {path}")
 
@@ -56,25 +39,16 @@ def _load_block_edge_override_file(path: Path) -> set[tuple[int, int]]:
         if first == second:
             raise ValueError(f"Manual Block edge {index} in {path} is a self-edge.")
         edges.add(tuple(sorted((first, second))))
-    return edges
-
-
-def block_edge_override_fingerprint(path: str | Path | None = None) -> str:
-    """Return a content fingerprint for normalized manual Block edges."""
-    encoded = json.dumps(load_block_edge_overrides(path), separators=(",", ":")).encode(
-        "utf-8"
-    )
-    return hashlib.sha256(encoded).hexdigest()[:12]
+    return sorted(edges)
 
 
 def apply_block_edge_overrides(
     G: nx.Graph,
-    edges: list[tuple[int, int]] | None = None,
+    edges: list[tuple[int, int]],
 ) -> list[tuple[int, int]]:
     """Add reviewed Block edges to a graph by resolving stable area IDs."""
-    configured = load_block_edge_overrides() if edges is None else edges
     normalized = sorted(
-        {tuple(sorted((int(first), int(second)))) for first, second in configured}
+        {tuple(sorted((int(first), int(second)))) for first, second in edges}
     )
     area_to_node = {
         int(attributes["area_id"]): node
@@ -105,9 +79,6 @@ def apply_block_edge_overrides(
 
 
 __all__ = [
-    "DEFAULT_BLOCK_EDGE_ADDITIONS",
-    "DEFAULT_BLOCK_EDGE_OVERRIDES",
     "apply_block_edge_overrides",
-    "block_edge_override_fingerprint",
     "load_block_edge_overrides",
 ]

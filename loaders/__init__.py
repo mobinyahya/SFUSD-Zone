@@ -9,7 +9,6 @@ from loaders.config import (
 )
 from loaders.edge_overrides import (
     apply_block_edge_overrides,
-    block_edge_override_fingerprint,
     load_block_edge_overrides,
 )
 from loaders.geography import (
@@ -51,7 +50,6 @@ __all__ = [
     "apply_capacity_scenario",
     "apply_student_frl_estimate",
     "apply_block_edge_overrides",
-    "block_edge_override_fingerprint",
     "filter_outside_district_students",
     "identity_fingerprint",
     "load_block_edge_overrides",
