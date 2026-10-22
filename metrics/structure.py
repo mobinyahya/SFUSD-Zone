@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from metrics.columns import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
-from metrics.contiguity import is_contiguous
+from metrics.columns import MetricColumns
 from metrics.solution_code import compute_solution_code
 from metrics.spatial import compute_spatial_metrics
 
@@ -22,7 +21,9 @@ def compute(context: MetricsContext) -> MetricOutput:
         MetricColumns.MAX_REOCK_SCORE: spatial.max_reock_score,
         MetricColumns.AVG_POLSBY_POPPER_SCORE: spatial.avg_polsby_popper_score,
         MetricColumns.MAX_POLSBY_POPPER_SCORE: spatial.max_polsby_popper_score,
-        MetricColumns.CONTIGUOUS: int(is_contiguous(context)),
+        MetricColumns.CONTIGUOUS: int(
+            bool(context.assignment) and context.solution.is_contiguous()
+        ),
         MetricColumns.SOLUTION_CODE: compute_solution_code(context.area_assignment),
     }
     return MetricOutput(metrics=metrics, run={"final_cut_edges": spatial.cut_edges})

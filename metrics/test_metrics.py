@@ -5,13 +5,13 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from metrics.columns import MetricColumns
 from optimization.data.contiguity import boundary_edges
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import make_grid_problem
 from metrics import MetricsCalculator
+from metrics.columns import MetricColumns
 from metrics import choice as choice_metrics
 from metrics import distance as distance_metrics
 from metrics import programs as program_metrics

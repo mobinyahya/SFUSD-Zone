@@ -6,9 +6,9 @@ from collections.abc import Iterable
 from typing import Any
 
 from Config.Constants import PROGRAM_CATEGORIES
-from metrics.columns import MetricColumns
 from loaders.tables import load_program_records
 from metrics.base import MetricOutput, MetricsContext
+from metrics.columns import MetricColumns
 from optimization.data.loaders import PROGRAM_ROLE
 
 LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])

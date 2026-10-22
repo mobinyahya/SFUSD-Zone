@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from choice.models import build_mnl_choice_model
-from metrics.columns import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
+from metrics.columns import MetricColumns
 
 
 def compute(context: MetricsContext) -> MetricOutput:

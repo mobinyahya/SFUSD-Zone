@@ -43,10 +43,6 @@ class MetricsResult:
         for zone_id, values in output.zone_data.items():
             self.zone_data.setdefault(int(zone_id), {}).update(values)
 
-    def to_flat_dict(self) -> dict[str, MetricValue]:
-        """Flat metrics only, for CSV-like consumers."""
-        return dict(self.metrics)
-
     def to_full_dict(self) -> dict[str, Any]:
         """JSON-serializable metrics, per-zone data, and run metadata."""
         return _jsonable(
@@ -65,7 +61,6 @@ class MetricsContext:
         self,
         solutions: ZoneSolution | list[ZoneSolution],
         config: Mapping[str, Any] | Any | None = None,
-        final_solution: ZoneSolution | None = None,
         compute_stage_metrics: bool = False,
     ):
         if isinstance(solutions, ZoneSolution):
@@ -83,7 +78,7 @@ class MetricsContext:
         self.config = _config_dict(config)
         # An OptimizationConfig already holds its loaded scenario; reuse it.
         self._data_scenario = getattr(config, "data_scenario", None)
-        self.solution = final_solution or self._select_final_solution()
+        self.solution = self._select_final_solution()
         self.compute_stage_metrics = bool(compute_stage_metrics)
 
     @property

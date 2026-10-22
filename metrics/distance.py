@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from metrics.columns import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
+from metrics.columns import MetricColumns
 from metrics.programs import ge_schools
 
 GE_PROXIMITY_RADIUS = 0.5
