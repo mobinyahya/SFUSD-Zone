@@ -13,6 +13,7 @@ from loaders import (
     load_school_records,
     load_student_records,
     read_csv_source,
+    require_geography_vintage,
     selected_geography_vintage,
 )
 
@@ -181,18 +182,17 @@ class SchoolChoiceMarket:
 
         A zone file of Census GEOIDs is compared against the students' IDs in
         the selected vintage, so one declaring another vintage is rejected.
+        Untagged zone files are not checked.
         """
         source = _named_source(self.data_scenario, "assignment.zones", policy)
-        vintage = selected_geography_vintage(self.data_scenario, "assignment")
-        if self.config.get(
-            "zone-building-blocks"
-        ) in _CENSUS_ZONE_BUILDING_BLOCKS and source.geography_vintage not in {
-            None,
-            vintage,
-        }:
-            raise ValueError(
-                f"Zone policy {policy!r} lists Census {source.geography_vintage} "
-                f"GEOIDs, but assignment.geography_vintage is {vintage!r}."
+        if (
+            self.config.get("zone-building-blocks") in _CENSUS_ZONE_BUILDING_BLOCKS
+            and source.geography_vintage is not None
+        ):
+            require_geography_vintage(
+                source,
+                selected_geography_vintage(self.data_scenario, "assignment"),
+                f"Zone policy {policy!r}",
             )
         return source.path
 

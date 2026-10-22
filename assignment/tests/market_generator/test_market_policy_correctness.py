@@ -86,7 +86,7 @@ def test_zone_file_rejects_census_ids_of_another_vintage():
     assert _zone_market(zones, geography_vintage="2020").zone_file("bg") == Path(
         "zones.csv"
     )
-    with pytest.raises(ValueError, match="Census 2020 GEOIDs"):
+    with pytest.raises(ValueError, match="Census 2020 GEOIDs.*Census 2010"):
         _zone_market(zones).zone_file("bg")
 
 
