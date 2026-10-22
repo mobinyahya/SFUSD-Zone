@@ -43,7 +43,7 @@ _MISSION_BAY_SCHOOL_IDS = {909, 999}
 #: SFUSD's placeholder school for a student on record with no school -- the
 #: district names it "Central Enrollment". A student recorded as enrolled at it
 #: is not enrolled anywhere, so no enrolled population ever contains one; see
-#: ``filter_not_enrolled_students``. It is also the post-run's
+#: ``_enrolled_mask``. It is also the post-run's
 #: ``idCurrentSchool`` for an applicant with no current SFUSD school, which is
 #: the same fact at an earlier date.
 NOT_ENROLLED_SCHOOL_ID = 899

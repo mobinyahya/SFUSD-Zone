@@ -83,9 +83,9 @@ Lists and named maps may contain any other source-reference form recursively.
 `DataScenario.sources(role)` flattens them in configured order, while
 `DataScenario.source_map(role)` preserves a top-level named map.
 
-Named-map keys must be non-empty strings. The five direct-source field names
-(`path`, `root`, `companions`, `classification`, and `geography_vintage`) are
-reserved: any map containing one of them is parsed as a direct source object,
+Named-map keys must be non-empty strings. The six direct-source field names
+(`path`, `root`, `companions`, `classification`, `geography_vintage`, and
+`identity`) are reserved: any map containing one of them is parsed as a direct source object,
 not a named map. Empty lists and maps pass configuration validation but resolve
 to no files and are not usable by consumers that require one or more sources.
 
@@ -98,6 +98,7 @@ to no files and are not usable by consumers that require one or more sources.
 | `companions` | List of path strings | No | `[]` | Files that participate in source identity with `path`. Paths use the same root as `path`. |
 | `classification` | String | No | `unspecified` | Data-classification metadata included in manifests and cache identity. Values such as `public`, `internal`, and `restricted` are conventions, not a validated enum. |
 | `geography_vintage` | Four-digit string | No | None | Census vintage already represented by a location-bearing source, such as `"2010"`. |
+| `identity` | `path_and_checksum` or `checksum` | No | `path_and_checksum` | How the source enters cache identity. `checksum` omits the absolute path, so a file shipped inside the repository keys the same from any checkout. |
 
 For a Shapefile `path`, `.dbf`, `.shx`, and `.prj` files are added to
 `companions` automatically. Rootless direct paths are relative to the YAML that
@@ -179,7 +180,7 @@ relative run overrides are resolved from the run YAML.
 
 Each key below `files` is an arbitrary non-empty catalog ID. Each value must be
 a complete direct source object using only `path`, `root`, `companions`,
-`classification`, and `geography_vintage`. A catalog entry cannot alias another
+`classification`, `geography_vintage`, and `identity`. A catalog entry cannot alias another
 catalog ID or contain a list or named map.
 
 Source files do not have to exist while configuration is resolved. Missing
