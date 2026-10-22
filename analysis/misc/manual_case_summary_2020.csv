@@ -1,0 +1,3 @@
+case_number,plot,focal_node,focal_area_id,school_id,centroid_node,centroid_area_id,distance_to_centroid_miles,plot_radius_miles,closer_candidate_count
+1,case_0001_block_60750179032001_school_912.png,1607,60750179032001,912,1561,60750179031011,2.5552704751883613,1.343826395751216,1
+2,case_0002_block_60750226002000_school_912.png,2248,60750226002000,912,1561,60750179031011,4.147355420693756,0.5081850303474021,1

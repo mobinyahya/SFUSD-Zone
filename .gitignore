@@ -6,8 +6,6 @@ output/*
 .venv
 /optimization_output/
 /optimization_output/*
-/analysis/plots/
-/analysis/plots/*
 sweep.log
 sweep_comparison.log
 .DS_Store
@@ -38,7 +36,6 @@ run_commands.txt
 r1_filter_student_without_specialprogs_2324.numbers
 .DS_Store
 choice_model.npy
-analysis/plots/*
 analysis/matches/*
 
 # Local-only shell scripts (kept outside version control for now)
@@ -122,3 +119,14 @@ paper/*
 analysis/probe_*.py
 analysis/saa_lagrangian_bound.py
 analysis/compare_saa_bound_arms.py
+
+# Generated plot data; keep plot scripts and tests visible
+/analysis/plots/output/
+
+# Kept from local main
+SFUSD
+/Zone_Generation/LLM/config.py
+/Zone_Generation/Data_Description/top_5_area_data.csv
+.pytest_cache/
+.ruff_cache/
+analysis/probes
