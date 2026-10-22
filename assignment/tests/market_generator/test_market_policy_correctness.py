@@ -133,12 +133,11 @@ def test_assignment_names_cover_all_policy_option_dimensions():
         "priority-weights": {"sibling": 1},
         "paths": {"zone-files": {"zones": "zones.csv"}},
     }
-    baseline_policy = Policy("zones", 1, 0, "MTB")
+    baseline_policy = Policy("zones", 1, "MTB")
     baseline = market._get_assignment_save_name(baseline_policy, 3)
 
     variants = []
-    variants.append(market._get_assignment_save_name(Policy("zones", 1, 123, "MTB"), 3))
-    variants.append(market._get_assignment_save_name(Policy("zones", 1, 0, "STB"), 3))
+    variants.append(market._get_assignment_save_name(Policy("zones", 1, "STB"), 3))
 
     market.config["guard-rails"] = 1
     variants.append(market._get_assignment_save_name(baseline_policy, 3))
@@ -246,7 +245,6 @@ def _configure_reuse_market(market):
         {
             "policies": ["zones"],
             "ctip-options": [0],
-            "rounds-merged-options": [0],
             "ties-options": ["STB"],
             "guard-rails": -1,
             "reserve-settings": {},
@@ -263,7 +261,7 @@ def _configure_reuse_market(market):
 def _write_reusable_assignment(market, iteration):
     return market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         iteration,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -279,7 +277,7 @@ def test_saved_rank_uses_source_listed_position_not_filtered_mechanism_rank(tmp_
 
     assignment = market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -307,7 +305,7 @@ def test_saved_rank_counts_an_honoured_promotion_as_a_first_choice(tmp_path):
 
     assignment = market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -317,7 +315,9 @@ def test_saved_rank_counts_an_honoured_promotion_as_a_first_choice(tmp_path):
     assert assignment.loc[0, "submitted_rank"] == 1
     assert assignment.loc[0, "rank"] == 1
     assert assignment.loc[0, "rank_excluding_promotion"] == 4
-    assert assignment.loc[1, ["submitted_rank", "rank_excluding_promotion"]].isna().all()
+    assert (
+        assignment.loc[1, ["submitted_rank", "rank_excluding_promotion"]].isna().all()
+    )
 
 
 def test_saved_utility_rank_is_independent_from_submitted_rank(tmp_path):
@@ -333,7 +333,7 @@ def test_saved_utility_rank_is_independent_from_submitted_rank(tmp_path):
 
     assignment = market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -352,7 +352,7 @@ def test_saved_mechanism_rank_preserves_designation_position(tmp_path):
 
     assignment = market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([7, 2]),
@@ -393,7 +393,7 @@ def test_incomplete_assignment_run_is_regenerated(tmp_path):
 
     assert len(assignments) == 2
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(Policy("zones", 0, 0, "STB"), 0).exists()
+    assert not market._assignment_save_path(Policy("zones", 0, "STB"), 0).exists()
 
 
 def test_invalid_complete_assignment_run_is_rejected(tmp_path):
@@ -401,7 +401,7 @@ def test_invalid_complete_assignment_run_is_rejected(tmp_path):
     _configure_reuse_market(market)
     for iteration in [0, 1]:
         _write_reusable_assignment(market, iteration)
-    invalid_path = market._assignment_save_path(Policy("zones", 0, 0, "STB"), 1)
+    invalid_path = market._assignment_save_path(Policy("zones", 0, "STB"), 1)
     pd.read_csv(invalid_path).iloc[[0]].to_csv(invalid_path, index=False)
     market._run_single_iteration_of_policy = Mock()
 
@@ -426,13 +426,13 @@ def test_assignment_reuse_can_be_disabled(tmp_path):
     list(market.create_iterations_generator())
 
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(Policy("zones", 0, 0, "STB"), 0).exists()
+    assert not market._assignment_save_path(Policy("zones", 0, "STB"), 0).exists()
 
 
 def test_assignment_reuse_rejects_rank_basis_from_different_policy_mode(tmp_path):
     market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
     _configure_reuse_market(market)
-    policy = Policy("zones", 0, 0, "STB")
+    policy = Policy("zones", 0, "STB")
     _write_reusable_assignment(market, 0)
     market.config["utility-model"]["enable"] = True
 
@@ -443,7 +443,7 @@ def test_assignment_reuse_rejects_rank_basis_from_different_policy_mode(tmp_path
 def test_real_match_assignment_is_reused_before_reconstruction(tmp_path):
     market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
     market.config["reuse_assignments"] = True
-    policy = Policy("real_match", None, None, None)
+    policy = Policy("real_match", None, None)
     market._save_assignment(
         np.array([[1], [0]]),
         policy,
@@ -467,7 +467,7 @@ def test_assignment_metrics_export_is_disabled_when_omitted(tmp_path, monkeypatc
 
     market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -504,7 +504,7 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     for iteration in [0, 1]:
         market._save_assignment(
             np.array([[1], [0]]),
-            Policy("zones", 0, 0, "STB"),
+            Policy("zones", 0, "STB"),
             iteration,
             np.array([1, 0]),
             np.array([1, 2]),
@@ -568,7 +568,7 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
 
     market._save_assignment(
         np.array([[1], [0]]),
-        Policy("zones", 0, 0, "STB"),
+        Policy("zones", 0, "STB"),
         0,
         np.array([1, 0]),
         np.array([1, 2]),
@@ -598,7 +598,7 @@ def test_failed_metrics_export_preserves_written_assignment(tmp_path, monkeypatc
     with pytest.raises(ValueError, match="report failed"):
         market._save_assignment(
             np.array([[1], [0]]),
-            Policy("zones", 0, 0, "STB"),
+            Policy("zones", 0, "STB"),
             0,
             np.array([1, 0]),
             np.array([1, 2]),
@@ -824,32 +824,27 @@ def test_non_designation_boost_comes_from_config():
         preference_generator=SimpleNamespace(pref_length=np.array([1])),
     )
     generator = PriorityGenerator(market)
-    generator._set_rounds_merged = Mock(return_value=np.zeros((1, 2)))
+    generator._round_priorities = Mock(return_value=np.zeros((1, 2)))
     generator._set_policy_priorities = Mock(return_value=np.zeros((1, 2)))
 
     priorities = generator.get_priorities_without_lottery(
-        Policy("zones", 0, 0, "MTB"), np.array([[1, 0]])
+        Policy("zones", 0, "MTB"), np.array([[1, 0]])
     )
 
     np.testing.assert_array_equal(priorities, [[37, 0]])
 
 
-def test_round_merging_uses_ordinals_and_restricts_legacy_codes():
+def test_earlier_rounds_outrank_later_ones_by_ordinal():
     students = SimpleNamespace(
         first_round=np.array([0, 1, 3]),
         rounds=4,
     )
-    market = SimpleNamespace(n=3, num_programs=1, students=students)
+    market = SimpleNamespace(n=3, num_programs=2, students=students)
     generator = PriorityGenerator(market)
 
     np.testing.assert_array_equal(
-        generator._set_rounds_merged(0).ravel(), [3000, 2000, 0]
+        generator._round_priorities(), [[3000, 3000], [2000, 2000], [0, 0]]
     )
-    np.testing.assert_array_equal(
-        generator._set_rounds_merged("all").ravel(), [0, 0, 0]
-    )
-    with pytest.raises(ValueError, match="supports at most three selected rounds"):
-        generator._set_rounds_merged(123)
 
 
 def test_unknown_tiebreakers_and_missing_lottery_iteration_are_fatal():
@@ -878,7 +873,7 @@ def test_policy_priorities_forward_the_lottery_iteration():
     generator._set_tiebreaker = Mock(return_value=np.zeros((1, 1)))
 
     generator.set_policy_specific_priorities(
-        Policy("zones", 0, 0, "MTB"),
+        Policy("zones", 0, "MTB"),
         np.array([[1]]),
         iteration=9,
     )

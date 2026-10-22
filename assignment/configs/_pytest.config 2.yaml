@@ -11,8 +11,6 @@ paths:
   assignment-folder: ./assignment_output/assignments/
 random-seed: 2023
 reuse_assignments: true
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - zones+reserves

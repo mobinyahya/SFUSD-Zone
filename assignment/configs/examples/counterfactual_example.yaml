@@ -66,8 +66,6 @@ paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/counterfactual_runs/baseline/selected_2223_k1_prog_gesplit/2223/
 r1-only: true
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - status_quo

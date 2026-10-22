@@ -329,12 +329,7 @@ class MarketGenerator(SchoolChoiceMarket):
         specs = []
         for policy in self.config["policies"]:
             if policy == "real_match":
-                policy_data = Policy(
-                    name="real_match",
-                    ctip=None,
-                    rounds_merged=None,
-                    tiebreaker=None,
-                )
+                policy_data = Policy(name="real_match", ctip=None, tiebreaker=None)
                 specs.append(
                     (
                         self._assignment_save_path(policy_data, None),
@@ -1391,9 +1386,7 @@ class MarketGenerator(SchoolChoiceMarket):
         Returns:
             pd.DataFrame: saved historical student assignments
         """
-        policy_data = Policy(
-            name="real_match", ctip=None, rounds_merged=None, tiebreaker=None
-        )
+        policy_data = Policy(name="real_match", ctip=None, tiebreaker=None)
         reusable = self._load_reusable_assignment(policy_data, None)
         if reusable is not None:
             return reusable
@@ -1477,16 +1470,9 @@ class MarketGenerator(SchoolChoiceMarket):
 
     def _policy_data_options(self, policy):
         return [
-            Policy(
-                name=policy,
-                ctip=ctip,
-                rounds_merged=rounds_merged,
-                tiebreaker=ties,
-            )
-            for ctip, rounds_merged, ties in product(
-                self.config["ctip-options"],
-                self.config["rounds-merged-options"],
-                self.config["ties-options"],
+            Policy(name=policy, ctip=ctip, tiebreaker=ties)
+            for ctip, ties in product(
+                self.config["ctip-options"], self.config["ties-options"]
             )
         ]
 
@@ -2196,7 +2182,6 @@ class MarketGenerator(SchoolChoiceMarket):
             .get("zone-files", {})
             .get(policy_data.name),
             "ctip": policy_data.ctip,
-            "rounds_merged": policy_data.rounds_merged,
             "tiebreaker": policy_data.tiebreaker,
             "guard_rails": guard_rails,
             "reserve_settings": self.config.get("reserve-settings", {}),
@@ -2225,7 +2210,6 @@ class MarketGenerator(SchoolChoiceMarket):
         code_folder = (
             f"{safe_token(zone_policy)}_{restrict_label}Restrict_"
             f"{reserve_label}Reserve_{safe_token(ctip)}_{sibling}Sibling_"
-            f"rounds{safe_token(policy_data.rounds_merged)}_"
             f"ties{safe_token(policy_data.tiebreaker)}_{signature}"
         )
         return f"{code_folder}/{code_folder}_iteration{iteration}.csv"

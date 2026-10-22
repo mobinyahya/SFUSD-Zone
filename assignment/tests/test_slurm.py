@@ -700,7 +700,6 @@ def _rng_market(tmp_path):
         "restrict-zone": False,
         "citywide-or-lp": [],
         "ctip-options": [0],
-        "rounds-merged-options": [0],
         "ties-options": ["MTB"],
         "reuse_assignments": False,
     }

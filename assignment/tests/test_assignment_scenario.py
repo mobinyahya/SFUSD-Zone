@@ -231,7 +231,6 @@ def _config(
         "iterations": {"start": 0, "end": 1},
         "paths": {"assignment-folder": str(tmp_path / "assignments")},
         "random-seed": 7,
-        "rounds-merged-options": [0],
         "save-assignment": True,
         "subconfigs": [],
         "utility-model": {"enable": False, "list-length": "7"},

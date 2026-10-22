@@ -248,8 +248,6 @@ paths:
   assignment-folder: ${run_folder}/
 r1-only: true
 random-seed: ${RANDOM_SEED}
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - ${SUBCONFIG}

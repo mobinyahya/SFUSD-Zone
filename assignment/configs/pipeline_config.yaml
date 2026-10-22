@@ -64,5 +64,3 @@ iterations:
   start: 0
   end: 10
 save-assignment: true
-rounds-merged-options:
-- 0

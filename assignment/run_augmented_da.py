@@ -113,17 +113,10 @@ class AugmentedMarketGenerator(MarketGenerator):
                 prefs, aug_config, policy=policy, iteration=iteration
             )
 
-        for ctip, rounds_merged, ties in product(
-            self.config["ctip-options"],
-            self.config["rounds-merged-options"],
-            self.config["ties-options"],
+        for ctip, ties in product(
+            self.config["ctip-options"], self.config["ties-options"]
         ):
-            policy_data = Policy(
-                name=policy,
-                ctip=ctip,
-                rounds_merged=rounds_merged,
-                tiebreaker=ties,
-            )
+            policy_data = Policy(name=policy, ctip=ctip, tiebreaker=ties)
 
             priorities = self.priority_generator.set_policy_specific_priorities(
                 policy_data, prefs, iteration=iteration

@@ -63,8 +63,6 @@ subconfigs:
 - 2405-SFUSD-simulations/simulation3_fuzzy
 - 2405-SFUSD-simulations/simulation3_noFuzzy
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 paths:
   assignment-folder: ~/assignments-facility-capacity/simulation3/

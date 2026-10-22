@@ -39,7 +39,6 @@ a sourced settings file (`scripts/settings/*.env`, see `--settings`).
 | `export-local-metrics` | bool | Also write program, ZIP-code, and attendance-area reports. Requires `export-aggregate-metrics: true` and defaults to `false`. |
 | `reuse_assignments` | bool | Reuse valid assignment CSVs already present under `paths.assignment-folder` instead of rerunning DA. Reused assignments still contribute to combined metric exports. Defaults to `true`. |
 | `r1-only` | bool | Treat round 1 as the only round when reconstructing final assignments. |
-| `rounds-merged-options` | list | Round-merging variants over chronological ordinals: `0` (no merge), `all`, or legacy three-round codes `123`, `12`, `23`. Legacy codes are rejected when more than three rounds are selected. |
 | `read-lotteries` | bool | Read tie-breaker lotteries from the `assignment.lotteries` scenario role instead of drawing them. |
 | `subconfigs` | list(str) | Policy subconfig names to run (files in `configs/policy_configs/`). |
 

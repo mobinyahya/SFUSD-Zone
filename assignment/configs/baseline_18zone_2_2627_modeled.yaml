@@ -30,8 +30,6 @@ export_heatmaps: true
 reuse_assignments: true
 
 r1-only: true
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - small_zones+no_reserves

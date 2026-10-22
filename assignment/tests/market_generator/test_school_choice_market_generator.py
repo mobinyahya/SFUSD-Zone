@@ -44,7 +44,6 @@ def test_real_preferences_honor_designate_policy_setting():
         "utility-model": {"enable": False},
         "designate": False,
         "ctip-options": [],
-        "rounds-merged-options": [],
         "ties-options": [],
     }
     market.priority_generator = Mock()

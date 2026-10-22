@@ -66,8 +66,6 @@ paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/t8_estimates_runs/t8_2223_k3_prog_gesplit/
 r1-only: true
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - status_quo

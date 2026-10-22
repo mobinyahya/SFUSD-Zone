@@ -17,8 +17,6 @@ export-local-metrics: true
 reuse_assignments: false
 
 r1-only: true
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - zone_apples

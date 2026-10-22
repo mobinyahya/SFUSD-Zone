@@ -915,8 +915,6 @@ paths:
   assignment-folder: <STUDENT_ASSIGNMENT_PATH>/local-data/local-runs/all_zones_selected/
 r1-only: true
 random-seed: 2023
-rounds-merged-options:
-- 0
 save-assignment: true
 subconfigs:
 - small_zones+no_reserves
