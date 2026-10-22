@@ -8,7 +8,7 @@ import networkx as nx
 import pytest
 
 from Config.Constants import AREA_ETHNICITIES
-from Config.metrics_config import MetricColumns
+from metrics.columns import MetricColumns
 from metrics import MetricsCalculator
 from optimization.config import OptimizationConfig
 from optimization.data.contiguity import boundary_cost, boundary_edges

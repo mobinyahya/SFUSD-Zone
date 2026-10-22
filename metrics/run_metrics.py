@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from Config.metrics_config import MetricColumns
+from metrics.columns import MetricColumns
 from metrics.base import MetricOutput, MetricsContext
 from metrics.spatial import compute_spatial_metrics
 

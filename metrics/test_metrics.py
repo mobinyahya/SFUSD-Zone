@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from Config.metrics_config import MetricColumns
+from metrics.columns import MetricColumns
 from optimization.data.contiguity import boundary_edges
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem

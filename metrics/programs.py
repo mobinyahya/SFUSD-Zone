@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from Config.Constants import PROGRAM_CATEGORIES
-from Config.metrics_config import MetricColumns
+from metrics.columns import MetricColumns
 from loaders.tables import load_program_records
 from metrics.base import MetricOutput, MetricsContext
 from optimization.data.loaders import PROGRAM_ROLE
