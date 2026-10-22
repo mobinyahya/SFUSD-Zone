@@ -66,6 +66,8 @@ def main(argv: list[str] | None = None) -> None:
             f"Regenerated {regen.regenerated}/{regen.total}; "
             f"failed={regen.failed}, skipped={regen.skipped}"
         )
+        for run_dir, error in regen.errors.items():
+            print(f"  {run_dir}: {error}")
         _aggregate(output_dir, sweep)
 
 
