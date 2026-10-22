@@ -170,4 +170,3 @@ class RecursiveStrategy(Strategy):
     @staticmethod
     def _constraint_multiplier(looseness, levels, i):
         return float(looseness) ** (len(levels) - i - 1)
-

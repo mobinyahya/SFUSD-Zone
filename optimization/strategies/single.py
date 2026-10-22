@@ -41,4 +41,3 @@ class SingleShotStrategy(Strategy):
                 )
             return solutions
         return [solver.solve(problem)]
-
