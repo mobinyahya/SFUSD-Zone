@@ -14,6 +14,7 @@ from functools import cached_property
 from typing import Any, Callable, Mapping
 
 from loaders import DataScenario, load_scenario
+from metrics.spatial import SpatialMetrics, compute_spatial_metrics
 from optimization.solution import ZoneSolution
 
 MetricValue = float | int | str | bool | None
@@ -80,6 +81,7 @@ class MetricsContext:
         self._data_scenario = getattr(config, "data_scenario", None)
         self.solution = self._select_final_solution()
         self.compute_stage_metrics = bool(compute_stage_metrics)
+        self._spatial: dict[int, SpatialMetrics] = {}
 
     @property
     def G(self):
@@ -96,6 +98,13 @@ class MetricsContext:
     @property
     def level_name(self) -> str:
         return self.solution.level.name
+
+    def spatial_metrics(self, solution: ZoneSolution) -> SpatialMetrics:
+        """Block_0 spatial metrics for one stage, computed once per stage."""
+        key = id(solution)
+        if key not in self._spatial:
+            self._spatial[key] = compute_spatial_metrics(solution, self.config)
+        return self._spatial[key]
 
     @cached_property
     def data_scenario(self) -> DataScenario | None:

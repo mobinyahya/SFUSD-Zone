@@ -18,6 +18,7 @@ from benchmark.runner import (
     RESULT_FILENAME,
     load_manifest,
 )
+from metrics.spatial import SPATIAL_FIELDS
 
 
 def discover_run_dirs(root_folder: str) -> list[str]:
@@ -136,13 +137,7 @@ def _stage_rows(
             "objective": stage.get("objective"),
             "mid_welfare": metadata.get("mid_welfare"),
             "saa_welfare": metadata.get("saa_welfare"),
-            "cut_edges": metrics_stage.get("cut_edges"),
-            "normalized_cut_edges": metrics_stage.get("normalized_cut_edges"),
-            "fractional_cut_edges": metrics_stage.get("fractional_cut_edges"),
-            "avg_reock_score": metrics_stage.get("avg_reock_score"),
-            "max_reock_score": metrics_stage.get("max_reock_score"),
-            "avg_polsby_popper_score": metrics_stage.get("avg_polsby_popper_score"),
-            "max_polsby_popper_score": metrics_stage.get("max_polsby_popper_score"),
+            **{field: metrics_stage.get(field) for field in SPATIAL_FIELDS},
             "wall_time": stage.get("wall_time"),
             "contiguous": metrics_stage.get("contiguous")
             if "contiguous" in metrics_stage

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from metrics.base import MetricOutput, MetricsContext
 from metrics.columns import MetricColumns
-from metrics.spatial import compute_spatial_metrics
+from metrics.spatial import SPATIAL_FIELDS
 
 
 def compute(context: MetricsContext) -> MetricOutput:
@@ -39,35 +39,20 @@ def compute(context: MetricsContext) -> MetricOutput:
 
     for idx, (name, solution) in enumerate(zip(context.stage_names, context.stages)):
         stage_is_eligible = solution.feasible and bool(solution.assignment)
-        spatial = (
-            compute_spatial_metrics(solution, context.config)
-            if compute_stage_metrics and stage_is_eligible
-            else None
-        )
-        contiguous = (
-            solution.is_contiguous()
-            if compute_stage_metrics and stage_is_eligible
-            else None
-        )
+        measured = compute_stage_metrics and stage_is_eligible
+        spatial = context.spatial_metrics(solution) if measured else None
         row = {
             "name": name,
             "index": idx,
             "level": solution.level.name,
             "status": solution.status,
             "objective": solution.objective,
-            "cut_edges": spatial.cut_edges if spatial else None,
-            "normalized_cut_edges": spatial.normalized_cut_edges if spatial else None,
-            "fractional_cut_edges": spatial.fractional_cut_edges if spatial else None,
-            "avg_reock_score": spatial.avg_reock_score if spatial else None,
-            "max_reock_score": spatial.max_reock_score if spatial else None,
-            "avg_polsby_popper_score": spatial.avg_polsby_popper_score
-            if spatial
-            else None,
-            "max_polsby_popper_score": spatial.max_polsby_popper_score
-            if spatial
-            else None,
+            **{
+                field: getattr(spatial, field) if spatial else None
+                for field in SPATIAL_FIELDS
+            },
             "wall_time": solution.wall_time,
-            "contiguous": contiguous,
+            "contiguous": solution.is_contiguous() if measured else None,
             "num_nodes": solution.problem.A,
             "num_zones": solution.problem.Z,
             "metadata": dict(solution.metadata),
@@ -76,36 +61,19 @@ def compute(context: MetricsContext) -> MetricOutput:
             row["choice_utility"] = solution.metadata["choice_utility"]
         stage_rows.append(row)
 
-        if final_is_eligible:
-            flat[f"objective_{name}"] = solution.objective
-            flat[f"wall_time_{name}"] = solution.wall_time
-        if compute_stage_metrics and stage_is_eligible:
-            flat[f"cut_edges_{name}"] = row["cut_edges"]
-            flat[f"normalized_cut_edges_{name}"] = row["normalized_cut_edges"]
-            flat[f"fractional_cut_edges_{name}"] = row["fractional_cut_edges"]
-            flat[f"avg_reock_score_{name}"] = row["avg_reock_score"]
-            flat[f"max_reock_score_{name}"] = row["max_reock_score"]
-            flat[f"avg_polsby_popper_score_{name}"] = row["avg_polsby_popper_score"]
-            flat[f"max_polsby_popper_score_{name}"] = row["max_polsby_popper_score"]
-        if final_is_eligible and level_counts[solution.level.name] == 1:
-            flat[f"objective_{solution.level.name}"] = solution.objective
-            flat[f"wall_time_{solution.level.name}"] = solution.wall_time
-            if compute_stage_metrics and stage_is_eligible:
-                flat[f"cut_edges_{solution.level.name}"] = row["cut_edges"]
-                flat[f"normalized_cut_edges_{solution.level.name}"] = row[
-                    "normalized_cut_edges"
-                ]
-                flat[f"fractional_cut_edges_{solution.level.name}"] = row[
-                    "fractional_cut_edges"
-                ]
-                flat[f"avg_reock_score_{solution.level.name}"] = row["avg_reock_score"]
-                flat[f"max_reock_score_{solution.level.name}"] = row["max_reock_score"]
-                flat[f"avg_polsby_popper_score_{solution.level.name}"] = row[
-                    "avg_polsby_popper_score"
-                ]
-                flat[f"max_polsby_popper_score_{solution.level.name}"] = row[
-                    "max_polsby_popper_score"
-                ]
+        # Every stage is keyed by its name; a level solved once is also keyed
+        # by the level alone.
+        suffixes = [name]
+        if level_counts[solution.level.name] == 1:
+            suffixes.append(solution.level.name)
+        for suffix in suffixes:
+            if final_is_eligible:
+                flat[f"objective_{suffix}"] = solution.objective
+                flat[f"wall_time_{suffix}"] = solution.wall_time
+            if measured:
+                flat.update(
+                    {f"{field}_{suffix}": row[field] for field in SPATIAL_FIELDS}
+                )
 
     final_stage = stage_rows[context.final_stage_index]
     if final_is_eligible and compute_stage_metrics:

@@ -266,6 +266,28 @@ def test_recursive_stage_metrics_can_be_enabled():
     assert result.run["stages"][1]["fractional_cut_edges"] > 0
 
 
+def test_stage_metrics_measure_each_stage_once(monkeypatch):
+    import metrics.base
+
+    measured = []
+    original = metrics.base.compute_spatial_metrics
+
+    def counting(solution, config):
+        measured.append(solution)
+        return original(solution, config)
+
+    monkeypatch.setattr(metrics.base, "compute_spatial_metrics", counting)
+    first, final = _solution(), _solution()
+
+    MetricsCalculator(
+        [first, final],
+        config={"strategy": "recursive"},
+        compute_stage_metrics=True,
+    ).compute()
+
+    assert [id(stage) for stage in measured] == [id(first), id(final)]
+
+
 def test_iterative_metrics_select_best_choice_utility():
     low = _solution(
         objective=30.0,
