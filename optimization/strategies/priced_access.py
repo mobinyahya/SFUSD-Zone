@@ -56,6 +56,8 @@ def _budget_metadata(budget: Budget, evaluation_seconds: float) -> dict:
 
 @register("priced_access")
 class PricedAccessStrategy(Strategy):
+    reads_assignment_market = True
+
     def run(self, dataset: Dataset, solver: Solver) -> list[ZoneSolution]:
         levels = [LevelSpec.parse(level) for level in self.options["levels"]]
         target = levels[-1]
@@ -76,8 +78,7 @@ class PricedAccessStrategy(Strategy):
         started = time.perf_counter()
         evaluation_seconds = 0.0
 
-        base_problem = dataset.problem_for(target)
-        base_problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
+        base_problem = self.problem_for(dataset, target)
         model = build_priced_access_choice_model(
             base_problem,
             dataset.config,
@@ -127,16 +128,17 @@ class PricedAccessStrategy(Strategy):
                 if hint_solution is not None and apply_hints
                 else None
             )
-            problem = dataset.problem_for(
+            problem = self.problem_for(
+                dataset,
                 target,
                 hint=hint,
                 choice_objective=choice_objective,
             )
-            problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
-            solver.options["solve_time_limit"] = iteration_time_limit
-            solver.options["relative_gap_limit"] = relative_tolerance
             master_start = time.perf_counter()
-            sol = solver.solve(problem)
+            sol = solver.with_options(
+                solve_time_limit=iteration_time_limit,
+                relative_gap_limit=relative_tolerance,
+            ).solve(problem)
             budget.charge(time.perf_counter() - master_start)
             iterations_completed += 1
             sol.metadata.update(

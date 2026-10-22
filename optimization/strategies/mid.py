@@ -6,32 +6,23 @@ import time
 
 from optimization.data.initial_solutions import initial_solution
 from optimization.data.mid import build_mid_market
-from optimization.levels import LevelSpec
 from optimization.solvers.mid import MidCpSatSolver
 from optimization.strategies.base import Strategy, register
 
 
 @register("mid")
 class MidStrategy(Strategy):
+    reads_assignment_market = True
+    capacity_balance = False
+
     def run(self, dataset, solver):
         if getattr(solver, "name", None) != "cp_bool":
             raise ValueError("mid requires solver='cp_bool'.")
         if dataset.config.program_population != "All":
             raise ValueError("mid requires program_population='All'.")
 
-        levels = [LevelSpec.parse(level) for level in self.options["levels"]]
-        target = levels[-1]
-        _apply_final_limit(solver.options, self.options.get("solve_time_limits"))
-        _apply_final_limit(
-            solver.options,
-            self.options.get("gap_limits"),
-            key="relative_gap_limit",
-        )
-
-        problem = dataset.problem_for(target)
-        problem.overage = -1.0
-        problem.shortage = -1.0
-        problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
+        solver = solver.with_options(**self.final_limits(solver))
+        problem = self.problem_for(dataset, self.options["levels"][-1])
         hint = initial_solution(
             problem,
             self.options.get("hints", "voronoi"),
@@ -57,8 +48,3 @@ class MidStrategy(Strategy):
             **solver.options,
         )
         return [mid_solver.solve(problem)]
-
-
-def _apply_final_limit(options: dict, values, *, key: str = "solve_time_limit") -> None:
-    if values:
-        options[key] = float(values[-1])

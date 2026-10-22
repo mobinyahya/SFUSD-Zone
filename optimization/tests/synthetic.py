@@ -16,6 +16,7 @@ from Config.Constants import AREA_ETHNICITIES
 from loaders import load_scenario
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
+from optimization.solvers.base import Solver
 
 
 _SYNTHETIC_DATA = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
@@ -311,3 +312,18 @@ class FakeDataset:
             hint=hint,
             choice_objective=choice_objective,
         )
+
+
+class FakeSolver(Solver):
+    """Base for scripted test solvers that record what each solve was given.
+
+    ``with_options`` applies the overrides in place and returns the solver
+    itself, so a fake's call counters and records stay one sequence and a
+    test can read the limits each solve ran under.
+    """
+
+    name = "fake"
+
+    def with_options(self, **overrides):
+        self.options = {**self.options, **overrides}
+        return self

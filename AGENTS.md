@@ -225,10 +225,13 @@ revalidated with `check_zoning` on write and on read, so a stale or
 solver-specific one is rejected rather than reused.
 
 `boundary_prop` is part of that fingerprint, and `Dataset.problem_for` does
-*not* set it — it returns `-1.0` (constraint off) and each strategy applies its
-own `options["boundary_prop"]` afterwards. Anything that builds a problem
-outside a strategy and expects to share the strategy's hints has to do the
-same, or it keys a different, strictly easier feasible set.
+*not* set it — it returns `-1.0` (constraint off). Every strategy builds its
+problems through `Strategy.problem_for`, which applies its own
+`options["boundary_prop"]` and, for the welfare strategies
+(`capacity_balance = False`), switches off `overage`/`shortage`. Anything that
+builds a problem outside a strategy and expects to share the strategy's hints
+has to go through the same hook (`analysis/warm_feasible_hints.py` does), or it
+keys a different feasible set.
 
 Zoned-transport bound cache path: `.../caches/zoned_transport_bound/v2/<sha256>/`
 (`zoned_transport.ZONED_TRANSPORT_CACHE_SCHEMA_VERSION`), keyed by the zoning feasible set, the market, the contiguity description (`neighbors` or `flow`), and `centroid_neighbor_radius`. `zoned_transport_workers` is deliberately excluded: threads change how long the LP takes, not its value.

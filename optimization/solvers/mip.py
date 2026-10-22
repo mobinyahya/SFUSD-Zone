@@ -21,7 +21,6 @@ from optimization.access_inequalities import (
     transitivity_triples,
 )
 from optimization.data import contiguity
-from optimization.data.initial_solutions import initial_solution
 from optimization.progress import SolverProgressTracker
 from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
@@ -722,21 +721,9 @@ class MipSolver(Solver):
             m.addConstr(utilities[cut.node] <= expr)
 
     def _add_hints(self, problem: ZoneProblem, x: _AssignmentVars) -> None:
-        hint = self._hint_assignment(problem)
+        hint = self.hint_assignment(problem)
         if not hint:
             return
         for (z, i), var in x.items():
             if i in hint:
                 var.Start = 1 if hint[i] == z else 0
-
-    def _hint_assignment(self, problem: ZoneProblem) -> dict[int, int] | None:
-        if problem.hint:
-            return problem.hint
-        if "hints" not in self.options:
-            return None
-        initial = initial_solution(
-            problem,
-            self.options.get("hints"),
-            solver_options=self.options,
-        )
-        return initial.assignment if initial is not None else None

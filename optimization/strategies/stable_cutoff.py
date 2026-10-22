@@ -29,37 +29,25 @@ Two settings are load-bearing.
 from __future__ import annotations
 
 from optimization.data.initial_solutions import initial_solution
-from optimization.levels import LevelSpec
 from optimization.solvers.stable_cutoff import StableCutoffMipSolver
 from optimization.stable_cutoff import build_stable_cutoff_instance
 from optimization.strategies.base import Strategy, register
-from optimization.strategies.budget import final_value
 
 
 @register("stable_cutoff")
 class StableCutoffStrategy(Strategy):
+    reads_assignment_market = True
+    capacity_balance = False
+
     def run(self, dataset, solver):
         if getattr(solver, "name", None) != "mip":
             raise ValueError("stable_cutoff requires solver='mip'.")
         if dataset.config.program_population != "All":
             raise ValueError("stable_cutoff requires program_population='All'.")
 
-        levels = [LevelSpec.parse(level) for level in self.options["levels"]]
-        target = levels[-1]
         # One solve, so the per-level limit lists collapse to their last entry.
-        solver.options["solve_time_limit"] = final_value(
-            self.options.get("solve_time_limits"),
-            solver.options.get("solve_time_limit", 60.0),
-        )
-        solver.options["relative_gap_limit"] = final_value(
-            self.options.get("gap_limits"),
-            solver.options.get("relative_gap_limit", 0.0),
-        )
-
-        problem = dataset.problem_for(target)
-        problem.overage = -1.0
-        problem.shortage = -1.0
-        problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
+        solver = solver.with_options(**self.final_limits(solver))
+        problem = self.problem_for(dataset, self.options["levels"][-1])
         hint = initial_solution(
             problem,
             self.options.get("hints", "voronoi"),

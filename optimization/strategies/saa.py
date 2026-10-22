@@ -120,6 +120,9 @@ def _budget_metadata(budget: Budget, recourse_seconds: float) -> dict:
 
 @register("saa")
 class SaaStrategy(Strategy):
+    reads_assignment_market = True
+    capacity_balance = False
+
     def run(self, dataset, solver):
         backend = getattr(solver, "name", None)
         if backend not in {"cp_bool", "mip"}:
@@ -157,8 +160,7 @@ class SaaStrategy(Strategy):
         )
         recourse_seconds = 0.0
 
-        base_problem = dataset.problem_for(target)
-        _configure_problem(base_problem, self.options)
+        base_problem = self.problem_for(dataset, target)
         hint = initial_solution(
             base_problem,
             self.options.get("hints", "voronoi"),
@@ -256,7 +258,8 @@ class SaaStrategy(Strategy):
                 total_lower_bound=0.0,
                 total_upper_bound=welfare_bound,
             )
-            problem = dataset.problem_for(
+            problem = self.problem_for(
+                dataset,
                 target,
                 hint=(
                     incumbent.assignment
@@ -265,7 +268,6 @@ class SaaStrategy(Strategy):
                 ),
                 choice_objective=choice_objective,
             )
-            _configure_problem(problem, self.options)
             master_options = {
                 **base_options,
                 "solve_time_limit": iteration_time_limit,
@@ -442,9 +444,3 @@ class SaaStrategy(Strategy):
             }
         )
         return stages
-
-
-def _configure_problem(problem, options) -> None:
-    problem.overage = -1.0
-    problem.shortage = -1.0
-    problem.boundary_prop = float(options.get("boundary_prop", -1.0))

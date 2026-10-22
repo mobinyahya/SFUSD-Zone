@@ -6,7 +6,6 @@ import math
 import time
 
 from optimization.data.mid import build_mid_market, preprocess_mid_market
-from optimization.levels import LevelSpec
 from optimization.solvers.burst_objectives import MidBatchEvaluator
 from optimization.solvers.recom import ShortBurstsSolver
 from optimization.strategies.base import Strategy, register
@@ -16,6 +15,9 @@ from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES, final_value
 @register("short_bursts_choice")
 class ShortBurstsChoiceStrategy(Strategy):
     """Use ReCom short bursts with exact discrete MID welfare as their score."""
+
+    reads_assignment_market = True
+    capacity_balance = False
 
     def run(self, dataset, solver):
         if not isinstance(solver, ShortBurstsSolver):
@@ -42,11 +44,7 @@ class ShortBurstsChoiceStrategy(Strategy):
                 f"{', '.join(BUDGET_ACCOUNTING_MODES)}."
             )
 
-        target = LevelSpec.parse(self.options["levels"][-1])
-        problem = dataset.problem_for(target)
-        problem.overage = -1.0
-        problem.shortage = -1.0
-        problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
+        problem = self.problem_for(dataset, self.options["levels"][-1])
 
         preprocessing_start = time.perf_counter()
         market = preprocess_mid_market(
@@ -56,10 +54,12 @@ class ShortBurstsChoiceStrategy(Strategy):
         preprocessing_seconds = time.perf_counter() - preprocessing_start
         # Under solver_time accounting the bursts get the whole budget; under
         # wall_clock they get what market preprocessing left behind.
-        solver.options["solve_time_limit"] = (
-            total_limit
-            if accounting == "solver_time"
-            else max(0.0, total_limit - preprocessing_seconds)
+        solver = solver.with_options(
+            solve_time_limit=(
+                total_limit
+                if accounting == "solver_time"
+                else max(0.0, total_limit - preprocessing_seconds)
+            )
         )
 
         scorer = MidBatchEvaluator(market, lottery_scale, workers)

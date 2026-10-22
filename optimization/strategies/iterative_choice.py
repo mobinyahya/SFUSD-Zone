@@ -56,7 +56,7 @@ class IterativeChoiceStrategy(Strategy):
             method=str(self.options.get("choice_model_method", "logsum")),
         )
 
-        base_problem = dataset.problem_for(target)
+        base_problem = self.problem_for(dataset, target)
         lower_bound, upper_bound = model.utility_bounds(base_problem)
         cuts = []
         hint_cut_count = 0
@@ -95,16 +95,17 @@ class IterativeChoiceStrategy(Strategy):
             )
             # Without choice_utility_hints, the first iteration intentionally has
             # no cuts, matching the legacy unconstrained seed.
-            problem = dataset.problem_for(
+            problem = self.problem_for(
+                dataset,
                 target,
                 hint=hint,
                 choice_objective=choice_objective,
             )
-            problem.boundary_prop = float(self.options.get("boundary_prop", -1.0))
-            solver.options["solve_time_limit"] = iteration_time_limit
-            solver.options["relative_gap_limit"] = relative_tolerance
             master_start = time.perf_counter()
-            sol = solver.solve(problem)
+            sol = solver.with_options(
+                solve_time_limit=iteration_time_limit,
+                relative_gap_limit=relative_tolerance,
+            ).solve(problem)
             budget.charge(time.perf_counter() - master_start)
             iterations_completed += 1
             sol.metadata["choice_iteration"] = iteration

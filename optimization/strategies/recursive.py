@@ -4,9 +4,9 @@ For each level in ``levels`` (coarse->fine, within one configured Census unit)
 the previous solution is projected onto the current graph via
 :class:`LevelConverter`, used as a warm-start hint, and used to narrow each
 node's candidate zones to those seen near zone boundaries -- so the finer solve
-only re-decides the borders. Per-level time and gap limits are applied to the
-solver before each solve, with optional carry-over of unused solve time from one
-level to the next.
+only re-decides the borders. Each level solves under its own time and gap
+limits, with optional carry-over of unused solve time from one level to the
+next.
 """
 
 from __future__ import annotations
@@ -14,10 +14,7 @@ from __future__ import annotations
 from optimization.data import contiguity
 from optimization.data.conversion import LevelConverter
 from optimization.data.dataset import Dataset
-from optimization.data.initial_solutions import (
-    initial_solution,
-    normalize_hints,
-)
+from optimization.data.initial_solutions import normalize_hints
 from optimization.levels import LevelSpec
 from optimization.problem import DuplicateCentroidError
 from optimization.solution import ZoneSolution
@@ -32,8 +29,7 @@ class RecursiveStrategy(Strategy):
         time_limits = self.options.get("solve_time_limits")
         carry_over_compute = bool(self.options.get("carry_over_compute", False))
         gap_limits = self.options.get("gap_limits")
-        hints = normalize_hints(self.options.get("hints", "voronoi"))
-        apply_hints = hints != "none"
+        apply_hints = normalize_hints(self.options.get("hints", "voronoi")) != "none"
         looseness = float(self.options.get("looseness", 1.0))
         if looseness < 1.0:
             raise ValueError("looseness must be >= 1.0 for recursive runs.")
@@ -56,11 +52,14 @@ class RecursiveStrategy(Strategy):
                 carry_over_time_received,
                 carry_over_compute,
             )
-            self._apply_limits(solver, effective_time_limit, gap_limits, i)
+            level_solver = solver.with_options(
+                **self._level_limits(effective_time_limit, gap_limits, i)
+            )
             constraint_multiplier = self._constraint_multiplier(looseness, levels, i)
 
             if prev is None or not prev.assignment:
-                problem = dataset.problem_for(
+                problem = self.problem_for(
+                    dataset,
                     level,
                     constraint_multiplier=constraint_multiplier,
                 )
@@ -83,17 +82,18 @@ class RecursiveStrategy(Strategy):
                     prev.problem.centroid_school_ids,
                     candidates,
                 )
-                problem = dataset.problem_for(
+                problem = self.problem_for(
+                    dataset,
                     level,
                     candidates=candidates,
                     hint=projected if apply_hints else None,
                     constraint_multiplier=constraint_multiplier,
                 )
 
-            _add_math_programming_initial_hint(problem, solver, hints)
+            self.add_initial_hint(problem, level_solver)
 
             try:
-                sol = solver.solve(problem)
+                sol = level_solver.solve(problem)
             except DuplicateCentroidError as exc:
                 if i + 1 == len(levels):
                     raise
@@ -159,22 +159,15 @@ class RecursiveStrategy(Strategy):
         return max(0.0, float(effective_time_limit) - float(wall_time))
 
     @staticmethod
-    def _apply_limits(solver, time_limit, gap_limits, i):
+    def _level_limits(time_limit, gap_limits, i) -> dict:
+        limits = {}
         if time_limit is not None:
-            solver.options["solve_time_limit"] = time_limit
+            limits["solve_time_limit"] = time_limit
         if gap_limits and i < len(gap_limits):
-            solver.options["relative_gap_limit"] = gap_limits[i]
+            limits["relative_gap_limit"] = gap_limits[i]
+        return limits
 
     @staticmethod
     def _constraint_multiplier(looseness, levels, i):
         return float(looseness) ** (len(levels) - i - 1)
 
-
-def _add_math_programming_initial_hint(problem, solver: Solver, hints: str) -> None:
-    if getattr(solver, "name", None) not in {"cp_int", "cp_bool", "mip"}:
-        return
-    if problem.hint is not None:
-        return
-    initial = initial_solution(problem, hints, solver_options=solver.options)
-    if initial is not None:
-        problem.hint = initial.assignment
