@@ -134,31 +134,57 @@ def prepare_assignment_targets(
     pending: list[BenchmarkTask],
     matching: MatchingRunConfig,
 ) -> None:
-    """Ready every task's assignment targets before a sweep runs.
+    """Ready the assignment targets of every task skipped as already complete.
 
-    Pending tasks write their targets when evaluated, so any zone file a
-    previous run left is removed: a rerun that fails must not be matched on
-    the old zoning. A task skipped as already complete may predate matching,
-    so its root target is rebuilt from the saved solution here.
+    Pending tasks write their own targets when evaluated, and clear what a
+    previous run left when their optimization starts
+    (:func:`clear_assignment_targets`), so planning never deletes anything. A
+    skipped task may predate matching, so its root target is rebuilt from the
+    saved solution here; its stage targets cannot be, so a skipped task asked
+    for them must already have them.
     """
     pending_ids = {task.task_id for task in pending}
     for task in tasks:
-        root = Path(task.output_dir)
         if task.task_id in pending_ids:
-            (root / GENERATED_ZONE_FILENAME).unlink(missing_ok=True)
-            for zone_file in root.glob(f"stages/*/{GENERATED_ZONE_FILENAME}"):
-                zone_file.unlink()
             continue
-        if (root / GENERATED_ZONE_FILENAME).is_file() or (
-            root / SKIP_MARKER_FILENAME
-        ).is_file():
-            continue
-        if matching.compute_stage_assignments:
-            raise ValueError(
-                f"Task {task.task_id} finished without matching; stage "
-                "assignments cannot be added afterwards, only root ones."
-            )
-        prepare_completed_run_target(root, str(task.config["levels"][-1]))
+        root = Path(task.output_dir)
+        if not _has_target(root):
+            if matching.compute_stage_assignments:
+                raise ValueError(
+                    f"Task {task.task_id} finished without matching; stage "
+                    "assignments cannot be added afterwards, only root ones."
+                )
+            prepare_completed_run_target(root, str(task.config["levels"][-1]))
+        elif matching.compute_stage_assignments:
+            missing = [
+                stage["name"]
+                for stage in load_manifest(root).get("stages", [])
+                if not _has_target(root / stage["path"])
+            ]
+            if missing:
+                raise ValueError(
+                    f"Task {task.task_id} finished without stage assignments "
+                    f"for {missing}; they cannot be added afterwards. Rerun "
+                    "the task, or turn compute_stage_assignments off."
+                )
+
+
+def clear_assignment_targets(output_dir: str | Path) -> None:
+    """Remove the zone files and skip markers a previous run left.
+
+    Called as a task's optimization starts, so a rerun that fails is never
+    matched on the old zoning and a stale skip marker never hides a new one.
+    """
+    root = Path(output_dir)
+    for folder in (root, *root.glob("stages/*")):
+        (folder / GENERATED_ZONE_FILENAME).unlink(missing_ok=True)
+        (folder / SKIP_MARKER_FILENAME).unlink(missing_ok=True)
+
+
+def _has_target(folder: Path) -> bool:
+    return (folder / GENERATED_ZONE_FILENAME).is_file() or (
+        folder / SKIP_MARKER_FILENAME
+    ).is_file()
 
 
 def assignment_targets(

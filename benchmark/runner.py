@@ -110,8 +110,11 @@ def run_optimization_phase(task: BenchmarkTask) -> TaskResult:
 def _execute_optimization_phase(
     task: BenchmarkTask,
 ) -> tuple[TaskResult, list[ZoneSolution] | None, dict[str, Any] | None]:
+    from benchmark.assignment import clear_assignment_targets
+
     output_dir = os.path.expanduser(task.output_dir)
     os.makedirs(output_dir, exist_ok=True)
+    clear_assignment_targets(output_dir)
     started_at = _now()
     config = task.optimization_config()
     solutions: list[ZoneSolution] = []
