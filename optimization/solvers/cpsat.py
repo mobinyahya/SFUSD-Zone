@@ -438,17 +438,8 @@ class _CpSatSolver(Solver):
                 metadata["choice_best_bound"] = (
                     solver.BestObjectiveBound() / objective_scale
                 )
-        elif problem.compactness_objective == "school_distance":
-            metadata.update(
-                {
-                    "objective_kind": "school_distance",
-                    "objective_unit": "mile^2",
-                    "school_distance_area_weight": problem.school_distance_area_weight,
-                    "school_distance_student_weight": (
-                        problem.school_distance_student_weight
-                    ),
-                }
-            )
+        elif problem.compactness_objective in {"school_distance", "average_distance"}:
+            metadata.update(problem.distance_objective_metadata())
         elif problem.weight_edges:
             metadata.update(
                 {
@@ -524,24 +515,24 @@ class _CpSatSolver(Solver):
         y: _ZoneVars,
     ) -> tuple[bool, float]:
         if problem.choice_objective is None:
-            if problem.compactness_objective == "school_distance":
-                self._add_school_distance_objective(m, problem, x)
+            if problem.compactness_objective in {"school_distance", "average_distance"}:
+                self._add_distance_objective(m, problem, x)
                 return False, float(SCHOOL_DISTANCE_SCALE)
             self._add_boundary_objective(m, problem, x, y)
             return False, 1.0
         self._add_choice_objective(m, problem, x)
         return True, float(problem.choice_objective.scale)
 
-    def _add_school_distance_objective(
+    def _add_distance_objective(
         self,
         m: cp_model.CpModel,
         problem: ZoneProblem,
         x: _AssignmentVars,
     ) -> None:
-        # The weights sum to one, so the objective is a mean squared distance
-        # in miles^2; the scale keeps ~1e-8 resolution in integer coefficients.
+        # Normalized weights give a mean distance (miles) or mean squared
+        # distance (miles^2); the shared scale keeps ~1e-8 coefficient resolution.
         terms = []
-        for (zone, node), cost in problem.school_distance_costs().items():
+        for (zone, node), cost in problem.distance_objective_costs().items():
             coefficient = int(round(SCHOOL_DISTANCE_SCALE * cost))
             var = x.get((zone, node))
             if coefficient and var is not None:

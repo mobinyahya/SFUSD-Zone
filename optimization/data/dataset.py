@@ -43,7 +43,7 @@ class Dataset:
                 "unit": self.ingest.unit,
                 "optimization_filters": self.ingest.filters,
                 "partition_policy": graph_builder.partition_cache_policy(
-                    self.ingest.unit, config.weight_edges
+                    self.ingest.unit, config.graph_weight_edges
                 ),
             },
             schema_version=graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
@@ -53,7 +53,11 @@ class Dataset:
         self.graph_cache_dir = str(self._graph_namespace.path)
         self._graphs: dict[str, nx.Graph] = {}
         self._centroids: dict[tuple[str, tuple[int, ...]], list[int]] = {}
-        self._area_hints: dict[str, dict[int, int]] = {}
+        self._centroid_schools: dict[str, tuple[int, ...]] = {}
+        self._area_hints: dict[tuple[str, str, tuple[int, ...]], dict[int, int]] = {}
+        self._area_assignments: dict[str, dict[int, int]] = {}
+        self._closer_neighbor_graphs: dict[str, nx.Graph] = {}
+        self._land_area_graphs: dict[str, nx.Graph] = {}
         self._closer_neighbor_store = closer_neighbors.CloserNeighborArtifactStore(
             self.data,
             geometry_loader=lambda unit: loaders.load_census_shapefile(unit, self.data),
@@ -80,7 +84,7 @@ class Dataset:
     def _generate(self, level: LevelSpec) -> nx.Graph:
         if level.is_base:
             return graph_builder.build_base_graph(
-                self.ingest, weight_edges=self.config.weight_edges
+                self.ingest, weight_edges=self.config.graph_weight_edges
             )
         targets = LEVEL_NODE_TARGETS.get(level.unit, {})
         if level.depth not in targets:
@@ -112,10 +116,11 @@ class Dataset:
             )
         return G
 
-    def _uses_school_distance(self) -> bool:
+    def _uses_school_distance(self, config=None) -> bool:
+        config = config or self.config
         return (
-            self.config.compactness_objective == "school_distance"
-            or self.config.adaptive_short_bursts_objective == "school_distance"
+            config.compactness_objective == "school_distance"
+            or config.adaptive_short_bursts_objective == "school_distance"
         )
 
     @staticmethod
@@ -135,8 +140,14 @@ class Dataset:
     def closer_neighbors_for(self, level) -> dict[int, dict[int, frozenset[int]]]:
         """Load and attach the shared geometry relation for ``level``."""
         level = LevelSpec.parse(level)
-        data = self._closer_neighbor_store.attach_to_graph(level, self.graph_for(level))
-        return data.closer_neighbors
+        G = self.graph_for(level)
+        self._attach_closer_neighbors(level, G)
+        return G.graph[closer_neighbors.CLOSER_NEIGHBORS_GRAPH_KEY]
+
+    def _attach_closer_neighbors(self, level: LevelSpec, G: nx.Graph) -> None:
+        if self._closer_neighbor_graphs.get(level.name) is not G:
+            self._closer_neighbor_store.attach_to_graph(level, G)
+            self._closer_neighbor_graphs[level.name] = G
 
     # ------------------------------------------------------------------ #
     # centroids
@@ -155,29 +166,43 @@ class Dataset:
             }
         )
 
-    def area_hint_for(self, level, G: nx.Graph, centroids: list[int]):
+    def area_hint_for(self, level, G: nx.Graph, centroids: list[int], *, path=None):
         """``config.hint_zoning`` projected onto ``level`` as a warm start."""
         from optimization.data import conversion
 
         level = LevelSpec.parse(level)
-        if level.name not in self._area_hints:
-            path = self.config.hint_zoning
-            self._area_hints[level.name] = conversion.hint_from_area_assignment(
-                conversion.load_area_assignment(path),
+        path = path if path is not None else self.config.hint_zoning
+        if path is None:
+            raise ValueError("An area hint requires a zoning file path.")
+        path = str(path)
+        key = (path, level.name, tuple(centroids))
+        if key not in self._area_hints:
+            if path not in self._area_assignments:
+                self._area_assignments[path] = conversion.load_area_assignment(path)
+            self._area_hints[key] = conversion.hint_from_area_assignment(
+                self._area_assignments[path],
                 conversion.area_file_level(path, level),
                 G,
                 level,
                 centroids,
                 converter=conversion.LevelConverter(data=self.data),
             )
-        return dict(self._area_hints[level.name])
+        return dict(self._area_hints[key])
+
+    def centroid_school_ids(self, centroids_type=None) -> list[int]:
+        """Read a centroid definition once across all levels and pipeline steps."""
+        centroids_type = centroids_type or self.config.centroids_type
+        if centroids_type not in self._centroid_schools:
+            self._centroid_schools[centroids_type] = tuple(
+                int(sid)
+                for sid in loaders.load_centroid_schools(centroids_type, self.data)
+            )
+        return list(self._centroid_schools[centroids_type])
 
     def centroids_for(self, level, school_ids=None) -> list[int]:
         level = LevelSpec.parse(level)
         if school_ids is None:
-            school_ids = loaders.load_centroid_schools(
-                self.config.centroids_type, self.data
-            )
+            school_ids = self.centroid_school_ids()
         school_ids = tuple(int(sid) for sid in school_ids)
         key = (level.name, school_ids)
         if key in self._centroids:
@@ -236,40 +261,63 @@ class Dataset:
         choice_objective=None,
         constraint_multiplier: float = 1.0,
         centroid_school_ids=None,
+        config: "OptimizationConfig | None" = None,
     ) -> ZoneProblem:
+        """Build a problem using this run's data and an optional step config.
+
+        Steps can change constraints, objectives, and search settings while
+        sharing the scenario, graphs, and geometry already loaded by the run.
+        Data selectors and graph construction settings belong to the dataset
+        and cannot change halfway through a pipeline.
+        """
+        config = config or self.config
         level = LevelSpec.parse(level)
+        if config.data_scenario is not self.data and config.data_scenario != self.data:
+            raise ValueError("Pipeline steps must use the dataset's data scenario.")
+        if (
+            level.unit != self.ingest.unit
+            or config.unit != self.ingest.unit
+            or (config.weight_edges and not self.config.graph_weight_edges)
+        ):
+            raise ValueError(
+                "Pipeline steps must preserve the dataset's geography unit; weighted objectives require boundary lengths in the dataset."
+            )
         constraint_multiplier = float(constraint_multiplier)
         if centroid_school_ids is None:
-            centroid_school_ids = loaders.load_centroid_schools(
-                self.config.centroids_type, self.data
-            )
+            centroid_school_ids = self.centroid_school_ids(config.centroids_type)
         centroid_school_ids = [int(school_id) for school_id in centroid_school_ids]
         G = self.graph_for(level)
-        self._closer_neighbor_store.attach_to_graph(level, G)
+        self._attach_closer_neighbors(level, G)
         centroids = self.centroids_for(level, centroid_school_ids)
-        if hint is None and self.config.hint_zoning is not None:
-            hint = self.area_hint_for(level, G, centroids)
-        if self._uses_school_distance() and self.config.school_distance_area_weight:
+        if hint is None and config.hint_zoning is not None:
+            hint = self.area_hint_for(level, G, centroids, path=config.hint_zoning)
+        if (
+            self._uses_school_distance(config)
+            and config.school_distance_area_weight
+            and self._land_area_graphs.get(level.name) is not G
+        ):
             node_areas.attach_land_areas(G, level.unit, self.data)
+            self._land_area_graphs[level.name] = G
         return ZoneProblem(
             G=G,
             level=level,
             centroids=centroids,
             centroid_school_ids=centroid_school_ids,
-            program_population=self.config.program_population,
-            frl_dev=self.config.frl_dev * constraint_multiplier,
-            racial_dev=self.config.racial_dev * constraint_multiplier,
-            overage=self.config.overage * constraint_multiplier,
-            shortage=self.config.shortage * constraint_multiplier,
-            max_distance=self.config.max_distance,
-            school_count_tolerance=self.config.school_count_tolerance,
-            weight_edges=self.config.weight_edges,
-            compactness_objective=self.config.compactness_objective,
-            school_distance_area_weight=self.config.school_distance_area_weight,
-            school_distance_student_weight=self.config.school_distance_student_weight,
+            program_population=config.program_population,
+            frl_dev=config.frl_dev * constraint_multiplier,
+            racial_dev=config.racial_dev * constraint_multiplier,
+            overage=config.overage * constraint_multiplier,
+            shortage=config.shortage * constraint_multiplier,
+            max_distance=config.max_distance,
+            boundary_prop=config.boundary_prop,
+            school_count_tolerance=config.school_count_tolerance,
+            weight_edges=config.weight_edges,
+            compactness_objective=config.compactness_objective,
+            school_distance_area_weight=config.school_distance_area_weight,
+            school_distance_student_weight=config.school_distance_student_weight,
             fixed=fixed,
             candidates=candidates,
             hint=hint,
             choice_objective=choice_objective,
-            optimization_config=self.config,
+            optimization_config=config,
         )

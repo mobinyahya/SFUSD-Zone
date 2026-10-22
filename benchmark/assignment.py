@@ -99,12 +99,26 @@ def process_solution_assignments(
 def planned_stage_names(config: Mapping[str, Any]) -> list[str] | None:
     """Every stage a task can save, or ``None`` when its solve decides the count.
 
-    ``recursive`` saves one stage per level, plain ``single`` one stage at the
-    finest level, and ``saa`` up to ``max_iterations + 1`` iterations there.
+    A pipeline saves one stage per step, ``recursive`` one per level, plain
+    ``single`` one at the finest level, and ``saa`` up to
+    ``max_iterations + 1`` iterations there.
     """
+    levels = planned_stage_levels(config)
+    if levels is None:
+        return None
+    return stage_names(levels, iterative=is_iterative_strategy(str(config["strategy"])))
+
+
+def planned_stage_levels(config: Mapping[str, Any]) -> list[str] | None:
+    """Planned levels in execution order, retaining repeated pipeline solves."""
     strategy = str(config["strategy"])
     levels = list(config["levels"])
-    if strategy == "recursive":
+    if strategy == "pipeline":
+        planned = [
+            step["level"] if isinstance(step, Mapping) else step.level
+            for step in config["steps"]
+        ]
+    elif strategy == "recursive":
         planned = levels
     elif strategy == "single" and int(config.get("enumerated_solutions", -1)) <= 0:
         planned = levels[-1:]
@@ -112,7 +126,14 @@ def planned_stage_names(config: Mapping[str, Any]) -> list[str] | None:
         planned = levels[-1:] * (int(config["max_iterations"]) + 1)
     else:
         return None
-    return stage_names(planned, iterative=is_iterative_strategy(strategy))
+    return planned
+
+
+def _final_level(config: Mapping[str, Any]) -> str:
+    if config.get("strategy") == "pipeline":
+        step = config["steps"][-1]
+        return step["level"] if isinstance(step, Mapping) else step.level
+    return str(config["levels"][-1])
 
 
 def plan_assignment_targets(
@@ -158,7 +179,7 @@ def prepare_assignment_targets(
                     f"Task {task.task_id} finished without matching; stage "
                     "assignments cannot be added afterwards, only root ones."
                 )
-            prepare_completed_run_target(root, str(task.config["levels"][-1]))
+            prepare_completed_run_target(root, _final_level(task.config))
         elif matching.compute_stage_assignments:
             missing = [
                 stage.get("name", stage["path"])
@@ -214,9 +235,8 @@ def assignment_targets(
             scenario = load_scenario(task.config["data"])
             scenarios[data_key] = scenario
         vintage = scenario.filter("optimization", "geography_vintage")
-        unit = zone_building_blocks(LevelSpec.parse(task.config["levels"][0]).unit)
         root = Path(task.output_dir)
-        folders = [("root", root)]
+        folders = [("root", root, _final_level(task.config))]
         if matching.compute_stage_assignments and planned_stages:
             planned = planned_stage_names(task.config)
             if planned is None:
@@ -226,23 +246,31 @@ def assignment_targets(
                     f"{task.config['strategy']!r} does not have."
                 )
             folders.extend(
-                (f"stage-{index}", root / "stages" / name)
-                for index, name in enumerate(planned)
+                (f"stage-{index}", root / "stages" / name, level)
+                for index, (name, level) in enumerate(
+                    zip(planned, planned_stage_levels(task.config))
+                )
             )
         elif (
             matching.compute_stage_assignments and (root / MANIFEST_FILENAME).is_file()
         ):
             folders.extend(
-                (f"stage-{stage['index']}", root / stage["path"])
+                (
+                    f"stage-{stage['index']}",
+                    root / stage["path"],
+                    stage.get("level", _final_level(task.config)),
+                )
                 for stage in load_manifest(root).get("stages", [])
             )
-        for suffix, folder in folders:
+        for suffix, folder, level in folders:
             targets.append(
                 {
                     "id": f"{task.task_id}-{suffix}",
                     "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
                     "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
-                    "zone_building_blocks": unit,
+                    "zone_building_blocks": zone_building_blocks(
+                        LevelSpec.parse(level).unit
+                    ),
                     "geography_vintage": vintage,
                 }
             )

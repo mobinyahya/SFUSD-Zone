@@ -25,6 +25,7 @@ from optimization.strategies import (  # noqa: E402,F401
     priced_access,
     stable_cutoff,
     dantzig_wolfe,
+    pipeline,
 )
 
 __all__ = ["Strategy", "get_strategy", "register"]

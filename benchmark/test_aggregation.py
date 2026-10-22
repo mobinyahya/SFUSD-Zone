@@ -32,6 +32,7 @@ from benchmark.runner import (
     write_json,
 )
 from metrics import MetricsCalculator
+from metrics import diversity, run_metrics
 
 
 def test_sweep_yaml_generates_cartesian_optimization_tasks(tmp_path):
@@ -330,18 +331,28 @@ def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
         enumerated_solutions=4,
         workers=8,
         seed=3,
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "cache")}},
+        },
     )
     solutions = config.make_strategy().run(FakeDataset(problem), config.make_solver())
     stage_names = stage_names_for(solutions, config)
 
     records = save_stage_artifacts(solutions, str(tmp_path), stage_names)
-    metrics = MetricsCalculator(solutions, config=config).compute()
+    # Exercise actual run selection and demographic metrics on this grid;
+    # spatial/program/choice metrics require production geography and tables.
+    metrics = MetricsCalculator(
+        solutions, config=config, modules=[run_metrics.compute, diversity.compute]
+    ).compute()
 
     assert len(records) == 4
     assert len({record["path"] for record in records}) == 4
     assert all((tmp_path / record["path"]).is_dir() for record in records)
     assert records[-1]["metadata"]["enumerated_solution_selected"] is True
     assert metrics.run["selection"] == "seeded_random_enumerated_solution"
+    assert metrics.metrics["frl_mad"] == pytest.approx(0.0)
+    assert sum(zone["ge_students"] for zone in metrics.zone_data.values()) == 9
     assert metrics.run["total_wall_time"] == pytest.approx(
         records[-1]["metadata"]["enumeration_wall_time_seconds"]
     )

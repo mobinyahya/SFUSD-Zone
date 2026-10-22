@@ -147,6 +147,11 @@ class OptimizationConfig:
     levels: list[str] = field(default_factory=lambda: ["BlockGroup_0"])
     solver: str = "cp_int"
     strategy: str = "single"
+    # Composable API. Legacy solver/strategy configurations remain readable.
+    method: str | None = None
+    objective: str | None = None
+    steps: list = field(default_factory=list)
+    constraints: dict[str, Any] = field(default_factory=dict)
 
     # --- optimization parameters -------------------------------------- #
     frl_dev: float = 0.3
@@ -173,9 +178,9 @@ class OptimizationConfig:
     save_solver_progress: bool = False
     secondary_objective: bool = False
     weight_edges: bool = False
-    # CP/MIP objective without a choice model: "cut_edges" (boundary cost) or
-    # "school_distance" (weighted squared distance from each node to its
-    # zone's school; ReCom solvers use adaptive_short_bursts_objective instead).
+    # Legacy CP/MIP cost selector: cut_edges, school_distance (squared), or
+    # average_distance (student-weighted linear distance). Pipelines select
+    # named objectives through ``objective`` instead.
     compactness_objective: str = "cut_edges"
     # school_distance node weight = area share * this + student share * that;
     # both in [0, 1] and summing to one.
@@ -353,6 +358,41 @@ class OptimizationConfig:
         self.data = deepcopy(dict(self.data))
         self._data_scenario = _resolved_data_scenario or load_scenario(self.data)
 
+        from optimization.pipeline import checked_constraints, normalize_steps
+
+        self.constraints = checked_constraints(self.constraints)
+        if not isinstance(self.steps, list):
+            raise ValueError("steps must be a list of solve steps.")
+        for name, value in self.constraints.items():
+            setattr(self, name, value)
+        if (
+            self.steps
+            or self.method is not None
+            or self.objective is not None
+            or self.strategy == "pipeline"
+        ):
+            if self.strategy not in {"single", "pipeline"}:
+                raise ValueError(
+                    "steps/method/objective cannot be combined with a legacy strategy."
+                )
+            self.steps = normalize_steps(self)
+            self.levels = [step.level for step in self.steps]
+            self.strategy = "pipeline"
+            for name in ("solve_time_limits", "gap_limits"):
+                values = getattr(self, name)
+                if not isinstance(values, list) or not values:
+                    raise ValueError(f"{name} must be a nonempty list for a pipeline.")
+                if any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    or value < 0
+                    for value in values
+                ):
+                    raise ValueError(
+                        f"{name} must contain finite non-negative numbers."
+                    )
+
         self.unit
         specs = [LevelSpec.parse(level) for level in self.levels]
         unsupported = [
@@ -482,8 +522,12 @@ class OptimizationConfig:
                         "values."
                     )
         if self.strategy in {"mid", "mid_decomp", "saa"}:
-            if self.strategy == "saa" and self.solver not in {"cp_bool", "mip"}:
-                raise ValueError("saa requires solver='cp_bool' or solver='mip'.")
+            if self.strategy == "saa" and self.solver not in {
+                "cp_bool",
+                "cp_int",
+                "mip",
+            }:
+                raise ValueError("saa requires solver='cp_bool', 'cp_int', or 'mip'.")
             if self.strategy != "saa" and self.solver != "cp_bool":
                 raise ValueError(f"{self.strategy} requires solver='cp_bool'.")
             if self.program_population != "All":
@@ -522,6 +566,36 @@ class OptimizationConfig:
             raise ValueError(
                 "capacity_match needs a positive unassigned or designated weight."
             )
+        if self.strategy == "pipeline":
+            from optimization.pipeline import step_config
+
+            for index, step in enumerate(self.steps):
+                effective = step_config(self, step, index)
+                if step.objective in {
+                    "matching_welfare",
+                    "welfare",
+                    "saa_welfare",
+                    "capacity_match",
+                }:
+                    if effective.program_population != "All":
+                        raise ValueError(
+                            f"{step.objective} requires program_population='All'."
+                        )
+                if step.objective in {
+                    "matching_welfare",
+                    "welfare",
+                    "saa_welfare",
+                    "capacity_match",
+                    "choice_welfare",
+                }:
+                    if effective.data_scenario.filter(
+                        "optimization", "geography_vintage"
+                    ) != effective.data_scenario.filter(
+                        "assignment", "geography_vintage"
+                    ):
+                        raise ValueError(
+                            f"{step.objective} requires matching optimization and assignment geography_vintage values."
+                        )
 
     def _check_number(
         self,
@@ -559,9 +633,13 @@ class OptimizationConfig:
             setattr(self, name, value)
 
     def _validate_school_distance(self) -> None:
-        if self.compactness_objective not in {"cut_edges", "school_distance"}:
+        if self.compactness_objective not in {
+            "cut_edges",
+            "school_distance",
+            "average_distance",
+        }:
             raise ValueError(
-                "compactness_objective must be one of: cut_edges, school_distance."
+                "compactness_objective must be one of: cut_edges, school_distance, average_distance."
             )
         if self.compactness_objective != "cut_edges" and self.solver in {
             "recom",
@@ -599,6 +677,17 @@ class OptimizationConfig:
         if len(units) != 1:
             raise ValueError(f"All levels must share one unit; got {sorted(units)}.")
         return units.pop()
+
+    @property
+    def graph_weight_edges(self) -> bool:
+        """Load boundary lengths once if any step needs them.
+
+        A weighted graph can also serve unit-cut and distance objectives. The
+        legacy ``weight_edges`` flag still controls each problem's edge cost.
+        """
+        return self.weight_edges or any(
+            step.objective == "boundary_perimeter" for step in self.steps
+        )
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings
@@ -751,6 +840,9 @@ class OptimizationConfig:
 
     def make_strategy(self):
         from optimization.strategies import get_strategy
+
+        if self.strategy == "pipeline":
+            return get_strategy("pipeline", config=self)
 
         return get_strategy(
             self.strategy,

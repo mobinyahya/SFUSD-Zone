@@ -37,7 +37,8 @@ Submit the same two-phase job graph directly:
 uv run python -m benchmark.slurm submit --config path/to/sweep.yaml
 ```
 
-Each sweep task is one optimization job using the config's `workers` count. A
+Each sweep task is one optimization job reserving the largest `workers` count
+used by its steps. A
 one-core metrics job runs after it and safely updates `summary.csv` and
 `stages.csv`. Recursive and iterative strategy stages stay within one
 optimization job. Local capacity and worker-pool settings are not used.
@@ -54,7 +55,7 @@ again under a different assignment config without overwriting the first set.
 A local `mode: run` runs the same targets for the sweep's own tasks as one
 batch after the last task, with stage targets taken from the stages each task
 saved. Slurm needs every stage planned before the run, so there
-`compute_stage_assignments` is limited to `recursive`, `single` without
+`compute_stage_assignments` is limited to pipelines, `recursive`, `single` without
 `enumerated_solutions`, and `saa`; other strategies are rejected. A task drops
 the zone files and skip markers a previous run left when its optimization
 starts (never at plan time), so a rerun that fails is not matched on its old
@@ -73,7 +74,10 @@ Aggregation is automatic after both modes.
 
 ## Sweep YAML
 
-See `sweep.example.yaml` for a full example.
+See [`sweep.pipeline.example.yaml`](sweep.pipeline.example.yaml) for a runnable
+pipeline comparison and [`../optimization/config.example.yaml`](../optimization/config.example.yaml)
+for a single pipeline run. [`sweep.example.yaml`](sweep.example.yaml) shows the
+legacy strategy-based sweep syntax.
 
 Top-level sections:
 
@@ -87,7 +91,74 @@ Top-level sections:
 | `execution` | Parallelism, capacity, skipping, and output options. |
 | `metrics` | Metric strictness, stage metric opt-in, and aggregation output settings. |
 
-Example with solver and strategy variation:
+Pipelines use the same sweep machinery as single solves. A sequence under
+`steps` is one task; use a list of sequences to sweep over alternative pipelines.
+Each step inherits the run defaults, may override constraints and search options,
+and saves one independently named stage. For example:
+
+```yaml
+optimization_defaults:
+  centroids_type: '5-zone-AF'
+  workers: 4
+  data:
+    scenario: legacy
+    overrides:
+      filters:
+        optimization: {program_population: All}
+  frl_dev: 0.2
+  racial_dev: 0.2
+  steps:
+    - name: shape
+      level: BlockGroup_1
+      method: cp_int
+      objective: cut_edges
+      time_limit: 30
+    - name: refine
+      level: BlockGroup_0
+      method: cp_bool
+      objective: cut_edges
+      time_limit: 60
+      inputs:
+        - {source: shape, mode: assign, select: interior, radius: 1}
+        - {source: shape, mode: hint, select: boundary, radius: 1}
+      constraints: {frl_dev: 0.15}
+    - name: access
+      level: BlockGroup_0
+      method: cp_bool
+      objective: matching_welfare
+      time_limit: 60
+      inputs:
+        - {source: refine, mode: hint}
+
+sweep:
+  seed: [1, 2, 3]
+
+execution:
+  output_dir: ./benchmark_output
+  capacity: 16
+
+metrics:
+  compute_stage_metrics: true
+
+matching:
+  enabled: true
+  config: ../assignment/configs/8-19-choice.yaml
+  compute_stage_assignments: true
+```
+
+The last stage supplies the root zoning for assignment. Stage assignment targets
+are known before execution, including repeated solves at the same level, so
+Slurm can plan matching for every step. Metrics regeneration reconstructs each
+step with its own constraints. `stages.csv` identifies `pipeline_step`,
+`pipeline_step_index`, `method`, and `objective_kind` alongside the objective
+value. Setting `carry_over_compute: true` at the run level carries unused
+stage time into the next step; configured time, elapsed time, received time,
+and unused time are also recorded in `stages.csv`.
+Task hashes include nested steps and the assignment-market sources read
+by welfare objectives at any step. Source manifests are reused across tasks
+that share the same input requirements.
+
+The legacy solver and strategy configuration remains accepted:
 
 ```yaml
 optimization_defaults:
@@ -135,7 +206,10 @@ metrics:
 
 Each expanded task is a concrete `OptimizationConfig` plus benchmark metadata.
 
-Capacity scheduling uses `capacity_slots` per task. By default this equals the task's `workers` value, so CP-SAT thread counts are reflected in the scheduler. You can override this globally with `execution.task_capacity`.
+Capacity scheduling uses `capacity_slots` per task. By default this is the
+largest `workers` value used by any step (the run default when there are no
+overrides), so CP-SAT thread counts are reflected in the scheduler. You can
+override this globally with `execution.task_capacity`.
 
 Important execution fields:
 
@@ -344,8 +418,12 @@ separate columns; `method` distinguishes recursive series in aggregates.
 Exact end-to-end timing would require stage-start timestamps, since work between
 solve calls is not represented by the stage durations.
 
-The `optimization_defaults.weight_edges: true` setting enables integer-metre
-shared-boundary costs for all these methods.
+Pipeline `objective: boundary_perimeter` automatically loads integer-metre
+shared-boundary costs, and can share a run with `cut_edges`, `average_distance`,
+or `average_squared_distance` steps. Distance objectives report miles or miles
+squared; each stage retains its own objective name and units. The legacy
+`optimization_defaults.weight_edges: true` setting also enables boundary costs
+for all these methods.
 Aggregation sums crossing parent-edge weights, so a coarse zoning and its
 unchanged projection onto a finer graph have exactly the same weighted cost.
 Unweighted cut counts count different adjacency graphs, so unweighted recursive

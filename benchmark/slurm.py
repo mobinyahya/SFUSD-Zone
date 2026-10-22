@@ -25,6 +25,7 @@ from benchmark.config import (
     SimulationSweep,
     VisualizationRunConfig,
     json_ready,
+    optimization_worker_count,
 )
 from benchmark.results import aggregate_results
 from benchmark.runner import (
@@ -505,7 +506,7 @@ def _validate_plan(plan: SlurmPlan) -> None:
 
 
 def _optimization_cpus(task: BenchmarkTask) -> int:
-    cpus = int(task.config.get("workers", 1))
+    cpus = optimization_worker_count(task.config)
     if cpus < 1:
         raise ValueError(f"Task {task.task_id} workers must be at least one.")
     if cpus > MAX_CPUS_PER_NODE:

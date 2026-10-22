@@ -13,7 +13,6 @@ from optimization.config import OptimizationConfig
 from optimization.data.conversion import LevelConverter
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
-from optimization.visualization import VisualizationArtifactStore
 
 try:  # Shapely 2.x
     from shapely import minimum_bounding_circle
@@ -222,6 +221,10 @@ def _node_area_metrics(
         return graph_geometry
 
     source_config = _optimization_config_for_solution(solution, config)
+    # Configuration and sweep planning import metrics too. Defer the plotting
+    # stack (and font-cache initialization) until geometry is actually needed.
+    from optimization.visualization import VisualizationArtifactStore
+
     geometry, _ = VisualizationArtifactStore(source_config.data_scenario).geometry_for(
         level, G
     )

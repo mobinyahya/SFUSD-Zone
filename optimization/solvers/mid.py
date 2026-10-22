@@ -19,6 +19,7 @@ from optimization.problem import ZoneProblem
 from optimization.solution import ZoneSolution
 from optimization.solvers.cpsat import (
     CpBoolSolver,
+    CpIntSolver,
     _AssignmentVars,
     _ZoneVars,
 )
@@ -737,3 +738,12 @@ class MidCpSatSolver(CpBoolSolver):
         ):
             raise RuntimeError("MID solver objective does not match cutoff evaluation.")
         return solution
+
+
+class MidCpIntSolver(MidCpSatSolver, CpIntSolver):
+    """The joint MID objective with integer zoning variables.
+
+    MID supplies the objective and its diagnostics; ``CpIntSolver`` supplies
+    the assignment variables, fixing, hints, and extraction. Both use the same
+    Boolean access indicators and zoning constraints.
+    """
