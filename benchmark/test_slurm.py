@@ -524,6 +524,11 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert result["metrics"] == {}
     assert not (run_dir / "zone_dict_Block_0.json").exists()
     assert (run_dir / "stages/stage_00_Block_0/zone_dict_Block_0.json").exists()
+    stage_info = json.loads(
+        (run_dir / "stages/stage_00_Block_0/solution_Block_0.json").read_text()
+    )
+    assert stage_info["config"] == manifest["config"]
+    assert (run_dir / "stages/stage_00_Block_0/zoning_config.yaml").exists()
 
     evaluated = evaluate_optimization_task(
         task,
@@ -542,6 +547,9 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert manifest["visualization"]["stages"] == "final"
     assert visualization_calls[0][2]["artifact_dir"] is None
     assert (run_dir / "zone_dict_Block_0.json").exists()
+    root_info = json.loads((run_dir / "solution_Block_0.json").read_text())
+    assert root_info["config"] == manifest["config"]
+    assert (run_dir / "zoning_config.yaml").exists()
 
 
 def test_optimization_failure_persists_error_artifacts(tmp_path, monkeypatch):

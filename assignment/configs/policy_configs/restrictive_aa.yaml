@@ -1,0 +1,54 @@
+# Restrictive attendance areas.
+#
+# The status quo (status_quo.yaml) with out-of-area GE choice removed: a
+# student may rank their attendance area's GE program and any number of
+# citywide programs, and nothing else. Citywide here means every program that
+# is not the GE program of a school some attendance area owns -- language
+# pathways at every school, special programs, and the GE programs of the
+# citywide schools.
+#
+# How the two settings below produce that:
+#   restrict-zone: true   priorities outside the zone go negative, so DA never
+#                         seats a student out of zone, and designation only
+#                         appends in-zone programs. It also adds every
+#                         program no zone owns to every zone
+#                         (Zones.add_remaining_schools_to_all_zones), which is
+#                         what makes the citywide programs reachable.
+#   sibling-access: false no exception for a sibling's out-of-area school;
+#                         sibling priority still applies where the student is
+#                         eligible.
+#
+# Zones: `Con1` is today's attendance-area map. With generated zones
+# (benchmark matching, assignment/generated_zones.py) the policy and
+# zone-building-blocks are replaced by the run's zoning, so each generated
+# zone acts as one attendance area. The policy is only "one GE school per
+# area" when every zone holds exactly one non-citywide school; a zone with
+# two gives its students both.
+
+assignment-algorithm: DA
+ctip-options:
+- 1
+
+restrict-zone: true
+guard-rails: -1
+non_designation_boost: 128
+
+policies:
+- Con1
+
+priority-weights:
+  promote: 1024
+  ctip: 8
+  sibling: 16
+  zone: 4
+  language-programs:
+    lp-sibling: 16
+    lp: 8
+    sibling: 4
+    ctip: 2
+
+sibling-access: false
+designate: true
+zone-building-blocks: 'attendance_area'
+ties-options:
+- MTB

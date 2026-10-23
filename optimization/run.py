@@ -64,14 +64,15 @@ def main(argv: list[str] | None = None) -> None:
         if "iterative" in config.strategy or config.strategy == "saa"
         else "stage"
     )
+    snapshot = _config_snapshot(config)
     for index, sol in enumerate(solutions):
         stage_dir = os.path.join(
             args.output,
             "stages",
             f"{stage_prefix}_{index:02d}_{sol.level.name}",
         )
-        sol.save(stage_dir)
-        sol.save(args.output)
+        sol.save(stage_dir, snapshot)
+        sol.save(args.output, snapshot)
         contig = sol.is_contiguous() if sol.feasible else "n/a"
         print(
             f"  {sol.level}: status={sol.status} objective={sol.objective} "
