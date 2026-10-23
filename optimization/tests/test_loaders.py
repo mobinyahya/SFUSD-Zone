@@ -42,6 +42,7 @@ def _student_scenario(
     frame=None,
     student_population="enrolled",
     frl_counts=None,
+    enrollment_shares=None,
     **filter_overrides,
 ):
     cleaned = tmp_path / "Data" / "Cleaned"
@@ -73,6 +74,14 @@ def _student_scenario(
                 "geography_vintage": "2020",
             },
         }
+    if enrollment_shares is not None:
+        share_path = tmp_path / "enrollment-shares.csv"
+        enrollment_shares.to_csv(share_path, index=False)
+        filters["enrollment_share"] = "ge_interest_esaa"
+        sources = {
+            **(sources or {"optimization.students": {"path": str(student_path)}}),
+            "optimization.enrollment_share": {"path": str(share_path)},
+        }
     return scenario_factory(
         sources=sources,
         filters={"optimization": filters},
@@ -95,7 +104,7 @@ def test_projected_centroids_latlon_avoids_geographic_crs_warning():
     assert -122.5 < centroids.iloc[0].x < -122.4
 
 
-def test_student_cache_uses_v8_content_addressed_layout(tmp_path, scenario_factory):
+def test_student_cache_uses_v9_content_addressed_layout(tmp_path, scenario_factory):
     baseline = _ingest(_student_scenario(tmp_path, scenario_factory))
     all_population = _ingest(
         _student_scenario(tmp_path, scenario_factory, program_population="All")
@@ -104,7 +113,7 @@ def test_student_cache_uses_v8_content_addressed_layout(tmp_path, scenario_facto
     baseline_namespace = loaders._student_cache_namespace(baseline)
     changed_namespace = loaders._student_cache_namespace(all_population)
 
-    assert baseline_namespace.path.parent.name == "v8"
+    assert baseline_namespace.path.parent.name == "v9"
     assert baseline_namespace.path.parent.parent.name == "students"
     assert loaders._student_cache_path(baseline).endswith("/students.csv")
     assert baseline_namespace.key != changed_namespace.key
@@ -131,6 +140,65 @@ def test_true_frl_counts_feed_optimization_with_student_file_fallback(
         "optimization.students",
         "optimization.frl_estimate",
     ]
+
+
+def test_enrollment_share_scales_only_the_capacity_student_counts(
+    tmp_path, scenario_factory
+):
+    shares = pd.DataFrame(
+        {
+            "Code": [10, 30],
+            "Percent of residents who want this program": ["50.0%", "80%"],
+        }
+    )
+    # Student 2's area (20) is not in the table, so it counts fully.
+    frame = _student_frame().assign(idschoolattendance=[10, 20])
+    cfg = _ingest(
+        _student_scenario(
+            tmp_path, scenario_factory, frame=frame, enrollment_shares=shares
+        )
+    )
+
+    assert loaders.load_enrollment_shares(cfg) == {10: 0.5, 30: 0.8}
+    students = loaders.load_students(cfg).sort_values("studentno")
+    assert students["ge_enrolling_students"].tolist() == pytest.approx(
+        (students["ge_students"] * [0.5, 1.0]).tolist()
+    )
+    assert students["all_prog_enrolling_students"].tolist() == pytest.approx(
+        (students["all_prog_students"] * [0.5, 1.0]).tolist()
+    )
+    assert loaders.student_source_roles(cfg) == [
+        "optimization.students",
+        "optimization.enrollment_share",
+    ]
+
+    baseline = _ingest(_student_scenario(tmp_path, scenario_factory, frame=frame))
+    assert loaders.load_enrollment_shares(baseline) == {}
+    unscaled = loaders.load_students(baseline)
+    assert unscaled["ge_enrolling_students"].tolist() == (
+        unscaled["ge_students"].tolist()
+    )
+    assert (
+        loaders._student_cache_namespace(baseline).key
+        != loaders._student_cache_namespace(cfg).key
+    )
+
+
+def test_enrollment_share_rejects_out_of_range_and_repeated_codes(
+    tmp_path, scenario_factory
+):
+    column = "Percent of residents who want this program"
+    over = pd.DataFrame({"Code": [10], column: ["120%"]})
+    cfg = _ingest(_student_scenario(tmp_path, scenario_factory, enrollment_shares=over))
+    with pytest.raises(ValueError, match="outside 0-100%"):
+        loaders.load_enrollment_shares(cfg)
+
+    repeated = pd.DataFrame({"Code": [10, 10], column: ["50%", "60%"]})
+    cfg = _ingest(
+        _student_scenario(tmp_path, scenario_factory, enrollment_shares=repeated)
+    )
+    with pytest.raises(ValueError, match=r"repeats codes \[10\]"):
+        loaders.load_enrollment_shares(cfg)
 
 
 def test_student_cache_identity_includes_selected_frl_count_contents(

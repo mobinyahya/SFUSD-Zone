@@ -228,7 +228,7 @@ def _balance_violations(
     violations: list[FeasibilityViolation] = []
     for constraint in balance_constraints(problem):
         for zone, nodes in enumerate(zones):
-            students = sum(problem.students(node) for node in nodes)
+            students = sum(constraint.students(problem, node) for node in nodes)
             value = sum(constraint.value(node) for node in nodes)
             if constraint.lower_ratio is not None:
                 short = constraint.lower_ratio * students - value

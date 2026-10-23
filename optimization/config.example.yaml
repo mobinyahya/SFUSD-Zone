@@ -75,4 +75,5 @@ data:
         include_mission_bay: true
         geography_vintage: '2020'     # 2010 | 2020
         frl_estimate: updated_2526     # updated_2526 | null (student-file FRL)
+        enrollment_share: null         # ge_interest_esaa | null; scales capacity-row students
         outside_district_students: ignore  # ignore | include

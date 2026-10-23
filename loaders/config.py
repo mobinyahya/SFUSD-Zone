@@ -30,7 +30,7 @@ _BASE_KEYS = {
     "student_frl_estimates",
     "school_years",
 }
-_OPTIONAL_BASE_KEYS = {"capacity_scenarios"}
+_OPTIONAL_BASE_KEYS = {"capacity_scenarios", "enrollment_shares"}
 _SCENARIO_KEYS = {"id", "sources", "filters"}
 _SOURCE_KEYS = {
     "path",
@@ -61,6 +61,7 @@ _FILTER_KEYS = {
         "include_mission_bay",
         "geography_vintage",
         "frl_estimate",
+        "enrollment_share",
         "outside_district_students",
     },
     "assignment": {
@@ -85,6 +86,7 @@ _FILTER_DEFAULTS = {
     "capacity_scenario": "programs",
     "geography_vintage": "2010",
     "frl_estimate": None,
+    "enrollment_share": None,
     "outside_district_students": "ignore",
 }
 _ANNUAL_ASSIGNMENT_ROLES = {
@@ -646,7 +648,8 @@ def _validate_filters(
         _unknown_keys(values, _FILTER_KEYS[group], f"{group} filter")
         if not partial:
             for key, value in _FILTER_DEFAULTS.items():
-                values.setdefault(key, value)
+                if key in _FILTER_KEYS[group]:
+                    values.setdefault(key, value)
             missing = sorted(_FILTER_KEYS[group] - set(values))
             if missing:
                 raise ValueError(f"{label}.{group} is missing filters: {missing}.")
@@ -717,10 +720,9 @@ def _validate_filters(
             values["geography_vintage"] = _geography_vintage(
                 values["geography_vintage"], f"{label}.{group}.geography_vintage"
             )
-        if "frl_estimate" in values and values["frl_estimate"] is not None:
-            values["frl_estimate"] = _nonempty_string(
-                values["frl_estimate"], f"{label}.{group}.frl_estimate"
-            )
+        for key in ("frl_estimate", "enrollment_share"):
+            if key in values and values[key] is not None:
+                values[key] = _nonempty_string(values[key], f"{label}.{group}.{key}")
         if "outside_district_students" in values and values[
             "outside_district_students"
         ] not in {"ignore", "include"}:
@@ -930,6 +932,13 @@ def _validate_student_frl_estimates(value: Any, files: Mapping[str, Any]) -> Non
         _validate_catalog_reference(source, f"Base student_frl_estimates.{name}", files)
 
 
+def _validate_enrollment_shares(value: Any, files: Mapping[str, Any]) -> None:
+    shares = _require_map(value, "Base enrollment_shares")
+    for name, source in shares.items():
+        _nonempty_string(name, "Base enrollment_shares key")
+        _validate_catalog_reference(source, f"Base enrollment_shares.{name}", files)
+
+
 def _validate_capacity_scenarios(value: Any, files: Mapping[str, Any]) -> None:
     scenarios = _require_map(value, "Base capacity_scenarios")
     for name, entry_value in scenarios.items():
@@ -1005,6 +1014,7 @@ def _validate_base(payload: dict[str, Any], path: Path) -> None:
     _validate_student_frl_estimates(payload["student_frl_estimates"], files)
     _validate_school_years(payload["school_years"], files)
     _validate_capacity_scenarios(payload.get("capacity_scenarios", {}), files)
+    _validate_enrollment_shares(payload.get("enrollment_shares", {}), files)
 
 
 def _validate_scenario(payload: dict[str, Any], path: Path) -> None:
@@ -1298,6 +1308,23 @@ def _student_frl_sources(
     return generated
 
 
+def _enrollment_share_sources(
+    filters: Mapping[str, Mapping[str, Any]], shares: Mapping[str, Any]
+) -> dict[str, Any]:
+    if "optimization" not in filters:
+        return {}
+    share = filters["optimization"]["enrollment_share"]
+    if share is None:
+        return {}
+    source = shares.get(share)
+    if source is None:
+        raise ValueError(
+            f"Enrollment share {share!r} is unavailable; available shares are "
+            f"{list(shares)}."
+        )
+    return {"optimization.enrollment_share": source}
+
+
 def _capacity_overlay_sources(
     filters: Mapping[str, Mapping[str, Any]], capacity_scenarios: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1315,10 +1342,12 @@ def _registry_sources(
     geographies: Mapping[str, Any],
     student_frl_estimates: Mapping[str, Any],
     capacity_scenarios: Mapping[str, Any],
+    enrollment_shares: Mapping[str, Any],
 ) -> dict[str, Any]:
     generated = _geography_sources(filters, geographies)
     generated.update(_student_frl_sources(filters, student_frl_estimates))
     generated.update(_capacity_overlay_sources(filters, capacity_scenarios))
+    generated.update(_enrollment_share_sources(filters, enrollment_shares))
     if "optimization" in filters:
         generated.update(_optimization_sources(filters["optimization"], school_years))
     if "assignment" in filters:
@@ -1456,6 +1485,7 @@ def load_scenario(
         base["geographies"],
         base["student_frl_estimates"],
         base.get("capacity_scenarios", {}),
+        base.get("enrollment_shares", {}),
     )
     sources = _deep_merge(declared_sources, generated_sources)
     sources = _deep_merge(sources, declared_overrides)

@@ -168,6 +168,7 @@ def test_example_uses_central_2021_through_2024_selectors():
         "include_mission_bay": True,
         "geography_vintage": "2020",
         "frl_estimate": "updated_2526",
+        "enrollment_share": None,
         "outside_district_students": "ignore",
     }
 

@@ -81,6 +81,8 @@ AREA_COLS = [
     "ge_students",
     # 'af_students',
     "all_prog_students",
+    "ge_enrolling_students",
+    "all_prog_enrolling_students",
 ]
 
 BUILDING_BLOCKS = [
@@ -100,6 +102,8 @@ IMPORTANT_COLS = [
     "FRL",
     "ge_students",
     "all_prog_students",
+    "ge_enrolling_students",
+    "all_prog_enrolling_students",
     "r1_ranked_idschool",
     "r1_rank",
     # "",

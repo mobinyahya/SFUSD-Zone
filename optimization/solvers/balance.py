@@ -10,12 +10,23 @@ from optimization.problem import ZoneProblem
 
 @dataclass(frozen=True)
 class BalanceConstraint:
-    """A zone-level ratio bound of ``value / students``."""
+    """A zone-level ratio bound of ``value / students``.
+
+    ``students`` is ``problem.students`` unless ``denominator`` names another
+    per-node count; the capacity rows divide by ``problem.capacity_students``.
+    """
 
     kind: str
     value: Callable[[int], float]
     lower_ratio: float | None
     upper_ratio: float | None
+    denominator: Callable[[int], float] | None = None
+
+    def students(self, problem: ZoneProblem, node: int) -> float:
+        """The count this constraint's ratio is taken against at ``node``."""
+        if self.denominator is None:
+            return problem.students(node)
+        return self.denominator(node)
 
 
 Term = tuple[float, int, int]
@@ -45,6 +56,7 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
                 value=problem.capacity,
                 lower_ratio=1.0 - problem.shortage if problem.shortage >= 0 else None,
                 upper_ratio=1.0 + problem.overage if problem.overage >= 0 else None,
+                denominator=problem.capacity_students,
             ),
         )
 
@@ -75,7 +87,7 @@ def balance_terms(
         [
             (
                 constraint.value(node)
-                - constraint.lower_ratio * problem.students(node),
+                - constraint.lower_ratio * constraint.students(problem, node),
                 zone,
                 node,
             )
@@ -88,7 +100,7 @@ def balance_terms(
         [
             (
                 constraint.value(node)
-                - constraint.upper_ratio * problem.students(node),
+                - constraint.upper_ratio * constraint.students(problem, node),
                 zone,
                 node,
             )

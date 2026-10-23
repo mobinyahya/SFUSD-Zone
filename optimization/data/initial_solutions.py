@@ -272,6 +272,17 @@ def _nearest_centroid_assignment(problem: ZoneProblem) -> dict[int, int]:
 # ---------------------------------------------------------------------- #
 # feasible-hint cache
 # ---------------------------------------------------------------------- #
+def _capacity_students_entry(problem: ZoneProblem, node: int) -> list[float]:
+    """The capacity rows' student count, only where it differs from ``students``.
+
+    Without an ``enrollment_share`` the two are equal and the feasible set is
+    the one every existing fingerprint already names, so it is left out.
+    """
+    students = float(problem.students(node))
+    capacity_students = float(problem.capacity_students(node))
+    return [] if capacity_students == students else [capacity_students]
+
+
 def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) -> str:
     """Hash every problem input the objective-free zoning model reads.
 
@@ -335,6 +346,7 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
                 node,
                 sorted(int(zone) for zone in problem.candidate_zones(node)),
                 float(problem.students(node)),
+                *_capacity_students_entry(problem, node),
                 float(problem.capacity(node)),
                 float(problem.frl(node)),
                 int(problem.num_schools(node)),
