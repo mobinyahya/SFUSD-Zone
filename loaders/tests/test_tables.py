@@ -671,6 +671,42 @@ def test_explicit_capacity_scenario_overrides_matching_selected_programs(
     assert loaded["capacity"].tolist() == [8, 4]
 
 
+def test_pooled_capacity_overlay_splits_seats_over_lottery_pools(
+    tmp_path, scenario_factory
+):
+    programs = tmp_path / "programs.csv"
+    capacities = tmp_path / "capacities.csv"
+    pd.DataFrame(
+        {
+            "program_id": ["10-SE-KG", "10-SN-KG", "20-JE-KG", "20-JN-KG", "30-GE-KG"],
+            "school_id": [10, 10, 20, 20, 30],
+            "program_type": ["SE", "SN", "JE", "JN", "GE"],
+            "capacity": [18, 26, 0, 0, 5],
+        }
+    ).to_csv(programs, index=False)
+    pd.DataFrame(
+        {
+            "Grade": ["K", "K", "K"],
+            "SchNum": [10, 20, 40],
+            "PathwayCode": ["SE+SN", "JE+JN", "SE+SN"],
+            "Scenario_A_Capacity": [88, 45, 33],
+        }
+    ).to_csv(capacities, index=False)
+    scenario = scenario_factory(
+        {
+            "assignment.programs": {"path": str(programs)},
+            "assignment.capacity": {"path": str(capacities)},
+        },
+        {"assignment": {"capacity_scenario": "A"}},
+    )
+
+    loaded = load_program_records(scenario)
+
+    # 88 seats keep the 18:26 split; pools with no seats share equally, the
+    # odd seat going to the first; school 40 has no such program and is ignored.
+    assert loaded["capacity"].tolist() == [36, 52, 23, 22, 5]
+
+
 @pytest.mark.parametrize(
     ("grade", "year", "rows", "expected"),
     [

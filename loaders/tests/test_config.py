@@ -629,6 +629,30 @@ def test_capacity_scenario_registry_is_strict_and_joins_the_manifest(tmp_path):
         load("programs", base_path=invalid_path)
 
 
+@pytest.mark.parametrize("group", ["optimization", "assignment"])
+def test_registered_capacity_overlay_becomes_the_group_capacity_source(group):
+    plain = load_scenario({"scenario": "sfusd-2627", "overrides": {}}, environ={})
+    overlaid = load_scenario(
+        {
+            "scenario": "sfusd-2627",
+            "overrides": {"filters": {group: {"capacity_scenario": "v102226_mpd"}}},
+        },
+        environ={},
+    )
+
+    assert plain.resolved(f"{group}.capacity").catalog_id == (
+        "capacity.stanford.scenarios_abcd"
+    )
+    assert overlaid.resolved(f"{group}.capacity").catalog_id == (
+        "capacity.sfusd.v102226"
+    )
+    assert overlaid.capacity_adjustments(group) is None
+    other = {"optimization": "assignment", "assignment": "optimization"}[group]
+    assert overlaid.resolved(f"{other}.capacity").catalog_id == (
+        "capacity.stanford.scenarios_abcd"
+    )
+
+
 def test_geography_vintage_selects_complete_2020_bundles():
     scenario = load_scenario(
         {
