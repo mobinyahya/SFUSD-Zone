@@ -18,7 +18,13 @@
 #                         sibling priority still applies where the student is
 #                         eligible.
 #
-# Zones: `Con1` is today's attendance-area map. With generated zones
+# Zones: `Con1` is today's attendance-area map, read as one zone per school
+# id in concept1zones.csv. Any attendance area that students live in (the
+# student table's idschoolattendance) but the file omits becomes its own zone
+# (Zones._add_unlisted_attendance_areas), so a new area such as Mission Bay
+# (999) is owned as soon as the student data assigns students to it, with no
+# edit to the file. Until then no zone owns 999-GE-KG and every student may
+# rank it, with a warning. With generated zones
 # (benchmark matching, assignment/generated_zones.py) the policy and
 # zone-building-blocks are replaced by the run's zoning, so each generated
 # zone acts as one attendance area. The policy is only "one GE school per
