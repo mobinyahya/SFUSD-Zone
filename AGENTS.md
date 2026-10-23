@@ -179,8 +179,9 @@ benchmark_manifest.json  # Task id, config hash, stage paths, status, timing
 result.json              # Status, metrics, zone_data, config, run metadata
 zone_dict_<level>.json   # Final root-level assignment alias
 zone_dict_area_<level>.json
-solution_<level>.json
-stages/<stage>/<files>   # Every recursive/iterative level result
+solution_<level>.json    # Status, metadata, and the generating config ("config")
+zoning_config.yaml       # That config, runnable by optimization.run as is
+stages/<stage>/<files>   # Every recursive/iterative level result, each with both
 ```
 
 Aggregation produces `summary.csv` with one row per run and `stages.csv` with one row per saved stage.

@@ -102,6 +102,7 @@ _ASSIGNMENT_YEAR_KEYS = {"students", "grades"}
 _ASSIGNMENT_GRADE_KEYS = {"profiles"}
 _ASSIGNMENT_VARIANT_KEYS = {"programs", "programs_catalog", "schools"}
 _CAPACITY_SCENARIO_KEYS = {"year", "include_mission_bay", "adjust"}
+_CAPACITY_OVERLAY_KEYS = {"source"}
 _CAPACITY_ADJUSTMENT_KEYS = {"school_id", "program_type", "expect", "add", "set"}
 _GEOGRAPHY_KEYS = {
     "blocks",
@@ -373,7 +374,8 @@ class DataScenario:
     filters: Mapping[str, Mapping[str, Any]]
     _source_values: Mapping[str, Any]
     #: The base ``capacity_scenarios`` registry: named in-memory capacity
-    #: adjustments that a group's ``capacity_scenario`` filter can select.
+    #: adjustments, or overlay files, that a group's ``capacity_scenario``
+    #: filter can select.
     capacity_scenarios: Mapping[str, Any] = MappingProxyType({})
 
     @classmethod
@@ -456,10 +458,17 @@ class DataScenario:
             raise KeyError(f"Filter {group}.{key} is not configured.") from None
 
     def capacity_adjustments(self, group: str) -> Mapping[str, Any] | None:
-        """Return the registered capacity scenario a group selects, if any."""
-        return self.capacity_scenarios.get(
+        """Return the registered capacity adjustments a group selects, if any.
+
+        A registered overlay file is not an adjustment: it becomes the group's
+        ``<group>.capacity`` source, which identifies it by content.
+        """
+        definition = self.capacity_scenarios.get(
             self.filter(group, "capacity_scenario", "programs")
         )
+        if definition is None or "source" in definition:
+            return None
+        return definition
 
     def source_manifest(
         self, roles: str | Iterable[str] | None = None
@@ -930,7 +939,7 @@ def _validate_enrollment_shares(value: Any, files: Mapping[str, Any]) -> None:
         _validate_catalog_reference(source, f"Base enrollment_shares.{name}", files)
 
 
-def _validate_capacity_scenarios(value: Any) -> None:
+def _validate_capacity_scenarios(value: Any, files: Mapping[str, Any]) -> None:
     scenarios = _require_map(value, "Base capacity_scenarios")
     for name, entry_value in scenarios.items():
         _nonempty_string(name, "Base capacity_scenarios key")
@@ -938,6 +947,10 @@ def _validate_capacity_scenarios(value: Any) -> None:
             raise ValueError("Base capacity_scenarios cannot redefine 'programs'.")
         label = f"Base capacity_scenarios.{name}"
         entry = _require_map(entry_value, label)
+        if "source" in entry:
+            _unknown_keys(entry, _CAPACITY_OVERLAY_KEYS, f"capacity_scenarios.{name}")
+            _validate_catalog_reference(entry["source"], f"{label}.source", files)
+            continue
         _unknown_keys(entry, _CAPACITY_SCENARIO_KEYS, f"capacity_scenarios.{name}")
         if "year" not in entry or "adjust" not in entry:
             raise ValueError(f"{label} must define year and adjust.")
@@ -1000,7 +1013,7 @@ def _validate_base(payload: dict[str, Any], path: Path) -> None:
     _validate_geographies(payload["geographies"], files)
     _validate_student_frl_estimates(payload["student_frl_estimates"], files)
     _validate_school_years(payload["school_years"], files)
-    _validate_capacity_scenarios(payload.get("capacity_scenarios", {}))
+    _validate_capacity_scenarios(payload.get("capacity_scenarios", {}), files)
     _validate_enrollment_shares(payload.get("enrollment_shares", {}), files)
 
 
@@ -1312,15 +1325,28 @@ def _enrollment_share_sources(
     return {"optimization.enrollment_share": source}
 
 
+def _capacity_overlay_sources(
+    filters: Mapping[str, Mapping[str, Any]], capacity_scenarios: Mapping[str, Any]
+) -> dict[str, Any]:
+    generated: dict[str, Any] = {}
+    for group, group_filters in filters.items():
+        definition = capacity_scenarios.get(group_filters["capacity_scenario"])
+        if definition is not None and "source" in definition:
+            generated[f"{group}.capacity"] = definition["source"]
+    return generated
+
+
 def _registry_sources(
     filters: Mapping[str, Mapping[str, Any]],
     school_years: Mapping[str, Any],
     geographies: Mapping[str, Any],
     student_frl_estimates: Mapping[str, Any],
+    capacity_scenarios: Mapping[str, Any],
     enrollment_shares: Mapping[str, Any],
 ) -> dict[str, Any]:
     generated = _geography_sources(filters, geographies)
     generated.update(_student_frl_sources(filters, student_frl_estimates))
+    generated.update(_capacity_overlay_sources(filters, capacity_scenarios))
     generated.update(_enrollment_share_sources(filters, enrollment_shares))
     if "optimization" in filters:
         generated.update(_optimization_sources(filters["optimization"], school_years))
@@ -1458,6 +1484,7 @@ def load_scenario(
         base["school_years"],
         base["geographies"],
         base["student_frl_estimates"],
+        base.get("capacity_scenarios", {}),
         base.get("enrollment_shares", {}),
     )
     sources = _deep_merge(declared_sources, generated_sources)

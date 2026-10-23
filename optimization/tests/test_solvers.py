@@ -741,3 +741,32 @@ def test_access_inequalities_do_not_change_the_integer_optimum(name, flags):
         bool(flags.get("choice_access_cardinality"))
     )
     assert solution.metadata["choice_access_triangle"] == 0
+
+
+def test_solution_save_embeds_generating_config(tmp_path):
+    from benchmark.config import config_snapshot, json_ready
+
+    problem = make_grid_problem(3, 3)
+    solution = get_solver("cp_int", solve_time_limit=10, workers=1).solve(problem)
+    config = OptimizationConfig.from_yaml(
+        os.path.join(os.path.dirname(__file__), "..", "config.example.yaml")
+    )
+    snapshot = config_snapshot(config)
+
+    solution.save(str(tmp_path), snapshot)
+
+    info = json.loads((tmp_path / "solution_BlockGroup_0.json").read_text())
+    assert info["config"] == json_ready(snapshot)
+    rerun = OptimizationConfig.from_yaml(str(tmp_path / "zoning_config.yaml"))
+    assert config_snapshot(rerun) == snapshot
+
+
+def test_solution_save_without_config_writes_no_config(tmp_path):
+    problem = make_grid_problem(3, 3)
+    solution = get_solver("cp_int", solve_time_limit=10, workers=1).solve(problem)
+
+    solution.save(str(tmp_path))
+
+    info = json.loads((tmp_path / "solution_BlockGroup_0.json").read_text())
+    assert "config" not in info
+    assert not (tmp_path / "zoning_config.yaml").exists()

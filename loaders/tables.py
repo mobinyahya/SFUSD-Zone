@@ -1022,6 +1022,63 @@ def _apply_capacity_adjustments(
     return result
 
 
+def _split_pooled_capacity(total: float, weights: pd.Series) -> pd.Series:
+    """Split seats over lottery pools in proportion to their current seats.
+
+    Pools with no current seats share equally. A whole-seat total stays whole
+    and exact: floors first, then the largest remainders take one seat each.
+    """
+    weights = weights.fillna(0).clip(lower=0).astype(float)
+    if weights.sum() <= 0:
+        weights = pd.Series(1.0, index=weights.index)
+    shares = total * weights / weights.sum()
+    if not float(total).is_integer():
+        return shares
+    seats = np.floor(shares)
+    remainder = int(round(total - seats.sum()))
+    order = (shares - seats).sort_values(ascending=False, kind="stable").index
+    seats.loc[order[:remainder]] += 1
+    return seats
+
+
+def _expand_pooled_overrides(
+    overrides: pd.DataFrame, result: pd.DataFrame, keys: list[str]
+) -> pd.DataFrame:
+    """Expand ``+``-joined program types onto the selected pool programs.
+
+    An overlay row such as ``SE+SN`` sets one program's seats; the program
+    tables split it into lottery pools, so the seats are divided among the
+    selected rows of those types at the same school (and grade). A pooled row
+    that matches no selected program is dropped like any unmatched row.
+    """
+    pooled = overrides["program_type"].str.contains("+", regex=False)
+    if not pooled.any():
+        return overrides
+    other_keys = [key for key in keys if key != "program_type"]
+    rows = [overrides.loc[~pooled]]
+    for _, row in overrides.loc[pooled].iterrows():
+        codes = row["program_type"].split("+")
+        targets = result["program_type"].isin(codes)
+        for key in other_keys:
+            targets &= result[key].eq(row[key])
+        targets = result.loc[targets]
+        if targets.empty:
+            continue
+        if targets["program_type"].duplicated().any():
+            raise ValueError(
+                f"Cannot split {row['program_type']} seats at school "
+                f"{row['school_id']}: a pool appears more than once."
+            )
+        seats = _split_pooled_capacity(
+            row["capacity"], pd.to_numeric(targets["capacity"], errors="coerce")
+        )
+        expanded = pd.DataFrame([row] * len(targets)).reset_index(drop=True)
+        expanded["program_type"] = targets["program_type"].to_numpy()
+        expanded["capacity"] = seats.to_numpy()
+        rows.append(expanded)
+    return pd.concat(rows, ignore_index=True)
+
+
 def apply_capacity_scenario(
     frame: pd.DataFrame,
     scenario: DataScenario,
@@ -1097,6 +1154,7 @@ def apply_capacity_scenario(
         raise ValueError(
             f"Capacity scenario {scenario_name!r} contains blank matching keys."
         )
+    overrides = _expand_pooled_overrides(overrides, result, keys)
 
     resolved_rows = []
     for _, candidates in overrides.groupby(keys, sort=False, dropna=False):

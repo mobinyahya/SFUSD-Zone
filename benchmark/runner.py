@@ -128,7 +128,7 @@ def _execute_optimization_phase(
         if not solutions:
             raise ValueError("Optimization strategy returned no solutions.")
         stage_records = save_stage_artifacts(
-            solutions, output_dir, stage_names_for(solutions, config)
+            solutions, output_dir, stage_names_for(solutions, config), config
         )
         status = str(solutions[-1].status or "UNKNOWN")
         manifest = manifest_for(
@@ -165,6 +165,7 @@ def _execute_optimization_phase(
                     solutions,
                     output_dir,
                     stage_names_for(solutions, config),
+                    config,
                 )
             except Exception:
                 pass
@@ -238,7 +239,7 @@ def evaluate_optimization_task(
         )
         metrics = calculator.compute()
         final_solution = calculator.context.solution
-        final_solution.save(output_dir)
+        final_solution.save(output_dir, config_snapshot(config))
 
         if matching and matching.enabled:
             from benchmark.assignment import process_solution_assignments
@@ -319,14 +320,16 @@ def save_stage_artifacts(
     solutions: Sequence[ZoneSolution],
     output_dir: str,
     stage_names: Sequence[str],
+    config: OptimizationConfig | None = None,
 ) -> list[dict[str, Any]]:
     stages_dir = Path(output_dir) / "stages"
     stages_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = config_snapshot(config) if config is not None else None
     records: list[dict[str, Any]] = []
     for idx, (solution, stage_name) in enumerate(zip(solutions, stage_names)):
         stage_dir = stages_dir / stage_name
         stage_dir.mkdir(parents=True, exist_ok=True)
-        solution.save(str(stage_dir))
+        solution.save(str(stage_dir), snapshot)
         records.append(stage_record(solution, idx, stage_name, stage_dir, output_dir))
     return records
 

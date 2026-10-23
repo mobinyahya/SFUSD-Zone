@@ -597,6 +597,13 @@ files:
     path: Data/capacity_management/2023-03-03_06_target_capacities.npy
     root: data
     classification: internal
+  # The district's 22 Oct 2026 kindergarten capacity workbook, converted by
+  # analysis/data_prep/convert_capacities_v102226.py; the workbook itself sits
+  # in Data/capacity_management/raw/. Selected through capacity_scenarios.
+  capacity.sfusd.v102226:
+    path: Data/capacity_management/sfusd_capacities_v10.22.26.csv
+    root: data
+    classification: internal
 
   census.blocks.2010:
     path: shapefiles/geo_export_d4e9e90c-ff77-4dc9-a766-6a1a7f7d9f9c.shp
@@ -906,12 +913,23 @@ student_frl_estimates:
 enrollment_shares:
   ge_interest_esaa: enrollment_share.ge_interest_esaa
 
-# Named in-memory adjustments to the selected assignment program table, chosen
-# by `capacity_scenario`. Each names one program by school and program type.
+# Named capacity scenarios, chosen by either group's `capacity_scenario`.
+#
+# An entry with `source` is an overlay file: it becomes that group's
+# `<group>.capacity` source, and its `Scenario_<name>_Capacity` column sets
+# every program it matches. The district's October 2026 kindergarten proposals
+# (ideal classroom use, and the MPD proposal) are overlays.
+#
+# An entry with `adjust` is an in-memory adjustment to the selected assignment
+# program table. Each names one program by school and program type.
 # The Mission Bay comparison study (assignment/configs/mb_comparison/README.md):
 # without Mission Bay, Webster (497) takes the GE seats Mission Bay would have
 # held; in 2026-27, Mission Bay's 69 GE seats move to Webster.
 capacity_scenarios:
+  v102226_ideal:
+    source: capacity.sfusd.v102226
+  v102226_mpd:
+    source: capacity.sfusd.v102226
   webster_plus_66_ge_2324:
     year: "2324"
     include_mission_bay: false

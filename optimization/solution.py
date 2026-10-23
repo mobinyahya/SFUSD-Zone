@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Optional
+
+import yaml
 
 from optimization.data.edge_weights import edge_weight
 from optimization.problem import ZoneProblem
@@ -98,8 +102,14 @@ class ZoneSolution:
     # ------------------------------------------------------------------ #
     # serialization
     # ------------------------------------------------------------------ #
-    def save(self, folder: str) -> None:
-        """Write ``zone_dict_<level>.json`` and ``solution_<level>.json``."""
+    def save(self, folder: str, config: Optional[Mapping] = None) -> None:
+        """Write ``zone_dict_<level>.json`` and ``solution_<level>.json``.
+
+        ``config`` is the snapshot of the config that produced this zoning. It
+        is embedded in ``solution_<level>.json`` and written beside the zoning
+        as ``zoning_config.yaml``, which ``optimization.run`` accepts as is, so
+        a zoning copied out of its run still says how it was made.
+        """
         os.makedirs(folder, exist_ok=True)
         level = self.level.name
 
@@ -124,6 +134,9 @@ class ZoneSolution:
             "contiguous": self.is_contiguous() if self.feasible else None,
             "metadata": self.metadata,
         }
+        if config is not None:
+            info["config"] = _json_ready(config)
+            save_zoning_config(config, folder)
         info_path = os.path.join(folder, f"solution_{level}.json")
         with open(info_path, "w") as f:
             json.dump(info, f, indent=2)
@@ -184,6 +197,50 @@ class ZoneSolution:
                 "solver_progress_dir": rel_dir,
             }
         )
+
+
+ZONING_CONFIG_FILENAME = "zoning_config.yaml"
+
+
+def save_zoning_config(config: Mapping, folder: str) -> str:
+    """Write ``config`` as a YAML ``OptimizationConfig.from_yaml`` can load.
+
+    ``unit`` is dropped because it is derived from ``levels``, not a key.
+    """
+    body = {k: v for k, v in config.items() if k != "unit"}
+    path = os.path.join(folder, ZONING_CONFIG_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# Config that produced the zoning in this folder.\n")
+        f.write("# Rerun: uv run python -m optimization.run <this file>\n")
+        yaml.safe_dump(_yaml_ready(body), f, sort_keys=False)
+    return path
+
+
+def _json_ready(value):
+    """Spell infinities as ``benchmark.config.json_ready`` does, so the copy
+    here matches the run manifest's and stays strict JSON."""
+    if isinstance(value, Mapping):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_ready(v) for v in value]
+    if hasattr(value, "item"):
+        return _json_ready(value.item())
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
+    return value
+
+
+def _yaml_ready(value):
+    if isinstance(value, Mapping):
+        return {str(k): _yaml_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_yaml_ready(v) for v in value]
+    if hasattr(value, "item"):
+        return value.item()
+    return value
 
 
 def _safe_filename(value: str) -> str:

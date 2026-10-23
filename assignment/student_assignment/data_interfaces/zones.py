@@ -381,7 +381,26 @@ class Zones:
         programs_in_zones = {
             prog for prog_list in self.area_id2prog_list.values() for prog in prog_list
         }  # set of all programs
-        for program in list(set(self.programs.indices) - programs_in_zones):
+        remaining = set(self.programs.indices) - programs_in_zones
+        attendance_schools = (
+            set(self.aa_schools["school_id"])
+            if "school_id" in self.aa_schools
+            else set()
+        )
+        unowned = sorted(
+            program
+            for program in remaining
+            if program.split("-")[1] == "GE"
+            and program.split("-")[0].isdigit()
+            and int(program.split("-")[0]) in attendance_schools
+        )
+        if unowned:
+            warnings.warn(
+                f"No zone owns attendance-school programs {unowned}; they are "
+                "open to every zone, like a citywide program.",
+                stacklevel=2,
+            )
+        for program in list(remaining):
             for area_id in self.area_id2prog_list:
                 self.area_id2prog_list[area_id].append(program)
 
@@ -417,6 +436,8 @@ class Zones:
         self.area2zone, self.zone2area_list = self._create_zone(
             os.path.expanduser(zone_file)
         )
+        if self.config["zone-building-blocks"] == "attendance_area":
+            self._add_unlisted_attendance_areas()
         if self.config["zone-building-blocks"] in [
             "attendance_area",
             "block_group",
@@ -424,6 +445,36 @@ class Zones:
             "tract",
         ]:
             self.zones_set = True
+
+    def _add_unlisted_attendance_areas(self):
+        """Give each lived-in attendance area the zone file omits its own zone.
+
+        An attendance-area zone file is a fixed list of school ids, while the
+        students' areas come from the student table. When the district adds an
+        area -- Mission Bay (999) opened in 2026 after concept1zones.csv was
+        written -- the first is stale as soon as the second is updated, and
+        the new area's students would belong to no zone. An area with a school
+        and at least one student is therefore its own zone. One without
+        students stays unowned: its GE program is then spread to every zone
+        under ``restrict-zone`` (see :meth:`add_remaining_schools_to_all_zones`).
+        """
+        if (
+            getattr(self.students, "attendance_area", None) is None
+            or "attendance_area" not in self.aa_schools
+        ):
+            return
+        lived_in = {int(area) for area in self.students.attendance_area.unique()}
+        with_school = set(self.aa_schools["attendance_area"].dropna().astype(int))
+        unlisted = sorted((lived_in & with_school) - set(self.area2zone) - {0})
+        for area in unlisted:
+            self.area2zone[area] = len(self.zone2area_list)
+            self.zone2area_list.append({area})
+        if unlisted:
+            warnings.warn(
+                f"Attendance areas {unlisted} have students but are missing from "
+                "the zone file; each was added as its own zone.",
+                stacklevel=2,
+            )
 
     # def set_zone_from_dict(self, zone_list: List, zone_dict: dict):
     #     """

@@ -762,20 +762,39 @@ The checked-in registry holds the Mission Bay comparison study's
 `mission_bay_ge_to_webster_2627`. See
 `assignment/configs/mb_comparison/README.md` for the study design.
 
+A registered entry may instead name an overlay file, for either group:
+
+```yaml
+capacity_scenarios:
+  v102226_mpd:
+    source: capacity.sfusd.v102226
+```
+
+Selecting it makes that catalog file the group's `<group>.capacity` source,
+replacing the scenario's own binding (a run's `overrides.sources` still wins),
+and reads its `Scenario_<name>_Capacity` column as below. The checked-in
+`v102226_ideal` and `v102226_mpd` are the two kindergarten proposals in the
+district's 22 Oct 2026 capacity workbook, converted by
+`analysis/data_prep/convert_capacities_v102226.py`; that script's docstring
+records how the workbook's school codes and program labels were mapped.
+
 Other explicit values, such as `A`, require the source role `<group>.capacity`
 and read:
 
 | Source column | Meaning |
 |---|---|
 | `SchNum` | School ID match key |
-| `PathwayCode` | Program type match key |
+| `PathwayCode` | Program type match key; `+`-joined codes (`SE+SN`) name one program split into lottery pools |
 | `Scenario_<value>_Capacity` | Capacity selected by `capacity_scenario` |
 | `Grade` | Optional grade match key |
 
 Selected overlay capacities must be numeric, finite, and non-negative. Matching
 uses school and program, plus grade when `Grade` is present. At least one
 selected program must match. Unmatched programs retain their program-table
-capacities. Conflicting duplicate overlay rows fail after Mission Bay
+capacities. A pooled `PathwayCode` divides its seats among the selected
+programs of those types at the school, in proportion to their current
+capacities (equally when they have none), with whole seats kept whole by
+largest remainder. Conflicting duplicate overlay rows fail after Mission Bay
 normalization; when both alias ID `909` and canonical ID `999` are present, the
 canonical row is preferred.
 
@@ -785,6 +804,7 @@ Selectors generate these roles from the base registries:
 
 | Filter group | Generated roles |
 |---|---|
+| either | `<group>.capacity`, when `capacity_scenario` names a registered overlay file |
 | `optimization` | `optimization.students`, `optimization.census`, `optimization.crosswalk`, `optimization.adjacency`, `optimization.manual_edges`, and optional `optimization.geography.blockgroups` / `optimization.geography.tracts` |
 | `assignment` | `assignment.students`, `assignment.programs`, optional `assignment.programs.catalog`, `assignment.schools`, `assignment.school_coordinates`, and available `assignment.geography.blocks`, `assignment.geography.blockgroups`, `assignment.geography.tracts`, `assignment.geography.crosswalk`, and, for each other vintage an assignment source declares, `assignment.geography.<vintage>.blocks` and `.crosswalk` |
 

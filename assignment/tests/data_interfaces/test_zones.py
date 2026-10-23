@@ -498,3 +498,54 @@ def test_zone_eligibility_does_not_mutate_zone_priority(aa_config):
     np.testing.assert_array_equal(eligibility, [[1, 0, 1], [1, 1, 1]])
     np.testing.assert_array_equal(priority, base_priority)
     np.testing.assert_array_equal(zones.zone_priority_matrix, base_priority)
+
+
+def _mission_bay_zones(tmp_path, student_areas):
+    """Zones over a stale two-area map (101, 102) and schools 101, 102, 999."""
+    zone_file = tmp_path / "aa_zones.csv"
+    zone_file.write_text("101\n102\n")
+    schools = pd.DataFrame(
+        {"attendance_area": [101, 102, 999]},
+        index=pd.Index([101, 102, 999], name="school_id"),
+    )
+    programs = Programs(
+        pd.DataFrame(
+            {
+                "programno": [1, 2, 3],
+                "program_id": [f"{s}{PROGRAM_PREFIX}" for s in (101, 102, 999)],
+            }
+        )
+    )
+    students = SimpleNamespace(attendance_area=pd.Series(student_areas))
+    zones = Zones(
+        {"zone-building-blocks": "attendance_area"},
+        schools,
+        programs,
+        students,
+        grade=GRADE,
+    )
+    return zones, zone_file
+
+
+def test_lived_in_attendance_area_missing_from_zone_file_gets_its_own_zone(tmp_path):
+    zones, zone_file = _mission_bay_zones(tmp_path, [101, 102, 999, 0])
+
+    with pytest.warns(UserWarning, match=r"\[999\] have students"):
+        zones.set_zone(zone_file)
+    zones.set_area_id2prog_list_dict(remaining_programs_citywide=True)
+
+    assert zones.area2zone[999] == 2
+    assert zones.area_id2prog_list[999] == [f"999{PROGRAM_PREFIX}"]
+    assert f"999{PROGRAM_PREFIX}" not in zones.area_id2prog_list[101]
+
+
+def test_attendance_school_without_students_stays_open_to_every_zone(tmp_path):
+    zones, zone_file = _mission_bay_zones(tmp_path, [101, 102])
+
+    zones.set_zone(zone_file)
+    with pytest.warns(UserWarning, match=r"No zone owns .*999-GE-KG"):
+        zones.set_area_id2prog_list_dict(remaining_programs_citywide=True)
+
+    assert 999 not in zones.area2zone
+    assert f"999{PROGRAM_PREFIX}" in zones.area_id2prog_list[101]
+    assert f"999{PROGRAM_PREFIX}" in zones.area_id2prog_list[102]
