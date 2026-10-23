@@ -23,10 +23,15 @@ _SUM_ATTRS = [
     "num_schools",
     "FRL",
 ]
+# Summed when the parent carries them. Every built graph does; a hand-built one
+# without them counts every student in the capacity rows (see
+# ``ZoneProblem.capacity_students``), and its aggregates keep that meaning.
+_OPTIONAL_SUM_ATTRS = ["ge_enrolling_students", "all_prog_enrolling_students"]
 
 # Bumped to 14 when coarse part numbering became canonical (derived from the
-# stable area ids in each part rather than from KaHIP's own labels).
-GRAPH_CACHE_SCHEMA_VERSION = 14
+# stable area ids in each part rather than from KaHIP's own labels), and to 15
+# when nodes gained the ``*_enrolling_students`` capacity-row counts.
+GRAPH_CACHE_SCHEMA_VERSION = 15
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
@@ -61,6 +66,8 @@ def build_base_graph(cfg: IngestConfig, *, weight_edges: bool = False) -> nx.Gra
             "ge_capacity": float(row["ge_capacity"]),
             "all_prog_students": float(row["all_prog_students"]),
             "all_prog_capacity": float(row["all_prog_capacity"]),
+            "ge_enrolling_students": float(row["ge_enrolling_students"]),
+            "all_prog_enrolling_students": float(row["all_prog_enrolling_students"]),
             "num_schools": int(row["num_schools"]),
             "FRL": float(row["FRL"]),
             "school_ids": list(row["school_ids"]),
@@ -144,6 +151,9 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
         b = parent_G.nodes[node]
         for a in _SUM_ATTRS:
             n[a] += float(b[a])
+        for a in _OPTIONAL_SUM_ATTRS:
+            if a in b:
+                n[a] = n.get(a, 0.0) + float(b[a])
         for e in AREA_ETHNICITIES:
             n[e] += float(b[e])
         n["school_ids"].extend(b.get("school_ids", []))

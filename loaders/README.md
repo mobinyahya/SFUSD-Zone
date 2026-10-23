@@ -141,9 +141,11 @@ geographies: {}
 student_frl_estimates: {}
 school_years: {}
 capacity_scenarios: {}
+enrollment_shares: {}
 ```
 
-The first six fields are required; `capacity_scenarios` is optional.
+The first six fields are required; `capacity_scenarios` and
+`enrollment_shares` are optional.
 
 | Field | Type | Description |
 |---|---|---|
@@ -154,6 +156,7 @@ The first six fields are required; `capacity_scenarios` is optional.
 | `student_frl_estimates` | Non-empty map | Selectable student FRL count sources. |
 | `school_years` | Non-empty map | Annual optimization and assignment source registry. |
 | `capacity_scenarios` | Map | Named in-memory capacity adjustments; see [Capacity Overlays](#capacity-overlays). |
+| `enrollment_shares` | Map | Selectable attendance-area enrollment shares for optimization's capacity rows; see [Enrollment Shares](#enrollment-shares). |
 
 ### Roots
 
@@ -255,6 +258,36 @@ overrides:
 ```
 
 Assignment uses the equivalent `assignment.frl_estimate` role.
+
+### Enrollment Shares
+
+`enrollment_shares` maps names for the optimization-only `enrollment_share`
+selector to catalog IDs:
+
+```yaml
+enrollment_shares:
+  ge_interest_esaa: enrollment_share.ge_interest_esaa
+```
+
+A share is the fraction of an attendance area's residents expected to enrol
+at that area's school. Each source has one row per attendance area: `Code` (the
+attendance-area school code, matched against the student table's
+`idschoolattendance`) and `Percent of residents who want this program` (a
+percentage such as `89.6%`). `ge_interest_esaa` is the School Reorg "GE
+Interest by ESAA of Residence" table: 58 kindergarten GE attendance-area
+schools, stored at `Data/enrollment_share/ge_interest_by_esaa.csv`.
+
+The share changes only the capacity (`overage`/`shortage`) rows. Each student
+counts for their area's share there, so a zone's seats must lie within
+`[(1 - shortage), (1 + overage)]` times its *enrolling* students. Students are
+weighted individually and summed up the graph hierarchy, so a coarse unit
+straddling two areas is weighted exactly. A student with no attendance area, or
+one the table does not list, counts fully. FRL and racial balance, objectives,
+and metrics keep raw counts, and assignment never reads the selector. The
+per-node counts are the graph attributes `ge_enrolling_students` and
+`all_prog_enrolling_students`, equal to the raw counts when no share is
+selected. The selected source joins the student and graph cache keys, as an
+FRL estimate does; the source override role is `optimization.enrollment_share`.
 
 ### School-Year Registry
 
@@ -545,6 +578,7 @@ The only defaults injected by the loader are:
 | `capacity_scenario` | `programs` |
 | `geography_vintage` | `"2010"` |
 | `frl_estimate` | `null` |
+| `enrollment_share` | `null` (optimization only) |
 | `outside_district_students` | `ignore` |
 
 These defaults are applied within a configured group. They do not create an
@@ -611,6 +645,7 @@ filters:
 | `include_mission_bay` | Boolean | Yes | Shared Mission Bay policy described above. |
 | `geography_vintage` | Four-digit registered vintage | No | Target Census geography. Defaults to `"2010"`. |
 | `frl_estimate` | Registered estimate name or `null` | No | Block-count FRL source. Defaults to `null`, which retains optimization's source `FRL Score`. |
+| `enrollment_share` | Registered share name or `null` | No | Attendance-area enrollment share scaling the students the capacity rows count; see [Enrollment Shares](#enrollment-shares). Defaults to `null`, which counts every student. |
 | `outside_district_students` | `ignore` or `include` | No | Outside-district policy. Defaults to `ignore`. |
 
 ### The two citywide selectors

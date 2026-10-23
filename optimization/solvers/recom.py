@@ -288,8 +288,12 @@ class _ReComContext:
         self.students = tuple(problem.students(node) for node in self.nodes)
         self.seats = tuple(problem.capacity(node) for node in self.nodes)
         self.frl = tuple(problem.frl(node) for node in self.nodes)
+        # One value per balance row, then the student count that row's ratio
+        # is taken against (the capacity rows count enrolling students), so
+        # zone sums of both come from the same bookkeeping.
         self.values = tuple(
             tuple(row.constraint.value(node) for row in self.balance_rows)
+            + tuple(row.constraint.students(problem, node) for row in self.balance_rows)
             for node in self.nodes
         )
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
@@ -404,15 +408,18 @@ class _ReComContext:
 
     def zone_violations(self, stats: _ZoneStats) -> tuple[float, ...]:
         violations: list[float] = []
-        for value, row in zip(stats.values, self.balance_rows, strict=True):
+        rows = len(self.balance_rows)
+        for value, students, row in zip(
+            stats.values[:rows], stats.values[rows:], self.balance_rows, strict=True
+        ):
             if row.sense == "lower":
-                raw_diff = row.ratio * stats.students - value
+                raw_diff = row.ratio * students - value
             else:
-                raw_diff = value - row.ratio * stats.students
+                raw_diff = value - row.ratio * students
 
             if self.normalize_fractional:
-                if stats.students > 0:
-                    violations.append(max(0.0, (raw_diff / stats.students) * 100.0))
+                if students > 0:
+                    violations.append(max(0.0, (raw_diff / students) * 100.0))
                 else:
                     violations.append(0.0 if value == 0 else 100.0)
             else:
@@ -437,7 +444,7 @@ class _ReComContext:
         schools = [0.0] * self.zone_count
         seats = [0.0] * self.zone_count
         frl = [0.0] * self.zone_count
-        values = [[0.0] * len(self.balance_rows) for _ in range(self.zone_count)]
+        values = [[0.0] * 2 * len(self.balance_rows) for _ in range(self.zone_count)]
         internal_edges = [0] * self.zone_count
 
         for pos, zone in enumerate(assignment):

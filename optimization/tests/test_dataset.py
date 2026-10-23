@@ -78,13 +78,13 @@ def test_graph_cache_path_changes_for_weighted_edges(tmp_path):
     assert "edge_weighting" in weighted._graph_namespace.parameters["partition_policy"]
 
 
-def test_default_graph_root_uses_v14_shared_cache_namespace():
+def test_default_graph_root_uses_v15_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
 
-    assert dataset._graph_namespace.schema_version == 14
+    assert dataset._graph_namespace.schema_version == 15
     assert dataset._graph_namespace.version_dir == Path(
-        "/soalnas/share/data/school_choice/Data/caches/graphs/v14"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v15"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 
@@ -213,7 +213,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     assert first.graph_for("Block_0") is graph
     manifest = first._graph_namespace.manifest()
     assert manifest is not None
-    assert manifest["schema_version"] == 14
+    assert manifest["schema_version"] == 15
     assert manifest["payloads"]["Block_0.pickle"]["format"] == "pickle"
 
     monkeypatch.setattr(

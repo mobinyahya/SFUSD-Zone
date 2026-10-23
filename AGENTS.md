@@ -36,7 +36,10 @@ Optimization selectors are canonical `years`, `grades`, `student_population`,
 `rounds`, `special_programs`, `program_population`, `capacity_scenario`, and the
 `include_k8`, `include_citywide_zoning`, `include_citywide_choice_opt`, and
 `include_mission_bay` flags. The two citywide selectors are independent and
-documented in `loaders/README.md`. `include_citywide_zoning` governs the school
+documented in `loaders/README.md`. Optimization alone also selects an optional
+`enrollment_share` (default `null`): the share of each attendance area's
+residents expected to enrol, which scales the students the capacity
+(`overage`/`shortage`) rows count and nothing else. `include_citywide_zoning` governs the school
 table, so it decides whether a citywide school occupies a graph node and joins
 the capacity and school-count balance of the zone containing it.
 `include_citywide_choice_opt` governs the welfare markets built by
@@ -111,6 +114,8 @@ The optimization uses NetworkX undirected graphs. Nodes are geographic areas and
     'ge_capacity': float,        # GE school seats
     'all_prog_students': float,  # All program students
     'all_prog_capacity': float,  # All program capacity
+    'ge_enrolling_students': float,        # ge_students scaled by enrollment_share (capacity rows only)
+    'all_prog_enrolling_students': float,  # all_prog_students scaled likewise
     'num_schools': int,
     'school_ids': list,
     'FRL': float,                # Free/Reduced Lunch students (count, not proportion)
@@ -153,7 +158,7 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 
 Graphs are cached by exact source contents, data filters, and partition-policy
 parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v<N>/<sha256>/`,
-where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (14 at time of writing).
+where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (15 at time of writing).
 
 ## Benchmarking
 
@@ -204,11 +209,11 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `seed` | `42` | Solver seed |
 
 Cache paths carry the artifact's schema version, which lives in code and moves
-without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (14),
+without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (15),
 `initial_solutions.FEASIBLE_HINT_CACHE_SCHEMA_VERSION` (3). Read the constant
 rather than the number quoted here.
 
-Graph cache path: `.../caches/graphs/v14/<sha256>/`.
+Graph cache path: `.../caches/graphs/v15/<sha256>/`.
 
 Feasible-hint cache path: `.../caches/feasible_hint/v3/<sha256>/`, keyed by the
 *feasible set* and nothing else: `feasibility_fingerprint(problem)` plus

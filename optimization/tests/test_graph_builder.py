@@ -216,6 +216,8 @@ def test_base_graph_district_frl_uses_selected_population(
             "ge_capacity": 0.0,
             "all_prog_students": all_students,
             "all_prog_capacity": 0.0,
+            "ge_enrolling_students": ge_students,
+            "all_prog_enrolling_students": all_students,
             "num_schools": 0,
             "FRL": frl,
             "school_ids": [],

@@ -53,7 +53,8 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-STUDENT_CACHE_SCHEMA_VERSION = 8
+# Bumped to 9 when student rows gained the enrolling-student weights.
+STUDENT_CACHE_SCHEMA_VERSION = 9
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 EXCLUDED_OPTIMIZATION_BLOCKS = frozenset(
@@ -69,6 +70,10 @@ TREASURE_ISLAND_BLOCK_GROUP = 60750179031
 
 STUDENT_ROLE = "optimization.students"
 FRL_ESTIMATE_ROLE = "optimization.frl_estimate"
+ENROLLMENT_SHARE_ROLE = "optimization.enrollment_share"
+#: Column of the enrollment share table holding each area's share, as a
+#: percentage string such as ``"89.6%"``.
+ENROLLMENT_SHARE_COLUMN = "Percent of residents who want this program"
 SCHOOL_ROLE = "optimization.schools"
 PROGRAM_ROLE = "optimization.programs"
 CAPACITY_ROLE = "optimization.capacity"
@@ -192,6 +197,10 @@ class IngestConfig:
     def frl_estimate(self) -> str | None:
         return self.data.filter("optimization", "frl_estimate")
 
+    @property
+    def enrollment_share(self) -> str | None:
+        return self.data.filter("optimization", "enrollment_share")
+
 
 def _legacy_scenario() -> DataScenario:
     return load_scenario({"scenario": "legacy", "overrides": {}})
@@ -228,7 +237,7 @@ def _student_cache_namespace(cfg: IngestConfig) -> CacheNamespace:
 
 
 def _student_cache_path(cfg: IngestConfig) -> str:
-    """Return the v8 student CSV path for cache introspection."""
+    """Return the v9 student CSV path for cache introspection."""
     return str(_student_cache_namespace(cfg).payload_path("students.csv"))
 
 
@@ -237,7 +246,63 @@ def student_source_roles(cfg: IngestConfig) -> list[str]:
     roles = [STUDENT_ROLE]
     if cfg.frl_estimate is not None:
         roles.append(FRL_ESTIMATE_ROLE)
+    if cfg.enrollment_share is not None:
+        roles.append(ENROLLMENT_SHARE_ROLE)
     return roles
+
+
+def load_enrollment_shares(cfg: IngestConfig) -> dict[int, float]:
+    """Return ``{attendance-area school code: share in [0, 1]}``, or ``{}``.
+
+    The share is the fraction of an attendance area's residents expected to
+    enrol at its school. It only scales the students the capacity rows count;
+    see ``_add_enrolling_students``.
+    """
+    if cfg.enrollment_share is None:
+        return {}
+    source = cfg.data.source(ENROLLMENT_SHARE_ROLE)
+    frame = read_csv_source(source)
+    missing = {"Code", ENROLLMENT_SHARE_COLUMN} - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"Enrollment share source {source.path} is missing columns: "
+            f"{sorted(missing)}."
+        )
+    codes = pd.to_numeric(frame["Code"], errors="raise").astype(int)
+    if codes.duplicated().any():
+        duplicates = sorted(set(codes[codes.duplicated()]))
+        raise ValueError(
+            f"Enrollment share source {source.path} repeats codes {duplicates}."
+        )
+    shares = (
+        pd.to_numeric(
+            frame[ENROLLMENT_SHARE_COLUMN].astype(str).str.strip().str.rstrip("%"),
+            errors="raise",
+        )
+        / 100.0
+    )
+    if ((shares < 0) | (shares > 1)).any():
+        raise ValueError(
+            f"Enrollment share source {source.path} has shares outside 0-100%."
+        )
+    return dict(zip(codes.tolist(), shares.tolist()))
+
+
+def _add_enrolling_students(frame: pd.DataFrame, cfg: IngestConfig) -> None:
+    """Add the student counts the capacity (overage/shortage) rows divide by.
+
+    Each student counts for their attendance area's enrollment share; a student
+    with no attendance area, or one the share table does not list, counts
+    fully. With no ``enrollment_share`` selected these equal the raw counts.
+    """
+    shares = load_enrollment_shares(cfg)
+    weight = (
+        pd.to_numeric(frame["attendance_area"], errors="coerce").map(shares).fillna(1.0)
+        if shares
+        else 1.0
+    )
+    frame["ge_enrolling_students"] = frame["ge_students"] * weight
+    frame["all_prog_enrolling_students"] = frame["all_prog_students"] * weight
 
 
 def _student_sources_by_year(cfg: IngestConfig):
@@ -330,6 +395,7 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
         ),
         axis=1,
     )
+    _add_enrolling_students(frame, cfg)
 
     if "resolved_ethnicity" not in frame.columns:
         raise ValueError(
@@ -642,6 +708,7 @@ def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
 def _apply_closure_scaling(area: pd.DataFrame) -> pd.DataFrame:
     ratio = 3700 / area["all_prog_students"].sum()
     area["all_prog_students"] = area["all_prog_students"] * ratio
+    area["all_prog_enrolling_students"] = area["all_prog_enrolling_students"] * ratio
     area["FRL"] = (3700 / 2460) * area["FRL"]
     for ethnicity in AREA_ETHNICITIES:
         if ethnicity in area.columns:
@@ -898,6 +965,8 @@ __all__ = [
     "SCHOOL_ROLE",
     "STUDENT_CACHE_SCHEMA_VERSION",
     "STUDENT_ROLE",
+    "ENROLLMENT_SHARE_ROLE",
+    "load_enrollment_shares",
     "load_area_latlon",
     "load_area_table",
     "load_census_shapefile",

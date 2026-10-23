@@ -1013,3 +1013,47 @@ def test_only_the_2020_manual_edges_file_identifies_by_checksum_alone():
         if isinstance(source, dict) and source.get("identity") == "checksum"
     )
     assert checksum_only == ["bundled.manual_edges.2020"]
+
+
+def test_enrollment_share_is_an_optimization_only_selector():
+    scenario = load_scenario(
+        {
+            "scenario": "legacy",
+            "overrides": {
+                "filters": {"optimization": {"enrollment_share": "ge_interest_esaa"}}
+            },
+        },
+        environ={},
+    )
+
+    assert scenario.source("optimization.enrollment_share").path == (
+        scenario.roots["data"] / "Data/enrollment_share" / "ge_interest_by_esaa.csv"
+    )
+    assert "enrollment_share" not in scenario.filters["assignment"]
+
+    default = load_scenario({"scenario": "legacy", "overrides": {}}, environ={})
+    assert default.filter("optimization", "enrollment_share") is None
+    with pytest.raises(KeyError, match="optimization.enrollment_share"):
+        default.source("optimization.enrollment_share")
+
+    with pytest.raises(ValueError, match="Enrollment share 'unknown'.*unavailable"):
+        load_scenario(
+            {
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"optimization": {"enrollment_share": "unknown"}}
+                },
+            },
+            environ={},
+        )
+
+    with pytest.raises(ValueError, match="enrollment_share"):
+        load_scenario(
+            {
+                "scenario": "legacy",
+                "overrides": {
+                    "filters": {"assignment": {"enrollment_share": "ge_interest_esaa"}}
+                },
+            },
+            environ={},
+        )

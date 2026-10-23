@@ -70,7 +70,9 @@ class ZoneProblem:
     overage, shortage:
         Capacity tolerance: a zone's seats must lie within
         ``[(1 - shortage), (1 + overage)]`` times its students (proportions).
-        A negative value disables its corresponding bound.
+        The students counted here are ``capacity_students``, scaled by the
+        ``enrollment_share`` selector. A negative value disables its
+        corresponding bound.
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
         that centroid's zone. Can also be set to ``"auto"`` to automatically
@@ -208,9 +210,29 @@ class ZoneProblem:
     def capacity(self, node: int) -> float:
         return float(self.G.nodes[node][self.capacity_attribute])
 
+    def capacity_students(self, node: int) -> float:
+        """Students the capacity (overage/shortage) rows count at ``node``.
+
+        These are the students scaled by the ``enrollment_share`` selector, and
+        equal ``students`` when none is selected. A graph built without the
+        attribute (hand-built test graphs) counts every student.
+        """
+        attrs = self.G.nodes[node]
+        if self.capacity_student_attribute not in attrs:
+            return self.students(node)
+        return float(attrs[self.capacity_student_attribute])
+
     @property
     def student_attribute(self) -> str:
         return "ge_students" if self.program_population == "GE" else "all_prog_students"
+
+    @property
+    def capacity_student_attribute(self) -> str:
+        return (
+            "ge_enrolling_students"
+            if self.program_population == "GE"
+            else "all_prog_enrolling_students"
+        )
 
     @property
     def capacity_attribute(self) -> str:

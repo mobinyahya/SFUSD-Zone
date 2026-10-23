@@ -259,7 +259,7 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
             if ratio is None:
                 continue
             values = [
-                constraint.value(node) - ratio * problem.students(node)
+                constraint.value(node) - ratio * constraint.students(problem, node)
                 for node in nodes
             ]
             add(f"{constraint.kind}_{bound}", sense, values, 0.0)

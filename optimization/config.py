@@ -497,6 +497,7 @@ class OptimizationConfig:
         self.include_citywide_choice_opt
         self.include_mission_bay
         self.frl_estimate
+        self.enrollment_share
         self.outside_district_students
         if self.strategy == "dantzig_wolfe":
             if self.solver != "cp_bool":
@@ -765,6 +766,10 @@ class OptimizationConfig:
     @property
     def frl_estimate(self) -> str | None:
         return self._data_scenario.filter("optimization", "frl_estimate")
+
+    @property
+    def enrollment_share(self) -> str | None:
+        return self._data_scenario.filter("optimization", "enrollment_share")
 
     # ------------------------------------------------------------------ #
     # loading
