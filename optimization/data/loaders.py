@@ -53,8 +53,9 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-# Bumped to 9 when student rows gained the enrolling-student weights.
-STUDENT_CACHE_SCHEMA_VERSION = 9
+# Bumped to 9 when student rows gained the enrolling-student weights, and to 10
+# when Mission Bay's canonical school ID became 1731.
+STUDENT_CACHE_SCHEMA_VERSION = 10
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 EXCLUDED_OPTIMIZATION_BLOCKS = frozenset(
@@ -912,10 +913,20 @@ def load_neighbors(cfg: IngestConfig, area2idx: dict[int, int]) -> dict[int, lis
 # ====================================================================== #
 # Centroids and manual edges
 # ====================================================================== #
+#: ``centroids_type`` that names every school the zoning problem holds rather
+#: than a list in the centroid file; resolved by ``Dataset.centroid_school_ids``.
+ALL_SCHOOLS_CENTROIDS = "all"
+
+
 def load_centroid_schools(
     centroids_type: str, data: DataScenario | None = None
 ) -> list[int]:
     """Return canonical school IDs for a scenario centroid configuration."""
+    if centroids_type == ALL_SCHOOLS_CENTROIDS:
+        raise ValueError(
+            f"centroids_type {ALL_SCHOOLS_CENTROIDS!r} is the graph's school set, "
+            "not a centroid-file entry; resolve it with Dataset.centroid_school_ids."
+        )
     scenario = data or _legacy_scenario()
     path = scenario.source(CENTROID_ROLE).path
     with path.open("r", encoding="utf-8") as stream:
@@ -970,6 +981,7 @@ __all__ = [
     "load_area_latlon",
     "load_area_table",
     "load_census_shapefile",
+    "ALL_SCHOOLS_CENTROIDS",
     "load_centroid_schools",
     "load_distance_dict",
     "load_manual_block_edges",

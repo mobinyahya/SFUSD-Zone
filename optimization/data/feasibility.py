@@ -25,8 +25,8 @@ Every check here is implied by the constraints the solvers post, never stricter:
   consumer actually requires.
 * balance -- the ``frl`` / ``capacity`` / ``racial`` rows of
   :func:`optimization.solvers.balance.balance_constraints`
-* school count -- every zone within ``school_count_tolerance`` schools of the
-  district average (one, by default)
+* school count -- every zone holds floor(schools / zones) to
+  ceil(schools / zones) schools
 * boundary -- cut edges within ``boundary_prop`` of the graph's edge count,
   counted unweighted, as :meth:`_add_boundary_constraint` posts it
 

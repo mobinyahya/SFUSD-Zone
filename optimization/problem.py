@@ -82,10 +82,6 @@ class ZoneProblem:
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
-    school_count_tolerance:
-        Every zone holds the district-average school count plus or minus this
-        many schools. ``0`` with one centroid per school means exactly one
-        school per zone.
     compactness_objective:
         What CP/MIP solvers minimize when there is no choice objective:
         ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
@@ -125,7 +121,6 @@ class ZoneProblem:
     shortage: float = 0.2
     max_distance: float | str = float("inf")
     boundary_prop: float = -1.0
-    school_count_tolerance: float = 1.0
     weight_edges: bool = False
     compactness_objective: str = "cut_edges"
     school_distance_area_weight: float = 0.75
@@ -245,15 +240,16 @@ class ZoneProblem:
         return int(self.G.nodes[node].get("num_schools", 0))
 
     def school_count_bounds(self) -> tuple[float, float] | None:
-        """Per-zone ``(floor, ceiling)`` school counts, or ``None`` without schools."""
+        """Per-zone school counts ``(floor, ceil)`` of ``schools / zones``.
+
+        Every zone holds either the rounded-down or the rounded-up average, so
+        the counts are as even as whole schools allow: 59 schools in 13 zones
+        means 4 or 5 per zone, 59 in 59 exactly one. ``None`` without schools.
+        """
         total = sum(self.num_schools(node) for node in self.nodes)
         if total == 0:
             return None
-        average = total / self.Z
-        return (
-            max(0.0, average - self.school_count_tolerance),
-            average + self.school_count_tolerance,
-        )
+        return float(total // self.Z), float(-(-total // self.Z))
 
     def ethnicity(self, node: int, ethnicity: str) -> float:
         return float(self.G.nodes[node][ethnicity])

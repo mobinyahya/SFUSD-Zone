@@ -9,7 +9,7 @@ outside_option`` directly.
 
 A school the fit never saw has no fixed effect. It gets the mean fitted school
 effect, which says nothing about it beyond what the other features do. A program
-type the fit never saw gets the GE reference effect (0). Mission Bay (999),
+type the fit never saw gets the GE reference effect (0). Mission Bay (1731),
 which opened in August 2026, and the one-seat ``476-NC`` and ``724-NS``
 programs, closed in 2025-26, are the cases this exists for. The report lists
 every program either rule touched.

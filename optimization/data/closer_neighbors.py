@@ -21,7 +21,8 @@ from loaders import DataScenario
 from optimization.data import loaders
 from optimization.levels import LevelSpec
 
-CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 3
+# Bumped to 4 when Mission Bay's canonical school ID became 1731.
+CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 4
 CLOSER_NEIGHBORS_GRAPH_KEY = "closer_neighbors"
 SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY = "school_geometry_distances_miles"
 METERS_PER_MILE = 1609.344

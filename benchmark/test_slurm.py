@@ -9,6 +9,8 @@ import subprocess
 
 import pytest
 
+from assignment.run_custom_config import load_custom_config
+
 from benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
@@ -94,6 +96,7 @@ def test_submission_script_queues_nine_dependent_assignment_jobs(tmp_path):
                 "skip_marker": str(target / ".assignment-skipped"),
                 "zone_building_blocks": "block_group",
                 "geography_vintage": "2020",
+                "data": load_custom_config(assignment_config)["data"],
             }
         ],
         assignment_folder=tmp_path,

@@ -54,7 +54,6 @@ tasks:
   - &asb
     solver: recom
     workers: 1
-    school_count_tolerance: 0
     hints: voronoi
     recom_iterations: -1
     recom_objective: school_distance

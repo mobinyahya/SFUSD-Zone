@@ -275,7 +275,14 @@ attendance-area school code, matched against the student table's
 `idschoolattendance`) and `Percent of residents who want this program` (a
 percentage such as `89.6%`). `ge_interest_esaa` is the School Reorg "GE
 Interest by ESAA of Residence" table: 58 kindergarten GE attendance-area
-schools, stored at `Data/enrollment_share/ge_interest_by_esaa.csv`.
+schools, stored at `Data/enrollment_share/ge_interest_by_esaa.csv`, plus one
+row added by hand: Mission Bay at 90.0%, a manual estimate the district
+table does not contain (its `School` reads "MANUAL ESTIMATE"). The district's
+own file is kept beside it as `ge_interest_by_esaa.district_original.csv`.
+The row is keyed by the legacy placeholder `999`, and share codes are not
+aliased to `1731`. That changes nothing today: shares are matched on the
+student's *district* attendance area, and no student's `idschoolattendance` is
+Mission Bay (it shares Webster's 2013 area).
 
 The share changes only the capacity (`overage`/`shortage`) rows. Each student
 counts for their area's share there, so a zone's seats must lie within
@@ -538,9 +545,10 @@ converted year applies them. `EES_FEEDER_FIRST_YEAR` in
 `analysis/data_prep/sfusd_transfer_schema.py` is the switch.
 
 SY26-27 introduces one identity change worth knowing: Mission Bay ES appears in
-real requests under school ID `1731`, which none of this repository's Mission
-Bay handling recognises. The converter rewrites it to the canonical `999`, so
-`include_mission_bay` keeps working as documented.
+real requests under its district code `1731`. That is the repository's
+canonical Mission Bay ID (`loaders.tables.MISSION_BAY_SCHOOL_ID`), so the
+converter writes it through unchanged, and the shared loader reads the older
+placeholders `999` and `909` in the borrowed 2023-24 tables as `1731`.
 
 ## Scenario Configuration
 
@@ -593,7 +601,8 @@ Fields shared by both groups follow these rules:
 | `rounds` | `all` or a non-empty, duplicate-free list of positive integers. Explicit lists are sorted and every requested round must exist in the student table. |
 | `special_programs` | `include`, `exclude_only_special`, or `exclude_any_special`. `exclude_only_special` removes special-program preferences; `exclude_any_special` removes students listing a special program in a selected round. Both exclusion modes remove special program rows. |
 | `capacity_scenario` | Non-empty string. `programs` retains capacities in the selected program table; another value selects an external capacity overlay. |
-| `include_mission_bay` | Boolean. False removes school IDs 909 and 999 from school-keyed records and preferences. True normalizes the legacy ID `909` to `999`. |
+| `include_mission_bay` | Boolean. False removes Mission Bay -- school ID 1731 and its legacy placeholders 999 and 909 -- from school-keyed records and preferences. True normalizes both placeholders to `1731`, in school-keyed records, preferences, centroid lists, and choice-estimate program columns. |
+| `include_mandarin_immersion` | Boolean, default `false`. True adds the base `planned_schools.mandarin_immersion` entry -- school `400`, citywide, programs `400-ME-KG`/`400-MN-KG` -- to the school and program tables, where a selected capacity scenario sets its seats like any other. The entry's site (`lat`/`lon`) and per-pool seats are still null, and a scenario that sets this true fails to load, naming each missing value; none is assumed. False leaves every cache key unchanged. |
 | `geography_vintage` | Four-digit string registered in base `geographies`; currently `"2010"` or `"2020"`. |
 | `frl_estimate` | Name registered in base `student_frl_estimates`, or `null` to retain FRL fields from the selected student table. |
 | `outside_district_students` | `ignore` or `include`. When normalized student data has a `census_block` column, `ignore` removes rows with no selected-geography Block and `include` retains them. If that column is absent, this filter leaves the table unchanged. Optimization graph construction still rejects retained students lacking its selected geography. |
@@ -694,6 +703,40 @@ Adding or renaming any selector changes every derived cache key, because
 `DataScenario.source_manifest` hashes the whole filter block into each cache
 namespace. The first run after this split rebuilds graphs and student tables.
 
+### Which schools own an attendance area
+
+Both selectors read *citywide* off each school table's `category` column
+(`Attendance` or `Citywide`). A capacity scenario from the district's workbook
+sets that column (see "Capacity scenarios" below): every school it lists is
+`Attendance` exactly when it has attendance-area seats, in every school table
+`load_school_records` reads, for both groups. The optimization graph
+(`include_citywide_zoning`), the welfare markets' citywide set, and the
+assignment zones therefore agree on which schools own an area, and the
+workbook is the only place that decides it.
+
+Assignment reads each student's area from the student table's
+`idschoolattendance`. A student whose area is a school the selected scenario
+makes citywide belongs to no attendance-area zone; under `restrict-zone` such
+a student keeps only the programs every zone holds (the citywide set).
+
+### Filling blank attendance areas from a map
+
+The optional role `assignment.attendance_area_fill` names an attendance-area
+map (polygons). When it is bound, the assignment loader fills each blank
+`idschoolattendance` with the area containing the student's
+`latitude`/`longitude` and records `attendance_area_source` (`district`,
+`map`, or blank for a student no polygon contains). A district value is never
+overwritten. The 2013 map (`assignment.attendance_areas.2013`) has no
+attribute table, so each polygon is named by the `Attendance` school located
+inside it. A polygon holding two, such as Webster (497) and Mission Bay (1731),
+is named by the one some student's district record already uses, and any other
+ambiguity fails. On the 2026-27 applicants the map reproduces the district's
+area for 3,791 of 3,828 students (99.0%) and fills all 27 blanks, all of them
+TK promotes without a Main Round application. When the role is bound, a
+manifest naming `assignment.students` also carries the map and
+`assignment.schools`, so every cache keyed on the students sees them.
+`attendance-areas-2627` binds it.
+
 `program_population` and `capacity_scenario` accept any non-empty string at
 schema validation. Values other than the special cases above must be supported
 by the selected source data.
@@ -744,7 +787,7 @@ capacity_scenarios:
     year: "2627"
     include_mission_bay: true
     adjust:
-      - {school_id: 999, program_type: GE, expect: 69, set: 0}
+      - {school_id: 1731, program_type: GE, expect: 69, set: 0}
       - {school_id: 497, program_type: GE, add: 69}
 ```
 
@@ -766,17 +809,36 @@ A registered entry may instead name an overlay file, for either group:
 
 ```yaml
 capacity_scenarios:
-  v102226_mpd:
-    source: capacity.sfusd.v102226
+  ideal_webster_w2w_2627:
+    source: capacity.sfusd.2627
 ```
 
 Selecting it makes that catalog file the group's `<group>.capacity` source,
 replacing the scenario's own binding (a run's `overrides.sources` still wins),
-and reads its `Scenario_<name>_Capacity` column as below. The checked-in
-`v102226_ideal` and `v102226_mpd` are the two kindergarten proposals in the
-district's 22 Oct 2026 capacity workbook, converted by
-`analysis/data_prep/convert_capacities_v102226.py`; that script's docstring
-records how the workbook's school codes and program labels were mapped.
+and reads its `Scenario_<name>_Capacity` column as below.
+
+The checked-in overlays are the district's 2026-27 kindergarten "ideal
+capacity" scenarios (`Capacities for Stanford (2026-27).xlsx`), converted by
+`analysis/data_prep/convert_capacity_workbook.py`:
+
+| Name | Scenario |
+|---|---|
+| `ideal_baseline_2627` | Every classroom used, current program mix |
+| `ideal_bessie_ge_2627` | Baseline, with Carmichael (449) GE as an attendance-area program |
+| `ideal_webster_w2w_2627` | Baseline, with Webster (497) wall-to-wall Spanish DLI |
+| `ideal_alvarado_w2w_2627` | Baseline, with Alvarado (420) wall-to-wall Spanish DLI |
+| `ideal_westportal_w2w_2627` | Baseline, with West Portal (876) wall-to-wall Cantonese DLI |
+| `ideal_star_king_w2w_2627` | Baseline, with Starr King (838) wall-to-wall Mandarin DLI |
+
+The workbook is the source of truth for these scenarios twice over: for the
+seats, and for which schools are attendance-area schools. A school with any
+attendance-area seats is one, however many of its other seats are citywide;
+that is what gives it its own graph node when `program_population` is `All`,
+and attendance-area priority in assignment. The workbook's MPD proposals are
+not converted. The converter's docstring records how school codes and program
+labels map, including the placeholder code `400` for the new Mandarin
+Immersion TK-8, whose seats are not modelled until it has a site. To add a
+newer workbook, convert it and register the names the script prints.
 
 Other explicit values, such as `A`, require the source role `<group>.capacity`
 and read:
@@ -786,6 +848,8 @@ and read:
 | `SchNum` | School ID match key |
 | `PathwayCode` | Program type match key; `+`-joined codes (`SE+SN`) name one program split into lottery pools |
 | `Scenario_<value>_Capacity` | Capacity selected by `capacity_scenario` |
+| `Scenario_<value>_AttendanceAreaCapacity` | Optional; how many of the program's seats are attendance-area seats. Loaded programs carry it as `attendance_area_capacity`; programs no scenario row labels get every seat of a GE program at an `Attendance` school, and none otherwise |
+| `Scenario_<value>_Category` | Optional school category, `Attendance` or `Citywide`; sets the `category` of every listed school in the school tables, for the selected grades |
 | `Grade` | Optional grade match key |
 
 Selected overlay capacities must be numeric, finite, and non-negative. Matching
@@ -793,10 +857,13 @@ uses school and program, plus grade when `Grade` is present. At least one
 selected program must match. Unmatched programs retain their program-table
 capacities. A pooled `PathwayCode` divides its seats among the selected
 programs of those types at the school, in proportion to their current
-capacities (equally when they have none), with whole seats kept whole by
-largest remainder. Conflicting duplicate overlay rows fail after Mission Bay
-normalization; when both alias ID `909` and canonical ID `999` are present, the
-canonical row is preferred.
+capacities, with whole seats kept whole by largest remainder. That proportion
+is the only native/non-native split the loaders ever use: when none of the
+pools holds seats now, a positive total fails rather than assume one. Seats at a school with no selected program at all are
+reported with a warning. Conflicting duplicate overlay rows fail after Mission
+Bay normalization; when several Mission Bay IDs are present, the canonical
+`1731` row is preferred, then `999`, then `909`. The same precedence resolves
+Mission Bay rows in school tables.
 
 ## Generated Source Roles and Precedence
 

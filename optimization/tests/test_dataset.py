@@ -78,13 +78,13 @@ def test_graph_cache_path_changes_for_weighted_edges(tmp_path):
     assert "edge_weighting" in weighted._graph_namespace.parameters["partition_policy"]
 
 
-def test_default_graph_root_uses_v15_shared_cache_namespace():
+def test_default_graph_root_uses_v16_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
 
-    assert dataset._graph_namespace.schema_version == 15
+    assert dataset._graph_namespace.schema_version == 16
     assert dataset._graph_namespace.version_dir == Path(
-        "/soalnas/share/data/school_choice/Data/caches/graphs/v15"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v16"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 
@@ -213,7 +213,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     assert first.graph_for("Block_0") is graph
     manifest = first._graph_namespace.manifest()
     assert manifest is not None
-    assert manifest["schema_version"] == 15
+    assert manifest["schema_version"] == 16
     assert manifest["payloads"]["Block_0.pickle"]["format"] == "pickle"
 
     monkeypatch.setattr(
@@ -510,3 +510,25 @@ def test_pipeline_area_hint_cache_accounts_for_file_and_centroids(
     assert dataset.area_hint_for("Block_0", graph, [0], path="first.json")[0] == 0
     dataset.area_hint_for("Block_0", graph, [0], path="second.json")
     assert loaded == ["first.json", "second.json"]
+
+
+def test_all_centroids_are_every_zoning_school_in_id_order(tmp_path, monkeypatch):
+    dataset, _, _ = _pipeline_dataset(tmp_path, monkeypatch, centroids_type="all")
+    monkeypatch.setattr(
+        loaders,
+        "load_schools",
+        lambda ingest: pd.DataFrame({"school_id": [200, 100]}),
+    )
+
+    def refuse(*args):
+        raise AssertionError("'all' must not read the centroid file")
+
+    monkeypatch.setattr(loaders, "load_centroid_schools", refuse)
+    assert dataset.centroid_school_ids() == [100, 200]
+    assert dataset.centroids_for("Block_0") == [0, 1]
+    assert dataset.problem_for("Block_0").centroid_school_ids == [100, 200]
+
+
+def test_all_is_not_a_centroid_file_entry():
+    with pytest.raises(ValueError, match="graph's school set"):
+        loaders.load_centroid_schools(loaders.ALL_SCHOOLS_CENTROIDS)

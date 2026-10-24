@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from optimization.config import OptimizationConfig
 from optimization.data.feasibility import (
     InfeasibleZoningError,
     assert_feasible,
     check_zoning,
 )
 from optimization.data.initial_solutions import (
-    feasibility_fingerprint,
     initial_solution,
 )
 from optimization.tests.synthetic import (
@@ -129,30 +129,28 @@ def test_rejects_a_negative_tolerance():
         check_zoning(problem, assignment, tolerance=-1.0)
 
 
-def test_school_count_tolerance_sets_the_per_zone_bounds():
+def test_school_count_bounds_are_the_floor_and_ceiling_of_the_average():
     """Path with schools [2, 1, 1, 2] in two zones: the average is three."""
     # No distance limit, so every split is structurally valid and only the
     # numeric rows can reject one.
-    default = make_solver_contract_problem(max_distance=float("inf"))
-    exact = make_solver_contract_problem(
-        max_distance=float("inf"), school_count_tolerance=0.0
-    )
-    assert default.school_count_bounds() == (2.0, 4.0)
-    assert exact.school_count_bounds() == (3.0, 3.0)
+    whole = make_solver_contract_problem(max_distance=float("inf"))
+    assert whole.school_count_bounds() == (3.0, 3.0)
 
-    # {0} | {1, 2, 3} holds 2 and 4 schools: inside +/-1, outside +/-0.
+    # {0} | {1, 2, 3} holds 2 and 4 schools, outside the exact band of three.
     lopsided = {0: 0, 1: 1, 2: 1, 3: 1}
-    school_rows = {"schools_lower", "schools_upper"}
-    default_kinds = {v.kind for v in check_zoning(default, lopsided).violations}
-    exact_kinds = {v.kind for v in check_zoning(exact, lopsided).violations}
-    assert not default_kinds & school_rows
-    assert school_rows <= exact_kinds
+    kinds = {v.kind for v in check_zoning(whole, lopsided).violations}
+    assert {"schools_lower", "schools_upper"} <= kinds
+
+    # Seven schools over two zones: 3.5 on average, so three or four.
+    fractional = make_solver_contract_problem(max_distance=float("inf"))
+    fractional.G.nodes[0]["num_schools"] = 3
+    assert fractional.school_count_bounds() == (3.0, 4.0)
+    kinds = {v.kind for v in check_zoning(fractional, lopsided).violations}
+    assert not kinds & {"schools_lower", "schools_upper"}
 
 
-def test_default_school_count_tolerance_keeps_hint_fingerprints():
-    default = make_solver_contract_problem()
-    explicit = make_solver_contract_problem(school_count_tolerance=1.0)
-    exact = make_solver_contract_problem(school_count_tolerance=0.0)
-
-    assert feasibility_fingerprint(default) == feasibility_fingerprint(explicit)
-    assert feasibility_fingerprint(default) != feasibility_fingerprint(exact)
+def test_school_count_tolerance_is_no_longer_a_config_key(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("school_count_tolerance: 1\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unknown config keys.*school_count_tolerance"):
+        OptimizationConfig.from_yaml(str(path))

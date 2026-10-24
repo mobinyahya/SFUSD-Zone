@@ -162,7 +162,7 @@ zone_colors = {
     21: "tan",
     539: "tan",
     22: "fuchsia",
-    999: "fuchsia",
+    1731: "fuchsia",
     23: "darkred",
     562: "darkred",
     24: "darkorange",

@@ -52,6 +52,29 @@ targets can be added that way, not `compute_stage_assignments`.
 `matching.assignment_dir` (default `assignments`) names the folder under
 `execution.output_dir` they are written to, so the same zonings can be matched
 again under a different assignment config without overwriting the first set.
+
+Each zoning is matched in the `data` of the optimization task that drew it:
+that task's scenario and overrides, assignment group included. `matching.config`
+and its policy subconfigs decide only how matching is done (policies,
+iterations, metrics); a `data` block in the matching config is ignored with a
+warning. A sweep over `data` (for example capacity scenarios) is therefore
+matched in the corresponding markets. The assignment group keeps its own
+population, rounds and capacity profile, since zones are often drawn on
+enrolled students and matched on applicants. It must agree with the
+optimization group on `capacity_scenario`, `include_mission_bay` and
+`geography_vintage`, so set both groups in a data override:
+
+```yaml
+sweep:
+  data:
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627}
+          assignment: {capacity_scenario: ideal_baseline_2627}
+```
+
+A scenario with no `assignment` filter group cannot be matched.
 A local `mode: run` runs the same targets for the sweep's own tasks as one
 batch after the last task, with stage targets taken from the stages each task
 saved. Slurm needs every stage planned before the run, so there

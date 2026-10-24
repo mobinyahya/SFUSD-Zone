@@ -384,7 +384,7 @@ actually reads; the one real loss is `r1_distance`, blank for all of 2026-27.
 
 | Decision | Why it was needed | What was done |
 |---|---|---|
-| Mission Bay ES `1731` → `999` | SY26-27 issues Mission Bay a new ID; the repo keys every Mission Bay policy on `{909, 999}`, so `include_mission_bay: false` would have silently retained it | Rewritten in the converter; 488 request rows. Gives the school the 2023-24 coordinates and the `999-GE-KG` capacity of 66 |
+| Mission Bay ES `1731` | SY26-27 issues Mission Bay its district code; the 2023-24 tables carry the placeholders `999`/`909` | Originally rewritten to `999` in the converter (488 request rows). Since Oct 2026 `1731` is the canonical ID: the converter keeps it and the shared loader reads `999`/`909` as `1731`, which gives the school the 2023-24 coordinates |
 | `BAY` / `B2A` / `BRN` mapping | The transfer codes do not map by name onto `bayview_to_brown_ms` / `bayview_to_all_ms` / `brown_ms_to_hs` | Pinned empirically: `BAY` is grade-6-only and school-858-only; `B2A` is grade-6 across all middle schools; `BRN` is grade-9 across all high schools |
 | `homelang` encoding | The transfer has full language names (`Cantonese`), the checked-in years have two-letter codes (`CC`) | Emitted as the full HLS1 name. The only consumer, `Students.get_qualified_programs_dict`, accepts both; HLS1's distribution matches the checked-in column most closely |
 | Multi-school `MSF` | `msf` is a scalar school column and `Students.msf` grants priority at one school; the transfer lists two for 15 (2526) and 21 (2627) students | Kept the school at the student's lowest listed rank; the rest cannot be represented |

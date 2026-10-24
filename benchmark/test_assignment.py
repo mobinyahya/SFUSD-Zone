@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,11 +7,14 @@ import pytest
 from assignment.generated_zones import (
     GENERATED_ZONE_POLICY,
     SKIP_MARKER_FILENAME,
+    matching_data,
+    resolve_generated_zone_batch_config,
     resolve_generated_zone_batch_configs,
     resolve_generated_zone_configs,
     run_generated_zone_assignments,
     write_generated_zones,
 )
+from assignment.run_custom_config import load_custom_config
 from assignment.slurm import build_generated_zone_slurm_plan
 from assignment.student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
@@ -37,6 +41,9 @@ from optimization.tests.synthetic import make_grid_problem
 
 
 ASSIGNMENT_CONFIG = Path(__file__).parents[1] / "assignment/configs/8-19-choice.yaml"
+#: The data a generated target carries from its optimization run; the matching
+#: config's own, so these tests keep their market.
+MATCHING_DATA = load_custom_config(ASSIGNMENT_CONFIG)["data"]
 ZONE_ONLY_ASSIGNMENT_CONFIG = (
     Path(__file__).parents[1] / "assignment/configs/8-18-real-pref-zone-only.yaml"
 )
@@ -105,6 +112,7 @@ def test_batch_resolver_expands_zones_and_policies_under_one_root(tmp_path):
             "zone_file": tmp_path / f"run-{index}/assignment_zones.csv",
             "zone_building_blocks": "block_group",
             "geography_vintage": "2020",
+            "data": MATCHING_DATA,
         }
         for index in range(2)
     ]
@@ -142,6 +150,7 @@ def test_generated_zone_batch_publishes_metrics_once_at_root(tmp_path, monkeypat
             "zone_file": tmp_path / f"run-{index}/assignment_zones.csv",
             "zone_building_blocks": "block_group",
             "geography_vintage": "2020",
+            "data": MATCHING_DATA,
         }
         for index in range(2)
     ]
@@ -476,6 +485,7 @@ def test_generated_assignment_slurm_plan_uses_nine_jobs(tmp_path):
                 "skip_marker": str(target / ".assignment-skipped"),
                 "zone_building_blocks": "block_group",
                 "geography_vintage": "2020",
+                "data": MATCHING_DATA,
             }
         ],
         assignment_folder=tmp_path,
@@ -508,6 +518,7 @@ def test_generated_assignment_plan_has_one_task_per_benchmark_run(tmp_path):
                 "skip_marker": str(target / ".assignment-skipped"),
                 "zone_building_blocks": "block_group",
                 "geography_vintage": "2020",
+                "data": MATCHING_DATA,
             }
         )
 
@@ -576,3 +587,66 @@ def test_completed_run_target_is_rebuilt_from_saved_files(tmp_path):
     assert prepare_completed_run_target(unknown, "Block_0") is False
     assert (unknown / SKIP_MARKER_FILENAME).is_file()
     assert not (unknown / GENERATED_ZONE_FILENAME).exists()
+
+
+def _variant_data(**assignment_filters):
+    data = copy.deepcopy(MATCHING_DATA)
+    data["overrides"]["filters"]["assignment"].update(assignment_filters)
+    return data
+
+
+def test_each_target_is_matched_in_its_own_optimization_data(tmp_path):
+    variant = _variant_data(special_programs="include")
+    targets = [
+        {
+            "id": f"run-{index}-root",
+            "zone_file": tmp_path / f"run-{index}/assignment_zones.csv",
+            "zone_building_blocks": "block_group",
+            "geography_vintage": "2020",
+            "data": data,
+        }
+        for index, data in enumerate([variant, MATCHING_DATA])
+    ]
+    base_config = load_custom_config(ASSIGNMENT_CONFIG)
+    base_config["data"] = _variant_data(special_programs="exclude_only_special")
+
+    with pytest.warns(UserWarning, match="matching config's data is ignored"):
+        base, resolved = resolve_generated_zone_batch_config(
+            base_config, targets, assignment_folder=tmp_path
+        )
+
+    assert base["data"] == variant
+    for entry in resolved:
+        filters = entry["config"]["data"]["overrides"]["filters"]["assignment"]
+        expected = (
+            "include" if entry["target"] == "run-0-root" else ("exclude_any_special")
+        )
+        assert filters["special_programs"] == expected
+
+
+def test_matching_requires_target_data_and_agreeing_selectors(tmp_path):
+    target = {
+        "id": "run-root",
+        "zone_file": tmp_path / "assignment_zones.csv",
+        "zone_building_blocks": "block",
+        "geography_vintage": "2020",
+    }
+    base_config = load_custom_config(ASSIGNMENT_CONFIG)
+    with pytest.raises(ValueError, match="must carry their optimization run's data"):
+        resolve_generated_zone_batch_config(
+            base_config, [target], assignment_folder=tmp_path
+        )
+
+    # Capacities set for the zoning only would match it in other seats.
+    data = {
+        "scenario": "attendance-areas-2627",
+        "overrides": {
+            "filters": {"optimization": {"capacity_scenario": "ideal_baseline_2627"}}
+        },
+    }
+    with pytest.raises(
+        ValueError, match="capacity_scenario: 'ideal_baseline_2627' != 'programs'"
+    ):
+        matching_data(data)
+    data["overrides"]["filters"]["assignment"] = {"capacity_scenario": "ideal_baseline_2627"}
+    assert matching_data(data) == data

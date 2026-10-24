@@ -93,7 +93,7 @@ Parsing notes:
 - The 25-26 list has its header on line 14 → `skiprows=13`.
 - The 26-27 list has its header on line 3 → `skiprows=2`.
 - Capacity-file grade codes are `K`, `TK`, `PK`, `1`–`13`; normalize `K` → `KG`.
-- Mission Bay is school `1731`; apply the existing 1731 → 999 alias.
+- Mission Bay is school `1731`, the canonical ID; it needs no alias.
 - Student identity: raw `scrambledstudentno` `S000000001` → `1`, matching
   `_student_identity` in the converter. IDs are stable across years, which the
   cross-year lookups in §7 rely on.

@@ -60,7 +60,6 @@ from analysis.data_prep.sfusd_transfer_schema import (  # noqa: E402
     MR_CAPACITY_PROVENANCE,
     MR_CAPACITY_REQUIRED,
     PRIOR_TK_SOURCES,
-    RAW_SCHOOL_ID_ALIASES,
     TRANSFER_YEAR_LABELS,
 )
 from loaders.tables import normalize_grade  # noqa: E402
@@ -105,7 +104,7 @@ def load_mr_capacities(path: Path) -> pd.DataFrame:
     """Read one year's Main Round capacity file into normalized columns.
 
     The file is one row per school, grade, and program, covering every grade
-    from PK to 13. School IDs are put through the Mission Bay alias and grades
+    from PK to 13. School IDs are read as issued and grades
     through :func:`normalize_grade`, so ``K`` arrives as ``KG`` and matches the
     rest of the repository.
     """
@@ -116,11 +115,8 @@ def load_mr_capacities(path: Path) -> pd.DataFrame:
         raise ValueError(f"Capacity file {path} is missing columns {missing}.")
 
     result = pd.DataFrame(index=frame.index)
-    result["school_id"] = (
-        pd.to_numeric(frame["idSchool"], errors="coerce")
-        .astype("Int64")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
+    result["school_id"] = pd.to_numeric(frame["idSchool"], errors="coerce").astype(
+        "Int64"
     )
     result["school_name"] = frame.get("SchoolName", pd.Series(pd.NA, index=frame.index))
     result["grade"] = frame["Grade"].map(normalize_grade)
@@ -256,14 +252,8 @@ def build_promotion_map(path: Path, year: str) -> PromotionMap:
         k_pathway.loc[usable],
         strict=True,
     ):
-        source = (
-            int(RAW_SCHOOL_ID_ALIASES.get(int(tk_id), int(tk_id))),
-            str(tk_path),
-        )
-        target = (
-            int(RAW_SCHOOL_ID_ALIASES.get(int(k_id), int(k_id))),
-            str(k_path),
-        )
+        source = (int(tk_id), str(tk_path))
+        target = (int(k_id), str(k_path))
         if source == target:
             same_site[source] = target
         else:
@@ -318,11 +308,8 @@ def tk_lists_from_prerun(
     frame = prerun.copy()
     frame["studentno"] = identity
     frame["grade"] = frame["Grade"].map(normalize_grade)
-    frame["school_id"] = (
-        pd.to_numeric(frame["idSchool"], errors="coerce")
-        .astype("Int64")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
+    frame["school_id"] = pd.to_numeric(frame["idSchool"], errors="coerce").astype(
+        "Int64"
     )
     frame["program_type"] = frame["ProgramCode"].astype("string").str.strip()
     frame["rank"] = pd.to_numeric(frame["Rank"], errors="coerce")
@@ -408,12 +395,7 @@ def promotion_entitlements(
     if not required <= set(outcomes.columns):
         return empty
 
-    school = (
-        pd.to_numeric(outcomes["idCurrentSchool"], errors="coerce")
-        .astype("Int64")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
-    )
+    school = pd.to_numeric(outcomes["idCurrentSchool"], errors="coerce").astype("Int64")
     program = outcomes["CurrentProgramCode"].astype("string").str.strip()
     in_tk = outcomes["CurrentGrade"].map(normalize_grade).eq("TK")
     is_kindergarten_program = pd.Series(

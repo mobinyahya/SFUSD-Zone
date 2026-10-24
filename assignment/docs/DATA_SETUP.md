@@ -101,9 +101,9 @@ come only from the earliest remaining selected round and are exposed through
 - `exclude_any_special` removes a student if any selected-round choice is
   special.
 
-`include_mission_bay` centrally applies Mission Bay inclusion and derives
-`909 -> 999` across student, program, and school tables. Do not provide an alias
-map.
+`include_mission_bay` centrally applies Mission Bay inclusion and reads the
+legacy IDs `999` and `909` as `1731` across student, program, and school tables.
+Do not provide an alias map.
 
 ## Prepared KG Inputs
 
@@ -156,4 +156,5 @@ runs should set `data.overrides.roots.cache` to a temporary directory.
 - **Missing estimate**: override `assignment.estimate` with the concrete model
   output used by the run.
 - **Unexpected Mission Bay ID**: verify `include_mission_bay`; enabled runs
-  centrally map school `909` to `999`, while disabled runs exclude both IDs.
+  centrally map schools `999` and `909` to `1731`, while disabled runs exclude
+  all three IDs.

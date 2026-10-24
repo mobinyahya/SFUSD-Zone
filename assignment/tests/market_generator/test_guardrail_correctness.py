@@ -45,6 +45,7 @@ def test_zone_fractions_use_zone_labels_and_include_empty_categories():
         program_type=pd.Series(["GE"]),
         indices={},
     )
+    setup.schools = SimpleNamespace(citywide_schools=[618])
     setup.market = SimpleNamespace(config={"citywide-separate-reserves": False})
     setup.program2zone = {0: 42}
     setup.num_programs = 1
@@ -81,6 +82,7 @@ def test_citywide_reserve_ratio_length_is_validated():
         program_type=pd.Series(["GE"]),
         indices={"618-GE-KG": 1},
     )
+    setup.schools = SimpleNamespace(citywide_schools=[618])
     setup.market = SimpleNamespace(
         config={
             "citywide-separate-reserves": True,
@@ -100,8 +102,9 @@ def test_citywide_reserves_use_loaded_non_kg_program_ids():
     setup.n = 2
     setup.programs = SimpleNamespace(
         program_type=pd.Series(["GE", "GE"]),
-        indices={"618-GE-06": 1, "999-GE-06": 2},
+        indices={"618-GE-06": 1, "1731-GE-06": 2},
     )
+    setup.schools = SimpleNamespace(citywide_schools=[618, 449])
     setup.market = SimpleNamespace(
         config={
             "grade": "06",

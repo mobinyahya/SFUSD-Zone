@@ -17,13 +17,19 @@
 #   sibling-access: false no exception for a sibling's out-of-area school;
 #                         sibling priority still applies where the student is
 #                         eligible.
+#   add_aa_schools: true  every student's own area GE program is appended to
+#                         their list when they did not rank it, so it is a
+#                         choice (with the non-designation boost) rather than
+#                         only a designation. Under a generated zoning that is
+#                         the GE program of the school their zone owns, not
+#                         the district's 2013 idschoolattendance.
 #
 # Zones: `Con1` is today's attendance-area map, read as one zone per school
 # id in concept1zones.csv. Any attendance area that students live in (the
 # student table's idschoolattendance) but the file omits becomes its own zone
 # (Zones._add_unlisted_attendance_areas), so a new area such as Mission Bay
-# (999) is owned as soon as the student data assigns students to it, with no
-# edit to the file. Until then no zone owns 999-GE-KG and every student may
+# (1731) is owned as soon as the student data assigns students to it, with no
+# edit to the file. Until then no zone owns 1731-GE-KG and every student may
 # rank it, with a warning. With generated zones
 # (benchmark matching, assignment/generated_zones.py) the policy and
 # zone-building-blocks are replaced by the run's zoning, so each generated
@@ -53,6 +59,7 @@ priority-weights:
     sibling: 4
     ctip: 2
 
+add_aa_schools: true
 sibling-access: false
 designate: true
 zone-building-blocks: 'attendance_area'

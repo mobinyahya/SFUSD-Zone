@@ -1,0 +1,44 @@
+# Restrictive attendance areas on the 2026-27 kindergarten applicants.
+#
+# The market is scenario attendance-areas-2627: 3,855 applicants (Main Round
+# plus TK promotes), 162 programs, 4,306 seats at the 2026-27 program-table
+# capacities, each applicant's submitted main-round list (utility model off;
+# the 2023-24 estimate covers no 2026-27 student).
+#
+# Run on its own, restrictive_aa reads zones from Con1, today's 2013
+# attendance-area map, so this is the baseline the new areas get compared
+# against. Students take their area from the district's idschoolattendance;
+# nobody lives in a Mission Bay area, so 1731-GE-KG is open to everyone (Zones
+# warns about it).
+#
+# It is also the matching config of
+# benchmark/configs/attendance_areas/10-22.yaml. There each
+# generated zoning replaces Con1 and the zoning's own task data replaces the
+# data block below, so only the policy, iterations and metrics come from here.
+#
+# Local:   uv run sfusd-match simulate --config assignment/configs/attendance_areas/restrictive_aa_2627.yaml --assignments-dir ./assignment_output/attendance_areas/restrictive_aa_2627/assignments
+# Cluster: uv run python -m assignment.slurm submit --config assignment/configs/attendance_areas/restrictive_aa_2627.yaml
+
+data:
+  scenario: attendance-areas-2627
+  overrides: {}
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/attendance_areas/restrictive_aa_2627/assignments
+output_dir: /soalnas/share/data/school_choice/local_runs/attendance_areas/restrictive_aa_2627/
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: false
+reuse_assignments: true
+
+r1-only: true
+save-assignment: true
+subconfigs:
+- restrictive_aa
+utility-model:
+  enable: false
+  designate-lp-for-all: false
+  list-length: "7"   # required by the schema; inert while disabled

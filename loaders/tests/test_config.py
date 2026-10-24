@@ -126,6 +126,7 @@ def test_bundled_scenarios_are_declared_as_package_data():
         "assignment-generated-zones-2425.yaml",
         "assignment-generated-zones-2526.yaml",
         "assignment-generated-zones-2627.yaml",
+        "attendance-areas-2627.yaml",
         "historical-2324.yaml",
         "legacy.yaml",
         "mission-bay-2324.yaml",
@@ -609,7 +610,7 @@ def test_capacity_scenario_registry_is_strict_and_joins_the_manifest(tmp_path):
 
     moved = load("mission_bay_ge_to_webster_2627")
     assert moved.capacity_adjustments("assignment")["adjust"][0] == {
-        "school_id": 999,
+        "school_id": 1731,
         "program_type": "GE",
         "expect": 69,
         "set": 0,
@@ -635,7 +636,9 @@ def test_registered_capacity_overlay_becomes_the_group_capacity_source(group):
     overlaid = load_scenario(
         {
             "scenario": "sfusd-2627",
-            "overrides": {"filters": {group: {"capacity_scenario": "v102226_mpd"}}},
+            "overrides": {
+                "filters": {group: {"capacity_scenario": "ideal_webster_w2w_2627"}}
+            },
         },
         environ={},
     )
@@ -643,9 +646,7 @@ def test_registered_capacity_overlay_becomes_the_group_capacity_source(group):
     assert plain.resolved(f"{group}.capacity").catalog_id == (
         "capacity.stanford.scenarios_abcd"
     )
-    assert overlaid.resolved(f"{group}.capacity").catalog_id == (
-        "capacity.sfusd.v102226"
-    )
+    assert overlaid.resolved(f"{group}.capacity").catalog_id == ("capacity.sfusd.2627")
     assert overlaid.capacity_adjustments(group) is None
     other = {"optimization": "assignment", "assignment": "optimization"}[group]
     assert overlaid.resolved(f"{other}.capacity").catalog_id == (
@@ -1077,6 +1078,47 @@ def test_enrollment_share_is_an_optimization_only_selector():
                 "scenario": "legacy",
                 "overrides": {
                     "filters": {"assignment": {"enrollment_share": "ge_interest_esaa"}}
+                },
+            },
+            environ={},
+        )
+
+
+def test_mandarin_immersion_is_registered_off_by_default_and_rekeys_nothing():
+    plain = load_scenario({"scenario": "sfusd-2627", "overrides": {}}, environ={})
+    for group in ("optimization", "assignment"):
+        assert plain.filter(group, "include_mandarin_immersion") is False
+        assert plain.selected_planned_schools(group) == ()
+    assert plain.planned_schools["mandarin_immersion"]["school_id"] == 400
+    assert all(
+        "include_mandarin_immersion" not in values
+        for values in plain.source_manifest([])["filters"].values()
+    )
+
+    # The site and the native/non-native split are not known yet, so the
+    # scenario refuses to load and names every gap.
+    with pytest.raises(
+        ValueError,
+        match=r"missing lat, lon, programs\.KG\.ME, programs\.KG\.MN\.",
+    ):
+        load_scenario(
+            {
+                "scenario": "sfusd-2627",
+                "overrides": {
+                    "filters": {"optimization": {"include_mandarin_immersion": True}}
+                },
+            },
+            environ={},
+        )
+
+    with pytest.raises(
+        ValueError, match="include_mandarin_immersion must be a boolean"
+    ):
+        load_scenario(
+            {
+                "scenario": "sfusd-2627",
+                "overrides": {
+                    "filters": {"assignment": {"include_mandarin_immersion": "yes"}}
                 },
             },
             environ={},

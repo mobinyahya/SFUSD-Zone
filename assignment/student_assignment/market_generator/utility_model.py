@@ -11,6 +11,10 @@ import re
 
 import numpy as np
 import pandas as pd
+from loaders.tables import MISSION_BAY_LEGACY_IDS, MISSION_BAY_SCHOOL_ID
+
+#: ``<school>-<program type>-<grade>``, e.g. ``413-GE-KG``.
+_PROGRAM_ID = re.compile(r"\d+-[A-Z]{2}-[0-9A-Z]+")
 
 
 class UtilityModel:
@@ -50,6 +54,29 @@ class UtilityModel:
         if year_prefixed:
             return year_prefixed.group(1)
         return identity
+
+    @classmethod
+    def _normalize_program_label(
+        cls, value, required_identities: set[str] | None = None
+    ) -> str:
+        """Normalize a program column label, reading Mission Bay as 1731.
+
+        Estimates fitted before Mission Bay had its district code name its
+        programs under the retired placeholders (``999-GE-KG``). Such a label
+        becomes ``1731-GE-KG`` when that program is required, or always when
+        no requirement is given. A label already shaped like a program ID is
+        never read as year-prefixed: ``1731-GE-KG`` is not year 1731's
+        ``GE-KG``.
+        """
+        identity = cls._identity_text(value)
+        school, separator, rest = identity.partition("-")
+        if separator and school.isdigit() and int(school) in MISSION_BAY_LEGACY_IDS:
+            canonical = f"{MISSION_BAY_SCHOOL_ID}-{rest}"
+            if required_identities is None or canonical in required_identities:
+                return canonical
+        if required_identities is None or _PROGRAM_ID.fullmatch(identity):
+            return identity
+        return cls._normalize_labeled_identity(identity, required_identities)
 
     @staticmethod
     def _validate_csv_header(path: pathlib.Path) -> None:
@@ -109,7 +136,7 @@ class UtilityModel:
             raise ValueError("Required program identities are not unique.")
         required_program_set = set(required_programs)
         program_labels = [
-            self._normalize_labeled_identity(program_id, required_program_set)
+            self._normalize_program_label(program_id, required_program_set)
             for program_id in estimates_df.columns
         ]
         duplicate_programs = pd.Index(program_labels)[

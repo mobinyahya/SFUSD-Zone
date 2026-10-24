@@ -20,10 +20,8 @@
 # Three filters differ from the 2023-24 scenario. `capacity_profile` is
 # `default` because the registry publishes no `status_quo` profile for these
 # years. `include_mission_bay` is `false` because Mission Bay ES does not
-# open until 2026-27. Its real district code is idSchool 1731, which
-# `RAW_SCHOOL_ID_ALIASES = {1731: 999}` in
-# `analysis/data_prep/sfusd_transfer_schema.py` remaps onto the 999 the
-# shared loader keys Mission Bay policy on. In the transfer's Main Round
+# open until 2026-27. Its district code is idSchool 1731, the canonical ID
+# the shared loader keys Mission Bay policy on. In the transfer's Main Round
 # capacity files, 1731 appears in the SY26-27 file only -- at K GE 69,
 # MM 5, AF 0 seats -- and in neither the 24-25 nor the 25-26 file; it is
 # the one school added anywhere across the three years. This year's
@@ -32,7 +30,7 @@
 # the registry's `mission_bay` program variant for this year is
 # byte-identical to the standard one. Leaving the flag `true` selects the
 # Mission Bay *school* table against a program table without Mission Bay,
-# and zone setup then fails with `Unknown program IDs: ['999-GE-KG']`,
+# and zone setup then fails with `Unknown program IDs: ['1731-GE-KG']`,
 # because `Zones.get_area_id2ge_program_id_dict` turns every
 # attendance-area school into a `<school>-GE-KG` program id. Use
 # `assignment-generated-zones-2627`, which has the real Mission Bay, when

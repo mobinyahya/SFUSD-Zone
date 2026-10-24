@@ -25,7 +25,6 @@ CONSTRAINT_FIELDS = frozenset(
         "overage",
         "shortage",
         "max_distance",
-        "school_count_tolerance",
         "boundary_prop",
         "centroid_neighbor_radius",
     }
@@ -98,8 +97,6 @@ def checked_constraints(value, label="constraints") -> dict:
             or not math.isfinite(raw)
         ):
             raise ValueError(f"{label}.{name} must be a finite number.")
-        if name == "school_count_tolerance" and raw < 0:
-            raise ValueError(f"{label}.{name} must be non-negative.")
     return result
 
 
@@ -111,6 +108,13 @@ class SolutionInput:
     selects its complement. The band includes both endpoints of every cut edge
     and extends ``radius`` graph hops. ``nodes`` intersects this selection with
     explicit target graph node indices. Hard assignments never become hints.
+
+    A hard assignment the CP contiguity rows cannot honor -- the block has no
+    same-zone neighbor strictly closer to its school, which a ReCom zoning
+    need not give -- is loosened as in the recursive strategy
+    (``relax_unsupported_candidates``): the block becomes free and each block
+    on its closer-neighbor paths keeps its own zone plus that one. Widened
+    blocks are saved per stage as ``pipeline_candidates_areas``.
     """
 
     source: str = "previous"
@@ -297,7 +301,8 @@ def step_config(
             else "school_distance"
             if objective_spec.compactness_objective == "school_distance"
             else objective
-            if objective in {"cut_edges", "school_distance", "capacity_match"}
+            if objective
+            in {"cut_edges", "school_distance", "capacity_match", "aa_capacity_match"}
             else "cut_edges"
         ),
         solve_time_limits=[

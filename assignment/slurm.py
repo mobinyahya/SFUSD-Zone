@@ -409,6 +409,7 @@ def build_generated_zone_slurm_plan(
                 "id": target_id,
                 "zone_file": str(pathlib.Path(target["zone_file"]).resolve()),
                 "skip_marker": str(pathlib.Path(target["skip_marker"]).resolve()),
+                "data": target["data"],
             }
         )
 

@@ -118,7 +118,7 @@ def test_cache_is_shared_by_level_and_reused_without_source_loaders(
         tmp_path
         / "cache"
         / "closer_neighbors"
-        / "v3"
+        / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
         / "closer_neighbors_Block_0.pickle"
     )
     with path.open("rb") as file:
@@ -160,7 +160,7 @@ def test_cache_schema_version_invalidates_stale_in_file_data(
         tmp_path
         / "cache"
         / "closer_neighbors"
-        / "v3"
+        / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
         / "closer_neighbors_Block_0.pickle"
     )
     path.parent.mkdir(parents=True)

@@ -53,7 +53,9 @@ def load_estimate(
     frame.index = pd.Index(student_labels, name="studentno")
 
     if program_ids is None:
-        program_labels = [identity_text(value) for value in frame.columns]
+        program_labels = [
+            UtilityModel._normalize_program_label(value) for value in frame.columns
+        ]
         required_programs = set(program_labels)
     else:
         program_keys = [identity_text(value) for value in program_ids]
@@ -61,7 +63,7 @@ def load_estimate(
             raise ValueError("Program identities are ambiguous after normalization.")
         required_programs = set(program_keys)
         program_labels = [
-            UtilityModel._normalize_labeled_identity(value, required_programs)
+            UtilityModel._normalize_program_label(value, required_programs)
             for value in frame.columns
         ]
     if len(program_labels) != len(set(program_labels)):

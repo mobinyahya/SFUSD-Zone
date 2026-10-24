@@ -43,8 +43,16 @@ _CHAIN_BLOCK = 25
 # ``cut_edges`` is the boundary cost (metres under ``weight_edges``),
 # ``school_distance`` the weighted squared distance to each zone's school,
 # ``welfare`` the discrete MID program welfare, ``capacity_match`` the
-# weighted count of students left unassigned or designated by the MID match.
-RECOM_OBJECTIVES = ("cut_edges", "school_distance", "welfare", "capacity_match")
+# weighted count of students left unassigned or designated by the MID match,
+# ``aa_capacity_match`` the same count with the match confined to
+# attendance-area seats.
+RECOM_OBJECTIVES = (
+    "cut_edges",
+    "school_distance",
+    "welfare",
+    "capacity_match",
+    "aa_capacity_match",
+)
 
 ShortBurstBatchScorer = Callable[
     [tuple[Mapping[int, int], ...], Mapping[int, int] | None],

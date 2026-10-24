@@ -175,6 +175,7 @@ class Zones:
             return
 
         self.get_area_id2ge_program_id_dict()
+        self.citywide_program_ids = []
         lp_area_id2prog_list = {}
         if lp_zone_path_list is not None:
             for zone_path in lp_zone_path_list:
@@ -208,7 +209,9 @@ class Zones:
         if lp_same_as_ge:
             sch2pr_idx = self.programs.school_to_indices
             for area_id, prog_list in self.area_id2ge_program_id.items():
-                program_idxs = [y for x in prog_list for y in sch2pr_idx[int(x[:3])]]
+                program_idxs = [
+                    y for x in prog_list for y in sch2pr_idx[int(x.split("-")[0])]
+                ]
                 lp_area_id2prog_list[area_id] = [
                     self.programs.codes[x] for x in program_idxs
                 ]
@@ -304,6 +307,14 @@ class Zones:
             vec[prog_idxs] = 1
             area2progs_vec[k] = np.array(vec, dtype=int)
         self.area2progs_vec = area2progs_vec
+        # What a student in no zone holds: the programs every zone was given
+        # because no zone owns them, which is empty unless ``restrict-zone``
+        # spread them (see :meth:`add_remaining_schools_to_all_zones`).
+        unzoned = np.zeros(len(self.programs.program_df.index), dtype=int)
+        citywide = getattr(self, "citywide_program_ids", [])
+        if citywide:
+            unzoned[[x - 1 for x in self.programs.index_list(citywide)]] = 1
+        self.unzoned_progs_vec = unzoned
 
     def programs_for_area_id(
         self,
@@ -331,10 +342,17 @@ class Zones:
         if not hasattr(self, "area2progs_vec"):
             self._update_programs_for_area()
         if self.config["zone-building-blocks"] == "attendance_area":
+            # A student with no attendance area on file (or one no zone holds)
+            # keeps the citywide programs every zone holds, rather than being
+            # locked out of every program under ``restrict-zone``.
             return (
                 self.area2progs_vec[attendance_area]
                 if attendance_area in self.area2progs_vec
-                else np.zeros(len(self.programs.program_df.index))
+                else getattr(
+                    self,
+                    "unzoned_progs_vec",
+                    np.zeros(len(self.programs.program_df.index), dtype=int),
+                ).copy()
             )
         if self.config["zone-building-blocks"] == "home_based":
             return self.area2progs_vec[str(studentno)]
@@ -369,8 +387,7 @@ class Zones:
                     school_list_of_lists.append(self.area2school_id[area])
             school_list = [x for sublist in school_list_of_lists for x in sublist]
             area_id2program_id[area_id] = [
-                f"{school_id}-GE-{self.grade}"
-                for school_id in school_list
+                f"{school_id}-GE-{self.grade}" for school_id in school_list
             ]
 
         self.zone2area_list = zone2area_list
@@ -400,6 +417,7 @@ class Zones:
                 "open to every zone, like a citywide program.",
                 stacklevel=2,
             )
+        self.citywide_program_ids = sorted(remaining)
         for program in list(remaining):
             for area_id in self.area_id2prog_list:
                 self.area_id2prog_list[area_id].append(program)
@@ -451,7 +469,7 @@ class Zones:
 
         An attendance-area zone file is a fixed list of school ids, while the
         students' areas come from the student table. When the district adds an
-        area -- Mission Bay (999) opened in 2026 after concept1zones.csv was
+        area -- Mission Bay (1731) opened in 2026 after concept1zones.csv was
         written -- the first is stale as soon as the second is updated, and
         the new area's students would belong to no zone. An area with a school
         and at least one student is therefore its own zone. One without

@@ -7,7 +7,12 @@ from dataclasses import asdict
 import os
 import time
 
-from optimization.data.conversion import LevelConverter, base_area_assignment
+from optimization.data import contiguity
+from optimization.data.conversion import (
+    LevelConverter,
+    _node_base_ids,
+    base_area_assignment,
+)
 from optimization.objectives import get_objective, solve_objective
 from optimization.pipeline import step_config
 from optimization.strategies.base import Strategy, register
@@ -37,6 +42,46 @@ def selected_nodes(graph, assignment, binding):
             raise ValueError(f"Input selects unknown target nodes: {sorted(unknown)}.")
         selected.intersection_update(binding.nodes)
     return selected
+
+
+def relax_unsupported_assignments(problem, fixed, assignment):
+    """Loosen hard assignments the CP contiguity rows could never satisfy.
+
+    The MIP/CP solvers require every non-centroid block to have a same-zone
+    neighbor strictly closer to its school, which a prior step's zoning (ReCom
+    zonings are only connected) need not give. As in the recursive strategy,
+    :func:`relax_unsupported_candidates` frees each unsupported block and adds
+    its zone as a candidate along its closer-neighbor paths, so a fixed block
+    on such a path keeps its own zone and gains only the ones it may need.
+    Returns ``(fixed, candidates)``: still-forced blocks, and blocks the
+    relaxation widened, with their allowed zones.
+    """
+    if not fixed:
+        return fixed, {}
+    relaxed = contiguity.relax_unsupported_candidates(
+        problem.G,
+        assignment,
+        list(problem.centroids),
+        problem.centroid_school_ids,
+        {node: {zone} for node, zone in fixed.items()},
+    )
+    kept, candidates = {}, {}
+    for node, zone in fixed.items():
+        zones = relaxed.get(node)
+        if zones == {zone}:
+            kept[node] = zone
+        elif zones is not None:
+            candidates[node] = zones
+    return kept, candidates
+
+
+def _base_area_candidates(G, candidates):
+    """``{base_area_id: sorted zones}`` so a saved stage can rebuild them."""
+    return {
+        area: sorted(zones)
+        for node, zones in candidates.items()
+        for area in _node_base_ids(G, node)
+    }
 
 
 @register("pipeline")
@@ -69,10 +114,22 @@ class PipelineStrategy(Strategy):
             fixed = LevelConverter(data=dataset.data).from_area_assignment(
                 areas, step.level, graph, step.level
             )
+        candidates = {}
+        if metadata.get("pipeline_candidates_areas"):
+            graph = dataset.graph_for(step.level)
+            areas = {
+                int(a): {int(z) for z in zones}
+                for a, zones in metadata["pipeline_candidates_areas"].items()
+            }
+            for node in graph:
+                ids = [a for a in _node_base_ids(graph, node) if a in areas]
+                if ids:
+                    candidates[node] = areas[ids[0]]
         return dataset.problem_for(
             step.level,
             config=step_config(self.config, step, index),
             fixed=fixed or None,
+            candidates=candidates or None,
         )
 
     def run(self, dataset, solver):
@@ -135,8 +192,10 @@ class PipelineStrategy(Strategy):
                     raise ValueError(
                         f"Hard assignment for node {node} to zone {zone} violates the candidate constraints in step {step.name!r}."
                     )
-            problem.fixed = fixed or None
             hints.update(fixed)
+            fixed, candidates = relax_unsupported_assignments(problem, fixed, hints)
+            problem.fixed = fixed or None
+            problem.candidates = candidates or None
             if hints:
                 hints.update(
                     {centroid: zone for zone, centroid in enumerate(problem.centroids)}
@@ -173,6 +232,9 @@ class PipelineStrategy(Strategy):
                 pipeline_spec=asdict(step),
                 pipeline_fixed=fixed,
                 pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
+                pipeline_candidates_areas=_base_area_candidates(
+                    problem.G, candidates
+                ),
                 method=step.method,
                 objective_kind=step.objective,
                 configured_time_limit_seconds=configured_time,

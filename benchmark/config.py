@@ -390,8 +390,6 @@ def optimization_config_hash(
             semantic.pop(name, None)
     if semantic.get("weight_edges") is False:
         semantic.pop("weight_edges")
-    if semantic.get("school_count_tolerance") == 1.0:
-        semantic.pop("school_count_tolerance")
     # New objective settings drop out at their defaults so existing task ids hold;
     # the weights only matter once school_distance is selected.
     if semantic.get("compactness_objective") == "cut_edges":

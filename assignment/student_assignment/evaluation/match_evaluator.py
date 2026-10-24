@@ -818,8 +818,11 @@ class MatchEvaluator:
             if column not in self.student_data:
                 self.student_data[column] = default
 
-        self.student_data["programtype"] = self.student_data["assignment"].str[4:6]
-        self.student_data["assigned school"] = self.student_data["assignment"].str[:3]
+        # A program ID is "<school>-<type>-<grade>"; school IDs are not all
+        # three digits (Mission Bay is 1731).
+        assignment_parts = self.student_data["assignment"].str.split("-")
+        self.student_data["programtype"] = assignment_parts.str[1]
+        self.student_data["assigned school"] = assignment_parts.str[0]
         self.student_data["frl"] = pd.to_numeric(
             self.student_data["freelunch_prob"], errors="coerce"
         ).fillna(0) + pd.to_numeric(
@@ -1051,8 +1054,15 @@ class MatchEvaluator:
         is missing or ``-inf`` (a program the estimate rules out) counts as below.
         """
         name = "Designated below outside option"
-        if "outside_utility" not in student_data or "assigned_utility" not in student_data:
-            return {name: np.nan, f"{name} numerator": np.nan, f"{name} denominator": np.nan}
+        if (
+            "outside_utility" not in student_data
+            or "assigned_utility" not in student_data
+        ):
+            return {
+                name: np.nan,
+                f"{name} numerator": np.nan,
+                f"{name} denominator": np.nan,
+            }
         utility = pd.to_numeric(student_data["assigned_utility"], errors="coerce")
         outside = pd.to_numeric(student_data["outside_utility"], errors="coerce")
         designated = pd.to_numeric(student_data["designation"], errors="coerce").eq(1)
@@ -1955,11 +1965,13 @@ class MatchEvaluator:
             new_columns += list_schools
         else:
             # Exclude schools not in results from school order
-            existing_schools = set([x[:3] for x in list_schools])
-            school_order = [x for x in school_order if x[:3] in existing_schools]
+            existing_schools = set([x.split()[0] for x in list_schools])
+            school_order = [x for x in school_order if x.split()[0] in existing_schools]
             # Rename columns to the new school names.
-            new_schoolid2school = {x[:3]: x for x in school_order}
-            school_old2new = {x: new_schoolid2school[x[:3]] for x in list_schools}
+            new_schoolid2school = {x.split()[0]: x for x in school_order}
+            school_old2new = {
+                x: new_schoolid2school[x.split()[0]] for x in list_schools
+            }
             all_metrics_df = all_metrics_df.rename(columns=school_old2new)
             new_columns += school_order
         return all_metrics_df[new_columns]

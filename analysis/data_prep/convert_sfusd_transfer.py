@@ -93,7 +93,6 @@ from analysis.data_prep.sfusd_transfer_schema import (  # noqa: E402
     PRIORITY_LISTS,
     PROGRAM_COLUMNS,
     PROMOTION_STUDENT_COLUMNS,
-    RAW_SCHOOL_ID_ALIASES,
     SOTA_SCHOOL_ID,
     STUDENT_COLUMNS,
     TRANSFER_FILE_FRAGMENTS,
@@ -117,7 +116,13 @@ from analysis.data_prep.tk_promotion import (  # noqa: E402
 )
 from loaders import load_scenario  # noqa: E402
 from loaders.geography import match_points_to_census  # noqa: E402
-from loaders.tables import NOT_ENROLLED_SCHOOL_ID, normalize_grade  # noqa: E402
+from loaders.tables import (  # noqa: E402
+    MISSION_BAY_LEGACY_IDS,
+    MISSION_BAY_SCHOOL_ID,
+    MISSION_BAY_SCHOOL_IDS,
+    NOT_ENROLLED_SCHOOL_ID,
+    normalize_grade,
+)
 
 _NULL_TOKENS = frozenset({"NULL", "null", "n/a", "N/A", "", "NaN", "nan", "None"})
 
@@ -522,20 +527,7 @@ def build_student_table(
             f"Pre-run has {count} request rows with no idSchool; a ranked choice "
             "without a school cannot be represented."
         )
-    aliased = requests["school_id"].isin(RAW_SCHOOL_ID_ALIASES)
-    if aliased.any():
-        report.substitute(
-            kind="school_id_alias",
-            mapping={str(k): v for k, v in RAW_SCHOOL_ID_ALIASES.items()},
-            rows=int(aliased.sum()),
-            reason=(
-                "the shared table loader keys Mission Bay policy on {909, 999}; "
-                "the transfer issues Mission Bay ES a new ID"
-            ),
-        )
-    requests["school_id"] = (
-        requests["school_id"].replace(RAW_SCHOOL_ID_ALIASES).astype("Int64")
-    )
+    requests["school_id"] = requests["school_id"].astype("Int64")
     requests["grade"] = requests["Grade"].map(normalize_grade)
     blank_grade = requests["grade"].eq("")
     if blank_grade.any():
@@ -822,7 +814,7 @@ def _attach_postrun_columns(
             "r1_idschool",
         }:
             series = _school_ids(series, f"Post-run {raw_column}")
-            series = series.replace(RAW_SCHOOL_ID_ALIASES).astype("Int64")
+            series = series.astype("Int64")
         elif output_column in {
             "r1_rank",
             "r1_distance",
@@ -1400,7 +1392,7 @@ def _fall_enrollment(
     school = _school_ids(frame["SCHOOL_CODE"], "Demographics SCHOOL_CODE")
     return pd.DataFrame(
         {
-            "school": school.replace(RAW_SCHOOL_ID_ALIASES).astype("Int64"),
+            "school": school.astype("Int64"),
             "grade": frame["GRADE"].map(normalize_grade),
             "program": (
                 frame["ENR_PATHWAY"]
@@ -1613,16 +1605,12 @@ def build_program_table(
     """
     grade = bundle.grade
     requests = prerun.copy()
-    requests["school_id"] = (
-        _school_ids(requests["idSchool"], "Pre-run")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
-    )
+    requests["school_id"] = _school_ids(requests["idSchool"], "Pre-run").astype("Int64")
     requests["grade"] = requests["Grade"].map(normalize_grade)
     requests["program_type"] = requests["ProgramCode"].astype("string").str.strip()
     selected = requests.loc[requests["grade"] == grade].copy()
     if not include_mission_bay:
-        selected = selected.loc[~selected["school_id"].isin([909, 999])]
+        selected = selected.loc[~selected["school_id"].isin(MISSION_BAY_SCHOOL_IDS)]
 
     if bundle.capacity_grade is not None:
         offered = _programs_from_capacity_file(
@@ -1706,7 +1694,10 @@ def build_program_table(
                 },
             )
 
-    offered = offered.sort_values("program_id", kind="stable").reset_index(drop=True)
+    # By school number first: Mission Bay's 1731 would sort before 413 as text.
+    offered = offered.sort_values(
+        ["school_id", "program_id"], kind="stable"
+    ).reset_index(drop=True)
     offered["programno"] = np.arange(1, len(offered) + 1)
     for column in bundle.extra_columns:
         if column == "r2_capacity":
@@ -1768,7 +1759,7 @@ def _programs_from_capacity_file(
         return None
 
     if not include_mission_bay:
-        rows = rows.loc[~rows["school_id"].isin([909, 999])]
+        rows = rows.loc[~rows["school_id"].isin(MISSION_BAY_SCHOOL_IDS)]
 
     locatable = locatable_schools(
         bundle, cleaned_dir=cleaned_dir, include_mission_bay=include_mission_bay
@@ -1897,11 +1888,9 @@ def _program_counts(frame: pd.DataFrame) -> pd.Series:
     if not {"idNextSchool", "NextProgramCode"} <= set(frame.columns):
         return pd.Series(dtype="int64")
     frame = frame.copy()
-    frame["school_id"] = (
-        _school_ids(frame["idNextSchool"], "Post-run idNextSchool")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
-    )
+    frame["school_id"] = _school_ids(
+        frame["idNextSchool"], "Post-run idNextSchool"
+    ).astype("Int64")
     frame["program_type"] = frame["NextProgramCode"].astype("string").str.strip()
     frame = frame.dropna(subset=["school_id", "program_type"])
     return frame.groupby(["school_id", "program_type"]).size()
@@ -1931,9 +1920,13 @@ def locatable_schools(
     missing = {"school_id", "lat", "lon"} - set(schools.columns)
     if missing:
         raise TransferGapError(f"School table {path} is missing {sorted(missing)}.")
+    # The borrowed tables predate Mission Bay's district code and hold it
+    # under the repository's placeholders; the transfer uses 1731.
+    legacy = dict.fromkeys(MISSION_BAY_LEGACY_IDS, MISSION_BAY_SCHOOL_ID)
     return set(
         schools.loc[schools["lat"].notna() & schools["lon"].notna(), "school_id"]
         .astype(int)
+        .replace(legacy)
         .tolist()
     )
 
@@ -1961,10 +1954,8 @@ def drop_unlocatable_requests(
     """
     requests = prerun.copy()
     requests["_grade"] = requests["Grade"].map(normalize_grade)
-    requests["_school_id"] = (
-        _school_ids(requests["idSchool"], "Pre-run")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
+    requests["_school_id"] = _school_ids(requests["idSchool"], "Pre-run").astype(
+        "Int64"
     )
 
     drop = pd.Series(False, index=requests.index)
@@ -2273,11 +2264,9 @@ def _aligned_list_column(
 def _attendance_area_map(outcomes: pd.DataFrame) -> dict[int, int]:
     if "idSchoolAttendance" not in outcomes.columns:
         return {}
-    schools = (
-        _school_ids(outcomes["idSchoolAttendance"], "Post-run idSchoolAttendance")
-        .replace(RAW_SCHOOL_ID_ALIASES)
-        .astype("Int64")
-    )
+    schools = _school_ids(
+        outcomes["idSchoolAttendance"], "Post-run idSchoolAttendance"
+    ).astype("Int64")
     return {
         int(studentno): int(school)
         for studentno, school in zip(outcomes.index, schools, strict=True)

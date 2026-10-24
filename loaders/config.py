@@ -30,7 +30,7 @@ _BASE_KEYS = {
     "student_frl_estimates",
     "school_years",
 }
-_OPTIONAL_BASE_KEYS = {"capacity_scenarios", "enrollment_shares"}
+_OPTIONAL_BASE_KEYS = {"capacity_scenarios", "enrollment_shares", "planned_schools"}
 _SCENARIO_KEYS = {"id", "sources", "filters"}
 _SOURCE_KEYS = {
     "path",
@@ -59,6 +59,7 @@ _FILTER_KEYS = {
         "include_citywide_zoning",
         "include_citywide_choice_opt",
         "include_mission_bay",
+        "include_mandarin_immersion",
         "geography_vintage",
         "frl_estimate",
         "enrollment_share",
@@ -73,11 +74,15 @@ _FILTER_KEYS = {
         "capacity_profile",
         "capacity_scenario",
         "include_mission_bay",
+        "include_mandarin_immersion",
         "geography_vintage",
         "frl_estimate",
         "outside_district_students",
     },
 }
+#: Filter -> the base ``planned_schools`` entry it adds to the school and
+#: program tables when true.
+PLANNED_SCHOOL_FILTERS = {"include_mandarin_immersion": "mandarin_immersion"}
 _CANONICAL_YEAR = re.compile(r"^\d{4}$")
 _CANONICAL_GRADES = {"PK", "TK", "KG", *(f"{grade:02d}" for grade in range(1, 13))}
 _STUDENT_POPULATIONS = {"applicant", "enrolled"}
@@ -88,6 +93,7 @@ _FILTER_DEFAULTS = {
     "frl_estimate": None,
     "enrollment_share": None,
     "outside_district_students": "ignore",
+    **dict.fromkeys(PLANNED_SCHOOL_FILTERS, False),
 }
 _ANNUAL_ASSIGNMENT_ROLES = {
     "assignment.students",
@@ -103,6 +109,26 @@ _ASSIGNMENT_GRADE_KEYS = {"profiles"}
 _ASSIGNMENT_VARIANT_KEYS = {"programs", "programs_catalog", "schools"}
 _CAPACITY_SCENARIO_KEYS = {"year", "include_mission_bay", "adjust"}
 _CAPACITY_OVERLAY_KEYS = {"source"}
+_PLANNED_SCHOOL_KEYS = {
+    "school_id",
+    "school_name",
+    "category",
+    "lat",
+    "lon",
+    "programs",
+}
+_PLANNED_SCHOOL_CATEGORIES = {"Attendance", "Citywide"}
+#: Optional role naming an attendance-area map (polygons) from which a blank
+#: assignment ``idschoolattendance`` is filled by the student's location
+#: (``loaders.tables.fill_attendance_areas``).
+ATTENDANCE_AREA_FILL_ROLE = "assignment.attendance_area_fill"
+#: Roles whose content changes what another role loads as. A manifest naming a
+#: key role carries each companion the scenario binds, so a cache keyed on the
+#: students alone still sees the map that filled their attendance areas and
+#: the schools that name its polygons.
+_MANIFEST_COMPANIONS = {
+    "assignment.students": (ATTENDANCE_AREA_FILL_ROLE, "assignment.schools"),
+}
 _CAPACITY_ADJUSTMENT_KEYS = {"school_id", "program_type", "expect", "add", "set"}
 _GEOGRAPHY_KEYS = {
     "blocks",
@@ -141,6 +167,12 @@ def _identity_filters(filters: Mapping[str, Mapping[str, Any]]) -> dict[str, Any
     rename re-keys nothing.
     """
     plain = _plain(filters)
+    # A planned school left out is the data as it was before the filter
+    # existed, so it re-keys nothing either.
+    for values in plain.values():
+        for key in PLANNED_SCHOOL_FILTERS:
+            if values.get(key) is False:
+                del values[key]
     assignment = plain.get("assignment")
     if assignment is not None and "grade" in assignment:
         assignment["grades"] = [assignment.pop("grade")]
@@ -377,6 +409,9 @@ class DataScenario:
     #: adjustments, or overlay files, that a group's ``capacity_scenario``
     #: filter can select.
     capacity_scenarios: Mapping[str, Any] = MappingProxyType({})
+    #: The base ``planned_schools`` registry: schools no data file holds yet,
+    #: each added by its ``include_<name>`` filter.
+    planned_schools: Mapping[str, Any] = MappingProxyType({})
 
     @classmethod
     def load(
@@ -470,11 +505,34 @@ class DataScenario:
             return None
         return definition
 
+    def selected_planned_schools(self, group: str) -> tuple[Mapping[str, Any], ...]:
+        """Return the planned-school definitions a group's filters include."""
+        selected = []
+        for key, name in PLANNED_SCHOOL_FILTERS.items():
+            if not self.filter(group, key, False):
+                continue
+            if name not in self.planned_schools:
+                raise ValueError(
+                    f"{group}.{key} is true but base planned_schools has no {name!r}."
+                )
+            selected.append(self.planned_schools[name])
+        return tuple(selected)
+
     def source_manifest(
         self, roles: str | Iterable[str] | None = None
     ) -> dict[str, Any]:
         """Build a deterministic content and selector manifest for source roles."""
         selected = _selected_roles(self._source_values, roles)
+        extra = set()
+        if ATTENDANCE_AREA_FILL_ROLE in self._source_values:
+            for role in selected:
+                extra.update(
+                    companion
+                    for companion in _MANIFEST_COMPANIONS.get(role, ())
+                    if companion in self._source_values
+                )
+        if extra:
+            selected = sorted({*selected, *extra})
 
         def build(value: Any) -> Any:
             if isinstance(value, ResolvedSource):
@@ -501,6 +559,14 @@ class DataScenario:
         }
         if adjustments:
             manifest["capacity_scenarios"] = adjustments
+        # Likewise a planned school's location and seats, when one is included.
+        planned = {
+            group: [_plain(definition) for definition in definitions]
+            for group in self.filters
+            if (definitions := self.selected_planned_schools(group))
+        }
+        if planned:
+            manifest["planned_schools"] = planned
         return manifest
 
     @property
@@ -734,6 +800,7 @@ def _validate_filters(
             "include_citywide_zoning",
             "include_citywide_choice_opt",
             "include_mission_bay",
+            *PLANNED_SCHOOL_FILTERS,
         ):
             if key in values and not isinstance(values[key], bool):
                 raise ValueError(f"{label}.{group}.{key} must be a boolean.")
@@ -939,6 +1006,84 @@ def _validate_enrollment_shares(value: Any, files: Mapping[str, Any]) -> None:
         _validate_catalog_reference(source, f"Base enrollment_shares.{name}", files)
 
 
+def _validate_planned_schools(value: Any) -> None:
+    schools = _require_map(value, "Base planned_schools")
+    for name, entry_value in schools.items():
+        label = f"Base planned_schools.{name}"
+        entry = _require_map(entry_value, label)
+        _unknown_keys(entry, _PLANNED_SCHOOL_KEYS, f"planned_schools.{name}")
+        missing = sorted(_PLANNED_SCHOOL_KEYS - set(entry))
+        if missing:
+            raise ValueError(f"{label} is missing {missing}.")
+        school_id = entry["school_id"]
+        if isinstance(school_id, bool) or not isinstance(school_id, int):
+            raise ValueError(f"{label}.school_id must be an integer.")
+        _nonempty_string(entry["school_name"], f"{label}.school_name")
+        if entry["category"] not in _PLANNED_SCHOOL_CATEGORIES:
+            raise ValueError(f"{label}.category must be Attendance or Citywide.")
+        # A site may be unknown (null) until the district names one; including
+        # the school then fails with what is missing.
+        for key in ("lat", "lon"):
+            coordinate = entry[key]
+            if coordinate is not None and (
+                isinstance(coordinate, bool) or not isinstance(coordinate, int | float)
+            ):
+                raise ValueError(f"{label}.{key} must be a number or null.")
+        grades = _require_map(entry["programs"], f"{label}.programs")
+        if not grades:
+            raise ValueError(f"{label}.programs must not be empty.")
+        for grade, programs_value in grades.items():
+            if grade not in _CANONICAL_GRADES:
+                raise ValueError(f"{label}.programs has unknown grade {grade!r}.")
+            programs = _require_map(programs_value, f"{label}.programs.{grade}")
+            for program_type, seats in programs.items():
+                _nonempty_string(program_type, f"{label}.programs.{grade} key")
+                if seats is not None and (
+                    isinstance(seats, bool) or not isinstance(seats, int) or seats < 0
+                ):
+                    raise ValueError(
+                        f"{label}.programs.{grade}.{program_type} must be a "
+                        "non-negative integer or null."
+                    )
+    absent = sorted(set(PLANNED_SCHOOL_FILTERS.values()) - set(schools))
+    if absent:
+        raise ValueError(f"Base planned_schools is missing {absent}.")
+
+
+def planned_school_gaps(definition: Mapping[str, Any]) -> list[str]:
+    """The values a planned school still lacks, as dotted field names."""
+    gaps = [key for key in ("lat", "lon") if definition[key] is None]
+    for grade, programs in definition["programs"].items():
+        gaps.extend(
+            f"programs.{grade}.{program_type}"
+            for program_type, seats in programs.items()
+            if seats is None
+        )
+    return gaps
+
+
+def _validate_planned_school_selection(
+    filters: Mapping[str, Mapping[str, Any]], planned: Mapping[str, Any]
+) -> None:
+    """Fail at load when a group includes a planned school with missing data."""
+    for group, values in filters.items():
+        for key, name in PLANNED_SCHOOL_FILTERS.items():
+            if not values.get(key):
+                continue
+            if name not in planned:
+                raise ValueError(
+                    f"{group}.{key} is true but base planned_schools has no {name!r}."
+                )
+            gaps = planned_school_gaps(planned[name])
+            if gaps:
+                raise ValueError(
+                    f"{group}.{key} is true, but planned_schools.{name} "
+                    f"({planned[name]['school_name']}) is missing "
+                    f"{', '.join(gaps)}. Fill them in loaders/configs/base.yaml; "
+                    "nothing is assumed in their place."
+                )
+
+
 def _validate_capacity_scenarios(value: Any, files: Mapping[str, Any]) -> None:
     scenarios = _require_map(value, "Base capacity_scenarios")
     for name, entry_value in scenarios.items():
@@ -1014,6 +1159,8 @@ def _validate_base(payload: dict[str, Any], path: Path) -> None:
     _validate_student_frl_estimates(payload["student_frl_estimates"], files)
     _validate_school_years(payload["school_years"], files)
     _validate_capacity_scenarios(payload.get("capacity_scenarios", {}), files)
+    if "planned_schools" in payload:
+        _validate_planned_schools(payload["planned_schools"])
     _validate_enrollment_shares(payload.get("enrollment_shares", {}), files)
 
 
@@ -1503,6 +1650,7 @@ def load_scenario(
         for role, source in sources.items()
     }
     _validate_student_frl_source_vintages(filters, source_values)
+    _validate_planned_school_selection(filters, base.get("planned_schools", {}))
     source_values.update(
         _converted_geography_sources(
             filters,
@@ -1520,6 +1668,7 @@ def load_scenario(
         filters=_freeze(filters),
         _source_values=MappingProxyType(source_values),
         capacity_scenarios=_freeze(base.get("capacity_scenarios", {})),
+        planned_schools=_freeze(base.get("planned_schools", {})),
     )
 
 

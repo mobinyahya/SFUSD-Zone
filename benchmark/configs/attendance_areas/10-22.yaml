@@ -1,0 +1,135 @@
+# New attendance areas: one zone per attendance-area school, 2026-27.
+#
+# Scenario attendance-areas-2627: the 3,855 kindergarten applicants (the same
+# market the assignment simulation runs), 2020 Census blocks.
+# `centroids_type: all` makes every attendance-area school a centroid: the 58
+# of the 2013 map plus Mission Bay (1731), the same 59 as the `59-zone` list.
+# It follows the capacity workbook, the only source of which schools own an
+# area: a workbook scenario that makes a school citywide removes its zone with
+# no centroid edit. The 14 citywide schools own no area and hold no graph node.
+#
+# Capacities are the district's 2026-27 kindergarten workbook scenario
+# ideal_baseline_2627 (every classroom used, current program mix), set on both
+# groups because matching requires the zoning and its market to agree. The
+# Mandarin Immersion TK-8 is a planned school that stays out of this market
+# (`include_mandarin_immersion` defaults to false). The enrollment share is set
+# aside for now.
+#
+# Every run is three steps. The shape step starts from a CP-SAT feasible hint
+# (`hints: feasible`, up to 300 s, counted against its 10 minutes): from a
+# Voronoi start, short bursts found no zoning inside the capacity band in a
+# 3-minute smoke test, while CP-SAT found one in under 3. The hint is cached by
+# feasible set, not seed, so every seed starts from the same zoning and the
+# seeds differ only in the bursts that follow.
+#   shape     Block_0.5, recom short bursts for 10 minutes, optimizing
+#             capacity_match. Not Block_2: its aggregates hold up to 195
+#             students, too coarse for one school per zone.
+#   distance  Block_0, cp_bool for 5 minutes, average_squared_distance. The
+#             shape zoning's interior is fixed; its boundary band (the
+#             endpoints of every cut edge plus one hop, radius 1) is free and
+#             hinted.
+#   perimeter Block_0, cp_bool for 5 minutes, boundary_perimeter (total shared
+#             boundary length), seeded the same way from distance but with
+#             radius 0 (cut-edge endpoints only).
+#             Zones average ~100 blocks, so even radius 0 frees about half the
+#             map (46% in a seed-1 smoke test; radius 1 freed 83%). Fixed
+#             blocks the CP contiguity rows cannot support are loosened as in
+#             the recursive strategy (see optimization/pipeline.py).
+# capacity_match scores a zoning by matching the applicants on their submitted
+# lists (`mid_preference_source: stated`), because the 2023-24 choice estimate
+# covers no 2026-27 student. With the designated weight at 0 it counts only
+# students left unassigned: a designated student still fills a seat, and seat
+# utilization (citywide schools included) is what this sweep targets.
+#
+# Constraints for every step: each zone holds exactly one school (59 schools in
+# 59 zones makes the floor/ceil school band exact, which is what lets
+# restrictive_aa read each zone as one attendance area), seats at least 90% and at most 130% of the zone's
+# applicants (all programs; shortage 0.1, overage 0.3), FRL within 0.30,
+# racial balance off, max_distance auto. The capacity band keeps the distance
+# and perimeter steps, which do not look at seats, from undoing the shape.
+#
+# 5 seeds = 5 runs.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/attendance_areas/10-22.yaml
+
+name: attendance_areas_10-22
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization: {capacity_scenario: ideal_baseline_2627}
+        assignment: {capacity_scenario: ideal_baseline_2627}
+  centroids_type: all
+  hints: voronoi
+  workers: 8
+  save_solver_logs: false
+  save_solver_progress: false
+  constraints:
+    frl_dev: 0.3
+    racial_dev: -1
+    overage: 0.3
+    shortage: 0.1
+    max_distance: auto
+    boundary_prop: -1
+
+sweep:
+  seed: [1, 2, 3, 4, 5]
+
+tasks:
+  - steps:
+      - name: shape
+        level: Block_0.5
+        method: recom
+        objective: capacity_match
+        time_limit: 600
+        options:
+          workers: 1
+          recom_iterations: -1
+          recom_burst_length: 25
+          mid_preference_source: stated
+          capacity_match_designated_weight: 0
+          hints: feasible
+          feasible_hint_time_limit: 300
+      - name: distance
+        level: Block_0
+        method: cp_bool
+        objective: average_squared_distance
+        time_limit: 300
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 1}
+          - {source: previous, mode: hint, select: boundary, radius: 1}
+      - name: perimeter
+        level: Block_0
+        method: cp_bool
+        objective: boundary_perimeter
+        time_limit: 300
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 0}
+          - {source: previous, mode: hint, select: boundary, radius: 0}
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/attendance_areas_10-22_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final
+
+# Every feasible zoning is matched under restrictive_aa in its own task's data
+# (ideal_baseline_2627); the assignment config sets only the policy,
+# iterations and metrics.
+matching:
+  enabled: true
+  config: ../../../assignment/configs/attendance_areas/restrictive_aa_2627.yaml
+  compute_stage_assignments: false

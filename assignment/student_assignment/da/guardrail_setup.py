@@ -12,23 +12,6 @@ from .da_with_guardrails import DAwithGuards
 
 
 class GuardrailSetup:
-    _CITYWIDE_SCHOOLS = {
-        449,
-        476,
-        479,
-        485,
-        493,
-        509,
-        537,
-        618,
-        676,
-        714,
-        724,
-        760,
-        796,
-        814,
-    }
-
     def __init__(self, market, prefs):
         self.schools = market.schools
         self.students = market.students
@@ -171,6 +154,9 @@ class GuardrailSetup:
         return zone_frac.reindex(columns=range(num_classes), fill_value=0.0)
 
     def _citywide_ge_program_ids(self):
+        # Citywide is the school table's category, which a selected capacity
+        # scenario may set (loaders.tables.apply_school_category_scenario).
+        citywide_schools = {int(school) for school in self.schools.citywide_schools}
         program_ids = []
         for program_id, programno in self.programs.indices.items():
             parts = str(program_id).split("-")
@@ -180,7 +166,7 @@ class GuardrailSetup:
                 school_id = int(parts[0])
             except ValueError:
                 continue
-            if school_id in self._CITYWIDE_SCHOOLS:
+            if school_id in citywide_schools:
                 program_ids.append(programno - 1)
         return program_ids
 

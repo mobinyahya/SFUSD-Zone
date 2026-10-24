@@ -72,6 +72,22 @@ non-enrollees. Optimization keeps them. See `loaders/README.md`.
 capacity values in its year/profile-selected program table; optimization uses
 the current 2023-24 program table. Explicit scenarios such as `A` through `D`
 overlay matching school/program/grade capacities from the shared scenario table.
+The district's 2026-27 KG workbook scenarios (`ideal_baseline_2627`,
+`ideal_bessie_ge_2627`, `ideal_*_w2w_2627`; converted by
+`analysis/data_prep/convert_capacity_workbook.py`) also set each listed school's
+`category`: a school with any attendance-area seats is `Attendance`, so it owns
+a graph node under `program_population: All`; the rest are `Citywide`.
+They also label each program's attendance-area seats, which loaded programs
+carry as `attendance_area_capacity` and the `aa_capacity_match` objective scores.
+The workbook's new Mandarin Immersion TK-8 (placeholder school `400`) is in no
+data file; both groups' `include_mandarin_immersion` (default `false`) adds it
+from base `planned_schools`. Its site and its ME/MN (non-native/native) seat
+split are still null, so setting it true fails at load, naming what is missing.
+
+**Mission Bay ES is school 1731** (`loaders.tables.MISSION_BAY_SCHOOL_ID`). The
+2023-24 tables and the 2023-24 choice estimate carry the old placeholders 999
+and 909; with `include_mission_bay: true` every loader reads them as 1731, and
+with `false` all three are dropped.
 
 `frl_estimate` defaults to `null`, which retains the student table's FRL fields.
 Named estimates come from the central `student_frl_estimates` registry. The
@@ -158,7 +174,7 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 
 Graphs are cached by exact source contents, data filters, and partition-policy
 parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v<N>/<sha256>/`,
-where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (15 at time of writing).
+where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (16 at time of writing).
 
 ## Benchmarking
 
@@ -197,7 +213,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 
 | Parameter | Example | Description |
 |---|---|---|
-| `centroids_type` | `'5-zone-AF'` | Zone count and centroid configuration |
+| `centroids_type` | `'5-zone-AF'` | Zone count and centroid configuration; `all` makes every school the zoning problem holds a centroid (the attendance-area schools, plus citywide ones under `include_citywide_zoning`), in ascending id order |
 | `frl_dev` | `0.3` | Max FRL deviation from district average |
 | `racial_dev` | `0.3` | Max racial/ethnic deviation |
 | `solver` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
@@ -210,11 +226,11 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `seed` | `42` | Solver seed |
 
 Cache paths carry the artifact's schema version, which lives in code and moves
-without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (15),
+without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (16),
 `initial_solutions.FEASIBLE_HINT_CACHE_SCHEMA_VERSION` (3). Read the constant
 rather than the number quoted here.
 
-Graph cache path: `.../caches/graphs/v15/<sha256>/`.
+Graph cache path: `.../caches/graphs/v16/<sha256>/`.
 
 Feasible-hint cache path: `.../caches/feasible_hint/v3/<sha256>/`, keyed by the
 *feasible set* and nothing else: `feasibility_fingerprint(problem)` plus

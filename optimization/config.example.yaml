@@ -18,7 +18,6 @@ constraints:
   racial_dev: 0.3
   overage: 0.8
   shortage: 0.2
-  school_count_tolerance: 1
   max_distance: 5              # miles, .inf, or auto
   boundary_prop: -1            # negative disables cut-edge proportion cap
   centroid_neighbor_radius: 0
@@ -54,7 +53,8 @@ steps:
 # Methods: cp_bool, cp_int, mip, recom (its recom_* settings pick the ReCom
 # variant; see optimization/README.md). Objectives: cut_edges, boundary_perimeter,
 # average_distance, average_squared_distance, school_distance (legacy name),
-# matching_welfare, saa_welfare, choice_welfare, capacity_match.
+# matching_welfare, saa_welfare, choice_welfare, capacity_match,
+# aa_capacity_match.
 # Supported combinations are documented in optimization/README.md.
 
 data:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -79,6 +80,7 @@ def process_solution_assignments(
                 "geography_vintage": config.data_scenario.filter(
                     "optimization", "geography_vintage"
                 ),
+                "data": copy.deepcopy(config.data),
             }
         )
 
@@ -272,6 +274,7 @@ def assignment_targets(
                         LevelSpec.parse(level).unit
                     ),
                     "geography_vintage": vintage,
+                    "data": copy.deepcopy(task.config["data"]),
                 }
             )
     return targets
