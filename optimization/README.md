@@ -195,7 +195,8 @@ independently.
   `solvers/recom_policy.py` makes the choices from one merit, the weighted
   linear violation, through independent settings: `recom_weights` (`fixed`,
   `hedge`, `dual`), `recom_pair_selection` (`uniform`, `proportional`,
-  `softmax`, `zone`, `exp3`), `recom_cut_selection` (`uniform`, `softmax`),
+  `softmax`, `zone`, `exp3`), `recom_pair_score` (`pressure`, `pooled`),
+  `recom_cut_selection` (`uniform`, `softmax`),
   `recom_temperature` or `recom_entropy`, `recom_exploration`,
   `recom_learning_rate`, `recom_bandit_window`, `recom_objective_weight`, and
   `recom_reject_infeasible`. `recom_policy.PRESETS` names the studied methods:

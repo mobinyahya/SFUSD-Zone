@@ -193,6 +193,7 @@ class OptimizationConfig:
     recom_reject_infeasible: bool = _RECOM.reject_infeasible
     recom_weights: str = _RECOM.weights
     recom_pair_selection: str = _RECOM.pair_selection
+    recom_pair_score: str = _RECOM.pair_score
     recom_cut_selection: str = _RECOM.cut_selection
     recom_temperature: float = _RECOM.temperature
     recom_entropy: float | None = _RECOM.entropy
