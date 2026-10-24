@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, fields, replace
 from typing import TYPE_CHECKING, Any
 
 from optimization.levels import LevelSpec
+from optimization.solvers.recom_policy import ReComSettings
 
 if TYPE_CHECKING:
     from optimization.config import OptimizationConfig
@@ -43,13 +44,9 @@ OPTION_FIELDS = frozenset(
         "symmetry_level",
         "cp_sat_search_strategy",
         "recom_iterations",
-        "short_bursts_length",
-        "short_bursts_method",
-        "adaptive_short_bursts_lr",
-        "adaptive_short_bursts_temperature",
-        "adaptive_short_bursts_pair_selector",
-        "adaptive_short_bursts_unassigned_weight",
-        "adaptive_short_bursts_designated_weight",
+        *(f"recom_{f.name}" for f in fields(ReComSettings)),
+        "capacity_match_unassigned_weight",
+        "capacity_match_designated_weight",
         "school_distance_area_weight",
         "school_distance_student_weight",
         "mid_lottery_scale",
@@ -294,7 +291,7 @@ def step_config(
         compactness_objective=objective_spec.compactness_objective
         if step.method in {"cp_bool", "cp_int", "mip"}
         else "cut_edges",
-        adaptive_short_bursts_objective=(
+        recom_objective=(
             "welfare"
             if objective in {"matching_welfare", "welfare"}
             else "school_distance"

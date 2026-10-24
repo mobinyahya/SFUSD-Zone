@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Score an unguided relaxed-ReCom chain on the benchmark's three yardsticks.
+"""Score an unguided ReCom chain on the benchmark's three yardsticks.
 
 Every strategy in the choice benchmark spends its budget steering the search.
 This script produces the reference point they should be read against: one
-relaxed-ReCom random walk that optimizes nothing at all, with choice welfare,
+ReCom random walk that optimizes nothing at all, with choice welfare,
 budget welfare, and cut edges computed for *every* iteration rather than only
 for a final zoning.
 
-The chain is the same kernel ``short_bursts_choice`` uses - ``relaxed_recom``,
-started from the same ``hints: feasible`` initial solution and run on the same
-problem - but with no scorer and no burst restarts, so nothing selects among the
-zonings it visits. Its configuration is read from a benchmarked run so the
+The chain is the same kernel ``short_bursts_choice`` uses - ``recom``'s
+classic chain preset (uniform pairs and cuts), started from the same
+``hints: feasible`` initial solution and run on the same problem - but with no
+scorer and no burst restarts, so nothing selects among the zonings it visits.
+(Before the ReCom overhaul it drew cuts with ``relaxed_recom``'s hand-tuned
+weights, which no longer exist.) Its configuration is read from a benchmarked run so the
 problem, the balance constraints, and the lottery scale match the runs it is
 compared against.
 
@@ -44,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import time
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -64,6 +67,7 @@ from optimization.solvers import get_solver
 # which reports only the best zoning it saw. These are the same handles that
 # solver uses, so the walk is the benchmark's walk and not a re-implementation.
 from optimization.solvers.recom import _NoProposal, _ReComKernel
+from optimization.solvers.recom_policy import PRESETS, Policy
 
 DEFAULT_BENCHMARK_DIR = (
     "/soalnas/share/data/school_choice/local_runs/benchmark_choice_v4"
@@ -234,23 +238,15 @@ def walk(inputs: ChainInputs, iterations: int, seed: int) -> Iterator[dict[str, 
     residual under ReCom's own float check, which the first accepted move
     clears. ``max_violation`` records it either way.
     """
-    solver = get_solver(
-        "relaxed_recom",
-        **{
-            **inputs.config.make_solver().options,
-            "recom_iterations": iterations,
-            # The chain is bounded by iterations only; the run's time limit
-            # would otherwise cut it short.
-            "solve_time_limit": None,
-            "seed": seed,
-        },
-    )
-    setup = solver._initialize(inputs.problem, time.monotonic())
-    context, state = setup.context, setup.state
-    kernel = _ReComKernel(context, setup.rng, setup.deadline)
+    solver = get_solver("recom", **inputs.config.make_solver().options)
+    context, state, hint_metadata = solver._initial_state(inputs.problem)
+    rng = random.Random(seed)
+    # The chain is bounded by iterations only, so it has no deadline.
+    kernel = _ReComKernel(context, rng, None)
+    policy = Policy(context, rng, PRESETS["chain"], objective_local=True)
     print(
-        f"  initial solution: {setup.hint_metadata.get('hints')} "
-        f"(cache {setup.hint_metadata.get('hint_cache', 'n/a')})"
+        f"  initial solution: {hint_metadata.get('hints')} "
+        f"(cache {hint_metadata.get('hint_cache', 'n/a')})"
     )
 
     attempt_limit = max(PROPOSAL_ATTEMPT_FACTOR * iterations, PROPOSAL_ATTEMPT_FACTOR)
@@ -275,14 +271,14 @@ def walk(inputs: ChainInputs, iterations: int, seed: int) -> Iterator[dict[str, 
         while move is None and attempted < attempt_limit:
             attempted += 1
             try:
-                move = kernel.propose(state, "relaxed")
+                move = kernel.propose(state, policy)
             except _NoProposal as exc:
                 failures += 1
                 if exc.reason == "no_adjacent_zone_pairs":
                     stalled = exc.reason
                     break
                 continue
-            if not move.globally_feasible:
+            if not move.cut.feasible:
                 rejected += 1
                 move = None
         if move is None:
@@ -326,7 +322,7 @@ def run_baseline(
         # 600-second timeout on the tighter centroid configurations.
         config = config_from_snapshot({**snapshot, "workers": workers})
         level = LevelSpec.parse(config.levels[-1])
-        print(f"{centroid}: {iterations} relaxed-ReCom iterations on {level}")
+        print(f"{centroid}: {iterations} ReCom chain iterations on {level}")
         start = time.perf_counter()
         try:
             for row in walk(build_inputs(config), iterations, seed):
@@ -383,7 +379,7 @@ def run_baseline(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Score an unguided relaxed-ReCom chain iteration by iteration."
+        description="Score an unguided ReCom chain iteration by iteration."
     )
     parser.add_argument(
         "benchmark_dir",

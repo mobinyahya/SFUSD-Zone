@@ -259,7 +259,7 @@ def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
 def test_manifest_hashes_the_assignment_market_for_strategies_that_read_it(
     strategy, reads_market
 ):
-    solver = {"stable_cutoff": "mip", "short_bursts_choice": "short_bursts"}
+    solver = {"stable_cutoff": "mip", "short_bursts_choice": "recom"}
     config = OptimizationConfig(
         strategy=strategy,
         solver=solver.get(strategy, "cp_bool"),
@@ -367,8 +367,8 @@ def test_adaptive_choice_objectives_hash_the_assignment_market(tmp_path):
     programs = sweep_path.parent / "inputs/assignment-programs.csv"
     _with_optimization(
         sweep_path,
-        solver="adaptive_short_bursts",
-        adaptive_short_bursts_objective="capacity_match",
+        solver="recom",
+        recom_objective="capacity_match",
     )
     sweep = SimulationSweep.from_yaml(str(sweep_path))
 

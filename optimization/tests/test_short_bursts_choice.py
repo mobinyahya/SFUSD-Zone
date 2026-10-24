@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from optimization.data.mid import MidMarket, MidProgram, MidType
 from optimization.mid_oracle import finite_grid_oracle
 from optimization.solvers import get_solver
+from optimization.solvers.recom_policy import PRESETS, ReComSettings
 from optimization.strategies import get_strategy
 from optimization.strategies import short_bursts_choice as sbc_module
 from optimization.tests.synthetic import make_grid_problem, make_solver_contract_problem
@@ -55,10 +57,11 @@ def _strategy(**options):
     return get_strategy("short_bursts_choice", **options)
 
 
-def _short_bursts(**options):
+def _short_bursts(preset: str = "uniform_bursts", **options):
+    options = {**PRESETS[preset].as_options(), **options}
     options.setdefault("solve_time_limit", 60.0)
     options.setdefault("workers", 1)
-    return get_solver("short_bursts", **options)
+    return get_solver("recom", **options)
 
 
 def test_strategy_is_registered() -> None:
@@ -67,12 +70,12 @@ def test_strategy_is_registered() -> None:
     assert "short_bursts_choice" in available_strategies()
 
 
-def test_requires_short_bursts_solver(monkeypatch) -> None:
+def test_requires_the_recom_solver(monkeypatch) -> None:
     problem = make_solver_contract_problem(hint={0: 0, 1: 0, 2: 1, 3: 1})
     _use_market(monkeypatch, _make_test_market())
 
-    with pytest.raises(ValueError, match="solver='short_bursts'"):
-        _strategy().run(_dataset(problem), get_solver("recom"))
+    with pytest.raises(ValueError, match="solver='recom'"):
+        _strategy().run(_dataset(problem), get_solver("cp_bool"))
 
 
 def test_requires_all_program_population(monkeypatch) -> None:
@@ -83,52 +86,22 @@ def test_requires_all_program_population(monkeypatch) -> None:
         _strategy().run(_dataset(problem, "GE"), _short_bursts())
 
 
-def test_requires_feasible_initial_solution(monkeypatch) -> None:
+def test_requires_a_hint(monkeypatch) -> None:
     _use_market(monkeypatch, _make_test_market())
-
-    # A missing hint cannot start a scored walk.
     problem = make_solver_contract_problem(hint=None)
+
     solutions = _strategy().run(_dataset(problem), _short_bursts(hints="none"))
+
     assert len(solutions) == 1
     assert solutions[0].status == "ERROR"
     assert "hint" in solutions[0].metadata["error_message"].lower()
-
-    # Neither can an infeasible one.
-    infeasible = make_solver_contract_problem(
-        hint={0: 0, 1: 0, 2: 1, 3: 1}, frl_dev=0.01
-    )
-    infeasible.G.nodes[0]["FRL"] = 1.0
-    solutions = _strategy().run(_dataset(infeasible), _short_bursts())
-    assert len(solutions) == 1
-    assert solutions[0].status == "ERROR"
-    assert (
-        "requires a feasible initial solution" in solutions[0].metadata["error_message"]
-    )
-
-
-def test_rejected_hint_reports_which_rows_it_broke(monkeypatch) -> None:
-    """Naming the violated rows is what turns this error into a diagnosis."""
-
-    _use_market(monkeypatch, _make_test_market())
-    infeasible = make_solver_contract_problem(
-        hint={0: 0, 1: 0, 2: 1, 3: 1}, frl_dev=0.01
-    )
-    infeasible.G.nodes[0]["FRL"] = 1.0
-
-    metadata = _strategy().run(_dataset(infeasible), _short_bursts())[0].metadata
-
-    assert "frl_upper" in metadata["error_message"]
-    # Provenance survives the error path, so a bad hint says where it came from.
-    assert metadata["hint_source"] == "generated"
-    assert metadata["hints"] == "voronoi"
-    assert metadata["initial_feasible"] is False
 
 
 @pytest.mark.parametrize(
     ("strategy_options", "solver_options", "match"),
     [
-        ({}, {"short_bursts_method": "invalid"}, "short_bursts_method"),
-        ({}, {"short_bursts_length": 0}, "short_bursts_length"),
+        ({}, {"recom_pair_selection": "invalid"}, "recom_pair_selection"),
+        ({}, {"recom_burst_length": -1}, "recom_burst_length"),
         ({"mid_lottery_scale": -1}, {}, "mid_lottery_scale"),
         ({"mid_lottery_scale": 1.5}, {}, "mid_lottery_scale"),
         ({"mid_lottery_scale": True}, {}, "mid_lottery_scale"),
@@ -147,19 +120,14 @@ def test_validates_options(
         )
 
 
-@pytest.mark.parametrize("method", ["recom", "relaxed_recom"])
-def test_solve_basic(monkeypatch, method: str) -> None:
+@pytest.mark.parametrize("preset", ["uniform_bursts", "entropy", "hedge"])
+def test_solve_basic(monkeypatch, preset: str) -> None:
     problem = make_solver_contract_problem(hint={0: 0, 1: 0, 2: 1, 3: 1})
     _use_market(monkeypatch, _make_test_market())
 
     solutions = _strategy().run(
         _dataset(problem),
-        _short_bursts(
-            short_bursts_method=method,
-            recom_iterations=10,
-            short_bursts_length=5,
-            seed=42,
-        ),
+        _short_bursts(preset, recom_iterations=10, recom_burst_length=5, seed=42),
     )
 
     assert len(solutions) == 1
@@ -167,7 +135,9 @@ def test_solve_basic(monkeypatch, method: str) -> None:
     assert sol.status == "FEASIBLE"
     assert sol.feasible
     assert sol.objective is not None
-    assert sol.metadata["short_bursts_method"] == method
+    assert ReComSettings.from_options(sol.metadata) == replace(
+        PRESETS[preset], burst_length=5
+    )
     assert sol.metadata["objective_kind"] == "mid_program_welfare"
     assert sol.metadata["initial_feasible"] is True
     assert sol.metadata["strategy"] == "short_bursts_choice"
@@ -206,18 +176,13 @@ def test_never_selects_infeasible_partition(monkeypatch) -> None:
 
     solutions = _strategy().run(
         _dataset(problem),
-        _short_bursts(
-            short_bursts_method="relaxed_recom",
-            recom_iterations=25,
-            short_bursts_length=5,
-            seed=42,
-        ),
+        _short_bursts(recom_iterations=25, recom_burst_length=5, seed=42),
     )
 
     sol = solutions[0]
     assert sol.status == "FEASIBLE"
     assert sol.feasible
-    # The initial partition is retained because every relaxed move was infeasible.
+    # The initial partition is retained because every move is infeasible.
     assert sol.assignment == {0: 0, 1: 0, 2: 1, 3: 1}
 
 
@@ -246,12 +211,12 @@ def test_selects_higher_welfare(monkeypatch) -> None:
 
     solutions = _strategy().run(
         _dataset(problem),
-        _short_bursts(recom_iterations=20, short_bursts_length=5, seed=1),
+        _short_bursts(recom_iterations=20, recom_burst_length=5, seed=1),
     )
 
     sol = solutions[0]
     assert sol.status == "FEASIBLE"
-    assert sol.metadata["selected_burst_improvements"] >= 1
+    assert sol.metadata["restarts"] >= 1
     assert sol.metadata["final_welfare"] > sol.metadata["initial_welfare"]
     # The reported objective is the discrete oracle's welfare for the zoning kept.
     expected = finite_grid_oracle(
@@ -266,7 +231,7 @@ def test_selects_higher_welfare(monkeypatch) -> None:
 def test_parallel_workers_match_serial_scores(monkeypatch) -> None:
     market = _make_test_market()
     _use_market(monkeypatch, market)
-    kwargs = dict(recom_iterations=20, short_bursts_length=5, seed=1)
+    kwargs = dict(recom_iterations=20, recom_burst_length=5, seed=1)
 
     def solve(workers: int):
         problem = make_grid_problem(

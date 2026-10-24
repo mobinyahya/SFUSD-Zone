@@ -92,31 +92,23 @@ tasks:
   # --- adaptive short bursts at Block_0, 1 core ---
   - &asb
     strategy: single
-    solver: adaptive_short_bursts
+    solver: recom
     levels: ['Block_0']
     solve_time_limits: [3600]
     hints: voronoi
     workers: 1
     recom_iterations: -1
-    adaptive_short_bursts_objective: cut_edges
-    adaptive_short_bursts_pair_selector: lagrangian_softmax
-    adaptive_short_bursts_temperature: 1.0
-    short_bursts_length: 25
+    recom_objective: cut_edges
+    recom_burst_length: 25
     seed: 1
   - <<: *asb
     seed: 2
   - <<: *asb
-    short_bursts_length: 100
+    recom_burst_length: 100
     seed: 1
   - <<: *asb
-    short_bursts_length: 100
+    recom_burst_length: 100
     seed: 2
-  - <<: *asb
-    adaptive_short_bursts_temperature: 1.15
-    seed: 1
-  - <<: *asb
-    adaptive_short_bursts_lr: 0.3
-    seed: 1
 
 execution:
   output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_v1'

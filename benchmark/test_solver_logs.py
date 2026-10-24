@@ -18,9 +18,10 @@ from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
 from optimization.solvers import get_solver
 from optimization.solvers.heuristic_log import HeuristicProgressLog
+from optimization.solvers.recom_policy import PRESETS
 from optimization.tests.synthetic import make_grid_graph
 
-HEURISTIC_SOLVERS = ("recom", "relaxed_recom", "short_bursts", "adaptive_short_bursts")
+RECOM_PRESETS = ("chain", "uniform_bursts", "entropy", "hedge", "dual")
 
 GUROBI_LOG = """Gurobi Optimizer version 11.0.0 build v11.0.0rc2 (mac64[arm])
 
@@ -102,7 +103,7 @@ def test_log_records_only_strict_improvements(tmp_path) -> None:
 def test_infeasible_states_improve_by_unweighted_lagrangian(tmp_path) -> None:
     log = HeuristicProgressLog(
         str(tmp_path / "progress.jsonl"),
-        solver="relaxed_recom",
+        solver="recom",
         level="Block_2",
         labels=("capacity_upper", "frl_upper"),
         start=0.0,
@@ -111,9 +112,7 @@ def test_infeasible_states_improve_by_unweighted_lagrangian(tmp_path) -> None:
     assert log.record(feasible=False, boundary_cost=10.0, violations=(3.0, 4.0))
     # Cheaper cut but far worse residuals: a higher Lagrangian, so no record.
     assert not log.record(feasible=False, boundary_cost=1.0, violations=(9.0, 0.0))
-    assert log.record(
-        feasible=False, boundary_cost=10.0, violations=(1.0, 1.0), weights=(2.0, 3.0)
-    )
+    assert log.record(feasible=False, boundary_cost=10.0, violations=(1.0, 1.0))
     log.finish()
 
     records = [
@@ -123,9 +122,7 @@ def test_infeasible_states_improve_by_unweighted_lagrangian(tmp_path) -> None:
     first, second = records[1], records[2]
     assert first["unweighted_lagrangian"] == pytest.approx(10.0 + 9.0 + 16.0)
     assert first["penalties"] == {"capacity_upper": 3.0, "frl_upper": 4.0}
-    assert "weighted_lagrangian" not in first
     assert second["unweighted_lagrangian"] == pytest.approx(12.0)
-    assert second["weighted_lagrangian"] == pytest.approx(10.0 + 2.0 + 3.0)
 
 
 def test_log_rejects_mismatched_violation_length(tmp_path) -> None:
@@ -143,10 +140,11 @@ def test_log_rejects_mismatched_violation_length(tmp_path) -> None:
 # ---------------------------------------------------------------------- #
 # solver integration
 # ---------------------------------------------------------------------- #
-@pytest.mark.parametrize("solver_name", HEURISTIC_SOLVERS)
-def test_heuristic_solvers_write_a_progress_log(solver_name: str, tmp_path) -> None:
+@pytest.mark.parametrize("preset", RECOM_PRESETS)
+def test_recom_writes_a_progress_log(preset: str, tmp_path) -> None:
     solution = get_solver(
-        solver_name,
+        "recom",
+        **PRESETS[preset].as_options(),
         save_solver_logs=True,
         output_dir=str(tmp_path),
         recom_iterations=200,
@@ -157,7 +155,7 @@ def test_heuristic_solvers_write_a_progress_log(solver_name: str, tmp_path) -> N
     log_path = solution.metadata["solver_log_path"]
     assert solution.metadata["solver_log_format"] == "jsonl"
     assert log_path == os.path.join(
-        "solver_logs", f"solver_00_BlockGroup_0_{solver_name}.jsonl"
+        "solver_logs", "solver_00_BlockGroup_0_recom.jsonl"
     )
 
     rows = parse_recom_log(str(tmp_path / log_path))
@@ -190,9 +188,6 @@ def test_heuristic_solvers_write_a_progress_log(solver_name: str, tmp_path) -> N
     assert labels <= {
         key[len("pen_") :] for key in improvements[0] if key.startswith("pen_")
     }
-    if solver_name == "adaptive_short_bursts":
-        assert improvements[0]["weighted_lagrangian"] is not None
-        assert any(key.startswith("w_") for key in improvements[0])
 
 
 def test_no_progress_log_without_save_solver_logs(tmp_path) -> None:
@@ -230,10 +225,10 @@ def test_parse_log_name_handles_units_with_underscores() -> None:
         "level": "Block_2",
         "solver": "cp_bool",
     }
-    assert parse_log_name("solver_00_attendance_area_1_relaxed_recom.jsonl") == {
+    assert parse_log_name("solver_00_attendance_area_1_recom.jsonl") == {
         "log_index": 0,
         "level": "attendance_area_1",
-        "solver": "relaxed_recom",
+        "solver": "recom",
     }
 
 
@@ -270,7 +265,8 @@ def test_collect_merges_formats_into_one_frame(tmp_path) -> None:
     (run_dir / "solver_logs" / "solver_01_Block_2_mip.log").write_text(GUROBI_LOG)
 
     get_solver(
-        "relaxed_recom",
+        "recom",
+        **PRESETS["uniform_bursts"].as_options(),
         save_solver_logs=True,
         output_dir=str(run_dir),
         recom_iterations=100,
@@ -281,12 +277,12 @@ def test_collect_merges_formats_into_one_frame(tmp_path) -> None:
     frame = collect(str(tmp_path), out_csv="solver_progress.csv")
 
     assert (tmp_path / "solver_progress.csv").exists()
-    assert set(frame["solver"]) == {"mip", "relaxed_recom"}
+    assert set(frame["solver"]) == {"mip", "recom"}
     assert set(frame["log_format"]) == {"gurobi", "recom"}
     assert set(frame["task_id"]) == {"t1"}
     # The unified columns: heuristics fill incumbent only, the MIP fills both.
     mip = frame[frame["solver"] == "mip"]
-    heuristic = frame[frame["solver"] == "relaxed_recom"]
+    heuristic = frame[frame["solver"] == "recom"]
     assert mip["bound"].notna().any()
     assert heuristic["bound"].isna().all()
     assert heuristic["boundary_cost"].notna().any()

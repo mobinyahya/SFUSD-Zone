@@ -64,7 +64,7 @@ def test_methods_minimize_and_report_the_same_physical_cost(method, objective, u
         options={
             "solve_time_limit": 3,
             "recom_iterations": 30,
-            "short_bursts_length": 5,
+            "recom_burst_length": 5,
             "workers": 1,
             "seed": 17,
             "hints": "none",
@@ -129,7 +129,7 @@ def test_squared_distance_name_reuses_existing_area_and_student_weights(method):
     underlying = (
         effective.compactness_objective
         if method in {"cp_bool", "cp_int", "mip"}
-        else effective.adaptive_short_bursts_objective
+        else effective.recom_objective
     )
     assert underlying == "school_distance"
     assert effective.school_distance_area_weight == 0.75

@@ -381,7 +381,7 @@ def test_named_heuristic_distance_objectives_load_only_needed_geometry(
         steps=[
             {
                 "level": "Block_0",
-                "method": "adaptive_short_bursts",
+                "method": "recom",
                 "objective": objective,
             }
         ],

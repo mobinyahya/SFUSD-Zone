@@ -23,9 +23,6 @@ optimization_defaults:
   carry_over_compute: true
   recom_iterations: -1
   boundary_radius: 1
-  short_bursts_method: relaxed_recom
-  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
-  adaptive_short_bursts_temperature: 1.1
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
@@ -43,19 +40,33 @@ tasks:
   - solver: 'mip'
     solve_time_limits: [[600], [1800]]
 
+  # ReCom: the classic rejection chain, an unrejected chain, uniform short
+  # bursts, and the default adaptive short bursts (entropy temperature).
   - solver: 'recom'
     workers: 1
     solve_time_limits: [[600], [1800]]
+    recom_burst_length: 0
+    recom_reject_infeasible: true
+    recom_pair_selection: uniform
+    recom_cut_selection: uniform
+    recom_entropy: null
 
-  - solver: 'relaxed_recom'
+  - solver: 'recom'
     workers: 1
     solve_time_limits: [[600], [1800]]
+    recom_burst_length: 0
+    recom_pair_selection: uniform
+    recom_cut_selection: uniform
+    recom_entropy: null
 
-  - solver: 'short_bursts'
+  - solver: 'recom'
     workers: 1
     solve_time_limits: [[600], [1800]]
+    recom_pair_selection: uniform
+    recom_cut_selection: uniform
+    recom_entropy: null
 
-  - solver: 'adaptive_short_bursts'
+  - solver: 'recom'
     workers: 1
     solve_time_limits: [[600], [1800]]
 

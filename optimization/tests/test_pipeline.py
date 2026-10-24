@@ -88,9 +88,6 @@ def test_typed_and_yaml_steps_share_default_input_semantics():
         "cp_bool",
         "cp_int",
         "recom",
-        "relaxed_recom",
-        "short_bursts",
-        "adaptive_short_bursts",
     ],
 )
 def test_pipeline_solves_and_preserves_hard_inputs(method):
@@ -107,7 +104,7 @@ def test_pipeline_solves_and_preserves_hard_inputs(method):
                 "level": "BlockGroup_0",
                 "method": method,
                 "time_limit": 1,
-                "options": {"recom_iterations": 4, "short_bursts_length": 2},
+                "options": {"recom_iterations": 4, "recom_burst_length": 2},
                 "constraints": {"frl_dev": 0.2},
                 "inputs": [{"mode": "hint"}, {"mode": "assign", "nodes": [1, 4, 10]}],
             },
