@@ -1,0 +1,84 @@
+# New attendance areas on the 2026-27 transfer
+#
+# One market for both groups: the 3,855 kindergarten applicants of
+# student_2627.csv (Main Round applicants plus TK promotes, see
+# loaders/README.md) against programs_withMissionBay_2627.csv (162 programs,
+# 4,306 seats, Mission Bay 1731 at GE 69 / MM 5 / AF 0). Optimization draws
+# zones over those students; assignment simulates the restrictive
+# attendance-area policy on them. Read sfusd_transfer_report_2627.md beside the
+# cleaned tables before trusting a number from this year.
+#
+# Which schools own an attendance area is the capacity workbook's call: a
+# workbook capacity scenario (`ideal_baseline_2627` and its variants) sets every
+# school table's `category`, for both groups, and nothing else overrides it.
+# Under `ideal_baseline_2627` that is 59 attendance-area schools: the 58 of the
+# 2013 map plus Mission Bay (1731). The 14 citywide schools stay open to every
+# zone (`include_citywide_zoning: false`, `include_citywide_choice_opt: true`).
+# Left at `capacity_scenario: programs`, the school tables' own `category`
+# column stands and gives the same 59.
+#
+# Assignment reads each student's area from the district's
+# `idschoolattendance` (the 2013 map). 27 students have it blank -- all TK
+# promotes who never filed a Main Round application -- and
+# `assignment.attendance_area_fill` fills those from their home location on the
+# 2013 map instead (`attendance_area_source: map`). A district value is never
+# overwritten: where both exist they agree for 3,791 of 3,828 students
+# (99.0%). Nobody lives in a Mission Bay area -- it shares Webster's (497)
+# polygon, and the fill names that polygon 497 too -- so until a generated
+# zoning replaces the map, restrict-zone leaves 1731-GE-KG open to everyone
+# (with a warning), exactly like a citywide program.
+#
+# The optimization and assignment school tables differ
+# (schools_table_for_zone_development_updated.csv carries attendance_area,
+# cap_lb, scores and the 910-912 placeholders); coordinates and categories
+# agree on the 73 schools with 2026-27 programs. Both tables are 2010-vintage
+# and are remapped to 2020 Census geography from lat/lon.
+#
+# The choice-model utility estimate is the 2023-24 one and covers no 2026-27
+# student, so welfare objectives need `mid_preference_source: stated`.
+
+id: attendance-areas-2627
+
+sources:
+  optimization.schools: optimization.schools.current
+  optimization.programs: assignment.programs.2627.mission_bay
+  optimization.centroids: bundled.centroids
+  assignment.program_codes: assignment.program_codes
+  assignment.estimate: utility.2324.exp8
+  assignment.attendance_areas: assignment.attendance_areas.2013
+  assignment.attendance_area_fill: assignment.attendance_areas.2013
+  assignment.zones:
+    Con1: zones.common.con1
+  assignment.ctip:
+    block: ctip.array.block.2024
+    blockgroup: ctip.array.blockgroup.2024
+  choice.estimate: utility.2324.exp8
+
+filters:
+  optimization:
+    years: ["2627"]
+    grades: [KG]
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    program_population: All
+    capacity_scenario: programs
+    include_k8: false
+    include_citywide_zoning: false
+    include_citywide_choice_opt: true
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore
+  assignment:
+    year: "2627"
+    grade: KG
+    student_population: applicant
+    rounds: [1]
+    special_programs: include
+    capacity_profile: default
+    capacity_scenario: programs
+    include_mission_bay: true
+    geography_vintage: "2020"
+    frl_estimate: updated_2526
+    outside_district_students: ignore

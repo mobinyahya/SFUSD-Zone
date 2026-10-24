@@ -175,6 +175,7 @@ class Zones:
             return
 
         self.get_area_id2ge_program_id_dict()
+        self.citywide_program_ids = []
         lp_area_id2prog_list = {}
         if lp_zone_path_list is not None:
             for zone_path in lp_zone_path_list:
@@ -306,6 +307,14 @@ class Zones:
             vec[prog_idxs] = 1
             area2progs_vec[k] = np.array(vec, dtype=int)
         self.area2progs_vec = area2progs_vec
+        # What a student in no zone holds: the programs every zone was given
+        # because no zone owns them, which is empty unless ``restrict-zone``
+        # spread them (see :meth:`add_remaining_schools_to_all_zones`).
+        unzoned = np.zeros(len(self.programs.program_df.index), dtype=int)
+        citywide = getattr(self, "citywide_program_ids", [])
+        if citywide:
+            unzoned[[x - 1 for x in self.programs.index_list(citywide)]] = 1
+        self.unzoned_progs_vec = unzoned
 
     def programs_for_area_id(
         self,
@@ -333,10 +342,17 @@ class Zones:
         if not hasattr(self, "area2progs_vec"):
             self._update_programs_for_area()
         if self.config["zone-building-blocks"] == "attendance_area":
+            # A student with no attendance area on file (or one no zone holds)
+            # keeps the citywide programs every zone holds, rather than being
+            # locked out of every program under ``restrict-zone``.
             return (
                 self.area2progs_vec[attendance_area]
                 if attendance_area in self.area2progs_vec
-                else np.zeros(len(self.programs.program_df.index))
+                else getattr(
+                    self,
+                    "unzoned_progs_vec",
+                    np.zeros(len(self.programs.program_df.index), dtype=int),
+                ).copy()
             )
         if self.config["zone-building-blocks"] == "home_based":
             return self.area2progs_vec[str(studentno)]
@@ -401,6 +417,7 @@ class Zones:
                 "open to every zone, like a citywide program.",
                 stacklevel=2,
             )
+        self.citywide_program_ids = sorted(remaining)
         for program in list(remaining):
             for area_id in self.area_id2prog_list:
                 self.area_id2prog_list[area_id].append(program)

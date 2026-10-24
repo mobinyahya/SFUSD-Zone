@@ -549,3 +549,21 @@ def test_attendance_school_without_students_stays_open_to_every_zone(tmp_path):
     assert 999 not in zones.area2zone
     assert f"999{PROGRAM_PREFIX}" in zones.area_id2prog_list[101]
     assert f"999{PROGRAM_PREFIX}" in zones.area_id2prog_list[102]
+
+
+@pytest.mark.parametrize("area", [np.nan, 0, 555])
+def test_student_with_no_zoned_attendance_area_keeps_citywide_programs(tmp_path, area):
+    # 999 has no students, so no zone owns it and restrict-zone spreads it to
+    # every zone. A student whose area is blank or held by no zone must keep
+    # that citywide set instead of being shut out of every program.
+    zones, zone_file = _mission_bay_zones(tmp_path, [101, 102])
+    zones.set_zone(zone_file)
+    with pytest.warns(UserWarning, match=r"No zone owns"):
+        zones.set_area_id2prog_list_dict(remaining_programs_citywide=True)
+
+    np.testing.assert_array_equal(zones.programs_for_area_id(area, 0, 0, 1), [0, 0, 1])
+    np.testing.assert_array_equal(zones.programs_for_area_id(101, 0, 0, 1), [1, 0, 1])
+
+    # Without restrict-zone nothing is spread, so the student holds nothing.
+    zones.set_area_id2prog_list_dict(remaining_programs_citywide=False)
+    np.testing.assert_array_equal(zones.programs_for_area_id(area, 0, 0, 1), [0, 0, 0])

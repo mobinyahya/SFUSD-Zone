@@ -213,7 +213,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 
 | Parameter | Example | Description |
 |---|---|---|
-| `centroids_type` | `'5-zone-AF'` | Zone count and centroid configuration |
+| `centroids_type` | `'5-zone-AF'` | Zone count and centroid configuration; `all` makes every school the zoning problem holds a centroid (the attendance-area schools, plus citywide ones under `include_citywide_zoning`), in ascending id order |
 | `frl_dev` | `0.3` | Max FRL deviation from district average |
 | `racial_dev` | `0.3` | Max racial/ethnic deviation |
 | `solver` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |

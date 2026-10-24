@@ -75,6 +75,49 @@ def test_add_aa_schools_appends_missing_ge_program_to_real_preferences():
     np.testing.assert_array_equal(generator.pref_length, [3, 2, 1])
 
 
+def test_add_aa_schools_uses_the_generated_zone_school_not_the_district_area():
+    initial_preferences = np.array(
+        [
+            [2, 4, 0, 0],
+            [3, 2, 0, 0],
+            [4, 0, 0, 0],
+        ]
+    )
+    market = _preference_market(
+        {"add_aa_schools": True, "grade": "KG", "zone-building-blocks": "block"},
+        initial_preferences,
+    )
+    # District areas are 101, 102 and 999, but the generated zoning gives
+    # student 10 the zone owning 102 and student 11 the one owning 101;
+    # student 12's zone owns no school. 200 is citywide and in every zone.
+    market.zones = SimpleNamespace(
+        area_id2prog_list={},
+        citywide_program_ids=["200-GE-KG"],
+        zone_priority_matrix=np.array(
+            [
+                [0, 1, 1, 0],
+                [1, 1, 0, 1],
+                [0, 1, 0, 0],
+            ]
+        ),
+    )
+    generator = PreferenceGenerator(market)
+
+    preferences = generator.initialize_real_preferences(designate=False)
+
+    np.testing.assert_array_equal(
+        preferences,
+        np.array(
+            [
+                [2, 4, 3, 0],
+                [3, 2, 1, 0],
+                [4, 0, 0, 0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(generator.pref_length, [3, 3, 1])
+
+
 def test_add_aa_schools_applies_to_utility_model_preferences():
     initial_preferences = np.array(
         [

@@ -5,7 +5,9 @@ import pytest
 
 from loaders import ResolvedSource, SPECIAL_PROGRAMS
 from loaders.tables import (
+    ATTENDANCE_AREA_FILL_ROLE,
     apply_capacity_scenario,
+    fill_attendance_areas,
     load_program_records,
     load_school_records,
     load_student_records,
@@ -1105,3 +1107,84 @@ def test_programs_carry_attendance_area_seats_from_the_scenario_or_the_school(
         scenario_factory(sources, {"assignment": {}}, scenario_id="plain")
     )
     assert plain["attendance_area_capacity"].tolist() == [40, 0, 0, 0, 22]
+
+def _fill_scenario(tmp_path, scenario_factory, *, bind=True):
+    """Two unlabelled polygons: A holds school 20, B holds schools 30 and 31."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    areas = tmp_path / "areas.shp"
+    gpd.GeoDataFrame(
+        geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs="EPSG:4326"
+    ).to_file(areas)
+    schools = tmp_path / "schools.csv"
+    pd.DataFrame(
+        {
+            "school_id": [20, 30, 31, 40],
+            "category": ["Attendance", "Attendance", "Attendance", "Citywide"],
+            "lat": [0.5, 0.5, 0.6, 0.4],
+            "lon": [0.5, 1.5, 1.6, 0.4],
+        }
+    ).to_csv(schools, index=False)
+    sources = {"assignment.schools": {"path": str(schools)}}
+    if bind:
+        sources[ATTENDANCE_AREA_FILL_ROLE] = {"path": str(areas)}
+    return scenario_factory(sources, {"assignment": {}}, scenario_id=f"fill{bind}")
+
+
+def test_blank_attendance_areas_are_filled_from_the_map_only(
+    tmp_path, scenario_factory
+):
+    students = pd.DataFrame(
+        {
+            "studentno": [1, 2, 3, 4, 5],
+            # 1 lives in polygon B but the district says 20: the record wins.
+            "idschoolattendance": [20, None, 30, None, None],
+            "latitude": [0.5, 0.5, 0.5, 5.0, 0.5],
+            "longitude": [1.5, 1.5, 1.5, 5.0, 0.5],
+        }
+    )
+    scenario = _fill_scenario(tmp_path, scenario_factory)
+
+    with pytest.warns(UserWarning, match="Filled 2 blank .*; 1 remain blank"):
+        filled = fill_attendance_areas(students, scenario)
+
+    # B holds 30 and 31; only 30 is anyone's district area, so B is 30.
+    assert filled["idschoolattendance"].tolist()[:3] == [20, 30, 30]
+    assert pd.isna(filled["idschoolattendance"].iloc[3])
+    assert filled["idschoolattendance"].iloc[4] == 20
+    assert filled["attendance_area_source"].fillna("none").tolist() == [
+        "district",
+        "map",
+        "district",
+        "none",
+        "map",
+    ]
+    # Caches keyed on the students alone must see the map and the schools
+    # that name its polygons.
+    assert {ATTENDANCE_AREA_FILL_ROLE, "assignment.schools"} <= set(
+        scenario.source_manifest(["assignment.students"])["sources"]
+    )
+
+    unbound = _fill_scenario(tmp_path, scenario_factory, bind=False)
+    pd.testing.assert_frame_equal(fill_attendance_areas(students, unbound), students)
+    assert (
+        "assignment.schools"
+        not in unbound.source_manifest(["assignment.students"])["sources"]
+    )
+
+
+def test_attendance_area_fill_rejects_an_unresolvable_polygon(
+    tmp_path, scenario_factory
+):
+    # Nobody's district area is 30 or 31, so polygon B cannot be named.
+    students = pd.DataFrame(
+        {
+            "studentno": [1, 2],
+            "idschoolattendance": [20, None],
+            "latitude": [0.5, 0.5],
+            "longitude": [0.5, 1.5],
+        }
+    )
+    with pytest.raises(ValueError, match=r"holds schools \[30, 31\]"):
+        fill_attendance_areas(students, _fill_scenario(tmp_path, scenario_factory))

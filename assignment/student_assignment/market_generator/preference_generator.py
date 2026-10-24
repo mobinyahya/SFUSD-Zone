@@ -100,29 +100,71 @@ class PreferenceGenerator:
     def _add_attendance_area_schools_to_preferences(
         self, prefs: np.ndarray
     ) -> np.ndarray:
-        """Append each student's attendance-area GE program when not already ranked."""
+        """Append each student's attendance-area GE program when not already ranked.
+
+        Under the attendance-area map that is the GE program of the student's
+        district ``idschoolattendance``. Under any other zone building block
+        (a generated zoning) the district's area is the old map, so it is the
+        GE program of each school the student's zone owns -- one, when every
+        zone holds exactly one school -- appended in program order.
+        """
         combined_prefs = prefs.copy()
         pref_lengths = np.count_nonzero(combined_prefs, axis=1)
-        attendance_areas = self.market.students.attendance_area
-        grade = self.market.grade
+        zone_programs = self._zone_owned_ge_programs()
 
         for student_idx, studentno in self.market.students.idx2studentno.items():
-            attendance_area = attendance_areas.get(studentno, 0)
-            program_idx = self.market.programs.indices.get(
-                f"{attendance_area}-GE-{grade}"
-            )
-            pref_length = pref_lengths[student_idx]
-            if (
-                program_idx is None
-                or program_idx in combined_prefs[student_idx, :pref_length]
-                or pref_length >= combined_prefs.shape[1]
-            ):
-                continue
-            combined_prefs[student_idx, pref_length] = program_idx
-            pref_lengths[student_idx] += 1
+            for program_idx in zone_programs(student_idx, studentno):
+                pref_length = pref_lengths[student_idx]
+                if (
+                    program_idx in combined_prefs[student_idx, :pref_length]
+                    or pref_length >= combined_prefs.shape[1]
+                ):
+                    continue
+                combined_prefs[student_idx, pref_length] = program_idx
+                pref_lengths[student_idx] += 1
 
         self.pref_length = pref_lengths
         return combined_prefs
+
+    def _zone_owned_ge_programs(self):
+        """Return ``(student_idx, studentno) -> program indices`` of the
+        student's own area GE programs, as :meth:`_add_attendance_area_schools_to_preferences`
+        defines them."""
+        grade = self.market.grade
+        indices = self.market.programs.indices
+        zones = getattr(self.market, "zones", None)
+        generated = (
+            zones is not None
+            and hasattr(zones, "area_id2prog_list")
+            and self.market.config.get("zone-building-blocks", "attendance_area")
+            != "attendance_area"
+        )
+        if not generated:
+            attendance_areas = self.market.students.attendance_area
+
+            def from_attendance_area(student_idx, studentno):
+                program_idx = indices.get(
+                    f"{attendance_areas.get(studentno, 0)}-GE-{grade}"
+                )
+                return [] if program_idx is None else [program_idx]
+
+            return from_attendance_area
+
+        citywide = set(getattr(zones, "citywide_program_ids", []))
+        owned = np.array(
+            [
+                program_idx - 1
+                for code, program_idx in sorted(indices.items(), key=lambda x: x[1])
+                if code.split("-")[1:] == ["GE", grade] and code not in citywide
+            ],
+            dtype=int,
+        )
+        in_zone = zones.zone_priority_matrix
+
+        def from_zone(student_idx, studentno):
+            return [int(column) + 1 for column in owned[in_zone[student_idx, owned] > 0]]
+
+        return from_zone
 
     def _drop_preferences_below_attendance_area(self, prefs: np.ndarray) -> np.ndarray:
         """Drop programs ranked after each student's attendance-area GE program."""

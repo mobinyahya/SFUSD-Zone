@@ -510,3 +510,25 @@ def test_pipeline_area_hint_cache_accounts_for_file_and_centroids(
     assert dataset.area_hint_for("Block_0", graph, [0], path="first.json")[0] == 0
     dataset.area_hint_for("Block_0", graph, [0], path="second.json")
     assert loaded == ["first.json", "second.json"]
+
+
+def test_all_centroids_are_every_zoning_school_in_id_order(tmp_path, monkeypatch):
+    dataset, _, _ = _pipeline_dataset(tmp_path, monkeypatch, centroids_type="all")
+    monkeypatch.setattr(
+        loaders,
+        "load_schools",
+        lambda ingest: pd.DataFrame({"school_id": [200, 100]}),
+    )
+
+    def refuse(*args):
+        raise AssertionError("'all' must not read the centroid file")
+
+    monkeypatch.setattr(loaders, "load_centroid_schools", refuse)
+    assert dataset.centroid_school_ids() == [100, 200]
+    assert dataset.centroids_for("Block_0") == [0, 1]
+    assert dataset.problem_for("Block_0").centroid_school_ids == [100, 200]
+
+
+def test_all_is_not_a_centroid_file_entry():
+    with pytest.raises(ValueError, match="graph's school set"):
+        loaders.load_centroid_schools(loaders.ALL_SCHOOLS_CENTROIDS)

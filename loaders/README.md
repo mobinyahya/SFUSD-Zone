@@ -275,7 +275,14 @@ attendance-area school code, matched against the student table's
 `idschoolattendance`) and `Percent of residents who want this program` (a
 percentage such as `89.6%`). `ge_interest_esaa` is the School Reorg "GE
 Interest by ESAA of Residence" table: 58 kindergarten GE attendance-area
-schools, stored at `Data/enrollment_share/ge_interest_by_esaa.csv`.
+schools, stored at `Data/enrollment_share/ge_interest_by_esaa.csv`, plus one
+row added by hand: Mission Bay at 90.0%, a manual estimate the district
+table does not contain (its `School` reads "MANUAL ESTIMATE"). The district's
+own file is kept beside it as `ge_interest_by_esaa.district_original.csv`.
+The row is keyed by the legacy placeholder `999`, and share codes are not
+aliased to `1731`. That changes nothing today: shares are matched on the
+student's *district* attendance area, and no student's `idschoolattendance` is
+Mission Bay (it shares Webster's 2013 area).
 
 The share changes only the capacity (`overage`/`shortage`) rows. Each student
 counts for their area's share there, so a zone's seats must lie within
@@ -695,6 +702,40 @@ Two consequences worth knowing:
 Adding or renaming any selector changes every derived cache key, because
 `DataScenario.source_manifest` hashes the whole filter block into each cache
 namespace. The first run after this split rebuilds graphs and student tables.
+
+### Which schools own an attendance area
+
+Both selectors read *citywide* off each school table's `category` column
+(`Attendance` or `Citywide`). A capacity scenario from the district's workbook
+sets that column (see "Capacity scenarios" below): every school it lists is
+`Attendance` exactly when it has attendance-area seats, in every school table
+`load_school_records` reads, for both groups. The optimization graph
+(`include_citywide_zoning`), the welfare markets' citywide set, and the
+assignment zones therefore agree on which schools own an area, and the
+workbook is the only place that decides it.
+
+Assignment reads each student's area from the student table's
+`idschoolattendance`. A student whose area is a school the selected scenario
+makes citywide belongs to no attendance-area zone; under `restrict-zone` such
+a student keeps only the programs every zone holds (the citywide set).
+
+### Filling blank attendance areas from a map
+
+The optional role `assignment.attendance_area_fill` names an attendance-area
+map (polygons). When it is bound, the assignment loader fills each blank
+`idschoolattendance` with the area containing the student's
+`latitude`/`longitude` and records `attendance_area_source` (`district`,
+`map`, or blank for a student no polygon contains). A district value is never
+overwritten. The 2013 map (`assignment.attendance_areas.2013`) has no
+attribute table, so each polygon is named by the `Attendance` school located
+inside it. A polygon holding two, such as Webster (497) and Mission Bay (1731),
+is named by the one some student's district record already uses, and any other
+ambiguity fails. On the 2026-27 applicants the map reproduces the district's
+area for 3,791 of 3,828 students (99.0%) and fills all 27 blanks, all of them
+TK promotes without a Main Round application. When the role is bound, a
+manifest naming `assignment.students` also carries the map and
+`assignment.schools`, so every cache keyed on the students sees them.
+`attendance-areas-2627` binds it.
 
 `program_population` and `capacity_scenario` accept any non-empty string at
 schema validation. Values other than the special cases above must be supported

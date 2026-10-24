@@ -108,6 +108,13 @@ class SolutionInput:
     selects its complement. The band includes both endpoints of every cut edge
     and extends ``radius`` graph hops. ``nodes`` intersects this selection with
     explicit target graph node indices. Hard assignments never become hints.
+
+    A hard assignment the CP contiguity rows cannot honor -- the block has no
+    same-zone neighbor strictly closer to its school, which a ReCom zoning
+    need not give -- is loosened as in the recursive strategy
+    (``relax_unsupported_candidates``): the block becomes free and each block
+    on its closer-neighbor paths keeps its own zone plus that one. Widened
+    blocks are saved per stage as ``pipeline_candidates_areas``.
     """
 
     source: str = "previous"

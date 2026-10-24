@@ -1,6 +1,7 @@
 """Pipeline contracts across real solver calls and persisted stage semantics."""
 
 from dataclasses import asdict, replace
+from types import SimpleNamespace
 
 import networkx as nx
 import pytest
@@ -10,7 +11,10 @@ from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.pipeline import SolutionInput, SolveStep, step_config
 from optimization.solution import ZoneSolution
-from optimization.strategies.pipeline import selected_nodes
+from optimization.strategies.pipeline import (
+    relax_unsupported_assignments,
+    selected_nodes,
+)
 from optimization.tests.synthetic import make_grid_problem
 
 
@@ -227,6 +231,50 @@ def test_saved_hard_assignments_survive_node_renumbering():
         },
     )
     assert problem.fixed == {14: 0}
+
+
+def test_unsupported_hard_inputs_are_widened_along_closer_paths():
+    # Block 1 (zone 0) has no zone-0 neighbor closer to school 100, so its
+    # support has to run through 2 and 3, which zone 1 holds. Those keep zone
+    # 1 and gain zone 0; 1 itself falls back to distance candidacy.
+    G = nx.Graph([(0, 1), (1, 2), (2, 3), (3, 0), (2, 4), (3, 4)])
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset({3})},
+        1: {100: frozenset({2}), 200: frozenset({2})},
+        2: {100: frozenset({3}), 200: frozenset({4})},
+        3: {100: frozenset({0}), 200: frozenset({4})},
+        4: {100: frozenset({3}), 200: frozenset()},
+    }
+    problem = SimpleNamespace(G=G, centroids=[0, 4], centroid_school_ids=[100, 200])
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1, 4: 1}
+
+    fixed, candidates = relax_unsupported_assignments(
+        problem, {1: 0, 2: 1, 3: 1}, assignment
+    )
+
+    assert fixed == {}
+    assert candidates == {2: {0, 1}, 3: {0, 1}}
+
+
+def test_saved_widened_inputs_survive_node_renumbering():
+    config = _config(method="cp_bool")
+    dataset = MemoryDataset(config)
+    graph = dataset.base.G
+    old_area = graph.nodes[1]["area_id"]
+    dataset.base = replace(
+        dataset.base,
+        G=nx.relabel_nodes(graph, {n: 15 - n for n in graph}),
+        centroids=[15, 0],
+    )
+    problem = config.make_strategy().problem_for_stage(
+        dataset,
+        {
+            "pipeline_step_index": 0,
+            "pipeline_fixed": {},
+            "pipeline_candidates_areas": {str(old_area): [0, 1]},
+        },
+    )
+    assert problem.candidates == {14: {0, 1}}
 
 
 def test_hard_inputs_cannot_override_a_steps_tighter_distance(monkeypatch):

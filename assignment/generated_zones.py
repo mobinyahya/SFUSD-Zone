@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Mapping
@@ -22,6 +23,14 @@ from .student_assignment.market_generator.school_choice_market_generator import 
 
 
 GENERATED_ZONE_POLICY = "generated-zones"
+#: Selectors on which an optimization run and the market it is matched in must
+#: agree: the seats the zoning balanced, the schools it zoned, and the Census
+#: geography its zone file is written in.
+SHARED_MATCHING_SELECTORS = (
+    "capacity_scenario",
+    "include_mission_bay",
+    "geography_vintage",
+)
 GENERATED_ZONE_FILENAME = "assignment_zones.csv"
 SKIP_MARKER_FILENAME = ".assignment-skipped"
 
@@ -48,6 +57,55 @@ def write_generated_zones(
     return zone_id_map
 
 
+def matching_data(data: Mapping) -> dict:
+    """Return an optimization run's ``data`` as the data it is matched in.
+
+    A generated zoning is simulated in the market of the run that drew it: the
+    run's scenario and overrides, assignment group included. The assignment
+    group keeps its own population, rounds, and capacity profile (zones are
+    often drawn on enrolled students and matched on applicants), but it must
+    agree with the optimization group on :data:`SHARED_MATCHING_SELECTORS`.
+    """
+    data = copy.deepcopy(dict(data))
+    scenario = load_scenario(data)
+    if "assignment" not in scenario.filters:
+        raise ValueError(
+            f"Scenario {scenario.id!r} has no assignment filters, so a zoning "
+            "drawn on it has no market to be matched in."
+        )
+    if "optimization" in scenario.filters:
+        mismatched = {
+            key: (
+                scenario.filter("optimization", key),
+                scenario.filter("assignment", key),
+            )
+            for key in SHARED_MATCHING_SELECTORS
+            if scenario.filter("optimization", key)
+            != scenario.filter("assignment", key)
+        }
+        if mismatched:
+            raise ValueError(
+                "Optimization and assignment filters must agree for matching; "
+                + ", ".join(
+                    f"{key}: {optimization!r} != {assignment!r}"
+                    for key, (optimization, assignment) in mismatched.items()
+                )
+                + ". Set the assignment filter in the run's data overrides."
+            )
+    return data
+
+
+def _replace_matching_data(base: dict, data: Mapping) -> None:
+    """Make ``data`` the base config's data; the policy config's is ignored."""
+    if "data" in base and base["data"] != data:
+        warnings.warn(
+            "The matching config's data is ignored: each generated zoning is "
+            "matched in its optimization run's data.",
+            stacklevel=3,
+        )
+    base["data"] = copy.deepcopy(dict(data))
+
+
 def resolve_generated_zone_configs(
     config_path: str | Path,
     *,
@@ -55,6 +113,7 @@ def resolve_generated_zone_configs(
     assignment_folder: str | Path,
     zone_building_blocks: str,
     geography_vintage: str | None = None,
+    data: Mapping | None = None,
 ) -> tuple[dict, list[dict]]:
     """Resolve every policy subconfig and inject one generated zone source."""
     base = load_custom_config(
@@ -68,6 +127,7 @@ def resolve_generated_zone_configs(
         assignment_folder=assignment_folder,
         zone_building_blocks=zone_building_blocks,
         geography_vintage=geography_vintage,
+        data=data,
     )
 
 
@@ -96,26 +156,42 @@ def resolve_generated_zone_batch_config(
     *,
     assignment_folder: str | Path,
 ) -> tuple[dict, list[dict]]:
-    """Inject every generated zone target as a unique policy subconfig."""
+    """Inject every generated zone target as a unique policy subconfig.
+
+    Each target is matched in its own optimization run's ``data``
+    (:func:`matching_data`), so one batch can span a sweep over data
+    scenarios; the policy configs decide only how matching is done.
+    """
     if not targets:
         raise ValueError("Generated-zone assignment requires at least one target.")
     target_ids = [str(target["id"]) for target in targets]
     if len(target_ids) != len(set(target_ids)):
         raise ValueError("Generated-zone target IDs must be unique.")
+    missing_data = [tid for tid, t in zip(target_ids, targets) if "data" not in t]
+    if missing_data:
+        raise ValueError(
+            "Generated-zone targets must carry their optimization run's data; "
+            f"missing for {missing_data[:5]}."
+        )
 
     output_path = Path(assignment_folder).expanduser().resolve()
     base = copy.deepcopy(base_config)
     base.setdefault("paths", {})["assignment-folder"] = str(output_path)
 
-    scenario = load_scenario(base["data"])
-    assignment_vintage = scenario.filter("assignment", "geography_vintage")
-    for target in targets:
+    target_data = {}
+    for target, target_id in zip(targets, target_ids, strict=True):
+        data = matching_data(target["data"])
+        assignment_vintage = load_scenario(data).filter(
+            "assignment", "geography_vintage"
+        )
         geography_vintage = target.get("geography_vintage")
         if geography_vintage is not None and geography_vintage != assignment_vintage:
             raise ValueError(
                 "Optimization and assignment geography vintages differ: "
                 f"{geography_vintage!r} != {assignment_vintage!r}."
             )
+        target_data[target_id] = data
+    _replace_matching_data(base, target_data[target_ids[0]])
 
     configurator = Configerator.from_config(base)
     policy_names = list(configurator.config.get("subconfigs", []))
@@ -134,6 +210,7 @@ def resolve_generated_zone_batch_config(
         zone_path = Path(target["zone_file"]).expanduser().resolve()
         for template in templates:
             config = copy.deepcopy(template["config"])
+            config["data"] = copy.deepcopy(target_data[target_id])
             _inject_generated_zone(
                 config, zone_path, str(target["zone_building_blocks"])
             )
@@ -160,12 +237,19 @@ def resolve_generated_zone_config(
     assignment_folder: str | Path,
     zone_building_blocks: str,
     geography_vintage: str | None = None,
+    data: Mapping | None = None,
 ) -> tuple[dict, list[dict]]:
-    """Resolve generated-zone subconfigs from an already anchored base config."""
+    """Resolve generated-zone subconfigs from an already anchored base config.
+
+    ``data`` is the optimization run's data; when given it replaces the base
+    config's (see :func:`matching_data`).
+    """
     zone_path = Path(zone_file).expanduser().resolve()
     output_path = Path(assignment_folder).expanduser().resolve()
     base = copy.deepcopy(base_config)
     base.setdefault("paths", {})["assignment-folder"] = str(output_path)
+    if data is not None:
+        _replace_matching_data(base, matching_data(data))
     _inject_generated_zone(base, zone_path, zone_building_blocks)
 
     scenario = load_scenario(base["data"])
@@ -199,6 +283,7 @@ def run_generated_zone_assignment(
     assignment_folder: str | Path,
     zone_building_blocks: str,
     geography_vintage: str | None = None,
+    data: Mapping | None = None,
     workers: int = 1,
 ) -> None:
     """Run all assignment subconfigs and assignment-owned metrics."""
@@ -211,6 +296,7 @@ def run_generated_zone_assignment(
         assignment_folder=output_path,
         zone_building_blocks=zone_building_blocks,
         geography_vintage=geography_vintage,
+        data=data,
     )
     _run_generated_zone_configs(base, resolved, output_path, workers)
 

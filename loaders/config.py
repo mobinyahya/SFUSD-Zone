@@ -118,6 +118,17 @@ _PLANNED_SCHOOL_KEYS = {
     "programs",
 }
 _PLANNED_SCHOOL_CATEGORIES = {"Attendance", "Citywide"}
+#: Optional role naming an attendance-area map (polygons) from which a blank
+#: assignment ``idschoolattendance`` is filled by the student's location
+#: (``loaders.tables.fill_attendance_areas``).
+ATTENDANCE_AREA_FILL_ROLE = "assignment.attendance_area_fill"
+#: Roles whose content changes what another role loads as. A manifest naming a
+#: key role carries each companion the scenario binds, so a cache keyed on the
+#: students alone still sees the map that filled their attendance areas and
+#: the schools that name its polygons.
+_MANIFEST_COMPANIONS = {
+    "assignment.students": (ATTENDANCE_AREA_FILL_ROLE, "assignment.schools"),
+}
 _CAPACITY_ADJUSTMENT_KEYS = {"school_id", "program_type", "expect", "add", "set"}
 _GEOGRAPHY_KEYS = {
     "blocks",
@@ -512,6 +523,16 @@ class DataScenario:
     ) -> dict[str, Any]:
         """Build a deterministic content and selector manifest for source roles."""
         selected = _selected_roles(self._source_values, roles)
+        extra = set()
+        if ATTENDANCE_AREA_FILL_ROLE in self._source_values:
+            for role in selected:
+                extra.update(
+                    companion
+                    for companion in _MANIFEST_COMPANIONS.get(role, ())
+                    if companion in self._source_values
+                )
+        if extra:
+            selected = sorted({*selected, *extra})
 
         def build(value: Any) -> Any:
             if isinstance(value, ResolvedSource):

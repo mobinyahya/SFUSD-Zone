@@ -193,9 +193,18 @@ class Dataset:
         """Read a centroid definition once across all levels and pipeline steps."""
         centroids_type = centroids_type or self.config.centroids_type
         if centroids_type not in self._centroid_schools:
+            if centroids_type == loaders.ALL_SCHOOLS_CENTROIDS:
+                # Every school the zoning problem holds -- the attendance-area
+                # schools, plus citywide ones under include_citywide_zoning --
+                # in ascending id order, so zone k is the same school on
+                # every level and every machine.
+                school_ids = sorted(
+                    int(sid) for sid in loaders.load_schools(self.ingest)["school_id"]
+                )
+            else:
+                school_ids = loaders.load_centroid_schools(centroids_type, self.data)
             self._centroid_schools[centroids_type] = tuple(
-                int(sid)
-                for sid in loaders.load_centroid_schools(centroids_type, self.data)
+                int(sid) for sid in school_ids
             )
         return list(self._centroid_schools[centroids_type])
 

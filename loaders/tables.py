@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from loaders.config import DataScenario, ResolvedSource
+from loaders.config import ATTENDANCE_AREA_FILL_ROLE, DataScenario, ResolvedSource
 
 _SCHOOL_ROUND = re.compile(r"r(\d+)_ranked_idschool")
 _PROGRAM_ROUND = re.compile(r"r(\d+)_programs")
@@ -368,7 +368,100 @@ def load_student_records(
         style="student",
     )
     frame = apply_student_frl_estimate(frame, scenario, group)
-    return filter_outside_district_students(frame, scenario, group)
+    frame = filter_outside_district_students(frame, scenario, group)
+    if group == "assignment":
+        frame = fill_attendance_areas(frame, scenario)
+    return frame
+
+
+def _attendance_area_polygon_schools(scenario: DataScenario, areas, lived_in):
+    """Name each attendance-area polygon by the attendance school inside it.
+
+    The map carries no attributes, so a polygon is identified by the
+    ``Attendance`` school located within it. A polygon holding two (Webster
+    497 and Mission Bay 1731 share one) is the school some student's district
+    record already names; any other ambiguity fails.
+    """
+    import geopandas as gpd
+
+    schools = load_school_records(
+        scenario, "assignment.schools", filter_group="assignment"
+    )
+    schools = schools.loc[schools["category"] == "Attendance"].dropna(
+        subset=["lat", "lon"]
+    )
+    points = gpd.GeoDataFrame(
+        {"school_id": schools["school_id"].map(_school_identity).to_numpy()},
+        geometry=gpd.points_from_xy(schools["lon"], schools["lat"]),
+        crs="EPSG:4326",
+    ).to_crs(areas.crs)
+    joined = gpd.sjoin(points, areas, how="inner", predicate="within")
+    named = {}
+    for polygon, ids in joined.groupby("index_right")["school_id"]:
+        candidates = sorted(set(ids))
+        if len(candidates) > 1:
+            candidates = [school for school in candidates if school in lived_in]
+        if len(candidates) != 1:
+            raise ValueError(
+                f"Attendance-area polygon {polygon} holds schools "
+                f"{sorted(set(ids))}, and student records do not single one out."
+            )
+        named[polygon] = candidates[0]
+    return named
+
+
+def fill_attendance_areas(frame: pd.DataFrame, scenario: DataScenario) -> pd.DataFrame:
+    """Fill blank ``idschoolattendance`` from the student's location.
+
+    Only when the scenario binds :data:`ATTENDANCE_AREA_FILL_ROLE` to a map.
+    A district value is never overwritten: the map and the district disagree
+    for about 1% of students who have both, so it is used for the gaps only.
+    ``attendance_area_source`` records ``district``, ``map``, or nothing for a
+    student the map cannot place.
+    """
+    if ATTENDANCE_AREA_FILL_ROLE not in scenario.roles:
+        return frame
+    if not scenario.sources(ATTENDANCE_AREA_FILL_ROLE):
+        return frame
+    required = {"idschoolattendance", "latitude", "longitude"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"Filling attendance areas needs student columns {missing}.")
+    import geopandas as gpd
+
+    frame = frame.copy()
+    known = frame["idschoolattendance"].notna()
+    frame["attendance_area_source"] = np.where(known, "district", None)
+    blank = ~known & frame[["latitude", "longitude"]].notna().all(axis=1)
+    if not blank.any():
+        return frame
+    areas = gpd.read_file(scenario.source(ATTENDANCE_AREA_FILL_ROLE).path)
+    if areas.crs is None:
+        raise ValueError("The attendance-area fill map must define a CRS.")
+    areas = areas[["geometry"]].reset_index(drop=True)
+    lived_in = {
+        _school_identity(value) for value in frame.loc[known, "idschoolattendance"]
+    }
+    named = _attendance_area_polygon_schools(scenario, areas, lived_in)
+    students = frame.loc[blank]
+    points = gpd.GeoDataFrame(
+        index=students.index,
+        geometry=gpd.points_from_xy(students["longitude"], students["latitude"]),
+        crs="EPSG:4326",
+    ).to_crs(areas.crs)
+    joined = gpd.sjoin(points, areas, how="left", predicate="within")
+    joined = joined.loc[~joined.index.duplicated(keep="first")]
+    school = joined["index_right"].map(named)
+    filled = school.dropna()
+    frame.loc[filled.index, "idschoolattendance"] = filled.astype(float)
+    frame.loc[filled.index, "attendance_area_source"] = "map"
+    unplaced = int((~known).sum()) - len(filled)
+    warnings.warn(
+        f"Filled {len(filled)} blank attendance areas from the attendance-area "
+        f"map; {unplaced} remain blank.",
+        stacklevel=2,
+    )
+    return frame
 
 
 def _frl_count_rates(source: ResolvedSource) -> pd.Series:
@@ -1574,6 +1667,7 @@ def _append_planned_programs(
 
 __all__ = [
     "AA_CAPACITY",
+    "ATTENDANCE_AREA_FILL_ROLE",
     "K8_SCHOOL_IDS",
     "MISSION_BAY_LEGACY_IDS",
     "MISSION_BAY_SCHOOL_ID",
@@ -1582,6 +1676,7 @@ __all__ = [
     "SPECIAL_PROGRAMS",
     "apply_school_category_scenario",
     "attach_attendance_area_capacity",
+    "fill_attendance_areas",
     "load_program_records",
     "load_school_records",
     "load_student_records",
