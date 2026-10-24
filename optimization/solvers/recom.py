@@ -324,6 +324,12 @@ class _ReComContext:
             out.append((stats.schools - upper) * scale)
         return tuple(out)
 
+    def row_students(self, stats: _ZoneStats) -> tuple[float, ...]:
+        """Per row, what its residual is a percentage of: ``count = g s / 100``."""
+        rows = len(self.balance_rows)
+        schools = (self.average_schools,) * (2 if self.school_bounds else 0)
+        return (*stats.values[rows:], *schools)
+
     def cut_residual(self, cut_edges: int) -> float:
         return (cut_edges - self.cut_limit) / max(self.cut_limit, 1) * 100.0
 

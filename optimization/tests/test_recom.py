@@ -23,8 +23,10 @@ from optimization.solvers.recom_policy import (
     Exp3Pairs,
     HedgeWeights,
     Policy,
+    ProportionalPairs,
     ReComSettings,
     Temperature,
+    Weights,
     ZonePairs,
     entropy_beta,
 )
@@ -77,6 +79,7 @@ def test_config_passes_recom_settings_to_solver() -> None:
         ({"recom_burst_length": -1}, "recom_burst_length"),
         ({"recom_weights": "adam"}, "recom_weights"),
         ({"recom_pair_selection": "lagrangian_softmax"}, "recom_pair_selection"),
+        ({"recom_pair_score": "compatible"}, "recom_pair_score"),
         ({"recom_cut_selection": "relaxed"}, "recom_cut_selection"),
         ({"recom_temperature": 0}, "recom_temperature"),
         ({"recom_entropy": 1.5}, "recom_entropy"),
@@ -194,8 +197,9 @@ def test_recom_uses_weighted_boundary_cost(preset: str) -> None:
     assert solution.metadata["objective_unit"] == "meter"
 
 
+@pytest.mark.parametrize("pair_score", ["pressure", "pooled"])
 @pytest.mark.parametrize("preset", PRESETS)
-def test_every_preset_repairs_an_infeasible_start(preset: str) -> None:
+def test_every_preset_repairs_an_infeasible_start(preset: str, pair_score: str) -> None:
     # One school per zone, but the start puts both in zone 0.
     problem = make_grid_problem(4, 4, school_count_tolerance=0.0)
     start = [int(pos == 14) for pos in range(16)]
@@ -203,7 +207,9 @@ def test_every_preset_repairs_an_infeasible_start(preset: str) -> None:
     assert not context.build_state(start).feasible
     problem = replace(problem, hint=context.assignment_dict(start))
 
-    solution = _solver(preset, recom_iterations=400, seed=5).solve(problem)
+    solution = _solver(
+        preset, recom_iterations=400, recom_pair_score=pair_score, seed=5
+    ).solve(problem)
 
     # Even the rejection chain: it accepts any move that lands in the feasible set.
     _assert_valid_recom_solution(problem, solution)
@@ -496,6 +502,71 @@ def test_zone_pairs_keep_an_exploration_floor() -> None:
     pairs = ZonePairs(weights, PRESETS["dual"], random.Random(5), 0.0)
 
     assert (2, 3) in {pairs.choose(state, _CYCLE) for _ in range(200)}
+
+
+class _PooledContext(_OneRowContext):
+    def row_students(self, stats: _ZoneStats) -> tuple[float, ...]:
+        return (stats.students,)
+
+
+def _signed_state(residuals: list[float], students: list[float] | None = None):
+    """One-row zones with signed residuals: positive is over, negative slack."""
+    state = _zone_state([(max(0.0, g),) for g in residuals], _CYCLE)
+    state.zone_residuals = [(g,) for g in residuals]
+    if students is not None:
+        state.zone_stats = [_ZoneStats(1, s, (1.0, s), 1.0) for s in students]
+    return state
+
+
+def test_pooled_scores_pairs_by_what_the_other_zone_can_absorb() -> None:
+    # Zones 0 and 1 are both over; 3 has two points of slack, 2 one.
+    state = _signed_state([3.0, 1.0, -1.0, -2.0])
+    settings = replace(PRESETS["exact_penalty"], exploration=0.0)
+    weights = Weights(_PooledContext(), settings)
+
+    pressure = ProportionalPairs(weights, settings, random.Random(1), 0.0)
+    pooled = ProportionalPairs(
+        weights, replace(settings, pair_score="pooled"), random.Random(1), 0.0
+    )
+
+    # _CYCLE is (0, 1), (1, 2), (2, 3), (0, 3).
+    assert pressure._pressures(state, _CYCLE) == [4.0, 1.0, 0.0, 3.0]
+    assert pooled._pressures(state, _CYCLE) == [0.0, 1.0, 0.0, 2.0]
+    assert {pooled.choose(state, _CYCLE) for _ in range(100)} == {(1, 2), (0, 3)}
+
+
+def test_pooled_converts_slack_through_student_counts() -> None:
+    # 4% of 100 students over is 4 students; 2% slack in 50 absorbs 1 of them.
+    state = _signed_state([4.0, -2.0, 0.0, 0.0], students=[100.0, 50.0, 1.0, 1.0])
+    settings = replace(PRESETS["exact_penalty"], pair_score="pooled")
+    pairs = ProportionalPairs(
+        Weights(_PooledContext(), settings), settings, random.Random(1), 0.0
+    )
+
+    assert pairs._pooled(state, 0, 1) == pytest.approx(1.0)
+
+
+def test_pooled_hedge_pressure_is_the_absorbable_fraction() -> None:
+    state = _signed_state([3.0, 1.0, -1.0, -2.0])
+    settings = replace(PRESETS["hedge"], pair_score="pooled")
+    pairs = ZonePairs(
+        HedgeWeights(_PooledContext(), settings), settings, random.Random(1), 0.0
+    )
+
+    assert pairs._pooled(state, 0, 3) == pytest.approx(2.0 / 3.0)
+    assert pairs._pooled(state, 1, 2) == pytest.approx(1.0)
+
+
+def test_pooled_zone_pairs_pick_the_neighbour_with_slack() -> None:
+    # Zone 0 is the only violated zone; neighbour 1 is over too, 3 has slack.
+    state = _signed_state([3.0, 0.5, 0.0, -2.0])
+    state.zone_violations[1] = (0.0,)
+    settings = replace(PRESETS["dual"], exploration=0.0, pair_score="pooled")
+    pairs = ZonePairs(
+        DualWeights(_PooledContext(), settings), settings, random.Random(2), 0.0
+    )
+
+    assert {pairs.choose(state, _CYCLE) for _ in range(100)} == {(0, 3)}
 
 
 def test_hedge_raises_rows_that_stay_violated_and_keeps_mean_one() -> None:

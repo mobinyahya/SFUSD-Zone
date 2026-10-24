@@ -18,6 +18,10 @@ violation over many zones. Three independent pieces then make the choices:
     pair's pressure with an exploration floor; ``softmax`` over pairs;
     ``zone`` (a zone by pressure, then a uniform neighbour); ``exp3``, the
     proportional rule times discounted EXP3-IX weights learned per pair.
+    ``recom_pair_score`` says what a pair's score is: ``pressure``, the two
+    zones' own pressures added, or ``pooled``, the part of each zone's
+    pressure the other's slack could absorb - an upper bound on what one
+    move on the pair can repair.
 ``CutSelection`` (``recom_cut_selection``)
     Which tree edge to cut: ``uniform`` over the pair-feasible cuts (all cuts
     if none is), or ``softmax`` of ``-(M_ab + mu * boundary) / tau``.
@@ -42,6 +46,7 @@ _EPS = 1e-6
 
 WEIGHTS = ("fixed", "hedge", "dual")
 PAIR_SELECTIONS = ("uniform", "proportional", "softmax", "zone", "exp3")
+PAIR_SCORES = ("pressure", "pooled")
 CUT_SELECTIONS = ("uniform", "softmax")
 
 
@@ -59,6 +64,7 @@ class ReComSettings:
     reject_infeasible: bool = False
     weights: str = "fixed"
     pair_selection: str = "softmax"
+    pair_score: str = "pressure"
     cut_selection: str = "softmax"
     temperature: float = 1.0
     entropy: float | None = 0.3
@@ -71,6 +77,7 @@ class ReComSettings:
         for name, choices in (
             ("weights", WEIGHTS),
             ("pair_selection", PAIR_SELECTIONS),
+            ("pair_score", PAIR_SCORES),
             ("cut_selection", CUT_SELECTIONS),
         ):
             if getattr(self, name) not in choices:
@@ -261,6 +268,10 @@ class Weights:
     def pressure(self, zone: int, violations: tuple[float, ...]) -> float:
         return self.zone(zone, violations)
 
+    def row_pressure(self, row: int, violation: float, part: float) -> float:
+        """What repairing ``part`` of one row's ``violation`` is worth in pressure."""
+        return self.weight(row) * part
+
     def scale(self, zone_a: int, zone_b: int) -> float:
         return 1.0
 
@@ -302,6 +313,9 @@ class HedgeWeights(Weights):
     def pressure(self, zone, violations):
         base = zone * self.rows
         return sum(self.w[base + k] for k, v in enumerate(violations) if v > _EPS)
+
+    def row_pressure(self, row, violation, part):
+        return self.w[row] * part / violation
 
     def scale(self, zone_a, zone_b):
         r = self.rows
@@ -413,10 +427,36 @@ class PairSelection:
         """The merit change of the last chosen pair's move (``exp3`` learns it)."""
 
     def _pressures(self, state: "_State", pairs) -> list[float]:
+        if self.settings.pair_score == "pooled":
+            return [self._pooled(state, a, b) for a, b in pairs]
         zone = [
             self.weights.pressure(z, v) for z, v in enumerate(state.zone_violations)
         ]
         return [zone[a] + zone[b] for a, b in pairs]
+
+    def _pooled(self, state: "_State", a: int, b: int) -> float:
+        """The pressure one move on ``a`` and ``b`` could at most repair.
+
+        A move only redistributes the union, and every row is linear in the
+        counts, so the union's two-zone residual is ``c_a + c_b`` (counts,
+        ``c = g s / 100``). Since ``max(0, c_a' + c_b') <= max(0, c_a') +
+        max(0, c_b')``, no split leaves less than the pooled violation: what a
+        zone can shed is at most the other's slack, ``min(c_a+, c_b-)``.
+        """
+        return self._transfer(state, a, b) + self._transfer(state, b, a)
+
+    def _transfer(self, state: "_State", a: int, b: int) -> float:
+        rows = self.weights.rows
+        students = self.weights.context.row_students
+        s_a, s_b = students(state.zone_stats[a]), students(state.zone_stats[b])
+        g_b = state.zone_residuals[b]
+        total = 0.0
+        for k, v in enumerate(state.zone_violations[a]):
+            if v <= _EPS or g_b[k] >= 0:
+                continue
+            slack = -g_b[k] * s_b[k] / s_a[k] if s_a[k] > 0 else math.inf
+            total += self.weights.row_pressure(a * rows + k, v, min(v, slack))
+        return total
 
     def metadata(self) -> dict[str, object]:
         return {}
@@ -449,7 +489,11 @@ class SoftmaxPairs(PairSelection):
 
 
 class ZonePairs(PairSelection):
-    """Zone ``a`` by ``(1 - gamma) P_a / sum P + gamma / n``, then a uniform neighbour."""
+    """Zone ``a`` by ``(1 - gamma) P_a / sum P + gamma / n``, then a neighbour.
+
+    The neighbour is uniform under ``pressure``; under ``pooled`` it is drawn
+    the same way by the pair's pooled score.
+    """
 
     def choose(self, state, pairs):
         neighbours: dict[int, list[int]] = defaultdict(list)
@@ -465,7 +509,18 @@ class ZonePairs(PairSelection):
             else [1.0 / n] * n
         )
         zone = zones[_sample(self.rng, probabilities)]
-        other = neighbours[zone][self.rng.randrange(len(neighbours[zone]))]
+        others = neighbours[zone]
+        if self.settings.pair_score == "pooled":
+            # The neighbour by what the pair can repair, with the same floor.
+            q = [self._pooled(state, zone, other) for other in others]
+            total, m = sum(q), len(others)
+            other = others[
+                _sample(self.rng, [(1.0 - gamma) * x / total + gamma / m for x in q])
+                if total > _EPS
+                else self.rng.randrange(m)
+            ]
+        else:
+            other = others[self.rng.randrange(len(others))]
         return (zone, other) if zone < other else (other, zone)
 
 
