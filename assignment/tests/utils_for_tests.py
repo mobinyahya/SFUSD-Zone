@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 from loaders import ResolvedSource
+from loaders.tables import MISSION_BAY_SCHOOL_IDS
 
 YEAR = 21
 LP_TYPE = "CB"
@@ -155,7 +156,7 @@ def generate_random_schools(num_schools=100, special_school_id=None):
     - school_ids ([Int]): List of generated school ids.
     """
     school_ids = set()
-    excluded_school_ids = {909, 999}
+    excluded_school_ids = set(MISSION_BAY_SCHOOL_IDS)
     if special_school_id:
         school_ids.add(special_school_id)
         num_schools -= 1

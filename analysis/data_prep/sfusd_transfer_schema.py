@@ -222,13 +222,10 @@ LOWELL_SCHOOL_ID = 697
 SOTA_SCHOOL_ID = 815
 
 #: SY26-27 is the first year in which Mission Bay ES appears in real requests,
-#: and the district issued it a new identity (1731) rather than reusing the
-#: placeholder IDs the repository already knows (909 and 999). The shared table
-#: loader keys every Mission Bay policy on {909, 999}
-#: (``loaders.tables._MISSION_BAY_SCHOOL_IDS``), so the converter rewrites 1731
-#: to the canonical 999 and records the rewrite in the report. Without the
-#: rewrite ``include_mission_bay: false`` would silently retain the school.
-RAW_SCHOOL_ID_ALIASES: dict[int, int] = {1731: 999}
+#: under its district code 1731. That is the repository's canonical Mission Bay
+#: ID (``loaders.tables.MISSION_BAY_SCHOOL_ID``), so the converter writes it
+#: through unchanged; the shared loader reads the older placeholders 999 and
+#: 909 in the borrowed 2023-24 tables as 1731.
 
 # --------------------------------------------------------------------------- #
 # Per-request priority columns
@@ -557,7 +554,6 @@ __all__ = [
     "PriorTkSource",
     "PriorityFlag",
     "PriorityList",
-    "RAW_SCHOOL_ID_ALIASES",
     "SOTA_SCHOOL_ID",
     "STUDENT_COLUMNS",
     "TRANSFER_FILE_FRAGMENTS",

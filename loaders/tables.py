@@ -39,7 +39,15 @@ _ROUND_PREFERENCE_COLUMN = re.compile(
     r"r(\d+)_(ranked_idschool|programs|listed_ranks|cohortstring|randomnumber|"
     r"designation_randomnumber)"
 )
-_MISSION_BAY_SCHOOL_IDS = {909, 999}
+#: Mission Bay ES's district school code, the one the SY26-27 transfer and the
+#: district's capacity workbooks issue it. Older tables carry the repository's
+#: placeholders instead -- 999 and, before that, 909 -- which every loader reads
+#: as 1731 when Mission Bay is included and drops with it when it is not.
+MISSION_BAY_SCHOOL_ID = 1731
+#: Retired Mission Bay placeholders, most recent first. Where one table holds
+#: rows under several, the canonical ID wins, then the most recent placeholder.
+MISSION_BAY_LEGACY_IDS = (999, 909)
+MISSION_BAY_SCHOOL_IDS = frozenset({MISSION_BAY_SCHOOL_ID, *MISSION_BAY_LEGACY_IDS})
 #: SFUSD's placeholder school for a student on record with no school -- the
 #: district names it "Central Enrollment". A student recorded as enrolled at it
 #: is not enrolled anywhere, so no enrolled population ever contains one; see
@@ -54,6 +62,8 @@ SPECIAL_PROGRAMS = frozenset({"AF", "DA", "DT", "ED", "MM", "MS", "SA", "TC", "A
 K8_SCHOOL_IDS = frozenset({618, 449, 676, 479, 760, 796, 493, 485})
 SOTA_PROGRAM_ID = "815-GE-09"
 LOWELL_PROGRAM_ID = "697-GE-09"
+#: Program column holding how many of its seats are attendance-area seats.
+AA_CAPACITY = "attendance_area_capacity"
 #: Capacity of a selective high school, which admits every eligible applicant.
 UNCAPPED_CAPACITY = 10000
 _FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
@@ -200,7 +210,23 @@ def _selected_grades(scenario: DataScenario, group: str) -> tuple[str, ...]:
 
 def school_id_aliases(scenario: DataScenario, group: str) -> dict[int, int]:
     """Return centrally derived school-ID aliases for one filter group."""
-    return {909: 999} if scenario.filter(group, "include_mission_bay") else {}
+    if not scenario.filter(group, "include_mission_bay"):
+        return {}
+    return {legacy: MISSION_BAY_SCHOOL_ID for legacy in MISSION_BAY_LEGACY_IDS}
+
+
+def _alias_preference(original: Any, mapped: Any) -> int:
+    """Rank a row's source school ID among rows aliased onto the same ID.
+
+    Lower wins: the canonical ID itself, then legacy placeholders from most to
+    least recent, then anything else.
+    """
+    original = _safe_school_identity(original)
+    if original == _safe_school_identity(mapped):
+        return 0
+    if original in MISSION_BAY_LEGACY_IDS:
+        return 1 + MISSION_BAY_LEGACY_IDS.index(original)
+    return 1 + len(MISSION_BAY_LEGACY_IDS)
 
 
 def _map_scalar_school(value: Any, aliases: Mapping[int, int]) -> Any:
@@ -555,7 +581,7 @@ def normalize_student_records(
                 keep_positions = [
                     position
                     for position in keep_positions
-                    if schools[position] not in _MISSION_BAY_SCHOOL_IDS
+                    if schools[position] not in MISSION_BAY_SCHOOL_IDS
                 ]
             if special_mode == "exclude_only_special":
                 keep_positions = [
@@ -606,9 +632,7 @@ def normalize_student_records(
                 ) from exc
             if not include_mission_bay:
                 schools = [
-                    school
-                    for school in schools
-                    if school not in _MISSION_BAY_SCHOOL_IDS
+                    school for school in schools if school not in MISSION_BAY_SCHOOL_IDS
                 ]
             parsed_values.append(
                 [aliases.get(school, school) for school in schools]
@@ -633,7 +657,7 @@ def normalize_student_records(
                 programs = [
                     program
                     for program in programs
-                    if _program_school_identity(program) not in _MISSION_BAY_SCHOOL_IDS
+                    if _program_school_identity(program) not in MISSION_BAY_SCHOOL_IDS
                 ]
             parsed_program_values.append(
                 [
@@ -654,7 +678,7 @@ def normalize_student_records(
                     lambda value: (
                         pd.NA
                         if not _missing(value)
-                        and _safe_school_identity(value) in _MISSION_BAY_SCHOOL_IDS
+                        and _safe_school_identity(value) in MISSION_BAY_SCHOOL_IDS
                         else value
                     )
                 )
@@ -780,19 +804,20 @@ def _drop_alias_duplicates(
         group_positions = list(positions)
         if len(group_positions) < 2:
             continue
-        mapped_id = _safe_school_identity(frame.loc[group_positions[0], "school_id"])
-        canonical_positions = [
-            position
+        mapped_id = frame.loc[group_positions[0], "school_id"]
+        ranks = {
+            position: _alias_preference(original_ids.loc[position], mapped_id)
             for position in group_positions
-            if _safe_school_identity(original_ids.loc[position]) == mapped_id
+        }
+        best = min(ranks.values())
+        preferred = [
+            position for position in group_positions if ranks[position] == best
         ]
-        if canonical_positions and len(canonical_positions) < len(group_positions):
+        if len(preferred) < len(group_positions):
             drop.extend(
-                position
-                for position in group_positions
-                if position not in canonical_positions
+                position for position in group_positions if ranks[position] != best
             )
-            group_positions = canonical_positions
+            group_positions = preferred
         if len(group_positions) < 2:
             continue
         if original_ids.loc[group_positions].nunique(dropna=False) < 2:
@@ -844,7 +869,7 @@ def normalize_school_records(
     include_mission_bay = scenario.filter(group, "include_mission_bay")
     if not include_mission_bay:
         keep = ~frame["school_id"].map(_safe_school_identity).isin(
-            _MISSION_BAY_SCHOOL_IDS
+            MISSION_BAY_SCHOOL_IDS
         )
         frame = frame.loc[keep].copy()
         original_ids = original_ids.loc[frame.index]
@@ -992,7 +1017,7 @@ def _apply_capacity_adjustments(
             f"{name} requires {year} assignment data{policy[include_mission_bay]}."
         )
     school_ids = pd.to_numeric(frame["school_id"], errors="coerce")
-    if include_mission_bay is False and school_ids.isin(_MISSION_BAY_SCHOOL_IDS).any():
+    if include_mission_bay is False and school_ids.isin(MISSION_BAY_SCHOOL_IDS).any():
         raise ValueError(f"{name} requires no Mission Bay programs.")
     program_types = frame["program_type"].astype(str)
     result = frame.copy()
@@ -1025,12 +1050,21 @@ def _apply_capacity_adjustments(
 def _split_pooled_capacity(total: float, weights: pd.Series) -> pd.Series:
     """Split seats over lottery pools in proportion to their current seats.
 
-    Pools with no current seats share equally. A whole-seat total stays whole
-    and exact: floors first, then the largest remainders take one seat each.
+    The proportion is the program table's, so the split is the district's.
+    Pools with no current seats at all give no proportion, and nothing is
+    assumed in its place: a positive total then fails. A whole-seat total
+    stays whole and exact: floors first, then the largest remainders take one
+    seat each.
     """
     weights = weights.fillna(0).clip(lower=0).astype(float)
     if weights.sum() <= 0:
-        weights = pd.Series(1.0, index=weights.index)
+        if total > 0:
+            raise ValueError(
+                f"Cannot split {total:g} seats over lottery pools "
+                f"{list(weights.index)} that hold no seats now: the program "
+                "table gives no native/non-native proportion to follow."
+            )
+        return weights
     shares = total * weights / weights.sum()
     if not float(total).is_integer():
         return shares
@@ -1069,12 +1103,23 @@ def _expand_pooled_overrides(
                 f"Cannot split {row['program_type']} seats at school "
                 f"{row['school_id']}: a pool appears more than once."
             )
-        seats = _split_pooled_capacity(
-            row["capacity"], pd.to_numeric(targets["capacity"], errors="coerce")
-        )
+        weights = pd.to_numeric(targets["capacity"], errors="coerce")
+        try:
+            seats = _split_pooled_capacity(row["capacity"], weights)
+            attendance = (
+                _split_pooled_capacity(row[AA_CAPACITY], weights)
+                if AA_CAPACITY in row.index
+                else None
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"School {row['school_id']} {row['program_type']}: {exc}"
+            ) from exc
         expanded = pd.DataFrame([row] * len(targets)).reset_index(drop=True)
         expanded["program_type"] = targets["program_type"].to_numpy()
         expanded["capacity"] = seats.to_numpy()
+        if attendance is not None:
+            expanded[AA_CAPACITY] = np.minimum(attendance, seats).to_numpy()
         rows.append(expanded)
     return pd.concat(rows, ignore_index=True)
 
@@ -1107,8 +1152,10 @@ def apply_capacity_scenario(
             "SchNum": "school_id",
             "PathwayCode": "program_type",
             capacity_column: "capacity",
+            f"Scenario_{scenario_name}_AttendanceAreaCapacity": AA_CAPACITY,
         }
     )
+    has_attendance_seats = AA_CAPACITY in overrides.columns
     required_override_columns = {"school_id", "program_type", "capacity"}
     missing = required_override_columns - set(overrides.columns)
     if missing:
@@ -1154,6 +1201,30 @@ def apply_capacity_scenario(
         raise ValueError(
             f"Capacity scenario {scenario_name!r} contains blank matching keys."
         )
+    if has_attendance_seats:
+        overrides[AA_CAPACITY] = pd.to_numeric(overrides[AA_CAPACITY], errors="coerce")
+        invalid = ~overrides[AA_CAPACITY].between(0, overrides["capacity"])
+        if invalid.any():
+            examples = overrides.loc[invalid, keys].head(10).to_dict("records")
+            raise ValueError(
+                f"Capacity scenario {scenario_name!r} has attendance-area seats "
+                f"outside [0, capacity] for {examples}."
+            )
+    selected_schools = set(result["school_id"].map(_safe_school_identity))
+    unplaced = sorted(
+        set(
+            overrides.loc[overrides["capacity"] > 0, "school_id"].map(
+                _safe_school_identity
+            )
+        )
+        - selected_schools
+    )
+    if unplaced:
+        warnings.warn(
+            f"Capacity scenario {scenario_name!r} gives seats to schools {unplaced}, "
+            "which have no selected program; their seats are not modelled.",
+            stacklevel=2,
+        )
     overrides = _expand_pooled_overrides(overrides, result, keys)
 
     resolved_rows = []
@@ -1161,11 +1232,13 @@ def apply_capacity_scenario(
         if len(candidates) == 1:
             resolved_rows.append(candidates.iloc[0])
             continue
-        canonical = candidates.loc[
-            pd.to_numeric(candidates["school_id"], errors="coerce").eq(
-                candidates["_source_school_id"]
+        ranks = [
+            _alias_preference(source, mapped)
+            for source, mapped in zip(
+                candidates["_source_school_id"], candidates["school_id"], strict=True
             )
         ]
+        canonical = candidates.loc[[rank == min(ranks) for rank in ranks]]
         if len(canonical) == 1:
             resolved_rows.append(canonical.iloc[0])
         elif candidates["capacity"].nunique() == 1:
@@ -1177,18 +1250,22 @@ def apply_capacity_scenario(
                 f"{duplicate_keys}."
             )
     overrides = pd.DataFrame(resolved_rows)
-    capacity_by_key = {
-        tuple(row[key] for key in keys): float(row["capacity"])
-        for _, row in overrides.iterrows()
-    }
-    matched_capacity = pd.Series(
-        [
-            capacity_by_key.get(tuple(row[key] for key in keys), np.nan)
-            for _, row in result.iterrows()
-        ],
-        index=result.index,
-        dtype=float,
-    )
+
+    def matched(column: str) -> pd.Series:
+        by_key = {
+            tuple(row[key] for key in keys): float(row[column])
+            for _, row in overrides.iterrows()
+        }
+        return pd.Series(
+            [
+                by_key.get(tuple(row[key] for key in keys), np.nan)
+                for _, row in result.iterrows()
+            ],
+            index=result.index,
+            dtype=float,
+        )
+
+    matched_capacity = matched("capacity")
     if not result.empty and matched_capacity.notna().sum() == 0:
         raise ValueError(
             f"Capacity scenario {scenario_name!r} has no rows matching the "
@@ -1197,7 +1274,103 @@ def apply_capacity_scenario(
     result["capacity"] = matched_capacity.combine_first(
         pd.to_numeric(result["capacity"], errors="coerce")
     )
+    if has_attendance_seats:
+        # Unmatched programs stay blank, for attach_attendance_area_capacity.
+        result[AA_CAPACITY] = matched(AA_CAPACITY)
     return result.drop(columns=["_capacity_grade"], errors="ignore")
+
+
+def attach_attendance_area_capacity(
+    programs: pd.DataFrame, schools: pd.DataFrame
+) -> pd.DataFrame:
+    """Give every program its attendance-area seat count, ``AA_CAPACITY``.
+
+    A capacity scenario that labels seats (the district's workbooks) sets it
+    for the programs it lists. Every other program falls back to the rule the
+    workbooks follow: a GE program at an attendance-area school holds only
+    attendance-area seats, and no other program holds any. A table without
+    seats or program types is returned unchanged.
+    """
+    if not {"school_id", "program_type", "capacity"} <= set(programs.columns):
+        return programs
+    result = programs.copy()
+    category = (
+        schools.drop_duplicates("school_id").set_index("school_id")["category"]
+        if "category" in schools.columns
+        else pd.Series(dtype=object)
+    )
+    at_attendance_school = (
+        result["school_id"].map(_safe_school_identity).map(category).eq("Attendance")
+    )
+    fallback = pd.to_numeric(result["capacity"], errors="coerce").where(
+        result["program_type"].astype(str).eq("GE") & at_attendance_school, 0.0
+    )
+    if AA_CAPACITY in result.columns:
+        fallback = pd.to_numeric(result[AA_CAPACITY], errors="coerce").combine_first(
+            fallback
+        )
+    result[AA_CAPACITY] = fallback.fillna(0.0)
+    return result
+
+
+#: School categories a capacity scenario may assign.
+SCHOOL_CATEGORIES = frozenset({"Attendance", "Citywide"})
+
+
+def apply_school_category_scenario(
+    frame: pd.DataFrame,
+    scenario: DataScenario,
+    group: str,
+) -> pd.DataFrame:
+    """Set school categories from the selected capacity scenario, if it has any.
+
+    An overlay file may carry ``Scenario_<name>_Category`` beside its capacity
+    column: ``Attendance`` or ``Citywide`` per school, for the scenario's
+    grades. When that scenario is selected it decides, for every school it
+    lists, whether the school is an attendance-area school -- which owns a
+    graph node in zoning and attendance-area priority in assignment -- or a
+    citywide one. Schools it does not list keep their table category.
+    """
+    scenario_name = scenario.filter(group, "capacity_scenario", "programs")
+    if scenario_name == "programs" or scenario.capacity_adjustments(group) is not None:
+        return frame
+    try:
+        scenario.resolved(f"{group}.capacity")
+    except KeyError:
+        return frame
+    column = f"Scenario_{scenario_name}_Category"
+    overlay = read_csv(scenario, f"{group}.capacity", low_memory=False)
+    if column not in overlay.columns:
+        return frame
+    overlay = overlay.rename(columns={"SchNum": "school_id", column: "category"})
+    if "Grade" in overlay.columns:
+        selected_grades = set(_selected_grades(scenario, group))
+        overlay = overlay.loc[
+            overlay["Grade"].map(normalize_grade).isin(selected_grades)
+        ]
+    overlay = overlay.loc[overlay["category"].notna(), ["school_id", "category"]]
+    invalid = sorted(set(overlay["category"]) - SCHOOL_CATEGORIES)
+    if invalid:
+        raise ValueError(
+            f"Capacity scenario {scenario_name!r} has unknown school categories "
+            f"{invalid}; expected {sorted(SCHOOL_CATEGORIES)}."
+        )
+    overlay = normalize_school_records(overlay, scenario, group).drop_duplicates()
+    conflicting = overlay.loc[overlay["school_id"].duplicated(), "school_id"]
+    if not conflicting.empty:
+        raise ValueError(
+            f"Capacity scenario {scenario_name!r} gives schools "
+            f"{sorted(conflicting.unique().tolist())} more than one category."
+        )
+    categories = overlay.set_index(overlay["school_id"].map(_safe_school_identity))[
+        "category"
+    ]
+    listed = frame["school_id"].map(_safe_school_identity).map(categories)
+    result = frame.copy()
+    result["category"] = listed.combine_first(
+        result["category"] if "category" in result.columns else listed
+    )
+    return result
 
 
 def load_program_records(
@@ -1247,6 +1420,7 @@ def load_program_records(
         else:
             catalog["capacity"] = mapped
         selected = catalog
+    selected = _append_planned_programs(selected, scenario, group)
     selected = _apply_grade_capacity_rules(selected, scenario, group)
     selected = apply_capacity_scenario(selected, scenario, group)
     return _attach_program_geography(selected, scenario, group)
@@ -1255,7 +1429,8 @@ def load_program_records(
 def _attach_program_geography(
     frame: pd.DataFrame, scenario: DataScenario, group: str
 ) -> pd.DataFrame:
-    """Attach each program's selected-vintage school location when available."""
+    """Attach each program's attendance-area seats and selected-vintage school
+    location when the group has a school table."""
     if "school_id" not in frame.columns:
         return frame
     role = f"{group}.schools"
@@ -1263,6 +1438,7 @@ def _attach_program_geography(
         schools = load_school_records(scenario, role, filter_group=group)
     except KeyError:
         return frame
+    frame = attach_attendance_area_capacity(frame, schools)
     location_columns = [
         column
         for column in ("Block", "BlockGroup", "Tract", "lat", "lon")
@@ -1294,20 +1470,118 @@ def load_school_records(
     """Load schools with central aliases and deterministic collision handling."""
     group = _filter_group(role, filter_group)
     frame = _load_school_keyed_records(scenario, role, group, **read_csv_kwargs)
-    from loaders.geography import normalize_census_geography
+    planned = _planned_school_rows(scenario, group, frame)
+    frame = pd.concat([frame, planned], ignore_index=True) if len(planned) else frame
+    frame = apply_school_category_scenario(frame, scenario, group)
+    from loaders.geography import (
+        GEOGRAPHY_COLUMNS,
+        match_points_to_census,
+        normalize_census_geography,
+    )
 
-    return normalize_census_geography(
+    result = normalize_census_geography(
         frame,
         scenario,
         group,
         source_vintage=_role_geography_vintage(scenario, role),
         style="school",
     )
+    if len(planned):
+        # A planned school has only a point; place it in the selected vintage.
+        rows = result["school_id"].isin(planned["school_id"])
+        matched = match_points_to_census(
+            result,
+            scenario,
+            group,
+            latitude_column="lat",
+            longitude_column="lon",
+            row_mask=rows,
+        )
+        for unit, column in GEOGRAPHY_COLUMNS["school"].items():
+            located = matched[unit].where(rows)
+            if column in result.columns:
+                located = located.combine_first(result[column])
+            result[column] = located.astype("Int64")
+    return result
+
+
+def _planned_school_rows(
+    scenario: DataScenario, group: str, frame: pd.DataFrame
+) -> pd.DataFrame:
+    """School-table rows for the planned schools a group's filters include."""
+    rows = []
+    existing = set(
+        frame.get("school_id", pd.Series(dtype=object)).map(_safe_school_identity)
+    )
+    for definition in scenario.selected_planned_schools(group):
+        school_id, name = definition["school_id"], definition["school_name"]
+        if school_id in existing:
+            raise ValueError(
+                f"Planned school {name} ({school_id}) is already in the school "
+                "table; remove it from base planned_schools."
+            )
+        rows.append(
+            {
+                "school_id": school_id,
+                "school_name": name,
+                "category": definition["category"],
+                "lat": float(definition["lat"]),
+                "lon": float(definition["lon"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _append_planned_programs(
+    frame: pd.DataFrame, scenario: DataScenario, group: str
+) -> pd.DataFrame:
+    """Add the included planned schools' programs at the selected grades.
+
+    Their seats are the registry's, which ``load_scenario`` has checked are all
+    present; a selected capacity scenario applies to them afterwards like any
+    other program.
+    """
+    grades = _selected_grades(scenario, group)
+    rows = []
+    for definition in scenario.selected_planned_schools(group):
+        school_id = definition["school_id"]
+        for grade in grades:
+            for program_type, seats in definition["programs"].get(grade, {}).items():
+                rows.append(
+                    {
+                        "program_id": f"{school_id}-{program_type}-{grade}",
+                        "school_id": school_id,
+                        "program_type": program_type,
+                        "capacity": float(seats),
+                    }
+                )
+    if not rows:
+        return frame
+    added = pd.DataFrame(rows)
+    if (
+        "program_id" in frame.columns
+        and frame["program_id"].isin(added["program_id"]).any()
+    ):
+        raise ValueError(
+            "Planned programs are already in the program table: "
+            f"{sorted(set(frame['program_id']) & set(added['program_id']))}."
+        )
+    if "programno" in frame.columns:
+        start = int(pd.to_numeric(frame["programno"], errors="coerce").max()) + 1
+        added["programno"] = range(start, start + len(added))
+    return pd.concat([frame, added], ignore_index=True)
 
 
 __all__ = [
+    "AA_CAPACITY",
     "K8_SCHOOL_IDS",
+    "MISSION_BAY_LEGACY_IDS",
+    "MISSION_BAY_SCHOOL_ID",
+    "MISSION_BAY_SCHOOL_IDS",
+    "SCHOOL_CATEGORIES",
     "SPECIAL_PROGRAMS",
+    "apply_school_category_scenario",
+    "attach_attendance_area_capacity",
     "load_program_records",
     "load_school_records",
     "load_student_records",

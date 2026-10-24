@@ -25,16 +25,17 @@
 # school table. 2026-27 is the first transfer year that actually carries
 # Mission Bay ES, so it is also the only one of the three that sets
 # `include_mission_bay: true`. The school is idSchool 1731 in the transfer,
-# remapped to 999 by `RAW_SCHOOL_ID_ALIASES` in
-# `analysis/data_prep/sfusd_transfer_schema.py`; this year's Main Round
+# the canonical Mission Bay ID; this year's Main Round
 # capacity file is the only one of the three that lists it, at K GE 69,
 # MM 5 and AF 0 seats, and those are the capacities the market carries.
-# The 2023-24 scenario's `999-GE-KG` is a counterfactual instead. The school
+# The 2023-24 scenario's Mission Bay GE program (`999-GE-KG` in its table,
+# read as `1731-GE-KG`) is a counterfactual instead. The school
 # opened in August 2026, so it cannot appear in 2023-24: no 2023-24 student
 # enrols there, ranks it in any round, or has it as an attendance area, and
 # its 66 seats are a planning figure hard-coded in
 # `programs_statusQuo_2324.csv`, not a district capacity. 909 and 999 are
-# both placeholder IDs for it, carried as two identical school rows. Treat a
+# both placeholder IDs for it, carried as two identical school rows that the
+# loader reads as one school 1731. Treat a
 # 2023-24 vs 2026-27 comparison of anything Mission Bay-touching as a
 # counterfactual against a record, not as two observations. See the 2024-25
 # and 2025-26 scenarios, which have no Mission Bay data at all.

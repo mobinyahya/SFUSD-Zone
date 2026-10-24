@@ -65,6 +65,7 @@ _OBJECTIVES = {
     "saa_welfare": Objective("saa_welfare", frozenset(METHODS), True, True),
     "choice_welfare": Objective("choice_welfare", frozenset(METHODS), True, True),
     "capacity_match": Objective("capacity_match", _HEURISTICS, False, True),
+    "aa_capacity_match": Objective("aa_capacity_match", _HEURISTICS, False, True),
 }
 OBJECTIVES = tuple(_OBJECTIVES)
 

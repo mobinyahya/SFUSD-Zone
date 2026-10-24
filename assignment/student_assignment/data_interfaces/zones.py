@@ -208,7 +208,9 @@ class Zones:
         if lp_same_as_ge:
             sch2pr_idx = self.programs.school_to_indices
             for area_id, prog_list in self.area_id2ge_program_id.items():
-                program_idxs = [y for x in prog_list for y in sch2pr_idx[int(x[:3])]]
+                program_idxs = [
+                    y for x in prog_list for y in sch2pr_idx[int(x.split("-")[0])]
+                ]
                 lp_area_id2prog_list[area_id] = [
                     self.programs.codes[x] for x in program_idxs
                 ]
@@ -369,8 +371,7 @@ class Zones:
                     school_list_of_lists.append(self.area2school_id[area])
             school_list = [x for sublist in school_list_of_lists for x in sublist]
             area_id2program_id[area_id] = [
-                f"{school_id}-GE-{self.grade}"
-                for school_id in school_list
+                f"{school_id}-GE-{self.grade}" for school_id in school_list
             ]
 
         self.zone2area_list = zone2area_list
@@ -451,7 +452,7 @@ class Zones:
 
         An attendance-area zone file is a fixed list of school ids, while the
         students' areas come from the student table. When the district adds an
-        area -- Mission Bay (999) opened in 2026 after concept1zones.csv was
+        area -- Mission Bay (1731) opened in 2026 after concept1zones.csv was
         written -- the first is stale as soon as the second is updated, and
         the new area's students would belong to no zone. An area with a school
         and at least one student is therefore its own zone. One without

@@ -119,8 +119,8 @@ map and can therefore be reloaded from another working directory.
 Assignment filters own the canonical school year, grade,
 applicant/enrolled population, selected round labels, special-program mode,
 capacity profile, and Mission Bay inclusion. `include_mission_bay` centrally
-derives the `909 -> 999` alias across tables; users do not configure an alias
-map.
+reads Mission Bay's legacy IDs `999` and `909` as `1731` across tables; users do
+not configure an alias map.
 
 Participation is always any selected round. The loader sorts selected rounds,
 applies Mission Bay and special-program filtering, removes students with no

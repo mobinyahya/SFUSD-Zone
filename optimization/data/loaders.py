@@ -53,8 +53,9 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-# Bumped to 9 when student rows gained the enrolling-student weights.
-STUDENT_CACHE_SCHEMA_VERSION = 9
+# Bumped to 9 when student rows gained the enrolling-student weights, and to 10
+# when Mission Bay's canonical school ID became 1731.
+STUDENT_CACHE_SCHEMA_VERSION = 10
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 EXCLUDED_OPTIMIZATION_BLOCKS = frozenset(

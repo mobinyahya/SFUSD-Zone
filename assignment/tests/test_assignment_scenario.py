@@ -272,10 +272,10 @@ def test_mission_bay_alias_is_derived_from_the_scenario_filter(tmp_path):
 
     assert excluded.programs.program_df["school_id"].unique().tolist() == [101]
     assert excluded.students.student_data.loc[1, "selected_ranked_idschool"] == [101]
-    assert set(included.programs.program_df["school_id"]) == {999, 101}
-    assert included.schools.school_df.index.tolist() == [999, 101]
+    assert set(included.programs.program_df["school_id"]) == {1731, 101}
+    assert included.schools.school_df.index.tolist() == [1731, 101]
     assert included.students.student_data.loc[1, "selected_ranked_idschool"] == [
-        999,
+        1731,
         101,
     ]
 
@@ -790,7 +790,7 @@ def _write_mission_bay_sources(tmp_path):
     ("include_mission_bay", "expected_schools", "expected_lp_siblings"),
     [
         (False, [101], ["101-CN-KG"]),
-        (True, [999, 101], ["999-CN-KG", "101-CN-KG"]),
+        (True, [1731, 101], ["1731-CN-KG", "101-CN-KG"]),
     ],
 )
 def test_evaluator_uses_mission_bay_normalized_student_tables(

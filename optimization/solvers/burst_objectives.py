@@ -14,6 +14,13 @@ objectives need:
   run out.  Designation is pooled per zone rather than walked school by
   school, which is exact for the count because any free in-zone GE seat is a
   designation the district can make.
+* ``aa_capacity_match`` -- the same count over attendance-area seats only.
+  Every program is cut to the seats the program table labels attendance-area
+  (``attendance_area_capacity``, from the district's capacity workbook when a
+  workbook scenario is selected), so language pathways, citywide schools, and
+  the citywide share of a GE program take no one.  The match runs on those
+  seats, and students it leaves out are designated to the attendance-area
+  seats their zone still has free.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ import multiprocessing as mp
 from collections import defaultdict
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from optimization.data.mid import MidMarket, build_mid_market, preprocess_mid_market
@@ -71,6 +78,54 @@ def designation_seats(market: MidMarket) -> tuple[DesignationSeat, ...]:
         and program.school_node is not None
         and program.capacity > 0
         and is_general_education(program.program_id)
+    )
+
+
+def attendance_area_seats(program) -> int:
+    """A program's attendance-area seats.
+
+    Markets built from a program table carry the count. One that does not
+    (``None``) falls back to the rule the workbooks follow: every seat of a
+    zoned GE program, and none elsewhere.
+    """
+
+    if program.attendance_area_capacity is not None:
+        return 0 if program.citywide else int(program.attendance_area_capacity)
+    zoned_ge = (
+        not program.citywide
+        and program.school_node is not None
+        and is_general_education(program.program_id)
+    )
+    return int(program.capacity) if zoned_ge else 0
+
+
+def attendance_area_market(market: MidMarket) -> MidMarket:
+    """``market`` with every program cut to its attendance-area seats.
+
+    A program left with none keeps its identity at capacity 0, so
+    ``preprocess_mid_market`` strips it from every preference list.
+    """
+
+    return replace(
+        market,
+        programs=tuple(
+            replace(program, capacity=attendance_area_seats(program))
+            for program in market.programs
+        ),
+    )
+
+
+def attendance_area_designation_seats(
+    market: MidMarket,
+) -> tuple[DesignationSeat, ...]:
+    """The attendance-area seats of ``market``, which should be unpreprocessed."""
+
+    return tuple(
+        DesignationSeat(
+            program.program_id, int(program.school_node), attendance_area_seats(program)
+        )
+        for program in market.programs
+        if program.school_node is not None and attendance_area_seats(program) > 0
     )
 
 
@@ -229,7 +284,8 @@ class MidBatchEvaluator:
             self.executor.shutdown(wait=True, cancel_futures=True)
 
 
-CHOICE_METRICS = ("welfare", "capacity_match")
+CHOICE_METRICS = ("welfare", "capacity_match", "aa_capacity_match")
+CAPACITY_METRICS = frozenset({"capacity_match", "aa_capacity_match"})
 
 
 class MidBurstScorer:
@@ -320,10 +376,8 @@ def mid_burst_scorer(
         raise ValueError("mid_lottery_scale must be a positive integer.")
     unassigned_weight = _weight(options, "capacity_match_unassigned_weight")
     designated_weight = _weight(options, "capacity_match_designated_weight")
-    if metric == "capacity_match" and unassigned_weight == designated_weight == 0:
-        raise ValueError(
-            "capacity_match needs a positive unassigned or designated weight."
-        )
+    if metric in CAPACITY_METRICS and unassigned_weight == designated_weight == 0:
+        raise ValueError(f"{metric} needs a positive unassigned or designated weight.")
 
     raw_market = build_mid_market(problem, config)
     if raw_market.utility_student_count == 0:
@@ -334,11 +388,16 @@ def mid_burst_scorer(
             "choice-utility row: the choice estimate does not cover the "
             "assignment year's students."
         )
+    if metric == "aa_capacity_match":
+        market = attendance_area_market(raw_market)
+        seats = attendance_area_designation_seats(raw_market)
+    else:
+        market, seats = raw_market, designation_seats(raw_market)
     evaluator = MidBatchEvaluator(
-        preprocess_mid_market(raw_market, problem),
+        preprocess_mid_market(market, problem),
         lottery_scale,
         max(1, int(options.get("workers", 1))),
-        designation_seats(raw_market),
+        seats,
     )
     return MidBurstScorer(
         evaluator,

@@ -104,7 +104,7 @@ def test_projected_centroids_latlon_avoids_geographic_crs_warning():
     assert -122.5 < centroids.iloc[0].x < -122.4
 
 
-def test_student_cache_uses_v9_content_addressed_layout(tmp_path, scenario_factory):
+def test_student_cache_uses_v10_content_addressed_layout(tmp_path, scenario_factory):
     baseline = _ingest(_student_scenario(tmp_path, scenario_factory))
     all_population = _ingest(
         _student_scenario(tmp_path, scenario_factory, program_population="All")
@@ -113,7 +113,7 @@ def test_student_cache_uses_v9_content_addressed_layout(tmp_path, scenario_facto
     baseline_namespace = loaders._student_cache_namespace(baseline)
     changed_namespace = loaders._student_cache_namespace(all_population)
 
-    assert baseline_namespace.path.parent.name == "v9"
+    assert baseline_namespace.path.parent.name == "v10"
     assert baseline_namespace.path.parent.parent.name == "students"
     assert loaders._student_cache_path(baseline).endswith("/students.csv")
     assert baseline_namespace.key != changed_namespace.key
@@ -545,7 +545,7 @@ def test_school_loading_uses_program_capacities_unless_scenario_is_selected(
     assert loaders.load_schools(_ingest(scenario))["ge_capacity"].tolist() == [19]
 
 
-def test_legacy_alias_canonically_selects_school_999_everywhere(
+def test_legacy_aliases_canonically_select_school_1731_everywhere(
     tmp_path, scenario_factory
 ):
     schools = pd.DataFrame(
@@ -581,14 +581,14 @@ def test_legacy_alias_canonically_selects_school_999_everywhere(
     graph_school_data = graph_builder._school_data(cfg)
 
     assert loaded_schools[["school_id", "Block", "ge_capacity"]].to_dict("records") == [
-        {"school_id": 999, "Block": 1002, "ge_capacity": 20}
+        {"school_id": 1731, "Block": 1002, "ge_capacity": 20}
     ]
-    assert locations.to_dict("records") == [{"school_id": 999, "Block": 1002}]
+    assert locations.to_dict("records") == [{"school_id": 1731, "Block": 1002}]
     assert coordinates.to_dict("records") == [
-        {"school_id": 999, "lat": 37.2, "lon": -122.2}
+        {"school_id": 1731, "lat": 37.2, "lon": -122.2}
     ]
-    assert set(graph_school_data) == {999}
-    assert loaders.load_centroid_schools("test-centroids", scenario) == [999]
+    assert set(graph_school_data) == {1731}
+    assert loaders.load_centroid_schools("test-centroids", scenario) == [1731]
 
 
 def test_load_census_shapefile_enriches_geographic_ids(tmp_path, scenario_factory):

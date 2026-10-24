@@ -30,8 +30,9 @@ _OPTIONAL_SUM_ATTRS = ["ge_enrolling_students", "all_prog_enrolling_students"]
 
 # Bumped to 14 when coarse part numbering became canonical (derived from the
 # stable area ids in each part rather than from KaHIP's own labels), and to 15
-# when nodes gained the ``*_enrolling_students`` capacity-row counts.
-GRAPH_CACHE_SCHEMA_VERSION = 15
+# when nodes gained the ``*_enrolling_students`` capacity-row counts, and to 16
+# when Mission Bay's canonical school ID became 1731.
+GRAPH_CACHE_SCHEMA_VERSION = 16
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42

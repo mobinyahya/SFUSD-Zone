@@ -32,7 +32,7 @@ def test_mission_bay_webster_capacity_transfer_is_selected_and_conserves_seats(
     )
     programs = pd.DataFrame(
         {
-            "school_id": [999, 497, 999],
+            "school_id": [1731, 497, 1731],
             "program_type": ["GE", "GE", "MM"],
             "capacity": [69, 44, 5],
         }
@@ -376,8 +376,8 @@ def test_the_promotion_claim_is_filtered_and_aliased_like_any_program_list(
     loaded = normalize_student_records(students, scenario, "assignment").set_index(
         "studentno"
     )
-    assert loaded.loc[1, "promote"] == ["999-GE-KG"]
-    assert loaded.loc[1, "feeder_school"] == 999
+    assert loaded.loc[1, "promote"] == ["1731-GE-KG"]
+    assert loaded.loc[1, "feeder_school"] == 1731
 
     scenario = _student_scenario(
         tmp_path, scenario_factory, students, rounds=[1], include_mission_bay=False
@@ -524,7 +524,7 @@ def test_special_program_modes_across_selected_rounds(
 @pytest.mark.parametrize(
     ("include_mission_bay", "expected_schools", "expected_ranks"),
     [
-        (True, [999, 999, 20], [1, 2, 3]),
+        (True, [1731, 1731, 20], [1, 2, 3]),
         (False, [20], [3]),
     ],
 )
@@ -561,10 +561,10 @@ def test_mission_bay_filter_keeps_all_choice_metadata_aligned(
     assert loaded.loc[0, "r1_ranked_idschool"] == expected_schools
     assert loaded.loc[0, "r1_listed_ranks"] == expected_ranks
     if include_mission_bay:
-        assert loaded.loc[0, "sibling"] == [999, 999, 20]
+        assert loaded.loc[0, "sibling"] == [1731, 1731, 20]
         assert loaded.loc[0, "currentlpsibling"] == [
-            "999-SE-KG",
-            "999-GE-KG",
+            "1731-SE-KG",
+            "1731-GE-KG",
             "20-CN-KG",
         ]
     else:
@@ -632,8 +632,8 @@ def test_program_grade_special_filtering_and_capacity_overlay(
 
     loaded = load_program_records(scenario)
 
-    assert loaded["program_id"].tolist() == ["999-GE-KG"]
-    assert loaded["school_id"].tolist() == [999]
+    assert loaded["program_id"].tolist() == ["1731-GE-KG"]
+    assert loaded["school_id"].tolist() == [1731]
     assert loaded["capacity"].tolist() == [66]
 
 
@@ -681,7 +681,7 @@ def test_pooled_capacity_overlay_splits_seats_over_lottery_pools(
             "program_id": ["10-SE-KG", "10-SN-KG", "20-JE-KG", "20-JN-KG", "30-GE-KG"],
             "school_id": [10, 10, 20, 20, 30],
             "program_type": ["SE", "SN", "JE", "JN", "GE"],
-            "capacity": [18, 26, 0, 0, 5],
+            "capacity": [18, 26, 22, 0, 5],
         }
     ).to_csv(programs, index=False)
     pd.DataFrame(
@@ -700,11 +700,118 @@ def test_pooled_capacity_overlay_splits_seats_over_lottery_pools(
         {"assignment": {"capacity_scenario": "A"}},
     )
 
-    loaded = load_program_records(scenario)
+    with pytest.warns(UserWarning, match=r"schools \[40\].*not modelled"):
+        loaded = load_program_records(scenario)
 
-    # 88 seats keep the 18:26 split; pools with no seats share equally, the
-    # odd seat going to the first; school 40 has no such program and is ignored.
-    assert loaded["capacity"].tolist() == [36, 52, 23, 22, 5]
+    # 88 seats keep the 18:26 split; a pool with no seats now stays empty;
+    # school 40 has no such program and is ignored.
+    assert loaded["capacity"].tolist() == [36, 52, 45, 0, 5]
+
+    pd.DataFrame(
+        {
+            "program_id": ["20-JE-KG", "20-JN-KG"],
+            "school_id": [20, 20],
+            "program_type": ["JE", "JN"],
+            "capacity": [0, 0],
+        }
+    ).to_csv(programs, index=False)
+    # No pool holds seats, so there is no proportion to follow, and none is
+    # assumed.
+    with (
+        pytest.warns(UserWarning),
+        pytest.raises(ValueError, match="School 20 JE\\+JN: Cannot split 45 seats"),
+    ):
+        load_program_records(scenario)
+
+
+def test_capacity_scenario_categories_decide_attendance_and_citywide_schools(
+    tmp_path, scenario_factory
+):
+    schools = tmp_path / "schools.csv"
+    capacities = tmp_path / "capacities.csv"
+    pd.DataFrame(
+        {
+            "school_id": [10, 20, 30, 999],
+            "category": ["Attendance", "Citywide", "Citywide", "Attendance"],
+        }
+    ).to_csv(schools, index=False)
+    # School 10 keeps attendance-area seats in one program only, which is
+    # enough; school 20 gains some; 30 is unlisted; Mission Bay is listed under
+    # its district code against the table's legacy placeholder.
+    pd.DataFrame(
+        {
+            "Grade": ["K", "K", "K", "K", "06"],
+            "SchNum": [10, 10, 20, 1731, 30],
+            "PathwayCode": ["GE", "SB", "GE", "GE", "GE"],
+            "Scenario_A_Capacity": [22, 44, 66, 66, 10],
+            "Scenario_A_Category": [
+                "Attendance",
+                "Attendance",
+                "Attendance",
+                "Citywide",
+                "Attendance",
+            ],
+        }
+    ).to_csv(capacities, index=False)
+    scenario = scenario_factory(
+        {
+            "assignment.schools": {"path": str(schools)},
+            "assignment.capacity": {"path": str(capacities)},
+        },
+        {
+            "assignment": {
+                "year": "2324",
+                "capacity_profile": "status_quo",
+                "capacity_scenario": "A",
+                "include_mission_bay": True,
+            }
+        },
+    )
+
+    loaded = load_school_records(scenario).set_index("school_id")["category"]
+
+    assert loaded.to_dict() == {
+        10: "Attendance",
+        20: "Attendance",
+        30: "Citywide",
+        1731: "Citywide",
+    }
+
+    plain = scenario_factory(
+        {"assignment.schools": {"path": str(schools)}},
+        {"assignment": {"capacity_scenario": "programs"}},
+        scenario_id="plain",
+    )
+    assert load_school_records(plain)["category"].tolist() == [
+        "Attendance",
+        "Citywide",
+        "Citywide",
+    ]
+
+
+def test_capacity_scenario_categories_must_agree_per_school(tmp_path, scenario_factory):
+    schools = tmp_path / "schools.csv"
+    capacities = tmp_path / "capacities.csv"
+    pd.DataFrame({"school_id": [10], "category": ["Attendance"]}).to_csv(
+        schools, index=False
+    )
+    pd.DataFrame(
+        {
+            "SchNum": [10, 10],
+            "PathwayCode": ["GE", "SB"],
+            "Scenario_A_Capacity": [22, 44],
+            "Scenario_A_Category": ["Attendance", "Citywide"],
+        }
+    ).to_csv(capacities, index=False)
+    scenario = scenario_factory(
+        {
+            "assignment.schools": {"path": str(schools)},
+            "assignment.capacity": {"path": str(capacities)},
+        },
+        {"assignment": {"capacity_scenario": "A"}},
+    )
+    with pytest.raises(ValueError, match=r"schools \[10\] more than one category"):
+        load_school_records(scenario)
 
 
 @pytest.mark.parametrize(
@@ -806,5 +913,195 @@ def test_school_loading_applies_mission_bay_policy_and_central_alias(
         scenario_id="excluded",
     )
 
-    assert load_school_records(included)["school_id"].tolist() == [999, 20]
+    assert load_school_records(included)["school_id"].tolist() == [1731, 20]
     assert load_school_records(excluded)["school_id"].tolist() == [20]
+
+
+@pytest.mark.parametrize(
+    ("source_ids", "kept_name"),
+    [
+        ([909, 999, 20], "placeholder 999"),
+        ([909, 1731, 999, 20], "district 1731"),
+    ],
+)
+def test_school_loading_prefers_canonical_then_recent_mission_bay_rows(
+    tmp_path, scenario_factory, source_ids, kept_name
+):
+    names = {909: "placeholder 909", 999: "placeholder 999", 1731: "district 1731"}
+    schools = tmp_path / "schools.csv"
+    pd.DataFrame(
+        {
+            "school_id": source_ids,
+            "school_name": [names.get(school, "Other") for school in source_ids],
+        }
+    ).to_csv(schools, index=False)
+    scenario = scenario_factory(
+        {"assignment.schools": {"path": str(schools)}},
+        {
+            "assignment": {
+                "year": "2324",
+                "capacity_profile": "status_quo",
+                "include_mission_bay": True,
+            }
+        },
+    )
+
+    loaded = load_school_records(scenario).set_index("school_id")
+    assert loaded.index.tolist() == [1731, 20]
+    assert loaded.loc[1731, "school_name"] == kept_name
+
+
+def _with_planned_school(scenario, *, include=False, **site):
+    """``scenario`` with a test Mandarin Immersion entry, optionally included.
+
+    The flag is set after loading because ``load_scenario`` rejects including
+    the real entry, whose site and pool split are still unknown.
+    """
+    import dataclasses
+
+    definition = {
+        "school_id": 400,
+        "school_name": "Mandarin Immersion TK-8",
+        "category": "Citywide",
+        "lat": None,
+        "lon": None,
+        "programs": {"KG": {"ME": 27, "MN": 39}},
+        **site,
+    }
+    filters = {
+        group: {**values, "include_mandarin_immersion": include}
+        for group, values in scenario.filters.items()
+    }
+    return dataclasses.replace(
+        scenario,
+        filters=filters,
+        planned_schools={"mandarin_immersion": definition},
+    )
+
+
+def test_planned_school_is_absent_by_default(tmp_path, scenario_factory):
+    schools = tmp_path / "schools.csv"
+    pd.DataFrame({"school_id": [10], "category": ["Attendance"]}).to_csv(
+        schools, index=False
+    )
+    sources = {"assignment.schools": {"path": str(schools)}}
+    plain = _with_planned_school(scenario_factory(sources, {"assignment": {}}))
+    assert load_school_records(plain)["school_id"].tolist() == [10]
+    assert "planned_schools" not in plain.source_manifest([])
+
+
+def test_included_planned_school_joins_school_and_program_tables(
+    tmp_path, scenario_factory, monkeypatch
+):
+    import loaders.geography
+
+    schools = tmp_path / "schools.csv"
+    programs = tmp_path / "programs.csv"
+    capacities = tmp_path / "capacities.csv"
+    pd.DataFrame(
+        {"school_id": [10], "category": ["Attendance"], "lat": [37.7], "lon": [-122.4]}
+    ).to_csv(schools, index=False)
+    pd.DataFrame(
+        {
+            "program_id": ["10-GE-KG"],
+            "school_id": [10],
+            "program_type": ["GE"],
+            "capacity": [44],
+            "programno": [1],
+        }
+    ).to_csv(programs, index=False)
+    pd.DataFrame(
+        {
+            "Grade": ["K"],
+            "SchNum": [400],
+            "PathwayCode": ["ME+MN"],
+            "Scenario_A_Capacity": [88],
+        }
+    ).to_csv(capacities, index=False)
+
+    def fake_match(frame, *args, row_mask=None, **kwargs):
+        located = pd.Series(pd.NA, index=frame.index, dtype="Int64")
+        located[row_mask] = 60750607001053
+        return pd.DataFrame(
+            {
+                "Block": located,
+                "BlockGroup": located // 1000,
+                "Tract": located // 10000,
+            }
+        )
+
+    monkeypatch.setattr(loaders.geography, "match_points_to_census", fake_match)
+    sources = {
+        "assignment.schools": {"path": str(schools)},
+        "assignment.programs": {"path": str(programs)},
+        "assignment.capacity": {"path": str(capacities)},
+    }
+    scenario = _with_planned_school(
+        scenario_factory(sources, {"assignment": {"capacity_scenario": "A"}}),
+        include=True,
+        lat=37.77,
+        lon=-122.39,
+    )
+
+    loaded_schools = load_school_records(scenario).set_index("school_id")
+    assert loaded_schools.loc[400, "category"] == "Citywide"
+    assert loaded_schools.loc[400, "Block"] == 60750607001053
+
+    loaded = load_program_records(scenario).set_index("program_id")
+    # The registry's 27:39 split carries the scenario's 88 seats.
+    assert loaded.loc[["400-ME-KG", "400-MN-KG"], "capacity"].tolist() == [36, 52]
+    assert loaded["programno"].tolist() == [1, 2, 3]
+    assert (
+        scenario.source_manifest([])["planned_schools"]["assignment"][0]["school_id"]
+        == 400
+    )
+
+
+def test_programs_carry_attendance_area_seats_from_the_scenario_or_the_school(
+    tmp_path, scenario_factory
+):
+    schools = tmp_path / "schools.csv"
+    programs = tmp_path / "programs.csv"
+    capacities = tmp_path / "capacities.csv"
+    pd.DataFrame(
+        {
+            "school_id": [10, 20, 30],
+            "category": ["Attendance", "Citywide", "Attendance"],
+        }
+    ).to_csv(schools, index=False)
+    pd.DataFrame(
+        {
+            "program_id": ["10-GE-KG", "10-SE-KG", "10-SN-KG", "20-GE-KG", "30-GE-KG"],
+            "school_id": [10, 10, 10, 20, 30],
+            "program_type": ["GE", "SE", "SN", "GE", "GE"],
+            "capacity": [40, 10, 10, 50, 22],
+        }
+    ).to_csv(programs, index=False)
+    # School 10's GE seats are split: 44 attendance-area, 22 citywide.
+    pd.DataFrame(
+        {
+            "Grade": ["K", "K", "K"],
+            "SchNum": [10, 10, 20],
+            "PathwayCode": ["GE", "SE+SN", "GE"],
+            "Scenario_A_Capacity": [66, 44, 66],
+            "Scenario_A_AttendanceAreaCapacity": [44, 0, 0],
+            "Scenario_A_Category": ["Attendance", "Attendance", "Citywide"],
+        }
+    ).to_csv(capacities, index=False)
+    sources = {
+        "assignment.schools": {"path": str(schools)},
+        "assignment.programs": {"path": str(programs)},
+        "assignment.capacity": {"path": str(capacities)},
+    }
+
+    overlaid = load_program_records(
+        scenario_factory(sources, {"assignment": {"capacity_scenario": "A"}})
+    ).set_index("program_id")
+    # School 30 is not in the scenario, so its GE seats fall back to the rule.
+    assert overlaid["capacity"].tolist() == [66, 22, 22, 66, 22]
+    assert overlaid["attendance_area_capacity"].tolist() == [44, 0, 0, 0, 22]
+
+    plain = load_program_records(
+        scenario_factory(sources, {"assignment": {}}, scenario_id="plain")
+    )
+    assert plain["attendance_area_capacity"].tolist() == [40, 0, 0, 0, 22]

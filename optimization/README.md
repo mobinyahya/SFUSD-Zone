@@ -66,6 +66,7 @@ uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
 | `saa_welfare` | yes | yes | yes | yes |
 | `choice_welfare` | yes | yes | yes | yes |
 | `capacity_match` | — | — | — | yes |
+| `aa_capacity_match` | — | — | — | yes |
 
 Unsupported combinations fail during configuration, before loading graphs.
 Methods are `cp_bool`, `cp_int`, `mip`, and `recom`. There is no implicit
@@ -77,7 +78,14 @@ or matching oracle. `saa_welfare` is expected stable matching welfare across
 sampled lotteries. `choice_welfare` is MNL school-availability utility (`logsum`
 by default, or `choice_model_method: max`). These remain distinct objectives in
 saved results and benchmark tables. `capacity_match` minimizes weighted
-unassigned and designated student counts. Matching/SAA/capacity objectives need
+unassigned and designated student counts. `aa_capacity_match` is the same
+count over attendance-area seats only. Every program is cut to its
+`attendance_area_capacity` -- the seats the district's capacity workbook labels
+attendance-area when a workbook `capacity_scenario` is selected for the
+assignment group, otherwise every seat of a GE program at an attendance-area
+school -- so language pathways, citywide schools, and the citywide share of a
+GE program take no one; a student the match leaves out is designated to the
+attendance-area seats their zone has free. Matching/SAA/capacity objectives need
 `data.overrides.filters.optimization.program_population: All` and matching
 optimization/assignment geography vintages.
 

@@ -203,8 +203,9 @@ class OptimizationConfig:
     recom_objective_weight: float = _RECOM.objective_weight
     # What a plain ``recom`` solve ranks feasible partitions by: ``cut_edges``
     # (boundary cost), ``school_distance``, ``welfare`` (discrete MID welfare,
-    # maximized), or ``capacity_match``. The two choice objectives build a MID
-    # market and need program_population='All'. Pipeline steps pick theirs
+    # maximized), ``capacity_match``, or ``aa_capacity_match`` (the same, with
+    # the match confined to attendance-area seats). The choice objectives build
+    # a MID market and need program_population='All'. Pipeline steps pick theirs
     # through ``objective`` instead.
     recom_objective: str = "cut_edges"
     # capacity_match: the weights of an unassigned and a designated student.
@@ -563,12 +564,13 @@ class OptimizationConfig:
             )
         self.recom_settings()  # validates every recom_* setting
         if (
-            self.recom_objective == "capacity_match"
+            self.recom_objective in {"capacity_match", "aa_capacity_match"}
             and self.capacity_match_unassigned_weight == 0
             and self.capacity_match_designated_weight == 0
         ):
             raise ValueError(
-                "capacity_match needs a positive unassigned or designated weight."
+                f"{self.recom_objective} needs a positive "
+                "unassigned or designated weight."
             )
         if self.strategy == "pipeline":
             from optimization.pipeline import step_config
@@ -580,6 +582,7 @@ class OptimizationConfig:
                     "welfare",
                     "saa_welfare",
                     "capacity_match",
+                    "aa_capacity_match",
                 }:
                     if effective.program_population != "All":
                         raise ValueError(
@@ -590,6 +593,7 @@ class OptimizationConfig:
                     "welfare",
                     "saa_welfare",
                     "capacity_match",
+                    "aa_capacity_match",
                     "choice_welfare",
                 }:
                     if effective.data_scenario.filter(
@@ -797,7 +801,10 @@ class OptimizationConfig:
 
     def recom_settings(self) -> ReComSettings:
         return ReComSettings.from_options(
-            {f"recom_{f.name}": getattr(self, f"recom_{f.name}") for f in fields(ReComSettings)}
+            {
+                f"recom_{f.name}": getattr(self, f"recom_{f.name}")
+                for f in fields(ReComSettings)
+            }
         )
 
     def make_solver(self, output_dir: str | None = None):

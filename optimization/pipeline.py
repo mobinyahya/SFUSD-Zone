@@ -297,7 +297,8 @@ def step_config(
             else "school_distance"
             if objective_spec.compactness_objective == "school_distance"
             else objective
-            if objective in {"cut_edges", "school_distance", "capacity_match"}
+            if objective
+            in {"cut_edges", "school_distance", "capacity_match", "aa_capacity_match"}
             else "cut_edges"
         ),
         solve_time_limits=[

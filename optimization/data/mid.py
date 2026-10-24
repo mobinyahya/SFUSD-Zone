@@ -38,6 +38,9 @@ class MidProgram:
     capacity: int
     citywide: bool
     school_node: int | None
+    #: How many of ``capacity`` are attendance-area seats (the program table's
+    #: ``attendance_area_capacity``); ``None`` when the table does not say.
+    attendance_area_capacity: int | None = None
 
 
 @dataclass(frozen=True)
@@ -245,8 +248,20 @@ def build_mid_student_market(
                 f"Restricted program {program_id} school {school_id} is absent "
                 f"from graph {problem.level.name}."
             )
+        attendance_seats = row.get("attendance_area_capacity")
         programs.append(
-            MidProgram(program_id, school_id, capacity, citywide, school_node)
+            MidProgram(
+                program_id,
+                school_id,
+                capacity,
+                citywide,
+                school_node,
+                None
+                if attendance_seats is None or pd.isna(attendance_seats)
+                else _integer(
+                    attendance_seats, f"attendance-area seats for {program_id}"
+                ),
+            )
         )
     # Preference lists are read positionally off ``available_programs``, so the
     # utility and priority columns have to be narrowed in the same order.

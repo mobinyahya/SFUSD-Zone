@@ -301,6 +301,149 @@ def test_capacity_match_weights_change_the_answer(monkeypatch) -> None:
     assert stranded.metadata["best_unassigned_students"] > 0.0
 
 
+def _pathway_market() -> MidMarket:
+    """Node 1's two students rank only a language pathway, node 2's two only a
+    citywide program; both have room, and each zone has two free GE seats."""
+
+    return MidMarket(
+        programs=(
+            MidProgram("100-GE-KG", 100, 2, False, 0),
+            MidProgram("100-SE-KG", 100, 3, False, 0),
+            MidProgram("200-GE-KG", 200, 2, False, 3),
+            MidProgram("300-GE-KG", 300, 5, True, None),
+        ),
+        types=(
+            MidType(1, 2, ("100-SE-KG",), (0,), (2.0,), (200,)),
+            MidType(2, 2, ("300-GE-KG",), (0,), (2.0,), (200,)),
+        ),
+        student_count=4,
+        outside_only_student_count=0,
+        utility_student_count=4,
+        utility_handling="omit_nonpositive",
+    )
+
+
+def test_unlabelled_markets_fall_back_to_zoned_ge_seats() -> None:
+    market = burst_objectives.attendance_area_market(_pathway_market())
+
+    capacities = {program.program_id: program.capacity for program in market.programs}
+    assert capacities == {
+        "100-GE-KG": 2,
+        "100-SE-KG": 0,
+        "200-GE-KG": 2,
+        "300-GE-KG": 0,
+    }
+    assert market.types == _pathway_market().types
+
+
+def test_aa_capacity_match_counts_only_attendance_area_seats(monkeypatch) -> None:
+    _use_market(monkeypatch, _pathway_market())
+    problem = _choice_problem()
+
+    def score(metric):
+        scorer = burst_objectives.mid_burst_scorer(problem, metric, {"workers": 1})
+        try:
+            (value,) = scorer((SPLIT_A,), None)
+            return value, scorer.describe(SPLIT_A)
+        finally:
+            scorer.close()
+
+    # The full match seats everyone in the pathway and the citywide program.
+    full, _ = score("capacity_match")
+    assert full == pytest.approx(0.0)
+    # Confined to GE seats, all four fall to designation in their own zone.
+    aa, details = score("aa_capacity_match")
+    assert aa == pytest.approx(4.0)
+    assert details["best_designated_students"] == pytest.approx(4.0)
+    assert details["best_unassigned_students"] == pytest.approx(0.0)
+
+
+def _split_ge_market() -> MidMarket:
+    """School 100's four GE seats are half attendance-area, half citywide, as a
+    workbook may label them; node 1's four students rank only that program."""
+
+    return MidMarket(
+        programs=(
+            MidProgram("100-GE-KG", 100, 4, False, 0, 2),
+            MidProgram("100-SE-KG", 100, 3, False, 0, 0),
+            MidProgram("200-GE-KG", 200, 2, False, 3, 2),
+            MidProgram("300-GE-KG", 300, 5, True, None, 5),
+        ),
+        types=(MidType(1, 4, ("100-GE-KG",), (0,), (2.0,), (200,)),),
+        student_count=4,
+        outside_only_student_count=0,
+        utility_student_count=4,
+        utility_handling="omit_nonpositive",
+    )
+
+
+def test_attendance_area_market_uses_the_labelled_seats() -> None:
+    market = _split_ge_market()
+
+    cut = burst_objectives.attendance_area_market(market)
+    seats = burst_objectives.attendance_area_designation_seats(market)
+
+    # A citywide school holds no attendance-area seats whatever its label.
+    assert {p.program_id: p.capacity for p in cut.programs} == {
+        "100-GE-KG": 2,
+        "100-SE-KG": 0,
+        "200-GE-KG": 2,
+        "300-GE-KG": 0,
+    }
+    assert [(s.program_id, s.capacity) for s in seats] == [
+        ("100-GE-KG", 2),
+        ("200-GE-KG", 2),
+    ]
+
+
+def test_aa_capacity_match_ignores_the_citywide_share_of_a_ge_program(
+    monkeypatch,
+) -> None:
+    _use_market(monkeypatch, _split_ge_market())
+    problem = _choice_problem()
+
+    def score(metric):
+        scorer = burst_objectives.mid_burst_scorer(problem, metric, {"workers": 1})
+        try:
+            (value,) = scorer((SPLIT_A,), None)
+            return value, scorer.describe(SPLIT_A)
+        finally:
+            scorer.close()
+
+    full, _ = score("capacity_match")
+    assert full == pytest.approx(0.0)
+    # Two of the four fit the attendance-area half; zone 0 has no other
+    # attendance-area seat, so the other two are unassigned.
+    aa, details = score("aa_capacity_match")
+    assert aa == pytest.approx(2.0)
+    assert details["best_unassigned_students"] == pytest.approx(2.0)
+    assert details["best_designated_students"] == pytest.approx(0.0)
+
+
+def test_aa_capacity_match_runs_under_recom(monkeypatch) -> None:
+    _use_market(monkeypatch, _capacity_market())
+
+    solution = _recom(recom_objective="aa_capacity_match").solve(_choice_problem())
+
+    # Every program here is a zoned GE seat, so it agrees with capacity_match.
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["objective_kind"] == "aa_capacity_match"
+    assert solution.objective == pytest.approx(
+        solution.metadata["best_unassigned_students"]
+        + solution.metadata["best_designated_students"]
+    )
+
+
+def test_aa_capacity_match_needs_a_positive_weight() -> None:
+    with pytest.raises(ValueError, match="aa_capacity_match needs a positive"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"],
+            recom_objective="aa_capacity_match",
+            capacity_match_unassigned_weight=0.0,
+            capacity_match_designated_weight=0.0,
+        )
+
+
 def test_welfare_objective_maximizes_mid_welfare(monkeypatch) -> None:
     market = _welfare_market()
     _use_market(monkeypatch, market)

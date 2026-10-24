@@ -164,8 +164,9 @@ other non-graph workflows. Optimization graph construction fails if retained
 students lack the graph's selected geography.
 
 `include_mission_bay` centrally controls Mission Bay handling. When enabled,
-the shared table loader derives the `909 -> 999` school alias across student,
-program, and school data. Runs do not supply an alias map.
+the shared table loader reads Mission Bay's legacy placeholders `999` and
+`909` as its district code `1731` across student, program, and school data.
+Runs do not supply an alias map.
 
 The six large generated-zone run configs share
 `assignment-generated-zones-2324`. The scenario exposes 256 zone aliases and
@@ -181,9 +182,8 @@ from the 2023-24 scenario:
 * `capacity_profile` is `default`, because the registry publishes no
   `status_quo` profile for the transfer years.
 * `include_mission_bay` is `false` for 2024-25 and 2025-26 and `true` only
-  for 2026-27. Mission Bay ES is idSchool 1731 in the transfer, remapped to
-  999 by `RAW_SCHOOL_ID_ALIASES` in
-  `analysis/data_prep/sfusd_transfer_schema.py`. It appears in the SY26-27
+  for 2026-27. Mission Bay ES is idSchool 1731 in the transfer, the
+  repository's canonical Mission Bay ID. It appears in the SY26-27
   Main Round capacity file only, at K GE 69, MM 5 and AF 0 seats, and is the
   single school added anywhere across the three years (Presidio EES is the
   only one dropped). The 2024-25 and 2025-26 demographics and post-run
@@ -192,7 +192,7 @@ from the 2023-24 scenario:
   variant is byte-identical to the standard one.
   Enabling Mission Bay for them selects the Mission Bay *school* table
   against a program table without Mission Bay, and zone setup then fails with
-  `Unknown program IDs: ['999-GE-KG']`, because
+  `Unknown program IDs: ['1731-GE-KG']`, because
   `Zones.get_area_id2ge_program_id_dict` turns every attendance-area school
   into a `<school>-GE-KG` program id. The shipped `sfusd-2425` and
   `sfusd-2526` scenarios still set `include_mission_bay: true` and hit this
@@ -325,7 +325,7 @@ is independent of the data-catalog schema version in source manifests.
 | `students/v6/<key>/` | `students.csv` | Filtered multi-year optimization students |
 | `area_distances/v3/<key>/` | `distances.csv` | Source-aware area centroid distances |
 | `graphs/v11/<key>/` | `Block_*.pickle`, `BlockGroup_*.pickle`, or `Tract_0.pickle` | Optimization graph hierarchy |
-| `closer_neighbors/v3/` | `closer_neighbors_<level>.pickle` | Geometry distances and strictly closer adjacent nodes |
+| `closer_neighbors/v4/` | `closer_neighbors_<level>.pickle` | Geometry distances and strictly closer adjacent nodes |
 | `student_program_distances/v4/<key>/` | `distances.pkl` | Assignment student-to-program distances |
 | `visualization_geometry/v4/<key>/` | `geometry.pkl` | Dissolved graph-node geometry for maps and spatial metrics |
 
@@ -335,7 +335,7 @@ With the defaults, a graph payload therefore lives at a path like:
 /soalnas/share/data/school_choice/Data/caches/graphs/v11/<sha256>/Block_0.pickle
 ```
 
-`closer_neighbors/v3` predates the generic namespace layout. It keeps one
+`closer_neighbors/v4` predates the generic namespace layout. It keeps one
 locked file per level and stores validated graph/source fingerprint variants
 inside that file. It is still source-aware and schema-versioned.
 

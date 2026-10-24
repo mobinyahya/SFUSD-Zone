@@ -118,7 +118,7 @@ ZONE_COLORS = {
     21: "tan",
     539: "tan",
     22: "darkblue",
-    999: "darkblue",
+    1731: "darkblue",
     23: "darkred",
     562: "darkred",
     24: "darkorange",

@@ -45,7 +45,7 @@ PRERUN_ROWS = [
     # already on the list and appending it would duplicate a choice.
     ("S000000001", 1, 413, "K", "GE", 0.10, "CT1;", None, "CT1"),
     ("S000000001", 2, 420, "K", "GE", 0.20, "CT1;S;", "S", "CT1"),
-    ("S000000001", 4, 999, "K", "GE", 0.30, "CT1;", None, "CT1"),
+    ("S000000001", 4, 1731, "K", "GE", 0.30, "CT1;", None, "CT1"),
     # Student 2: one KG choice at Mission Bay's new transfer ID, but currently
     # in TK at 420-GE, so the feeder has to be appended.
     ("S000000002", 1, 1731, "K", "GE", 0.40, None, None, None),
@@ -87,7 +87,7 @@ POSTRUN_ROWS = [
     (
         "S000000002",
         420,
-        999,
+        1731,
         "GE",
         "K",
         37.7698,
@@ -248,7 +248,7 @@ CAPACITY_ROWS = [
     (413, "Alamo ES", "K", "GE", 64, 40, 2, 3, 1),
     (420, "Alvarado ES", "K", "GE", 88, 70, 5, 2, 1),
     (420, "Alvarado ES", "K", "SE", 0, 0, 0, 0, 0),
-    (999, "Mission Bay ES", "K", "GE", 20, 20, 0, 0, 0),
+    (1731, "Mission Bay ES", "K", "GE", 20, 20, 0, 0, 0),
     (413, "Alamo ES", "TK", "GE", 48, 48, 0, 0, 0),
     (903, "Argonne EES", "TK", "GE", 24, 24, 0, 0, 0),
     (404, "Aptos MS", "6", "GE", 271, 271, 0, 0, 0),
@@ -380,7 +380,7 @@ def test_discovery_fails_when_a_role_is_absent(transfer):
 # --------------------------------------------------------------------------- #
 def test_ranked_lists_preserve_order_and_non_contiguous_listed_ranks(frames):
     students = _students(frames)
-    assert students.loc[1, "r1_ranked_idschool"] == "[413, 420, 999]"
+    assert students.loc[1, "r1_ranked_idschool"] == "[413, 420, 1731]"
     assert students.loc[1, "r1_programs"] == "['GE', 'GE', 'GE']"
     # Rank 3 was withdrawn: the gap is kept rather than renumbered, because the
     # loader aligns listed ranks to the school list.
@@ -399,12 +399,12 @@ def test_malformed_student_identity_is_an_error_not_a_dropped_row(frames):
         _students(frames)
 
 
-def test_mission_bay_new_transfer_id_is_rewritten_to_the_canonical_id(frames):
+def test_mission_bay_district_id_is_kept_as_the_canonical_id(frames):
     students = _students(frames)
-    # 1731 is Mission Bay ES in the SY26-27 transfer; the shared table loader
-    # keys every Mission Bay policy on {909, 999}, so it must arrive as 999.
-    assert students.loc[2, "r1_ranked_idschool"] == "[999]"
-    assert int(students.loc[2, "enrolled_idschool"]) == 999
+    # 1731 is Mission Bay ES in the SY26-27 transfer and the repository's
+    # canonical Mission Bay ID, so it is written through unchanged.
+    assert students.loc[2, "r1_ranked_idschool"] == "[1731]"
+    assert int(students.loc[2, "enrolled_idschool"]) == 1731
 
 
 def test_per_request_priority_flags_become_per_student_school_lists(frames):
@@ -517,6 +517,8 @@ def cleaned_dir(tmp_path: Path) -> Path:
     ).to_csv(folder / bundle.schools_standard, index=False)
     pd.DataFrame(
         {
+            # The borrowed school table still holds Mission Bay under the
+            # legacy placeholder 999, which locates the transfer's 1731.
             "school_id": [413, 420, 999],
             "lat": [37.783, 37.7537, 37.7698],
             "lon": [-122.4823, -122.4382, -122.3945],
@@ -554,7 +556,7 @@ def test_kindergarten_capacity_is_the_capacity_file_total_not_the_open_seats(
     # auto-promotion re-enter the same run when a promote wins elsewhere.
     assert programs.loc["413-GE-KG", "capacity"] == 64
     assert "TotalSeats" in programs.loc["413-GE-KG", "capacity_source"]
-    assert programs.loc["999-GE-KG", "capacity"] == 20
+    assert programs.loc["1731-GE-KG", "capacity"] == 20
 
 
 def test_district_promote_counts_ride_along_as_provenance(
@@ -579,22 +581,22 @@ def test_the_row_set_is_the_capacity_file_not_the_requests(
 ):
     programs = _programs(frames, cleaned_dir, capacities)
     # 420-SE is in the capacity file and nobody ranked it; both TK rows and the
-    # grade-6 row belong to other grades.
-    assert sorted(programs["program_id"]) == [
+    # grade-6 row belong to other grades. Rows run in school-number order.
+    assert programs["program_id"].tolist() == [
         "413-GE-KG",
         "420-GE-KG",
         "420-SE-KG",
-        "999-GE-KG",
+        "1731-GE-KG",
     ]
 
 
 def test_mission_bay_is_dropped_from_the_standard_variant(
     frames, cleaned_dir, capacities
 ):
-    # 999 has coordinates only in the Mission Bay school table, so the standard
+    # 1731 has coordinates only in the Mission Bay school table, so the standard
     # variant must not carry it -- a program assignment cannot place.
     programs = _programs(frames, cleaned_dir, capacities, include_mission_bay=False)
-    assert "999-GE-KG" not in set(programs["program_id"])
+    assert "1731-GE-KG" not in set(programs["program_id"])
 
 
 def test_a_capacity_program_at_an_unplaceable_school_is_dropped_and_reported(
@@ -894,8 +896,8 @@ def test_the_enrolled_table_keeps_only_students_with_an_enrolment_record(
     # is at 899 ("Central Enrollment", enrolled nowhere), student 4 is recorded
     # at TK, and 6 and 7 have no record, so the post-run seated all four and
     # none of them enrolled. Student 2 moved after the Main Round from their
-    # 999-GE seat to 420-SE; student 5 is recorded at Mission Bay under the
-    # district's new id 1731.
+    # 1731-GE seat to 420-SE; student 5 is recorded at Mission Bay under the
+    # district's id 1731.
     frames["demographics"] = pd.DataFrame(
         {
             "scrambledstudentno": [f"S00000000{n}" for n in (1, 2, 4, 5)],
@@ -919,10 +921,10 @@ def test_the_enrolled_table_keeps_only_students_with_an_enrolment_record(
         420,
         "SE",
     ]
-    assert enrolled.loc[5, "enrolled_idschool"] == 999
+    assert enrolled.loc[5, "enrolled_idschool"] == 1731
     # The student table, and the Main Round outcome columns of both tables,
     # stay the post-run seat.
-    assert students.loc[2, "enrolled_idschool"] == 999
+    assert students.loc[2, "enrolled_idschool"] == 1731
     assert enrolled.loc[2, "final_school"] == students.loc[2, "final_school"]
     assert report.row_counts["enrolled_KG_seated_at_899"] == 1
     assert report.row_counts["enrolled_KG_seated_no_record"] == 2
@@ -1092,7 +1094,7 @@ def test_a_feeder_already_ranked_is_not_appended_twice(
 ):
     built = _tables(frames, cleaned_dir, capacities, promotion, transfer)
     market = built.table
-    assert market.loc[1, "r1_ranked_idschool"] == "[413, 420, 999]"
+    assert market.loc[1, "r1_ranked_idschool"] == "[413, 420, 1731]"
     assert market.loc[1, "r1_programs"] == "['GE', 'GE', 'GE']"
     # The withdrawn rank 3 is still missing, because the list did not change.
     assert market.loc[1, "r1_listed_ranks"] == "[1, 2, 4]"
@@ -1103,7 +1105,7 @@ def test_a_feeder_not_ranked_is_appended_after_the_submitted_choices(
 ):
     built = _tables(frames, cleaned_dir, capacities, promotion, transfer)
     market = built.table
-    assert market.loc[2, "r1_ranked_idschool"] == "[999, 420]"
+    assert market.loc[2, "r1_ranked_idschool"] == "[1731, 420]"
     assert market.loc[2, "r1_programs"] == "['GE', 'GE']"
     assert market.loc[2, "r1_listed_ranks"] == "[1, 2]"
     assert market.loc[2, "num_ranked"] == 2
@@ -1131,7 +1133,7 @@ def test_an_absent_round_aligned_column_stays_empty_rather_than_partial(
     frames["prerun"] = frames["prerun"].drop(columns=["RandomNumber"])
     built = _tables(frames, cleaned_dir, capacities, promotion, transfer)
     market = built.table
-    assert market.loc[2, "r1_ranked_idschool"] == "[999, 420]"
+    assert market.loc[2, "r1_ranked_idschool"] == "[1731, 420]"
     assert market.loc[2, "r1_randomnumber"] == "[]"
     # The columns the pre-run does carry still line up.
     assert market.loc[2, "r1_listed_ranks"] == "[1, 2]"
@@ -1180,8 +1182,8 @@ def test_the_attendance_area_is_not_appended_to_a_student_who_has_a_list(
     # For everyone else that is the policy config's job (add_aa_schools).
     built = _tables(frames, cleaned_dir, capacities, promotion, transfer)
     market = built.table
-    assert market.loc[2, "r1_ranked_idschool"] == "[999, 420]"
-    assert 413 not in [999, 420]
+    assert market.loc[2, "r1_ranked_idschool"] == "[1731, 420]"
+    assert 413 not in [1731, 420]
 
 
 def test_the_report_compares_the_identified_promotes_with_the_district(
@@ -1206,7 +1208,7 @@ def test_the_market_is_written_onto_both_tables_and_no_other_grade(
     market = built.table
     applied = converter.apply_market_columns(students, market, grade="KG")
     by_id = applied.set_index("studentno")
-    assert by_id.loc[2, "r1_ranked_idschool"] == "[999, 420]"
+    assert by_id.loc[2, "r1_ranked_idschool"] == "[1731, 420]"
     assert by_id.loc[2, "pref_source"] == "k_list"
     # The grade-6 applicant keeps the list they filed and holds no promotion
     # columns at all.
