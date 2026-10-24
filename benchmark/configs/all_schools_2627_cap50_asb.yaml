@@ -2,11 +2,11 @@
 # all_schools_2627_cap50.yaml), adaptive short bursts with exactly one school
 # per zone.
 #
-# ReCom solvers do not pin zones to centroids, so under the default school-count
-# rule (average +/- 1, i.e. 0-2 schools) adaptive short bursts produced 20 empty
-# zones and 20 two-school zones. school_count_tolerance: 0 makes the rule
-# "exactly one school per zone", which the walk penalizes like any other row;
-# which school a zone holds is left free.
+# ReCom solvers do not pin zones to centroids. Under the old school-count rule
+# (average +/- 1, i.e. 0-2 schools) adaptive short bursts produced 20 empty
+# zones and 20 two-school zones; the rule is now floor/ceil of the average, so
+# with 59 schools in 59 zones it is "exactly one school per zone", which the
+# walk penalizes like any other row; which school a zone holds is left free.
 #
 # Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50_asb.yaml
 #
@@ -36,7 +36,6 @@ optimization_defaults:
   overage: 0.5
   shortage: 0.5
   boundary_prop: -1
-  school_count_tolerance: 0
 
   hints: voronoi
   workers: 1

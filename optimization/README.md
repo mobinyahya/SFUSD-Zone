@@ -129,9 +129,10 @@ ReCom's connected-zone walks retain their respective formulations.
 
 Capacity bands stay configured across **all** objectives. To disable them for
 welfare, explicitly set `overage: -1, shortage: -1` at run or step scope.
-Step `constraints` accepts FRL/racial deviations, overage/shortage,
-school-count tolerance, maximum distance, boundary proportion, and centroid
-neighborhood radius. Step `options` accepts validated search and objective
+Step `constraints` accepts FRL/racial deviations, overage/shortage, maximum
+distance, boundary proportion, and centroid neighborhood radius. The school
+count is not configurable: every zone holds floor(schools / zones) to
+ceil(schools / zones) schools. Step `options` accepts validated search and objective
 settings such as `workers`, `hints`, `recom_burst_length`, `mid_lottery_scale`,
 `saa_num_seeds`, and `max_iterations`; unknown keys are errors.
 

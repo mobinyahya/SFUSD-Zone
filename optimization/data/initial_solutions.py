@@ -314,11 +314,13 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
             bool(problem.weight_edges),
         ],
     )
-    # Appended only when non-default so every pre-existing key is unchanged.
-    if problem.school_count_tolerance != 1.0:
-        _write(
-            digest, ["school_count_tolerance", float(problem.school_count_tolerance)]
-        )
+    # The school-count band is floor/ceil of the average. Where the average is
+    # fractional that is the old default band (+/- 1) and appends nothing;
+    # where it is whole it is the old tolerance-0 band, and keeps that key, so
+    # every hint whose feasible set is unchanged keeps its key.
+    schools = sum(problem.num_schools(node) for node in problem.nodes)
+    if schools and schools % problem.Z == 0:
+        _write(digest, ["school_count_tolerance", 0.0])
     _write(
         digest,
         [

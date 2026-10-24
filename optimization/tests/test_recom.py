@@ -201,7 +201,7 @@ def test_recom_uses_weighted_boundary_cost(preset: str) -> None:
 @pytest.mark.parametrize("preset", PRESETS)
 def test_every_preset_repairs_an_infeasible_start(preset: str, pair_score: str) -> None:
     # One school per zone, but the start puts both in zone 0.
-    problem = make_grid_problem(4, 4, school_count_tolerance=0.0)
+    problem = make_grid_problem(4, 4)
     start = [int(pos == 14) for pos in range(16)]
     context = _ReComContext(problem)
     assert not context.build_state(start).feasible
@@ -287,9 +287,7 @@ def test_scored_walks_repair_an_infeasible_start() -> None:
     """Burst selection prefers feasible samples, so a scored walk needs no
     feasible start; only feasible samples are ever scored."""
     # Three schools per zone: only {0, 1} | {2, 3} is feasible.
-    problem = make_solver_contract_problem(
-        hint={0: 0, 1: 1, 2: 1, 3: 1}, school_count_tolerance=0.0
-    )
+    problem = make_solver_contract_problem(hint={0: 0, 1: 1, 2: 1, 3: 1})
     scored: list[dict[int, int]] = []
 
     def scorer(assignments, base):
@@ -421,8 +419,8 @@ def test_residuals_are_percent_of_the_zone_and_clip_to_violations() -> None:
         assert violations == tuple(max(0.0, g) for g in residuals)
 
 
-def test_school_count_tolerance_zero_penalizes_uneven_school_counts() -> None:
-    problem = make_solver_contract_problem(school_count_tolerance=0.0)
+def test_a_whole_average_school_count_penalizes_uneven_zones() -> None:
+    problem = make_solver_contract_problem()
     context = _ReComContext(problem)
     assert context.school_bounds == (3.0, 3.0)
 

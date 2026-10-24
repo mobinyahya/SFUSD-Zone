@@ -25,7 +25,6 @@ CONSTRAINT_FIELDS = frozenset(
         "overage",
         "shortage",
         "max_distance",
-        "school_count_tolerance",
         "boundary_prop",
         "centroid_neighbor_radius",
     }
@@ -98,8 +97,6 @@ def checked_constraints(value, label="constraints") -> dict:
             or not math.isfinite(raw)
         ):
             raise ValueError(f"{label}.{name} must be a finite number.")
-        if name == "school_count_tolerance" and raw < 0:
-            raise ValueError(f"{label}.{name} must be non-negative.")
     return result
 
 

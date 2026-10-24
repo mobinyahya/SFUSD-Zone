@@ -151,9 +151,6 @@ class OptimizationConfig:
     racial_dev: float = 0.3
     overage: float = 0.8
     shortage: float = 0.2
-    # Zones hold the average school count +/- this many schools; 0 = exactly one
-    # school per zone when every school is a centroid.
-    school_count_tolerance: float = 1.0
     looseness: float = 1.0
     max_distance: float | str = float("inf")
     centroid_neighbor_radius: int = 0

@@ -411,8 +411,8 @@ class SchoolDistanceScorer:
     """``sum_n w_n * d(n, school of n's zone)^2`` for adaptive short bursts.
 
     ReCom zones are not tied to centroids, so a zone's school is whichever
-    school node it holds; under ``school_count_tolerance: 0`` only partitions
-    with exactly one per zone are scored. Should a zone hold several, each node
+    school node it holds; with one centroid per school the school-count band
+    is exactly one per zone, so only such partitions are scored. Should a zone hold several, each node
     is charged to the nearest of them, and a zone with none to the nearest
     school anywhere, so the score stays finite whatever the school rows allow.
     """

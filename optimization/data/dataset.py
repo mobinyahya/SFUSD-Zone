@@ -310,7 +310,6 @@ class Dataset:
             shortage=config.shortage * constraint_multiplier,
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
-            school_count_tolerance=config.school_count_tolerance,
             weight_edges=config.weight_edges,
             compactness_objective=config.compactness_objective,
             school_distance_area_weight=config.school_distance_area_weight,
