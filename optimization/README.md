@@ -55,7 +55,7 @@ uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
 
 ### Objectives and methods
 
-| Objective | cp_bool | cp_int | mip | All four ReCom/burst methods |
+| Objective | cp_bool | cp_int | mip | recom |
 |---|---|---|---|---|
 | `cut_edges` | yes | yes | yes | yes |
 | `boundary_perimeter` | yes | yes | yes | yes |
@@ -68,8 +68,8 @@ uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
 | `capacity_match` | — | — | — | yes |
 
 Unsupported combinations fail during configuration, before loading graphs.
-Methods are `cp_bool`, `cp_int`, `mip`, `recom`, `relaxed_recom`, `short_bursts`,
-and `adaptive_short_bursts`. There is no implicit substitution of methods.
+Methods are `cp_bool`, `cp_int`, `mip`, and `recom`. There is no implicit
+substitution of methods.
 SAA's recourse LPs require Gurobi even when the zoning search uses CP or ReCom.
 
 `matching_welfare` is finite-grid MID program welfare, using a joint CP model
@@ -109,7 +109,7 @@ student travel distance, with each step hinted from its predecessor:
 steps:
   - {name: counts, level: Block_1, method: cp_int, objective: cut_edges}
   - {name: perimeter, level: Block_0, method: cp_bool, objective: boundary_perimeter}
-  - {name: distance, level: Block_0, method: adaptive_short_bursts, objective: average_distance}
+  - {name: distance, level: Block_0, method: recom, objective: average_distance}
   - {name: squared, level: Block_0, method: cp_int, objective: average_squared_distance,
      options: {school_distance_area_weight: 0, school_distance_student_weight: 1}}
 ```
@@ -124,7 +124,7 @@ welfare, explicitly set `overage: -1, shortage: -1` at run or step scope.
 Step `constraints` accepts FRL/racial deviations, overage/shortage,
 school-count tolerance, maximum distance, boundary proportion, and centroid
 neighborhood radius. Step `options` accepts validated search and objective
-settings such as `workers`, `hints`, `short_bursts_length`, `mid_lottery_scale`,
+settings such as `workers`, `hints`, `recom_burst_length`, `mid_lottery_scale`,
 `saa_num_seeds`, and `max_iterations`; unknown keys are errors.
 
 `time_limit` and `gap_limit` override the run's indexed `solve_time_limits`
@@ -175,7 +175,7 @@ runner.
 | Layer | Contract | Built-ins | Add a new one |
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
-| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom`, `relaxed_recom`, `short_bursts`, `adaptive_short_bursts` | subclass `Solver`, `@register("name")` |
+| **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom` | subclass `Solver`, `@register("name")` |
 | **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `short_bursts_choice`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
@@ -184,10 +184,27 @@ independently.
 
 ## Key design points
 
-- **Solver-owned implementations.** `cp_bool`, `cp_int`, `mip`, and the ReCom
-  family each build their own solver-specific representation from `ZoneProblem`.
+- **Solver-owned implementations.** `cp_bool`, `cp_int`, `mip`, and `recom`
+  each build their own solver-specific representation from `ZoneProblem`.
   The CP-SAT solvers share common helpers, while the Gurobi MIP implementation
   stays separate.
+- **One ReCom, many methods.** `recom` (`solvers/recom.py`) is one walk: a
+  move merges two adjacent zones, draws a uniform spanning tree, and cuts it;
+  moves run in bursts of `recom_burst_length`, each burst restarting from the
+  best state it visited (feasible, then objective, else the policy's merit).
+  `solvers/recom_policy.py` makes the choices from one merit, the weighted
+  linear violation, through independent settings: `recom_weights` (`fixed`,
+  `hedge`, `dual`), `recom_pair_selection` (`uniform`, `proportional`,
+  `softmax`, `zone`, `exp3`), `recom_cut_selection` (`uniform`, `softmax`),
+  `recom_temperature` or `recom_entropy`, `recom_exploration`,
+  `recom_learning_rate`, `recom_bandit_window`, `recom_objective_weight`, and
+  `recom_reject_infeasible`. `recom_policy.PRESETS` names the studied methods:
+  `chain` (classic rejection ReCom, `recom_burst_length: 0`), `uniform_bursts`,
+  `entropy` (the defaults), `exact_penalty`, `bandit`, `hedge`, and `dual`.
+  `entropy` is the default because it was the most robust: from a Voronoi
+  start at 240 s, it reached a feasible zoning in 58 of 75 runs over five
+  instances (59 zones and 6/10/13/18 zones), against 39 for the old
+  Adam-weighted adaptive short bursts, with the best objective at 6-13 zones.
 - **ReCom label semantics.** ReCom uses centroids to determine the zone count and
   to generate an optional Voronoi hint, but does not enforce centroid anchors or
   `max_distance` during the walk. Explicit `candidates` and `fixed` restrictions

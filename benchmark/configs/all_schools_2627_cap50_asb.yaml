@@ -24,7 +24,7 @@ optimization_defaults:
           geography_vintage: "2020"
   centroids_type: '59-zone'
   strategy: single
-  solver: adaptive_short_bursts
+  solver: recom
   levels: ['Block_0']
   solve_time_limits: [3600]
   save_solver_logs: true
@@ -41,22 +41,13 @@ optimization_defaults:
   hints: voronoi
   workers: 1
   recom_iterations: -1
-  adaptive_short_bursts_objective: cut_edges
-  adaptive_short_bursts_pair_selector: lagrangian_softmax
-  adaptive_short_bursts_temperature: 1.15
-  short_bursts_length: 25
+  recom_objective: cut_edges
+  recom_burst_length: 25
   seed: 1
 
 tasks:
-  - {adaptive_short_bursts_temperature: 1.0, seed: 1}
-  - {adaptive_short_bursts_temperature: 1.0, seed: 2}
-  - {adaptive_short_bursts_temperature: 1.15, seed: 1}
-  - {adaptive_short_bursts_temperature: 1.15, seed: 2}
-  - {adaptive_short_bursts_temperature: 1.3, seed: 1}
-  - {adaptive_short_bursts_temperature: 1.3, seed: 2}
-  - {short_bursts_length: 10}
-  - {short_bursts_length: 50}
-  - {adaptive_short_bursts_lr: 0.3}
+  - {recom_burst_length: 10}
+  - {recom_burst_length: 50}
 
 execution:
   output_dir: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_asb_v1'

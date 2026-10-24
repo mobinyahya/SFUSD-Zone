@@ -7,7 +7,7 @@ import time
 
 from optimization.data.mid import build_mid_market, preprocess_mid_market
 from optimization.solvers.burst_objectives import MidBatchEvaluator
-from optimization.solvers.recom import ShortBurstsSolver
+from optimization.solvers.recom import ReComSolver
 from optimization.strategies.base import Strategy, register
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES, final_value
 
@@ -20,8 +20,8 @@ class ShortBurstsChoiceStrategy(Strategy):
     capacity_balance = False
 
     def run(self, dataset, solver):
-        if not isinstance(solver, ShortBurstsSolver):
-            raise ValueError("short_bursts_choice requires solver='short_bursts'.")
+        if not isinstance(solver, ReComSolver):
+            raise ValueError("short_bursts_choice requires solver='recom'.")
         if dataset.config.program_population != "All":
             raise ValueError("short_bursts_choice requires program_population='All'.")
 
@@ -77,8 +77,8 @@ class ShortBurstsChoiceStrategy(Strategy):
             {
                 "strategy": self.name,
                 "formulation": "short_bursts_discrete_mid_oracle",
-                "initial_welfare": solution.metadata.get("initial_score"),
-                "final_welfare": solution.metadata.get("final_score"),
+                "initial_welfare": solution.metadata.get("initial_objective"),
+                "final_welfare": solution.objective,
                 "mid_lottery_scale": lottery_scale,
                 "mid_oracle_type": "finite",
                 "mid_preprocessing_seconds": preprocessing_seconds,

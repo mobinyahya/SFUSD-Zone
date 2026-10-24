@@ -58,26 +58,18 @@ tasks:
 
   # --- adaptive short bursts, exactly one school per zone, 1 core ---
   - &asb
-    solver: adaptive_short_bursts
+    solver: recom
     workers: 1
     school_count_tolerance: 0
     hints: voronoi
     recom_iterations: -1
-    adaptive_short_bursts_objective: cut_edges
-    adaptive_short_bursts_pair_selector: lagrangian_softmax
-    adaptive_short_bursts_temperature: 1.3
-    short_bursts_length: 25
+    recom_objective: cut_edges
+    recom_burst_length: 25
     seed: 3
   - <<: *asb
     seed: 4
   - <<: *asb
-    adaptive_short_bursts_temperature: 1.5
-    seed: 1
-  - <<: *asb
-    adaptive_short_bursts_temperature: 1.5
-    seed: 2
-  - <<: *asb
-    short_bursts_length: 50
+    recom_burst_length: 50
     seed: 3
   # continue from the 2,734 map
   - <<: *asb

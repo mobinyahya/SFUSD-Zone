@@ -21,7 +21,7 @@ optimization_defaults:
           years: ["2324", "2425", "2526", "2627"]
   levels: ['Block_0']
   strategy: single
-  solver: adaptive_short_bursts
+  solver: recom
   save_solver_logs: true
   save_solver_progress: false
   max_distance: auto
@@ -33,10 +33,8 @@ optimization_defaults:
   shortage: -1
   boundary_prop: -1         # no cut-edge cap
 
-  adaptive_short_bursts_objective: cut_edges
-  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
-  adaptive_short_bursts_temperature: 1.15
-  short_bursts_length: 25
+  recom_objective: cut_edges
+  recom_burst_length: 25
 
   hints: voronoi            # fallback only; hint_zoning below takes precedence
   recom_iterations: -1

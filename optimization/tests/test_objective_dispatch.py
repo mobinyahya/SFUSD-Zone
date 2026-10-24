@@ -42,7 +42,7 @@ def test_school_distance_uses_the_same_cost_and_domains_across_methods(method):
             "recom_iterations": 50,
             "solve_time_limit": 3,
             "workers": 1,
-            "short_bursts_length": 5,
+            "recom_burst_length": 5,
             "seed": 17,
             "hints": "none",
         },
@@ -102,9 +102,6 @@ def _matching_market():
         "cp_bool",
         "cp_int",
         "recom",
-        "relaxed_recom",
-        "short_bursts",
-        "adaptive_short_bursts",
     ],
 )
 def test_matching_welfare_uses_the_finite_mid_market_without_disabling_constraints(
@@ -134,7 +131,7 @@ def test_matching_welfare_uses_the_finite_mid_market_without_disabling_constrain
             "recom_iterations": 50,
             "solve_time_limit": 3,
             "workers": 1,
-            "short_bursts_length": 5,
+            "recom_burst_length": 5,
         },
     )
 
@@ -270,7 +267,7 @@ def test_heuristics_use_choice_model_welfare_and_cache_revisited_zonings(
         "choice_welfare",
         options={
             "recom_iterations": 100,
-            "short_bursts_length": 5,
+            "recom_burst_length": 5,
             "solve_time_limit": 3,
         },
     )
@@ -312,7 +309,7 @@ def test_heuristics_use_the_same_sampled_stable_assignment_welfare(monkeypatch, 
         "saa_welfare",
         options={
             "recom_iterations": 50,
-            "short_bursts_length": 5,
+            "recom_burst_length": 5,
             "solve_time_limit": 3,
             "seed": 17,
             "workers": 1,

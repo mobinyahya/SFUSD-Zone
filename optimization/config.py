@@ -27,14 +27,18 @@ from optimization.mid_options import (
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
+from optimization.solvers.recom_policy import ReComSettings
 
+
+_RECOM = ReComSettings()
 
 # Strategies that read max_iterations, and those that read tolerance.
 _MAX_ITERATION_STRATEGIES = {"iterative_choice", "priced_access", "mid_decomp", "saa"}
 _TOLERANCE_STRATEGIES = _MAX_ITERATION_STRATEGIES | {"dantzig_wolfe"}
 
-# Field validation tables. ``strategy``, ``solver`` and
-# ``adaptive_short_bursts_objective`` are checked against their registries.
+# Field validation tables. ``strategy``, ``solver`` and ``recom_objective`` are
+# checked against their registries; the ``recom_*`` method settings by
+# ``ReComSettings`` itself.
 _CHOICES = {
     "dw_objective": DW_OBJECTIVES,
     "dw_master_method": tuple(sorted(DW_MASTER_METHODS)),
@@ -44,8 +48,6 @@ _CHOICES = {
     "priced_access_price_source": PRICE_SOURCES,
     "budget_accounting": BUDGET_ACCOUNTING_MODES,
     "hints": ("feasible", "voronoi", "none"),
-    "short_bursts_method": ("recom", "relaxed_recom"),
-    "adaptive_short_bursts_pair_selector": ("uniform", "lagrangian_softmax"),
 }
 _BOOLEANS = (
     "weight_edges",
@@ -69,7 +71,6 @@ _INTEGERS = {
     "choice_access_triangle_limit": 0,
     "choice_access_completion_limit": 0,
     "dw_recom_samples": 0,
-    "short_bursts_length": 1,
     "mid_lottery_scale": 1,
     "saa_num_seeds": 1,
     "zoned_transport_workers": 1,
@@ -96,19 +97,11 @@ _NUMBERS = {
         "must be non-negative",
         {"minimum": 0.0, "coerce": False},
     ),
-    "adaptive_short_bursts_lr": (
-        "must be positive",
-        {"minimum": 0.0, "open_minimum": True, "coerce": False},
-    ),
-    "adaptive_short_bursts_temperature": (
-        "must be positive",
-        {"minimum": 0.0, "open_minimum": True, "coerce": False},
-    ),
-    "adaptive_short_bursts_unassigned_weight": (
+    "capacity_match_unassigned_weight": (
         "must be finite and non-negative",
         {"minimum": 0.0, "finite": True},
     ),
-    "adaptive_short_bursts_designated_weight": (
+    "capacity_match_designated_weight": (
         "must be finite and non-negative",
         {"minimum": 0.0, "finite": True},
     ),
@@ -193,21 +186,29 @@ class OptimizationConfig:
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
     enumerated_solutions: int = -1
+    # ReCom: the move budget (-1: time only), then the settings that pick
+    # the method (see ``ReComSettings`` for what each means and the presets).
     recom_iterations: int = -1
-    short_bursts_length: int = 25
-    short_bursts_method: str = "recom"
-    adaptive_short_bursts_lr: float = 0.1
-    adaptive_short_bursts_temperature: float = 1.0
-    adaptive_short_bursts_pair_selector: str = "lagrangian_softmax"
-    # What adaptive short bursts rank feasible partitions by: ``cut_edges``
-    # (boundary cost), ``welfare`` (discrete MID welfare, maximized), or
-    # ``capacity_match`` (weighted unassigned plus designated students,
-    # minimized). The two choice objectives build a MID market and need
-    # program_population='All'. Constraints, including boundary_prop's
-    # cut-edge cap, are penalized in the Lagrangian under every objective.
-    adaptive_short_bursts_objective: str = "cut_edges"
-    adaptive_short_bursts_unassigned_weight: float = 1.0
-    adaptive_short_bursts_designated_weight: float = 1.0
+    recom_burst_length: int = _RECOM.burst_length
+    recom_reject_infeasible: bool = _RECOM.reject_infeasible
+    recom_weights: str = _RECOM.weights
+    recom_pair_selection: str = _RECOM.pair_selection
+    recom_cut_selection: str = _RECOM.cut_selection
+    recom_temperature: float = _RECOM.temperature
+    recom_entropy: float | None = _RECOM.entropy
+    recom_exploration: float = _RECOM.exploration
+    recom_learning_rate: float | None = _RECOM.learning_rate
+    recom_bandit_window: float = _RECOM.bandit_window
+    recom_objective_weight: float = _RECOM.objective_weight
+    # What a plain ``recom`` solve ranks feasible partitions by: ``cut_edges``
+    # (boundary cost), ``school_distance``, ``welfare`` (discrete MID welfare,
+    # maximized), or ``capacity_match``. The two choice objectives build a MID
+    # market and need program_population='All'. Pipeline steps pick theirs
+    # through ``objective`` instead.
+    recom_objective: str = "cut_edges"
+    # capacity_match: the weights of an unassigned and a designated student.
+    capacity_match_unassigned_weight: float = 1.0
+    capacity_match_designated_weight: float = 1.0
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0
@@ -407,13 +408,13 @@ class OptimizationConfig:
             )
         import optimization.solvers  # noqa: F401  (registers the solvers)
         from optimization.solvers.base import available_solvers
-        from optimization.solvers.recom import ADAPTIVE_OBJECTIVES
+        from optimization.solvers.recom import RECOM_OBJECTIVES
         from optimization.strategies.base import available_strategies
 
         for name, choices in {
             "strategy": available_strategies(),
             "solver": available_solvers(),
-            "adaptive_short_bursts_objective": ADAPTIVE_OBJECTIVES,
+            "recom_objective": RECOM_OBJECTIVES,
             **_CHOICES,
         }.items():
             if getattr(self, name) not in choices:
@@ -559,10 +560,11 @@ class OptimizationConfig:
             raise ValueError(
                 "solve_time_limits must include a value when recom_iterations is negative."
             )
+        self.recom_settings()  # validates every recom_* setting
         if (
-            self.adaptive_short_bursts_objective == "capacity_match"
-            and self.adaptive_short_bursts_unassigned_weight == 0
-            and self.adaptive_short_bursts_designated_weight == 0
+            self.recom_objective == "capacity_match"
+            and self.capacity_match_unassigned_weight == 0
+            and self.capacity_match_designated_weight == 0
         ):
             raise ValueError(
                 "capacity_match needs a positive unassigned or designated weight."
@@ -642,15 +644,10 @@ class OptimizationConfig:
             raise ValueError(
                 "compactness_objective must be one of: cut_edges, school_distance, average_distance."
             )
-        if self.compactness_objective != "cut_edges" and self.solver in {
-            "recom",
-            "relaxed_recom",
-            "short_bursts",
-            "adaptive_short_bursts",
-        }:
+        if self.compactness_objective != "cut_edges" and self.solver == "recom":
             raise ValueError(
-                "compactness_objective applies to CP/MIP solvers; ReCom solvers "
-                "take adaptive_short_bursts_objective: school_distance instead."
+                "compactness_objective applies to CP/MIP solvers; recom takes "
+                "recom_objective: school_distance instead."
             )
         weights = []
         for name in ("school_distance_area_weight", "school_distance_student_weight"):
@@ -797,6 +794,11 @@ class OptimizationConfig:
 
         return Dataset(self)
 
+    def recom_settings(self) -> ReComSettings:
+        return ReComSettings.from_options(
+            {f"recom_{f.name}": getattr(self, f"recom_{f.name}") for f in fields(ReComSettings)}
+        )
+
     def make_solver(self, output_dir: str | None = None):
         from optimization.solvers import get_solver
 
@@ -821,22 +823,12 @@ class OptimizationConfig:
             "choice_access_completion_limit": self.choice_access_completion_limit,
             "centroid_neighbor_radius": self.centroid_neighbor_radius,
             "recom_iterations": self.recom_iterations,
-            "short_bursts_length": self.short_bursts_length,
-            "short_bursts_method": self.short_bursts_method,
-            "adaptive_short_bursts_lr": self.adaptive_short_bursts_lr,
-            "adaptive_short_bursts_temperature": self.adaptive_short_bursts_temperature,
-            "adaptive_short_bursts_pair_selector": (
-                self.adaptive_short_bursts_pair_selector
-            ),
-            "adaptive_short_bursts_objective": self.adaptive_short_bursts_objective,
-            "adaptive_short_bursts_unassigned_weight": (
-                self.adaptive_short_bursts_unassigned_weight
-            ),
-            "adaptive_short_bursts_designated_weight": (
-                self.adaptive_short_bursts_designated_weight
-            ),
-            # The adaptive short bursts' welfare scorer reads it here; the
-            # MID strategies read their own copy.
+            **self.recom_settings().as_options(),
+            "recom_objective": self.recom_objective,
+            "capacity_match_unassigned_weight": self.capacity_match_unassigned_weight,
+            "capacity_match_designated_weight": self.capacity_match_designated_weight,
+            # The recom welfare scorer reads it here; the MID strategies read
+            # their own copy.
             "mid_lottery_scale": self.mid_lottery_scale,
         }
         if output_dir is not None:

@@ -8,9 +8,9 @@ improving state and a closing summary.
 
 A heuristic has no bound, so the useful trajectory is the objective together
 with the constraint residuals it is trading against.  Every record therefore
-carries the boundary cost, each individual constraint penalty, and both
-Lagrangians, which is enough to reconstruct any of the scalarizations the
-solvers use internally without keeping a single assignment on disk.
+carries the boundary cost and each individual constraint penalty, which is
+enough to reconstruct any scalarization of them without keeping a single
+assignment on disk.
 """
 
 from __future__ import annotations
@@ -63,7 +63,6 @@ class HeuristicProgressLog:
                     "total_violation": "sum(penalties)",
                     "squared_violation": "sum(penalty**2)",
                     "unweighted_lagrangian": "boundary_cost + sum(penalty**2)",
-                    "weighted_lagrangian": ("boundary_cost + sum(weight * penalty**2)"),
                     "improvement_key": (
                         "(not feasible, boundary_cost if feasible "
                         "else unweighted_lagrangian), minimized"
@@ -82,7 +81,6 @@ class HeuristicProgressLog:
         feasible: bool,
         boundary_cost: float,
         violations: Sequence[float],
-        weights: Sequence[float] | None = None,
         iteration: int | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> bool:
@@ -121,19 +119,6 @@ class HeuristicProgressLog:
         }
         if iteration is not None:
             row["iteration"] = int(iteration)
-        if weights is not None:
-            if len(weights) != len(self.labels):
-                raise ValueError(
-                    "Weight vector length does not match the constraint labels."
-                )
-            row["weighted_lagrangian"] = float(boundary_cost) + sum(
-                float(weight) * float(value) * float(value)
-                for weight, value in zip(weights, violations, strict=True)
-            )
-            row["weights"] = {
-                label: float(weight)
-                for label, weight in zip(self.labels, weights, strict=True)
-            }
         if extra:
             row.update(dict(extra))
 

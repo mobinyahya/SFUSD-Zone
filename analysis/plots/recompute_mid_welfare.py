@@ -60,6 +60,7 @@ from optimization.data.mid import MidMarket, build_mid_market, preprocess_mid_ma
 from optimization.levels import LevelSpec
 from optimization.mid_oracle import finite_grid_oracle
 from optimization.problem import ZoneProblem
+from optimization.solvers.recom_policy import ReComSettings
 
 DEFAULT_BENCHMARK_DIR = (
     "/soalnas/share/data/school_choice/local_runs/benchmark_choice_v4"
@@ -73,8 +74,10 @@ SOLVER_ONLY_KEYS = frozenset(
         "carry_over_compute", "budget_accounting", "hints", "feasible_hint_time_limit",
         "save_solver_logs", "save_solver_progress", "linearization_level",
         "cp_model_probing_level", "symmetry_level", "cp_sat_search_strategy",
-        "enumerated_solutions", "recom_iterations", "short_bursts_length",
-        "short_bursts_method", "adaptive_short_bursts_lr",
+        "enumerated_solutions", "recom_iterations",
+        *(f"recom_{f.name}" for f in fields(ReComSettings)),
+        # Runs from before the ReCom overhaul carry these instead.
+        "short_bursts_length", "short_bursts_method", "adaptive_short_bursts_lr",
         "adaptive_short_bursts_temperature", "max_iterations", "tolerance",
         "mid_transport_bounds", "mid_complementary_slackness",
         "mid_complementary_slackness_slack", "saa_num_seeds",

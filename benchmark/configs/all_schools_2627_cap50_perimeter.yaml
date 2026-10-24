@@ -52,15 +52,13 @@ tasks:
 
   # --- adaptive short bursts, exactly one school per zone, 1 core ---
   - &asb
-    solver: adaptive_short_bursts
+    solver: recom
     workers: 1
     school_count_tolerance: 0
     hints: voronoi
     recom_iterations: -1
-    adaptive_short_bursts_objective: cut_edges   # metres, since weight_edges is on
-    adaptive_short_bursts_pair_selector: lagrangian_softmax
-    adaptive_short_bursts_temperature: 1.3
-    short_bursts_length: 25
+    recom_objective: cut_edges   # metres, since weight_edges is on
+    recom_burst_length: 25
     hint_zoning: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_r4/59-zone/seed1/frl0.3_racial1/overage0.5_shortage0.5/single_cp_bool_Block_0_tl_3600_ac312ada/zone_dict_area_Block_0.json'
     seed: 1
   - <<: *asb

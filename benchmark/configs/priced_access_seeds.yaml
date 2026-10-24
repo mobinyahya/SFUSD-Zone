@@ -42,7 +42,6 @@ optimization_defaults:
 
   carry_over_compute: true
   recom_iterations: -1
-  short_bursts_method: relaxed_recom
 
   mid_utility_handling: omit_nonpositive
   saa_num_seeds: 15

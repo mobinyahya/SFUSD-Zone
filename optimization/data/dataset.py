@@ -120,7 +120,7 @@ class Dataset:
         config = config or self.config
         return (
             config.compactness_objective == "school_distance"
-            or config.adaptive_short_bursts_objective == "school_distance"
+            or config.recom_objective == "school_distance"
         )
 
     @staticmethod

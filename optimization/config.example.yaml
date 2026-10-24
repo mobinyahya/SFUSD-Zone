@@ -44,15 +44,15 @@ steps:
   # Step constraints override run constraints. Any earlier step can be a source.
   # - name: welfare
   #   level: Block_0
-  #   method: adaptive_short_bursts
+  #   method: recom
   #   objective: matching_welfare  # requires program_population: All below
   #   time_limit: 60
   #   constraints: {overage: -1, shortage: -1}
-  #   options: {short_bursts_length: 25, mid_lottery_scale: 20}
+  #   options: {recom_burst_length: 25, mid_lottery_scale: 20}
   #   inputs: [{source: refine, mode: hint}]
 
-# Methods: cp_bool, cp_int, mip, recom, relaxed_recom, short_bursts,
-# adaptive_short_bursts. Objectives: cut_edges, boundary_perimeter,
+# Methods: cp_bool, cp_int, mip, recom (its recom_* settings pick the ReCom
+# variant; see optimization/README.md). Objectives: cut_edges, boundary_perimeter,
 # average_distance, average_squared_distance, school_distance (legacy name),
 # matching_welfare, saa_welfare, choice_welfare, capacity_match.
 # Supported combinations are documented in optimization/README.md.

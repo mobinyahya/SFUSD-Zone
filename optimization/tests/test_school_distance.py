@@ -127,9 +127,9 @@ def test_burst_scorer_charges_each_node_to_its_zones_school():
         (
             {
                 "compactness_objective": "school_distance",
-                "solver": "adaptive_short_bursts",
+                "solver": "recom",
             },
-            "adaptive_short_bursts_objective",
+            "recom_objective",
         ),
     ],
 )
@@ -149,8 +149,8 @@ def test_config_accepts_school_distance_for_cp_and_short_bursts():
     assert cp.school_distance_area_weight == 1.0
     asb = OptimizationConfig(
         levels=["BlockGroup_0"],
-        solver="adaptive_short_bursts",
-        adaptive_short_bursts_objective="school_distance",
+        solver="recom",
+        recom_objective="school_distance",
     )
     assert (asb.school_distance_area_weight, asb.school_distance_student_weight) == (
         0.75,

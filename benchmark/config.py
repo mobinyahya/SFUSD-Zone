@@ -436,8 +436,7 @@ def _contains_value(value: Any, target: str) -> bool:
 
 def _reads_assignment_market(config: OptimizationConfig) -> bool:
     return config.make_strategy().reads_assignment_market or (
-        config.solver == "adaptive_short_bursts"
-        and config.adaptive_short_bursts_objective != "cut_edges"
+        config.solver == "recom" and config.recom_objective != "cut_edges"
     )
 
 

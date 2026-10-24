@@ -1,4 +1,4 @@
-"""Adaptive short bursts: selectable objectives and the cut-edge constraint row."""
+"""ReCom: selectable objectives and the cut-edge constraint row."""
 
 from __future__ import annotations
 
@@ -14,12 +14,8 @@ from optimization.data.mid import MidMarket, MidProgram, MidType
 from optimization.mid_oracle import finite_grid_oracle
 from optimization.solvers import burst_objectives
 from optimization.solvers import get_solver
-from optimization.solvers.recom import (
-    _Lagrangian,
-    _NoProposal,
-    _ReComContext,
-    _ReComKernel,
-)
+from optimization.solvers.recom import _NoProposal, _ReComContext, _ReComKernel
+from optimization.solvers.recom_policy import PRESETS, Policy, Weights
 from optimization.tests.synthetic import make_grid_problem
 
 # 2x2 grid: nodes 0 1 / 2 3, schools at 0 and 3. The two splits that keep the
@@ -42,7 +38,10 @@ def test_boundary_prop_adds_a_cut_edge_row_to_the_violation_vector() -> None:
     assert context.cut_row == context.violation_count - 1
     assert context.violation_labels()[context.cut_row] == "boundary"
     assert state.cut_edges == problem.G.number_of_edges()
-    assert state.violations[context.cut_row] == pytest.approx(state.cut_edges - limit)
+    # In percent of the cap, like every other row.
+    assert state.violations[context.cut_row] == pytest.approx(
+        (state.cut_edges - limit) / limit * 100
+    )
     assert not state.feasible
 
 
@@ -56,21 +55,22 @@ def test_no_cut_edge_row_without_boundary_prop() -> None:
 
 def test_incremental_cut_edges_match_a_rebuild() -> None:
     problem = make_grid_problem(4, 4, boundary_prop=0.2, weight_edges=False)
-    for normalize in (False, True):
-        context = _ReComContext(problem, normalize_fractional=normalize)
-        state = context.build_state([0 if pos % 4 < 2 else 1 for pos in range(16)])
-        kernel = _ReComKernel(context, random.Random(3), None)
-        for _ in range(40):
-            try:
-                kernel.apply(state, kernel.propose(state, "uniform"))
-            except _NoProposal:
-                continue
-            rebuilt = context.build_state(list(state.assignment))
-            assert state.cut_edges == rebuilt.cut_edges
-            assert state.violations == pytest.approx(rebuilt.violations)
+    context = _ReComContext(problem)
+    state = context.build_state([0 if pos % 4 < 2 else 1 for pos in range(16)])
+    rng = random.Random(3)
+    kernel = _ReComKernel(context, rng, None)
+    policy = Policy(context, rng, PRESETS["uniform_bursts"], objective_local=True)
+    for _ in range(40):
+        try:
+            kernel.apply(state, kernel.propose(state, policy))
+        except _NoProposal:
+            continue
+        rebuilt = context.build_state(list(state.assignment))
+        assert state.cut_edges == rebuilt.cut_edges
+        assert state.violations == pytest.approx(rebuilt.violations)
 
 
-def test_cut_cap_enters_the_lagrangian_without_a_cut_edge_objective() -> None:
+def test_cut_cap_enters_the_merit_whatever_the_objective() -> None:
     """A constraint is penalized whatever the objective is."""
 
     problem = make_grid_problem(3, 3, boundary_prop=0.1)
@@ -79,36 +79,31 @@ def test_cut_cap_enters_the_lagrangian_without_a_cut_edge_objective() -> None:
     cut_row = context.cut_row
     assert state.violations[cut_row] > 0
 
-    weights = tuple(
-        3.0 if row == cut_row else 0.0 for row in range(len(state.violations))
+    weights = Weights(context, PRESETS["entropy"])
+    assert weights.merit(state) == pytest.approx(sum(state.violations))
+    # The objective's price only joins the merit a move is judged by.
+    local = Policy(
+        context, random.Random(0), PRESETS["exact_penalty"], objective_local=True
     )
-    no_objective = _Lagrangian(weights, objective_weight=0.0)
-
-    penalty = 3.0 * state.violations[cut_row] ** 2
-    assert no_objective.candidate(state.boundary_cost, state.violations) == (
-        pytest.approx(penalty)
+    batch = Policy(
+        context, random.Random(0), PRESETS["exact_penalty"], objective_local=False
     )
-    # Its per-zone shares add back up to the whole penalty.
-    assert sum(no_objective.zone(context, state, zone) for zone in (0, 1)) == (
-        pytest.approx(penalty)
+    assert local.walk_merit(state) == pytest.approx(
+        sum(state.violations) + state.boundary_cost
     )
-    # As both objective and constraint, both terms are present.
-    both = _Lagrangian(weights, objective_weight=1.0)
-    assert both.candidate(state.boundary_cost, state.violations) == pytest.approx(
-        state.boundary_cost + penalty
-    )
+    assert batch.walk_merit(state) == pytest.approx(sum(state.violations))
 
 
-def test_adaptive_short_bursts_enforce_boundary_prop() -> None:
+@pytest.mark.parametrize("preset", ["entropy", "hedge", "dual"])
+def test_recom_enforces_boundary_prop(preset: str) -> None:
     problem = make_grid_problem(4, 4, boundary_prop=0.2)
     limit = math.floor(0.2 * problem.G.number_of_edges())
 
     solution = get_solver(
-        "adaptive_short_bursts",
+        "recom",
+        **{**PRESETS[preset].as_options(), "recom_burst_length": 10},
         recom_iterations=300,
-        short_bursts_length=10,
         seed=11,
-        adaptive_short_bursts_objective="cut_edges",
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
@@ -212,18 +207,18 @@ def test_designation_split_counts_unassigned_and_designated(split, expected) -> 
     assert split_counts == pytest.approx(expected)
 
 
-def _adaptive(**options):
+def _recom(**options):
     options.setdefault("recom_iterations", 40)
-    options.setdefault("short_bursts_length", 5)
+    options.setdefault("recom_burst_length", 5)
     options.setdefault("seed", 1)
     options.setdefault("workers", 1)
-    return get_solver("adaptive_short_bursts", **options)
+    return get_solver("recom", **options)
 
 
 def _feasible_splits(problem) -> list[dict[int, int]]:
     """Every feasible contiguous two-zone partition, by brute force."""
 
-    context = _ReComContext(problem, normalize_fractional=True)
+    context = _ReComContext(problem)
     splits = []
     for mask in range(1, 2 ** len(context.nodes) - 1):
         assignment = {node: (mask >> pos) & 1 for pos, node in enumerate(context.nodes)}
@@ -270,17 +265,16 @@ def test_capacity_match_reaches_the_weighted_optimum(
         key=lambda item: item[0],
     )[0]
 
-    solution = _adaptive(
-        adaptive_short_bursts_objective="capacity_match",
-        adaptive_short_bursts_unassigned_weight=unassigned_weight,
-        adaptive_short_bursts_designated_weight=designated_weight,
+    solution = _recom(
+        recom_objective="capacity_match",
+        capacity_match_unassigned_weight=unassigned_weight,
+        capacity_match_designated_weight=designated_weight,
     ).solve(problem)
 
     assert solution.status == "FEASIBLE"
     assert solution.objective == pytest.approx(best)
     meta = solution.metadata
     assert meta["objective_kind"] == "capacity_match"
-    assert meta["adaptive_short_bursts_objective"] == "capacity_match"
     assert solution.objective == pytest.approx(
         unassigned_weight * meta["best_unassigned_students"]
         + designated_weight * meta["best_designated_students"]
@@ -291,10 +285,10 @@ def test_capacity_match_weights_change_the_answer(monkeypatch) -> None:
     _use_market(monkeypatch, _capacity_market())
 
     def solve(unassigned_weight, designated_weight):
-        return _adaptive(
-            adaptive_short_bursts_objective="capacity_match",
-            adaptive_short_bursts_unassigned_weight=unassigned_weight,
-            adaptive_short_bursts_designated_weight=designated_weight,
+        return _recom(
+            recom_objective="capacity_match",
+            capacity_match_unassigned_weight=unassigned_weight,
+            capacity_match_designated_weight=designated_weight,
         ).solve(_choice_problem())
 
     # Unassigned students dominate: everyone is placed, three by designation.
@@ -313,7 +307,7 @@ def test_welfare_objective_maximizes_mid_welfare(monkeypatch) -> None:
     problem = _choice_problem()
     best = max(_scores(market, problem, "welfare"), key=lambda item: item[0])[0]
 
-    solution = _adaptive(adaptive_short_bursts_objective="welfare").solve(problem)
+    solution = _recom(recom_objective="welfare").solve(problem)
 
     expected = finite_grid_oracle(
         burst_objectives.preprocess_mid_market(market, problem),
@@ -328,13 +322,13 @@ def test_welfare_objective_maximizes_mid_welfare(monkeypatch) -> None:
 
 
 def test_welfare_objective_still_enforces_boundary_prop(monkeypatch) -> None:
-    """The cap reaches the Lagrangian and feasibility with no cut-edge objective."""
+    """The cap reaches the merit and feasibility with no cut-edge objective."""
 
     _use_market(monkeypatch, _welfare_market())
     # Both splits cut two of the four edges; a cap of one rules both out.
     problem = _choice_problem(boundary_prop=0.25)
 
-    solution = _adaptive(adaptive_short_bursts_objective="welfare").solve(problem)
+    solution = _recom(recom_objective="welfare").solve(problem)
 
     assert solution.status == "UNKNOWN"
     assert solution.metadata["initial_feasible"] is False
@@ -345,32 +339,32 @@ def test_choice_objectives_require_the_all_program_population(monkeypatch) -> No
     _use_market(monkeypatch, _welfare_market())
 
     with pytest.raises(ValueError, match="program_population='All'"):
-        _adaptive(adaptive_short_bursts_objective="welfare").solve(
+        _recom(recom_objective="welfare").solve(
             _choice_problem(program_population="GE")
         )
 
 
 def test_unknown_objective_is_rejected() -> None:
-    with pytest.raises(ValueError, match="adaptive_short_bursts_objective"):
-        _adaptive(adaptive_short_bursts_objective="nonsense").solve(_choice_problem())
+    with pytest.raises(ValueError, match="recom_objective"):
+        _recom(recom_objective="nonsense").solve(_choice_problem())
 
 
-def test_config_passes_adaptive_objective_options() -> None:
+def test_config_passes_recom_objective_options() -> None:
     solver = OptimizationConfig(
         levels=["BlockGroup_0"],
-        solver="adaptive_short_bursts",
-        adaptive_short_bursts_objective="capacity_match",
-        adaptive_short_bursts_unassigned_weight=4,
-        adaptive_short_bursts_designated_weight=0.5,
+        solver="recom",
+        recom_objective="capacity_match",
+        capacity_match_unassigned_weight=4,
+        capacity_match_designated_weight=0.5,
     ).make_solver()
 
-    assert solver.options["adaptive_short_bursts_objective"] == "capacity_match"
-    assert solver.options["adaptive_short_bursts_unassigned_weight"] == 4.0
-    assert solver.options["adaptive_short_bursts_designated_weight"] == 0.5
+    assert solver.options["recom_objective"] == "capacity_match"
+    assert solver.options["capacity_match_unassigned_weight"] == 4.0
+    assert solver.options["capacity_match_designated_weight"] == 0.5
     assert (
         OptimizationConfig(levels=["BlockGroup_0"])
         .make_solver()
-        .options["adaptive_short_bursts_objective"]
+        .options["recom_objective"]
         == "cut_edges"
     )
 
@@ -378,23 +372,23 @@ def test_config_passes_adaptive_objective_options() -> None:
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"adaptive_short_bursts_objective": "bad"}, "adaptive_short_bursts_objective"),
-        ({"adaptive_short_bursts_unassigned_weight": -1}, "unassigned_weight"),
+        ({"recom_objective": "bad"}, "recom_objective"),
+        ({"capacity_match_unassigned_weight": -1}, "unassigned_weight"),
         (
-            {"adaptive_short_bursts_designated_weight": float("nan")},
+            {"capacity_match_designated_weight": float("nan")},
             "designated_weight",
         ),
         (
             {
-                "adaptive_short_bursts_objective": "capacity_match",
-                "adaptive_short_bursts_unassigned_weight": 0,
-                "adaptive_short_bursts_designated_weight": 0,
+                "recom_objective": "capacity_match",
+                "capacity_match_unassigned_weight": 0,
+                "capacity_match_designated_weight": 0,
             },
             "positive unassigned or designated weight",
         ),
     ],
 )
-def test_config_rejects_invalid_adaptive_objective_options(overrides, message) -> None:
+def test_config_rejects_invalid_recom_objective_options(overrides, message) -> None:
     with pytest.raises(ValueError, match=message):
         OptimizationConfig(levels=["BlockGroup_0"], **overrides)
 
@@ -413,6 +407,4 @@ def test_choice_objectives_refuse_a_market_without_utilities(monkeypatch) -> Non
     _use_market(monkeypatch, market)
 
     with pytest.raises(ValueError, match="no student with a choice-utility row"):
-        _adaptive(adaptive_short_bursts_objective="capacity_match").solve(
-            _choice_problem()
-        )
+        _recom(recom_objective="capacity_match").solve(_choice_problem())

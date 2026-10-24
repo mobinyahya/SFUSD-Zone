@@ -22,11 +22,8 @@ METHODS = (
     "cp_int",
     "mip",
     "recom",
-    "relaxed_recom",
-    "short_bursts",
-    "adaptive_short_bursts",
 )
-_HEURISTICS = frozenset(METHODS[3:])
+_HEURISTICS = frozenset({"recom"})
 
 
 @dataclass(frozen=True)
@@ -253,19 +250,11 @@ def solve_objective(
         solution = solve_welfare_objective(problem, method, objective, options)
     elif objective == "matching_welfare" and method in {"cp_bool", "cp_int"}:
         solution = _welfare_solver(problem, method, options).solve(problem)
-    elif method == "adaptive_short_bursts" and objective in {
-        "cut_edges",
-        "boundary_perimeter",
-    }:
-        solver = get_solver(
-            method,
-            **{
-                **options,
-                "adaptive_short_bursts_objective": "cut_edges",
-            },
+    elif method in _HEURISTICS and objective in {"cut_edges", "boundary_perimeter"}:
+        solution = get_solver(method, **{**options, "recom_objective": "cut_edges"}).solve(
+            problem
         )
-        solution = solver.solve(problem)
-    elif method in _HEURISTICS and objective not in {"cut_edges", "boundary_perimeter"}:
+    elif method in _HEURISTICS:
         scorer = heuristic_scorer(problem, objective, options)
         try:
             solution = get_solver(method, **options).solve_with_scorer(

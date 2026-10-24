@@ -31,7 +31,7 @@ optimization_defaults:
           years: ["2324", "2425", "2526", "2627"]
   levels: ['Block_0']
   strategy: single
-  solver: adaptive_short_bursts
+  solver: recom
   save_solver_logs: true
   save_solver_progress: false
   max_distance: auto
@@ -42,12 +42,10 @@ optimization_defaults:
   shortage: -1
   # boundary_prop is set per task: 1.15 x the hint's own cut-edge share.
 
-  adaptive_short_bursts_objective: capacity_match
-  adaptive_short_bursts_unassigned_weight: 1.0
-  adaptive_short_bursts_designated_weight: 1.0
-  adaptive_short_bursts_pair_selector: 'lagrangian_softmax'
-  adaptive_short_bursts_temperature: 1.1
-  short_bursts_length: 25
+  recom_objective: capacity_match
+  capacity_match_unassigned_weight: 1.0
+  capacity_match_designated_weight: 1.0
+  recom_burst_length: 25
   mid_lottery_scale: 20
   mid_preference_source: stated   # utility.2324.exp8 covers no 2026-27 student
 

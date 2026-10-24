@@ -318,8 +318,8 @@ def mid_burst_scorer(
         or lottery_scale <= 0
     ):
         raise ValueError("mid_lottery_scale must be a positive integer.")
-    unassigned_weight = _weight(options, "adaptive_short_bursts_unassigned_weight")
-    designated_weight = _weight(options, "adaptive_short_bursts_designated_weight")
+    unassigned_weight = _weight(options, "capacity_match_unassigned_weight")
+    designated_weight = _weight(options, "capacity_match_designated_weight")
     if metric == "capacity_match" and unassigned_weight == designated_weight == 0:
         raise ValueError(
             "capacity_match needs a positive unassigned or designated weight."
