@@ -62,7 +62,8 @@ failed aggregation) exits nonzero and holds the downstream jobs back.
 With `matching.enabled`, assignment jobs for every run's root zoning are
 submitted behind the optimization jobs. Runs that already finished without
 matching get their `assignment_zones.csv` (or skip marker) rebuilt from the
-saved `solution_<level>.json` and `zone_dict_area_<level>.json` at plan time,
+final stage of the saved `zonings.json.xz` (or a legacy run's root
+`solution_<level>.json` and `zone_dict_area_<level>.json`) at plan time,
 so matching can be turned on after a sweep and resubmitted; only root
 targets can be added that way, not `compute_stage_assignments`.
 `matching.assignment_dir` (default `assignments`) names the folder under
@@ -302,23 +303,26 @@ Each task writes one run directory.
 ```text
 benchmark_manifest.json
 result.json
-zone_dict_<level>.json
-zone_dict_area_<level>.json
-solution_<level>.json
-stages/
-  stage_00_<level>/
-    zone_dict_<level>.json
-    zone_dict_area_<level>.json
-    solution_<level>.json
-  stage_01_<level>/
-    ...
+zonings.json.xz
+solver_progress.json.xz   # only with save_solver_progress
+zoning_config.yaml
+stages/<stage>/           # only assignment targets, when matching
 ```
 
-`benchmark_manifest.json` stores task identity, config hash, schema version, stage paths, status, timings, and the selected final stage.
+`benchmark_manifest.json` stores task identity, config hash, schema version, stage records, status, timings, and the selected final stage.
 
 `result.json` stores metrics, zone data, run metadata, levels, status, and a config snapshot.
 
-Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases for the metrics-selected final solution.
+`zonings.json.xz` (LZMA-compressed JSON, `xzcat` to read it) holds every stage's node assignment, area assignment, status, graph fingerprint and full metadata, the config once, and `final_stage`, the metrics-selected stage. Read it with `optimization.run_archive`: `load_run_zonings(run_dir)`, then `get_stage`, `node_assignment` and `area_assignment`. Stage metadata in the manifest and `result.json` is `summary_metadata`: containers over 2 KB (a pipeline's `capacity_reference`, its fixed areas) are dropped there and listed in `archived_metadata_keys`, which keeps the two files every resume and aggregation reads small.
+
+Runs saved before the archive have one folder per stage (`zone_dict_<level>.json`, `zone_dict_area_<level>.json`, `solution_<level>.json`, `zoning_config.yaml`, `solver_progress/<id>/`) and a root alias of the final stage. Every reader still accepts them. To rewrite them:
+
+```bash
+uv run python -m benchmark.compact <output_dir> --workers 4
+uv run python -m benchmark.compact <output_dir> --delete-legacy
+```
+
+The first pass writes and verifies each archive against the old files and slims the manifest and `result.json`; the old files stay until `--delete-legacy`. The root `zone_dict_area_<level>.json` survives even that unless `--drop-root-zoning` is given, because sweep configs name those files as `hint_zoning` and task identity hashes the hint's bytes.
 
 ### Objective Trajectories
 
@@ -332,7 +336,7 @@ Root-level `zone_dict_*`, `zone_dict_area_*`, and `solution_*` files are aliases
 
 Heuristic records are improvement-only, ordered by `(not feasible, boundary cost if feasible else unweighted Lagrangian)`. Any feasible state supersedes any infeasible one, so penalties are nonzero only while no feasible partition has been found yet. Penalties are residuals in percent of the zone's students (school counts in percent of the average count), as the `penalty_scale` header field states; logs written before the ReCom overhaul by `recom`, `relaxed_recom`, and `short_bursts` report absolute student counts instead. When `boundary_prop` is set, the log also carries a `boundary` penalty, cut edges above the cap in percent of the cap. The improvement key stays boundary cost even when the objective is `welfare` or `capacity_match`; the solution's `objective` and `best_*` metadata carry the chosen objective. The header also records every `recom_*` setting.
 
-`save_solver_progress: true` is a separate, heavier mechanism: `mip` and `cp_bool` only, and it writes two full `zone_dict` files per incumbent alongside `solver_progress/<id>/progress.jsonl`. Prefer the logs when only objective values are needed.
+`save_solver_progress: true` is a separate, heavier mechanism: `mip` and `cp_bool` only, and it writes every incumbent's node and area assignment to the run's one `solver_progress.json.xz` (`run_archive.read_solver_progress`). Prefer the logs when only objective values are needed.
 
 Flatten a whole sweep into one long-format table:
 

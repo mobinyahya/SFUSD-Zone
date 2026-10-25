@@ -20,7 +20,7 @@ optimization_defaults:
   gap_limits: [0, 0]
   hints: voronoi
   save_solver_logs: false     # write solver logs under solver_logs/
-  save_solver_progress: false # save improving incumbents under solver_progress/
+  save_solver_progress: false # save improving incumbents to solver_progress.json.xz
   weight_edges: false         # weight cut edges by shared boundary length in metres
   seed: 42
   workers: 8
