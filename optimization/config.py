@@ -163,8 +163,8 @@ class OptimizationConfig:
     budget_accounting: str = "wall_clock"
     gap_limits: list[float] = field(default_factory=lambda: [0.0])
     hints: str = "voronoi"
-    # Path to a saved ``{area_id: zone}`` zoning (a benchmark
-    # ``zone_dict_area_<level>.json``). When set it is projected onto every
+    # Path to a saved zoning: a run's ``zonings.json.xz`` (its final stage) or
+    # an ``{area_id: zone}`` JSON. When set it is projected onto every
     # level by area id and becomes the problem's hint, ahead of ``hints``.
     hint_zoning: str | None = None
     feasible_hint_time_limit: float = 60.0

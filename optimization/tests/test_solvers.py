@@ -1,6 +1,5 @@
 """Data-free, end-to-end solver tests on a synthetic grid problem."""
 
-import json
 import os
 import random
 from dataclasses import replace
@@ -9,6 +8,7 @@ import pytest
 from ortools.sat.python import cp_model
 
 from choice.objective import ChoiceCut, ChoiceObjective, ChoiceTerm
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.data import contiguity
 from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
@@ -470,29 +470,28 @@ def test_cpsat_solver_saves_progress(tmp_path):
 
     solution.save(str(tmp_path))
 
-    expected_dir = os.path.join("solver_progress", "solver_00_BlockGroup_0_cp_int")
-    expected_log = os.path.join(expected_dir, "progress.jsonl")
-    assert solution.metadata["solver_progress_path"] == expected_log
-    assert solution.metadata["solver_progress_format"] == "jsonl"
+    assert solution.metadata["solver_progress_path"] == "solver_progress.json.xz"
+    assert solution.metadata["solver_progress_format"] == "json.xz"
+    assert solution.metadata["solver_progress_id"] == "solver_00_BlockGroup_0_cp_int"
     assert solution.metadata["solver_progress_count"] == len(solution.solver_progress)
+    # The archive's copy of the metadata already points at the progress file.
+    stage = run_archive.get_stage(run_archive.read_zonings(tmp_path))
+    assert stage["metadata"]["solver_progress_path"] == "solver_progress.json.xz"
 
-    rows = [
-        json.loads(line)
-        for line in (tmp_path / expected_log).read_text(encoding="utf-8").splitlines()
-    ]
+    progress = run_archive.read_solver_progress(tmp_path)
+    (record,) = progress["stages"]
+    rows = record["entries"]
+    assert record["node_ids"] == list(problem.nodes)
     assert len(rows) == len(solution.solver_progress)
     assert rows[-1]["objective"] == pytest.approx(solution.objective)
     objectives = [row["objective"] for row in rows]
     assert all(next_obj < obj for obj, next_obj in zip(objectives, objectives[1:]))
 
-    for idx, row in enumerate(rows):
+    area_ids = progress["area_ids"]["BlockGroup"]
+    for idx, (row, entry) in enumerate(zip(rows, solution.solver_progress)):
         assert row["solution_index"] == idx
-        assignment_path = tmp_path / expected_dir / row["assignment_path"]
-        area_path = tmp_path / expected_dir / row["area_assignment_path"]
-        assert assignment_path.exists()
-        assert area_path.exists()
-        assignment = json.loads(assignment_path.read_text(encoding="utf-8"))
-        assert {int(node) for node in assignment} == set(problem.nodes)
+        assert tuple(row["node_zones"]) == entry.assignment
+        assert len(row["area_zones"]) == len(area_ids)
 
 
 @pytest.mark.parametrize(
@@ -566,8 +565,7 @@ def test_area_assignment_and_save(tmp_path):
     # base graph: one area_id per node
     assert len(area) == len(problem.nodes)
     solution.save(str(tmp_path))
-    assert (tmp_path / "zone_dict_BlockGroup_0.json").exists()
-    assert (tmp_path / "solution_BlockGroup_0.json").exists()
+    assert (tmp_path / run_archive.ZONINGS_FILENAME).exists()
 
 
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
@@ -619,10 +617,8 @@ def test_mip_solver_saves_progress(tmp_path):
 
     assert solution.solver_progress
     solution.save(str(tmp_path))
-    expected_log = os.path.join(
-        "solver_progress", "solver_00_BlockGroup_0_mip", "progress.jsonl"
-    )
-    assert (tmp_path / expected_log).exists()
+    progress = run_archive.read_solver_progress(tmp_path)
+    assert progress["stages"][0]["progress_id"] == "solver_00_BlockGroup_0_mip"
 
 
 @pytest.mark.parametrize(
@@ -755,8 +751,8 @@ def test_solution_save_embeds_generating_config(tmp_path):
 
     solution.save(str(tmp_path), snapshot)
 
-    info = json.loads((tmp_path / "solution_BlockGroup_0.json").read_text())
-    assert info["config"] == json_ready(snapshot)
+    archive = run_archive.read_zonings(tmp_path)
+    assert archive["config"] == json_ready(snapshot)
     rerun = OptimizationConfig.from_yaml(str(tmp_path / "zoning_config.yaml"))
     assert config_snapshot(rerun) == snapshot
 
@@ -767,6 +763,5 @@ def test_solution_save_without_config_writes_no_config(tmp_path):
 
     solution.save(str(tmp_path))
 
-    info = json.loads((tmp_path / "solution_BlockGroup_0.json").read_text())
-    assert "config" not in info
+    assert run_archive.read_zonings(tmp_path)["config"] is None
     assert not (tmp_path / "zoning_config.yaml").exists()

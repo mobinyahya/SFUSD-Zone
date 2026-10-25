@@ -8,6 +8,7 @@ import networkx as nx
 import pytest
 import yaml
 
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
@@ -348,7 +349,11 @@ def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
 
     assert len(records) == 4
     assert len({record["path"] for record in records}) == 4
-    assert all((tmp_path / record["path"]).is_dir() for record in records)
+    archive = run_archive.read_zonings(tmp_path)
+    assert [stage["name"] for stage in archive["stages"]] == stage_names
+    assert [run_archive.node_assignment(stage) for stage in archive["stages"]] == [
+        solution.assignment for solution in solutions
+    ]
     assert records[-1]["metadata"]["enumerated_solution_selected"] is True
     assert metrics.run["selection"] == "seeded_random_enumerated_solution"
     assert metrics.metrics["frl_mad"] == pytest.approx(0.0)
@@ -614,7 +619,6 @@ def _write_synthetic_run(tmp_path):
         stage_names_for(solutions, config),
     )
     metrics = MetricsCalculator(solutions, config=config).compute()
-    solution.save(str(run_dir))
     write_json(
         os.path.join(run_dir, RESULT_FILENAME),
         result_payload_for(

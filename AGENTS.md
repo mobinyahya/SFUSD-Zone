@@ -200,14 +200,27 @@ See `benchmark/sweep.example.yaml` for the YAML shape.
 
 Each run produces a folder at `{centroids_type}/seed{seed}/frl{frl}_racial{racial}/...`:
 ```
-benchmark_manifest.json  # Task id, config hash, stage paths, status, timing
+benchmark_manifest.json  # Task id, config hash, stage records, status, timing
 result.json              # Status, metrics, zone_data, config, run metadata
-zone_dict_<level>.json   # Final root-level assignment alias
-zone_dict_area_<level>.json
-solution_<level>.json    # Status, metadata, and the generating config ("config")
-zoning_config.yaml       # That config, runnable by optimization.run as is
-stages/<stage>/<files>   # Every recursive/iterative level result, each with both
+zonings.json.xz          # Every stage: node + area assignment, status, full metadata, config
+solver_progress.json.xz  # Only with save_solver_progress: every stage's incumbents
+zoning_config.yaml       # The generating config, runnable by optimization.run as is
+stages/<stage>/          # Only assignment targets (assignment_zones.csv), when matching
 ```
+
+`optimization/run_archive.py` owns the archive: area ids are stored once per
+unit and each stage only its zones, and LZMA's window folds the metadata stages
+repeat (a pipeline's `capacity_reference`), so a three-stage pipeline run that
+took 2.8 MB in 18 JSON files takes ~30 KB. The manifest and `result.json` carry
+`summary_metadata` (containers over 2 KB dropped, named in
+`archived_metadata_keys`), since both are read for every run on resume and
+aggregation; full metadata is in the archive. Readers go through
+`run_archive.load_run_zonings`, which also reads runs saved in the old
+one-folder-per-stage layout; `uv run python -m benchmark.compact <root>`
+rewrites those (`--delete-legacy` removes the old files once verified; the root
+`zone_dict_area_<level>.json` stays unless `--drop-root-zoning`, because sweep
+configs name it as `hint_zoning`). `hint_zoning` accepts a `zonings.json.xz`
+(read at its final stage) as well as an `{area_id: zone}` JSON.
 
 Aggregation produces `summary.csv` with one row per run and `stages.csv` with one row per saved stage.
 

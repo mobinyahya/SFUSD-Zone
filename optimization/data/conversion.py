@@ -26,6 +26,7 @@ import networkx as nx
 
 from loaders import DataScenario, load_scenario
 from loaders.tables import read_csv
+from optimization import run_archive
 from optimization.levels import LevelSpec
 
 
@@ -207,7 +208,17 @@ _AREA_FILE_LEVEL = re.compile(
 
 
 def load_area_assignment(path: str) -> dict[int, int]:
-    """Read a saved ``{area_id: zone}`` JSON such as ``zone_dict_area_<level>.json``."""
+    """Read a saved zoning as ``{area_id: zone}``.
+
+    ``path`` is a run's ``zonings.json.xz``, read at its final stage, or a
+    ``{area_id: zone}`` JSON such as a legacy ``zone_dict_area_<level>.json``.
+    """
+    if run_archive.is_zonings_archive(path):
+        archive = run_archive.read_zonings(path)
+        raw = run_archive.area_assignment(archive, run_archive.get_stage(archive))
+        if not raw:
+            raise ValueError(f"Final stage of {path!r} saved no area assignment.")
+        return raw
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
     if not isinstance(raw, Mapping) or not raw:
@@ -216,11 +227,16 @@ def load_area_assignment(path: str) -> dict[int, int]:
 
 
 def area_file_level(path: str, default: LevelSpec | str) -> LevelSpec:
-    """The level a benchmark ``zone_dict_area_<level>.json`` was written at.
+    """The level a saved zoning was written at.
 
-    Only the unit matters, since area files are keyed by the unit's base ids;
-    files without the benchmark name are read as ``default``'s unit.
+    Only the unit matters, since area files are keyed by the unit's base ids.
+    A ``zonings.json.xz`` records its final stage's level; a JSON named like
+    a benchmark ``zone_dict_area_<level>.json`` carries it in the name, and
+    any other file is read as ``default``'s unit.
     """
+    if run_archive.is_zonings_archive(path):
+        archive = run_archive.read_zonings(path)
+        return LevelSpec.parse(run_archive.get_stage(archive)["level"])
     match = _AREA_FILE_LEVEL.search(str(path))
     return LevelSpec.parse(match.group(1) if match else default)
 

@@ -12,7 +12,16 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from optimization.config import OptimizationConfig
-from optimization.solution import ZoneSolution, graph_fingerprint
+from optimization.run_archive import (
+    area_assignment,
+    legacy_files,
+    load_run_zonings,
+    node_assignment,
+    save_zonings,
+    set_final_stage,
+    summary_metadata,
+)
+from optimization.solution import ZoneSolution, graph_fingerprint, save_zoning_config
 from benchmark.config import (
     BenchmarkTask,
     ExecutionConfig,
@@ -240,7 +249,8 @@ def evaluate_optimization_task(
         )
         metrics = calculator.compute()
         final_solution = calculator.context.solution
-        final_solution.save(output_dir, config_snapshot(config))
+        # A legacy run keeps its root alias; only an archive records the pick.
+        set_final_stage(output_dir, calculator.context.final_stage_name)
 
         if matching and matching.enabled:
             from benchmark.assignment import process_solution_assignments
@@ -336,16 +346,26 @@ def save_stage_artifacts(
     stage_names: Sequence[str],
     config: OptimizationConfig | None = None,
 ) -> list[dict[str, Any]]:
-    stages_dir = Path(output_dir) / "stages"
-    stages_dir.mkdir(parents=True, exist_ok=True)
+    """Save every stage in the run's one ``zonings.json.xz``.
+
+    Each record's ``path`` names the stage's folder, which only assignment
+    jobs create, to hold that stage's target.
+    """
+    stage_names = list(stage_names)[: len(solutions)]
+    solutions = list(solutions)[: len(stage_names)]
     snapshot = config_snapshot(config) if config is not None else None
-    records: list[dict[str, Any]] = []
-    for idx, (solution, stage_name) in enumerate(zip(solutions, stage_names)):
-        stage_dir = stages_dir / stage_name
-        stage_dir.mkdir(parents=True, exist_ok=True)
-        solution.save(str(stage_dir), snapshot)
-        records.append(stage_record(solution, idx, stage_name, stage_dir, output_dir))
-    return records
+    save_zonings(output_dir, solutions, stage_names, config=snapshot)
+    # A rerun over a run saved in the legacy layout must not leave its old
+    # per-stage files beside the archive, where they would read as current.
+    for path in legacy_files(output_dir):
+        path.unlink()
+    if snapshot is not None:
+        save_zoning_config(snapshot, output_dir)
+    stages_dir = Path(output_dir) / "stages"
+    return [
+        stage_record(solution, idx, stage_name, stages_dir / stage_name, output_dir)
+        for idx, (solution, stage_name) in enumerate(zip(solutions, stage_names))
+    ]
 
 
 def stage_record(
@@ -366,7 +386,9 @@ def stage_record(
         "num_zones": solution.problem.Z,
         # Filled in from the evaluated stage metrics, when they are computed.
         "contiguous": None,
-        "metadata": dict(solution.metadata),
+        # Read for every run on resume and aggregation; the full copy is in
+        # the run's archive.
+        "metadata": summary_metadata(solution.metadata),
     }
 
 
@@ -380,6 +402,9 @@ def result_payload_for(
     """Build the evaluated ``result.json`` payload from computed metrics."""
     body = metrics.to_full_dict()
     run = body.get("run", {})
+    for stage in run.get("stages", []):
+        if "metadata" in stage:
+            stage["metadata"] = summary_metadata(stage["metadata"])
     return _result_payload(
         body,
         task=task,
@@ -476,20 +501,19 @@ def load_solutions(
     config = optimization_config_from_dict(manifest["config"])
     dataset = dataset or config.make_dataset()
     pipeline = config.make_strategy() if config.strategy == "pipeline" else None
+    records = list(manifest.get("stages", []))
+    archive = load_run_zonings(output_dir, records)
+    saved_by_name = {saved["name"]: saved for saved in archive["stages"]}
     solutions: list[ZoneSolution] = []
-    for stage in manifest.get("stages", []):
+    for stage in records:
         level = stage["level"]
-        stage_dir = os.path.join(output_dir, stage["path"])
-        zone_dict_path = os.path.join(stage_dir, f"zone_dict_{level}.json")
-        area_dict_path = os.path.join(stage_dir, f"zone_dict_area_{level}.json")
-        solution_path = os.path.join(stage_dir, f"solution_{level}.json")
-        with open(zone_dict_path, "r", encoding="utf-8") as f:
-            assignment = {int(k): int(v) for k, v in json.load(f).items()}
-        info: dict[str, Any] = {}
-        if os.path.exists(solution_path):
-            with open(solution_path, "r", encoding="utf-8") as f:
-                info = json.load(f)
-        metadata = dict(info.get("metadata") or stage.get("metadata") or {})
+        saved = saved_by_name.get(stage["name"])
+        if saved is None:
+            raise ValueError(
+                f"Saved stage {stage['name']} is missing from {output_dir}."
+            )
+        assignment = node_assignment(saved)
+        metadata = dict(saved.get("metadata") or stage.get("metadata") or {})
         centroid_school_ids = metadata.get("centroid_school_ids")
         if (
             centroid_school_ids is None
@@ -503,27 +527,34 @@ def load_solutions(
                 level,
                 centroid_school_ids=centroid_school_ids,
             )
-        saved_fingerprint = info.get("graph_fingerprint")
-        if saved_fingerprint != graph_fingerprint(problem.G):
-            if not os.path.exists(area_dict_path):
+        if saved.get("graph_fingerprint") != graph_fingerprint(problem.G):
+            area_assignment_saved = area_assignment(archive, saved)
+            if area_assignment_saved is None:
                 raise ValueError(
                     f"Saved stage {stage['name']} uses a different graph and has no "
                     "area assignment for safe reconstruction."
                 )
-            with open(area_dict_path, "r", encoding="utf-8") as f:
-                area_assignment = {int(k): int(v) for k, v in json.load(f).items()}
             assignment = _node_assignment_from_areas(
                 problem.G,
-                area_assignment,
+                area_assignment_saved,
                 stage["name"],
             )
+        status = saved.get("status")
         solutions.append(
             ZoneSolution(
                 problem=problem,
                 assignment=assignment,
-                status=str(info.get("status") or stage.get("status") or "UNKNOWN"),
-                objective=info.get("objective", stage.get("objective")),
-                wall_time=info.get("wall_time", stage.get("wall_time")),
+                status=str(status or stage.get("status") or "UNKNOWN"),
+                objective=(
+                    saved["objective"]
+                    if saved.get("objective") is not None or status is not None
+                    else stage.get("objective")
+                ),
+                wall_time=(
+                    saved["wall_time"]
+                    if saved.get("wall_time") is not None or status is not None
+                    else stage.get("wall_time")
+                ),
                 metadata=metadata,
             )
         )

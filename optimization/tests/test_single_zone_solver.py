@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 
 import networkx as nx
 import pytest
@@ -10,6 +9,7 @@ import pytest
 from Config.Constants import AREA_ETHNICITIES
 from metrics.columns import MetricColumns
 from metrics import MetricsCalculator
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.data.contiguity import boundary_cost, boundary_edges
 from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
@@ -210,12 +210,13 @@ def test_single_zone_solution_saves_only_selected_nodes(tmp_path):
 
     solution.save(str(tmp_path))
 
-    assignment = json.loads(
-        (tmp_path / "zone_dict_Block_0.json").read_text(encoding="utf-8")
-    )
-    info = json.loads((tmp_path / "solution_Block_0.json").read_text(encoding="utf-8"))
-    assert {int(node) for node in assignment} == set(solution.assignment)
+    archive = run_archive.read_zonings(tmp_path)
+    info = run_archive.get_stage(archive)
+    assignment = run_archive.node_assignment(info)
+    assert set(assignment) == set(solution.assignment)
     assert len(assignment) == 3
+    # Areas outside the selected zone are left out, not assigned a zone.
+    assert run_archive.area_assignment(archive, info) == solution.area_assignment()
     assert info["num_zones"] == 1
     assert info["contiguous"] is True
     assert info["metadata"]["partial_assignment"] is True

@@ -45,6 +45,7 @@ from benchmark.slurm import (
     write_plan,
     write_submission_script,
 )
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
@@ -654,13 +655,12 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert manifest["phase"] == "optimization"
     assert manifest["final_stage"] is None
     assert result["metrics"] == {}
-    assert not (run_dir / "zone_dict_Block_0.json").exists()
-    assert (run_dir / "stages/stage_00_Block_0/zone_dict_Block_0.json").exists()
-    stage_info = json.loads(
-        (run_dir / "stages/stage_00_Block_0/solution_Block_0.json").read_text()
-    )
-    assert stage_info["config"] == manifest["config"]
-    assert (run_dir / "stages/stage_00_Block_0/zoning_config.yaml").exists()
+    archive = run_archive.read_zonings(run_dir)
+    assert [stage["name"] for stage in archive["stages"]] == ["stage_00_Block_0"]
+    assert archive["final_stage"] is None
+    assert archive["config"] == manifest["config"]
+    assert (run_dir / "zoning_config.yaml").exists()
+    assert not (run_dir / "stages").exists()
 
     evaluated = evaluate_optimization_task(
         task,
@@ -678,10 +678,8 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert result["metrics"]
     assert manifest["visualization"]["stages"] == "final"
     assert visualization_calls[0][2]["artifact_dir"] is None
-    assert (run_dir / "zone_dict_Block_0.json").exists()
-    root_info = json.loads((run_dir / "solution_Block_0.json").read_text())
-    assert root_info["config"] == manifest["config"]
-    assert (run_dir / "zoning_config.yaml").exists()
+    assert run_archive.read_zonings(run_dir)["final_stage"] == "stage_00_Block_0"
+    assert not (run_dir / "zone_dict_Block_0.json").exists()
 
 
 def test_optimization_failure_persists_error_artifacts(tmp_path, monkeypatch):
