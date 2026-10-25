@@ -14,6 +14,12 @@ import os
 from dataclasses import asdict
 
 from optimization.config import OptimizationConfig
+from optimization.run_archive import (
+    save_zonings,
+    set_final_stage,
+    summary_metadata,
+)
+from optimization.solution import save_zoning_config
 from metrics import MetricsCalculator
 
 DEFAULT_CONFIG = os.path.join(os.path.dirname(__file__), "config.example.yaml")
@@ -65,14 +71,13 @@ def main(argv: list[str] | None = None) -> None:
         else "stage"
     )
     snapshot = _config_snapshot(config)
-    for index, sol in enumerate(solutions):
-        stage_dir = os.path.join(
-            args.output,
-            "stages",
-            f"{stage_prefix}_{index:02d}_{sol.level.name}",
-        )
-        sol.save(stage_dir, snapshot)
-        sol.save(args.output, snapshot)
+    stage_names = [
+        f"{stage_prefix}_{index:02d}_{sol.level.name}"
+        for index, sol in enumerate(solutions)
+    ]
+    save_zonings(args.output, solutions, stage_names, config=snapshot)
+    save_zoning_config(snapshot, args.output)
+    for sol in solutions:
         contig = sol.is_contiguous() if sol.feasible else "n/a"
         print(
             f"  {sol.level}: status={sol.status} objective={sol.objective} "
@@ -80,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     metrics = MetricsCalculator(solutions, config=config).compute()
+    set_final_stage(args.output, metrics.run["final_stage"])
     result_path = os.path.join(args.output, "result.json")
     with open(result_path, "w") as f:
         json.dump(_result_payload(metrics, config, solutions), f, indent=2)
@@ -114,6 +120,9 @@ def main(argv: list[str] | None = None) -> None:
 def _result_payload(metrics, config: OptimizationConfig, solutions) -> dict:
     payload = metrics.to_full_dict()
     run = payload.get("run", {})
+    for stage in run.get("stages", []):
+        if "metadata" in stage:
+            stage["metadata"] = summary_metadata(stage["metadata"])
     payload.update(
         {
             "status": run.get("final_status"),

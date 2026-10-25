@@ -337,19 +337,24 @@ def prepare_completed_run_target(output_dir: str | Path, final_level: str) -> bo
     The optimization worker only writes ``assignment_zones.csv`` (or the skip
     marker) when matching was enabled for that run, so turning matching on
     after a sweep has finished leaves nothing for the assignment jobs to read.
-    This rebuilds the root target from the saved files alone -- the final
-    level's ``solution_<level>.json`` for status and the portable
-    ``zone_dict_area_<level>.json`` for the zoning -- with the same
+    This rebuilds the root target from the saved zonings alone -- the final
+    stage's status and its portable area assignment -- with the same
     eligibility rule as :func:`process_solution_assignments`, without
-    rebuilding any graph. Returns whether the run is eligible.
+    rebuilding any graph. A legacy run is read from its root alias at
+    ``final_level``. Returns whether the run is eligible.
     """
-    import json
+    from optimization import run_archive
 
     root = Path(output_dir).expanduser().resolve()
     zone_file = root / GENERATED_ZONE_FILENAME
     skip_marker = root / SKIP_MARKER_FILENAME
-    with (root / f"solution_{final_level}.json").open(encoding="utf-8") as stream:
-        saved = json.load(stream)
+    archive = run_archive.load_run_zonings(
+        root,
+        None
+        if (root / run_archive.ZONINGS_FILENAME).is_file()
+        else [{"name": "final", "level": final_level, "path": "."}],
+    )
+    saved = run_archive.get_stage(archive)
     eligible = saved.get("status") in ("OPTIMAL", "FEASIBLE") and not (
         saved.get("metadata") or {}
     ).get("partial_assignment")
@@ -357,8 +362,9 @@ def prepare_completed_run_target(output_dir: str | Path, final_level: str) -> bo
         zone_file.unlink(missing_ok=True)
         skip_marker.write_text("ineligible optimization solution\n", encoding="utf-8")
         return False
-    with (root / f"zone_dict_area_{final_level}.json").open(encoding="utf-8") as stream:
-        area_assignment = {int(k): int(v) for k, v in json.load(stream).items()}
+    area_assignment = run_archive.area_assignment(archive, saved)
+    if area_assignment is None:
+        raise ValueError(f"Run {root} saved no area assignment for its final stage.")
     skip_marker.unlink(missing_ok=True)
     write_generated_zones(area_assignment, zone_file)
     return True
