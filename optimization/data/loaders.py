@@ -28,6 +28,7 @@ from Config.Constants import (
     ETHNICITY_DICT,
     IMPORTANT_COLS,
     K8_SCHOOLS,
+    SUPPLEMENTARY_ETHNICITIES,
 )
 from loaders import (
     CacheNamespace,
@@ -53,9 +54,10 @@ from optimization.data.geography import EARTH_RADIUS_MILES
 
 PROJECTED_CENTROID_CRS = "EPSG:32610"  # San Francisco is in UTM zone 10N.
 OUTPUT_LATLON_CRS = "EPSG:4326"
-# Bumped to 9 when student rows gained the enrolling-student weights, and to 10
-# when Mission Bay's canonical school ID became 1731.
-STUDENT_CACHE_SCHEMA_VERSION = 10
+# Bumped to 9 when student rows gained the enrolling-student weights, to 10
+# when Mission Bay's canonical school ID became 1731, and to 11 when rows kept
+# the Not Specified, Decline to State and blank (Missing) ethnicity columns.
+STUDENT_CACHE_SCHEMA_VERSION = 11
 AREA_DISTANCE_CACHE_SCHEMA_VERSION = 3
 
 EXCLUDED_OPTIMIZATION_BLOCKS = frozenset(
@@ -124,6 +126,9 @@ _ETHNICITY_RENAME = {
     "resolved_ethnicity_Hispanic/Latinx": "Ethnicity_Hispanic/Latinx",
     "resolved_ethnicity_Two or More Races": "Ethnicity_Two_or_More_Races",
     "resolved_ethnicity_White": "Ethnicity_White",
+    "resolved_ethnicity_Not specified": "Ethnicity_Not_Specified",
+    "resolved_ethnicity_Decline to state": "Ethnicity_Decline_To_State",
+    "resolved_ethnicity_Missing": "Ethnicity_Missing",
 }
 
 
@@ -402,7 +407,9 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
         raise ValueError(
             "Student data is missing required column 'resolved_ethnicity'."
         )
-    frame["resolved_ethnicity"] = frame["resolved_ethnicity"].replace(ETHNICITY_DICT)
+    frame["resolved_ethnicity"] = (
+        frame["resolved_ethnicity"].fillna("Missing").replace(ETHNICITY_DICT)
+    )
     frame = pd.get_dummies(frame, columns=["resolved_ethnicity"])
 
     population_weight = (
@@ -425,7 +432,7 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
     fill_columns = [column for column in frame.columns if column not in GEOGRAPHY_UNITS]
     frame[fill_columns] = frame[fill_columns].fillna(value=0)
     frame.rename(columns=_ETHNICITY_RENAME, inplace=True)
-    for ethnicity in AREA_ETHNICITIES:
+    for ethnicity in AREA_ETHNICITIES + SUPPLEMENTARY_ETHNICITIES:
         if ethnicity not in frame.columns:
             frame[ethnicity] = 0.0
     return frame
@@ -654,11 +661,8 @@ def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
 
 def _aggregate_students(students: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
     stats = students.groupby(cfg.unit, as_index=False).sum(numeric_only=True)
-    columns = [
-        column
-        for column in AREA_COLS + [cfg.unit] + AREA_ETHNICITIES
-        if column in stats.columns
-    ]
+    wanted = AREA_COLS + [cfg.unit] + AREA_ETHNICITIES + SUPPLEMENTARY_ETHNICITIES
+    columns = [column for column in wanted if column in stats.columns]
     stats = stats[columns]
     for column in stats.columns:
         if column not in BUILDING_BLOCKS:

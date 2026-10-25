@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Any, Mapping
 
 import geopandas as gpd
@@ -32,10 +32,17 @@ class SpatialMetrics:
     max_reock_score: float
     avg_polsby_popper_score: float
     max_polsby_popper_score: float
+    #: Per-zone ``polsby_popper_score``, ``reock_score``, ``area_sq_m`` and
+    #: ``perimeter_m`` on the dissolved Block_0 geometry; zone data, not a column.
+    zone_scores: Mapping[int, Mapping[str, float]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
 
-#: Flat metric columns, one per :class:`SpatialMetrics` field.
-SPATIAL_FIELDS = tuple(field.name for field in fields(SpatialMetrics))
+#: Flat metric columns, one per scalar :class:`SpatialMetrics` field.
+SPATIAL_FIELDS = tuple(
+    item.name for item in fields(SpatialMetrics) if item.name != "zone_scores"
+)
 
 
 def compute_spatial_metrics(
@@ -79,6 +86,7 @@ def compute_spatial_metrics(
         max_reock_score,
         avg_polsby_popper_score,
         max_polsby_popper_score,
+        zone_scores,
     ) = _zone_shape_scores(
         solution,
         config,
@@ -94,6 +102,7 @@ def compute_spatial_metrics(
         max_reock_score=max_reock_score,
         avg_polsby_popper_score=avg_polsby_popper_score,
         max_polsby_popper_score=max_polsby_popper_score,
+        zone_scores=zone_scores,
     )
 
 
@@ -163,11 +172,12 @@ def _zone_shape_scores(
     graph=None,
     assignment: Mapping[int, int] | None = None,
     level: LevelSpec | None = None,
-) -> tuple[float, float, float, float]:
+) -> tuple[float, float, float, float, dict[int, dict[str, float]]]:
+    """Mean and max Reock and Polsby-Popper over zones, then per-zone scores."""
     assignment = solution.assignment if assignment is None else assignment
     areas = _node_area_metrics(solution, config, graph=graph, level=level)
     if areas.empty:
-        return 0.0, 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, {}
 
     assigned = areas[["node", "geometry"]].copy()
     assigned["zone_id"] = assigned["node"].map(
@@ -175,13 +185,12 @@ def _zone_shape_scores(
     )
     assigned = assigned.dropna(subset=["zone_id", "geometry"]).copy()
     if assigned.empty:
-        return 0.0, 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, {}
     assigned["zone_id"] = assigned["zone_id"].astype(int)
 
     zones = assigned.dissolve(by="zone_id", as_index=False)[["zone_id", "geometry"]]
-    reock_scores: list[float] = []
-    polsby_popper_scores: list[float] = []
-    for geometry in zones.geometry:
+    zone_scores: dict[int, dict[str, float]] = {}
+    for zone_id, geometry in zip(zones["zone_id"], zones.geometry):
         geometry = _clean_geometry(geometry)
         if geometry is None or geometry.is_empty:
             continue
@@ -189,14 +198,23 @@ def _zone_shape_scores(
         perimeter = float(geometry.length)
         if area <= 0:
             continue
-        reock_scores.append(_reock_score(geometry, area))
-        polsby_popper_scores.append(_polsby_popper_score(area, perimeter))
+        zone_scores[int(zone_id)] = {
+            "polsby_popper_score": _polsby_popper_score(area, perimeter),
+            "reock_score": _reock_score(geometry, area),
+            "area_sq_m": area,
+            "perimeter_m": perimeter,
+        }
 
+    reock_scores = [scores["reock_score"] for scores in zone_scores.values()]
+    polsby_popper_scores = [
+        scores["polsby_popper_score"] for scores in zone_scores.values()
+    ]
     return (
         _mean(reock_scores),
         max(reock_scores, default=0.0),
         _mean(polsby_popper_scores),
         max(polsby_popper_scores, default=0.0),
+        zone_scores,
     )
 
 

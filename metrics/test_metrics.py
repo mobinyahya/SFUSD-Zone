@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
+from Config.Constants import SUPPLEMENTARY_ETHNICITIES
 from optimization.data.contiguity import boundary_edges
 from optimization.levels import LevelSpec
 from optimization.problem import ZoneProblem
@@ -14,6 +15,8 @@ from metrics import MetricsCalculator
 from metrics.columns import MetricColumns
 from metrics import choice as choice_metrics
 from metrics import distance as distance_metrics
+from metrics import diversity as diversity_metrics
+from metrics.base import MetricsContext
 from metrics import programs as program_metrics
 from metrics.spatial import compute_spatial_metrics
 
@@ -393,3 +396,110 @@ def test_choice_metric_uses_configured_mnl_method(tmp_path):
     assert max_result.metrics[column] == pytest.approx(8.0)
     assert logsum_result.metrics[column] == pytest.approx(expected_logsum)
     assert logsum_result.run["choice_preassignment_utility"]["method"] == "logsum"
+
+
+def test_zone_population_fields_name_ge_and_all_program_counts():
+    problem = _problem()
+    problem.program_population = "All"
+    for node in (0, 1):
+        problem.G.nodes[node]["all_prog_students"] = 2.0
+        problem.G.nodes[node]["all_prog_capacity"] = 3.0
+    solution = ZoneSolution(
+        problem=problem, assignment=_assignment(), status="FEASIBLE"
+    )
+
+    result = MetricsCalculator(solution, modules=[diversity_metrics.compute]).compute()
+
+    zone = result.zone_data[0]
+    assert zone["students"] == zone["all_prog_students"] == 6.0
+    assert zone["capacity"] == zone["all_prog_capacity"] == 8.0
+    assert zone["ge_students"] == 4.0
+    assert zone["ge_capacity"] == 4.0
+    # Shares and the seat disparity stay over the problem's own population.
+    assert zone["frl_pct"] == pytest.approx(2.0 / 6.0)
+    assert zone["seat_disparity"] == pytest.approx((8.0 - 6.0) / 6.0)
+    assert zone["supplementary_ethnicity_pcts"] is None
+    assert result.run["zone_population"] == {
+        "students": "all_prog_students",
+        "capacity": "all_prog_capacity",
+    }
+
+
+def test_supplementary_ethnicities_are_shares_of_the_zone_population(monkeypatch):
+    counts = {
+        node: dict.fromkeys(SUPPLEMENTARY_ETHNICITIES, 0.0)
+        for node in _problem().G.nodes
+    }
+    counts[0]["Ethnicity_Not_Specified"] = 1.0
+    counts[1]["Ethnicity_Missing"] = 1.0
+    counts[2]["Ethnicity_Filipino"] = 1.0
+    monkeypatch.setattr(
+        MetricsContext,
+        "supplementary_ethnicity_counts",
+        property(lambda self: counts),
+    )
+
+    result = MetricsCalculator(
+        _solution(), modules=[diversity_metrics.compute]
+    ).compute()
+
+    zone0 = result.zone_data[0]["supplementary_ethnicity_pcts"]
+    assert zone0["Ethnicity_Not_Specified"] == 0.25
+    assert zone0["Ethnicity_Missing"] == 0.25
+    assert zone0["Ethnicity_Unreported"] == 0.5
+    zone1 = result.zone_data[1]["supplementary_ethnicity_pcts"]
+    assert zone1["Ethnicity_Filipino"] == 0.2
+    assert zone1["Ethnicity_Unreported"] == 0.0
+
+
+def test_nearest_ge_school_distances_weight_populated_nodes():
+    problem = _problem()
+    problem.program_population = "All"
+    problem.G.nodes[4]["ge_students"] = 0.0
+    problem.G.nodes[4]["all_prog_students"] = 2.0
+    # Zone 2 holds node 2 alone and no school.
+    assignment = {**_assignment(), 2: 2}
+    solution = ZoneSolution(problem=problem, assignment=assignment, status="FEASIBLE")
+
+    result = MetricsCalculator(solution, modules=[distance_metrics.compute]).compute()
+
+    zone0 = result.zone_data[0]
+    assert zone0["school_ids"] == zone0["ge_school_ids"] == [100]
+    # Nodes 0, 1, 3 and 4 sit 0, 1, 1 and sqrt(2) from school 100 at node 0.
+    assert zone0["ge_populated_nodes"] == 3
+    assert zone0["ge_weighted_avg_nearest_ge_school_distance"] == pytest.approx(2 / 3)
+    assert zone0["max_ge_populated_node_nearest_ge_school_distance"] == 1.0
+    assert zone0["populated_nodes"] == 4
+    assert zone0["weighted_avg_nearest_ge_school_distance"] == pytest.approx(
+        (2 + 2 * math.sqrt(2)) / 5
+    )
+    assert zone0["max_populated_node_nearest_ge_school_distance"] == pytest.approx(
+        math.sqrt(2)
+    )
+    zone2 = result.zone_data[2]
+    assert zone2["school_ids"] == []
+    assert zone2["ge_weighted_avg_nearest_ge_school_distance"] is None
+    assert zone2["max_ge_populated_node_nearest_ge_school_distance"] is None
+    assert zone2["ge_students_without_in_zone_ge_school"] == 1.0
+    assert result.metrics[MetricColumns.GE_STUDENTS_WITHOUT_IN_ZONE_GE_SCHOOL] == 1.0
+    # The district maximum is zone 1's node 6, two cells from school 200.
+    assert (
+        result.metrics[MetricColumns.MAX_POPULATED_NODE_NEAREST_GE_SCHOOL_DISTANCE]
+        == 2.0
+    )
+
+
+def test_structure_metrics_report_per_zone_shape_scores():
+    result = MetricsCalculator(_solution(), config={"strategy": "single"}).compute()
+
+    scores = [result.zone_data[zone]["polsby_popper_score"] for zone in (0, 1)]
+    assert max(scores) == result.metrics["max_polsby_popper_score"]
+    assert sum(scores) / 2 == pytest.approx(result.metrics["avg_polsby_popper_score"])
+    # Zone 0 is the 2x2 square of grid cells.
+    assert result.zone_data[0]["area_sq_m"] == 4.0
+    assert result.zone_data[0]["perimeter_m"] == 8.0
+    # Its bounding circle has radius sqrt(2); shapely draws it as a polygon.
+    assert result.zone_data[0]["reock_score"] == pytest.approx(
+        4 / (2 * math.pi), rel=0.01
+    )
+    assert "zone_scores" not in result.metrics
