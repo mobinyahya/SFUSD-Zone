@@ -349,7 +349,7 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
                 sorted(int(zone) for zone in problem.candidate_zones(node)),
                 float(problem.students(node)),
                 *_capacity_students_entry(problem, node),
-                float(problem.capacity(node)),
+                float(problem.capacity_seats(node)),
                 float(problem.frl(node)),
                 int(problem.num_schools(node)),
                 [float(problem.ethnicity(node, e)) for e in ethnicities],

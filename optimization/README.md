@@ -198,7 +198,7 @@ independently.
   The CP-SAT solvers share common helpers, while the Gurobi MIP implementation
   stays separate.
 - **One ReCom, many methods.** `recom` (`solvers/recom.py`) is one walk: a
-  move merges two adjacent zones, draws a uniform spanning tree, and cuts it;
+  move merges two adjacent zones, draws a spanning tree, and cuts it;
   moves run in bursts of `recom_burst_length`, each burst restarting from the
   best state it visited (feasible, then objective, else the policy's merit).
   `solvers/recom_policy.py` makes the choices from one merit, the weighted
@@ -206,15 +206,22 @@ independently.
   `hedge`, `dual`), `recom_pair_selection` (`uniform`, `proportional`,
   `softmax`, `zone`, `exp3`), `recom_pair_score` (`pressure`, `pooled`),
   `recom_cut_selection` (`uniform`, `softmax`),
+  `recom_tree_sampler` (`random_mst`, the default: fresh independent uniform
+  random edge weights followed by a minimum spanning tree; `wilson_uniform`:
+  Wilson's uniform spanning tree),
   `recom_temperature` or `recom_entropy`, `recom_exploration`,
   `recom_learning_rate`, `recom_bandit_window`, `recom_objective_weight`, and
   `recom_reject_infeasible`. `recom_policy.PRESETS` names the studied methods:
-  `chain` (classic rejection ReCom, `recom_burst_length: 0`), `uniform_bursts`,
+  `chain` (rejection ReCom, `recom_burst_length: 0`), `uniform_bursts`,
   `entropy` (the defaults), `exact_penalty`, `bandit`, `hedge`, and `dual`.
   `entropy` is the default because it was the most robust: from a Voronoi
   start at 240 s, it reached a feasible zoning in 58 of 75 runs over five
   instances (59 zones and 6/10/13/18 zones), against 39 for the old
   Adam-weighted adaptive short bursts, with the best objective at 6-13 zones.
+  Those comparisons used Wilson trees. Random-weight MSTs have a different,
+  nonuniform distribution over spanning trees. Both samplers use the run's
+  seeded RNG, independently of boundary edge weights, and `sample_feasible`
+  also honors `recom_tree_sampler`.
 - **ReCom label semantics.** ReCom uses centroids to determine the zone count and
   to generate an optional Voronoi hint, but does not enforce centroid anchors or
   `max_distance` during the walk. Explicit `candidates` and `fixed` restrictions

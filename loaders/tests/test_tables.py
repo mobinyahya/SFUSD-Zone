@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 import pytest
 
@@ -1059,9 +1061,7 @@ def test_included_planned_school_joins_school_and_program_tables(
     )
 
 
-def test_programs_carry_attendance_area_seats_from_the_scenario_or_the_school(
-    tmp_path, scenario_factory
-):
+def _attendance_seat_sources(tmp_path, overlay):
     schools = tmp_path / "schools.csv"
     programs = tmp_path / "programs.csv"
     capacities = tmp_path / "capacities.csv"
@@ -1079,34 +1079,63 @@ def test_programs_carry_attendance_area_seats_from_the_scenario_or_the_school(
             "capacity": [40, 10, 10, 50, 22],
         }
     ).to_csv(programs, index=False)
-    # School 10's GE seats are split: 44 attendance-area, 22 citywide.
     pd.DataFrame(
         {
             "Grade": ["K", "K", "K"],
             "SchNum": [10, 10, 20],
             "PathwayCode": ["GE", "SE+SN", "GE"],
             "Scenario_A_Capacity": [66, 44, 66],
-            "Scenario_A_AttendanceAreaCapacity": [44, 0, 0],
+            "Scenario_A_AttendanceAreaCapacity": overlay,
             "Scenario_A_Category": ["Attendance", "Attendance", "Citywide"],
         }
     ).to_csv(capacities, index=False)
-    sources = {
+    return {
         "assignment.schools": {"path": str(schools)},
         "assignment.programs": {"path": str(programs)},
         "assignment.capacity": {"path": str(capacities)},
     }
+
+
+def test_programs_carry_attendance_area_seats_from_the_scenario_or_the_school(
+    tmp_path, scenario_factory
+):
+    # School 10's GE seats are all attendance-area; its Spanish pathway, at
+    # the same attendance-area school, is all citywide.
+    sources = _attendance_seat_sources(tmp_path, [66, 0, 0])
 
     overlaid = load_program_records(
         scenario_factory(sources, {"assignment": {"capacity_scenario": "A"}})
     ).set_index("program_id")
     # School 30 is not in the scenario, so its GE seats fall back to the rule.
     assert overlaid["capacity"].tolist() == [66, 22, 22, 66, 22]
-    assert overlaid["attendance_area_capacity"].tolist() == [44, 0, 0, 0, 22]
+    assert overlaid["attendance_area_capacity"].tolist() == [66, 0, 0, 0, 22]
 
     plain = load_program_records(
         scenario_factory(sources, {"assignment": {}}, scenario_id="plain")
     )
     assert plain["attendance_area_capacity"].tolist() == [40, 0, 0, 0, 22]
+
+
+@pytest.mark.parametrize(
+    ("overlay", "named"),
+    [
+        # 44 attendance-area and 22 citywide seats in one GE program.
+        ([44, 0, 0], "10-GE-KG (44 of 66"),
+        # A GE program at an attendance-area school with only citywide seats.
+        ([0, 0, 0], "10-GE-KG (0 of 66"),
+        # Attendance-area seats in a language pathway.
+        ([66, 44, 0], "10-SE-KG (22 of 22"),
+    ],
+)
+def test_unsupported_attendance_area_seat_labels_fail_at_load(
+    tmp_path, scenario_factory, overlay, named
+):
+    sources = _attendance_seat_sources(tmp_path, overlay)
+    with pytest.raises(ValueError, match=re.escape(named)):
+        load_program_records(
+            scenario_factory(sources, {"assignment": {"capacity_scenario": "A"}})
+        )
+
 
 def _fill_scenario(tmp_path, scenario_factory, *, bind=True):
     """Two unlabelled polygons: A holds school 20, B holds schools 30 and 31."""

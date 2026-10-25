@@ -78,13 +78,13 @@ def test_graph_cache_path_changes_for_weighted_edges(tmp_path):
     assert "edge_weighting" in weighted._graph_namespace.parameters["partition_policy"]
 
 
-def test_default_graph_root_uses_v16_shared_cache_namespace():
+def test_default_graph_root_uses_v17_shared_cache_namespace():
     config = OptimizationConfig(levels=["Block_0"])
     dataset = Dataset(config)
 
-    assert dataset._graph_namespace.schema_version == 16
+    assert dataset._graph_namespace.schema_version == 17
     assert dataset._graph_namespace.version_dir == Path(
-        "/soalnas/share/data/school_choice/Data/caches/graphs/v16"
+        "/soalnas/share/data/school_choice/Data/caches/graphs/v17"
     )
     assert Path(dataset.graph_cache_dir).parent == dataset._graph_namespace.version_dir
 
@@ -184,7 +184,9 @@ def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypat
         lambda cfg, **kwargs: base,
     )
 
-    def fake_aggregate(parent, target, program_population, *, partition=None):
+    def fake_aggregate(
+        parent, target, program_population, *, partition=None, area_weight=0.0
+    ):
         generated_from.append((parent, target, program_population))
         return middle if parent is base else coarse
 
@@ -193,7 +195,10 @@ def test_dataset_builds_each_level_from_its_immediate_parent(tmp_path, monkeypat
         fake_aggregate,
     )
 
-    dataset = Dataset(_config(tmp_path, levels=["BlockGroup_2"]))
+    # The fake parents carry no census geometry, so balance students only.
+    dataset = Dataset(
+        _config(tmp_path, levels=["BlockGroup_2"], partition_area_weight=0.0)
+    )
     result = dataset.graph_for("BlockGroup_2")
 
     assert result is coarse
@@ -213,7 +218,7 @@ def test_graph_payload_is_saved_and_loaded_through_validated_manifest(
     assert first.graph_for("Block_0") is graph
     manifest = first._graph_namespace.manifest()
     assert manifest is not None
-    assert manifest["schema_version"] == 16
+    assert manifest["schema_version"] == 17
     assert manifest["payloads"]["Block_0.pickle"]["format"] == "pickle"
 
     monkeypatch.setattr(

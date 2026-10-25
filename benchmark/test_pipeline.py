@@ -186,3 +186,50 @@ def test_saved_pipeline_reconstructs_each_steps_problem(tmp_path):
     assert stages["pipeline_step"].tolist() == ["coarse", "refine", "polish"]
     assert stages["method"].tolist() == ["cp_int"] * 3
     assert stages["objective_kind"].tolist() == ["cut_edges"] * 3
+
+
+def test_10_24_sweep_pairs_all_ideal_scenarios_and_freezes_shape(monkeypatch):
+    from pathlib import Path
+    import yaml
+
+    monkeypatch.setattr(
+        "benchmark.config._benchmark_source_manifest",
+        lambda config, **kw: {"capacity_scenario": config.capacity_scenario},
+    )
+    path = Path(__file__).parent / "configs/attendance_areas/10-24.yaml"
+    sweep = SimulationSweep.from_yaml(str(path))
+    tasks = sweep.generate_tasks()
+    assert len(tasks) == 120
+    assert len({task.config_hash for task in tasks}) == 120
+    assert {task.optimization_config().frl_dev for task in tasks} == {0.15, 0.2, 0.25, 0.3}
+    catalog = yaml.safe_load(
+        (path.parents[3] / "loaders/configs/base.yaml").read_text()
+    )
+    expected = {
+        s
+        for s in catalog["capacity_scenarios"]
+        if s.startswith("ideal_") and s.endswith("2627")
+    }
+    assert {task.optimization_config().capacity_scenario for task in tasks} == expected
+    for task in tasks:
+        config = task.optimization_config()
+        assert config.capacity_scenario == config.data_scenario.filter(
+            "assignment", "capacity_scenario"
+        )
+        shape, distance, perimeter = config.steps
+        assert shape.objective == "capacity_match"
+        assert shape.options["recom_weights"] == "hedge"
+        assert shape.options["recom_tree_sampler"] == "random_mst"
+        assert shape.options["capacity_match_unassigned_weight"] == 1
+        assert shape.options["capacity_match_designated_weight"] == 0
+        assert shape.options["hints"] == "voronoi"
+        assert shape.constraints == {"overage": -1, "shortage": -1}
+        assert distance.capacity_reference == perimeter.capacity_reference == "shape"
+        assert distance.method == perimeter.method == "cp_bool"
+        from optimization.pipeline import step_config
+
+        effective = [step_config(config, step, i) for i, step in enumerate(config.steps)]
+        assert all(step.frl_dev == config.frl_dev for step in effective)
+        assert effective[0].overage == effective[0].shortage == -1
+        assert effective[0].recom_tree_sampler == "random_mst"
+        assert all(step.overage == 0.10 and step.shortage == 0.05 for step in effective[1:])

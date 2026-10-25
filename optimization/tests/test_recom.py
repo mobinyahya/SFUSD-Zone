@@ -16,9 +16,17 @@ from optimization.data.edge_weights import BOUNDARY_WEIGHT_ATTR
 from optimization.solvers import get_solver
 from optimization.solvers.balance import balance_constraints
 from optimization.solvers.base import available_solvers
-from optimization.solvers.recom import _ReComContext, _ReComKernel, _State, _ZoneStats
+from optimization.solvers.recom import (
+    _DeadlineReached,
+    _NoProposal,
+    _ReComContext,
+    _ReComKernel,
+    _State,
+    _ZoneStats,
+)
 from optimization.solvers.recom_policy import (
     PRESETS,
+    TREE_SAMPLERS,
     DualWeights,
     Exp3Pairs,
     HedgeWeights,
@@ -59,6 +67,7 @@ def test_config_passes_recom_settings_to_solver() -> None:
         recom_burst_length=17,
         recom_weights="hedge",
         recom_pair_selection="zone",
+        recom_tree_sampler="wilson_uniform",
         recom_entropy=None,
     )
 
@@ -66,7 +75,11 @@ def test_config_passes_recom_settings_to_solver() -> None:
 
     assert options["recom_iterations"] == 321
     assert ReComSettings.from_options(options) == ReComSettings(
-        burst_length=17, weights="hedge", pair_selection="zone", entropy=None
+        burst_length=17,
+        weights="hedge",
+        pair_selection="zone",
+        tree_sampler="wilson_uniform",
+        entropy=None,
     )
     assert ReComSettings.from_options(OptimizationConfig().make_solver().options) == (
         ReComSettings()
@@ -81,6 +94,7 @@ def test_config_passes_recom_settings_to_solver() -> None:
         ({"recom_pair_selection": "lagrangian_softmax"}, "recom_pair_selection"),
         ({"recom_pair_score": "compatible"}, "recom_pair_score"),
         ({"recom_cut_selection": "relaxed"}, "recom_cut_selection"),
+        ({"recom_tree_sampler": "dfs"}, "recom_tree_sampler"),
         ({"recom_temperature": 0}, "recom_temperature"),
         ({"recom_entropy": 1.5}, "recom_entropy"),
         ({"recom_exploration": -0.1}, "recom_exploration"),
@@ -264,7 +278,8 @@ def test_negative_iterations_use_only_the_time_limit() -> None:
     assert solution.metadata["stop_reason"] == "time_limit"
 
 
-def test_sample_feasible_walks_the_chain_whatever_the_options() -> None:
+@pytest.mark.parametrize("tree_sampler", TREE_SAMPLERS)
+def test_sample_feasible_uses_chain_policy_and_selected_tree_sampler(tree_sampler) -> None:
     problem = make_grid_problem(3, 3, frl_dev=1.0, overage=-1, shortage=-1)
     problem = replace(problem, hint={n: int(n % 3 > 0) for n in problem.nodes})
     visited: list[dict[int, int]] = []
@@ -273,14 +288,16 @@ def test_sample_feasible_walks_the_chain_whatever_the_options() -> None:
         visited.append(assignment)
         return len(visited) < 5
 
-    solution = _solver("dual", recom_iterations=100, seed=2).sample_feasible(
-        problem, visit
-    )
+    solution = _solver(
+        "dual", recom_iterations=100, seed=2, recom_tree_sampler=tree_sampler
+    ).sample_feasible(problem, visit)
 
     assert len(visited) == 5
     assert solution.metadata["stop_reason"] == "visitor_stop"
     assert solution.metadata["recom_reject_infeasible"] is True
     assert solution.metadata["recom_burst_length"] == 0
+    assert solution.metadata["tree_sampler"] == tree_sampler
+    assert solution.metadata["recom_tree_sampler"] == tree_sampler
 
 
 def test_scored_walks_repair_an_infeasible_start() -> None:
@@ -362,9 +379,10 @@ def test_uniform_cuts_prefer_pair_feasible_cuts() -> None:
         assert cut.pair_feasible
 
 
-def test_wilson_sampler_returns_a_spanning_tree() -> None:
+@pytest.mark.parametrize("tree_sampler", TREE_SAMPLERS)
+def test_sampler_returns_a_spanning_tree(tree_sampler) -> None:
     context = _ReComContext(make_solver_contract_problem())
-    kernel = _ReComKernel(context, random.Random(4), None)
+    kernel = _ReComKernel(context, random.Random(4), None, tree_sampler=tree_sampler)
     nodes = set(range(len(context.nodes)))
     adjacency = {node: context.adjacency[node] for node in nodes}
 
@@ -375,14 +393,71 @@ def test_wilson_sampler_returns_a_spanning_tree() -> None:
     assert nx.is_tree(graph)
 
 
+def test_random_mst_minimizes_fresh_edge_weights_on_every_draw() -> None:
+    context = _ReComContext(make_grid_problem(4, 4))
+    kernel = _ReComKernel(context, random.Random(7), None)
+    assert kernel.tree_sampler == "random_mst"
+    nodes = list(range(len(context.nodes)))
+    adjacency = {node: context.adjacency[node] for node in nodes}
+    rng = random.Random(7)
+    draws = []
+
+    for _ in range(3):
+        weighted = nx.Graph()
+        weighted.add_weighted_edges_from(
+            (u, v, rng.random())
+            for u in nodes
+            for v in sorted(adjacency[u])
+            if u < v
+        )
+        expected = nx.minimum_spanning_tree(weighted)
+        tree = kernel._random_spanning_tree(nodes, adjacency)
+        edges = {tuple(sorted((u, v))) for u, neighbors in tree.items() for v in neighbors}
+
+        assert edges == {tuple(sorted(edge)) for edge in expected.edges}
+        assert kernel.rng.getstate() == rng.getstate()
+        draws.append(frozenset(edges))
+
+    assert len(set(draws)) > 1
+
+
+@pytest.mark.parametrize("tree_sampler", TREE_SAMPLERS)
+def test_sampler_handles_singleton_and_empty_regions(tree_sampler) -> None:
+    context = _ReComContext(make_solver_contract_problem())
+    kernel = _ReComKernel(context, random.Random(0), None, tree_sampler=tree_sampler)
+
+    assert kernel._random_spanning_tree([3], {3: ()}) == {3: []}
+    with pytest.raises(_NoProposal, match="empty_zone_pair"):
+        kernel._random_spanning_tree([], {})
+
+
+def test_random_mst_rejects_disconnected_regions() -> None:
+    context = _ReComContext(make_solver_contract_problem())
+    kernel = _ReComKernel(context, random.Random(0), None)
+
+    with pytest.raises(_NoProposal, match="disconnected_zone_pair"):
+        kernel._random_spanning_tree([0, 1, 2, 3], {0: (1,), 1: (0,), 2: (3,), 3: (2,)})
+
+
+def test_random_mst_respects_the_deadline() -> None:
+    context = _ReComContext(make_grid_problem(12, 12))
+    kernel = _ReComKernel(context, random.Random(0), time.monotonic() - 1)
+    nodes = list(range(len(context.nodes)))
+    adjacency = {node: context.adjacency[node] for node in nodes}
+
+    with pytest.raises(_DeadlineReached):
+        kernel._random_spanning_tree(nodes, adjacency)
+
+
+@pytest.mark.parametrize("tree_sampler", TREE_SAMPLERS)
 @pytest.mark.parametrize("preset", ["uniform_bursts", "entropy", "hedge", "dual"])
-def test_incremental_state_matches_a_full_rebuild(preset: str) -> None:
+def test_incremental_state_matches_a_full_rebuild(preset: str, tree_sampler: str) -> None:
     hint = {node: 0 if node % 5 < 2 else 1 for node in range(25)}
     problem = make_grid_problem(5, 5, hint=hint, boundary_prop=0.3)
     context = _ReComContext(problem)
     state = context.build_state(context.validate_hint(hint))
     rng = random.Random(11)
-    kernel = _ReComKernel(context, rng, None)
+    kernel = _ReComKernel(context, rng, None, tree_sampler=tree_sampler)
     policy = Policy(context, rng, PRESETS[preset], objective_local=True)
 
     for _ in range(50):

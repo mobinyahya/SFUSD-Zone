@@ -12,6 +12,7 @@ from optimization.levels import LevelSpec
 from optimization.pipeline import SolutionInput, SolveStep, step_config
 from optimization.solution import ZoneSolution
 from optimization.strategies.pipeline import (
+    detached_fixed_pieces,
     relax_unsupported_assignments,
     selected_nodes,
 )
@@ -71,6 +72,24 @@ def test_method_objective_shorthand_and_serialization():
     assert asdict(config)["steps"][0]["objective"] == "cut_edges"
     restored = optimization_config_from_dict(optimization_config_to_dict(config))
     assert restored.steps == config.steps
+
+
+@pytest.mark.parametrize("sampler", ["random_mst", "wilson_uniform"])
+def test_recom_tree_sampler_survives_pipeline_serialization(sampler):
+    config = _config(
+        steps=[
+            {
+                "name": "shape",
+                "level": "BlockGroup_0",
+                "method": "recom",
+                "options": {"recom_tree_sampler": sampler},
+            }
+        ]
+    )
+    restored = optimization_config_from_dict(optimization_config_to_dict(config))
+    effective = step_config(restored, restored.steps[0])
+
+    assert effective.make_solver().options["recom_tree_sampler"] == sampler
 
 
 def test_typed_and_yaml_steps_share_default_input_semantics():
@@ -277,24 +296,81 @@ def test_saved_widened_inputs_survive_node_renumbering():
     assert problem.candidates == {14: {0, 1}}
 
 
-def test_hard_inputs_cannot_override_a_steps_tighter_distance(monkeypatch):
+def test_hard_inputs_beyond_a_steps_tighter_distance_are_freed(monkeypatch):
+    # Under max_distance 2.5, blocks 3 and 12 reach no school and 7 and 8 only
+    # the other zone's, so the loose zoning cannot fix them.
     config = _config(
         steps=[
             {"name": "loose", "level": "BlockGroup_0"},
             {
                 "level": "BlockGroup_0",
-                "constraints": {"max_distance": 0.5},
+                "constraints": {"max_distance": 2.5},
                 "inputs": [{"source": "loose", "mode": "assign"}],
             },
         ]
     )
+    problems = []
 
     def solve(problem, *args, **kwargs):
+        problems.append(problem)
         return ZoneSolution(problem, {n: int(n >= 8) for n in problem.G}, "FEASIBLE")
 
     monkeypatch.setattr("optimization.strategies.pipeline.solve_objective", solve)
-    with pytest.raises(ValueError, match="violates the candidate constraints"):
-        config.make_strategy().run(MemoryDataset(config), config.make_solver())
+    results = config.make_strategy().run(MemoryDataset(config), config.make_solver())
+
+    freed = {3: 0, 7: 0, 8: 1, 12: 1}
+    tight = problems[1]
+    assert set(tight.fixed).isdisjoint(freed)
+    assert set(tight.fixed) | set(tight.candidates or {}) | set(freed) == set(tight.G)
+    assert all(node not in tight.hint for node in freed)
+    for node in freed:
+        assert tight.candidate_zones(node) == tight._distance_candidates()[node]
+    graph = tight.G
+    assert results[1].metadata["pipeline_out_of_range_areas"] == {
+        graph.nodes[node]["area_id"]: zone for node, zone in freed.items()
+    }
+
+
+def test_fixed_pieces_cut_off_from_their_centroid_become_hints(monkeypatch):
+    # On the 4x4 grid zone 0 is rows 0-1 with centroid 0. Fixing blocks 1, 6
+    # and 7 leaves 6-7 touching 0 only through free blocks 2 and 5.
+    config = _config(
+        steps=[
+            {"name": "loose", "level": "BlockGroup_0"},
+            {
+                "level": "BlockGroup_0",
+                "inputs": [
+                    {"source": "loose", "mode": "assign", "nodes": [1, 6, 7]},
+                    {"source": "loose", "mode": "hint"},
+                ],
+            },
+        ]
+    )
+    problems = []
+
+    def solve(problem, *args, **kwargs):
+        problems.append(problem)
+        return ZoneSolution(problem, {n: int(n >= 8) for n in problem.G}, "FEASIBLE")
+
+    monkeypatch.setattr("optimization.strategies.pipeline.solve_objective", solve)
+    results = config.make_strategy().run(MemoryDataset(config), config.make_solver())
+
+    step = problems[1]
+    assert set(step.fixed or {}) | set(step.candidates or {}) <= {1}
+    assert {node: step.hint[node] for node in (6, 7)} == {6: 0, 7: 0}
+    graph = step.G
+    assert results[1].metadata["pipeline_detached_areas"] == {
+        graph.nodes[6]["area_id"]: 0,
+        graph.nodes[7]["area_id"]: 0,
+    }
+
+
+def test_detached_pieces_are_found_per_zone():
+    problem = make_grid_problem(4, 4, frl_dev=1.0, racial_dev=1.0)
+    # Zone 1's centroid is 15; 14 touches it, 8 does not.
+    fixed = {1: 0, 6: 0, 7: 0, 14: 1, 8: 1}
+    assert detached_fixed_pieces(problem, fixed) == {6: 0, 7: 0, 8: 1}
+    assert detached_fixed_pieces(problem, {1: 0, 2: 0, 6: 0}) == {}
 
 
 @pytest.mark.parametrize("objective", ["choice_welfare", "saa_welfare"])
@@ -334,3 +410,95 @@ def test_repeated_levels_keep_distinct_discoverable_solver_logs(tmp_path):
     logs = collect(str(tmp_path))
     assert set(logs["pipeline_step_index"]) == {0, 1}
     assert logs["log_file"].nunique() == 2
+
+
+def test_capacity_reference_is_frozen_reused_and_restored(monkeypatch):
+    import json
+
+    from optimization.data.mid import MidMarket, MidProgram, MidType
+
+    data = {
+        "scenario": "legacy",
+        "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+    }
+    config = _config(
+        data=data,
+        steps=[
+            {"name": "shape", "level": "BlockGroup_1"},
+            {
+                "name": "distance",
+                "level": "BlockGroup_0",
+                "capacity_reference": "shape",
+            },
+            {
+                "name": "perimeter",
+                "level": "BlockGroup_0",
+                "capacity_reference": "shape",
+            },
+        ],
+    )
+    dataset = MemoryDataset(config)
+    dataset.base.program_population = "All"
+    loads = []
+
+    def market(problem, source_config):
+        loads.append(problem.level)
+        return MidMarket(
+            programs=(
+                MidProgram("100-GE-KG", 100, 10, False, 0, 10),
+                MidProgram("200-GE-KG", 200, 10, False, 15, 10),
+                MidProgram("900-GE-KG", 900, 4, True, None, 0),
+            ),
+            types=tuple(
+                MidType(n, 1, ("900-GE-KG",), (0,), (1.0,), (1,))
+                if n < 8
+                else MidType(n, 1, (), (), (), ())
+                for n in range(16)
+            ),
+            student_count=16,
+            outside_only_student_count=8,
+            utility_student_count=8,
+            utility_handling="omit_nonpositive",
+        )
+
+    def solve(problem, *args, **kwargs):
+        # Moving the distance boundary must not recompute the reference.
+        zoning = {n: int(n >= 8) for n in problem.G}
+        if problem.capacity_student_counts is not None:
+            zoning[7] = 1
+        return ZoneSolution(problem, zoning, "FEASIBLE", wall_time=0)
+
+    monkeypatch.setattr("optimization.data.mid.build_mid_market", market)
+    monkeypatch.setattr("optimization.strategies.pipeline.solve_objective", solve)
+    strategy = config.make_strategy()
+    assert strategy.reads_assignment_market
+    results = strategy.run(dataset, config.make_solver())
+    shape, distance, perimeter = results
+    assert loads == [LevelSpec("BlockGroup", 0)]
+    assert shape.problem.capacity_student_counts is None
+    assert distance.problem.capacity_students(0) == 0.5
+    assert distance.problem.capacity_seats(0) == 4
+    assert (
+        perimeter.problem.capacity_student_counts
+        == distance.problem.capacity_student_counts
+    )
+    assert (
+        perimeter.problem.capacity_seat_counts == distance.problem.capacity_seat_counts
+    )
+    assert (
+        perimeter.metadata["capacity_reference"]
+        == distance.metadata["capacity_reference"]
+    )
+    metadata = json.loads(json.dumps(perimeter.metadata))
+    rebuilt = strategy.problem_for_stage(dataset, metadata)
+    assert rebuilt.capacity_student_counts == perimeter.problem.capacity_student_counts
+    assert rebuilt.capacity_seat_counts == perimeter.problem.capacity_seat_counts
+    del metadata["capacity_reference"]
+    with pytest.raises(ValueError, match="missing its frozen capacity reference"):
+        strategy.problem_for_stage(dataset, metadata)
+
+
+@pytest.mark.parametrize("reference", ["previous", "later", "", 1])
+def test_invalid_capacity_reference_fails_before_loading(reference):
+    with pytest.raises(ValueError, match="capacity_reference"):
+        _config(steps=[{"capacity_reference": reference}])

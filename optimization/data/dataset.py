@@ -43,7 +43,9 @@ class Dataset:
                 "unit": self.ingest.unit,
                 "optimization_filters": self.ingest.filters,
                 "partition_policy": graph_builder.partition_cache_policy(
-                    self.ingest.unit, config.graph_weight_edges
+                    self.ingest.unit,
+                    config.graph_weight_edges,
+                    config.partition_area_weight,
                 ),
             },
             schema_version=graph_builder.GRAPH_CACHE_SCHEMA_VERSION,
@@ -101,11 +103,15 @@ class Dataset:
             if artifact is not None
             else None
         )
+        area_weight = self.config.partition_area_weight
+        if area_weight and partition is None:
+            node_areas.attach_land_areas(parent, level.unit, self.data)
         G = graph_builder.aggregate_level(
             parent,
             targets[level.depth],
             self.ingest.program_population,
             partition=partition,
+            area_weight=area_weight,
         )
         # Publishing is a determinism aid, not part of producing the graph, so a
         # coarsening that carries no membership is used as-is rather than failing.

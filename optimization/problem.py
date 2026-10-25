@@ -70,8 +70,10 @@ class ZoneProblem:
     overage, shortage:
         Capacity tolerance: a zone's seats must lie within
         ``[(1 - shortage), (1 + overage)]`` times its students (proportions).
-        The students counted here are ``capacity_students``, scaled by the
-        ``enrollment_share`` selector. A negative value disables its
+        These rows use ``capacity_seats`` and ``capacity_students``: normally
+        physical seats and students scaled by ``enrollment_share``, or the
+        frozen counts selected by a pipeline ``capacity_reference``.
+        A negative value disables its
         corresponding bound.
     max_distance:
         Areas farther than this (miles) from a centroid are not candidates for
@@ -133,6 +135,9 @@ class ZoneProblem:
     optimization_config: Optional["OptimizationConfig"] = field(
         default=None, repr=False, compare=False
     )
+    # Solve-local reference counts; never written into the shared graph.
+    capacity_student_counts: Optional[dict[int, float]] = None
+    capacity_seat_counts: Optional[dict[int, float]] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(
@@ -205,13 +210,22 @@ class ZoneProblem:
     def capacity(self, node: int) -> float:
         return float(self.G.nodes[node][self.capacity_attribute])
 
+    def capacity_seats(self, node: int) -> float:
+        """Seats counted only by the overage/shortage constraints."""
+        if self.capacity_seat_counts is not None:
+            return self.capacity_seat_counts[node]
+        return self.capacity(node)
+
     def capacity_students(self, node: int) -> float:
         """Students the capacity (overage/shortage) rows count at ``node``.
 
         These are the students scaled by the ``enrollment_share`` selector, and
-        equal ``students`` when none is selected. A graph built without the
-        attribute (hand-built test graphs) counts every student.
+        equal ``students`` when none is selected. A pipeline capacity reference
+        replaces these with expected AA GE assignments by residence. A graph
+        without the attribute (hand-built test graphs) counts every student.
         """
+        if self.capacity_student_counts is not None:
+            return self.capacity_student_counts[node]
         attrs = self.G.nodes[node]
         if self.capacity_student_attribute not in attrs:
             return self.students(node)

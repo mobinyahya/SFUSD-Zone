@@ -36,6 +36,8 @@ class MidProgram:
     program_id: str
     school_id: int
     capacity: int
+    #: Open to every zone: the program holds no attendance-area seats, even
+    #: when its school is an attendance-area school.
     citywide: bool
     school_node: int | None
     #: How many of ``capacity`` are attendance-area seats (the program table's
@@ -235,9 +237,27 @@ def build_mid_student_market(
         capacity = _integer(row["capacity"], f"capacity for program {program_id}")
         if capacity < 0:
             raise ValueError(f"Program {program_id} has negative capacity.")
-        citywide = school_id in citywide_schools
-        if citywide and not keep_citywide:
+        if school_id in citywide_schools and not keep_citywide:
             continue
+        # The seat label, not the school, decides access: attendance-area
+        # seats are tied to the zone owning the school, citywide seats are open
+        # to every zone, even at an attendance-area school. The loaders reject
+        # a program holding both (loaders.tables.attach_attendance_area_capacity).
+        attendance_seats = row.get("attendance_area_capacity")
+        if attendance_seats is None or pd.isna(attendance_seats):
+            raise ValueError(
+                f"Program {program_id} has no attendance-area seat count."
+            )
+        attendance_seats = _integer(
+            attendance_seats, f"attendance-area seats for {program_id}"
+        )
+        if 0 < attendance_seats < capacity:
+            raise ValueError(
+                f"Program {program_id} mixes {attendance_seats} attendance-area "
+                f"and {capacity - attendance_seats} citywide seats, which MID "
+                "does not model."
+            )
+        citywide = attendance_seats == 0
         retained_programs.append(program_id)
         school_node = None if citywide else school_to_node.get(school_id)
         if not citywide and school_node is None:
@@ -248,7 +268,6 @@ def build_mid_student_market(
                 f"Restricted program {program_id} school {school_id} is absent "
                 f"from graph {problem.level.name}."
             )
-        attendance_seats = row.get("attendance_area_capacity")
         programs.append(
             MidProgram(
                 program_id,
@@ -256,11 +275,7 @@ def build_mid_student_market(
                 capacity,
                 citywide,
                 school_node,
-                None
-                if attendance_seats is None or pd.isna(attendance_seats)
-                else _integer(
-                    attendance_seats, f"attendance-area seats for {program_id}"
-                ),
+                attendance_seats,
             )
         )
     # Preference lists are read positionally off ``available_programs``, so the

@@ -154,12 +154,18 @@ class SolveStep:
     constraints: dict[str, Any] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
     inputs: list[SolutionInput] | None = None
+    # Freeze expected AA demand/used seats under this earlier step's zoning.
+    capacity_reference: str | None = None
 
     def __post_init__(self):
         from optimization.objectives import validate_method_objective
 
         if not isinstance(self.name, str) or not self.name or self.name == "previous":
             raise ValueError("step.name must be nonempty and cannot be 'previous'.")
+        if self.capacity_reference is not None and (
+            not isinstance(self.capacity_reference, str) or not self.capacity_reference
+        ):
+            raise ValueError("step.capacity_reference must name an earlier step.")
         object.__setattr__(self, "level", LevelSpec.parse(self.level).name)
         validate_method_objective(self.method, self.objective)
         for name in ("time_limit", "gap_limit"):
@@ -238,6 +244,16 @@ def normalize_steps(config: OptimizationConfig) -> list[SolveStep]:
             step = replace(step, inputs=[SolutionInput()] if index else [])
         if step.name in known:
             raise ValueError(f"Duplicate pipeline step name {step.name!r}.")
+        if step.capacity_reference is not None and (
+            (step.capacity_reference == "previous" and not index)
+            or (
+                step.capacity_reference != "previous"
+                and step.capacity_reference not in known
+            )
+        ):
+            raise ValueError(
+                f"Step {step.name!r} capacity_reference must reference an earlier step."
+            )
         for binding in step.inputs:
             if (binding.source == "previous" and not index) or (
                 binding.source != "previous" and binding.source not in known

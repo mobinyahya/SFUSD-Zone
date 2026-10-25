@@ -215,6 +215,7 @@ def evaluate_optimization_task(
                 f"Manifest config hash does not match task {task.task_id}."
             )
         if manifest.get("phase") == "optimization_error":
+            _skip_missing_targets(output_dir, config, matching, "optimization error")
             return TaskResult(
                 task_id=task.task_id,
                 output_dir=output_dir,
@@ -304,6 +305,7 @@ def evaluate_optimization_task(
         if regenerating:
             raise
         manifest = manifest or {}
+        _skip_missing_targets(output_dir, config, matching, failure_phase)
         return _save_error_result(
             task,
             config,
@@ -314,6 +316,18 @@ def evaluate_optimization_task(
             phase=failure_phase,
             manifest=manifest,
         )
+
+
+def _skip_missing_targets(
+    output_dir: str,
+    config: OptimizationConfig,
+    matching: MatchingRunConfig | None,
+    reason: str,
+) -> None:
+    if matching and matching.enabled:
+        from benchmark.assignment import mark_missing_targets_skipped
+
+        mark_missing_targets_skipped(output_dir, config, matching, reason)
 
 
 def save_stage_artifacts(

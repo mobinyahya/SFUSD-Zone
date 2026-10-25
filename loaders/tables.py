@@ -1403,7 +1403,41 @@ def attach_attendance_area_capacity(
             fallback
         )
     result[AA_CAPACITY] = fallback.fillna(0.0)
+    _check_attendance_area_seats(result, at_attendance_school)
     return result
+
+
+def _check_attendance_area_seats(
+    programs: pd.DataFrame, at_attendance_school: pd.Series
+) -> None:
+    """Require attendance-area seats to be exactly the GE seats of AA schools.
+
+    A program's seat label decides who may apply: attendance-area seats are
+    tied to the zone owning the school, citywide seats are open to everyone.
+    MID and assignment both name a school's attendance-area program as its GE
+    program, so anything else -- a program holding both seat types, a non-GE
+    program holding attendance-area seats, or a GE program at an
+    attendance-area school holding citywide seats -- is not modelled and fails
+    here rather than being matched under the wrong access rule.
+    """
+    seats = pd.to_numeric(programs["capacity"], errors="coerce").fillna(0.0)
+    attendance = programs[AA_CAPACITY]
+    is_ge = programs["program_type"].astype(str).eq("GE")
+    expected = seats.where(is_ge & at_attendance_school, 0.0)
+    wrong = ~np.isclose(attendance, expected)
+    if not wrong.any():
+        return
+    label = programs["program_id"] if "program_id" in programs else programs.index
+    details = [
+        f"{name} ({int(aa)} of {int(total)} seats attendance-area)"
+        for name, aa, total in zip(label[wrong], attendance[wrong], seats[wrong])
+    ]
+    raise ValueError(
+        "Attendance-area seats must be exactly the GE seats of attendance-area "
+        "schools; mixed or non-GE attendance-area seats are not supported: "
+        + ", ".join(details[:20])
+        + (f" and {len(details) - 20} more." if len(details) > 20 else ".")
+    )
 
 
 #: School categories a capacity scenario may assign.

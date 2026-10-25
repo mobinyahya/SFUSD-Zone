@@ -1,7 +1,8 @@
 """ReCom: one stochastic zoning solver, parameterized by ``ReComSettings``.
 
-A move merges two adjacent zones, draws a uniform spanning tree of the merged
-region with Wilson's algorithm, and cuts one tree edge. Zone statistics and
+A move merges two adjacent zones, draws a spanning tree of the merged region,
+and cuts one tree edge. By default the tree minimizes fresh independent random
+edge weights; Wilson's uniform spanning tree is optional. Zone statistics and
 constraint residuals are additive, so every cut of the tree is scored at once
 without building any candidate subgraph.
 
@@ -24,7 +25,7 @@ import math
 import random
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 from optimization.data import contiguity
 from optimization.data.initial_solutions import initial_solution, normalize_hints
@@ -484,11 +485,19 @@ def _clip(residuals: tuple[float, ...]) -> tuple[float, ...]:
 
 class _ReComKernel:
     def __init__(
-        self, context: _ReComContext, rng: random.Random, deadline: float | None
+        self,
+        context: _ReComContext,
+        rng: random.Random,
+        deadline: float | None,
+        *,
+        tree_sampler: str | None = None,
     ):
         self.context = context
         self.rng = rng
         self.deadline = deadline
+        self.tree_sampler = (
+            ReComSettings().tree_sampler if tree_sampler is None else tree_sampler
+        )
         self._deadline_checks = 0
 
     def propose(self, state: _State, policy: Policy) -> _Move:
@@ -559,9 +568,59 @@ class _ReComKernel:
     def _random_spanning_tree(
         self, nodes: list[int], adjacency: dict[int, tuple[int, ...]]
     ) -> dict[int, list[int]]:
-        """Wilson's algorithm: a uniformly random spanning tree."""
+        """Draw a fresh tree using the selected sampler and the run's RNG."""
         if not nodes:
             raise _NoProposal("empty_zone_pair")
+        if self.tree_sampler == "random_mst":
+            return self._random_weight_mst(nodes, adjacency)
+        if self.tree_sampler == "wilson_uniform":
+            return self._wilson_spanning_tree(nodes, adjacency)
+        raise ValueError(f"Unknown ReCom tree sampler {self.tree_sampler!r}.")
+
+    def _random_weight_mst(
+        self, nodes: list[int], adjacency: dict[int, tuple[int, ...]]
+    ) -> dict[int, list[int]]:
+        """Kruskal's MST with a fresh independent U(0, 1) weight per edge."""
+        tree: dict[int, list[int]] = {node: [] for node in nodes}
+        edges = []
+        for u in nodes:
+            for v in sorted(adjacency[u]):
+                if u < v:
+                    edges.append((self.rng.random(), u, v))
+                self._check_deadline()
+        edges.sort()
+        parents = {node: node for node in nodes}
+        sizes = dict.fromkeys(nodes, 1)
+
+        def root(node: int) -> int:
+            while parents[node] != node:
+                parents[node] = parents[parents[node]]
+                node = parents[node]
+            return node
+
+        components = len(nodes)
+        for _, u, v in edges:
+            self._check_deadline()
+            a, b = root(u), root(v)
+            if a == b:
+                continue
+            if sizes[a] < sizes[b]:
+                a, b = b, a
+            parents[b] = a
+            sizes[a] += sizes[b]
+            tree[u].append(v)
+            tree[v].append(u)
+            components -= 1
+            if components == 1:
+                break
+        if components != 1:
+            raise _NoProposal("disconnected_zone_pair")
+        return tree
+
+    def _wilson_spanning_tree(
+        self, nodes: list[int], adjacency: dict[int, tuple[int, ...]]
+    ) -> dict[int, list[int]]:
+        """Wilson's algorithm: a uniformly random spanning tree."""
         tree: dict[int, list[int]] = {node: [] for node in nodes}
         in_tree = {self.rng.choice(nodes)}
         unvisited = set(nodes) - in_tree
@@ -861,15 +920,19 @@ class ReComSolver(Solver):
         )
 
     def sample_feasible(self, problem: ZoneProblem, visitor) -> ZoneSolution:
-        """Walk the classic ReCom chain, whatever the ``recom_*`` options say,
-        and visit the initial and every accepted feasible partition, improving
-        or not, as a fresh assignment dict. A visitor returning False stops it.
+        """Walk a rejection chain with the configured tree sampler and visit the
+        initial and every accepted feasible partition, improving or not, as a
+        fresh assignment dict. Other policy settings use the chain preset.
+        A visitor returning False stops it.
         """
         return self._run(
             problem,
             lambda: _BurstObjective("cut_edges"),
             visitor=visitor,
-            settings=PRESETS["chain"],
+            settings=replace(
+                PRESETS["chain"],
+                tree_sampler=ReComSettings.from_options(self.options).tree_sampler,
+            ),
         )
 
     def _run(
@@ -922,7 +985,7 @@ class ReComSolver(Solver):
     ) -> ZoneSolution:
         max_moves, deadline = self._limits(start)
         rng = random.Random(int(self.options.get("seed", 42)))
-        kernel = _ReComKernel(context, rng, deadline)
+        kernel = _ReComKernel(context, rng, deadline, tree_sampler=settings.tree_sampler)
         policy = Policy(context, rng, settings, objective_local=objective.local)
         log = self._open_log(problem, context, start, settings)
         tally = _Tally()
@@ -1022,7 +1085,7 @@ class ReComSolver(Solver):
             **summary,
             "initial_feasible": initial.feasible,
             "violation_labels": context.violation_labels(),
-            "tree_sampler": "wilson_uniform",
+            "tree_sampler": settings.tree_sampler,
             **policy.metadata(),
         }
         if best is not None:

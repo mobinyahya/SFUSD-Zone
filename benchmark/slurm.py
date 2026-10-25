@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from functools import cached_property
+import getpass
 import os
 from pathlib import Path
 import re
@@ -42,9 +43,13 @@ from benchmark.runner import (
 PLAN_SCHEMA_VERSION = 4
 MAX_CPUS_PER_NODE = 40
 MAX_SLURM_JOBS = 12
-MAX_DOWNSTREAM_SLURM_JOBS = 8
-MAX_DOWNSTREAM_ASSIGNMENT_JOBS = 6
-MAX_DOWNSTREAM_METRICS_JOBS = 6
+MAX_SUBMITTED_SLURM_JOBS = 20
+MAX_DOWNSTREAM_SLURM_JOBS = MAX_SUBMITTED_SLURM_JOBS - MAX_SLURM_JOBS
+# Assignment, metrics, and the finalizer share the eight pending-job slots.
+MAX_DOWNSTREAM_ASSIGNMENT_JOBS = 4
+MAX_DOWNSTREAM_METRICS_JOBS = (
+    MAX_DOWNSTREAM_SLURM_JOBS - MAX_DOWNSTREAM_ASSIGNMENT_JOBS - 1
+)
 SLURM_DIRNAME = ".slurm"
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
@@ -259,8 +264,22 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
     """Render benchmark allocations and the dependent assignment graph."""
 
     _validate_plan(plan)
+    job_count = _submission_job_count(plan)
     allocations = plan.allocations
     lines = ["#!/usr/bin/env bash", "set -euo pipefail", GUROBI_LICENSE_SETUP, ""]
+    if job_count:
+        lines.extend(
+            [
+                'existing_jobs=$(squeue --noheader --array --user "$(id -un)" --format=%i | wc -l)',
+                f"if (( existing_jobs + {job_count} > {MAX_SUBMITTED_SLURM_JOBS} )); then",
+                '    printf "Cannot submit: %s existing jobs plus '
+                f'{job_count} planned jobs exceeds the {MAX_SUBMITTED_SLURM_JOBS}-job limit.\\n" '
+                '"$existing_jobs" >&2',
+                "    exit 1",
+                "fi",
+                "",
+            ]
+        )
     for index in range(len(allocations)):
         command = _sbatch_options(plan, plan_path, index)
         variable = f"benchmark_job_{index}"
@@ -294,6 +313,9 @@ def submit_plan(
     """Explicitly submit all planned jobs and return their Slurm identifiers."""
 
     _validate_plan(plan)
+    job_count = _submission_job_count(plan)
+    if job_count:
+        _check_submission_capacity(job_count, run)
     _log_dir(plan).mkdir(parents=True, exist_ok=True)
     plan_path = Path(plan_path).expanduser().resolve()
     allocations = plan.allocations
@@ -336,6 +358,48 @@ def submit_plan(
             for index, item in enumerate(assignment_submission["jobs"])
         )
     return submitted
+
+
+def _submission_job_count(plan: SlurmPlan) -> int:
+    """Count the complete graph, including dependent jobs and finalization."""
+    count = len(plan.allocations)
+    if plan.assignment_plan_path:
+        from assignment.slurm import load_plan as load_assignment_plan
+
+        assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
+        count += len(assignment_plan["jobs"])
+    if count > MAX_SUBMITTED_SLURM_JOBS:
+        raise ValueError(
+            f"Benchmark Slurm plan has {count} jobs, exceeding the "
+            f"{MAX_SUBMITTED_SLURM_JOBS}-job submission limit. Regenerate the plan."
+        )
+    return count
+
+
+def _check_submission_capacity(
+    job_count: int, run: Callable[..., subprocess.CompletedProcess[str]]
+) -> None:
+    """Check all of the user's queued jobs before submitting any new work."""
+    result = run(
+        [
+            "squeue",
+            "--noheader",
+            "--array",
+            "--user",
+            getpass.getuser(),
+            "--format=%i",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    existing = sum(bool(line.strip()) for line in result.stdout.splitlines())
+    if existing + job_count > MAX_SUBMITTED_SLURM_JOBS:
+        raise RuntimeError(
+            f"Cannot submit: {existing} existing jobs plus {job_count} planned "
+            f"jobs exceeds the {MAX_SUBMITTED_SLURM_JOBS}-job limit. "
+            "Wait for queue capacity, then submit again. No jobs were submitted."
+        )
 
 
 def _run_optimization_task(
@@ -404,7 +468,7 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
             }
             for future in as_completed(futures):
                 try:
-                    failed = _result_exit_code(future.result()) != 0 or failed
+                    _report_task_error("Optimization", futures[future], future.result())
                 except Exception as exc:
                     print(
                         f"Optimization task {futures[future]} failed: {exc}",
@@ -427,7 +491,7 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
             }
             for future in as_completed(futures):
                 try:
-                    failed = _result_exit_code(future.result()) != 0 or failed
+                    _report_task_error("Evaluation", futures[future], future.result())
                 except Exception as exc:
                     print(
                         f"Evaluation task {futures[future]} failed: {exc}",
@@ -702,8 +766,19 @@ def _validate_worker_cpus(expected: int) -> None:
         )
 
 
-def _result_exit_code(result: TaskResult) -> int:
-    return 1 if str(result.status).upper() == "ERROR" else 0
+def _report_task_error(phase: str, index: int, result: TaskResult) -> None:
+    """Log a task's saved ERROR without failing its allocation.
+
+    The ERROR is in the task's result and summary rows, and its assignment
+    targets carry skip markers, so the ``afterok`` assignment jobs can still
+    match every other task. Only a crash fails the allocation.
+    """
+    if str(result.status).upper() == "ERROR":
+        print(
+            f"{phase} task {index} recorded ERROR: {result.error_message}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _write_text_atomic(path: Path, text: str, *, mode: int) -> None:

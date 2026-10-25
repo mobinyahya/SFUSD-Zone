@@ -17,7 +17,7 @@ def test_aggregate_level_excludes_school_nodes_and_reattaches_edges(monkeypatch)
     G = make_grid_graph(3, 3)
     captured = {}
 
-    def fake_partition(graph, target_partition_count, population_attr):
+    def fake_partition(graph, target_partition_count, population_attr, area_weight):
         captured["nodes"] = set(graph)
         captured["target"] = target_partition_count
         captured["population_attr"] = population_attr
@@ -39,6 +39,8 @@ def test_aggregate_level_excludes_school_nodes_and_reattaches_edges(monkeypatch)
         "target": 2,
         "population_attr": "ge_students",
     }
+    assert coarse.graph["partition_area_weight"] == 0.0
+    assert coarse.graph["oversized_singleton_count"] == 0
     assert len(coarse) == 4
     assert coarse.graph["target_node_count"] == 4
     assert coarse.graph["partition_imbalance"] == 0.4
@@ -258,7 +260,7 @@ def test_component_partitioning_keeps_disconnected_inputs_separate(monkeypatch):
     G.remove_edge(3, 4)
     calls = []
 
-    def fake_partition(graph, target_partition_count, population_attr):
+    def fake_partition(graph, target_partition_count, population_attr, area_weight):
         calls.append((set(graph), target_partition_count, population_attr))
         return {0: list(graph)}, 0.2
 
@@ -347,7 +349,7 @@ def test_aggregate_level_node_numbering_survives_part_relabelling(monkeypatch):
     """The coarse graph is identical when KaHIP labels the same parts differently."""
 
     def partition_as(labels):
-        def fake_partition(graph, target_partition_count, population_attr):
+        def fake_partition(graph, target_partition_count, population_attr, area_weight):
             return {
                 node: labels[0] if node in {1, 2, 3} else labels[1]
                 for node in graph.nodes()
@@ -383,7 +385,7 @@ def test_portable_partition_round_trips_through_area_ids():
 def test_replayed_partition_reproduces_the_coarse_graph(monkeypatch):
     """Replay must yield the same graph without consulting KaHIP."""
 
-    def fake_partition(graph, target_partition_count, population_attr):
+    def fake_partition(graph, target_partition_count, population_attr, area_weight):
         return {node: (0 if node in {1, 2, 3} else 1) for node in graph.nodes()}, [0.4]
 
     monkeypatch.setattr(graph_builder, "_partition_non_school_nodes", fake_partition)
@@ -426,3 +428,87 @@ def test_portable_partition_rejects_a_foreign_artifact():
 
     with pytest.raises(ValueError, match="missing area ids"):
         graph_builder.partition_from_portable(G, artifact)
+
+
+def _with_land(G, areas):
+    from optimization.data.node_areas import LAND_AREA_ATTR
+
+    for node, area in areas.items():
+        G.nodes[node][LAND_AREA_ATTR] = float(area)
+    return G
+
+
+def test_area_weight_mixes_student_and_land_shares():
+    # Four equal-population blocks; block 0 holds 70% of the land.
+    G = _with_land(make_grid_graph(1, 4, schools={}), {0: 7, 1: 1, 2: 1, 3: 1})
+    nodes = sorted(G)
+    scale = graph_builder.PARTITION_AREA_WEIGHT_SCALE
+
+    assert graph_builder._vertex_weights(G, nodes, "ge_students", 0.0) == (
+        graph_builder._integer_population_weights(G, nodes, "ge_students")
+    )
+    assert graph_builder._vertex_weights(G, nodes, "ge_students", 1.0) == [
+        round(share * scale) for share in (0.7, 0.1, 0.1, 0.1)
+    ]
+    assert graph_builder._vertex_weights(G, nodes, "ge_students", 0.5) == [
+        round(share * scale) for share in (0.475, 0.175, 0.175, 0.175)
+    ]
+    # Parts follow the mixed weight across components too.
+    assert graph_builder._component_partition_counts(
+        G, [[0], [1, 2, 3]], 3, "ge_students", 1.0
+    ) == [1, 2]
+
+
+def test_area_weighted_level_needs_land_areas_and_records_its_weight():
+    G = make_grid_graph(3, 3)
+    with pytest.raises(KeyError):
+        graph_builder.aggregate_level(G, 4, "GE", area_weight=0.5)
+
+    _with_land(G, {node: 1 + node for node in G})
+    coarse = graph_builder.aggregate_level(G, 4, "GE", area_weight=0.5)
+    assert coarse.graph["partition_area_weight"] == 0.5
+    assert sorted(n for attrs in coarse.nodes.values() for n in attrs["block_ids"]) == [
+        G.nodes[node]["area_id"] for node in sorted(G)
+    ]
+
+
+def test_each_area_weight_keys_its_own_graph_cache():
+    default = graph_builder.partition_cache_policy("Block")
+    assert default["area_weight"] == 0.5
+    assert default["oversized_nodes_are_singletons"] is True
+    students_only = graph_builder.partition_cache_policy("Block", False, 0.0)
+    assert students_only["area_weight"] == 0.0
+    assert {k: v for k, v in students_only.items() if k != "area_weight"} == {
+        k: v for k, v in default.items() if k != "area_weight"
+    }
+
+
+def test_nodes_above_the_initial_bound_become_singletons():
+    # Six blocks in a row; block 2 holds 20 of 25 students. Split three ways,
+    # the average part holds 9 and the initial bound 16, so no part could take
+    # block 2 without loosening the imbalance for every other part.
+    G = make_grid_graph(1, 6, schools={})
+    for node in G:
+        G.nodes[node]["ge_students"] = 20.0 if node == 2 else 1.0
+    nodes = sorted(G)
+
+    assert graph_builder._oversized_nodes(G, nodes, 3, "ge_students", 0.0) == [2]
+    coarse = graph_builder.aggregate_level(G, 3, "GE")
+    assert coarse.graph["oversized_singleton_count"] == 1
+    assert coarse.graph["partition_imbalance"] == graph_builder.PARTITION_INITIAL_IMBALANCE
+    parts = sorted(sorted(attrs["block_ids"]) for _, attrs in coarse.nodes(data=True))
+    assert [G.nodes[2]["area_id"]] in parts
+
+
+def test_removing_oversized_nodes_rechecks_the_lowered_average():
+    # Split three ways, 156 students give a bound of 1.8 * 52 = 93.6, which
+    # only block 1 (94) exceeds. Without it two parts share 62, so the bound
+    # falls to 1.8 * 31 = 55.8 and block 3 (56) exceeds that.
+    G = make_grid_graph(1, 8, schools={})
+    weights = {0: 1, 1: 94, 2: 1, 3: 56, 4: 1, 5: 1, 6: 1, 7: 1}
+    for node, weight in weights.items():
+        G.nodes[node]["ge_students"] = float(weight)
+    assert graph_builder._oversized_nodes(G, sorted(G), 3, "ge_students", 0.0) == [
+        1,
+        3,
+    ]
