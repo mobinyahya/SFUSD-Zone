@@ -122,6 +122,10 @@ _NUMBERS = {
         {"minimum": 0.0, "maximum": 1.0},
     ),
     "dw_redraw_time_limit": ("must be nonnegative or infinity", {"minimum": 0.0}),
+    "partition_area_weight": (
+        "must lie in [0, 1]",
+        {"minimum": 0.0, "maximum": 1.0},
+    ),
 }
 
 
@@ -168,6 +172,10 @@ class OptimizationConfig:
     save_solver_progress: bool = False
     secondary_objective: bool = False
     weight_edges: bool = False
+    # KaHIP balances each coarse level's aggregates on this mix of student and
+    # land-area shares: 0 balances students only, 1 land area only. Each value
+    # keys its own graph cache.
+    partition_area_weight: float = 0.5
     # Legacy CP/MIP cost selector: cut_edges, school_distance (squared), or
     # average_distance (student-weighted linear distance). Pipelines select
     # named objectives through ``objective`` instead.
@@ -192,6 +200,7 @@ class OptimizationConfig:
     recom_pair_selection: str = _RECOM.pair_selection
     recom_pair_score: str = _RECOM.pair_score
     recom_cut_selection: str = _RECOM.cut_selection
+    recom_tree_sampler: str = _RECOM.tree_sampler
     recom_temperature: float = _RECOM.temperature
     recom_entropy: float | None = _RECOM.entropy
     recom_exploration: float = _RECOM.exploration
@@ -574,7 +583,12 @@ class OptimizationConfig:
 
             for index, step in enumerate(self.steps):
                 effective = step_config(self, step, index)
-                if step.objective in {
+                market_use = (
+                    "capacity_reference"
+                    if step.capacity_reference is not None
+                    else step.objective
+                )
+                if step.capacity_reference is not None or step.objective in {
                     "matching_welfare",
                     "welfare",
                     "saa_welfare",
@@ -583,9 +597,9 @@ class OptimizationConfig:
                 }:
                     if effective.program_population != "All":
                         raise ValueError(
-                            f"{step.objective} requires program_population='All'."
+                            f"{market_use} requires program_population='All'."
                         )
-                if step.objective in {
+                if step.capacity_reference is not None or step.objective in {
                     "matching_welfare",
                     "welfare",
                     "saa_welfare",
@@ -599,7 +613,7 @@ class OptimizationConfig:
                         "assignment", "geography_vintage"
                     ):
                         raise ValueError(
-                            f"{step.objective} requires matching optimization and assignment geography_vintage values."
+                            f"{market_use} requires matching optimization and assignment geography_vintage values."
                         )
 
     def _check_number(

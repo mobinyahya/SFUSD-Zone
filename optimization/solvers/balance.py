@@ -53,7 +53,7 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
             0,
             BalanceConstraint(
                 kind="capacity",
-                value=problem.capacity,
+                value=problem.capacity_seats,
                 lower_ratio=1.0 - problem.shortage if problem.shortage >= 0 else None,
                 upper_ratio=1.0 + problem.overage if problem.overage >= 0 else None,
                 denominator=problem.capacity_students,

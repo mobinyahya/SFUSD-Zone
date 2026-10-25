@@ -378,6 +378,9 @@ def optimization_config_hash(
     )
     semantic = copy.deepcopy(optimization_config_to_dict(resolved))
     semantic.pop("data", None)
+    for step in semantic.get("steps", []):
+        if step.get("capacity_reference") is None:
+            step.pop("capacity_reference", None)
     # Empty pipeline fields add no semantics to a legacy run. Keep the task
     # identity it had before pipeline configuration was introduced.
     for name, default in {
@@ -390,6 +393,9 @@ def optimization_config_hash(
             semantic.pop(name, None)
     if semantic.get("weight_edges") is False:
         semantic.pop("weight_edges")
+    # At its default, so task ids from before the setting existed still hold.
+    if semantic.get("partition_area_weight") == 0.5:
+        semantic.pop("partition_area_weight")
     # New objective settings drop out at their defaults so existing task ids hold;
     # the weights only matter once school_distance is selected.
     if semantic.get("compactness_objective") == "cut_edges":

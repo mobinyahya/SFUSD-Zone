@@ -35,6 +35,18 @@ class MetricColumns:
     MATH_SCORE_RANGE = "math_score_range"
     ENG_SCORE_RANGE = "eng_score_range"
     AVG_GE_SCHOOLS_WITHIN_HALF_MILE = "avg_ge_schools_within_half_mile"
+    GE_WEIGHTED_AVG_NEAREST_GE_SCHOOL_DISTANCE = (
+        "ge_weighted_avg_nearest_ge_school_distance"
+    )
+    MAX_GE_POPULATED_NODE_NEAREST_GE_SCHOOL_DISTANCE = (
+        "max_ge_populated_node_nearest_ge_school_distance"
+    )
+    GE_STUDENTS_WITHOUT_IN_ZONE_GE_SCHOOL = "ge_students_without_in_zone_ge_school"
+    WEIGHTED_AVG_NEAREST_GE_SCHOOL_DISTANCE = "weighted_avg_nearest_ge_school_distance"
+    MAX_POPULATED_NODE_NEAREST_GE_SCHOOL_DISTANCE = (
+        "max_populated_node_nearest_ge_school_distance"
+    )
+    STUDENTS_WITHOUT_IN_ZONE_GE_SCHOOL = "students_without_in_zone_ge_school"
     NUM_ZONES = "num_zones"
     CONTIGUOUS = "contiguous"
     SOLUTION_CODE = "solution_code"

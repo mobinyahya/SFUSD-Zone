@@ -73,6 +73,26 @@ ETHNICITY_COLS = [
     "resolved_ethnicity_Pacific Islander",
     "resolved_ethnicity_Two or More Races",
     "resolved_ethnicity_White",
+    "resolved_ethnicity_Not specified",
+    "resolved_ethnicity_Decline to state",
+    "resolved_ethnicity_Missing",
+]
+
+# Groups the student area table carries but graph nodes do not: they constrain
+# nothing and are reported by metrics only. Not Specified, Decline to State and
+# Missing (a blank resolved_ethnicity) together are the unreported students.
+SUPPLEMENTARY_ETHNICITIES = [
+    "Ethnicity_Filipino",
+    "Ethnicity_Two_or_More_Races",
+    "Ethnicity_American_Indian",
+    "Ethnicity_Not_Specified",
+    "Ethnicity_Decline_To_State",
+    "Ethnicity_Missing",
+]
+UNREPORTED_ETHNICITIES = [
+    "Ethnicity_Not_Specified",
+    "Ethnicity_Decline_To_State",
+    "Ethnicity_Missing",
 ]
 
 AREA_COLS = [

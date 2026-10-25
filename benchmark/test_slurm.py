@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from collections import Counter
 import json
+import os
 from pathlib import Path
 import subprocess
 
 import pytest
+import yaml
 
 from assignment.run_custom_config import load_custom_config
 
@@ -30,6 +33,7 @@ from benchmark.runner import (
 )
 from benchmark.slurm import (
     MAX_SLURM_JOBS,
+    MAX_SUBMITTED_SLURM_JOBS,
     SlurmPlan,
     _build_parser,
     _plan_allocations,
@@ -167,6 +171,8 @@ def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
+        if command[0] == "squeue":
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(command, 0, stdout=next(job_ids), stderr="")
 
     submitted = submit_plan(plan, tmp_path / "plan.json", run=fake_run)
@@ -174,13 +180,125 @@ def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     assert len(submitted) == 1
     assert submitted[0].phase == "benchmark"
     assert submitted[0].job_id == "120"
-    assert calls[0][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
-    assert "--cpus-per-task=4" in calls[0][0]
-    assert not any(value.startswith("--dependency") for value in calls[0][0])
+    assert calls[0][0][0] == "squeue"
+    assert calls[1][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
+    assert "--cpus-per-task=4" in calls[1][0]
+    assert not any(value.startswith("--dependency") for value in calls[1][0])
     assert all(
         call[1] == {"check": True, "capture_output": True, "text": True}
         for call in calls
     )
+
+
+@pytest.mark.parametrize("metrics_enabled", [True, False])
+def test_complete_matching_sweep_submits_twenty_jobs_with_full_optimization_capacity(
+    tmp_path, monkeypatch, metrics_enabled
+):
+    plan = _large_matching_plan(tmp_path, monkeypatch, metrics_enabled=metrics_enabled)
+    assert len(plan.allocations) == 12
+    assert all(allocation.cpus == 40 for allocation in plan.allocations)
+    assert sorted(i for a in plan.allocations for i in a.task_indices) == list(
+        range(120)
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[0] == "squeue":
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        assert command[0] == "sbatch"
+        return subprocess.CompletedProcess(
+            command, 0, stdout=f"{100 + len(calls)}\n", stderr=""
+        )
+
+    submitted = submit_plan(plan, tmp_path / "benchmark-plan.json", run=fake_run)
+
+    assert len(submitted) == MAX_SUBMITTED_SLURM_JOBS
+    assert sum(command[0] == "sbatch" for command in calls) == 20
+    expected = {"benchmark": 12, "assignment": 4, "metrics": 3, "metrics-finalize": 1}
+    if not metrics_enabled:
+        expected = {"benchmark": 12, "assignment": 8}
+    assert Counter(job.phase for job in submitted) == expected
+    optimization_ids = [job.job_id for job in submitted if job.phase == "benchmark"]
+    assignment_commands = [
+        c
+        for c in calls
+        if c[0] == "sbatch" and Path(c[-1]).name.startswith("assignment-")
+    ]
+    for command in assignment_commands:
+        assert "--dependency=afterok:" + ":".join(optimization_ids) in command
+    subprocess.run(
+        ["bash", "-n"],
+        input=submission_script(plan, tmp_path / "benchmark-plan.json"),
+        text=True,
+        check=True,
+    )
+
+
+@pytest.mark.parametrize("entrypoint", ["api", "script"])
+def test_oversized_saved_plan_is_rejected_before_any_submission(
+    tmp_path, monkeypatch, entrypoint
+):
+    plan = _large_matching_plan(tmp_path, monkeypatch, downstream_limits=(6, 6))
+    calls = []
+
+    with pytest.raises(ValueError, match="25 jobs.*20-job submission limit"):
+        if entrypoint == "api":
+            submit_plan(
+                plan, tmp_path / "plan.json", run=lambda *a, **kw: calls.append(a)
+            )
+        else:
+            submission_script(plan, tmp_path / "plan.json")
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("existing", [19, 20])
+def test_submit_counts_existing_user_jobs_before_submitting(tmp_path, existing):
+    plan = _plan(tmp_path)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[0] == "squeue":
+            return subprocess.CompletedProcess(
+                command, 0, stdout="\n".join(str(i) for i in range(existing)), stderr=""
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="123\n", stderr="")
+
+    if existing == 20:
+        with pytest.raises(RuntimeError, match="No jobs were submitted"):
+            submit_plan(plan, tmp_path / "plan.json", run=fake_run)
+        assert len(calls) == 1
+    else:
+        assert len(submit_plan(plan, tmp_path / "plan.json", run=fake_run)) == 1
+        assert calls[-1][0] == "sbatch"
+
+
+def test_generated_script_checks_existing_jobs_before_submitting(tmp_path):
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    squeue = directory / "squeue"
+    squeue.write_text(
+        "#!/bin/sh\nprintf '%s\\n' " + " ".join(str(i) for i in range(20)) + "\n"
+    )
+    squeue.chmod(0o755)
+    sbatch = directory / "sbatch"
+    marker = tmp_path / "submitted"
+    sbatch.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    sbatch.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash"],
+        input=submission_script(_plan(tmp_path), tmp_path / "plan.json"),
+        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "20 existing jobs plus 1 planned jobs" in result.stderr
+    assert not marker.exists()
 
 
 @pytest.mark.parametrize(
@@ -359,7 +477,9 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         fake_evaluate,
     )
 
-    assert run_benchmark_worker("plan.json", 0) == 1
+    # A saved task ERROR must not fail the allocation, or every afterok
+    # assignment job waits on it forever.
+    assert run_benchmark_worker("plan.json", 0) == 0
     assert [phase for phase, _task_id in events] == [
         "optimize",
         "optimize",
@@ -371,6 +491,15 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         kwargs["visualization"] == plan.visualization for kwargs in evaluation_kwargs
     )
     assert len(aggregate_calls) == 1
+
+    def crashing_evaluate(task, **kwargs):
+        raise RuntimeError("worker crash")
+
+    monkeypatch.setattr(
+        "benchmark.slurm.evaluate_optimization_task", crashing_evaluate
+    )
+    assert run_benchmark_worker("plan.json", 0) == 1
+    assert len(aggregate_calls) == 2
 
 
 def test_large_benchmark_plan_uses_twelve_allocations_and_usable_cpus(tmp_path):
@@ -594,6 +723,115 @@ def test_optimization_failure_persists_error_artifacts(tmp_path, monkeypatch):
     assert "synthetic optimization failure" in manifest["error_message"]
     assert "traceback" in manifest
     assert payload["status"] == "ERROR"
+
+
+def test_optimization_error_marks_its_assignment_targets_skipped(
+    tmp_path, monkeypatch
+):
+    from benchmark.assignment import planned_stage_names
+
+    config = OptimizationConfig(
+        workers=1,
+        strategy="recursive",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+        },
+    )
+    task = BenchmarkTask(
+        task_id="failure-test",
+        config_hash="failure-test-hash",
+        config=optimization_config_to_dict(config),
+        output_dir=str(tmp_path / "failed-run"),
+        capacity_slots=1,
+    )
+
+    class FailingStrategy:
+        def run(self, dataset, solver):
+            raise RuntimeError("synthetic optimization failure")
+
+    monkeypatch.setattr(OptimizationConfig, "make_dataset", lambda self: object())
+    monkeypatch.setattr(
+        OptimizationConfig, "make_solver", lambda self, output_dir=None: object()
+    )
+    monkeypatch.setattr(
+        OptimizationConfig, "make_strategy", lambda self: FailingStrategy()
+    )
+    run_optimization_phase(task)
+    run_dir = Path(task.output_dir)
+    stages = planned_stage_names(task.config)
+    assert len(stages) == 2
+    # A target that already has a zone file keeps it and is still matched.
+    matched = run_dir / "stages" / stages[0]
+    matched.mkdir(parents=True)
+    (matched / "assignment_zones.csv").write_text("zone\n", encoding="utf-8")
+
+    result = evaluate_optimization_task(
+        task,
+        matching=MatchingRunConfig(
+            enabled=True, config="unused.yaml", compute_stage_assignments=True
+        ),
+    )
+
+    assert result.status == "ERROR"
+    for folder in (run_dir, run_dir / "stages" / stages[1]):
+        assert (folder / ".assignment-skipped").read_text() == "optimization error\n"
+    assert not (matched / ".assignment-skipped").exists()
+    assert (matched / "assignment_zones.csv").exists()
+
+
+def _large_matching_plan(
+    tmp_path, monkeypatch, *, metrics_enabled=True, downstream_limits=None
+):
+    source = (
+        Path(__file__).parents[1]
+        / "assignment/configs/attendance_areas/restrictive_aa_2627.yaml"
+    )
+    config = load_custom_config(source)
+    config["export-aggregate-metrics"] = metrics_enabled
+    config["export-local-metrics"] = metrics_enabled
+    assignment_config = tmp_path / "assignment.yaml"
+    assignment_config.write_text(yaml.safe_dump(config))
+    tasks = [
+        BenchmarkTask(
+            task_id=f"task-{i}",
+            config_hash=f"hash-{i}",
+            config={"workers": 8},
+            output_dir=str(tmp_path / f"run-{i}"),
+            capacity_slots=8,
+        )
+        for i in range(120)
+    ]
+    sweep = SimulationSweep(
+        execution=ExecutionConfig(output_dir=str(tmp_path)),
+        matching=MatchingRunConfig(enabled=True, config=str(assignment_config)),
+    )
+    monkeypatch.setattr(
+        SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
+    )
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: tasks)
+    targets = [
+        {
+            "id": task.task_id,
+            "zone_file": str(Path(task.output_dir) / "assignment_zones.csv"),
+            "skip_marker": str(Path(task.output_dir) / ".assignment-skipped"),
+            "zone_building_blocks": "block",
+            "data": config["data"],
+        }
+        for task in tasks
+    ]
+    monkeypatch.setattr(
+        "benchmark.assignment.plan_assignment_targets", lambda *args: targets
+    )
+    if downstream_limits is not None:
+        monkeypatch.setattr(
+            "benchmark.slurm.MAX_DOWNSTREAM_ASSIGNMENT_JOBS", downstream_limits[0]
+        )
+        monkeypatch.setattr(
+            "benchmark.slurm.MAX_DOWNSTREAM_METRICS_JOBS", downstream_limits[1]
+        )
+    return create_plan(str(tmp_path / "sweep.yaml"))
 
 
 def _plan(tmp_path: Path) -> SlurmPlan:

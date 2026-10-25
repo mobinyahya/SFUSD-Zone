@@ -208,6 +208,29 @@ def clear_assignment_targets(output_dir: str | Path) -> None:
         (folder / SKIP_MARKER_FILENAME).unlink(missing_ok=True)
 
 
+def mark_missing_targets_skipped(
+    output_dir: str | Path,
+    config: OptimizationConfig,
+    matching: MatchingRunConfig,
+    reason: str,
+) -> None:
+    """Mark each target a failed task left without a zone file as skipped.
+
+    Assignment jobs are planned before optimization runs, so an errored task
+    must still answer for every target, or its job fails on the missing zone
+    file. A target that already has a zone file is still matched.
+    """
+    root = Path(output_dir)
+    folders = [root]
+    if matching.compute_stage_assignments:
+        planned = planned_stage_names(optimization_config_to_dict(config)) or []
+        folders.extend(root / "stages" / name for name in planned)
+    for folder in folders:
+        if not _has_target(folder):
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / SKIP_MARKER_FILENAME).write_text(f"{reason}\n", encoding="utf-8")
+
+
 def _has_target(folder: Path) -> bool:
     return (folder / GENERATED_ZONE_FILENAME).is_file() or (
         folder / SKIP_MARKER_FILENAME

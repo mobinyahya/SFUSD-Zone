@@ -9,7 +9,7 @@ import networkx as nx
 
 from Config.Constants import AREA_ETHNICITIES
 from loaders.edge_overrides import apply_block_edge_overrides
-from optimization.data import edge_weights, loaders
+from optimization.data import edge_weights, loaders, node_areas
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LEVEL_PARENT_DEPTHS
@@ -31,12 +31,16 @@ _OPTIONAL_SUM_ATTRS = ["ge_enrolling_students", "all_prog_enrolling_students"]
 # Bumped to 14 when coarse part numbering became canonical (derived from the
 # stable area ids in each part rather than from KaHIP's own labels), and to 15
 # when nodes gained the ``*_enrolling_students`` capacity-row counts, and to 16
-# when Mission Bay's canonical school ID became 1731.
-GRAPH_CACHE_SCHEMA_VERSION = 16
+# when Mission Bay's canonical school ID became 1731, and to 17 when coarse
+# levels began balancing land area with students and isolating oversized nodes.
+GRAPH_CACHE_SCHEMA_VERSION = 17
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
 PARTITION_WEIGHT_SCALE = 1000
+# Mixed student/land shares sum to 1 per partitioned graph; integer KaHIP
+# weights keep seven digits of them.
+PARTITION_AREA_WEIGHT_SCALE = 10_000_000
 PARTITION_MODE = "strong"
 
 # Version of the portable partition artifact written next to each cached graph.
@@ -240,7 +244,9 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
 # ====================================================================== #
 # Hierarchy partitioning
 # ====================================================================== #
-def partition_cache_policy(unit: str, weight_edges: bool = False) -> dict:
+def partition_cache_policy(
+    unit: str, weight_edges: bool = False, area_weight: float = 0.5
+) -> dict:
     """Return the partition policy included in graph cache namespaces."""
     policy = {
         "backend": "kahip",
@@ -250,6 +256,9 @@ def partition_cache_policy(unit: str, weight_edges: bool = False) -> dict:
         "initial_imbalance": PARTITION_INITIAL_IMBALANCE,
         "weight_scale": PARTITION_WEIGHT_SCALE,
         "school_nodes_are_singletons": True,
+        "oversized_nodes_are_singletons": True,
+        "area_weight": float(area_weight),
+        "area_weight_scale": PARTITION_AREA_WEIGHT_SCALE,
         "max_distance_exempt_nodes_stay_separate": True,
         "hierarchical": True,
         "node_targets": {
@@ -291,10 +300,46 @@ def _integer_population_weights(
     return weights if any(weights) else [1] * len(nodes)
 
 
+def _balance_shares(
+    G: nx.Graph, nodes: list[int], population_attr: str, area_weight: float
+) -> list[float]:
+    """Each node's share of the students and of the land, mixed by ``area_weight``.
+
+    Needs ``node_areas.LAND_AREA_ATTR`` on every node. An empty population
+    leaves the land share alone, and an empty land total the student share.
+    """
+    populations = [float(G.nodes[node][population_attr]) for node in nodes]
+    areas = [float(G.nodes[node][node_areas.LAND_AREA_ATTR]) for node in nodes]
+    for name, values in ((population_attr, populations), ("land area", areas)):
+        if any(not math.isfinite(value) or value < 0 for value in values):
+            raise ValueError(f"Invalid {name} on a node being partitioned.")
+    total_population, total_area = sum(populations), sum(areas)
+    weight = area_weight if total_population else 1.0
+    weight = weight if total_area else 0.0
+    return [
+        (1.0 - weight) * (population / total_population if total_population else 0.0)
+        + weight * (area / total_area if total_area else 0.0)
+        for population, area in zip(populations, areas)
+    ]
+
+
+def _vertex_weights(
+    G: nx.Graph, nodes: list[int], population_attr: str, area_weight: float
+) -> list[int]:
+    if not area_weight:
+        return _integer_population_weights(G, nodes, population_attr)
+    weights = [
+        round(share * PARTITION_AREA_WEIGHT_SCALE)
+        for share in _balance_shares(G, nodes, population_attr, area_weight)
+    ]
+    return weights if any(weights) else [1] * len(nodes)
+
+
 def _partition_graph_kahip(
     G: nx.Graph,
     target_partition_count: int,
     population_attr: str,
+    area_weight: float = 0.0,
 ) -> tuple[dict[int, list[int]], float]:
     """Partition one connected graph, relaxing balance until output is valid."""
     nodes = sorted(G.nodes())
@@ -321,7 +366,7 @@ def _partition_graph_kahip(
             adjncy.append(node_to_idx[neighbor])
             adjacency_weights.append(edge_weights.edge_weight(G, node, neighbor))
         xadj.append(len(adjncy))
-    vertex_weights = _integer_population_weights(G, nodes, population_attr)
+    vertex_weights = _vertex_weights(G, nodes, population_attr, area_weight)
 
     imbalance = PARTITION_INITIAL_IMBALANCE
     last_reason = "KaHIP returned no result"
@@ -390,8 +435,9 @@ def _component_partition_counts(
     components: list[list[int]],
     target_partition_count: int,
     population_attr: str,
+    area_weight: float = 0.0,
 ) -> list[int]:
-    """Allocate parts across components in proportion to selected population."""
+    """Allocate parts across components in proportion to the balanced weight."""
     if target_partition_count < len(components):
         raise ValueError(
             f"Cannot form at most {target_partition_count} connected aggregates from "
@@ -399,10 +445,17 @@ def _component_partition_counts(
         )
 
     counts = [1] * len(components)
-    populations = [
-        sum(float(G.nodes[node][population_attr]) for node in component)
-        for component in components
-    ]
+    if area_weight:
+        nodes = [node for component in components for node in component]
+        share = dict(
+            zip(nodes, _balance_shares(G, nodes, population_attr, area_weight))
+        )
+        populations = [sum(share[node] for node in component) for component in components]
+    else:
+        populations = [
+            sum(float(G.nodes[node][population_attr]) for node in component)
+            for component in components
+        ]
     if not any(populations):
         populations = [float(len(component)) for component in components]
     remaining = min(target_partition_count, sum(map(len, components))) - len(components)
@@ -421,10 +474,41 @@ def _component_partition_counts(
     return counts
 
 
+def _oversized_nodes(
+    G: nx.Graph,
+    nodes: list[int],
+    target_partition_count: int,
+    population_attr: str,
+    area_weight: float,
+) -> list[int]:
+    """Nodes too heavy for any part at the initial imbalance, kept as singletons.
+
+    KaHIP bounds every part by ``(1 + imbalance)`` times the average, so one
+    indivisible node above that bound (a 2.5 km^2 park block under area
+    balancing, or a dense block under student balancing) forces the imbalance
+    up for the whole level and the bound stops constraining anything else.
+    Such nodes become their own parts instead, like school nodes; removing
+    them lowers the average, so the test repeats until no node exceeds it.
+    """
+    remaining = sorted(nodes)
+    oversized: list[int] = []
+    while remaining and target_partition_count - len(oversized) > 1:
+        weights = _vertex_weights(G, remaining, population_attr, area_weight)
+        parts = target_partition_count - len(oversized)
+        bound = (1 + PARTITION_INITIAL_IMBALANCE) * math.ceil(sum(weights) / parts)
+        heavy = {node for node, weight in zip(remaining, weights) if weight > bound}
+        if not heavy:
+            break
+        oversized.extend(sorted(heavy))
+        remaining = [node for node in remaining if node not in heavy]
+    return oversized
+
+
 def _partition_non_school_nodes(
     G: nx.Graph,
     target_partition_count: int,
     population_attr: str,
+    area_weight: float = 0.0,
 ) -> tuple[dict[int, int], list[float]]:
     if not G:
         return {}, []
@@ -444,6 +528,7 @@ def _partition_non_school_nodes(
         components,
         target_partition_count,
         population_attr,
+        area_weight,
     )
 
     partition: dict[int, int] = {}
@@ -451,7 +536,10 @@ def _partition_non_school_nodes(
     offset = 0
     for component, count in zip(components, counts):
         groups, imbalance = _partition_graph_kahip(
-            partition_graph.subgraph(component).copy(), count, population_attr
+            partition_graph.subgraph(component).copy(),
+            count,
+            population_attr,
+            area_weight,
         )
         imbalances.append(imbalance)
         for part, nodes in groups.items():
@@ -564,12 +652,15 @@ def aggregate_level(
     program_population: str,
     *,
     partition: dict[int, int] | None = None,
+    area_weight: float = 0.0,
 ) -> nx.Graph:
     """Build one coarse graph from its immediate finer parent graph.
 
     Pass ``partition`` to replay a previously computed membership instead of
     calling KaHIP; the coarse graph is then reproducible on any machine, whatever
-    its native KaHIP build does.
+    its native KaHIP build does. A nonzero ``area_weight`` balances a mix of
+    student and land-area shares and needs ``node_areas.LAND_AREA_ATTR`` on
+    every parent node.
     """
     school_nodes = sorted(
         node for node, attrs in parent_G.nodes(data=True) if _is_school_node(attrs)
@@ -589,14 +680,27 @@ def aggregate_level(
         )
 
     population_attr = population_attribute(program_population)
+    oversized: list[int] = []
     if partition is None:
+        oversized = _oversized_nodes(
+            parent_G, non_school_nodes, non_school_target, population_attr, area_weight
+        )
+        oversized_set = set(oversized)
+        rest = [node for node in non_school_nodes if node not in oversized_set]
+        rest_target = non_school_target - len(oversized)
+        if rest and rest_target < 1:
+            raise ValueError(
+                f"Target {target_node_count} cannot hold {len(school_nodes)} school "
+                f"and {len(oversized)} oversized singletons and aggregate the rest."
+            )
         partition, imbalances = _partition_non_school_nodes(
-            parent_G.subgraph(non_school_nodes).copy(),
-            non_school_target,
+            parent_G.subgraph(rest).copy(),
+            rest_target,
             population_attr,
+            area_weight,
         )
         next_part = max(partition.values(), default=-1) + 1
-        for node in school_nodes:
+        for node in [*school_nodes, *oversized]:
             partition[node] = next_part
             next_part += 1
         replayed = False
@@ -618,20 +722,25 @@ def aggregate_level(
             "target_node_count": target_node_count,
             "actual_node_count": len(coarse),
             "school_singleton_count": len(school_nodes),
+            "oversized_singleton_count": len(oversized),
         }
     )
+    coarse.graph["partition_area_weight"] = float(area_weight)
     return coarse
 
 
 def build_hierarchy(
-    cfg: IngestConfig, *, weight_edges: bool = False
+    cfg: IngestConfig, *, weight_edges: bool = False, area_weight: float = 0.5
 ) -> dict[int, nx.Graph]:
     """Build every predefined level from its parent (normally ``depth - 1``)."""
     graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg, weight_edges=weight_edges)}
     parent_depths = LEVEL_PARENT_DEPTHS.get(cfg.unit, {})
     for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
+        parent = graphs[parent_depths.get(depth, depth - 1)]
+        if area_weight:
+            node_areas.attach_land_areas(parent, cfg.unit, cfg.data)
         graphs[depth] = aggregate_level(
-            graphs[parent_depths.get(depth, depth - 1)], target, cfg.program_population
+            parent, target, cfg.program_population, area_weight=area_weight
         )
     return graphs
 

@@ -1,0 +1,135 @@
+# One attendance area per school, all six ideal 2026-27 capacity scenarios.
+# 6 scenarios x 5 seeds x 4 FRL deviations = 120 runs.
+#
+# shape: ReCom with hedge weights, random-weight minimum spanning trees and a
+# Voronoi start, optimizing full-market capacity match for 10 minutes. All
+# program seats remain available; only unassigned students are penalized.
+# Aggregate overage/shortage are off here. FRL, school count and contiguity stay on.
+#
+# distance/perimeter: CP-Bool smooths the shape. Wider released bands than 10-24:
+# distance releases a 2-hop boundary band and perimeter a 1-hop band (10-24: 1
+# and 0). Fixed interior pieces cut off from their school by the band are hints.
+# Both capacity_reference fields point to shape, so neither
+# smoothing step moves the capacity target. The reference runs the full MID
+# market under shape at Block_0, using submitted preferences and fractional
+# lotteries. It counts only residents assigned/designated to AA GE seats and
+# freezes each school's expected usage of those same seats. The source map
+# balances exactly; unassigned students count on neither side. Citywide seats,
+# including language pathways at AA schools, are open to every zone, as in
+# restrictive_aa. Only overage/shortage use these
+# counts; diversity, objectives and reported metrics use the full populations.
+# The 0.05 shortage / 0.10 overage band is a proxy for protecting matching gains;
+# boundary changes can still affect realized choices.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/attendance_areas/10-25.yaml
+
+name: attendance_areas_10-25
+mode: run
+
+optimization_defaults:
+  centroids_type: all
+  hints: voronoi
+  workers: 8
+  save_solver_logs: false
+  save_solver_progress: false
+  constraints:
+    racial_dev: -1
+    overage: 0.10
+    shortage: 0.05
+    max_distance: auto
+    boundary_prop: -1
+
+sweep:
+  seed: [1, 2, 3, 4, 5]
+  frl_dev: [0.15, 0.2, 0.25, 0.3]
+  # Pair selectors within each data value; never cross different optimization
+  # and assignment capacities. Each scenario determines its own school zones.
+  data:
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627}
+          assignment: {capacity_scenario: ideal_baseline_2627}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_bessie_ge_2627}
+          assignment: {capacity_scenario: ideal_bessie_ge_2627}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_webster_w2w_2627}
+          assignment: {capacity_scenario: ideal_webster_w2w_2627}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_alvarado_w2w_2627}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_2627}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_westportal_w2w_2627}
+          assignment: {capacity_scenario: ideal_westportal_w2w_2627}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_star_king_w2w_2627}
+          assignment: {capacity_scenario: ideal_star_king_w2w_2627}
+
+tasks:
+  - steps:
+      - name: shape
+        level: Block_0.5
+        method: recom
+        objective: capacity_match
+        time_limit: 600
+        constraints: {overage: -1, shortage: -1}
+        options:
+          workers: 1
+          recom_iterations: -1
+          recom_burst_length: 25
+          recom_weights: hedge
+          recom_tree_sampler: random_mst
+          mid_preference_source: stated
+          capacity_match_unassigned_weight: 1
+          capacity_match_designated_weight: 0
+          hints: voronoi
+      - name: distance
+        level: Block_0
+        method: cp_bool
+        objective: average_squared_distance
+        time_limit: 300
+        capacity_reference: shape
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 2}
+          - {source: previous, mode: hint, select: boundary, radius: 2}
+      - name: perimeter
+        level: Block_0
+        method: cp_bool
+        objective: boundary_perimeter
+        time_limit: 300
+        capacity_reference: shape
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 1}
+          - {source: previous, mode: hint, select: boundary, radius: 1}
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/attendance_areas_10-25_v1'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final
+
+matching:
+  enabled: true
+  config: ../../../assignment/configs/attendance_areas/restrictive_aa_2627.yaml
+  compute_stage_assignments: false

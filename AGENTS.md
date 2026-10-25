@@ -79,6 +79,15 @@ The district's 2026-27 KG workbook scenarios (`ideal_baseline_2627`,
 a graph node under `program_population: All`; the rest are `Citywide`.
 They also label each program's attendance-area seats, which loaded programs
 carry as `attendance_area_capacity` and the `aa_capacity_match` objective scores.
+**The seat label decides access, not the school.** Attendance-area seats are
+tied to the zone owning the school; citywide seats are open to every zone, even
+at an attendance-area school (its language and special programs). The MID and
+SAA markets (`optimization/data/mid.py`) read access off the label. Assignment
+names a school's attendance-area program as its GE program, so the loaders
+require attendance-area seats to be exactly the GE seats of attendance-area
+schools and reject anything else at load: a program mixing both seat types, a
+non-GE program with attendance-area seats, or a GE program at an
+attendance-area school with citywide seats.
 The workbook's new Mandarin Immersion TK-8 (placeholder school `400`) is in no
 data file; both groups' `include_mandarin_immersion` (default `false`) adds it
 from base `planned_schools`. Its site and its ME/MN (non-native/native) seat
@@ -107,8 +116,8 @@ inherit geography from their school.
 
 The optimization uses NetworkX undirected graphs. Nodes are geographic areas and edges are adjacency. `optimization/data/graph_builder.py` creates these predefined hierarchies:
 - **Block_0** - Direct Census Block units
-- **Block_0.5** - Up to 3,000 nodes, built from Block_0 (KaHIP returns ~1,850 nodes,
-  no aggregate above ~17 students against Block_1's ~46). Block_1 is still built
+- **Block_0.5** - Up to 3,000 nodes, built from Block_0 (about 2,700 nodes at the
+  default 50/50 area weight, no aggregate above ~13 students). Block_1 is still built
   from Block_0, so the two are not nested. Parents other than `depth - 1` are
   declared in `LEVEL_PARENT_DEPTHS` (`optimization/levels.py`) and read through
   `LevelSpec.parent()`.
@@ -168,13 +177,13 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 `optimization/data/graph_builder.py` builds multi-level graphs:
 1. `build_base_graph()` creates depth 0 directly from the selected census units.
 2. Each coarser level uses its parent (the immediate finer level, unless `LEVEL_PARENT_DEPTHS` says otherwise) rather than repartitioning level 0.
-3. School nodes are removed and retained as singleton vertices. KaHIP strong mode partitions the remaining nodes using the population selected by `program_population`; imbalance starts at 0.8 and doubles until validation passes.
+3. School nodes are removed and retained as singleton vertices, and so is any node heavier than the initial bound (`(1 + 0.8)` times the average part, rechecked as the average falls), since one indivisible node would otherwise loosen the bound for the whole level. KaHIP strong mode partitions the remaining nodes on a weight mixing each node's share of the students selected by `program_population` with its share of land area, by `partition_area_weight` (default 0.5; 0 balances students only, 1 land only); imbalance starts at 0.8 and doubles until validation passes.
 4. `aggregate()` sums node attributes, flattens base area IDs, recomputes distances, and derives every child edge from crossing parent edges. This also reconnects school nodes to every aggregate containing one of their former neighbors.
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
 Graphs are cached by exact source contents, data filters, and partition-policy
 parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v<N>/<sha256>/`,
-where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (16 at time of writing).
+where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (17 at time of writing).
 
 ## Benchmarking
 
@@ -226,11 +235,11 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `seed` | `42` | Solver seed |
 
 Cache paths carry the artifact's schema version, which lives in code and moves
-without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (16),
+without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (17),
 `initial_solutions.FEASIBLE_HINT_CACHE_SCHEMA_VERSION` (3). Read the constant
 rather than the number quoted here.
 
-Graph cache path: `.../caches/graphs/v16/<sha256>/`.
+Graph cache path: `.../caches/graphs/v17/<sha256>/`.
 
 Feasible-hint cache path: `.../caches/feasible_hint/v3/<sha256>/`, keyed by the
 *feasible set* and nothing else: `feasibility_fingerprint(problem)` plus

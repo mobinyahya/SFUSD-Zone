@@ -104,7 +104,7 @@ def test_projected_centroids_latlon_avoids_geographic_crs_warning():
     assert -122.5 < centroids.iloc[0].x < -122.4
 
 
-def test_student_cache_uses_v10_content_addressed_layout(tmp_path, scenario_factory):
+def test_student_cache_uses_v11_content_addressed_layout(tmp_path, scenario_factory):
     baseline = _ingest(_student_scenario(tmp_path, scenario_factory))
     all_population = _ingest(
         _student_scenario(tmp_path, scenario_factory, program_population="All")
@@ -113,7 +113,7 @@ def test_student_cache_uses_v10_content_addressed_layout(tmp_path, scenario_fact
     baseline_namespace = loaders._student_cache_namespace(baseline)
     changed_namespace = loaders._student_cache_namespace(all_population)
 
-    assert baseline_namespace.path.parent.name == "v10"
+    assert baseline_namespace.path.parent.name == "v11"
     assert baseline_namespace.path.parent.parent.name == "students"
     assert loaders._student_cache_path(baseline).endswith("/students.csv")
     assert baseline_namespace.key != changed_namespace.key
@@ -735,3 +735,21 @@ def test_neighbors_use_unit_specific_scenario_role(tmp_path, scenario_factory):
     neighbors = loaders.load_neighbors(_ingest(scenario), {100: 4, 200: 9})
 
     assert neighbors == {4: [9], 9: [4]}
+
+
+def test_unreported_ethnicities_reach_the_area_table(tmp_path, scenario_factory):
+    frame = _student_frame()
+    frame["resolved_ethnicity"] = ["Not Specified", None]
+    cfg = _ingest(
+        _student_scenario(
+            tmp_path, scenario_factory, frame=frame, program_population="All"
+        )
+    )
+
+    aggregated = loaders._aggregate_students(loaders.load_students(cfg), cfg)
+
+    by_block = aggregated.set_index("Block")
+    assert by_block.loc[1001, "Ethnicity_Not_Specified"] == 1.0
+    assert by_block.loc[1002, "Ethnicity_Missing"] == 1.0
+    assert by_block["Ethnicity_Decline_To_State"].sum() == 0.0
+    assert by_block["Ethnicity_Hispanic/Latinx"].sum() == 0.0

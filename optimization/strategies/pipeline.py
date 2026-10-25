@@ -7,13 +7,20 @@ from dataclasses import asdict
 import os
 import time
 
+import networkx as nx
+
 from optimization.data import contiguity
+from optimization.data.capacity_reference import (
+    apply_capacity_reference,
+    build_capacity_reference,
+)
 from optimization.data.conversion import (
     LevelConverter,
     _node_base_ids,
     base_area_assignment,
 )
 from optimization.objectives import get_objective, solve_objective
+from optimization.levels import LevelSpec
 from optimization.pipeline import step_config
 from optimization.strategies.base import Strategy, register
 
@@ -42,6 +49,27 @@ def selected_nodes(graph, assignment, binding):
             raise ValueError(f"Input selects unknown target nodes: {sorted(unknown)}.")
         selected.intersection_update(binding.nodes)
     return selected
+
+
+def detached_fixed_pieces(problem, fixed):
+    """Hard assignments that reach their centroid only through free blocks.
+
+    Releasing a boundary band can leave a piece of a zone's fixed interior
+    whose every connection to the zone's centroid runs through the band. Kept
+    fixed, it forces the solver to hold a same-zone path through blocks the
+    step meant to free. Returns ``{node: zone}`` for every such piece, which the
+    pipeline demotes to hints.
+    """
+    by_zone = {}
+    for node, zone in fixed.items():
+        by_zone.setdefault(zone, set()).add(node)
+    detached = {}
+    for zone, nodes in by_zone.items():
+        centroid = problem.centroids[zone]
+        for piece in nx.connected_components(problem.G.subgraph(nodes | {centroid})):
+            if centroid not in piece:
+                detached.update({node: zone for node in piece})
+    return detached
 
 
 def relax_unsupported_assignments(problem, fixed, assignment):
@@ -97,7 +125,8 @@ class PipelineStrategy(Strategy):
     @property
     def reads_assignment_market(self):
         return any(
-            get_objective(step.objective).reads_assignment_market
+            step.capacity_reference is not None
+            or get_objective(step.objective).reads_assignment_market
             for step in self.config.steps
         )
 
@@ -125,24 +154,71 @@ class PipelineStrategy(Strategy):
                 ids = [a for a in _node_base_ids(graph, node) if a in areas]
                 if ids:
                     candidates[node] = areas[ids[0]]
-        return dataset.problem_for(
+        problem = dataset.problem_for(
             step.level,
             config=step_config(self.config, step, index),
             fixed=fixed or None,
             candidates=candidates or None,
         )
+        if step.capacity_reference is not None:
+            if "capacity_reference" not in metadata:
+                raise ValueError(
+                    "Saved stage is missing its frozen capacity reference."
+                )
+            apply_capacity_reference(problem, metadata["capacity_reference"])
+        return problem
 
     def run(self, dataset, solver):
         converter = LevelConverter(data=dataset.data)
         results = []
         by_name = {}
         projected_cache = {}
+        capacity_references = {}
         carry = 0.0
         output_dir = solver.options.get("output_dir")
         for index, step in enumerate(self.config.steps):
             started = time.perf_counter()
             effective = step_config(self.config, step, index)
             problem = dataset.problem_for(step.level, config=effective)
+            reference = None
+            if step.capacity_reference is not None:
+                source = (
+                    results[-1]
+                    if step.capacity_reference == "previous"
+                    else by_name[step.capacity_reference]
+                )
+                source_name = source.metadata["pipeline_step"]
+                if source_name not in capacity_references:
+                    if not source.feasible or set(source.assignment) != set(
+                        source.problem.G
+                    ):
+                        raise ValueError(
+                            "A capacity reference needs a complete feasible source."
+                        )
+                    source_config = source.problem.optimization_config
+                    base = dataset.problem_for(
+                        LevelSpec(source.level.unit, 0), config=source_config
+                    )
+                    zoning = converter.between(
+                        source.problem.G,
+                        source.assignment,
+                        source.level,
+                        base.G,
+                        base.level,
+                    )
+                    from optimization.data.mid import build_mid_market
+
+                    reference = build_capacity_reference(
+                        base,
+                        zoning,
+                        build_mid_market(base, source_config),
+                        source_config.mid_lottery_scale,
+                    )
+                    reference["source_step"] = source_name
+                    reference["preference_source"] = source_config.mid_preference_source
+                    capacity_references[source_name] = reference
+                reference = capacity_references[source_name]
+                apply_capacity_reference(problem, reference)
             fixed, hints = {}, dict(problem.hint or {})
             for binding in step.inputs:
                 source = (
@@ -187,11 +263,21 @@ class PipelineStrategy(Strategy):
                     raise ValueError(
                         f"Hard assignment conflicts with centroid {centroid} in step {step.name!r}."
                     )
-            for node, zone in fixed.items():
-                if zone not in problem.candidate_zones(node):
-                    raise ValueError(
-                        f"Hard assignment for node {node} to zone {zone} violates the candidate constraints in step {step.name!r}."
-                    )
+            # A source solved on coarser nodes measured max_distance from those
+            # nodes, so a projected block can lie beyond the distance this step
+            # allows its zone. Free it to its own distance candidates.
+            out_of_range = {
+                node: zone
+                for node, zone in fixed.items()
+                if zone not in problem.candidate_zones(node)
+            }
+            for node in out_of_range:
+                del fixed[node]
+                hints.pop(node, None)
+            islands = detached_fixed_pieces(problem, fixed)
+            for node, zone in islands.items():
+                del fixed[node]
+                hints[node] = zone
             hints.update(fixed)
             fixed, candidates = relax_unsupported_assignments(problem, fixed, hints)
             problem.fixed = fixed or None
@@ -232,15 +318,19 @@ class PipelineStrategy(Strategy):
                 pipeline_spec=asdict(step),
                 pipeline_fixed=fixed,
                 pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
-                pipeline_candidates_areas=_base_area_candidates(
-                    problem.G, candidates
+                pipeline_out_of_range_areas=base_area_assignment(
+                    problem.G, out_of_range
                 ),
+                pipeline_detached_areas=base_area_assignment(problem.G, islands),
+                pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
                 method=step.method,
                 objective_kind=step.objective,
                 configured_time_limit_seconds=configured_time,
                 pipeline_elapsed_seconds=elapsed,
                 solver_reported_wall_time_seconds=solution.wall_time,
             )
+            if reference is not None:
+                solution.metadata["capacity_reference"] = reference
             solution.wall_time = elapsed
             if self.config.carry_over_compute:
                 carry = max(0.0, configured_time + received - elapsed)

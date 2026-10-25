@@ -48,6 +48,7 @@ WEIGHTS = ("fixed", "hedge", "dual")
 PAIR_SELECTIONS = ("uniform", "proportional", "softmax", "zone", "exp3")
 PAIR_SCORES = ("pressure", "pooled")
 CUT_SELECTIONS = ("uniform", "softmax")
+TREE_SAMPLERS = ("random_mst", "wilson_uniform")
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,9 @@ class ReComSettings:
     pair_selection: str = "softmax"
     pair_score: str = "pressure"
     cut_selection: str = "softmax"
+    # Fresh independent U(0, 1) edge weights and their MST per proposal, or
+    # Wilson's uniform spanning tree. These give different tree distributions.
+    tree_sampler: str = "random_mst"
     temperature: float = 1.0
     entropy: float | None = 0.3
     exploration: float = 0.05
@@ -79,6 +83,7 @@ class ReComSettings:
             ("pair_selection", PAIR_SELECTIONS),
             ("pair_score", PAIR_SCORES),
             ("cut_selection", CUT_SELECTIONS),
+            ("tree_sampler", TREE_SAMPLERS),
         ):
             if getattr(self, name) not in choices:
                 raise ValueError(f"recom_{name} must be one of: {', '.join(choices)}.")
@@ -134,7 +139,7 @@ def _finite(value: Any) -> bool:
 # are named.
 _UNIFORM = dict(pair_selection="uniform", cut_selection="uniform", entropy=None)
 PRESETS: dict[str, ReComSettings] = {
-    # Classic ReCom: one chain that rejects every move leaving the feasible set.
+    # One chain that rejects every move leaving the feasible set.
     "chain": ReComSettings(burst_length=0, reject_infeasible=True, **_UNIFORM),
     "uniform_bursts": ReComSettings(**_UNIFORM),
     # Fixed weights; pairs and cuts at normalized entropy 0.3. The default.

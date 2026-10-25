@@ -70,15 +70,33 @@ Metric modules can add per-zone values through `MetricOutput.zone_data`.
 
 Examples include:
 
-- `ge_students`
-- `frl_pct`
-- `ethnicity_pcts`
-- `seat_disparity`
-- `programs`
-- `avg_math_score`
-- `avg_eng_score`
-- `avg_any_ge_school_distance`
-- `avg_farthest_ge_school_distance`
+- Population: `students` and `capacity` are the problem's own population
+  (`problem.student_attribute`/`capacity_attribute`, all-program counts under
+  `program_population: All`, named in `run.zone_population`). Every share and
+  `seat_disparity` is taken over them. `ge_students`, `ge_capacity`,
+  `all_prog_students` and `all_prog_capacity` report each population under its
+  own name.
+- Demographics: `frl_pct`, `aalpi_pct`, `ethnicity_pcts` (the five graph
+  groups), and `supplementary_ethnicity_pcts`, read from the run's student area
+  table: Filipino, Two or More, American Indian, Not Specified, Decline to
+  State, Missing (blank) and `Ethnicity_Unreported`, the sum of the last three.
+  It is `None` when the config names no data.
+- Schools: `school_ids`, `attendance_school_ids` (category `Attendance`) and
+  `ge_school_ids` physically in the zone. `schools_in_attendance_area` is *not*
+  a school count: it counts the zone's schools whose `attendance_area` ID is a
+  school in the same zone, so a school sharing another's area (Mission Bay,
+  area 497) reads 0 apart from that school.
+- Distance: great-circle miles between node points, a school at its node's
+  point. `avg_any_ge_school_distance`/`avg_farthest_ge_school_distance` are
+  unweighted node means of the mean/max over in-zone GE schools. The nearest
+  fields pair each node with its nearest in-zone GE school: for the GE students
+  (`ge_` prefix) and the problem population (no prefix), the weighted average,
+  the maximum over populated nodes (positive weight), the populated-node count
+  and the students in a zone with no GE school.
+- Shape: `polsby_popper_score`, `reock_score`, `area_sq_m` and `perimeter_m` on
+  the dissolved Block_0 geometry (EPSG:32610); `None` for a zone without
+  positive-area geometry.
+- `programs`, `avg_math_score`, `avg_eng_score`.
 
 The benchmark package stores this data in `result.json` and keeps scalar summaries in `summary.csv`.
 

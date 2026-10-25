@@ -7,6 +7,7 @@ objective: cut_edges
 seed: 42
 workers: 8
 hints: voronoi                 # feasible | voronoi | none
+recom_tree_sampler: random_mst  # random_mst (fresh random weights) | wilson_uniform
 solve_time_limits: [45]        # default seconds per step
 carry_over_compute: false      # optionally transfer unused step time forward
 weight_edges: false            # true: cut_edges minimizes boundary metres

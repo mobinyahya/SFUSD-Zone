@@ -788,13 +788,24 @@ def test_mid_market_builds_for_summer_26_zoning():
     # The scenario pairs ``include_citywide_zoning: false`` with
     # ``include_citywide_choice_opt: true``: no zone owns a citywide school, but
     # every student may still choose one. All 130 assignment programs are in the
-    # market, 24 of them citywide, carrying 723 of the 4,189 seats. Those 24
-    # have no school node, which every oracle reads as reachable from any zone.
+    # market. Access follows the seat labels: the 59 programs holding
+    # attendance-area seats (every attendance-area school's GE program) are tied
+    # to their zone, and the other 71, carrying 1,658 of the 4,189 seats, are
+    # open to every zone. Those include the 24 programs at citywide schools
+    # (723 seats) and every language and special program at an attendance-area
+    # school. None has a school node, which every oracle reads as reachable from
+    # any zone.
     assert len(market.programs) == 130
     citywide = [program for program in market.programs if program.citywide]
-    assert len(citywide) == 24
+    assert len(citywide) == 71
     assert all(program.school_node is None for program in citywide)
-    assert sum(program.capacity for program in citywide) == 723
+    assert all(program.attendance_area_capacity == 0 for program in citywide)
+    assert sum(program.capacity for program in citywide) == 1658
+    zoned = [program for program in market.programs if not program.citywide]
+    assert {program.program_id.split("-")[1] for program in zoned} == {"GE"}
+    assert all(
+        program.attendance_area_capacity == program.capacity for program in zoned
+    )
     assert sum(student_type.count for student_type in market.types) == 3953
 
 
@@ -841,12 +852,18 @@ def test_the_mid_market_drops_exactly_the_citywide_programs():
     filtered = mid_module.build_mid_student_market(problem, _DropCitywide())
     unfiltered = mid_module.build_mid_student_market(problem, config)
 
-    citywide = {p.program_id for p in unfiltered.programs if p.citywide}
+    from optimization.data.loaders import citywide_school_ids
+
+    citywide_schools = citywide_school_ids(config.data_scenario)
+    citywide = {
+        p.program_id for p in unfiltered.programs if p.school_id in citywide_schools
+    }
     assert len(citywide) == 24
+    assert all(p.citywide for p in unfiltered.programs if p.program_id in citywide)
     assert {p.program_id for p in filtered.programs} == {
         p.program_id for p in unfiltered.programs
     } - citywide
-    assert sum(p.capacity for p in unfiltered.programs if p.citywide) == 723
+    assert sum(p.capacity for p in unfiltered.programs if p.program_id in citywide) == 723
 
     assert len(filtered.students) == len(unfiltered.students)
     for kept, whole in zip(filtered.students, unfiltered.students):

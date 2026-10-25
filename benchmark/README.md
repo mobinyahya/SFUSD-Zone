@@ -37,11 +37,27 @@ Submit the same two-phase job graph directly:
 uv run python -m benchmark.slurm submit --config path/to/sweep.yaml
 ```
 
-Each sweep task is one optimization job reserving the largest `workers` count
-used by its steps. A
-one-core metrics job runs after it and safely updates `summary.csv` and
-`stages.csv`. Recursive and iterative strategy stages stay within one
-optimization job. Local capacity and worker-pool settings are not used.
+The planner packs sweep tasks into at most 12 optimization allocations, each
+using up to 40 cores. Each task reserves the largest `workers` count used by
+its steps; for example, five eight-worker tasks run concurrently in one
+40-core allocation. Recursive and iterative strategy stages stay within their
+task. Each allocation evaluates its optimization metrics and safely updates
+`summary.csv` and `stages.csv`. Local capacity and worker-pool settings are not used.
+
+The complete graph has at most 20 submitted jobs. With assignment metrics
+enabled, the eight downstream slots hold up to four assignment jobs, three
+metrics jobs, and one finalizer. Without assignment metrics, all eight slots
+can run assignments. Slurm dependencies hold this work behind optimization;
+no controller job occupies an execution slot. Both direct submission and the
+generated shell script check the user's existing queued jobs before submitting
+anything, and stop if the complete graph would exceed 20 jobs. Slurm enforces
+the account's 12-running-job limit.
+
+Assignment jobs wait on `afterok` for every optimization allocation, so a task
+that errors does not fail its allocation: the ERROR is saved in its
+`result.json` and summary row, and each of its assignment targets without a
+zone file gets an `.assignment-skipped` marker. Only a crashed allocation (or
+failed aggregation) exits nonzero and holds the downstream jobs back.
 
 With `matching.enabled`, assignment jobs for every run's root zoning are
 submitted behind the optimization jobs. Runs that already finished without
@@ -180,6 +196,37 @@ and unused time are also recorded in `stages.csv`.
 Task hashes include nested steps and the assignment-market sources read
 by welfare objectives at any step. Source manifests are reused across tasks
 that share the same input requirements.
+
+A smoothing step can set `capacity_reference: shape` to replace only its
+overage/shortage counts with expected demand and used seats under the earlier
+`shape` zoning. `previous` is also accepted. Point every smoothing step at the
+same named source to keep the reference fixed throughout the pipeline. For
+example, see [`configs/attendance_areas/10-24.yaml`](configs/attendance_areas/10-24.yaml).
+
+The reference projects the source zoning to base geography and runs the full
+fractional MID market using the **source step's** `mid_preference_source` and
+`mid_lottery_scale`. At each base unit, demand counts only residents expected
+to be assigned or designated to attendance-area **GE** seats. Each school's
+capacity is the expected occupied count of those same seats. Unassigned
+students and non-AA assignments count on neither side. Each source zone
+therefore balances exactly, even with zero overage/shortage. Programs holding
+no AA seats, including language pathways at attendance-area schools, are open
+to every zone in the market and count on neither side; the loaders reject a
+program mixing both seat types. Designations
+use free AA GE seats, pooled within each zone and distributed proportionally
+to schools' free seats (exact with one school per zone), and attributed to
+residents in proportion to each base unit's unmatched mass.
+
+The bounds remain `(1 - shortage) * demand <= used_seats <=
+(1 + overage) * demand` for each new zone. These reference counts replace any
+`enrollment_share` scaling for those rows. Full resident counts and physical
+capacities still feed diversity, objectives and reported metrics. The reference
+requires `program_population: All` and identical assignment/optimization
+cohorts at each base unit; mismatches fail explicitly. Counts are stored by
+base area and school ID in each stage's `capacity_reference` metadata, so
+metrics regeneration restores the same feasible set without rematching.
+The band protects a fixed capacity proxy; it does not guarantee an unchanged
+matching objective when a new boundary changes students' accessible choices.
 
 The legacy solver and strategy configuration remains accepted:
 

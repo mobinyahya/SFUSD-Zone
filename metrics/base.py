@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, is_dataclass, asdict
 from functools import cached_property
 from typing import Any, Callable, Mapping, Sequence
 
+from Config.Constants import SUPPLEMENTARY_ETHNICITIES
 from loaders import DataScenario, load_scenario
 from metrics.spatial import SpatialMetrics, compute_spatial_metrics
 from optimization.solution import ZoneSolution
@@ -120,6 +121,33 @@ class MetricsContext:
         from metrics.programs import school_programs
 
         return school_programs(self)
+
+    @cached_property
+    def supplementary_ethnicity_counts(self) -> dict[int, dict[str, float]] | None:
+        """Per-node counts of the groups graph nodes omit, or ``None`` without data.
+
+        Read from the run's student area table at the solution's unit, so they
+        carry the node counts' population filters and weights. A node sums the
+        areas in its ``area_id`` or ``block_ids``.
+        """
+        if self.data_scenario is None:
+            return None
+        from optimization.data.loaders import IngestConfig, load_area_table
+
+        unit = self.solution.level.unit
+        area = load_area_table(IngestConfig(unit=unit, data=self.data_scenario))
+        by_area = area.set_index(unit)[SUPPLEMENTARY_ETHNICITIES].to_dict("index")
+        counts: dict[int, dict[str, float]] = {}
+        for node, attrs in self.G.nodes(data=True):
+            area_ids = (
+                [attrs["area_id"]] if "area_id" in attrs else attrs.get("block_ids", [])
+            )
+            totals = dict.fromkeys(SUPPLEMENTARY_ETHNICITIES, 0.0)
+            for area_id in area_ids:
+                for ethnicity, value in by_area.get(int(area_id), {}).items():
+                    totals[ethnicity] += float(value)
+            counts[int(node)] = totals
+        return counts
 
     @cached_property
     def zone_nodes(self) -> dict[int, list[int]]:
