@@ -66,6 +66,9 @@ _OBJECTIVES = {
     "choice_welfare": Objective("choice_welfare", frozenset(METHODS), True, True),
     "capacity_match": Objective("capacity_match", _HEURISTICS, False, True),
     "aa_capacity_match": Objective("aa_capacity_match", _HEURISTICS, False, True),
+    "fill_polarization": Objective("fill_polarization", _HEURISTICS, False, True),
+    # A weighted sum of the objectives named in ``objective_weights``.
+    "weighted_sum": Objective("weighted_sum", _HEURISTICS, False, True),
 }
 OBJECTIVES = tuple(_OBJECTIVES)
 
@@ -99,12 +102,126 @@ def validate_method_objective(method: str, objective: str) -> None:
         )
 
 
+# Terms a weighted sum may combine: every batch-scored heuristic objective.
+# The boundary objectives are scored inside the walk, not in batches.
+WEIGHTED_SUM_TERMS = tuple(
+    name
+    for name, spec in _OBJECTIVES.items()
+    if _HEURISTICS <= spec.methods
+    and name not in {"cut_edges", "boundary_perimeter", "weighted_sum"}
+)
+_MID_TERMS = frozenset(
+    {"matching_welfare", "capacity_match", "aa_capacity_match", "fill_polarization"}
+)
+
+
+def checked_objective_weights(weights) -> dict[str, float] | None:
+    """``objective_weights`` as ``{term: weight}``, or ``None`` when unset."""
+    import math
+
+    if weights is None:
+        return None
+    if not isinstance(weights, Mapping) or not weights:
+        raise ValueError("objective_weights must be a nonempty mapping of term: weight.")
+    checked = {}
+    for name, weight in weights.items():
+        term = get_objective(name).name
+        if term not in WEIGHTED_SUM_TERMS:
+            raise ValueError(
+                f"objective_weights term {name!r} is not one of: "
+                f"{', '.join(WEIGHTED_SUM_TERMS)}."
+            )
+        if term in checked:
+            raise ValueError(f"objective_weights names {term!r} twice.")
+        if (
+            isinstance(weight, bool)
+            or not isinstance(weight, (int, float))
+            or not math.isfinite(weight)
+            or weight < 0
+        ):
+            raise ValueError(
+                f"objective_weights[{name!r}] must be finite and non-negative."
+            )
+        checked[term] = float(weight)
+    if not any(checked.values()):
+        raise ValueError("objective_weights needs a positive weight.")
+    return checked
+
+
+class _WeightedSumScorer:
+    """``sum_t w_t * cost_t``, a maximized term entering with its sign flipped.
+
+    MID terms share one market and outcome cache, so a weighted sum of several
+    costs one matching per zoning.
+    """
+
+    def __init__(self, terms):
+        self.terms = tuple(terms)  # (name, weight, sign, scorer)
+
+    def __call__(self, assignments, base=None) -> tuple[float, ...]:
+        totals = [0.0] * len(assignments)
+        for _, weight, sign, scorer in self.terms:
+            for index, value in enumerate(scorer(assignments, base)):
+                totals[index] += weight * sign * float(value)
+        return tuple(totals)
+
+    def describe(self, assignment) -> dict[str, float]:
+        details: dict[str, float] = {}
+        for name, weight, _, scorer in self.terms:
+            details[f"objective_term_{name}"] = float(scorer((assignment,), None)[0])
+            details[f"objective_weight_{name}"] = weight
+            describe = getattr(scorer, "describe", None)
+            if describe is not None:
+                details.update(describe(assignment))
+        return details
+
+    def close(self) -> None:
+        for _, _, _, scorer in self.terms:
+            close = getattr(scorer, "close", None)
+            if close is not None:
+                close()
+
+
+def _weighted_sum_scorer(problem: ZoneProblem, options: Mapping[str, Any]):
+    weights = checked_objective_weights(options.get("objective_weights"))
+    if weights is None:
+        raise ValueError("The weighted_sum objective needs objective_weights.")
+    weights = {name: weight for name, weight in weights.items() if weight > 0}
+    mid_terms = tuple(name for name in weights if name in _MID_TERMS)
+    scorers = {}
+    if mid_terms:
+        from optimization.solvers.burst_objectives import mid_burst_scorers
+
+        metrics = {
+            name: "welfare" if name == "matching_welfare" else name
+            for name in mid_terms
+        }
+        shared = mid_burst_scorers(problem, tuple(metrics.values()), options)
+        scorers.update({name: shared[metric] for name, metric in metrics.items()})
+    try:
+        for name in weights:
+            if name not in scorers:
+                scorers[name] = heuristic_scorer(problem, name, options)
+    except Exception:
+        for scorer in scorers.values():
+            close = getattr(scorer, "close", None)
+            if close is not None:
+                close()
+        raise
+    return _WeightedSumScorer(
+        (name, weight, -1.0 if get_objective(name).maximize else 1.0, scorers[name])
+        for name, weight in weights.items()
+    )
+
+
 def heuristic_scorer(problem: ZoneProblem, objective: str, options: Mapping[str, Any]):
     """A batch scorer in the objective's own units; cut edges need no scorer."""
     spec = get_objective(objective)
     objective = spec.name
     if objective in {"cut_edges", "boundary_perimeter"}:
         return None
+    if objective == "weighted_sum":
+        return _weighted_sum_scorer(problem, options)
     if spec.compactness_objective in {
         "school_distance",
         "average_distance",

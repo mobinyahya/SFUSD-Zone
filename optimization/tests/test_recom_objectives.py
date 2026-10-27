@@ -551,3 +551,165 @@ def test_choice_objectives_refuse_a_market_without_utilities(monkeypatch) -> Non
 
     with pytest.raises(ValueError, match="no student with a choice-utility row"):
         _recom(recom_objective="capacity_match").solve(_choice_problem())
+
+
+# --------------------------------------------------------------------------- #
+# fill polarization and weighted sums
+# --------------------------------------------------------------------------- #
+def _half_full_market() -> MidMarket:
+    """Under split A zone 0 fills two of four GE seats and zone 1 one of two."""
+
+    return MidMarket(
+        programs=(
+            MidProgram("100-GE-KG", 100, 4, False, 0),
+            MidProgram("200-GE-KG", 200, 2, False, 3),
+        ),
+        types=(
+            MidType(1, 2, ("100-GE-KG",), (0,), (2.0,), (200,)),
+            MidType(2, 1, ("200-GE-KG",), (0,), (2.0,), (200,)),
+        ),
+        student_count=3,
+        outside_only_student_count=0,
+        utility_student_count=3,
+        utility_handling="omit_nonpositive",
+    )
+
+
+def test_fill_polarization_is_zero_full_or_empty_and_peaks_half_full(
+    monkeypatch,
+) -> None:
+    _use_market(monkeypatch, _half_full_market())
+    scorer = burst_objectives.mid_burst_scorer(
+        _choice_problem(), "fill_polarization", {"workers": 1}
+    )
+    try:
+        (value,) = scorer((SPLIT_A,), None)
+    finally:
+        scorer.close()
+
+    # 2 * 2 / 4 + 1 * 1 / 2: each zone's used * empty / seats.
+    assert value == pytest.approx(1.5)
+
+
+def test_fill_polarization_counts_designated_students_as_filling_seats(
+    monkeypatch,
+) -> None:
+    # Node 1's three students rank only a one-seat citywide program; the two
+    # it cannot take are designated to zone 0's four GE seats.
+    market = MidMarket(
+        programs=(
+            MidProgram("100-GE-KG", 100, 4, False, 0),
+            MidProgram("200-GE-KG", 200, 2, False, 3),
+            MidProgram("300-GE-KG", 300, 1, True, None),
+        ),
+        types=(MidType(1, 3, ("300-GE-KG",), (0,), (2.0,), (200,)),),
+        student_count=3,
+        outside_only_student_count=0,
+        utility_student_count=3,
+        utility_handling="omit_nonpositive",
+    )
+    _use_market(monkeypatch, market)
+    scorer = burst_objectives.mid_burst_scorer(
+        _choice_problem(), "fill_polarization", {"workers": 1}
+    )
+    try:
+        (value,) = scorer((SPLIT_A,), None)
+        details = scorer.describe(SPLIT_A)
+    finally:
+        scorer.close()
+
+    # The finite lottery grid seats 0.9 of a student, so about two are left.
+    designated = details["best_designated_students"]
+    assert designated == pytest.approx(2.0, abs=0.2)
+    # Zone 0 holds only the designated students; zone 1 is empty.
+    assert value == pytest.approx(designated * (4 - designated) / 4)
+
+
+def test_weighted_sum_adds_terms_from_one_shared_market(monkeypatch) -> None:
+    calls = []
+
+    def build(problem, config):
+        calls.append(1)
+        return _half_full_market()
+
+    monkeypatch.setattr(burst_objectives, "build_mid_market", build)
+    from optimization.objectives import heuristic_scorer
+
+    scorer = heuristic_scorer(
+        _choice_problem(),
+        "weighted_sum",
+        {
+            "workers": 1,
+            "objective_weights": {"capacity_match": 1.0, "fill_polarization": 0.5},
+        },
+    )
+    try:
+        (value,) = scorer((SPLIT_A,), None)
+        details = scorer.describe(SPLIT_A)
+    finally:
+        scorer.close()
+
+    assert len(calls) == 1
+    assert value == pytest.approx(0.0 + 0.5 * 1.5)
+    assert details["objective_term_capacity_match"] == pytest.approx(0.0)
+    assert details["objective_term_fill_polarization"] == pytest.approx(1.5)
+    assert details["objective_weight_fill_polarization"] == 0.5
+
+
+def test_weighted_sum_subtracts_maximized_terms(monkeypatch) -> None:
+    _use_market(monkeypatch, _half_full_market())
+    from optimization.objectives import heuristic_scorer
+
+    options = {"workers": 1, "objective_weights": {"welfare": 2.0}}
+    scorer = heuristic_scorer(_choice_problem(), "weighted_sum", options)
+    welfare = burst_objectives.mid_burst_scorer(_choice_problem(), "welfare", options)
+    try:
+        assert scorer((SPLIT_A,), None)[0] == pytest.approx(
+            -2.0 * welfare((SPLIT_A,), None)[0]
+        )
+    finally:
+        scorer.close()
+        welfare.close()
+
+
+@pytest.mark.parametrize(
+    ("weights", "message"),
+    [
+        ({"cut_edges": 1.0}, "not one of"),
+        ({"capacity_match": -1.0}, "non-negative"),
+        ({"capacity_match": 0.0}, "positive weight"),
+        ({}, "nonempty"),
+        ({"capacity_match": 1.0, "aa_capacity_match": 1.0}, "cannot be combined"),
+    ],
+)
+def test_weighted_sum_rejects_bad_weights(monkeypatch, weights, message) -> None:
+    _use_market(monkeypatch, _half_full_market())
+    from optimization.objectives import heuristic_scorer
+
+    with pytest.raises(ValueError, match=message):
+        heuristic_scorer(
+            _choice_problem(),
+            "weighted_sum",
+            {"workers": 1, "objective_weights": weights},
+        )
+
+
+def test_weighted_sum_runs_under_recom(monkeypatch) -> None:
+    _use_market(monkeypatch, _half_full_market())
+
+    solution = _recom(
+        recom_objective="weighted_sum",
+        objective_weights={"capacity_match": 1.0, "fill_polarization": 0.5},
+    ).solve(_choice_problem())
+
+    assert solution.status == "FEASIBLE"
+    assert solution.metadata["objective_kind"] == "weighted_sum"
+    assert solution.objective == pytest.approx(
+        solution.metadata["objective_term_capacity_match"]
+        + 0.5 * solution.metadata["objective_term_fill_polarization"]
+    )
+
+
+def test_weighted_sum_config_needs_weights() -> None:
+    with pytest.raises(ValueError, match="needs objective_weights"):
+        OptimizationConfig(solver="recom", recom_objective="weighted_sum")
