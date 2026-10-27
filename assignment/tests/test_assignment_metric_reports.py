@@ -398,7 +398,7 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         legacy_evaluator.eval_aggregate_metric_reports("legacy")
 
 
-def test_program_report_uses_exact_program_assignments_and_schema():
+def test_program_report_uses_exact_program_assignments_and_schema(tmp_path):
     students = pd.DataFrame(
         {
             "studentno": range(1, 9),
@@ -533,6 +533,26 @@ def test_program_report_uses_exact_program_assignments_and_schema():
     assert heatmap_data.loc[101, "unassigned"] == 1
     assert heatmap_data.loc[202, "capacity"] == 0
     assert heatmap_data.loc[202, "unassigned"] == 0
+
+    zone_file = tmp_path / "zones.csv"
+    zone_file.write_text("101\n202\n")
+    zones = evaluator.eval_assignment_metrics_by_zone(
+        "config-a", zone_file, "attendance_area"
+    ).set_index("zone_id")
+    # Zone 0 holds attendance school 101: residents 1-5 fill five of its six GE
+    # seats (two designated) and resident 8 is unassigned. Zone 1 holds only
+    # citywide 202, so its residents 6 and 7 count as placed elsewhere.
+    assert zones.loc[0, "attendance_school_ids"] == "101"
+    assert zones.loc[0, ["residents", "own_zone_ge_assigned"]].tolist() == [6, 5]
+    assert zones.loc[0, "own_zone_ge_designated"] == 2
+    assert zones.loc[0, ["unassigned", "assigned_elsewhere"]].tolist() == [1, 0]
+    assert zones.loc[0, ["ge_capacity", "ge_assigned"]].tolist() == [6, 5]
+    assert zones.loc[0, "ge_assigned_nonresidents"] == 0
+    assert zones.loc[0, "empty_ge_seats"] == 1
+    assert zones.loc[0, "balance_if_unassigned_return"] == 0
+    assert zones.loc[1, "attendance_school_ids"] == ""
+    assert zones.loc[1, ["residents", "assigned_elsewhere"]].tolist() == [2, 2]
+    assert zones.loc[1, ["ge_capacity", "unassigned"]].tolist() == [0, 0]
     metrics = reports["citywide"].iloc[0]
     for rank, numerator in [(1, 1), (2, 2), (3, 3)]:
         name = f"Prop Top {rank} choice (All Students)"

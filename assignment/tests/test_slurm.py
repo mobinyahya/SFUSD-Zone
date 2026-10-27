@@ -787,6 +787,14 @@ def _reports(config_name, value):
                 "new_metric": [value],
             }
         ),
+        "zone": pd.DataFrame(
+            {
+                "config_name": [config_name],
+                "zone_id": [0],
+                "attendance_school_ids": ["101"],
+                "new_metric": [value],
+            }
+        ),
         "citywide": pd.DataFrame({"config_name": [config_name], "new_metric": [value]}),
     }
 
