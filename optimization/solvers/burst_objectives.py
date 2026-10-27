@@ -14,6 +14,12 @@ objectives need:
   run out.  Designation is pooled per zone rather than walked school by
   school, which is exact for the count because any free in-zone GE seat is a
   designation the district can make.
+* ``fill_polarization`` -- ``sum_z u_z (C_z - u_z) / C_z`` over zones, where
+  ``C_z`` is the zone's designation seats and ``u_z`` the seats the match and
+  designation fill.  Each term is concave in ``u_z``, zero when the zone's
+  seats are empty or full and largest (``C_z / 4``) when half full, so
+  minimizing it consolidates unused seats into fewer schools.  Quadratic
+  rather than ``min(u, C - u)`` so the pull toward full or empty is smooth.
 * ``aa_capacity_match`` -- the same count over attendance-area seats only.
   Every program is cut to the seats the program table labels attendance-area
   (``attendance_area_capacity``, from the district's capacity workbook when a
@@ -54,6 +60,7 @@ class MidOutcome:
     unassigned: float
     designated: float
     cutoffs: dict[str, int]
+    fill_polarization: float = 0.0
 
 
 def is_general_education(program_id: str) -> bool:
@@ -138,6 +145,21 @@ def designation_split(
 ) -> tuple[float, float]:
     """Return ``(unassigned, designated)`` student counts for one matching."""
 
+    unassigned, designated, _ = designation_outcome(
+        market, seats, zoning, result, lottery_scale
+    )
+    return unassigned, designated
+
+
+def designation_outcome(
+    market: MidMarket,
+    seats: tuple[DesignationSeat, ...],
+    zoning: Mapping[int, int],
+    result: MidOracleResult,
+    lottery_scale: int,
+) -> tuple[float, float, float]:
+    """Return ``(unassigned, designated, fill_polarization)`` for one matching."""
+
     unmatched: dict[int, float] = defaultdict(float)
     for student_type, remaining in zip(
         market.types, result.remaining_masses, strict=True
@@ -146,17 +168,28 @@ def designation_split(
         if mass > 0:
             unmatched[zoning[student_type.node]] += student_type.count * mass
     free: dict[int, float] = defaultdict(float)
+    capacity: dict[int, float] = defaultdict(float)
     for seat in seats:
         taken = result.demands.get(seat.program_id, 0.0)
         free[zoning[seat.school_node]] += max(0.0, seat.capacity - taken)
+        capacity[zoning[seat.school_node]] += seat.capacity
 
     total = 0.0
     designated = 0.0
+    zone_designated: dict[int, float] = {}
     for zone, mass in unmatched.items():
         students = mass / lottery_scale
         total += students
-        designated += min(students, free.get(zone, 0.0))
-    return max(0.0, total - designated), designated
+        zone_designated[zone] = min(students, free.get(zone, 0.0))
+        designated += zone_designated[zone]
+    polarization = 0.0
+    for zone, seats_in_zone in capacity.items():
+        if seats_in_zone <= 0:
+            continue
+        empty = max(0.0, free[zone] - zone_designated.get(zone, 0.0))
+        used = seats_in_zone - empty
+        polarization += used * empty / seats_in_zone
+    return max(0.0, total - designated), designated, polarization
 
 
 def mid_outcome(
@@ -173,7 +206,7 @@ def mid_outcome(
         check_minimality=False,
         warm_cutoffs=warm_cutoffs,
     )
-    unassigned, designated = designation_split(
+    unassigned, designated, polarization = designation_outcome(
         market, seats, zoning, result, lottery_scale
     )
     return MidOutcome(
@@ -181,6 +214,7 @@ def mid_outcome(
         unassigned=unassigned,
         designated=designated,
         cutoffs={key: int(value) for key, value in result.cutoffs.items()},
+        fill_polarization=polarization,
     )
 
 
@@ -284,7 +318,7 @@ class MidBatchEvaluator:
             self.executor.shutdown(wait=True, cancel_futures=True)
 
 
-CHOICE_METRICS = ("welfare", "capacity_match", "aa_capacity_match")
+CHOICE_METRICS = ("welfare", "capacity_match", "aa_capacity_match", "fill_polarization")
 CAPACITY_METRICS = frozenset({"capacity_match", "aa_capacity_match"})
 
 
@@ -311,6 +345,8 @@ class MidBurstScorer:
     def _value(self, outcome: MidOutcome) -> float:
         if self.metric == "welfare":
             return outcome.welfare
+        if self.metric == "fill_polarization":
+            return outcome.fill_polarization
         return (
             self.unassigned_weight * outcome.unassigned
             + self.designated_weight * outcome.designated
@@ -334,6 +370,7 @@ class MidBurstScorer:
             "best_welfare": outcome.welfare,
             "best_unassigned_students": outcome.unassigned,
             "best_designated_students": outcome.designated,
+            "best_fill_polarization": outcome.fill_polarization,
         }
 
     def close(self) -> None:
@@ -355,18 +392,38 @@ def mid_burst_scorer(
 ) -> MidBurstScorer:
     """Build the MID market for ``problem`` and wrap it as a burst scorer."""
 
-    if metric not in CHOICE_METRICS:
+    return mid_burst_scorers(problem, (metric,), options)[metric]
+
+
+def mid_burst_scorers(
+    problem, metrics: tuple[str, ...], options: Mapping[str, Any]
+) -> dict[str, MidBurstScorer]:
+    """One scorer per metric, all sharing one MID market and outcome cache.
+
+    ``aa_capacity_match`` confines the match to attendance-area seats, so it
+    cannot share a market with ``capacity_match``; ``fill_polarization`` then
+    measures the fill of the attendance-area seats too.
+    """
+
+    for metric in metrics:
+        if metric not in CHOICE_METRICS:
+            raise ValueError(
+                f"MID burst metric must be one of: {', '.join(CHOICE_METRICS)}."
+            )
+    if {"capacity_match", "aa_capacity_match"} <= set(metrics):
         raise ValueError(
-            f"MID burst metric must be one of: {', '.join(CHOICE_METRICS)}."
+            "capacity_match and aa_capacity_match run different markets and "
+            "cannot be combined."
         )
+    label = " and ".join(metrics)
     config = getattr(problem, "optimization_config", None)
     if config is None:
         raise ValueError(
-            f"The {metric} objective builds a MID market from the problem's "
+            f"The {label} objective builds a MID market from the problem's "
             "optimization_config, which this problem does not carry."
         )
     if problem.program_population != "All":
-        raise ValueError(f"The {metric} objective requires program_population='All'.")
+        raise ValueError(f"The {label} objective requires program_population='All'.")
     lottery_scale = options.get("mid_lottery_scale", 20)
     if (
         isinstance(lottery_scale, bool)
@@ -376,19 +433,22 @@ def mid_burst_scorer(
         raise ValueError("mid_lottery_scale must be a positive integer.")
     unassigned_weight = _weight(options, "capacity_match_unassigned_weight")
     designated_weight = _weight(options, "capacity_match_designated_weight")
-    if metric in CAPACITY_METRICS and unassigned_weight == designated_weight == 0:
-        raise ValueError(f"{metric} needs a positive unassigned or designated weight.")
+    for metric in metrics:
+        if metric in CAPACITY_METRICS and unassigned_weight == designated_weight == 0:
+            raise ValueError(
+                f"{metric} needs a positive unassigned or designated weight."
+            )
 
     raw_market = build_mid_market(problem, config)
     if raw_market.utility_student_count == 0:
         # Every student would be outside-only, so welfare is 0 and capacity
         # match the same constant for every zoning: the search is blind.
         raise ValueError(
-            f"The {metric} objective's MID market has no student with a "
+            f"The {label} objective's MID market has no student with a "
             "choice-utility row: the choice estimate does not cover the "
             "assignment year's students."
         )
-    if metric == "aa_capacity_match":
+    if "aa_capacity_match" in metrics:
         market = attendance_area_market(raw_market)
         seats = attendance_area_designation_seats(raw_market)
     else:
@@ -399,12 +459,15 @@ def mid_burst_scorer(
         max(1, int(options.get("workers", 1))),
         seats,
     )
-    return MidBurstScorer(
-        evaluator,
-        metric,
-        unassigned_weight=unassigned_weight,
-        designated_weight=designated_weight,
-    )
+    return {
+        metric: MidBurstScorer(
+            evaluator,
+            metric,
+            unassigned_weight=unassigned_weight,
+            designated_weight=designated_weight,
+        )
+        for metric in metrics
+    }
 
 
 class SchoolDistanceScorer:

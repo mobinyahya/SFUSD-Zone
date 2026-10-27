@@ -217,6 +217,9 @@ class OptimizationConfig:
     # capacity_match: the weights of an unassigned and a designated student.
     capacity_match_unassigned_weight: float = 1.0
     capacity_match_designated_weight: float = 1.0
+    # weighted_sum: ``{objective: weight}``, each term in its own units and a
+    # maximized term subtracted. ReCom only.
+    objective_weights: dict[str, float] | None = None
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
     boundary_prop: float = -1.0
@@ -578,6 +581,11 @@ class OptimizationConfig:
                 f"{self.recom_objective} needs a positive "
                 "unassigned or designated weight."
             )
+        from optimization.objectives import checked_objective_weights
+
+        self.objective_weights = checked_objective_weights(self.objective_weights)
+        if self.recom_objective == "weighted_sum" and self.objective_weights is None:
+            raise ValueError("The weighted_sum objective needs objective_weights.")
         if self.strategy == "pipeline":
             from optimization.pipeline import step_config
 
@@ -594,6 +602,8 @@ class OptimizationConfig:
                     "saa_welfare",
                     "capacity_match",
                     "aa_capacity_match",
+                    "fill_polarization",
+                    "weighted_sum",
                 }:
                     if effective.program_population != "All":
                         raise ValueError(
@@ -605,6 +615,8 @@ class OptimizationConfig:
                     "saa_welfare",
                     "capacity_match",
                     "aa_capacity_match",
+                    "fill_polarization",
+                    "weighted_sum",
                     "choice_welfare",
                 }:
                     if effective.data_scenario.filter(
@@ -846,6 +858,7 @@ class OptimizationConfig:
             "recom_objective": self.recom_objective,
             "capacity_match_unassigned_weight": self.capacity_match_unassigned_weight,
             "capacity_match_designated_weight": self.capacity_match_designated_weight,
+            "objective_weights": self.objective_weights,
             # The recom welfare scorer reads it here; the MID strategies read
             # their own copy.
             "mid_lottery_scale": self.mid_lottery_scale,
