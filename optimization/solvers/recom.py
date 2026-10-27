@@ -46,13 +46,16 @@ _CHAIN_BLOCK = 25
 # ``welfare`` the discrete MID program welfare, ``capacity_match`` the
 # weighted count of students left unassigned or designated by the MID match,
 # ``aa_capacity_match`` the same count with the match confined to
-# attendance-area seats.
+# attendance-area seats, ``fill_polarization`` how far zones' seats sit from
+# full or empty, and ``weighted_sum`` the sum of ``objective_weights`` terms.
 RECOM_OBJECTIVES = (
     "cut_edges",
     "school_distance",
     "welfare",
     "capacity_match",
     "aa_capacity_match",
+    "fill_polarization",
+    "weighted_sum",
 )
 
 ShortBurstBatchScorer = Callable[
