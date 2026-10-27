@@ -38,6 +38,7 @@ class MarketGenerator(SchoolChoiceMarket):
         "program": "metrics_by_program.csv",
         "zip_code": "metrics_by_zip_code.csv",
         "attendance_area": "metrics_by_attendance_area.csv",
+        "zone": "metrics_by_zone.csv",
         "citywide": "metrics_citywide.csv",
     }
     AGGREGATE_METRIC_GROUPS = {
@@ -51,6 +52,7 @@ class MarketGenerator(SchoolChoiceMarket):
         ],
         "zip_code": ["config_name", "zip_code"],
         "attendance_area": ["config_name", "attendance_area"],
+        "zone": ["config_name", "zone_id", "attendance_school_ids"],
         "citywide": ["config_name"],
     }
 
@@ -1965,6 +1967,21 @@ class MarketGenerator(SchoolChoiceMarket):
         assignment_df["designation"] = designation.astype(int)
         return assignment_df
 
+    def _zone_metric_report(self, evaluator, config_name, policy):
+        """Per-zone seat balance for a zone policy; empty for any other."""
+        from ..evaluation.match_evaluator import MatchEvaluator
+
+        building_block = self.config.get("zone-building-blocks")
+        if (
+            policy == "real_match"
+            or building_block not in MatchEvaluator.AREA_COLUMNS
+            or policy not in self.data_scenario.source_map("assignment.zones")
+        ):
+            return pd.DataFrame(columns=self.AGGREGATE_METRIC_GROUPS["zone"])
+        return evaluator.eval_assignment_metrics_by_zone(
+            config_name, self.zone_file(policy), building_block
+        )
+
     def _record_assignment_metric_reports(
         self, assignment_df, save_name, iteration, policy
     ):
@@ -1990,10 +2007,15 @@ class MarketGenerator(SchoolChoiceMarket):
         variant_name = self._metric_variant_name(save_name, iteration)
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
         if export_metrics:
+            include_local_metrics = self.config.get("export-local-metrics", False)
             reports = evaluator.eval_aggregate_metric_reports(
                 config_name,
-                include_local_metrics=self.config.get("export-local-metrics", False),
+                include_local_metrics=include_local_metrics,
             )
+            if include_local_metrics:
+                reports["zone"] = self._zone_metric_report(
+                    evaluator, config_name, policy
+                )
             self._record_aggregate_metric_reports(reports)
             self._frl_threshold_input_batches.append(
                 evaluator.eval_frl_threshold_inputs(config_name)
