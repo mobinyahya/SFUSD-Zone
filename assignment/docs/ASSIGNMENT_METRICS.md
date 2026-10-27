@@ -127,7 +127,10 @@ well when any of these local reports are needed:
   program table, including programs with no assignments.
 - `metrics_by_zip_code.csv` has one row per non-missing student `zipcode`.
 - `metrics_by_attendance_area.csv` has one row per non-missing student
-  `idschoolattendance`.
+  `idschoolattendance`. That is the district's map, not the policy's zones,
+  even under a generated zoning.
+- `metrics_by_zone.csv` has one row per zone of the policy's zone file, and no
+  rows for a policy without one (`real_match`, `home_based`). See below.
 
 Each program row includes the program, school, and program-type identifiers and
 the selected program-table capacity. Assigned counts include every placement
@@ -140,6 +143,19 @@ underage is `max((capacity - assigned) / capacity, 0)`. Top-k rates use all
 students assigned to the program as their denominator. Their numerator counts
 non-designated assignments with rank at or below k. Demographic columns provide
 separate non-designated and designated counts for each reported group.
+
+A zone row is the zone's attendance-area GE seat balance. `zone_id` is the zone
+file's 0-based row, and `attendance_school_ids` lists the attendance-area schools
+in it. Residents are the students whose `zone-building-blocks` area the row
+lists. They split into `own_zone_ge_assigned` (seated in a GE program of their
+own zone's attendance schools; `own_zone_ge_designated` of those designated),
+`unassigned` (`programno == 0`) and `assigned_elsewhere` (citywide schools,
+other programs, other zones). `ge_capacity` and `ge_assigned` are those GE
+programs' seats and placements from any residence, so `ge_assigned_nonresidents`
+and `empty_ge_seats` follow. `balance_if_unassigned_return` is
+`ge_capacity - own_zone_ge_assigned - unassigned`: negative is the overage if
+every unassigned resident fell back to their own zone. The unassigned are the
+only way to see excess demand, since DA never seats past capacity.
 
 The two residential-geography reports contain the complete full metric set,
 recomputed from the students residing in each geography. Program inventory and

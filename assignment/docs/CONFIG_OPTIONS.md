@@ -164,7 +164,8 @@ CSVs and the replayable config snapshot. When `export-aggregate-metrics` is
 enabled, `metrics_citywide.csv` is written directly under
 `assignment-folder/aggregate_metrics/`. With `export-local-metrics: true`, that
 directory also contains `metrics_by_program.csv`, `metrics_by_zip_code.csv`,
-and `metrics_by_attendance_area.csv`. Legacy input entries are rejected.
+`metrics_by_attendance_area.csv`, and `metrics_by_zone.csv`. Legacy input
+entries are rejected.
 
 With the default `reuse_assignments: true`, a complete existing policy run is
 loaded from the same assignment paths and DA is skipped. Completeness requires
