@@ -202,10 +202,23 @@ def _unknown_keys(payload: Mapping[str, Any], allowed: set[str], label: str) -> 
         raise ValueError(f"Unknown {label} keys: {unknown}.")
 
 
+# Parsed YAML keyed by (path, mtime, size). Every ``load_scenario`` re-reads the
+# 1,300-line base registry, and a sweep resolves hundreds of configs, so parsing
+# dominated config construction. Callers get a deep copy and may mutate it.
+_YAML_CACHE: dict[tuple[str, int, int], Any] = {}
+
+
 def _load_yaml(path: Path, label: str) -> dict[str, Any]:
     try:
-        with path.open("r", encoding="utf-8") as stream:
-            payload = yaml.safe_load(stream)
+        stat = path.stat()
+        key = (str(path), stat.st_mtime_ns, stat.st_size)
+        if key in _YAML_CACHE:
+            payload = _YAML_CACHE[key]
+        else:
+            with path.open("r", encoding="utf-8") as stream:
+                payload = yaml.safe_load(stream)
+            _YAML_CACHE[key] = payload
+        payload = copy.deepcopy(payload)
     except OSError as exc:
         raise ValueError(f"Could not read {label} YAML {path}: {exc}.") from exc
     except yaml.YAMLError as exc:

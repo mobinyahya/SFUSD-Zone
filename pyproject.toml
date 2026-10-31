@@ -36,11 +36,14 @@ sfusd-match = "assignment.student_assignment.cli:cli"
 dev = [
     "pandas-stubs~=2.3.3",
     "pytest>=8.0.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.15.20",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# Parallel runs: `pytest -n 6`. loadgroup keeps xdist_group-marked tests on one worker.
+addopts = "--dist loadgroup"
 markers = [
     "real_data: requires shared SFUSD source data or prebuilt graph caches",
 ]
