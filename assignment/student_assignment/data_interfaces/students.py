@@ -253,20 +253,19 @@ class Students:
 
         tmp = tmp.merge(codes, how="outer", on="key")
 
-        def get_distance(row):
-            return (
-                6371.01
-                * np.arccos(
-                    np.sin(row["lat"] * np.pi / 180)
-                    * np.sin(row["latitude"] * np.pi / 180)
-                    + np.cos(row["lat"] * np.pi / 180)
-                    * np.cos(row["latitude"] * np.pi / 180)
-                    * np.cos((row["lon"] - row["longitude"]) * np.pi / 180)
-                )
-                * 0.621371
+        # Great-circle miles, column-wise: a row-wise ``apply`` over this
+        # student x program cross join dominated market construction.
+        lat, latitude = tmp["lat"], tmp["latitude"]
+        tmp["distance"] = (
+            6371.01
+            * np.arccos(
+                np.sin(lat * np.pi / 180) * np.sin(latitude * np.pi / 180)
+                + np.cos(lat * np.pi / 180)
+                * np.cos(latitude * np.pi / 180)
+                * np.cos((tmp["lon"] - tmp["longitude"]) * np.pi / 180)
             )
-
-        tmp["distance"] = tmp.apply(get_distance, axis=1)
+            * 0.621371
+        )
 
         table = pd.pivot_table(
             tmp,
