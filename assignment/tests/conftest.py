@@ -47,3 +47,19 @@ def hermetic_user_config():
     else:
         os.environ[CONFIG_USER_ENV] = original_user
     PYTEST_CONFIG_PATH.unlink(missing_ok=True)
+
+
+# tryfirst: xdist reads the marker in its own modifyitems hook.
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items) -> None:
+    """Run this package on a single pytest-xdist worker.
+
+    The legacy unit tests write their generated CSVs to fixed paths under
+    tests/test_files and the working directory, and the fixture above rewrites
+    configs/_pytest.config.yaml, so two workers would clobber each other's
+    files. ``--dist loadgroup`` (pyproject addopts) keeps one group together.
+    """
+    here = Path(__file__).parent
+    for item in items:
+        if here in item.path.parents:
+            item.add_marker(pytest.mark.xdist_group("assignment-shared-files"))

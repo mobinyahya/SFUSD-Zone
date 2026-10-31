@@ -74,12 +74,14 @@ def sfusd_source_run() -> SourceRun:
     except (FileNotFoundError, OSError, ImportError) as exc:
         pytest.skip(f"SFUSD source data unavailable: {exc}")
 
+    # The constraint checks need any feasible zoning, not an optimal one: stop
+    # at the first (~3 s) instead of optimizing to the time limit with gap 0.
     solution = get_solver(
         "cp_int",
         solve_time_limit=SOLVE_SECONDS,
         workers=1,
         seed=config.seed,
-    ).solve(problem)
+    ).enumerate_solutions(problem, 1)[0]
 
     assert solution.status in {"OPTIMAL", "FEASIBLE"}, (
         f"source-backed fixture did not solve: status={solution.status}"

@@ -567,7 +567,9 @@ def test_submit_rejects_tasks_requiring_more_than_one_node(tmp_path):
     assert calls == []
 
 
-def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkeypatch):
+def test_optimization_and_metrics_are_separate_persisted_phases(
+    tmp_path, monkeypatch, shared_cache_root
+):
     problem = make_grid_problem(3, 3)
     problem.level = LevelSpec("Block", 0)
     solution = ZoneSolution(
@@ -587,7 +589,7 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
         overage=5.0,
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
         },
     )
     task = BenchmarkTask(
@@ -684,12 +686,14 @@ def test_optimization_and_metrics_are_separate_persisted_phases(tmp_path, monkey
     assert (run_dir / "zoning_config.yaml").exists()
 
 
-def test_optimization_failure_persists_error_artifacts(tmp_path, monkeypatch):
+def test_optimization_failure_persists_error_artifacts(
+    tmp_path, monkeypatch, shared_cache_root
+):
     config = OptimizationConfig(
         workers=1,
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
         },
     )
     task = BenchmarkTask(
@@ -726,7 +730,7 @@ def test_optimization_failure_persists_error_artifacts(tmp_path, monkeypatch):
 
 
 def test_optimization_error_marks_its_assignment_targets_skipped(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, shared_cache_root
 ):
     from benchmark.assignment import planned_stage_names
 
@@ -736,7 +740,7 @@ def test_optimization_error_marks_its_assignment_targets_skipped(
         levels=["BlockGroup_1", "BlockGroup_0"],
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
         },
     )
     task = BenchmarkTask(
