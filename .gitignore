@@ -111,9 +111,8 @@ runs_block2/
 # Hydra run directories
 assignment/outputs/
 
-# LaTeX build artifacts
-paper/*
-!paper/paper.tex
+# Paper, kept locally but not in the repo
+paper/
 
 # One-off research probes, kept locally but not on main
 analysis/probe_*.py
