@@ -373,6 +373,9 @@ def solve_objective(
             problem
         )
     elif method in _HEURISTICS:
+        # Built before the solver's clock starts, so it reports what the build
+        # took for wall-clock accounting to charge.
+        prepared = time.monotonic()
         scorer = heuristic_scorer(problem, objective, options)
         try:
             solution = get_solver(method, **options).solve_with_scorer(
@@ -380,6 +383,7 @@ def solve_objective(
                 scorer,
                 objective_kind=objective,
                 maximize=spec.maximize,
+                prepared_seconds=time.monotonic() - prepared,
             )
             describe = getattr(scorer, "describe", None)
             if solution.feasible and describe is not None:

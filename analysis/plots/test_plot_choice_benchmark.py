@@ -24,6 +24,7 @@ from analysis.plots.plot_choice_benchmark import (
     _measure_panel,
     _saa_sample_count,
     append_baseline,
+    default_baseline,
     attach_best_stage,
     iter_results,
     plot_strategy_comparison,
@@ -113,7 +114,7 @@ def test_attach_best_stage_without_a_replay_keeps_final_zonings(tmp_path: Path):
 
 
 def test_append_baseline_adds_one_variant(tmp_path: Path):
-    csv = tmp_path / "relaxed_recom_baseline.csv"
+    csv = tmp_path / "recom_chain_baseline.csv"
     chain_frame().to_csv(csv, index=False)
 
     combined = append_baseline(runs_frame(), csv)
@@ -130,6 +131,14 @@ def test_append_baseline_adds_one_variant(tmp_path: Path):
         [100.0 * 650.0 / 1100.0, 100.0 * 750.0 / 1100.0]
     )
     assert len(combined) == len(runs_frame()) + 2
+
+
+def test_default_baseline_falls_back_to_the_pre_rename_csv(tmp_path: Path):
+    assert default_baseline(tmp_path) == tmp_path / "recom_chain_baseline.csv"
+    (tmp_path / "relaxed_recom_baseline.csv").write_text("")
+    assert default_baseline(tmp_path) == tmp_path / "relaxed_recom_baseline.csv"
+    (tmp_path / "recom_chain_baseline.csv").write_text("")
+    assert default_baseline(tmp_path) == tmp_path / "recom_chain_baseline.csv"
 
 
 def test_append_baseline_ignores_missing_or_unusable_csv(tmp_path: Path):
@@ -190,7 +199,7 @@ def test_dense_row_is_summarized_rather_than_drawn_point_by_point():
 
 def test_append_baseline_needs_budget_welfare_to_rank_against(tmp_path: Path):
     """Budget welfare is the ranking measure, so the row cannot be placed without it."""
-    csv = tmp_path / "relaxed_recom_baseline.csv"
+    csv = tmp_path / "recom_chain_baseline.csv"
     chain_frame().to_csv(csv, index=False)
     runs = runs_frame().drop(columns=["mid_welfare", "budget_pct_of_best"])
 
@@ -393,7 +402,7 @@ def test_single_trace_separates_runs_that_share_a_seed():
 
 def test_append_baseline_warns_when_the_chain_misses_centroids(tmp_path, capsys):
     """A chain from an earlier sweep covers only the centroids the two share."""
-    csv = tmp_path / "relaxed_recom_baseline.csv"
+    csv = tmp_path / "recom_chain_baseline.csv"
     chain_frame().to_csv(csv, index=False)  # 6-zone-3 only
     runs = pd.concat(
         [runs_frame(), runs_frame().assign(centroid="6-zone-9", path=["c", "d"])],

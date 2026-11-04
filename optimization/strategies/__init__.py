@@ -21,7 +21,6 @@ from optimization.strategies import (  # noqa: E402,F401
     mid_decomp,
     saa,
     direct_samples,
-    short_bursts_choice,
     priced_access,
     stable_cutoff,
     dantzig_wolfe,

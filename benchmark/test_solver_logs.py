@@ -125,6 +125,73 @@ def test_infeasible_states_improve_by_unweighted_lagrangian(tmp_path) -> None:
     assert second["unweighted_lagrangian"] == pytest.approx(12.0)
 
 
+def test_feasible_states_improve_by_the_logged_objective(tmp_path) -> None:
+    log = HeuristicProgressLog(
+        str(tmp_path / "progress.jsonl"),
+        solver="recom",
+        level="Block_2",
+        labels=("capacity_upper",),
+        start=0.0,
+        objective="welfare",
+        maximize=True,
+    )
+
+    # Higher welfare is better, whatever the boundary cost does.
+    assert log.record(
+        feasible=True, boundary_cost=5.0, violations=(0.0,), objective=10.0
+    )
+    assert not log.record(
+        feasible=True, boundary_cost=1.0, violations=(0.0,), objective=9.0
+    )
+    assert log.record(
+        feasible=True,
+        boundary_cost=50.0,
+        violations=(0.0,),
+        objective=12.0,
+        elapsed_seconds=3.5,
+    )
+    # A feasible state cannot be ranked without its objective value.
+    with pytest.raises(ValueError, match="welfare"):
+        log.record(feasible=True, boundary_cost=1.0, violations=(0.0,))
+    log.finish()
+
+    path = str(tmp_path / "progress.jsonl")
+    header = json.loads(open(path).readline())
+    assert header["objective"] == "welfare"
+    assert header["objective_sense"] == "maximize"
+    improvements = [r for r in parse_recom_log(path) if r["record"] == "improvement"]
+    assert [r["incumbent"] for r in improvements] == [10.0, 12.0]
+    assert improvements[-1]["elapsed_seconds"] == 3.5
+
+
+def test_recom_logs_a_batch_scored_objective(tmp_path) -> None:
+    def scorer(assignments, base=None):
+        # Rewards zone 0 holding more nodes: unrelated to the boundary cost.
+        return tuple(
+            float(sum(zone == 0 for zone in a.values())) for a in assignments
+        )
+
+    solution = get_solver(
+        "recom",
+        save_solver_logs=True,
+        output_dir=str(tmp_path),
+        recom_iterations=300,
+        solve_time_limit=30,
+        seed=3,
+    ).solve_with_scorer(
+        skewed_frl_problem(frl_dev=0.5), scorer, objective_kind="test_score"
+    )
+
+    rows = parse_recom_log(str(tmp_path / solution.metadata["solver_log_path"]))
+    feasible = [r for r in rows if r["record"] == "improvement" and r["feasible"]]
+    assert feasible
+    scores = [r["incumbent"] for r in feasible]
+    assert all(later > earlier for earlier, later in zip(scores, scores[1:]))
+    assert scores[-1] == solution.objective
+    moves = [r["iteration"] for r in rows if r["record"] == "improvement"]
+    assert moves == sorted(moves)
+
+
 def test_log_rejects_mismatched_violation_length(tmp_path) -> None:
     log = HeuristicProgressLog(
         str(tmp_path / "progress.jsonl"),

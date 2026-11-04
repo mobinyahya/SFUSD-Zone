@@ -14,6 +14,14 @@ continuous chain, which with ``recom_reject_infeasible`` is classic ReCom.
 How pairs and cuts are chosen, and how constraint weights adapt, is the
 ``Policy`` of ``optimization.solvers.recom_policy``.
 
+``budget_accounting`` says what ``solve_time_limit`` pays for, as it does
+for the iterative strategies (``optimization.strategies.budget``):
+``wall_clock`` (the default) charges the setup - the initial state and its
+hint, and building the objective, a choice objective's market included - and
+``solver_time`` charges only the walk, its batch scoring included. A scorer
+built before the solve is called reports its build time as
+``prepared_seconds``, which ``wall_clock`` charges too.
+
 Centroids set the number of zones and seed the Voronoi hint, but they and
 distance-derived candidates are not hard constraints here; explicit candidate
 and fixed assignments are.
@@ -914,12 +922,18 @@ class ReComSolver(Solver):
         *,
         objective_kind: str,
         maximize: bool = True,
+        prepared_seconds: float = 0.0,
     ) -> ZoneSolution:
-        """Rank feasible partitions by an externally owned batch scorer."""
+        """Rank feasible partitions by an externally owned batch scorer.
+
+        ``prepared_seconds`` is what building ``scorer`` took; ``wall_clock``
+        accounting charges it against the time limit.
+        """
         return self._run(
             problem,
             lambda: _BurstObjective(objective_kind, scorer, maximize=maximize),
             close_objective=False,
+            prepared_seconds=prepared_seconds,
         )
 
     def sample_feasible(self, problem: ZoneProblem, visitor) -> ZoneSolution:
@@ -946,20 +960,45 @@ class ReComSolver(Solver):
         close_objective=True,
         visitor=None,
         settings: ReComSettings | None = None,
+        prepared_seconds: float = 0.0,
     ) -> ZoneSolution:
         if problem.choice_objective is not None:
             raise NotImplementedError(
                 "recom does not support iterative choice objectives; use cp_int, cp_bool, or mip."
             )
         settings = settings or ReComSettings.from_options(self.options)
+        # Imported here: the strategies package imports this module.
+        from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
+
+        accounting = str(self.options.get("budget_accounting", "wall_clock"))
+        if accounting not in BUDGET_ACCOUNTING_MODES:
+            raise ValueError(
+                "recom budget_accounting must be one of: "
+                f"{', '.join(BUDGET_ACCOUNTING_MODES)}."
+            )
+        prepared_seconds = float(prepared_seconds)
+        if not math.isfinite(prepared_seconds) or prepared_seconds < 0:
+            raise ValueError("prepared_seconds must be finite and non-negative.")
         start = time.monotonic()
         try:
             context, state, hint_metadata = self._initial_state(problem)
         except _HintError as exc:
             return self._error_solution(problem, start, str(exc), exc.metadata)
-        # Built inside the budget: a choice objective's market is part of
-        # what the solve costs under wall-clock accounting.
         objective = objective_factory()
+        setup_seconds = time.monotonic() - start
+        # When the time limit started running: before the setup and any
+        # preparation under wall-clock accounting, after both under solver time.
+        budget_start = (
+            start - prepared_seconds
+            if accounting == "wall_clock"
+            else time.monotonic()
+        )
+        hint_metadata = {
+            **hint_metadata,
+            "budget_accounting": accounting,
+            "recom_setup_seconds": setup_seconds,
+            "recom_prepared_seconds": prepared_seconds,
+        }
         try:
             return self._walk(
                 problem,
@@ -970,6 +1009,7 @@ class ReComSolver(Solver):
                 objective,
                 visitor,
                 hint_metadata,
+                budget_start,
             )
         finally:
             if close_objective:
@@ -985,12 +1025,13 @@ class ReComSolver(Solver):
         objective: _BurstObjective,
         visitor,
         hint_metadata: dict[str, object],
+        budget_start: float,
     ) -> ZoneSolution:
-        max_moves, deadline = self._limits(start)
+        max_moves, deadline = self._limits(budget_start)
         rng = random.Random(int(self.options.get("seed", 42)))
         kernel = _ReComKernel(context, rng, deadline, tree_sampler=settings.tree_sampler)
         policy = Policy(context, rng, settings, objective_local=objective.local)
-        log = self._open_log(problem, context, start, settings)
+        log = self._open_log(problem, context, start, settings, objective)
         tally = _Tally()
         initial = _snapshot(current, policy.merit(current))
         objective.prime(context, (initial,))
@@ -1019,6 +1060,9 @@ class ReComSolver(Solver):
             walk = current.clone() if restarting else current
             walk_merit = policy.walk_merit(walk, base.merit)
             samples: list[_Snapshot] = []
+            # (sample, move, seconds): logged once the burst is scored, since a
+            # non-local objective is only known after ``prime``.
+            visited: list[tuple[_Snapshot, int, float]] = []
             for _ in range(settings.burst_length or _CHAIN_BLOCK):
                 if not budget():
                     break
@@ -1045,11 +1089,8 @@ class ReComSolver(Solver):
                 walk_merit = after
                 samples.append(sample)
                 if log is not None:
-                    log.record(
-                        feasible=sample.feasible,
-                        boundary_cost=sample.boundary_cost,
-                        violations=sample.violations,
-                        iteration=tally.attempted_moves,
+                    visited.append(
+                        (sample, tally.attempted_moves, time.monotonic() - start)
                     )
                 min_violation = min(min_violation, sum(sample.violations))
                 if sample.feasible and first_feasible is None:
@@ -1059,6 +1100,15 @@ class ReComSolver(Solver):
                     break
 
             objective.prime(context, samples, base)
+            for sample, move, elapsed in visited:
+                log.record(
+                    feasible=sample.feasible,
+                    boundary_cost=sample.boundary_cost,
+                    violations=sample.violations,
+                    iteration=move,
+                    objective=objective.value(sample) if sample.feasible else None,
+                    elapsed_seconds=elapsed,
+                )
             for sample in samples:
                 if sample.feasible and _better(sample, best, objective.cost):
                     best = sample
@@ -1154,7 +1204,7 @@ class ReComSolver(Solver):
         )
 
     def _open_log(
-        self, problem, context, start, settings
+        self, problem, context, start, settings, objective: _BurstObjective
     ) -> HeuristicProgressLog | None:
         path = self._next_solver_log_path(problem, suffix=".jsonl")
         if path is None:
@@ -1165,10 +1215,16 @@ class ReComSolver(Solver):
             level=getattr(getattr(problem, "level", None), "name", "unknown_level"),
             labels=context.violation_labels(),
             start=start,
+            objective="boundary_cost" if objective.local else objective.kind,
+            maximize=objective.sign < 0,
             header={
                 "num_zones": problem.Z,
                 "weighted_edges": bool(problem.weight_edges),
-                "objective_unit": "meter" if problem.weight_edges else "cut_edges",
+                "objective_unit": (
+                    ("meter" if problem.weight_edges else "cut_edges")
+                    if objective.local
+                    else objective.kind
+                ),
                 "penalty_scale": "percent",
                 **settings.as_options(),
             },

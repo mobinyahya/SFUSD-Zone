@@ -34,7 +34,6 @@ def test_only_supported_strategies_are_registered():
         "priced_access",
         "recursive",
         "saa",
-        "short_bursts_choice",
         "single",
         "stable_cutoff",
     ]
@@ -191,7 +190,6 @@ def test_welfare_strategies_switch_off_the_capacity_band():
             "mid_decomp",
             "saa",
             "direct_samples",
-            "short_bursts_choice",
             "stable_cutoff",
         }
         assert strategy.capacity_balance is not welfare
