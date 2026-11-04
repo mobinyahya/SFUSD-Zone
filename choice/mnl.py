@@ -25,6 +25,12 @@ from choice.objective import ChoiceCut, ChoiceEvaluation, ChoiceModel, ChoiceTer
 from optimization.data import loaders as optimization_loaders
 from optimization.problem import ZoneProblem
 
+# Loaded (students, estimate, school columns) by scenario source fingerprint,
+# which covers source contents and filters. Metrics build a fresh model per run,
+# so a sweep's metric pass otherwise re-read both tables (~5 s) for every run.
+# The frames are read-only once loaded: ``_merged`` joins into a new frame.
+_LOADED_TABLES: dict[str, tuple[pd.DataFrame, pd.DataFrame, dict[int, list[str]]]] = {}
+
 
 @dataclass(frozen=True)
 class _PreparedZoningData:
@@ -215,6 +221,15 @@ class MNLChoiceModel(ChoiceModel):
         if self.utility_df is not None and self.student_df is not None:
             return
 
+        key = self.data.source_fingerprint
+        if key not in _LOADED_TABLES:
+            _LOADED_TABLES[key] = self._load_tables()
+        self.student_df, self.utility_df, self.school_to_cols = _LOADED_TABLES[key]
+        self._warn_on_estimate_coverage()
+
+    def _load_tables(
+        self,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, list[str]]]:
         student_df = load_student_records(
             self.data,
             "assignment.students",
@@ -232,11 +247,7 @@ class MNLChoiceModel(ChoiceModel):
         school_to_cols: dict[int, list[str]] = {}
         for col in utility_df.columns:
             school_to_cols.setdefault(program_school(col), []).append(col)
-
-        self.utility_df = utility_df
-        self.student_df = student_df
-        self.school_to_cols = school_to_cols
-        self._warn_on_estimate_coverage()
+        return student_df, utility_df, school_to_cols
 
     _COVERAGE_WARNING_THRESHOLD = 0.5
 

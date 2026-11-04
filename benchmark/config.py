@@ -410,6 +410,8 @@ def optimization_config_hash(
         semantic.pop("enumerated_solutions", None)
     if not _contains_value(semantic, "feasible"):
         semantic.pop("feasible_hint_time_limit", None)
+    if semantic.get("objective_weights") is None:
+        semantic.pop("objective_weights", None)
     if semantic.get("hint_zoning") is None:
         semantic.pop("hint_zoning", None)
     else:

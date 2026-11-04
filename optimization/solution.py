@@ -3,7 +3,7 @@
 A ``ZoneSolution`` is what every solver returns and what every strategy passes
 around. It pairs a node->zone assignment with solver metadata and the
 ``ZoneProblem`` it solved, and knows how to validate its own contiguity, expand
-to geographic-unit ids, and serialize. Most assignments cover the full graph;
+to geographic-unit ids, and serialize (to ``optimization.run_archive``). Most assignments cover the full graph;
 single-zone selection assignments omit nodes outside the selected zone and set
 ``metadata["partial_assignment"]``.
 """
@@ -11,7 +11,6 @@ single-zone selection assignments omit nodes outside the selected zone and set
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import os
 from collections.abc import Mapping
@@ -102,101 +101,28 @@ class ZoneSolution:
     # ------------------------------------------------------------------ #
     # serialization
     # ------------------------------------------------------------------ #
-    def save(self, folder: str, config: Optional[Mapping] = None) -> None:
-        """Write ``zone_dict_<level>.json`` and ``solution_<level>.json``.
+    def save(
+        self,
+        folder: str,
+        config: Optional[Mapping] = None,
+        stage_name: Optional[str] = None,
+    ) -> str:
+        """Write this zoning as a one-stage ``zonings.json.xz`` in ``folder``.
 
         ``config`` is the snapshot of the config that produced this zoning. It
-        is embedded in ``solution_<level>.json`` and written beside the zoning
-        as ``zoning_config.yaml``, which ``optimization.run`` accepts as is, so
-        a zoning copied out of its run still says how it was made.
+        is embedded in the archive and written beside it as
+        ``zoning_config.yaml``, which ``optimization.run`` accepts as is, so a
+        zoning copied out of its run still says how it was made. A run with
+        several stages saves them together through
+        :func:`optimization.run_archive.save_zonings` instead.
         """
-        os.makedirs(folder, exist_ok=True)
-        level = self.level.name
+        from optimization.run_archive import save_zonings
 
-        zone_dict_path = os.path.join(folder, f"zone_dict_{level}.json")
-        with open(zone_dict_path, "w") as f:
-            json.dump({str(k): int(v) for k, v in self.assignment.items()}, f)
-
-        area_path = os.path.join(folder, f"zone_dict_area_{level}.json")
-        with open(area_path, "w") as f:
-            json.dump({str(k): int(v) for k, v in self.area_assignment().items()}, f)
-
-        self._save_solver_progress(folder, level)
-
-        info = {
-            "level": level,
-            "graph_fingerprint": graph_fingerprint(self.problem.G),
-            "status": self.status,
-            "objective": self.objective,
-            "wall_time": self.wall_time,
-            "num_zones": self.problem.Z,
-            "centroids": list(self.problem.centroids),
-            "contiguous": self.is_contiguous() if self.feasible else None,
-            "metadata": self.metadata,
-        }
+        name = stage_name or self.level.name
+        path = save_zonings(folder, [self], [name], config=config, final_stage=name)
         if config is not None:
-            info["config"] = _json_ready(config)
             save_zoning_config(config, folder)
-        info_path = os.path.join(folder, f"solution_{level}.json")
-        with open(info_path, "w") as f:
-            json.dump(info, f, indent=2)
-
-    def _save_solver_progress(self, folder: str, level: str) -> None:
-        if not self.solver_progress:
-            if self.metadata.get("solver_progress_enabled"):
-                self.metadata["solver_progress_count"] = 0
-            return
-
-        progress_id = str(
-            self.metadata.get("solver_progress_id")
-            or _safe_filename(f"{level}_{self.metadata.get('solver', 'solver')}")
-        )
-        rel_dir = os.path.join("solver_progress", progress_id)
-        progress_dir = os.path.join(folder, rel_dir)
-        os.makedirs(progress_dir, exist_ok=True)
-
-        log_name = "progress.jsonl"
-        log_path = os.path.join(progress_dir, log_name)
-        nodes = list(self.problem.nodes)
-        with open(log_path, "w", encoding="utf-8") as log_file:
-            for idx, entry in enumerate(self.solver_progress):
-                if len(entry.assignment) != len(nodes):
-                    raise ValueError(
-                        "Solver progress assignment length does not match problem nodes."
-                    )
-                assignment = {
-                    int(node): int(zone) for node, zone in zip(nodes, entry.assignment)
-                }
-                zone_name = f"zone_dict_{level}_{idx:04d}.json"
-                area_name = f"zone_dict_area_{level}_{idx:04d}.json"
-                with open(os.path.join(progress_dir, zone_name), "w") as f:
-                    json.dump({str(k): int(v) for k, v in assignment.items()}, f)
-                area_assignment = self._area_assignment_for(assignment)
-                with open(os.path.join(progress_dir, area_name), "w") as f:
-                    json.dump({str(k): int(v) for k, v in area_assignment.items()}, f)
-
-                row = {
-                    "solution_index": idx,
-                    "objective": entry.objective,
-                    "elapsed_seconds": entry.elapsed_seconds,
-                    "assignment_path": zone_name,
-                    "area_assignment_path": area_name,
-                }
-                if entry.iteration is not None:
-                    row["iteration"] = entry.iteration
-                json.dump(row, log_file, sort_keys=True)
-                log_file.write("\n")
-
-        self.metadata.update(
-            {
-                "solver_progress_enabled": True,
-                "solver_progress_id": progress_id,
-                "solver_progress_count": len(self.solver_progress),
-                "solver_progress_format": "jsonl",
-                "solver_progress_path": os.path.join(rel_dir, log_name),
-                "solver_progress_dir": rel_dir,
-            }
-        )
+        return path
 
 
 ZONING_CONFIG_FILENAME = "zoning_config.yaml"
@@ -241,8 +167,3 @@ def _yaml_ready(value):
     if hasattr(value, "item"):
         return value.item()
     return value
-
-
-def _safe_filename(value: str) -> str:
-    safe = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value)
-    return safe.strip("_") or "solver_progress"

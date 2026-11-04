@@ -46,6 +46,7 @@ OPTION_FIELDS = frozenset(
         *(f"recom_{f.name}" for f in fields(ReComSettings)),
         "capacity_match_unassigned_weight",
         "capacity_match_designated_weight",
+        "objective_weights",
         "school_distance_area_weight",
         "school_distance_student_weight",
         "mid_lottery_scale",
@@ -318,7 +319,14 @@ def step_config(
             if objective_spec.compactness_objective == "school_distance"
             else objective
             if objective
-            in {"cut_edges", "school_distance", "capacity_match", "aa_capacity_match"}
+            in {
+                "cut_edges",
+                "school_distance",
+                "capacity_match",
+                "aa_capacity_match",
+                "fill_polarization",
+                "weighted_sum",
+            }
             else "cut_edges"
         ),
         solve_time_limits=[

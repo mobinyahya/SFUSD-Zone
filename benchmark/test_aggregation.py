@@ -8,6 +8,7 @@ import networkx as nx
 import pytest
 import yaml
 
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
@@ -294,8 +295,8 @@ def test_optimization_hash_ignores_cache_root_but_snapshot_retains_it(tmp_path):
     assert optimization_config_hash(first) == optimization_config_hash(second)
 
 
-def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_stage_artifacts_reconstruct_and_aggregate(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
 
     loaded, _, manifest = load_solutions(str(run_dir), dataset=FakeDataset(problem))
     assert manifest["stages"][0]["name"] == "stage_00_Block_0"
@@ -322,7 +323,7 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path):
     assert (tmp_path / "stages.csv").exists()
 
 
-def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
+def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path, shared_cache_root):
     problem = make_grid_problem(3, 3)
     config = OptimizationConfig(
         levels=["BlockGroup_0"],
@@ -333,7 +334,7 @@ def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
         seed=3,
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "cache")}},
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
         },
     )
     solutions = config.make_strategy().run(FakeDataset(problem), config.make_solver())
@@ -348,7 +349,11 @@ def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
 
     assert len(records) == 4
     assert len({record["path"] for record in records}) == 4
-    assert all((tmp_path / record["path"]).is_dir() for record in records)
+    archive = run_archive.read_zonings(tmp_path)
+    assert [stage["name"] for stage in archive["stages"]] == stage_names
+    assert [run_archive.node_assignment(stage) for stage in archive["stages"]] == [
+        solution.assignment for solution in solutions
+    ]
     assert records[-1]["metadata"]["enumerated_solution_selected"] is True
     assert metrics.run["selection"] == "seeded_random_enumerated_solution"
     assert metrics.metrics["frl_mad"] == pytest.approx(0.0)
@@ -358,8 +363,10 @@ def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path):
     )
 
 
-def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_saved_area_assignment_reconstructs_on_relabeled_graph(
+    tmp_path, shared_cache_root
+):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     mapping = {node: node + 100 for node in problem.G}
     relabeled = nx.relabel_nodes(problem.G, mapping)
     changed_problem = replace(
@@ -378,7 +385,7 @@ def test_saved_area_assignment_reconstructs_on_relabeled_graph(tmp_path):
     }
 
 
-def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
+def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path, shared_cache_root):
     run_dir = tmp_path / "single-zone"
     run_dir.mkdir()
     base_problem = make_grid_problem(3, 3)
@@ -407,7 +414,7 @@ def test_single_zone_stage_reconstructs_explicit_centroid(tmp_path):
         workers=1,
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
         },
     )
     config_dict = optimization_config_to_dict(config)
@@ -446,8 +453,8 @@ def test_saved_config_rejects_legacy_level_to_split():
         )
 
 
-def test_regenerate_metrics_rewrites_result_payload(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_regenerate_metrics_rewrites_result_payload(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     write_json(
         os.path.join(run_dir, RESULT_FILENAME), {"status": "STALE", "metrics": {}}
     )
@@ -463,8 +470,8 @@ def test_regenerate_metrics_rewrites_result_payload(tmp_path):
     assert summary.loc[0, "num_zones"] == 2
 
 
-def test_regenerate_metrics_keeps_completed_at(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_regenerate_metrics_keeps_completed_at(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     manifest_path = run_dir / MANIFEST_FILENAME
     completed_at = json.loads(manifest_path.read_text(encoding="utf-8"))["completed_at"]
 
@@ -478,8 +485,8 @@ def test_regenerate_metrics_keeps_completed_at(tmp_path):
     assert manifest["metrics_regenerated_at"]
 
 
-def test_regenerate_metrics_failure_leaves_saved_files(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_regenerate_metrics_failure_leaves_saved_files(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     regenerate_metrics(
         str(tmp_path),
         dataset_factory=lambda config, manifest: FakeDataset(problem),
@@ -502,8 +509,8 @@ def test_regenerate_metrics_failure_leaves_saved_files(tmp_path):
     assert (manifest_path.read_bytes(), result_path.read_bytes()) == saved
 
 
-def test_regenerate_metrics_completes_a_metrics_error_run(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_regenerate_metrics_completes_a_metrics_error_run(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     manifest_path = run_dir / MANIFEST_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest.update(
@@ -528,8 +535,8 @@ def test_regenerate_metrics_completes_a_metrics_error_run(tmp_path):
     assert manifest["final_stage"] == "stage_00_Block_0"
 
 
-def test_regenerate_metrics_skips_failed_optimizations(tmp_path):
-    run_dir, problem = _write_synthetic_run(tmp_path)
+def test_regenerate_metrics_skips_failed_optimizations(tmp_path, shared_cache_root):
+    run_dir, problem = _write_synthetic_run(tmp_path, shared_cache_root)
     manifest_path = run_dir / MANIFEST_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest.update(status="ERROR", phase="optimization_error")
@@ -544,8 +551,8 @@ def test_regenerate_metrics_skips_failed_optimizations(tmp_path):
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == manifest
 
 
-def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path):
-    run_dir, _ = _write_synthetic_run(tmp_path)
+def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path, shared_cache_root):
+    run_dir, _ = _write_synthetic_run(tmp_path, shared_cache_root)
     manifest_path = run_dir / MANIFEST_FILENAME
     result_path = run_dir / RESULT_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -563,7 +570,7 @@ def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path):
     assert (tmp_path / ".benchmark-aggregate.lock").exists()
 
 
-def _write_synthetic_run(tmp_path):
+def _write_synthetic_run(tmp_path, cache_root):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     problem = make_grid_problem(3, 3)
@@ -595,7 +602,7 @@ def _write_synthetic_run(tmp_path):
         workers=1,
         data={
             "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(tmp_path / "graphs")}},
+            "overrides": {"roots": {"cache": str(cache_root)}},
         },
     )
     config_dict = optimization_config_to_dict(config)
@@ -614,7 +621,6 @@ def _write_synthetic_run(tmp_path):
         stage_names_for(solutions, config),
     )
     metrics = MetricsCalculator(solutions, config=config).compute()
-    solution.save(str(run_dir))
     write_json(
         os.path.join(run_dir, RESULT_FILENAME),
         result_payload_for(

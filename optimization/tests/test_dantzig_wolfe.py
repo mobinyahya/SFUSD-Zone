@@ -499,6 +499,9 @@ def test_strategy_end_to_end(monkeypatch, objective):
         dw_objective=objective,
         dw_recom_samples=10,
         dw_recom_chains=2,
+        # A 2x2 grid has fewer than ten distinct zonings, so sampling never hits
+        # its target and would otherwise run to its 15 s share of the budget.
+        dw_recom_time_limit=1.0,
         dw_pricing_parallel=False,
         hints="voronoi",
         mid_lottery_scale=5,

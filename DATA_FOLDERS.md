@@ -367,13 +367,11 @@ another directory. A run can contain:
 
 ```text
 result.json
-solution_<level>.json
-zone_dict_<level>.json
-zone_dict_area_<level>.json
+zonings.json.xz
+zoning_config.yaml
 visualization_<stage>.png
-stages/<stage-name>/...
 solver_logs/...
-solver_progress/...
+solver_progress.json.xz
 ```
 
 The output config snapshot retains the strict `data` block. Spatial metrics

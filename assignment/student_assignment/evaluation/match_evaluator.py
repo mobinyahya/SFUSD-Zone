@@ -127,6 +127,15 @@ class _FullReportAggregates:
 
 
 class MatchEvaluator:
+    #: Zone building block -> (school column, student column) naming its areas.
+    AREA_COLUMNS = {
+        "attendance_area": ("school_id", "idschoolattendance"),
+        "block": ("Block", "census_block"),
+        "block_group": ("BlockGroup", "census_blockgroup"),
+        "tract": ("Tract", "census_tract"),
+    }
+    ZONE_REPORT_GROUPS = ["config_name", "zone_id", "attendance_school_ids"]
+
     def __init__(
         self,
         student_data,
@@ -2117,15 +2126,9 @@ class MatchEvaluator:
         if missing:
             raise ValueError(f"Heatmap metrics require program columns: {missing}")
 
-        area_columns = {
-            "attendance_area": ("school_id", "idschoolattendance"),
-            "block": ("Block", "census_block"),
-            "block_group": ("BlockGroup", "census_blockgroup"),
-            "tract": ("Tract", "census_tract"),
-        }
-        if building_block not in area_columns:
+        if building_block not in self.AREA_COLUMNS:
             raise ValueError(f"Unsupported heatmap building block {building_block!r}")
-        school_area, student_area = area_columns[building_block]
+        school_area, student_area = self.AREA_COLUMNS[building_block]
         required_school_columns = {"school_id", "category", school_area}
         missing = sorted(required_school_columns - set(self.schools_latlon.columns))
         if missing:
@@ -2187,6 +2190,80 @@ class MatchEvaluator:
             "int64"
         )
         result = result.sort_values("area_id").reset_index(drop=True)
+        result.insert(0, "config_name", str(config_name))
+        return result
+
+    def eval_assignment_metrics_by_zone(self, config_name, zone_file, building_block):
+        """Return each policy zone's attendance-area GE seat balance.
+
+        A zone's residents are the students whose area its zone file lists; its
+        seats are the GE programs of the attendance-area schools in those areas.
+        Residents split into those seated in their own zone's GE program, the
+        unassigned, and everyone placed elsewhere (citywide schools, other
+        programs, other zones). ``capacity - own_zone_ge_assigned - unassigned``
+        is the balance if every unassigned resident returned to their own zone.
+        """
+        from .heatmaps import _zone_plan
+
+        if building_block not in self.AREA_COLUMNS:
+            raise ValueError(f"Unsupported zone building block {building_block!r}")
+        school_area, student_area = self.AREA_COLUMNS[building_block]
+        if student_area not in self.student_data:
+            raise ValueError(f"Zone metrics require student column {student_area!r}")
+        zone_of = _zone_plan(zone_file).set_index("area_id")["zone_id"]
+
+        schools = self.schools_latlon
+        attendance = schools.loc[
+            schools["category"].astype("string").str.casefold().eq("attendance"),
+            list(dict.fromkeys(["school_id", school_area])),
+        ]
+        school_zone = (
+            pd.to_numeric(attendance[school_area], errors="coerce")
+            .map(zone_of)
+            .set_axis(attendance["school_id"])
+            .dropna()
+            .astype(int)
+        )
+        ge = self.programs.loc[
+            self.programs["program_type"].eq("GE")
+            & self.programs["school_id"].isin(school_zone.index),
+            ["program_id", "school_id", "capacity"],
+        ].copy()
+        ge["zone_id"] = ge["school_id"].map(school_zone)
+        program_zone = ge.set_index("program_id")["zone_id"]
+
+        students = self.student_data
+        home = pd.to_numeric(students[student_area], errors="coerce").map(zone_of)
+        assigned = self._assigned_mask(students)
+        seat_zone = students["assignment"].map(program_zone).where(assigned)
+        own = assigned & seat_zone.eq(home)
+        designated = own & students["designation"].eq(1)
+
+        zones = pd.Index(sorted(zone_of.unique()), name="zone_id")
+        residents = home.value_counts().reindex(zones, fill_value=0)
+        own_count = home[own].value_counts().reindex(zones, fill_value=0)
+        unassigned = home[~assigned].value_counts().reindex(zones, fill_value=0)
+        seats_taken = seat_zone.value_counts().reindex(zones, fill_value=0)
+        capacity = ge.groupby("zone_id")["capacity"].sum().reindex(zones, fill_value=0)
+        result = pd.DataFrame(
+            {
+                "attendance_school_ids": ge.groupby("zone_id")["school_id"]
+                .agg(lambda ids: ";".join(str(int(s)) for s in sorted(set(ids))))
+                .reindex(zones, fill_value=""),
+                "residents": residents,
+                "own_zone_ge_assigned": own_count,
+                "own_zone_ge_designated": home[designated]
+                .value_counts()
+                .reindex(zones, fill_value=0),
+                "unassigned": unassigned,
+                "assigned_elsewhere": residents - own_count - unassigned,
+                "ge_capacity": capacity,
+                "ge_assigned": seats_taken,
+                "ge_assigned_nonresidents": seats_taken - own_count,
+                "empty_ge_seats": capacity - seats_taken,
+                "balance_if_unassigned_return": capacity - own_count - unassigned,
+            }
+        ).reset_index()
         result.insert(0, "config_name", str(config_name))
         return result
 

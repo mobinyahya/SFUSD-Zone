@@ -27,8 +27,8 @@ Scoring a single zoning then costs milliseconds.
 
 Zonings are transferred by stable census area id, not by graph node index. Node
 indices are positional and depend on the KaHIP coarsening, which differs between
-the machine that ran the benchmark and the machine reading it; ``zone_dict_area_
-<level>.json`` records the zoning at base-block resolution, which is portable.
+the machine that ran the benchmark and the machine reading it; the run's saved
+area assignment records the zoning at base-block resolution, which is portable.
 Each local coarse node takes the majority zone of its constituent blocks, and
 ``transfer_purity`` reports the share of blocks whose own zone survived that
 vote - read the numbers as the benchmark's geography re-expressed on the local
@@ -55,6 +55,7 @@ import pandas as pd
 
 from choice.models import build_mnl_choice_model
 from loaders import load_scenario
+from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.data.mid import MidMarket, build_mid_market, preprocess_mid_market
 from optimization.levels import LevelSpec
@@ -180,28 +181,32 @@ def transfer_zoning(
     return zoning, agreed / total, split_nodes
 
 
-def read_area_zones(path: Path) -> dict[int, int]:
-    """Read one ``zone_dict_area_<level>.json`` as ``{area id: zone}``."""
-    with path.open() as handle:
-        return {int(area_id): int(zone) for area_id, zone in json.load(handle).items()}
-
-
 def saved_stages(
     run_dir: Path, result: dict[str, Any], level: LevelSpec
 ) -> list[dict[str, Any]]:
-    """Every stage of one run that saved a portable zoning, in run order.
+    """Every stage of one run that saved a portable zoning at ``level``, in run order.
 
     The run's own ``final_stage_index`` marks the stage it handed back, which is
     not always its last: ``iterative_choice`` and ``saa`` both select among the
     iterations they ran.
     """
     selected = result["run"].get("final_stage_index")
+    records = [
+        {
+            "name": stage["name"],
+            "index": stage["index"],
+            "level": str(level),
+            "path": f"stages/{stage['name']}",
+        }
+        for stage in result["run"]["stages"]
+        if (run_dir / "stages" / stage["name"] / f"zone_dict_{level}.json").exists()
+    ]
+    archive = run_archive.load_run_zonings(run_dir, records)
     stages: list[dict[str, Any]] = []
-    for stage in result["run"]["stages"]:
-        zone_path = run_dir / "stages" / stage["name"] / f"zone_dict_area_{level}.json"
-        if not zone_path.exists():
+    for saved in archive["stages"]:
+        if saved["level"] != str(level):
             continue
-        area_zones = read_area_zones(zone_path)
+        area_zones = run_archive.area_assignment(archive, saved)
         if not area_zones:
             # A master that returned no feasible solution still writes the stage,
             # with an empty zoning. Skipping it keeps one such run from aborting
@@ -209,18 +214,20 @@ def saved_stages(
             continue
         stages.append(
             {
-                "stage_index": int(stage["index"]),
-                "stage_name": stage["name"],
-                "is_selected": stage["index"] == selected,
-                "stage_objective": stage.get("objective"),
-                "stage_wall_time": stage.get("wall_time"),
+                "stage_index": int(saved["index"]),
+                "stage_name": saved["name"],
+                "is_selected": saved["index"] == selected,
+                "stage_objective": saved.get("objective"),
+                "stage_wall_time": saved.get("wall_time"),
                 "area_zones": area_zones,
             }
         )
-    if not stages:
+    legacy_alias = run_dir / f"zone_dict_area_{level}.json"
+    if not stages and legacy_alias.exists():
         # Older runs saved only the root alias; treat it as the one stage.
-        zone_path = run_dir / f"zone_dict_area_{level}.json"
-        if zone_path.exists() and read_area_zones(zone_path):
+        with legacy_alias.open() as handle:
+            area_zones = {int(a): int(z) for a, z in json.load(handle).items()}
+        if area_zones:
             stages.append(
                 {
                     "stage_index": selected if selected is not None else 0,
@@ -228,7 +235,7 @@ def saved_stages(
                     "is_selected": True,
                     "stage_objective": result["run"].get("final_objective"),
                     "stage_wall_time": None,
-                    "area_zones": read_area_zones(zone_path),
+                    "area_zones": area_zones,
                 }
             )
     return stages
