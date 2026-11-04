@@ -28,12 +28,14 @@ class HeuristicProgressLog:
     """Append-only JSONL log of strictly improving heuristic states.
 
     States are ordered by ``(not feasible, objective)``: any feasible state
-    beats any infeasible one, feasible states are ranked by boundary cost, and
-    infeasible states by the unweighted Lagrangian.  Both components are
-    independent of wall-clock time and of the running-max normalizer that
-    drives burst selection, so the logged sequence is monotone by construction
-    -- a record is written only when the search has genuinely beaten every
-    state it has visited so far.
+    beats any infeasible one, feasible states are ranked by the search's own
+    objective (``objective``, minimized unless ``maximize``; boundary cost by
+    default), and infeasible states by the unweighted Lagrangian
+    (``boundary_cost + sum(penalty**2)``).  This key is for logging only: it
+    is independent of wall-clock time and of the policy's merit and
+    constraint weights, which drive burst selection, so the logged sequence
+    is monotone by construction -- a record is written only when the search
+    has genuinely beaten every state it has visited so far.
     """
 
     def __init__(
@@ -44,9 +46,13 @@ class HeuristicProgressLog:
         level: str,
         labels: Sequence[str],
         start: float,
+        objective: str = "boundary_cost",
+        maximize: bool = False,
         header: Mapping[str, Any] | None = None,
     ) -> None:
         self.path = path
+        self.objective = objective
+        self._sign = -1.0 if maximize else 1.0
         self.labels = tuple(labels)
         self._start = float(start)
         self._count = 0
@@ -58,14 +64,16 @@ class HeuristicProgressLog:
                 "solver": solver,
                 "level": level,
                 "violation_labels": list(self.labels),
-                "objective": "boundary_cost",
+                "objective": objective,
+                "objective_sense": "maximize" if maximize else "minimize",
                 "definitions": {
                     "total_violation": "sum(penalties)",
                     "squared_violation": "sum(penalty**2)",
                     "unweighted_lagrangian": "boundary_cost + sum(penalty**2)",
                     "improvement_key": (
-                        "(not feasible, boundary_cost if feasible "
-                        "else unweighted_lagrangian), minimized"
+                        "(not feasible, objective if feasible "
+                        "else unweighted_lagrangian), minimized after "
+                        "negating a maximized objective"
                     ),
                 },
                 **(dict(header) if header else {}),
@@ -82,9 +90,17 @@ class HeuristicProgressLog:
         boundary_cost: float,
         violations: Sequence[float],
         iteration: int | None = None,
+        objective: float | None = None,
+        elapsed_seconds: float | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> bool:
         """Log ``violations`` if they beat every state seen so far.
+
+        ``objective`` is a feasible state's value of the log's objective, in
+        its own units; it defaults to ``boundary_cost``, so only a log whose
+        objective is something else needs it. ``elapsed_seconds`` is when the
+        state was visited, for a caller that logs a state after scoring it;
+        by default the clock is read on writing.
 
         Returns whether a record was written.  The improvement test runs before
         the clock is read, so a non-improving state costs a handful of
@@ -96,9 +112,17 @@ class HeuristicProgressLog:
                 "Violation vector length does not match the constraint labels."
             )
 
+        if feasible and objective is None:
+            if self.objective != "boundary_cost":
+                raise ValueError(
+                    f"A feasible state needs its {self.objective} objective value."
+                )
+            objective = boundary_cost
         squared = sum(float(value) * float(value) for value in violations)
         unweighted = float(boundary_cost) + squared
-        key = (0 if feasible else 1, float(boundary_cost) if feasible else unweighted)
+        key = (
+            (0, self._sign * float(objective)) if feasible else (1, unweighted)
+        )
         if not self._is_improvement(key):
             return False
         self._best = key
@@ -106,8 +130,13 @@ class HeuristicProgressLog:
         row: dict[str, Any] = {
             "record": "improvement",
             "index": self._count,
-            "elapsed_seconds": time.monotonic() - self._start,
+            "elapsed_seconds": (
+                time.monotonic() - self._start
+                if elapsed_seconds is None
+                else float(elapsed_seconds)
+            ),
             "feasible": bool(feasible),
+            "objective": float(objective) if feasible else None,
             "boundary_cost": float(boundary_cost),
             "total_violation": float(sum(float(value) for value in violations)),
             "squared_violation": squared,

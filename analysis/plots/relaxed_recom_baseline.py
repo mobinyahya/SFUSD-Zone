@@ -7,7 +7,7 @@ ReCom random walk that optimizes nothing at all, with choice welfare,
 budget welfare, and cut edges computed for *every* iteration rather than only
 for a final zoning.
 
-The chain is the same kernel ``short_bursts_choice`` uses - ``recom``'s
+The chain is the same kernel the benchmark's welfare short bursts use - ``recom``'s
 classic chain preset (uniform pairs and cuts), started from the same
 ``hints: feasible`` initial solution and run on the same problem - but with no
 scorer and no burst restarts, so nothing selects among the zonings it visits.
@@ -73,9 +73,19 @@ DEFAULT_BENCHMARK_DIR = (
     "/soalnas/share/data/school_choice/local_runs/benchmark_choice_v4"
 )
 
-# Whose config to copy. This strategy runs the same ReCom kernel, so its runs
-# define the problem the baseline should walk over.
+# Whose config to copy: the welfare-scored short bursts, which run the same
+# ReCom kernel and so define the problem the baseline should walk over. Runs
+# saved before the strategy was removed carry its name; later ones are a
+# ``single`` recom solve with ``recom_objective: welfare``.
 CONFIG_DONOR_STRATEGY = "short_bursts_choice"
+
+
+def is_donor(snapshot: dict[str, Any]) -> bool:
+    return snapshot["strategy"] == CONFIG_DONOR_STRATEGY or (
+        snapshot["strategy"] == "single"
+        and snapshot.get("solver") == "recom"
+        and snapshot.get("recom_objective") == "welfare"
+    )
 
 # Proposals per requested iteration before the walk is declared stuck. Around
 # half of them are rejected as infeasible on these instances, so the headroom
@@ -123,10 +133,15 @@ class ChainInputs:
 
 
 def config_from_snapshot(snapshot: dict[str, Any]) -> OptimizationConfig:
-    """Rebuild a run's config from the snapshot stored in ``result.json``."""
-    return OptimizationConfig(
-        **{k: v for k, v in snapshot.items() if k in CONFIG_FIELDS}
-    )
+    """Rebuild a run's config from the snapshot stored in ``result.json``.
+
+    The chain only needs the problem, so a removed strategy's name is read as
+    ``single``, the one-problem strategy it amounted to.
+    """
+    fields_ = {k: v for k, v in snapshot.items() if k in CONFIG_FIELDS}
+    if fields_.get("strategy") == CONFIG_DONOR_STRATEGY:
+        fields_["strategy"] = "single"
+    return OptimizationConfig(**fields_)
 
 
 def donor_snapshots(benchmark_dir: Path) -> dict[str, dict[str, Any]]:
@@ -135,7 +150,7 @@ def donor_snapshots(benchmark_dir: Path) -> dict[str, dict[str, Any]]:
     for path in sorted(benchmark_dir.rglob("result.json")):
         with path.open() as handle:
             snapshot = json.load(handle)["config"]
-        if snapshot["strategy"] != CONFIG_DONOR_STRATEGY:
+        if not is_donor(snapshot):
             continue
         centroid = str(snapshot["centroids_type"])
         seed = int(snapshot["seed"])
@@ -143,7 +158,7 @@ def donor_snapshots(benchmark_dir: Path) -> dict[str, dict[str, Any]]:
             best[centroid] = (seed, snapshot)
     if not best:
         raise SystemExit(
-            f"No {CONFIG_DONOR_STRATEGY} run under {benchmark_dir} to copy a config from."
+            f"No welfare short-bursts run under {benchmark_dir} to copy a config from."
         )
     return {centroid: snapshot for centroid, (_, snapshot) in sorted(best.items())}
 
@@ -307,7 +322,7 @@ def run_baseline(
         unknown = sorted(set(centroids) - set(snapshots))
         if unknown:
             raise SystemExit(
-                f"No {CONFIG_DONOR_STRATEGY} run for centroid(s) {unknown}; "
+                f"No welfare short-bursts run for centroid(s) {unknown}; "
                 f"available: {sorted(snapshots)}"
             )
         snapshots = {name: snapshots[name] for name in centroids}
@@ -315,7 +330,7 @@ def run_baseline(
     rows: list[dict[str, Any]] = []
     failed: list[str] = []
     for centroid, snapshot in snapshots.items():
-        # The donor is a short_bursts_choice run, and that sweep task gives it
+        # The donor is a welfare short-bursts run, and that sweep task gives it
         # one worker. The ReCom walk is single-threaded either way, so the only
         # thing the count reaches here is the CP-SAT feasible-hint search --
         # where it is the difference between a hint in half a minute and a

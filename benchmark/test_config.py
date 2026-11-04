@@ -250,7 +250,6 @@ def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
         ("mid_decomp", True),
         ("saa", True),
         ("direct_samples", True),
-        ("short_bursts_choice", True),
         ("priced_access", True),
         ("stable_cutoff", True),
         ("dantzig_wolfe", True),
@@ -259,7 +258,7 @@ def test_dw_manifest_tracks_matching_inputs_only_for_welfare(objective):
 def test_manifest_hashes_the_assignment_market_for_strategies_that_read_it(
     strategy, reads_market
 ):
-    solver = {"stable_cutoff": "mip", "short_bursts_choice": "recom"}
+    solver = {"stable_cutoff": "mip"}
     config = OptimizationConfig(
         strategy=strategy,
         solver=solver.get(strategy, "cp_bool"),

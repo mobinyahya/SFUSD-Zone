@@ -25,9 +25,12 @@ Caveats worth knowing before you plot:
   ``choice_objective.scale`` via ``cpsat_objective_scale``.
 * Gurobi prints its node table on a display interval (5s by default) plus one
   line per new incumbent, so its bound trajectory is sampled, not continuous.
-* For the burst solvers a whole burst is sampled before any of it is logged, so
-  ``elapsed_seconds`` is quantized to burst boundaries and ``iteration`` is the
-  attempted-move count at the end of the burst that produced the state.
+* For the burst solvers a whole burst is scored before any of it is logged,
+  since a batch-scored objective (welfare, capacity match) is only known then.
+  ``elapsed_seconds`` and ``iteration`` are still those of the move that
+  produced the state, and ``incumbent`` is in the objective's own units (the
+  header's ``objective`` and ``objective_sense``), so a maximized objective
+  such as welfare rises.
 
 Command line::
 
@@ -157,7 +160,11 @@ def parse_recom_log(path: str) -> list[dict[str, Any]]:
             "iteration": entry.get("iteration"),
             "burst": entry.get("burst"),
             "feasible": feasible,
-            "incumbent": boundary_cost if feasible else math.nan,
+            # The logged objective; logs written before it was recorded
+            # ranked feasible states by boundary cost alone.
+            "incumbent": entry.get("objective", boundary_cost)
+            if feasible
+            else math.nan,
             "boundary_cost": boundary_cost,
             "total_violation": entry.get("total_violation"),
             "squared_violation": entry.get("squared_violation"),

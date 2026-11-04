@@ -854,6 +854,8 @@ class OptimizationConfig:
             "choice_access_completion_limit": self.choice_access_completion_limit,
             "centroid_neighbor_radius": self.centroid_neighbor_radius,
             "recom_iterations": self.recom_iterations,
+            # recom reads it; the iterative strategies read their own copy.
+            "budget_accounting": self.budget_accounting,
             **self.recom_settings().as_options(),
             "recom_objective": self.recom_objective,
             "capacity_match_unassigned_weight": self.capacity_match_unassigned_weight,

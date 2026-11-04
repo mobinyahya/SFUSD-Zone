@@ -360,6 +360,75 @@ def test_scored_bursts_overrun_the_deadline_by_at_most_one_batch() -> None:
     assert elapsed <= time_limit + scorer.delay + 0.5, elapsed
 
 
+@pytest.mark.parametrize(
+    "accounting, walks", [("wall_clock", False), ("solver_time", True)]
+)
+def test_budget_accounting_decides_whether_preparation_is_charged(
+    accounting, walks
+) -> None:
+    """A scorer built for longer than the limit leaves a wall-clock walk nothing."""
+
+    problem = make_grid_problem(2, 2, frl_dev=1.0, hint={0: 0, 1: 0, 2: 1, 3: 1})
+    solver = _solver(
+        "uniform_bursts",
+        solve_time_limit=0.2,
+        recom_iterations=-1,
+        budget_accounting=accounting,
+        seed=7,
+    )
+
+    solution = solver.solve_with_scorer(
+        problem,
+        lambda assignments, base: tuple(1.0 for _ in assignments),
+        objective_kind="test_score",
+        prepared_seconds=5.0,
+    )
+
+    assert solution.metadata["budget_accounting"] == accounting
+    assert solution.metadata["recom_prepared_seconds"] == 5.0
+    assert solution.metadata["stop_reason"] == "time_limit"
+    assert (solution.metadata["attempted_moves"] > 0) is walks
+
+
+@pytest.mark.parametrize(
+    "accounting, walks", [("wall_clock", False), ("solver_time", True)]
+)
+def test_budget_accounting_decides_whether_objective_setup_is_charged(
+    accounting, walks
+) -> None:
+    """Building the objective inside the solve counts only under wall clock."""
+    from optimization.solvers.recom import _BurstObjective
+
+    def slow_objective():
+        time.sleep(0.3)
+        return _BurstObjective("cut_edges")
+
+    problem = make_grid_problem(2, 2, frl_dev=1.0, hint={0: 0, 1: 0, 2: 1, 3: 1})
+    solver = _solver(
+        "uniform_bursts",
+        solve_time_limit=0.2,
+        recom_iterations=-1,
+        budget_accounting=accounting,
+        seed=7,
+    )
+
+    solution = solver._run(problem, slow_objective)
+
+    assert solution.metadata["recom_setup_seconds"] >= 0.3
+    assert (solution.metadata["attempted_moves"] > 0) is walks
+
+
+def test_recom_rejects_unknown_budget_accounting() -> None:
+    problem = make_grid_problem(2, 2, frl_dev=1.0, hint={0: 0, 1: 0, 2: 1, 3: 1})
+    with pytest.raises(ValueError, match="budget_accounting"):
+        _solver(budget_accounting="cpu", recom_iterations=5).solve(problem)
+
+
+def test_config_passes_budget_accounting_to_the_solver() -> None:
+    config = OptimizationConfig(solver="recom", budget_accounting="solver_time")
+    assert config.make_solver().options["budget_accounting"] == "solver_time"
+
+
 # --------------------------------------------------------------------------- #
 # kernel and state
 # --------------------------------------------------------------------------- #

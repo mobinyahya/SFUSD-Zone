@@ -241,7 +241,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `solver` | `'cp_int'` | Solver: cp_int, cp_bool, or mip |
 | `levels` | `['BlockGroup_1','BlockGroup_0']` | Hierarchical solve order |
 | `solve_time_limits` | `[30, 30]` | Seconds per recursive level; iterative strategies use the last entry as one total run budget |
-| `budget_accounting` | `wall_clock` | What that budget pays for: `wall_clock` (everything) or `solver_time` (iterative solves only) |
+| `budget_accounting` | `wall_clock` | What that budget pays for: `wall_clock` (everything) or `solver_time` (iterative solves only; for `recom`, the walk, not its hint or objective/market setup) |
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `capacity_scenario` | `programs` | Program-table capacities, or an explicit scenario overlay |
 | `hints` | `voronoi` | Warm-start method: `feasible`, `voronoi`, or `none` |

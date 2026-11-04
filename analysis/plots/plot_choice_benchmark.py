@@ -92,7 +92,7 @@ CENTROID_MARKER_CYCLE = ["o", "s", "D", "^", "v", "P"]
 VARIANT_LABELS = {
     ("saa", "cp_bool"): "SAA",
     ("iterative_choice", "cp_bool"): "Iterative Choice",
-    ("short_bursts_choice", "short_bursts"): "Short Bursts (Relaxed ReCom)",
+    ("single", "recom"): "Short Bursts (ReCom)",
     ("mid", "cp_bool"): "MID",
     ("mid_decomp", "cp_bool"): "MID Decomp",
     ("priced_access", "cp_bool"): "Priced Access",
