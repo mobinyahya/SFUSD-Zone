@@ -12,7 +12,7 @@ classic chain preset (uniform pairs and cuts), started from the same
 ``hints: feasible`` initial solution and run on the same problem - but with no
 scorer and no burst restarts, so nothing selects among the zonings it visits.
 (Before the ReCom overhaul it drew cuts with ``relaxed_recom``'s hand-tuned
-weights, which no longer exist.) Its configuration is read from a benchmarked run so the
+weights, which no longer exist, and the script was named after them.) Its configuration is read from a benchmarked run so the
 problem, the balance constraints, and the lottery scale match the runs it is
 compared against.
 
@@ -36,7 +36,7 @@ blocks for scoring, which is exact: a coarse node's blocks all carry its zone.
 Both the oracle and the MNL evaluation depend only on that block-level zoning,
 so the numbers do not depend on the local KaHIP coarsening.
 
-Writes ``relaxed_recom_baseline.csv`` with one row per iteration, carrying
+Writes ``recom_chain_baseline.csv`` with one row per iteration, carrying
 ``max_violation`` - the worst balance residual in students - so the feasibility
 of every scored zoning stays auditable rather than asserted.
 """
@@ -63,7 +63,7 @@ from optimization.mid_oracle import finite_grid_oracle
 from optimization.problem import ZoneProblem
 from optimization.solvers import get_solver
 
-# The chain is driven directly rather than through ``RelaxedReComSolver.solve``,
+# The chain is driven directly rather than through ``ReComSolver.solve``,
 # which reports only the best zoning it saw. These are the same handles that
 # solver uses, so the walk is the benchmark's walk and not a re-implementation.
 from optimization.solvers.recom import _NoProposal, _ReComKernel
@@ -409,7 +409,7 @@ def parse_args() -> argparse.Namespace:
         "-o",
         "--output",
         default=None,
-        help="Destination CSV (default: analysis/plots/output/relaxed_recom_baseline.csv)",
+        help="Destination CSV (default: analysis/plots/output/recom_chain_baseline.csv)",
     )
     parser.add_argument(
         "--iterations",
@@ -444,7 +444,7 @@ def main() -> None:
     output = (
         Path(args.output)
         if args.output
-        else Path(__file__).resolve().parent / "output" / "relaxed_recom_baseline.csv"
+        else Path(__file__).resolve().parent / "output" / "recom_chain_baseline.csv"
     )
     table = run_baseline(
         Path(args.benchmark_dir), args.iterations, args.seed, args.centroids,

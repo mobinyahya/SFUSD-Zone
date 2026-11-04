@@ -15,8 +15,8 @@ Reads the per-run ``result.json`` files written by ``benchmark.run`` and produce
    welfare of the discrete MID program is labelled *budget welfare* throughout
    the figure, after the budget sets it clears; the data columns keep the ``mid``
    names of the code that computes them. When
-   ``analysis.plots.relaxed_recom_baseline`` has written its CSV, the feasible
-   relaxed-ReCom chain it walked joins the strategy axis as a baseline row.
+   ``analysis.plots.recom_chain_baseline`` has written its CSV, the feasible
+   ReCom chain it walked joins the strategy axis as a baseline row.
 2. ``choice_model_vs_actual.png`` - for ``iterative_choice``, the master
    problem's model utility against the exact evaluation of the same zoning,
    per iteration.
@@ -107,8 +107,11 @@ STRATEGY_LABELS = {
 # Strategies that expose a per-iteration model/actual pair to trace.
 TRACED_STRATEGIES = ("iterative_choice", "saa", "priced_access")
 
-# Row label for the unguided relaxed-ReCom chain.
-BASELINE_LABEL = "Relaxed ReCom (baseline)"
+# Row label for the unguided ReCom chain.
+BASELINE_LABEL = "ReCom chain (baseline)"
+# Baseline CSVs, newest name first: chains walked before the rename were
+# written under the old one.
+BASELINE_CSV_NAMES = ("recom_chain_baseline.csv", "relaxed_recom_baseline.csv")
 
 # Above this many replicates in a row, one marker per point paints a solid bar,
 # so the row shows its range, this inner band, and its mean instead.
@@ -353,10 +356,18 @@ def attach_best_stage(runs: pd.DataFrame, stage_csv: Path | None) -> pd.DataFram
     return merged
 
 
-def append_baseline(runs: pd.DataFrame, baseline_csv: Path | None) -> pd.DataFrame:
-    """Add the relaxed-ReCom chain to the comparison as one extra row.
+def default_baseline(output_dir: Path) -> Path:
+    """The baseline CSV in ``output_dir``: the current name, else the old one."""
+    for name in BASELINE_CSV_NAMES:
+        if (output_dir / name).exists():
+            return output_dir / name
+    return output_dir / BASELINE_CSV_NAMES[0]
 
-    ``analysis.plots.relaxed_recom_baseline`` writes one row per zoning the
+
+def append_baseline(runs: pd.DataFrame, baseline_csv: Path | None) -> pd.DataFrame:
+    """Add the ReCom chain to the comparison as one extra row.
+
+    ``analysis.plots.recom_chain_baseline`` writes one row per zoning the
     chain visited, each scored on the same three measures as a benchmarked run.
     Iteration 0 is the ``hints: feasible`` starting point rather than something
     the chain produced, so it is left out; so is any zoning the chain flagged as
@@ -396,7 +407,7 @@ def append_baseline(runs: pd.DataFrame, baseline_csv: Path | None) -> pd.DataFra
         print(
             f"  note: {baseline_csv.name} has no chain for {missing}; those "
             "panels get no baseline row. Re-run analysis.plots."
-            "relaxed_recom_baseline against this benchmark to cover them."
+            "recom_chain_baseline against this benchmark to cover them."
         )
     if chain.empty:
         return runs
@@ -408,8 +419,8 @@ def append_baseline(runs: pd.DataFrame, baseline_csv: Path | None) -> pd.DataFra
     rows = pd.DataFrame(
         {
             "path": str(baseline_csv.name),
-            "strategy": "relaxed_recom",
-            "solver": "relaxed_recom",
+            "strategy": "recom_chain",
+            "solver": "recom_chain",
             "variant": BASELINE_LABEL,
             "centroid": chain["centroid"].to_numpy(),
             "seed": chain["seed"].to_numpy() if "seed" in chain else np.nan,
@@ -713,7 +724,7 @@ def _describe_replicates(runs: pd.DataFrame) -> str:
 
 
 def _describe_baseline(runs: pd.DataFrame) -> str:
-    """Caption the relaxed-ReCom row, with its real iteration count."""
+    """Caption the ReCom chain row, with its real iteration count."""
     chain = runs[runs["variant"] == BASELINE_LABEL]
     if chain.empty:
         return ""
@@ -1054,9 +1065,10 @@ def parse_args() -> argparse.Namespace:
         "--baseline",
         default=None,
         help=(
-            "CSV of the relaxed-ReCom baseline chain from "
-            "analysis.plots.relaxed_recom_baseline (default: "
-            "<output-dir>/relaxed_recom_baseline.csv when present)"
+            "CSV of the ReCom chain baseline from "
+            "analysis.plots.recom_chain_baseline (default: "
+            "<output-dir>/recom_chain_baseline.csv when present, else an "
+            "older relaxed_recom_baseline.csv)"
         ),
     )
     parser.add_argument(
@@ -1129,9 +1141,7 @@ def main() -> None:
     )
     compared = append_baseline(
         runs,
-        Path(args.baseline)
-        if args.baseline
-        else output_dir / "relaxed_recom_baseline.csv",
+        Path(args.baseline) if args.baseline else default_baseline(output_dir),
     )
 
     outputs = [plot_strategy_comparison(compared, output_dir, args.title)]

@@ -1,10 +1,10 @@
-"""Tests for the relaxed-ReCom baseline's resource detection."""
+"""Tests for the ReCom chain baseline's resource detection."""
 
 from __future__ import annotations
 
 import os
 
-from analysis.plots.relaxed_recom_baseline import available_cpus
+from analysis.plots.recom_chain_baseline import available_cpus
 
 
 def test_available_cpus_respects_a_slurm_allocation(monkeypatch):
