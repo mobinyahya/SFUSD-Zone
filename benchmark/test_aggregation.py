@@ -529,6 +529,27 @@ def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path, shared_cache_r
     assert (tmp_path / ".benchmark-aggregate.lock").exists()
 
 
+def test_aggregation_lock_gives_up_instead_of_hanging(tmp_path, monkeypatch):
+    import fcntl
+
+    from benchmark import results
+
+    monkeypatch.setattr(results, "_AGGREGATION_LOCK_POLL", 0.01)
+    lock_path = tmp_path / ".benchmark-aggregate.lock"
+    with lock_path.open("a+") as holder:
+        # Another open file description holding the lock, as a stuck
+        # aggregation elsewhere would.
+        fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+        ran = False
+        with pytest.warns(RuntimeWarning, match="aggregating without it"):
+            with results._aggregation_lock(str(tmp_path), timeout=0.05):
+                ran = True
+        assert ran
+    # Released normally, the lock is taken without a warning.
+    with results._aggregation_lock(str(tmp_path), timeout=0.05):
+        pass
+
+
 def _write_synthetic_run(tmp_path, cache_root):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
