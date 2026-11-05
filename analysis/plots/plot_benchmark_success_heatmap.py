@@ -179,13 +179,16 @@ def map_solver_display_name(row: pd.Series | dict[str, Any]) -> str:
     """Map solver and strategy to canonical display labels."""
     solver = str(row.get("config_solver") or row.get("solver") or "").strip().lower()
     strategy = str(row.get("config_strategy") or row.get("strategy") or "").strip().lower()
+    multi_level = strategy == "recursive" or (
+        strategy == "pipeline" and len(_config_levels(row)) > 1
+    )
 
     if solver in {"cp_bool", "cp"}:
-        return "CP (Multi-Level)" if strategy == "recursive" else "CP"
+        return "CP (Multi-Level)" if multi_level else "CP"
     elif solver in {"cp_int"}:
-        return "CP (Int, Multi-Level)" if strategy == "recursive" else "CP (Int)"
+        return "CP (Int, Multi-Level)" if multi_level else "CP (Int)"
     elif solver in {"mip"}:
-        return "MIP (Multi-Level)" if strategy == "recursive" else "MIP"
+        return "MIP (Multi-Level)" if multi_level else "MIP"
     elif solver in {"recom"}:
         return "Recom"
     elif solver in {"relaxed_recom"}:
@@ -196,9 +199,20 @@ def map_solver_display_name(row: pd.Series | dict[str, Any]) -> str:
         return "Adaptive Short Bursts"
     else:
         name = solver.replace("_", " ").title()
-        if strategy == "recursive":
+        if multi_level:
             name += " (Multi-Level)"
         return name
+
+
+def _config_levels(row: pd.Series | dict[str, Any]) -> list:
+    """The run's levels, one per solve step for a pipeline run."""
+    levels = row.get("config_levels") or row.get("levels") or []
+    if isinstance(levels, str):
+        try:
+            levels = json.loads(levels)
+        except ValueError:
+            return [levels]
+    return list(levels)
 
 
 def format_time_limit_minutes(time_limit_str: Any) -> str:

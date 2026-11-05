@@ -291,7 +291,10 @@ class FakeDataset:
         choice_objective=None,
         constraint_multiplier=1.0,
         centroid_school_ids=None,
+        config=None,
     ):
+        # ``config`` is a pipeline step's settings; the synthetic problem keeps
+        # its own constraints.
         constraint_multiplier = float(constraint_multiplier)
         if centroid_school_ids is None:
             centroid_school_ids = self._problem.centroid_school_ids

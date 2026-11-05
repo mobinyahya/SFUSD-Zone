@@ -317,7 +317,8 @@ def test_multicut_is_the_default_saa_master():
     assert config.saa_multicut is True
     # A config-free construction must agree, or the strategy's own fallback
     # would silently average.
-    assert config.make_strategy().options["saa_multicut"] is True
+    legacy = OptimizationConfig(strategy="iterative_choice")
+    assert legacy.make_strategy().options["saa_multicut"] is True
 
 
 @pytest.mark.parametrize("backend", ["cp_bool", "mip"])

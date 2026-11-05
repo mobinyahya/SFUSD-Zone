@@ -44,7 +44,28 @@ silently soften. A failed solve stops the sequence and remains a saved stage.
 Each successful step emits one `ZoneSolution`; the last is the run's result.
 
 For a single solve, omit `steps` and specify `levels: [Block_0]`, `method`, and
-`objective`. Full examples are in [config.example.yaml](config.example.yaml)
+`objective`.
+
+`strategy: single` and `strategy: recursive` are shorthand for steps, expanded
+when the config loads (`optimization.pipeline.shorthand_steps`); every saved
+config records the expanded `steps` and `strategy: pipeline`.
+
+- `single` is one step at `levels[-1]` under the last `solve_time_limits` and
+  `gap_limits` entries. `cp_single_zone` needs a single-step run.
+- `recursive` is one step per level. Each finer step takes
+  `[{mode: assign, select: interior, radius: boundary_radius}, {mode: hint}]`
+  from the previous step (the hint is dropped under `hints: none`), so only the
+  boundary band is re-decided, over every zone within `max_distance`.
+  `looseness` becomes each coarser step's `constraints`
+  (`frl_dev`/`racial_dev`/`overage`/`shortage` times
+  `looseness ** (levels after it)`).
+
+A step's objective defaults to the run's `objective`, else
+`compactness_objective` (CP/MIP) or `recom_objective` (ReCom). Stages report
+the solver's own `wall_time`, and `carry_over_compute` hands that unused
+solver time to the next step. A step that is not the last whose coarse graph
+merges two centroids into one node is saved as `SKIPPED`, and `previous`
+then names the step before it. Full examples are in [config.example.yaml](config.example.yaml)
 and [the benchmark pipeline sweep](../benchmark/sweep.pipeline.example.yaml).
 The CLI is unchanged:
 
@@ -185,7 +206,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `pipeline` (also `single`/`recursive`, see above), `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary

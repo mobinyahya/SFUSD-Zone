@@ -1,6 +1,5 @@
 """Strategy tests using a FakeDataset (no SFUSD data required)."""
 
-import random
 import time
 from types import SimpleNamespace
 
@@ -8,12 +7,9 @@ import pytest
 
 from choice.objective import ChoiceCut, ChoiceEvaluation
 from optimization.config import OptimizationConfig
-from optimization.data.initial_solutions import InitialSolution
-from optimization.problem import DuplicateCentroidError
+from optimization.pipeline import step_config
 from optimization.solution import ZoneSolution
-from optimization.solvers import base as solver_base_module
 from optimization.solvers import get_solver
-from optimization.solvers.base import Solver
 from optimization.strategies import get_strategy
 from optimization.strategies import budget
 from optimization.strategies import iterative_choice as iterative_choice_module
@@ -32,9 +28,7 @@ def test_only_supported_strategies_are_registered():
         "mid_decomp",
         "pipeline",
         "priced_access",
-        "recursive",
         "saa",
-        "single",
         "stable_cutoff",
     ]
 
@@ -55,95 +49,6 @@ def test_config_rejects_removed_strategies(strategy):
         OptimizationConfig(levels=["BlockGroup_0"], strategy=strategy)
 
 
-def test_single_strategy():
-    problem = make_grid_problem(3, 3)
-    dataset = FakeDataset(problem)
-    solver = get_solver("cp_int", solve_time_limit=10, workers=1)
-    strat = get_strategy("single", levels=["BlockGroup_0"], boundary_prop=0.5)
-
-    solutions = strat.run(dataset, solver)
-
-    assert len(solutions) == 1
-    assert solutions[-1].status in ("OPTIMAL", "FEASIBLE")
-    assert solutions[-1].is_contiguous()
-    assert solutions[-1].problem.boundary_prop == 0.5
-
-
-def test_single_strategy_selects_seeded_enumerated_solution_as_final():
-    problem = make_grid_problem(3, 3)
-    dataset = FakeDataset(problem)
-    solver = get_solver("cp_int", solve_time_limit=10, workers=8, seed=5)
-    strat = get_strategy(
-        "single",
-        levels=["BlockGroup_0"],
-        enumerated_solutions=5,
-        seed=5,
-    )
-
-    solutions = strat.run(dataset, solver)
-
-    expected_index = random.Random(5).choice(range(5))
-    assert len(solutions) == 5
-    assert solutions[-1].metadata["enumerated_solution_index"] == expected_index
-    assert solutions[-1].metadata["enumerated_solution_selected"] is True
-    assert all(
-        solution.metadata["enumerated_solution_selected"] is False
-        for solution in solutions[:-1]
-    )
-    assert sum(solution.wall_time for solution in solutions) == pytest.approx(
-        solutions[-1].metadata["enumeration_wall_time_seconds"]
-    )
-
-
-def test_single_math_programming_solver_uses_generated_hint(monkeypatch):
-    problem = make_grid_problem(3, 3)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
-    solver.name = "cp_int"
-    solver.options["hints"] = "voronoi"
-    hint = {node: 0 if node < 4 else 1 for node in problem.nodes}
-
-    monkeypatch.setattr(
-        solver_base_module,
-        "initial_solution",
-        lambda problem_arg, hints, **kwargs: InitialSolution(
-            assignment=hint,
-            metadata={"hints": hints},
-        ),
-    )
-    strat = get_strategy(
-        "single",
-        levels=["BlockGroup_0"],
-        hints="voronoi",
-    )
-
-    strat.run(dataset, solver)
-
-    assert solver.problems[0].hint == hint
-
-
-class _LimitRecordingSolver(Solver):
-    """A real ``Solver`` that records the limits each solve ran under."""
-
-    name = "recording"
-
-    def __init__(self, **options):
-        super().__init__(**options)
-        self.seen = []
-
-    def solve(self, problem):
-        self.seen.append(
-            (
-                self.options.get("solve_time_limit"),
-                self.options.get("relative_gap_limit"),
-                problem.boundary_prop,
-            )
-        )
-        return ZoneSolution(
-            problem=problem, assignment=_split_assignment(problem), status="OPTIMAL"
-        )
-
-
 def test_with_options_copies_and_leaves_the_solver_alone():
     solver = get_solver("cp_bool", solve_time_limit=5, workers=1)
     copy = solver.with_options(solve_time_limit=9)
@@ -152,29 +57,6 @@ def test_with_options_copies_and_leaves_the_solver_alone():
     assert solver.options["solve_time_limit"] == 5
     copy._solve_count += 1
     assert solver._solve_count == 1  # log numbering is shared
-
-
-@pytest.mark.parametrize("strategy", ["single", "recursive"])
-def test_strategies_apply_limits_and_boundary_prop_without_mutating_the_solver(
-    strategy,
-):
-    dataset = FakeDataset(make_grid_problem(2, 2))
-    solver = _LimitRecordingSolver(solve_time_limit=1.0, relative_gap_limit=0.5)
-    get_strategy(
-        strategy,
-        levels=["BlockGroup_0", "BlockGroup_0"],
-        solve_time_limits=[3.0, 7.0],
-        gap_limits=[0.2, 0.01],
-        boundary_prop=0.75,
-    ).run(dataset, solver)
-
-    # single solves once, under the final level's limits; recursive once per
-    # level. Both apply boundary_prop at every solve.
-    expected = [(7.0, 0.01, 0.75)]
-    if strategy == "recursive":
-        expected = [(3.0, 0.2, 0.75), *expected]
-    assert solver.seen == expected
-    assert solver.options == {"solve_time_limit": 1.0, "relative_gap_limit": 0.5}
 
 
 def test_welfare_strategies_switch_off_the_capacity_band():
@@ -196,221 +78,6 @@ def test_welfare_strategies_switch_off_the_capacity_band():
         assert (configured.overage, configured.shortage) == (
             (-1.0, -1.0) if welfare else (problem.overage, problem.shortage)
         )
-
-
-def test_recursive_carry_over_compute_disabled_by_default():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(
-        statuses=["OPTIMAL", "OPTIMAL"],
-        wall_times=[1.0, 2.0],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0", "BlockGroup_0"],
-        solve_time_limits=[5.0, 10.0],
-    )
-
-    solutions = strat.run(dataset, solver)
-
-    assert solver.solve_time_limits == [5.0, 10.0]
-    assert "effective_time_limit_seconds" not in solutions[0].metadata
-
-
-def test_recursive_carry_over_compute_adds_unused_time_for_feasible_stage():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(
-        statuses=["FEASIBLE", "OPTIMAL"],
-        wall_times=[1.25, 2.0],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0", "BlockGroup_0"],
-        solve_time_limits=[5.0, 10.0],
-        carry_over_compute=True,
-    )
-
-    solutions = strat.run(dataset, solver)
-
-    assert solver.solve_time_limits == [5.0, 13.75]
-    assert solutions[0].metadata["configured_time_limit_seconds"] == 5.0
-    assert solutions[0].metadata["effective_time_limit_seconds"] == 5.0
-    assert solutions[0].metadata[
-        "unused_time_carried_forward_seconds"
-    ] == pytest.approx(3.75)
-    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
-        3.75
-    )
-    assert solutions[1].metadata["effective_time_limit_seconds"] == pytest.approx(13.75)
-
-
-def test_recursive_carry_over_compute_adds_unused_time_after_infeasible_stage():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(
-        statuses=["INFEASIBLE", "OPTIMAL"],
-        wall_times=[0.5, 1.0],
-        assignments=[{}, None],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0", "BlockGroup_0"],
-        solve_time_limits=[4.0, 7.0],
-        carry_over_compute=True,
-    )
-
-    solutions = strat.run(dataset, solver)
-
-    assert solver.solve_time_limits == [4.0, 10.5]
-    assert solutions[0].metadata[
-        "unused_time_carried_forward_seconds"
-    ] == pytest.approx(3.5)
-    assert solutions[1].metadata["carry_over_time_received_seconds"] == pytest.approx(
-        3.5
-    )
-    assert solver.problems[1].hint is None
-
-
-def test_recursive_skips_nonfinal_duplicate_centroid_stage():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = DuplicateCentroidSequenceSolver([True, False])
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_1", "BlockGroup_0"],
-        solve_time_limits=[4.0, 7.0],
-        carry_over_compute=True,
-    )
-
-    solutions = strat.run(dataset, solver)
-
-    assert [solution.status for solution in solutions] == ["SKIPPED", "OPTIMAL"]
-    assert solutions[0].assignment == {}
-    assert solutions[0].metadata["skip_reason"] == "duplicate_centroid"
-    assert solutions[0].metadata["duplicate_centroid_node"] == 23
-    assert solutions[0].metadata["duplicate_centroid_zones"] == [0, 3]
-    assert solutions[0].metadata["unused_time_carried_forward_seconds"] == 4.0
-    assert solver.solve_time_limits == [4.0, 11.0]
-    assert solver.problems[1].hint is None
-
-
-def test_recursive_raises_final_duplicate_centroid_stage():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = DuplicateCentroidSequenceSolver([True])
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0"],
-        solve_time_limits=[4.0],
-    )
-
-    with pytest.raises(
-        DuplicateCentroidError,
-        match="Node 23 is used as multiple centroids",
-    ):
-        strat.run(dataset, solver)
-
-
-def test_recursive_looseness_scales_constraints_by_configured_stage():
-    problem = make_grid_problem(
-        2,
-        2,
-        frl_dev=0.2,
-        racial_dev=0.3,
-        overage=0.4,
-        shortage=0.1,
-    )
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(
-        statuses=["OPTIMAL", "OPTIMAL", "OPTIMAL"],
-        wall_times=[0.0, 0.0, 0.0],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_2", "BlockGroup_1", "BlockGroup_0"],
-        solve_time_limits=[1.0, 1.0, 1.0],
-        looseness=1.2,
-    )
-
-    strat.run(dataset, solver)
-
-    multipliers = [1.2**2, 1.2, 1.0]
-    assert [p.level.name for p in solver.problems] == [
-        "BlockGroup_2",
-        "BlockGroup_1",
-        "BlockGroup_0",
-    ]
-    assert [p.frl_dev for p in solver.problems] == pytest.approx(
-        [problem.frl_dev * multiplier for multiplier in multipliers]
-    )
-    assert [p.racial_dev for p in solver.problems] == pytest.approx(
-        [problem.racial_dev * multiplier for multiplier in multipliers]
-    )
-    assert [p.overage for p in solver.problems] == pytest.approx(
-        [problem.overage * multiplier for multiplier in multipliers]
-    )
-    assert [p.shortage for p in solver.problems] == pytest.approx(
-        [problem.shortage * multiplier for multiplier in multipliers]
-    )
-
-
-def test_recursive_looseness_scales_by_configured_stages_when_levels_skip():
-    problem = make_grid_problem(2, 2, frl_dev=0.2)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(
-        statuses=["OPTIMAL", "OPTIMAL"],
-        wall_times=[0.0, 0.0],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_2", "BlockGroup_0"],
-        solve_time_limits=[1.0, 1.0],
-        looseness=1.2,
-    )
-
-    strat.run(dataset, solver)
-
-    assert [p.frl_dev for p in solver.problems] == pytest.approx([0.24, 0.2])
-
-
-def test_recursive_rejects_tightening_looseness():
-    problem = make_grid_problem(2, 2)
-    dataset = FakeDataset(problem)
-    solver = TimedSequenceSolver(statuses=["OPTIMAL"], wall_times=[0.0])
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0"],
-        solve_time_limits=[1.0],
-        looseness=0.9,
-    )
-
-    with pytest.raises(ValueError, match="looseness"):
-        strat.run(dataset, solver)
-
-
-def test_recursive_anchors_centroids_in_projected_hint():
-    problem = make_grid_problem(3, 3)
-    dataset = FakeDataset(problem)
-    bad_assignment = {node: 1 for node in problem.nodes}
-    solver = TimedSequenceSolver(
-        statuses=["OPTIMAL", "OPTIMAL"],
-        wall_times=[0.0, 0.0],
-        assignments=[bad_assignment, None],
-    )
-    strat = get_strategy(
-        "recursive",
-        levels=["BlockGroup_0", "BlockGroup_0"],
-        solve_time_limits=[1.0, 1.0],
-    )
-
-    strat.run(dataset, solver)
-
-    refined = solver.problems[1]
-    assert refined.hint[problem.centroids[0]] == 0
-    assert refined.hint[problem.centroids[1]] == 1
-    assert refined.candidate_zones(problem.centroids[0]) == {0}
-    assert refined.candidate_zones(problem.centroids[1]) == {1}
 
 
 def test_iterative_choice_strategy_terminates(monkeypatch):
@@ -527,7 +194,8 @@ def test_config_passes_feasible_hint_options():
     )
 
     assert config.make_solver().options["feasible_hint_time_limit"] == 12
-    assert config.make_strategy().options["feasible_hint_time_limit"] == 12
+    step = step_config(config, config.steps[0])
+    assert step.make_solver().options["feasible_hint_time_limit"] == 12
 
 
 @pytest.mark.parametrize("value", [0, -1, float("inf"), True, "bad"])
@@ -593,8 +261,9 @@ def test_config_accepts_valid_mid_complementary_slackness_slack(value, expected)
     )
     assert cfg.mid_complementary_slackness_slack == expected
     assert "mid_complementary_slackness" not in cfg.make_solver().options
-    assert cfg.make_strategy().options["mid_complementary_slackness"] is True
-    assert cfg.make_strategy().options["mid_complementary_slackness_slack"] == expected
+    step = step_config(cfg, cfg.steps[0])
+    assert step.mid_complementary_slackness is True
+    assert step.mid_complementary_slackness_slack == expected
 
 
 def test_mid_strategy_uses_finest_limits_and_disables_aggregate_capacity(monkeypatch):
@@ -1044,29 +713,6 @@ class TimedSequenceSolver(FakeSolver):
         )
 
 
-class DuplicateCentroidSequenceSolver(FakeSolver):
-    def __init__(self, duplicate_by_call):
-        self.duplicate_by_call = list(duplicate_by_call)
-        self.options = {}
-        self.problems = []
-        self.solve_time_limits = []
-
-    def solve(self, problem):
-        idx = len(self.problems)
-        self.problems.append(problem)
-        self.solve_time_limits.append(self.options.get("solve_time_limit"))
-        if self.duplicate_by_call[idx]:
-            raise DuplicateCentroidError(23, {0, 3})
-        return ZoneSolution(
-            problem=problem,
-            assignment=_split_assignment(problem),
-            status="OPTIMAL",
-            objective=0.0,
-            wall_time=1.0,
-            metadata={"solver": "duplicate_centroid_sequence"},
-        )
-
-
 def _split_assignment(problem):
     nodes = sorted(problem.nodes)
     midpoint = len(nodes) // 2
@@ -1180,15 +826,6 @@ def test_priced_access_closes_with_a_replay_of_its_best_zoning():
     assert final.metadata["priced_access_is_replay"] is True
     assert final.wall_time == 0.0
     assert final.metadata["choice_utility"] == max(utilities)
-
-
-def test_recursive_levels_past_gap_limits_keep_the_last_gap():
-    from optimization.strategies.recursive import RecursiveStrategy
-
-    gaps = [0.05, 0.01]
-    assert RecursiveStrategy._level_limits(None, gaps, 2) == {
-        "relative_gap_limit": 0.01
-    }
 
 
 def test_config_keeps_uncoerced_numbers_as_written():

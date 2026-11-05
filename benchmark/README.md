@@ -95,8 +95,8 @@ A scenario with no `assignment` filter group cannot be matched.
 A local `mode: run` runs the same targets for the sweep's own tasks as one
 batch after the last task, with stage targets taken from the stages each task
 saved. Slurm needs every stage planned before the run, so there
-`compute_stage_assignments` is limited to pipelines, `recursive`, `single` without
-`enumerated_solutions`, and `saa`; other strategies are rejected. A task drops
+`compute_stage_assignments` is limited to pipelines (`single` and `recursive`
+runs are pipelines) and `saa`; other strategies are rejected. A task drops
 the zone files and skip markers a previous run left when its optimization
 starts (never at plan time), so a rerun that fails is not matched on its old
 zoning. Saved assignments are keyed on the zone file's checksum, so a rerun
@@ -512,7 +512,7 @@ weights, rather than for an exact geometrical perimeter.
 
 Even with comparable weighted objectives, **recursive bounds remain local to
 each stage**. Coarse aggregation restricts possible partitions, and finer
-recursive solves restrict candidate zones near the previous boundary. Their
+recursive solves hold the previous step's interior fixed. Their
 lower bounds do not certify the unrestricted fine-level optimum and should
 not be merged into a global bound curve. The plotter omits them; the raw events
 retain them only as `stage_bound` for auditing.

@@ -36,44 +36,6 @@ def test_repair_makes_contiguous():
     assert repaired[8] == 1
 
 
-def test_boundary_candidates_pins_interior():
-    G = make_grid_graph(3, 3)
-    centroids = [0, 8]
-    assignment = {i: (1 if i % 3 == 2 else 0) for i in G.nodes()}
-    cands = contiguity.boundary_candidates(G, assignment, centroids, radius=1)
-    # centroids pinned
-    assert cands[0] == {0}
-    assert cands[8] == {1}
-    # every candidate set contains the node's current zone
-    for node, zones in cands.items():
-        assert assignment[node] in zones
-
-
-def test_boundary_candidates_radius_expands_switchable_band():
-    G = make_grid_graph(3, 3)
-    centroids = [0, 8]
-    assignment = {i: (1 if i % 3 == 2 else 0) for i in G.nodes()}
-
-    cands = contiguity.boundary_candidates(G, assignment, centroids, radius=1)
-
-    assert 1 in cands[3]
-    assert cands[0] == {0}
-    assert cands[8] == {1}
-
-
-def test_boundary_candidates_anchors_centroids_before_relaxing_neighbors():
-    G = make_grid_graph(3, 3)
-    centroids = [0, 8]
-    assignment = {i: 1 for i in G.nodes()}
-
-    cands = contiguity.boundary_candidates(G, assignment, centroids, radius=1)
-
-    assert cands[0] == {0}
-    assert cands[8] == {1}
-    assert 0 in cands[1]
-    assert 0 in cands[3]
-
-
 def test_relax_unsupported_candidates_opens_closer_path():
     G = nx.Graph([(0, 1), (1, 2), (2, 3), (3, 0), (2, 4), (3, 4)])
     G.graph["closer_neighbors"] = {

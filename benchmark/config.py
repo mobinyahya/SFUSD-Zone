@@ -406,8 +406,6 @@ def optimization_config_hash(
     ):
         semantic.pop("school_distance_area_weight", None)
         semantic.pop("school_distance_student_weight", None)
-    if semantic.get("enumerated_solutions", -1) <= 0:
-        semantic.pop("enumerated_solutions", None)
     if not _contains_value(semantic, "feasible"):
         semantic.pop("feasible_hint_time_limit", None)
     if semantic.get("objective_weights") is None:

@@ -177,8 +177,8 @@ def test_single_zone_solver_rejects_solver_progress():
         _solve(save_solver_progress=True)
 
 
-def test_single_zone_config_requires_single_strategy():
-    with pytest.raises(ValueError, match="requires strategy='single'"):
+def test_single_zone_config_requires_a_single_step():
+    with pytest.raises(ValueError, match="requires a single-step run"):
         OptimizationConfig(
             levels=["Block_1", "Block_0"],
             solver="cp_single_zone",

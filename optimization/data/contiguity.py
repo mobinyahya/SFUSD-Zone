@@ -14,8 +14,6 @@ This module provides:
 * :func:`is_contiguous` / :func:`boundary_edges` -- validators / objective
   helpers,
 * :func:`repair` -- a post-hoc assignment fixer,
-* :func:`boundary_candidates` -- the candidate-narrowing used by the recursive
-  strategy to relax only near zone borders,
 * :func:`relax_unsupported_candidates` -- targeted expansion for projected
   blocks without monotone support toward their centroid.
 """
@@ -181,52 +179,6 @@ def repair(
     for node in orphans:
         result[node] = assignment[node]
     return result
-
-
-def boundary_candidates(
-    G: nx.Graph,
-    assignment: dict[int, int],
-    centroids: list[int],
-    radius: int = 1,
-) -> dict[int, set[int]]:
-    """Candidate sets that relax only near zone borders.
-
-    Nodes within ``radius`` hops of a zone boundary may switch to any zone
-    present in that neighborhood; interior nodes are pinned to their current
-    zone. This is the clean re-derivation of the legacy ``drop_boundary`` /
-    ``trim_noncontiguity`` heuristics, used to seed a finer level from a coarser
-    solution in the recursive strategy.
-    """
-    anchored = dict(assignment)
-    for z, centroid in enumerate(centroids):
-        anchored[centroid] = z
-
-    candidates: dict[int, set[int]] = {
-        node: {zone} for node, zone in anchored.items() if node in G
-    }
-    boundary_sources: list[tuple[int, set[int]]] = []
-    for u, v in G.edges():
-        zu = anchored.get(u)
-        zv = anchored.get(v)
-        if zu is None or zv is None or zu == zv:
-            continue
-        zones = {zu, zv}
-        boundary_sources.append((u, zones))
-        boundary_sources.append((v, zones))
-
-    # Let adjacent-zone labels propagate into the boundary band. The previous
-    # implementation expanded the band but still only inspected immediate
-    # neighbors, so radius > 1 rarely changed the candidate sets.
-    cutoff = max(0, int(radius))
-    for source, zones in boundary_sources:
-        for node in nx.single_source_shortest_path_length(G, source, cutoff=cutoff):
-            if node in anchored:
-                candidates.setdefault(node, {anchored[node]}).update(zones)
-
-    # Pin centroids regardless of coverage.
-    for z, centroid in enumerate(centroids):
-        candidates[centroid] = {z}
-    return candidates
 
 
 def relax_unsupported_candidates(

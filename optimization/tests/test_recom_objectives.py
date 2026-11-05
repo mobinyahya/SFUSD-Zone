@@ -497,6 +497,11 @@ def test_config_passes_recom_objective_options() -> None:
         levels=["BlockGroup_0"],
         solver="recom",
         recom_objective="capacity_match",
+        # capacity_match reads the assignment market, which needs every program.
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
         capacity_match_unassigned_weight=4,
         capacity_match_designated_weight=0.5,
     ).make_solver()
