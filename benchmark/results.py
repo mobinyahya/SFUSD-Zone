@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import errno
 import fcntl
 import json
 import os
 from pathlib import Path
 import tempfile
+import time
 from typing import Any, Mapping
+import warnings
 
 import pandas as pd
 
@@ -139,10 +142,16 @@ def _stage_rows(
             "pipeline_step_index": metadata.get("pipeline_step_index"),
             "method": metadata.get("method"),
             "objective_kind": metadata.get("objective_kind"),
-            "configured_time_limit_seconds": metadata.get("configured_time_limit_seconds"),
+            "configured_time_limit_seconds": metadata.get(
+                "configured_time_limit_seconds"
+            ),
             "pipeline_elapsed_seconds": metadata.get("pipeline_elapsed_seconds"),
-            "carry_over_time_received_seconds": metadata.get("carry_over_time_received_seconds"),
-            "unused_time_carried_forward_seconds": metadata.get("unused_time_carried_forward_seconds"),
+            "carry_over_time_received_seconds": metadata.get(
+                "carry_over_time_received_seconds"
+            ),
+            "unused_time_carried_forward_seconds": metadata.get(
+                "unused_time_carried_forward_seconds"
+            ),
             "mid_welfare": metadata.get("mid_welfare"),
             "saa_welfare": metadata.get("saa_welfare"),
             **{field: metrics_stage.get(field) for field in SPATIAL_FIELDS},
@@ -193,17 +202,56 @@ def _write_csv(df: pd.DataFrame, root: str, path: str) -> None:
         raise
 
 
+# How long an aggregation waits for another one before going ahead unlocked.
+AGGREGATION_LOCK_TIMEOUT = 600.0
+_AGGREGATION_LOCK_POLL = 1.0
+
+
 @contextmanager
-def _aggregation_lock(root: str):
+def _aggregation_lock(root: str, timeout: float | None = None):
+    """Serialize aggregations of ``root``, but never wait on it forever.
+
+    The lock only stops two aggregations from interleaving their CSV writes;
+    each write is atomic and every aggregation rescans all runs. A blocking
+    ``flock`` on NFS can hang indefinitely when the server loses track of a
+    lock (two Slurm allocations once sat in ``nfs_wait_bit_killable`` for
+    hours with every task done), so poll a non-blocking lock and, after
+    ``timeout`` seconds, aggregate without it.
+    """
+    timeout = AGGREGATION_LOCK_TIMEOUT if timeout is None else float(timeout)
     root_path = Path(root)
     root_path.mkdir(parents=True, exist_ok=True)
     lock_path = root_path / ".benchmark-aggregate.lock"
     with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        deadline = time.monotonic() + timeout
+        locked = False
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except (BlockingIOError, PermissionError):
+                pass
+            except OSError as exc:
+                if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.ENOLCK):
+                    raise
+                if exc.errno == errno.ENOLCK:  # no lock support on this mount
+                    break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(_AGGREGATION_LOCK_POLL)
+        if not locked:
+            warnings.warn(
+                f"Could not lock {lock_path} within {timeout:g}s; aggregating "
+                "without it.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
         try:
             yield
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            if locked:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _cell(value: Any) -> Any:
