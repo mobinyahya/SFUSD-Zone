@@ -341,7 +341,7 @@ class MNLChoiceModel(ChoiceModel):
         if merged.empty:
             return _PreparedZoningData(merged, {}, student_area_col)
         merged["assigned_zone"] = merged["assigned_zone"].astype(int)
-        merged.reset_index(drop=True, inplace=True)
+        merged = merged.reset_index(drop=True)
 
         zone_to_cols = {
             zone: self._cols(schools) for zone, schools in zone_to_schools.items()
