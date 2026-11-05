@@ -34,7 +34,6 @@ sfusd-match = "assignment.student_assignment.cli:cli"
 
 [dependency-groups]
 dev = [
-    "pandas-stubs~=3.1.0",
     "pytest>=8.0.0,<9.2",  # pytest 9.2 breaks pytest-xdist 3.8 --dist loadgroup
     "pytest-xdist>=3.8.0",
     "ruff>=0.15.20",
