@@ -4,7 +4,7 @@
 # real market, the zoning block and the matching block agree on the access
 # structure, and CP-SAT returns a zoning -- not to close the gap. Each extra
 # seed is another |Gamma| Booleans and O(|Gamma|) rows (|Gamma| is about 12,000
-# on Block_2), so raise saa_num_seeds only alongside the time limit.
+# on Block_3), so raise saa_num_seeds only alongside the time limit.
 #
 # hints: feasible is not optional here. A mid run with hints: voronoi once spent
 # 14,400s without finding a single feasible zoning on this instance while every
@@ -32,7 +32,7 @@ optimization_defaults:
   frl_dev: 0.15
 
   strategy: 'direct_samples'
-  levels: ['Block_2']
+  levels: ['Block_3']
   solve_time_limits: [600]
   gap_limits: [0]
   workers: 8

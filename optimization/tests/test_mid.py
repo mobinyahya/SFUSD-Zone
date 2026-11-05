@@ -1105,7 +1105,7 @@ def test_mid_real_data_feasible_hint_complementary_slackness():
     from optimization.data.mid import build_mid_market
     from optimization.levels import LevelSpec
 
-    level = "Block_3"
+    level = "Block_4"
     config = OptimizationConfig(
         data={"scenario": "summer-26-zoning", "overrides": {}},
         centroids_type="6-zone-9",

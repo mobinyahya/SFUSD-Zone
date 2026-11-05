@@ -353,7 +353,7 @@ uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml
 
 # Local output and a comparison of individual runs on the same instance:
 uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml \
-  --centroids 6-zone-3 --seeds 1 --levels Block_2 --time-limits 600 \
+  --centroids 6-zone-3 --seeds 1 --levels Block_3 --time-limits 600 \
   --output-dir analysis/plots/output/edges_6_zone_3
 ```
 
@@ -407,7 +407,7 @@ stay in seconds too, the same way objective columns stay in metres.
 `log` is the default because it crops nothing, which matters most where one
 method lands several times worse than the rest (plain CP on `Block_0`). Use
 `zoom` where every method finishes within a few percent and the log axis still
-bunches them (`Block_2`); the suffixes let both coexist in one output
+bunches them (`Block_3`); the suffixes let both coexist in one output
 directory. The frame is deliberately not called `median`, which already names
 an `--aggregate` choice and appears in every filename. Either way the
 `by_zone` figures keep a full-range **Full run** panel beside the zoom, so

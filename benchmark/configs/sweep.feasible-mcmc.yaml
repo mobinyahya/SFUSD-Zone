@@ -19,7 +19,7 @@ optimization_defaults:
 sweep:
   centroids_type: ['4-zone-rec-4', '5-zone-AF', '6-zone-3','7-zone-19', '8-zone-24']
   seed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-  levels: [[Block_3], [Block_2], [Block_1], [Block_0]]
+  levels: [[Block_4], [Block_3], [Block_2], [Block_0]]
 
 # An unrejected uniform ReCom chain, and uniform short bursts.
 tasks:

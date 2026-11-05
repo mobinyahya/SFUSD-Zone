@@ -1,7 +1,7 @@
 # All-schools (59-zone) 2026-27 study, capacity-balanced, round 4: cross-seeding.
 #
 # On the real (cluster) cohort, pinned cp_bool finds nothing from scratch: at
-# Block_0.5 the capacity band, FRL band, and the closer-neighbour (star-shaped)
+# Block_1 the capacity band, FRL band, and the closer-neighbour (star-shaped)
 # contiguity rule are jointly infeasible, and Block_0 stays UNKNOWN for an hour.
 # Adaptive short bursts with exactly one school per zone
 # (all_schools_2627_cap50_asb.yaml) reached 2,734 / 2,754 cut edges at

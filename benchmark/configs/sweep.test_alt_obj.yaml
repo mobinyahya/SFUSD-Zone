@@ -16,7 +16,7 @@ optimization_defaults:
       filters:
         optimization:
           capacity_scenario: A
-  levels: [Block_1]
+  levels: [Block_2]
   racial_dev: -1
   workers: 8
   cp_sat_search_strategy: distance_to_centroid

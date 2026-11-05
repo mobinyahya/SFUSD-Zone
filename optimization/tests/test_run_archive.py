@@ -162,7 +162,7 @@ def test_archive_is_a_hint_zoning_source(tmp_path):
     assert conversion.area_file_level(path, "BlockGroup_0") == LevelSpec("Block", 0)
     run_archive.set_final_stage(tmp_path, "coarse")
     assert conversion.load_area_assignment(path) == coarse.area_assignment()
-    assert conversion.area_file_level(path, "BlockGroup_0") == LevelSpec("Block", 1)
+    assert conversion.area_file_level(path, "BlockGroup_0") == LevelSpec("Block", 0)
 
 
 def test_reader_rejects_other_files(tmp_path):

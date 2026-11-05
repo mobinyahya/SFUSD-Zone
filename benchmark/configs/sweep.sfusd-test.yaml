@@ -30,7 +30,7 @@ sweep:
 
 tasks:
   - strategy: 'recursive'
-    levels: ['Block_2', 'Block_0']
+    levels: ['Block_3', 'Block_0']
     solve_time_limits: [400, 800]
     boundary_radius: 1
   

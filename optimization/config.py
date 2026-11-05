@@ -249,7 +249,7 @@ class OptimizationConfig:
     # naming the contiguity description.
     #
     # "zoned_transport_neighbors" is the default because it is both the
-    # tightest and the cheapest of the four: measured on Block_2 it comes in
+    # tightest and the cheapest of the four: measured on Block_3 it comes in
     # ~1,200 below "transport" and ~100 below "zoned_transport_flow", for one
     # cached LP of ~2-3s. Relaxing the closer-neighbor rows the master itself
     # carries, rather than swapping in the flow description, is also the
@@ -259,7 +259,7 @@ class OptimizationConfig:
     saa_welfare_bound: str = "zoned_transport_neighbors"
     # Gurobi threads for the zoned-transport LP. One, deliberately: Gurobi runs
     # concurrent LP, and on a model this size the racing algorithms mostly just
-    # contend. Across 1/2/4/6/8 threads on two Block_2 instances, no count
+    # contend. Across 1/2/4/6/8 threads on two Block_3 instances, no count
     # above 1 was reliably faster and several were clearly slower -- flow went
     # 2.4s -> 4.4s from 1 to 8 threads, neighbors 1.8s -> 2.5s on 6-zone-3.
     # (One cell bucked it: neighbors on 6-zone-9 at 4 threads, 2.5s against

@@ -79,7 +79,7 @@ def test_the_zoned_neighbors_bound_is_the_default():
 def test_the_zoned_transport_lp_runs_single_threaded_by_default():
     """Gurobi's concurrent LP only contends on a model this size.
 
-    Measured on Block_2: every thread count above one was slower, ``flow``
+    Measured on Block_3: every thread count above one was slower, ``flow``
     worst at 2.4s to 4.4s between 1 and 8 threads. This is deliberately a
     separate knob from the master's ``workers``.
     """

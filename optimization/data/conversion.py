@@ -27,7 +27,7 @@ import networkx as nx
 from loaders import DataScenario, load_scenario
 from loaders.tables import read_csv
 from optimization import run_archive
-from optimization.levels import LevelSpec
+from optimization.levels import LevelSpec, level_unit
 
 
 def base_area_assignment(G: nx.Graph, assignment: dict[int, int]) -> dict[int, int]:
@@ -227,18 +227,22 @@ def load_area_assignment(path: str) -> dict[int, int]:
 
 
 def area_file_level(path: str, default: LevelSpec | str) -> LevelSpec:
-    """The level a saved zoning was written at.
+    """The base level of the unit a saved zoning's area ids belong to.
 
-    Only the unit matters, since area files are keyed by the unit's base ids.
-    A ``zonings.json.xz`` records its final stage's level; a JSON named like
-    a benchmark ``zone_dict_area_<level>.json`` carries it in the name, and
-    any other file is read as ``default``'s unit.
+    Area files are keyed by their unit's base ids, so only the unit of the
+    level they were solved at matters, and saved names this hierarchy no longer
+    defines (``Block_0.5``) still resolve. A ``zonings.json.xz`` records its
+    final stage's level; a JSON named like a benchmark
+    ``zone_dict_area_<level>.json`` carries it in the name, and any other file
+    is read as ``default``'s unit.
     """
     if run_archive.is_zonings_archive(path):
         archive = run_archive.read_zonings(path)
-        return LevelSpec.parse(run_archive.get_stage(archive)["level"])
-    match = _AREA_FILE_LEVEL.search(str(path))
-    return LevelSpec.parse(match.group(1) if match else default)
+        level = run_archive.get_stage(archive)["level"]
+    else:
+        match = _AREA_FILE_LEVEL.search(str(path))
+        level = match.group(1) if match else default
+    return LevelSpec(level_unit(level), 0)
 
 
 def hint_from_area_assignment(

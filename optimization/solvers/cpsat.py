@@ -44,7 +44,7 @@ SCHOOL_DISTANCE_SCALE = 10**8
 # Rounding a float coefficient to the nearest integer multiple of 1/CP_SAT_SCALE
 # can go either way, so a solution of the scaled model could break the exact
 # constraint by up to 0.5/CP_SAT_SCALE per term -- roughly 0.4 FRL students per
-# zone at Block_2. Nothing inside CP-SAT notices (it only ever sees the scaled
+# zone at Block_3. Nothing inside CP-SAT notices (it only ever sees the scaled
 # model), but consumers that re-check the exact constraint do: ReCom rejects any
 # violation above 1e-6, which is what made CP-SAT warm starts unusable as short
 # bursts' initial state. Rounding each side away from feasibility instead makes

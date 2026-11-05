@@ -1,11 +1,11 @@
 # All-schools (59-zone) 2026-27 study, capacity-balanced (see
-# all_schools_2627_cap50.yaml), multilevel through the new Block_0.5 level.
+# all_schools_2627_cap50.yaml), multilevel through Block_1 (formerly Block_0.5).
 #
-# Block_1 is infeasible for the +/-50% capacity band (its aggregates carry ~46
-# students); Block_0.5 (3,000-node target, ~1,850 nodes, <= ~17 students per
-# aggregate) is feasible, and Block_0.5 -> Block_0 at looseness 1.1, radius 2
+# Block_2 is infeasible for the +/-50% capacity band (its aggregates carry ~46
+# students); Block_1 (3,000-node target, ~1,850 nodes, <= ~17 students per
+# aggregate) is feasible, and Block_1 -> Block_0 at looseness 1.1, radius 2
 # reached 2,481 Block_0 cut edges in 7 local minutes against 3,035-3,271 for the
-# Block_0-only and Block_1-first cp_bool routes.
+# Block_0-only and Block_2-first cp_bool routes.
 #
 # Grid: looseness {1.0, 1.1, 1.2} x boundary radius {1, 2, 3}, plus a second
 # seed and a coarse-heavy time split for the local winner.
@@ -27,7 +27,7 @@ optimization_defaults:
   centroids_type: '59-zone'
   solver: cp_bool
   strategy: recursive
-  levels: ['Block_0.5', 'Block_0']
+  levels: ['Block_1', 'Block_0']
   solve_time_limits: [1200, 2400]
   save_solver_logs: true
   save_solver_progress: false

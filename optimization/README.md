@@ -14,7 +14,7 @@ objective: cut_edges
 constraints: {frl_dev: 0.3, racial_dev: 0.3, max_distance: 5}
 steps:
   - name: coarse
-    level: Block_1
+    level: Block_2
     time_limit: 30
   - name: refine
     level: Block_0
@@ -136,7 +136,7 @@ student travel distance, with each step hinted from its predecessor:
 
 ```yaml
 steps:
-  - {name: counts, level: Block_1, method: cp_int, objective: cut_edges}
+  - {name: counts, level: Block_2, method: cp_int, objective: cut_edges}
   - {name: perimeter, level: Block_0, method: cp_bool, objective: boundary_perimeter}
   - {name: distance, level: Block_0, method: recom, objective: average_distance}
   - {name: squared, level: Block_0, method: cp_int, objective: average_squared_distance,
@@ -251,7 +251,7 @@ independently.
   formulation: a non-centroid node may join a zone only if a strictly-closer
   neighbor does too. Same module validates contiguity and repairs assignments.
 - **Levels are data, not file edits.** A `LevelSpec` is `(unit, depth)`
-  (`"BlockGroup_0"`, `"Block_2"`). `Dataset` generates and caches whatever
+  (`"BlockGroup_0"`, `"Block_3"`). `Dataset` generates and caches whatever
   graph a level needs; `LevelConverter` maps assignments between any two
   levels (across depth or unit).
 - **Nested graph hierarchy.** Level 0 contains the source census units. Every
@@ -302,7 +302,7 @@ choice, or heatmap code.
 Switch granularity, solver, or strategy purely in the config:
 
 ```yaml
-levels: ['Block_2', 'Block_1', 'Block_0']
+levels: ['Block_3', 'Block_2', 'Block_0']
 solver: 'cp_bool'
 strategy: 'recursive'
 data:
@@ -458,7 +458,7 @@ how many splits a call harvests. Solved pairs are memoized on
 `(pair, territory, fixings)`, which expires exactly when another pair disturbs
 one of the two zones, so sweeps after the incumbent settles cost ~0s.
 
-Measured on Block_2 (501 units, `Z = 6`, 4,154 applicants,
+Measured on Block_3 (501 units, `Z = 6`, 4,154 applicants,
 `max_distance: 3.1`, six workers, 600s), seeded with one `cp_bool` feasibility
 hint and ReCom off so the comparison isolates the redraw: `mid` goes
 10,307.2692 -> 11,822.4615 (**+14.70%**) and `stable_matching` goes
@@ -530,7 +530,7 @@ not formal exact-arithmetic certificates. See
 
 Pricing is fast -- anchoring plus the CP-SAT formulation took a label's solve
 from ~600s for a 0.62% gap to 0.1-8s proved optimal -- and two-zone redraws
-now move the incumbent 15-17% off the feasibility hint on Block_2, but the
+now move the incumbent 15-17% off the feasibility hint on Block_3, but the
 *bound* side is untouched. The certified bound is the first-choice constant in
 every run: for it to stay at 16,830.95 while the restricted LP sits at
 12,050.60, the per-label pricing residuals must sum to ~4,780, against total

@@ -56,7 +56,7 @@ optimization_defaults:
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9']
-  levels: [['Block_2']]
+  levels: [['Block_3']]
 
 tasks:
   # The new strategy, with and without congestion pricing. Its iterations are
