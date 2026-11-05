@@ -102,11 +102,11 @@ def prepare_program_inputs(
     if grade_programs["program_id"].duplicated().any():
         raise ValueError("Program input contains duplicate program_id values.")
 
-    grade_programs.reset_index(drop=True, inplace=True)
+    grade_programs = grade_programs.reset_index(drop=True)
     without_special = grade_programs.loc[
         ~grade_programs["program_type"].isin(SPECIAL_PROGRAMS)
     ].copy()
-    without_special.reset_index(drop=True, inplace=True)
+    without_special = without_special.reset_index(drop=True)
     if "programno" in grade_programs.columns:
         grade_programs["programno"] = grade_programs.index + 1
         without_special["programno"] = without_special.index + 1

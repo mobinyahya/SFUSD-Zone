@@ -105,8 +105,8 @@ class EvaluateAssignments:
         table_path: pathlib.Path, save_name: str = "clean_summary.csv"
     ):
         metrics = pd.read_csv(table_path)
-        metrics.drop(index=0, inplace=True)
-        metrics.set_index("Assignment", inplace=True)
+        metrics = metrics.drop(index=0)
+        metrics = metrics.set_index("Assignment")
 
         proximity = ["Distance Av", "Distance < 0.5", "Distance > 3"]
         diversity = [

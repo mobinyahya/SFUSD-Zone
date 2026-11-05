@@ -813,7 +813,9 @@ class MatchEvaluator:
         if base.index.name != "studentno":
             base.index.name = "studentno"
         self.student_data = base.join(self.assignments, how="left")
-        self.student_data.rename(columns={"programcodes": "assignment"}, inplace=True)
+        self.student_data = self.student_data.rename(
+            columns={"programcodes": "assignment"}
+        )
         for column, default in {
             "assignment": pd.NA,
             "programno": 0,

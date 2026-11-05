@@ -34,9 +34,9 @@ class Schools:
         """
         df = school_data.copy()
         if "school_id" not in df.columns:
-            df.reset_index(level=0, inplace=True)
+            df = df.reset_index(level=0)
         elif df.index.name == "school_id":
-            df.reset_index(drop=True, inplace=True)
+            df = df.reset_index(drop=True)
         df["attendance_area"] = df.school_id.copy()
         df.loc[df.category == "Citywide", "attendance_area"] = 0
         df = df.set_index("school_id")
