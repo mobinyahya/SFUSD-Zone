@@ -1,5 +1,5 @@
 # Method comparison on cut edges: MIP, CP, ReCom, short bursts, adaptive
-# short bursts (hedge), and a two-level MIP (Block_3 -> Block_x), each at
+# short bursts (hedge), and two-level MIP and CP (Block_3 -> Block_x), each at
 # Block_0, Block_1 and Block_2 with a 10-minute budget.
 # Run: uv run python -m benchmark.run benchmark/configs/benchmark_methods_2324.yaml
 
@@ -97,6 +97,14 @@ tasks:
   # band (cut-edge endpoints + 1 hop) at Block_x, hinted from Block_3 everywhere.
   # Unused Block_3 time carries over to the fine step.
   - solver: 'mip'
+    strategy: recursive
+    levels: [['Block_3', 'Block_0'], ['Block_3', 'Block_1'], ['Block_3', 'Block_2']]
+    solve_time_limits: [300, 300]
+    boundary_radius: 1
+    carry_over_compute: true
+
+  # Multilevel CP: the same two-level scheme with cp_bool.
+  - solver: 'cp_bool'
     strategy: recursive
     levels: [['Block_3', 'Block_0'], ['Block_3', 'Block_1'], ['Block_3', 'Block_2']]
     solve_time_limits: [300, 300]
