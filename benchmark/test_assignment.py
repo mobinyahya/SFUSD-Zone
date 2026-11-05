@@ -308,22 +308,16 @@ def test_saa_assignment_targets_mark_unproduced_iterations(tmp_path):
 def test_planned_stage_names_follow_each_strategy():
     levels = ["BlockGroup_1", "BlockGroup_0"]
 
-    assert planned_stage_names({"strategy": "recursive", "levels": levels}) == [
-        "stage_00_BlockGroup_1",
-        "stage_01_BlockGroup_0",
-    ]
-    assert planned_stage_names({"strategy": "single", "levels": levels}) == [
-        "stage_00_BlockGroup_0"
-    ]
+    def planned(strategy):
+        # Tasks carry normalized configs: single/recursive are pipelines.
+        config = OptimizationConfig(strategy=strategy, levels=levels)
+        return planned_stage_names(optimization_config_to_dict(config))
+
+    assert planned("recursive") == ["stage_00_BlockGroup_1", "stage_01_BlockGroup_0"]
+    assert planned("single") == ["stage_00_BlockGroup_0"]
     assert planned_stage_names(
         {"strategy": "saa", "levels": levels, "max_iterations": 1}
     ) == ["iteration_00_BlockGroup_0", "iteration_01_BlockGroup_0"]
-    assert (
-        planned_stage_names(
-            {"strategy": "single", "levels": levels, "enumerated_solutions": 3}
-        )
-        is None
-    )
     assert (
         planned_stage_names({"strategy": "iterative_choice", "levels": levels}) is None
     )

@@ -72,7 +72,7 @@ def test_the_zoned_neighbors_bound_is_the_default():
     assert config.saa_welfare_bound == "zoned_transport_neighbors"
     # The strategy's own fallback must agree, or a config-free construction
     # would silently use a looser constant.
-    options = config.make_strategy().options
+    options = OptimizationConfig(strategy="iterative_choice").make_strategy().options
     assert options["saa_welfare_bound"] == "zoned_transport_neighbors"
 
 
@@ -87,7 +87,8 @@ def test_the_zoned_transport_lp_runs_single_threaded_by_default():
 
     config = OptimizationConfig(workers=32)
     assert config.zoned_transport_workers == 1
-    assert config.make_strategy().options["zoned_transport_workers"] == 1
+    legacy = OptimizationConfig(strategy="iterative_choice", workers=32)
+    assert legacy.make_strategy().options["zoned_transport_workers"] == 1
 
     with pytest.raises(ValueError, match="zoned_transport_workers"):
         OptimizationConfig(zoned_transport_workers=0)

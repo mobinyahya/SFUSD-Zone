@@ -101,9 +101,9 @@ def process_solution_assignments(
 def planned_stage_names(config: Mapping[str, Any]) -> list[str] | None:
     """Every stage a task can save, or ``None`` when its solve decides the count.
 
-    A pipeline saves one stage per step, ``recursive`` one per level, plain
-    ``single`` one at the finest level, and ``saa`` up to
-    ``max_iterations + 1`` iterations there.
+    A pipeline (every ``single`` and ``recursive`` run is one) saves one stage
+    per step, and ``saa`` up to
+    ``max_iterations + 1`` iterations at the finest level.
     """
     levels = planned_stage_levels(config)
     if levels is None:
@@ -120,10 +120,6 @@ def planned_stage_levels(config: Mapping[str, Any]) -> list[str] | None:
             step["level"] if isinstance(step, Mapping) else step.level
             for step in config["steps"]
         ]
-    elif strategy == "recursive":
-        planned = levels
-    elif strategy == "single" and int(config.get("enumerated_solutions", -1)) <= 0:
-        planned = levels[-1:]
     elif strategy == "saa":
         planned = levels[-1:] * (int(config["max_iterations"]) + 1)
     else:

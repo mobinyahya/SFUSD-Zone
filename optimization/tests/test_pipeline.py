@@ -54,15 +54,10 @@ class MemoryDataset:
 
 
 def _config(**kwargs):
-    return OptimizationConfig(
-        hints="none",
-        workers=1,
-        frl_dev=1,
-        racial_dev=1,
-        overage=5,
-        shortage=0,
-        **kwargs,
+    defaults = dict(
+        hints="none", workers=1, frl_dev=1, racial_dev=1, overage=5, shortage=0
     )
+    return OptimizationConfig(**{**defaults, **kwargs})
 
 
 def test_method_objective_shorthand_and_serialization():
@@ -502,3 +497,232 @@ def test_capacity_reference_is_frozen_reused_and_restored(monkeypatch):
 def test_invalid_capacity_reference_fails_before_loading(reference):
     with pytest.raises(ValueError, match="capacity_reference"):
         _config(steps=[{"capacity_reference": reference}])
+
+
+# --- single / recursive shorthand ------------------------------------------ #
+
+
+class _Recorder:
+    """``solve_objective`` stand-in that records each step's problem and limits."""
+
+    def __init__(self, statuses=None, wall_times=None, duplicate=()):
+        self.statuses = list(statuses or [])
+        self.wall_times = list(wall_times or [])
+        self.duplicate = set(duplicate)
+        self.problems, self.options = [], []
+
+    def __call__(self, problem, method, objective, *, options=None):
+        index = len(self.problems)
+        self.problems.append(problem)
+        self.options.append(dict(options))
+        if index in self.duplicate:
+            from optimization.problem import DuplicateCentroidError
+
+            raise DuplicateCentroidError(23, {0, 3})
+        status = self.statuses[index] if index < len(self.statuses) else "OPTIMAL"
+        wall = self.wall_times[index] if index < len(self.wall_times) else 0.0
+        assignment = (
+            {n: int(n >= 8) for n in problem.G} if status != "INFEASIBLE" else {}
+        )
+        return ZoneSolution(problem, assignment, status, 0.0, wall)
+
+    def limits(self):
+        return [(o["solve_time_limit"], o["relative_gap_limit"]) for o in self.options]
+
+
+def _run(monkeypatch, recorder, **kwargs):
+    monkeypatch.setattr("optimization.strategies.pipeline.solve_objective", recorder)
+    config = _config(**kwargs)
+    return config, config.make_strategy().run(
+        MemoryDataset(config), config.make_solver()
+    )
+
+
+def test_single_is_one_step_at_the_finest_level_under_the_final_limits(monkeypatch):
+    recorder = _Recorder()
+    config, results = _run(
+        monkeypatch,
+        recorder,
+        strategy="single",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[3.0, 7.0],
+        gap_limits=[0.2, 0.01],
+        boundary_prop=0.75,
+    )
+    assert config.strategy == "pipeline"
+    assert [step.level for step in config.steps] == ["BlockGroup_0"]
+    assert recorder.limits() == [(7.0, 0.01)]
+    assert results[-1].problem.boundary_prop == 0.75
+
+
+def test_recursive_solves_every_level_and_refines_the_previous_interior(
+    monkeypatch,
+):
+    recorder = _Recorder()
+    config, results = _run(
+        monkeypatch,
+        recorder,
+        strategy="recursive",
+        levels=["BlockGroup_1", "BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[3.0, 7.0],
+        gap_limits=[0.2],
+        boundary_radius=0,
+        hints="voronoi",
+    )
+    assert [step.level for step in config.steps] == [
+        "BlockGroup_1",
+        "BlockGroup_0",
+        "BlockGroup_0",
+    ]
+    assert config.steps[0].inputs == []
+    assert config.steps[1].inputs == [
+        SolutionInput(mode="assign", select="interior", radius=0),
+        SolutionInput(mode="hint"),
+    ]
+    # Levels past the configured limits keep the last ones.
+    assert recorder.limits() == [(3.0, 0.2), (7.0, 0.2), (7.0, 0.2)]
+    refined = recorder.problems[1]
+    interior = selected_nodes(
+        refined.G, results[0].assignment, SolutionInput(select="interior", radius=0)
+    )
+    assert set(refined.fixed) == interior
+    assert refined.hint == results[0].assignment
+
+
+def test_recursive_without_hints_only_holds_the_interior():
+    config = _config(strategy="recursive", levels=["BlockGroup_1", "BlockGroup_0"])
+    assert config.steps[1].inputs == [
+        SolutionInput(mode="assign", select="interior", radius=1)
+    ]
+
+
+def test_looseness_scales_each_coarser_steps_constraints(monkeypatch):
+    recorder = _Recorder()
+    _run(
+        monkeypatch,
+        recorder,
+        strategy="recursive",
+        levels=["BlockGroup_2", "BlockGroup_1", "BlockGroup_0"],
+        looseness=1.2,
+        frl_dev=0.2,
+        racial_dev=0.3,
+        overage=0.4,
+        shortage=-1,
+    )
+    multipliers = [1.2**2, 1.2, 1.0]
+    assert [p.frl_dev for p in recorder.problems] == pytest.approx(
+        [0.2 * m for m in multipliers]
+    )
+    assert [p.racial_dev for p in recorder.problems] == pytest.approx(
+        [0.3 * m for m in multipliers]
+    )
+    assert [p.overage for p in recorder.problems] == pytest.approx(
+        [0.4 * m for m in multipliers]
+    )
+    # A switched-off constraint stays off.
+    assert [p.shortage for p in recorder.problems] == [-1, -1, -1]
+
+
+def test_recursive_rejects_tightening_looseness():
+    with pytest.raises(ValueError, match="looseness"):
+        _config(strategy="recursive", levels=["BlockGroup_0"], looseness=0.9)
+
+
+def test_steps_cannot_be_combined_with_recursive():
+    with pytest.raises(ValueError, match="recursive"):
+        _config(strategy="recursive", steps=[{"level": "BlockGroup_0"}])
+
+
+def test_carry_over_is_off_by_default(monkeypatch):
+    recorder = _Recorder(wall_times=[1.0, 2.0])
+    _, results = _run(
+        monkeypatch,
+        recorder,
+        strategy="recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+    )
+    assert [limit for limit, _ in recorder.limits()] == [5.0, 10.0]
+    assert "effective_time_limit_seconds" not in results[0].metadata
+
+
+def test_carry_over_hands_on_unused_solver_time(monkeypatch):
+    recorder = _Recorder(statuses=["FEASIBLE", "OPTIMAL"], wall_times=[1.25, 2.0])
+    _, results = _run(
+        monkeypatch,
+        recorder,
+        strategy="recursive",
+        levels=["BlockGroup_0", "BlockGroup_0"],
+        solve_time_limits=[5.0, 10.0],
+        carry_over_compute=True,
+    )
+    assert [limit for limit, _ in recorder.limits()] == [5.0, 13.75]
+    first, second = (r.metadata for r in results)
+    assert first["configured_time_limit_seconds"] == 5.0
+    assert first["effective_time_limit_seconds"] == 5.0
+    assert first["unused_time_carried_forward_seconds"] == pytest.approx(3.75)
+    assert second["carry_over_time_received_seconds"] == pytest.approx(3.75)
+    assert second["effective_time_limit_seconds"] == pytest.approx(13.75)
+    # Stages report the solver's own time, not the step's elapsed time.
+    assert [r.wall_time for r in results] == [1.25, 2.0]
+
+
+def test_a_nonfinal_duplicate_centroid_step_is_skipped(monkeypatch):
+    recorder = _Recorder(duplicate={0})
+    _, results = _run(
+        monkeypatch,
+        recorder,
+        strategy="recursive",
+        levels=["BlockGroup_1", "BlockGroup_0"],
+        solve_time_limits=[4.0, 7.0],
+        carry_over_compute=True,
+    )
+    assert [r.status for r in results] == ["SKIPPED", "OPTIMAL"]
+    skipped = results[0]
+    assert skipped.assignment == {}
+    assert skipped.metadata["skip_reason"] == "duplicate_centroid"
+    assert skipped.metadata["duplicate_centroid_node"] == 23
+    assert skipped.metadata["duplicate_centroid_zones"] == [0, 3]
+    assert skipped.metadata["pipeline_step_index"] == 0
+    assert skipped.metadata["unused_time_carried_forward_seconds"] == 4.0
+    assert [limit for limit, _ in recorder.limits()] == [4.0, 11.0]
+    # With no earlier step to refine, the next step starts from scratch.
+    assert recorder.problems[1].fixed is None
+    assert recorder.problems[1].hint is None
+
+
+def test_a_final_duplicate_centroid_step_raises(monkeypatch):
+    from optimization.problem import DuplicateCentroidError
+
+    with pytest.raises(DuplicateCentroidError, match="Node 23"):
+        _run(monkeypatch, _Recorder(duplicate={0}), levels=["BlockGroup_0"])
+
+
+def test_single_math_programming_step_uses_the_generated_hint(monkeypatch):
+    from optimization.data.initial_solutions import InitialSolution
+    from optimization.solvers import base as solver_base
+
+    hint = {node: int(node >= 8) for node in range(16)}
+    monkeypatch.setattr(
+        solver_base,
+        "initial_solution",
+        lambda problem, hints, **kwargs: InitialSolution(
+            assignment=hint, metadata={"hints": hints}
+        ),
+    )
+    recorder = _Recorder()
+    _run(monkeypatch, recorder, solver="cp_int", hints="voronoi")
+    assert recorder.problems[0].hint == hint
+
+
+def test_shorthand_steps_take_the_runs_objective_fields():
+    assert _config(compactness_objective="school_distance").steps[0].objective == (
+        "school_distance"
+    )
+    from optimization.pipeline import default_objective
+
+    legacy = SimpleNamespace(
+        objective=None, recom_objective="welfare", compactness_objective="cut_edges"
+    )
+    assert default_objective(legacy, "recom") == "matching_welfare"
+    assert default_objective(legacy, "cp_bool") == "cut_edges"

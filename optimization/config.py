@@ -35,6 +35,8 @@ _RECOM = ReComSettings()
 # Strategies that read max_iterations, and those that read tolerance.
 _MAX_ITERATION_STRATEGIES = {"iterative_choice", "priced_access", "mid_decomp", "saa"}
 _TOLERANCE_STRATEGIES = _MAX_ITERATION_STRATEGIES | {"dantzig_wolfe"}
+# Strategies a run states as pipeline steps (``optimization.pipeline.shorthand_steps``).
+PIPELINE_SHORTHANDS = {"single", "recursive", "pipeline"}
 
 # Field validation tables. ``strategy``, ``solver`` and ``recom_objective`` are
 # checked against their registries; the ``recom_*`` method settings by
@@ -48,6 +50,7 @@ _CHOICES = {
     "priced_access_price_source": PRICE_SOURCES,
     "budget_accounting": BUDGET_ACCOUNTING_MODES,
     "hints": ("feasible", "voronoi", "none"),
+    "compactness_objective": ("cut_edges", "school_distance", "average_distance"),
 }
 _BOOLEANS = (
     "weight_edges",
@@ -65,7 +68,6 @@ _BOOLEANS = (
 )
 # Integer fields and their minimum (``None``: any integer).
 _INTEGERS = {
-    "enumerated_solutions": None,
     "recom_iterations": None,
     "centroid_neighbor_radius": 0,
     "choice_access_triangle_limit": 0,
@@ -190,7 +192,6 @@ class OptimizationConfig:
     cp_model_probing_level: int | None = None
     symmetry_level: int | None = None
     cp_sat_search_strategy: str | None = None
-    enumerated_solutions: int = -1
     # ReCom: the move budget (-1: time only), then the settings that pick
     # the method (see ``ReComSettings`` for what each means and the presets).
     recom_iterations: int = -1
@@ -363,8 +364,13 @@ class OptimizationConfig:
     # --- data ingestion ----------------------------------------------- #
     data: dict[str, Any] = field(default_factory=_legacy_data_config)
     _resolved_data_scenario: InitVar[DataScenario | None] = None
+    # Set by ``step_config``: the settings of one pipeline step's solve, which
+    # are never expanded into steps themselves.
+    _solve_local: InitVar[bool] = False
 
-    def __post_init__(self, _resolved_data_scenario: DataScenario | None):
+    def __post_init__(
+        self, _resolved_data_scenario: DataScenario | None, _solve_local: bool
+    ):
         if not isinstance(self.data, Mapping):
             raise ValueError("data must be a {scenario, overrides} map.")
         self.data = deepcopy(dict(self.data))
@@ -377,19 +383,26 @@ class OptimizationConfig:
             raise ValueError("steps must be a list of solve steps.")
         for name, value in self.constraints.items():
             setattr(self, name, value)
-        if (
-            self.steps
-            or self.method is not None
-            or self.objective is not None
-            or self.strategy == "pipeline"
-        ):
-            if self.strategy not in {"single", "pipeline"}:
-                raise ValueError(
-                    "steps/method/objective cannot be combined with a legacy strategy."
-                )
-            self.steps = normalize_steps(self)
-            self.levels = [step.level for step in self.steps]
-            self.strategy = "pipeline"
+        import optimization.solvers  # noqa: F401  (registers the solvers)
+        from optimization.solvers.base import available_solvers
+        from optimization.solvers.recom import RECOM_OBJECTIVES
+        from optimization.strategies.base import available_strategies
+
+        for name, choices in {
+            "strategy": sorted(set(available_strategies()) | PIPELINE_SHORTHANDS),
+            "solver": available_solvers(),
+            "recom_objective": RECOM_OBJECTIVES,
+            **_CHOICES,
+        }.items():
+            if getattr(self, name) not in choices:
+                raise ValueError(f"{name} must be one of: {', '.join(choices)}.")
+        # ``single`` and ``recursive`` are shorthand for pipeline steps; see
+        # ``optimization.pipeline.shorthand_steps``.
+        if not _solve_local and self.strategy in PIPELINE_SHORTHANDS:
+            if self.steps and self.strategy == "recursive":
+                raise ValueError("steps cannot be combined with strategy='recursive'.")
+            if not self.steps:
+                self.unit  # The shorthand reads its steps off ``levels``.
             for name in ("solve_time_limits", "gap_limits"):
                 values = getattr(self, name)
                 if not isinstance(values, list) or not values:
@@ -404,6 +417,15 @@ class OptimizationConfig:
                     raise ValueError(
                         f"{name} must contain finite non-negative numbers."
                     )
+            if self.strategy == "recursive" and self.looseness < 1.0:
+                raise ValueError("looseness must be >= 1.0 for recursive runs.")
+            self.steps = normalize_steps(self)
+            self.levels = [step.level for step in self.steps]
+            self.strategy = "pipeline"
+        elif self.steps or self.method is not None or self.objective is not None:
+            raise ValueError(
+                "steps/method/objective cannot be combined with a legacy strategy."
+            )
 
         self.unit
         specs = [LevelSpec.parse(level) for level in self.levels]
@@ -417,19 +439,6 @@ class OptimizationConfig:
             raise ValueError(
                 f"No predefined graph size for levels: {', '.join(unsupported)}."
             )
-        import optimization.solvers  # noqa: F401  (registers the solvers)
-        from optimization.solvers.base import available_solvers
-        from optimization.solvers.recom import RECOM_OBJECTIVES
-        from optimization.strategies.base import available_strategies
-
-        for name, choices in {
-            "strategy": available_strategies(),
-            "solver": available_solvers(),
-            "recom_objective": RECOM_OBJECTIVES,
-            **_CHOICES,
-        }.items():
-            if getattr(self, name) not in choices:
-                raise ValueError(f"{name} must be one of: {', '.join(choices)}.")
         for name in _BOOLEANS:
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"{name} must be a Boolean.")
@@ -459,17 +468,12 @@ class OptimizationConfig:
                 coerce=self.strategy == "saa",
             )
 
-        if self.strategy == "recursive" and self.looseness < 1.0:
-            raise ValueError("looseness must be >= 1.0 for recursive runs.")
-        if self.solver == "cp_single_zone" and self.strategy != "single":
-            raise ValueError("cp_single_zone requires strategy='single'.")
-        if self.enumerated_solutions > 0:
-            if self.solver not in {"cp_bool", "cp_int"}:
-                raise ValueError(
-                    "enumerated_solutions requires solver='cp_bool' or 'cp_int'."
-                )
-            if self.strategy != "single":
-                raise ValueError("enumerated_solutions requires strategy='single'.")
+        # A solve-local step config carries no steps; its run checked these.
+        if self.strategy != "pipeline" or self.steps:
+            methods = [step.method for step in self.steps] or [self.solver]
+            single_step = self.strategy == "pipeline" and len(self.steps) == 1
+            if "cp_single_zone" in methods and not single_step:
+                raise ValueError("cp_single_zone requires a single-step run.")
         self._validate_school_distance()
         if isinstance(self.max_distance, str):
             if self.max_distance.strip().lower() == "auto":
@@ -882,12 +886,9 @@ class OptimizationConfig:
             carry_over_compute=self.carry_over_compute,
             budget_accounting=self.budget_accounting,
             gap_limits=self.gap_limits,
-            enumerated_solutions=self.enumerated_solutions,
             seed=self.seed,
             hints=self.hints,
             feasible_hint_time_limit=self.feasible_hint_time_limit,
-            looseness=self.looseness,
-            boundary_radius=self.boundary_radius,
             boundary_prop=self.boundary_prop,
             max_iterations=self.max_iterations,
             choice_model_method=self.choice_model_method,

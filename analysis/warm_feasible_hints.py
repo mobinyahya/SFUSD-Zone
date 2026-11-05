@@ -73,9 +73,9 @@ def main() -> int:
         raise SystemExit(f"No task in {args.sweep} uses centroid {args.centroid!r}.")
 
     # The cache keys a hint on the feasible set and the centroid radius, so
-    # build every task's problem and warm each distinct key once. Recursive
-    # runs search for their first feasible zoning at the coarsest level, under
-    # that level's loosened constraints.
+    # build every task's problem and warm each distinct key once. A multi-level
+    # (``recursive``) run searches for its first feasible zoning at its first
+    # step, under that step's loosened constraints.
     datasets = {}
     warmed = set()
     failures = 0
@@ -105,12 +105,8 @@ def main() -> int:
                     warmed.add(key)
                     failures += _warm(problem, effective, args)
             continue
-        level, multiplier = config.levels[-1], 1.0
-        if config.strategy == "recursive":
-            level = config.levels[0]
-            multiplier = float(config.looseness) ** (len(config.levels) - 1)
         problem = config.make_strategy().problem_for(
-            datasets[data_key], level, constraint_multiplier=multiplier
+            datasets[data_key], config.levels[-1]
         )
         key = (feasibility_fingerprint(problem), config.centroid_neighbor_radius)
         if key not in warmed:

@@ -113,7 +113,7 @@ def test_nested_school_distance_objective_retains_its_weights():
     assert optimization_config_hash(first) != optimization_config_hash(second)
 
 
-def test_legacy_hash_payload_omits_empty_pipeline_settings(monkeypatch):
+def test_shorthand_hash_payload_records_steps_not_shorthand_fields(monkeypatch):
     payloads = []
 
     def capture(payload):
@@ -124,10 +124,11 @@ def test_legacy_hash_payload_omits_empty_pipeline_settings(monkeypatch):
     result = optimization_config_hash(OptimizationConfig(), source_manifest={})
 
     assert result == "legacy-task-hash"
-    assert (
-        not {"method", "objective", "steps", "constraints"}
-        & payloads[0]["optimization"].keys()
-    )
+    # A single run hashes as the one step it expands to.
+    payload = payloads[0]["optimization"]
+    assert payload["strategy"] == "pipeline"
+    assert [step["level"] for step in payload["steps"]] == ["BlockGroup_0"]
+    assert not {"method", "objective", "constraints"} & payload.keys()
 
 
 def test_saved_pipeline_reconstructs_each_steps_problem(tmp_path):
