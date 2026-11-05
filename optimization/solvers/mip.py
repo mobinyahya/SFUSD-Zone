@@ -175,6 +175,7 @@ class MipSolver(Solver):
 
                 metadata = {
                     "solver": self.name,
+                    "hint_dropped_nodes": getattr(self, "_hint_dropped_nodes", 0),
                     **self._solver_log_metadata(log_path),
                     **self._solver_progress_metadata(progress),
                 }
@@ -698,9 +699,62 @@ class MipSolver(Solver):
             m.addConstr(utilities[cut.node] <= expr)
 
     def _add_hints(self, problem: ZoneProblem, x: _AssignmentVars) -> None:
+        self._hint_dropped_nodes = 0
         hint = self.hint_assignment(problem)
         if not hint:
             return
+        hint = self._start_hint(problem, hint)
         for (z, i), var in x.items():
             if i in hint:
                 var.Start = 1 if hint[i] == z else 0
+
+    def _start_hint(self, problem: ZoneProblem, hint: dict[int, int]) -> dict[int, int]:
+        """``hint`` without the nodes the model's own rows would reject.
+
+        Gurobi discards a MIP start outright if any row is violated, and a
+        projected coarse zoning routinely breaks the closer-neighbor rows at a
+        few fine blocks: a coarse node can have a closer same-zone neighbor
+        that some block inside it lacks. Leaving those blocks unset, with the
+        blocks on their closer-neighbor paths toward the school (so Gurobi can
+        re-route their support) and any block hinted outside its candidates,
+        makes it a partial start, which Gurobi completes instead of dropping.
+        """
+        keep = {
+            node: zone
+            for node, zone in hint.items()
+            if zone in problem.candidate_zones(node)
+        }
+        if self._contiguity_model() == "neighbors":
+            relaxed = contiguity.relax_unsupported_candidates(
+                problem.G,
+                keep,
+                list(problem.centroids),
+                problem.centroid_school_ids,
+                {node: {zone} for node, zone in keep.items()},
+            )
+            for node in list(keep):
+                if relaxed.get(node) != {keep[node]}:
+                    del keep[node]
+            # A kept block whose every support was released would stay pinned
+            # to a zone it can no longer reach; release it too, until what is
+            # left supports itself.
+            supports = contiguity.contiguity_supports(
+                problem.G,
+                problem.centroids,
+                problem.centroid_school_ids,
+                problem.candidate_zones,
+            )
+            centroids = set(problem.centroids)
+            changed = True
+            while changed:
+                changed = False
+                for node, zone in list(keep.items()):
+                    if node in centroids:
+                        continue
+                    if not any(
+                        keep.get(s) == zone for s in supports.get((node, zone), ())
+                    ):
+                        del keep[node]
+                        changed = True
+        self._hint_dropped_nodes = len(hint) - len(keep)
+        return keep
