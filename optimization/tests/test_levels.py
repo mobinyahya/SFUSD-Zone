@@ -1,6 +1,6 @@
 import pytest
 
-from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
+from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec, level_unit
 
 
 @pytest.mark.parametrize(
@@ -31,7 +31,7 @@ def test_is_base():
 
 
 @pytest.mark.parametrize(
-    "bad", ["BlockGroup", "Block_x", "Foo_0", "", "Block_.5", "Block_0.", "Block_-1"]
+    "bad", ["BlockGroup", "Block_x", "Foo_0", "", "Block_.5", "Block_0.", "Block_0.5", "Block_-1"]
 )
 def test_malformed(bad):
     with pytest.raises(ValueError):
@@ -45,16 +45,16 @@ def test_parent_follows_the_chain_by_default():
         LevelSpec("Block", 0).parent()
 
 
-def test_block_0_5_is_coarsened_from_block_0():
-    spec = LevelSpec.parse("Block_0.5")
-    assert spec.depth == 0.5
-    assert str(spec) == "Block_0.5"
-    assert spec.filename == "Block_0.5.pickle"
-    assert spec.parent() == LevelSpec("Block", 0)
+def test_block_levels_are_a_coarsening_chain():
+    targets = LEVEL_NODE_TARGETS["Block"]
+    assert sorted(targets) == list(range(1, len(targets) + 1))
+    assert all(targets[d] > targets[d + 1] for d in range(1, len(targets)))
     assert LevelSpec("Block", 1).parent() == LevelSpec("Block", 0)
-    assert LEVEL_NODE_TARGETS["Block"][1] < LEVEL_NODE_TARGETS["Block"][0.5]
 
 
-def test_integral_float_depth_is_the_integer_level():
-    assert LevelSpec("Block", 1.0) == LevelSpec("Block", 1)
-    assert str(LevelSpec.parse("Block_1.0")) == "Block_1"
+def test_level_unit_reads_retired_level_names():
+    assert level_unit("Block_0.5") == "Block"
+    assert level_unit("attendance_area_1") == "attendance_area"
+    assert level_unit(LevelSpec("BlockGroup", 1)) == "BlockGroup"
+    with pytest.raises(ValueError):
+        level_unit("Foo_1")

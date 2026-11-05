@@ -116,15 +116,10 @@ inherit geography from their school.
 
 The optimization uses NetworkX undirected graphs. Nodes are geographic areas and edges are adjacency. `optimization/data/graph_builder.py` creates these predefined hierarchies:
 - **Block_0** - Direct Census Block units
-- **Block_0.5** - Up to 3,000 nodes, built from Block_0 (about 2,700 nodes at the
-  default 50/50 area weight, no aggregate above ~13 students). Block_1 is still built
-  from Block_0, so the two are not nested. Parents other than `depth - 1` are
-  declared in `LEVEL_PARENT_DEPTHS` (`optimization/levels.py`) and read through
-  `LevelSpec.parent()`.
-- **Block_1** - Up to 1,200 nodes, built from Block_0
-- **Block_2** - Up to 579 nodes, built from Block_1
-- **Block_3** - Up to 250 nodes, built from Block_2
-- **Block_4** - Up to 125 nodes, built from Block_3
+- **Block_1** - Up to 3,000 nodes, built from Block_0
+- **Block_2** - Up to 1,200 nodes, built from Block_1
+- **Block_3** - Up to 579 nodes, built from Block_2
+- **Block_4** - Up to 250 nodes, built from Block_3
 - **BlockGroup_0** - Direct Census BlockGroup units
 - **BlockGroup_1** - Up to 250 nodes, built from BlockGroup_0
 - **BlockGroup_2** - Up to 125 nodes, built from BlockGroup_1
@@ -176,14 +171,14 @@ Unweighted undirected edges from shapefile geometry adjacency (touches). Used to
 
 `optimization/data/graph_builder.py` builds multi-level graphs:
 1. `build_base_graph()` creates depth 0 directly from the selected census units.
-2. Each coarser level uses its parent (the immediate finer level, unless `LEVEL_PARENT_DEPTHS` says otherwise) rather than repartitioning level 0.
+2. Each coarser level uses its immediate parent (`depth - 1`) rather than repartitioning level 0.
 3. School nodes are removed and retained as singleton vertices, and so is any node heavier than the initial bound (`(1 + 0.8)` times the average part, rechecked as the average falls), since one indivisible node would otherwise loosen the bound for the whole level. KaHIP strong mode partitions the remaining nodes on a weight mixing each node's share of the students selected by `program_population` with its share of land area, by `partition_area_weight` (default 0.5; 0 balances students only, 1 land only); imbalance starts at 0.8 and doubles until validation passes.
 4. `aggregate()` sums node attributes, flattens base area IDs, recomputes distances, and derives every child edge from crossing parent edges. This also reconnects school nodes to every aggregate containing one of their former neighbors.
 5. Requested node counts include school singletons and are upper targets because KaHIP can return fewer nonempty partitions.
 
 Graphs are cached by exact source contents, data filters, and partition-policy
 parameters under `/soalnas/share/data/school_choice/Data/caches/graphs/v<N>/<sha256>/`,
-where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (17 at time of writing).
+where `<N>` is `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (18 at time of writing).
 
 ## Benchmarking
 
@@ -248,11 +243,11 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `seed` | `42` | Solver seed |
 
 Cache paths carry the artifact's schema version, which lives in code and moves
-without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (17),
+without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (18),
 `initial_solutions.FEASIBLE_HINT_CACHE_SCHEMA_VERSION` (3). Read the constant
 rather than the number quoted here.
 
-Graph cache path: `.../caches/graphs/v17/<sha256>/`.
+Graph cache path: `.../caches/graphs/v18/<sha256>/`.
 
 Feasible-hint cache path: `.../caches/feasible_hint/v3/<sha256>/`, keyed by the
 *feasible set* and nothing else: `feasibility_fingerprint(problem)` plus

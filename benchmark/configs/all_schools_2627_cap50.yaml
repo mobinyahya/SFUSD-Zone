@@ -7,10 +7,10 @@
 # seats within 50% of its students (overage = shortage = 0.5), plus the school
 # count, contiguity, and FRL within 0.30.
 #
-# Block_1 is infeasible for this band on the local graph even at looseness 2.0:
+# Block_2 is infeasible for this band on the local graph even at looseness 2.0:
 # its population-balanced aggregates carry ~46 students, too lumpy for zones
 # that hold 9-228 students. The two recursive tasks below probe the cluster's
-# Block_1 graph; if Block_1 is infeasible the strategy falls back to an
+# Block_2 graph; if Block_2 is infeasible the strategy falls back to an
 # unrestricted Block_0 solve.
 #
 # Run: uv run python -m benchmark.slurm submit --config benchmark/configs/all_schools_2627_cap50.yaml
@@ -59,16 +59,16 @@ tasks:
     hints: voronoi
     seed: 1
 
-  # --- cp_bool, recursive Block_1 -> Block_0 (probes; see header) ---
+  # --- cp_bool, recursive Block_2 -> Block_0 (probes; see header) ---
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [900, 2700]
     looseness: 1.1
     boundary_radius: 1
     hints: voronoi
     seed: 1
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [900, 2700]
     looseness: 1.5
     boundary_radius: 3

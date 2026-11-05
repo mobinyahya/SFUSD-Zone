@@ -21,8 +21,8 @@
 # 3-minute smoke test, while CP-SAT found one in under 3. The hint is cached by
 # feasible set, not seed, so every seed starts from the same zoning and the
 # seeds differ only in the bursts that follow.
-#   shape     Block_0.5, recom short bursts for 10 minutes, optimizing
-#             capacity_match. Not Block_2: its aggregates hold up to 195
+#   shape     Block_1, recom short bursts for 10 minutes, optimizing
+#             capacity_match. Not Block_3: its aggregates hold up to 195
 #             students, too coarse for one school per zone.
 #   distance  Block_0, cp_bool for 5 minutes, average_squared_distance. The
 #             shape zoning's interior is fixed; its boundary band (the
@@ -81,7 +81,7 @@ sweep:
 tasks:
   - steps:
       - name: shape
-        level: Block_0.5
+        level: Block_1
         method: recom
         objective: capacity_match
         time_limit: 600

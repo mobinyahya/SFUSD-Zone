@@ -17,7 +17,7 @@ aggregation of Rothblum's (1992) inequality,
     sum_{i' >_s^psi i} D_{i',s} + q_s sum_{s' >=_i^psi s} D_{i,s'} >= q_s a_{i,s},
 
 which is valid at every zoning but incomplete: it has fractional extreme points
-that no stable matching reaches, and on Block_2 it over-reports realized
+that no stable matching reaches, and on Block_3 it over-reports realized
 deferred-acceptance welfare by 195 to 252 units. Cutting those points off is
 what the comb inequalities of Proposition~2 are for, and separating them is why
 the oracle would need column generation.

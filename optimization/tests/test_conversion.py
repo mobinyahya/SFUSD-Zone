@@ -121,10 +121,14 @@ def test_area_file_level_reads_benchmark_names():
     ) == LevelSpec("Block", 0)
     assert conversion.area_file_level(
         "/x/zone_dict_area_BlockGroup_1_0007.json", "Block_0"
-    ) == LevelSpec("BlockGroup", 1)
+    ) == LevelSpec("BlockGroup", 0)
     assert conversion.area_file_level("/x/hint.json", "Block_2") == LevelSpec(
-        "Block", 2
+        "Block", 0
     )
+    # A retired fractional level still names its unit.
+    assert conversion.area_file_level(
+        "/x/zone_dict_area_Block_0.5.json", "BlockGroup_0"
+    ) == LevelSpec("Block", 0)
 
 
 def test_area_hint_round_trips_through_a_saved_file(tmp_path):

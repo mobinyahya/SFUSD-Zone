@@ -7,7 +7,7 @@
 #
 # Three families, each given about an hour:
 #   * cp_bool single-level at Block_0 (8 cores)
-#   * cp_bool recursive Block_1 -> Block_0 (and one Block_2 -> Block_1 -> Block_0),
+#   * cp_bool recursive Block_2 -> Block_0 (and one Block_3 -> Block_2 -> Block_0),
 #     looseness 1.1 (coarse levels get FRL 0.33 / 0.363), boundary radius 0 or 1
 #   * adaptive short bursts at Block_0 from a Voronoi start (1 core)
 #
@@ -57,33 +57,33 @@ tasks:
     hints: voronoi
     seed: 1
 
-  # --- cp_bool, recursive Block_1 -> Block_0 ---
+  # --- cp_bool, recursive Block_2 -> Block_0 ---
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [1800, 1800]
     looseness: 1.1
     boundary_radius: 0
     seed: 1
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [1800, 1800]
     looseness: 1.1
     boundary_radius: 1
     seed: 1
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [1800, 1800]
     looseness: 1.1
     boundary_radius: 1
     seed: 2
   - strategy: recursive
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [1800, 1800]
     looseness: 1.0
     boundary_radius: 1
     seed: 1
   - strategy: recursive
-    levels: ['Block_2', 'Block_1', 'Block_0']
+    levels: ['Block_3', 'Block_2', 'Block_0']
     solve_time_limits: [1200, 1200, 1200]
     looseness: 1.1
     boundary_radius: 1

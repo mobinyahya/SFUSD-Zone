@@ -46,7 +46,7 @@ class MidCpSatSolver(CpBoolSolver):
     #: Add the valid inequality that tightens the linear relaxation of the
     #: `min` recurrence.  Only ever turn this off to measure its effect: with
     #: `x` fixed it takes the relaxation from +38.6% to +0.8% on the real
-    #: Block_2 market, and it never changes the integral feasible set.
+    #: Block_3 market, and it never changes the integral feasible set.
     tighten_min_recurrence = True
 
     def __init__(

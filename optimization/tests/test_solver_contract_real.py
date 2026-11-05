@@ -18,7 +18,7 @@ from optimization.tests.solver_contract import (
     solve_contract_problem,
 )
 
-REAL_LEVEL = "Block_2"
+REAL_LEVEL = "Block_3"
 
 
 @dataclass(frozen=True)

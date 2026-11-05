@@ -3,7 +3,7 @@
 # One sample and a short budget: the point is to confirm the model builds on the
 # real market, the zoning block and the matching block agree on the access
 # structure, and Gurobi returns a zoning -- not to close the gap. Each extra
-# seed is another 2|Gamma| binaries (|Gamma| is about 12,000 on Block_2), so
+# seed is another 2|Gamma| binaries (|Gamma| is about 12,000 on Block_3), so
 # raise stable_cutoff_num_seeds only alongside the time limit.
 #
 # hints: feasible is not optional here. A mid run with hints: voronoi once spent
@@ -31,7 +31,7 @@ optimization_defaults:
   frl_dev: 0.15
 
   strategy: 'stable_cutoff'
-  levels: ['Block_2']
+  levels: ['Block_3']
   solve_time_limits: [600]
   gap_limits: [0]
   workers: 8

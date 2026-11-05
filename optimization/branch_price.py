@@ -35,7 +35,7 @@ Three changes address the dual side of that, and all three are shipped:
   the whole budget: 240s bought two master LPs.
 
 REVISIT -- none of that is sufficient, and the reason is *not* the dual
-degeneracy those remedies were chosen for. Measured on ``Block_2`` (501 units,
+degeneracy those remedies were chosen for. Measured on ``Block_3`` (501 units,
 six anchors, 4,154 applicants) seeded with one ``cp_bool`` feasibility hint,
 both welfare objectives ran 21 rounds and admitted 542 to 555 columns of
 strictly positive reduced cost in 600s while the restricted LP stayed at the
@@ -85,7 +85,7 @@ a-priori welfare constants.
 
 REVISIT -- the claim that pricing is no longer what holds it back was measured
 on a 576-node *synthetic* grid (0.1-8s to proved optimal) and does not hold on
-``Block_2``. There, one label at 600s reaches a bound within 0.45-0.58% of its
+``Block_3``. There, one label at 600s reaches a bound within 0.45-0.58% of its
 own best admissible zone but never reports OPTIMAL, and at the shipped
 ``dw_pricing_time_limit`` of 30s split over six labels the returned bounds are
 ~4x inflated: 20,783-24,161 per label against ~5,300 properly solved. So the
@@ -419,7 +419,7 @@ def _search(
             # columns, one tiling, the LP still at the seed value. The redraw
             # writes no bound, so firing it early costs only its own time, and
             # its ``(pair, territory)`` memo makes every sweep after the first
-            # nearly free until the incumbent moves. On Block_2 this trigger is
+            # nearly free until the incumbent moves. On Block_3 this trigger is
             # worth +14.7% (mid) and +17.0% (stable_matching) on the incumbent
             # against +0.000% without it.
             stalled = (

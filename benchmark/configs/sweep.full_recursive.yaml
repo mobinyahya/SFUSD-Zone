@@ -35,32 +35,32 @@ tasks:
 
   # equal splits
   - strategy: 'recursive'
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [600, 600]
 
 # - strategy: 'recursive'
-#   levels: ['Block_2', 'Block_0']
+#   levels: ['Block_3', 'Block_0']
 #   solve_time_limits: [300, 300]
 
   - strategy: 'recursive'
-    levels: ['Block_2', 'Block_1', 'Block_0']
+    levels: ['Block_3', 'Block_2', 'Block_0']
     solve_time_limits: [400, 400, 400]
 
 # back heavy splits
   - strategy: 'recursive'
-    levels: ['Block_2', 'Block_0']
+    levels: ['Block_3', 'Block_0']
     solve_time_limits: [200, 400]
 
   - strategy: 'recursive'
-    levels: ['Block_1', 'Block_0']
+    levels: ['Block_2', 'Block_0']
     solve_time_limits: [400, 800]
 
   - strategy: 'recursive'
-    levels: ['Block_2', 'Block_1', 'Block_0']
+    levels: ['Block_3', 'Block_2', 'Block_0']
     solve_time_limits: [200, 200, 800]
 
   - strategy: 'recursive'
-    levels: ['Block_2', 'Block_1', 'Block_0']
+    levels: ['Block_3', 'Block_2', 'Block_0']
     solve_time_limits: [100, 200, 300]
 
 
