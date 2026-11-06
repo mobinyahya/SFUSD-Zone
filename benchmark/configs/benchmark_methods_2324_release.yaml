@@ -1,0 +1,86 @@
+# The multilevel tasks of benchmark_methods_2324.yaml, rerun with the refine
+# step's new releases (repeat detach/relax to a fixpoint, shortest-path
+# release, keep each school's boundary_radius neighborhood fixed; PR #26
+# defaults). Everything else is identical, so task ids match the original.
+# Run: uv run python -m benchmark.run benchmark/configs/benchmark_methods_2324_release.yaml
+
+name: benchmark_methods_2324_release
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: summer-26-zoning
+    overrides:
+      filters:
+        optimization:
+          years: ["2324"]
+          student_population: applicant
+          capacity_scenario: programs
+          program_population: GE        # capacity rows: ge_enrolling_students vs ge_capacity
+          special_programs: exclude_only_special
+          include_citywide_zoning: false
+          include_citywide_choice_opt: false
+          include_mission_bay: true
+          enrollment_share: null        # ge_enrolling_students == ge_students
+
+  compactness_objective: cut_edges
+  recom_objective: cut_edges
+  weight_edges: false
+
+  frl_dev: 0.15
+  racial_dev: -1
+  overage: 0.3
+  shortage: 0.3
+
+  max_distance: auto
+  gap_limits: [0, 0]
+  budget_accounting: solver_time
+
+  hints: voronoi
+  recom_reject_infeasible: false
+  workers: 8
+  save_solver_logs: true
+  save_solver_progress: false
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
+                   '8-zone-22', '8-zone-24', '8-zone-25', '8-zone-31',
+                   '10-zone-3', '10-zone-9', '10-zone-1', '10-zone-7',
+                   '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
+                   '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8']
+  seed: [1, 2, 3, 4, 5]
+
+tasks:
+  # Multilevel MIP: solve Block_3, fix its interior, and re-solve the boundary
+  # band (cut-edge endpoints + 1 hop) at Block_x, hinted from Block_3 everywhere.
+  # Unused Block_3 time carries over to the fine step.
+  - solver: 'mip'
+    strategy: recursive
+    levels: [['Block_3', 'Block_0'], ['Block_3', 'Block_1'], ['Block_3', 'Block_2']]
+    solve_time_limits: [300, 300]
+    boundary_radius: 1
+    carry_over_compute: true
+
+  # Multilevel CP: the same two-level scheme with cp_bool.
+  - solver: 'cp_bool'
+    strategy: recursive
+    levels: [['Block_3', 'Block_0'], ['Block_3', 'Block_1'], ['Block_3', 'Block_2']]
+    solve_time_limits: [300, 300]
+    boundary_radius: 1
+    carry_over_compute: true
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/benchmark_methods_2324_release'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: false
+  stages: final

@@ -24,6 +24,7 @@ from optimization.mid_options import (
     MID_PREFERENCE_SOURCES,
     normalize_complementary_slackness_slack,
 )
+from optimization.data.contiguity import RELEASE_PATHS
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
@@ -49,6 +50,7 @@ _CHOICES = {
     "saa_welfare_bound": WELFARE_BOUNDS,
     "priced_access_price_source": PRICE_SOURCES,
     "budget_accounting": BUDGET_ACCOUNTING_MODES,
+    "release_paths": RELEASE_PATHS,
     "hints": ("feasible", "voronoi", "none"),
     "compactness_objective": ("cut_edges", "school_distance", "average_distance"),
 }
@@ -223,6 +225,19 @@ class OptimizationConfig:
     objective_weights: dict[str, float] | None = None
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
+    # Refine steps with hard inputs. A projected block with no same-zone
+    # neighbor closer to its school is freed, and its zone opened along
+    # closer-neighbor paths toward the school: one shortest path ending at
+    # the first supported block of that zone ("shortest"), or every such
+    # path ("all", which can release most of the city).
+    release_paths: str = "shortest"
+    # Blocks within this many hops of their own zone's centroid (walking
+    # only that zone's blocks in the source) stay fixed even inside the
+    # boundary band, so a school on its zone's boundary does not cut the
+    # zone's fixed interior off from it. 0 keeps only the centroid; null
+    # (the default) uses the radius of the step's interior hard input, i.e.
+    # ``boundary_radius`` in a recursive run, and 0 without one.
+    keep_centroid_radius: int | None = None
     boundary_prop: float = -1.0
     max_iterations: int = 5
     choice_model_method: str = "logsum"
@@ -446,6 +461,12 @@ class OptimizationConfig:
             value = getattr(self, name)
             if not _is_integer(value) or (minimum is not None and value < minimum):
                 raise ValueError(f"{name} must be {_INTEGER_KINDS[minimum]}.")
+        if self.keep_centroid_radius is not None and (
+            not _is_integer(self.keep_centroid_radius) or self.keep_centroid_radius < 0
+        ):
+            raise ValueError(
+                "keep_centroid_radius must be a non-negative integer or null."
+            )
         for name, (message, bounds) in _NUMBERS.items():
             self._check_number(name, message, **bounds)
         for name in ("saa_tie_breaking_method", "stable_cutoff_tie_breaking_method"):
