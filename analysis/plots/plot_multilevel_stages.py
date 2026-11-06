@@ -135,7 +135,7 @@ def plot(blocks, units, labels, output: Path) -> None:
 
     ax = axes[0]
     blocks.plot(ax=ax, color=colors_coarse, linewidth=0)
-    units.boundary.plot(ax=ax, color=SURFACE, linewidth=0.35)
+    units.boundary.plot(ax=ax, color=SURFACE, linewidth=0.25, alpha=0.35)
     coarse_zones.boundary.plot(ax=ax, color=INK, linewidth=0.9)
     _label_zones(ax, coarse_zones, "coarse")
     ax.set_title(f"1. {labels['first']} solution", loc="left", fontsize=10.5)
