@@ -3,8 +3,8 @@
 
 Finds, across one or more sweeps, the runs of one centroid set, seed and
 target level (later sweeps replace earlier runs of the same task), and maps
-each method's final zoning. Methods that found no feasible zoning get an empty
-panel saying so.
+each method's final zoning. Methods that found no feasible zoning are left
+out.
 
 Zone numbers are only labels, and ReCom does not keep a zone on its centroid,
 so every zoning is relabelled to match a reference zoning (by default the
@@ -42,7 +42,6 @@ from optimization.levels import LevelSpec
 from optimization.run_archive import area_assignment, get_stage, read_zonings
 
 SUCCESS = {"FEASIBLE", "OPTIMAL"}
-EMPTY = "#e6e5e0"
 REFERENCE = "CP (Multi-Level)"
 
 
@@ -93,7 +92,7 @@ def relabel(assignment: dict[int, int], reference: dict[int, int]) -> dict[int, 
     return {area: mapping[zone] for area, zone in assignment.items()}
 
 
-def plot(runs: dict[str, dict], output: Path, *, ncols: int = 4) -> None:
+def plot(runs: dict[str, dict], output: Path, *, ncols: int | None = None) -> None:
     feasible = {m: r for m, r in runs.items() if r["status"] in SUCCESS}
     if not feasible:
         raise ValueError("No method found a feasible zoning for this instance.")
@@ -114,12 +113,16 @@ def plot(runs: dict[str, dict], output: Path, *, ncols: int = 4) -> None:
     # and one shared extent so every panel draws the city at the same scale.
     zoned = set().union(*(z.keys() for z in zonings.values()))
     blocks = blocks[blocks[unit].isin(zoned)]
-    outline = blocks.dissolve()
     xmin, ymin, xmax, ymax = blocks.total_bounds
     pad = 0.02 * max(xmax - xmin, ymax - ymin)
 
-    methods = [m for m in METHOD_ORDER if m in runs]
+    # Only methods with a feasible zoning get a map.
+    methods = [m for m in METHOD_ORDER if m in zonings]
     best = min(r["cut_edges"] for r in feasible.values())
+    # One row up to five maps, else two balanced rows.
+    if ncols is None:
+        ncols = len(methods) if len(methods) <= 5 else -(-len(methods) // 2)
+    ncols = min(ncols, len(methods))
     nrows = -(-len(methods) // ncols)
     plt.rcParams.update({"font.family": "sans-serif", "font.size": 9})
     fig, axes = plt.subplots(
@@ -128,31 +131,17 @@ def plot(runs: dict[str, dict], output: Path, *, ncols: int = 4) -> None:
     axes = np.atleast_1d(axes).ravel()
     for ax, method in zip(axes, methods):
         run = runs[method]
-        if method in zonings:
-            shown = blocks.assign(zone=blocks[unit].map(zonings[method])).dropna(
-                subset=["zone"]
-            )
-            shown["zone"] = shown["zone"].astype(int)
-            shown.plot(ax=ax, color=shown["zone"].map(_zone_color), linewidth=0)
-            zones = shown.dissolve(by="zone", as_index=False)[["zone", "geometry"]]
-            zones.boundary.plot(ax=ax, color=INK, linewidth=0.7)
-            _label_zones(ax, zones, "zone")
-            cut = int(run["cut_edges"])
-            subtitle = f"{cut:,} cut edges" + ("  (best)" if cut == best else "")
-            weight = "bold" if cut == best else "normal"
-        else:
-            outline.plot(ax=ax, color=EMPTY, linewidth=0)
-            ax.text(
-                0.5,
-                0.5,
-                "no feasible zoning\nwithin the budget",
-                transform=ax.transAxes,
-                ha="center",
-                va="center",
-                fontsize=9,
-                color=INK_2,
-            )
-            subtitle, weight = "–", "normal"
+        shown = blocks.assign(zone=blocks[unit].map(zonings[method])).dropna(
+            subset=["zone"]
+        )
+        shown["zone"] = shown["zone"].astype(int)
+        shown.plot(ax=ax, color=shown["zone"].map(_zone_color), linewidth=0)
+        zones = shown.dissolve(by="zone", as_index=False)[["zone", "geometry"]]
+        zones.boundary.plot(ax=ax, color=INK, linewidth=0.7)
+        _label_zones(ax, zones, "zone")
+        cut = int(run["cut_edges"])
+        subtitle = f"{cut:,} cut edges" + ("  (best)" if cut == best else "")
+        weight = "bold" if cut == best else "normal"
         ax.set_title(method, loc="left", fontsize=10.5, color=INK, pad=16)
         ax.text(
             0.0,
