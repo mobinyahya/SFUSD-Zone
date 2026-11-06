@@ -14,6 +14,7 @@ from optimization.solution import ZoneSolution
 from optimization.strategies.pipeline import (
     detached_fixed_pieces,
     relax_unsupported_assignments,
+    release_unreachable_assignments,
     selected_nodes,
 )
 from optimization.tests.synthetic import make_grid_problem
@@ -358,6 +359,34 @@ def test_fixed_pieces_cut_off_from_their_centroid_become_hints(monkeypatch):
         graph.nodes[6]["area_id"]: 0,
         graph.nodes[7]["area_id"]: 0,
     }
+
+
+def test_released_unsupported_blocks_do_not_leave_cut_off_fixed_pieces():
+    # Path 0-1-2-3-4, zone 0 centred on 0 and zone 1 on 4. Block 1 has no
+    # block closer to school 100, so it is freed; that cuts 2-3 off from 0,
+    # which a single detach pass (run before the relaxation) never sees.
+    G = nx.path_graph(5)
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset({1})},
+        1: {100: frozenset(), 200: frozenset({2})},
+        2: {100: frozenset({1}), 200: frozenset({3})},
+        3: {100: frozenset({2}), 200: frozenset({4})},
+        4: {100: frozenset({3}), 200: frozenset()},
+    }
+    problem = SimpleNamespace(G=G, centroids=[0, 4], centroid_school_ids=[100, 200])
+    hints = {0: 0, 1: 0, 2: 0, 3: 0, 4: 1}
+
+    fixed, candidates, detached = release_unreachable_assignments(
+        problem, {1: 0, 2: 0, 3: 0}, hints
+    )
+
+    assert fixed == {}
+    assert candidates == {}
+    assert detached == {2: 0, 3: 0}
+    assert hints == {0: 0, 1: 0, 2: 0, 3: 0, 4: 1}
+    # The old single pass would have kept 2-3 pinned with no fixed path home.
+    once, _ = relax_unsupported_assignments(problem, {1: 0, 2: 0, 3: 0}, hints)
+    assert once == {2: 0, 3: 0}
 
 
 def test_detached_pieces_are_found_per_zone():

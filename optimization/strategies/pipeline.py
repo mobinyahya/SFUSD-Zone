@@ -105,6 +105,34 @@ def relax_unsupported_assignments(problem, fixed, assignment):
     return kept, candidates
 
 
+def release_unreachable_assignments(problem, fixed, hints):
+    """Free hard assignments until every fixed piece reaches its centroid.
+
+    Alternates :func:`detached_fixed_pieces` (pieces cut off from their
+    centroid become hints) and :func:`relax_unsupported_assignments` (blocks
+    without closer-neighbor support are freed or widened). Widening can cut a
+    piece off again, so one pass of each is not enough. ``hints`` is updated
+    in place with every released block's zone. Returns ``(fixed, candidates,
+    detached)``.
+    """
+    fixed = dict(fixed)
+    detached_all, candidates = {}, {}
+    while True:
+        detached = detached_fixed_pieces(problem, fixed)
+        for node, zone in detached.items():
+            del fixed[node]
+            hints[node] = zone
+        detached_all.update(detached)
+        hints.update(fixed)
+        before = len(fixed)
+        fixed, widened = relax_unsupported_assignments(problem, fixed, hints)
+        candidates.update(widened)
+        # The relaxation frees unsupported blocks outright as well as widening
+        # others, so repeat while either release shrank the fixed set.
+        if not detached and len(fixed) == before:
+            return fixed, candidates, detached_all
+
+
 def _base_area_candidates(G, candidates):
     """``{base_area_id: sorted zones}`` so a saved stage can rebuild them."""
     return {
@@ -375,12 +403,9 @@ class PipelineStrategy(Strategy):
         for node in out_of_range:
             del fixed[node]
             hints.pop(node, None)
-        islands = detached_fixed_pieces(problem, fixed)
-        for node, zone in islands.items():
-            del fixed[node]
-            hints[node] = zone
-        hints.update(fixed)
-        fixed, candidates = relax_unsupported_assignments(problem, fixed, hints)
+        fixed, candidates, islands = release_unreachable_assignments(
+            problem, fixed, hints
+        )
         problem.fixed = fixed or None
         problem.candidates = candidates or None
         if hints:
