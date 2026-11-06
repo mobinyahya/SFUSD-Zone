@@ -487,7 +487,9 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         "evaluate",
         "evaluate",
     ]
-    assert executor_workers == [2, 8]
+    # Optimization: 8 CPUs / 4 per task; evaluation: no more workers than its
+    # two tasks (and at most one per EVALUATION_CPUS_PER_TASK CPUs).
+    assert executor_workers == [2, 2]
     assert all(
         kwargs["visualization"] == plan.visualization for kwargs in evaluation_kwargs
     )
@@ -1033,3 +1035,15 @@ def test_run_benchmark_worker_skips_when_valid_existing_result(tmp_path, monkeyp
 
     exit_code = run_benchmark_worker(str(plan_path), allocation_index=0)
     assert exit_code == 0
+
+
+def test_evaluation_gives_each_task_two_cpus_of_memory() -> None:
+    from benchmark.slurm import SlurmAllocation, evaluation_workers
+
+    def allocation(cpus, tasks):
+        return SlurmAllocation("benchmark", tuple(range(tasks)), cpus, 1)
+
+    assert evaluation_workers(allocation(25, 25)) == 12
+    assert evaluation_workers(allocation(40, 45)) == 20
+    assert evaluation_workers(allocation(40, 3)) == 3
+    assert evaluation_workers(allocation(1, 5)) == 1

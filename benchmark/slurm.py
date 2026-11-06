@@ -42,6 +42,12 @@ from benchmark.runner import (
 # 4: execution.queue_multiplier removed.
 PLAN_SCHEMA_VERSION = 4
 MAX_CPUS_PER_NODE = 40
+#: CPUs of an allocation each concurrent evaluation task is given. Jobs get
+#: the partition's default 4 GB per CPU, and one evaluation (rebuilding the
+#: dataset, metrics, figures) briefly peaks near 3.2 GB: 25 of them started
+#: together on 25 CPUs OOM-killed attendance_areas_11-06's first job. Two
+#: CPUs (8 GB) per evaluation leaves room for that spike.
+EVALUATION_CPUS_PER_TASK = 2
 MAX_SLURM_JOBS = 12
 MAX_SUBMITTED_SLURM_JOBS = 20
 MAX_DOWNSTREAM_SLURM_JOBS = MAX_SUBMITTED_SLURM_JOBS - MAX_SLURM_JOBS
@@ -444,6 +450,17 @@ def _run_evaluation_task(
     )
 
 
+def evaluation_workers(allocation: SlurmAllocation) -> int:
+    """Concurrent evaluation tasks: one per ``EVALUATION_CPUS_PER_TASK`` CPUs."""
+    return max(
+        1,
+        min(
+            len(allocation.task_indices),
+            allocation.cpus // EVALUATION_CPUS_PER_TASK,
+        ),
+    )
+
+
 def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
     """Optimize and then evaluate every task in one Slurm allocation."""
 
@@ -476,7 +493,9 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
                         flush=True,
                     )
                     failed = True
-        with ProcessPoolExecutor(max_workers=allocation.cpus) as executor:
+        with ProcessPoolExecutor(
+            max_workers=evaluation_workers(allocation)
+        ) as executor:
             futures = {
                 executor.submit(
                     _run_evaluation_task,
