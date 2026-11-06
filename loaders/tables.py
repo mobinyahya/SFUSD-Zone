@@ -1718,9 +1718,10 @@ def _add_planned_demand(
     """Rank each planned school right after the student's first proxy choice.
 
     The planned program is the proxy's pathway at the planned school. The
-    added entry copies the proxy's lottery number and cohort string, and takes
-    a listed rank half a step below it, so every choice the student filed
-    keeps its own rank in the choice metrics.
+    added entry copies the proxy's lottery number and cohort string. It takes
+    the listed rank right after the proxy's, and every later choice moves down
+    one, because matching requires distinct whole-number ranks; the choices
+    the student ranked above it keep their ranks.
     """
     added = 0
     for planned, proxy_schools, proxy_programs in proxies:
@@ -1748,7 +1749,13 @@ def _add_planned_demand(
                 continue
             value = values[position]
             if column.endswith("listed_ranks"):
-                value = float(value) + 0.5
+                rank = int(float(value))
+                later = [
+                    int(float(v)) + 1 if int(float(v)) > rank else int(float(v))
+                    for v in values[insert:]
+                ]
+                updated[column] = [*values[:insert], rank + 1, *later]
+                continue
             updated[column] = [*values[:insert], value, *values[insert:]]
         aligned = updated
         added += 1

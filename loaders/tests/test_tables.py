@@ -1217,3 +1217,29 @@ def test_attendance_area_fill_rejects_an_unresolvable_polygon(
     )
     with pytest.raises(ValueError, match=r"holds schools \[30, 31\]"):
         fill_attendance_areas(students, _fill_scenario(tmp_path, scenario_factory))
+
+
+def test_planned_demand_takes_the_next_whole_rank() -> None:
+    from loaders.tables import _add_planned_demand
+
+    proxies = ((400, frozenset({746, 838}), frozenset({"ME", "MN"})),)
+    schools, programs, aligned, added = _add_planned_demand(
+        [485, 746, 838, 676],
+        ["CE", "ME", "ME", "GE"],
+        {
+            "r1_listed_ranks": [1, 2, 3, 5],
+            "r1_randomnumber": [0.1, 0.2, 0.3, 0.4],
+            "r1_cohortstring": ["", "S;", "", ""],
+        },
+        proxies,
+    )
+    assert added == 1
+    assert schools == [485, 746, 400, 838, 676]
+    assert programs == ["CE", "ME", "ME", "ME", "GE"]
+    # Distinct whole ranks: the inserted choice takes 3, later ones move down.
+    assert aligned["r1_listed_ranks"] == [1, 2, 3, 4, 6]
+    assert aligned["r1_randomnumber"] == [0.1, 0.2, 0.2, 0.3, 0.4]
+    assert aligned["r1_cohortstring"] == ["", "S;", "S;", "", ""]
+    # A student already ranking the planned school is left alone.
+    unchanged = _add_planned_demand([400, 746], ["ME", "ME"], {}, proxies)
+    assert unchanged[3] == 0
