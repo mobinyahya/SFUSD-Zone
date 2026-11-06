@@ -18,6 +18,7 @@ metadata records ``pipeline_fixed_areas``, so nothing is re-solved::
 from __future__ import annotations
 
 import argparse
+import pickle
 from pathlib import Path
 from typing import Sequence
 
@@ -29,7 +30,12 @@ from optimization.config import OptimizationConfig
 from optimization.data.dataset import Dataset
 from optimization.data.loaders import load_census_shapefile
 from optimization.levels import LevelSpec
+from optimization.pipeline import SolutionInput
 from optimization.run_archive import area_assignment, read_zonings
+from optimization.strategies.pipeline import (
+    release_unreachable_assignments,
+    selected_nodes,
+)
 
 # Reference categorical palette (dataviz skill), fixed order; zones are also
 # numbered on the map, so identity never rests on colour alone.
@@ -58,19 +64,98 @@ def _stage(archive, index: int) -> dict:
     return archive["stages"][index]
 
 
-def load_stages(run_dir: Path):
-    """``(blocks, coarse_units, labels)`` for the run's first and last stage."""
+def _node_areas(G, node) -> list:
+    attrs = G.nodes[node]
+    return attrs.get("block_ids") or [attrs["area_id"]]
+
+
+def run_graph(ds: Dataset, archive, stage):
+    """The graph ``stage`` was solved on.
+
+    Level names and graph construction change between code versions (Block
+    levels were renumbered, so an old ``Block_3`` is today's ``Block_4``), so
+    a run is matched to a graph by content: same node count, and every node's
+    areas carry the saved zone of that node. The current code's graph is
+    tried first, then every cached graph of that name.
+    """
+    level = LevelSpec.parse(stage["level"])
+    zones = dict(zip(stage["node_ids"], stage["node_zones"]))
+    area_zone = area_assignment(archive, stage)
+
+    def matches(G) -> bool:
+        return G.number_of_nodes() == len(zones) and all(
+            area_zone.get(int(a)) == zones.get(n) for n in G for a in _node_areas(G, n)
+        )
+
+    G = ds.graph_for(level)
+    if matches(G):
+        return G
+    graphs = Path(ds._graph_path(level)).parents[2]
+    for path in sorted(graphs.glob(f"v*/*/{level.name}.pickle")):
+        with open(path, "rb") as handle:
+            G = pickle.load(handle)
+        if matches(G):
+            return G
+    raise ValueError(
+        f"No cached graph matches the saved {level.name} zoning; it was built "
+        "by code whose graphs are not in the local cache."
+    )
+
+
+def current_fixed_areas(config: OptimizationConfig, archive) -> set[int]:
+    """The refine step's fixed base areas as the current pipeline code builds them.
+
+    Rebuilds what ``PipelineStrategy._solve_step`` fixes for a
+    ``recursive`` step (interior of the radius-``boundary_radius`` band,
+    within distance, then :func:`release_unreachable_assignments`) from the
+    saved coarse zoning, on the graph the run itself used, so a run saved by
+    older code can be shown as it would be solved now.
+    """
+    ds = Dataset(config)
+    last = archive["stages"][-1]
+    coarse = area_assignment(archive, archive["stages"][0])
+    G_run = run_graph(ds, archive, last)
+    ds.graph_for = lambda level: G_run
+    problem = ds.problem_for(LevelSpec.parse(last["level"]))
+    G = problem.G
+
+    def areas(node):
+        attrs = G.nodes[node]
+        return attrs.get("block_ids") or [attrs["area_id"]]
+
+    projected = {n: coarse[int(areas(n)[0])] for n in G}
+    band = SolutionInput(
+        mode="assign", select="interior", radius=int(config.boundary_radius)
+    )
+    fixed = {
+        n: projected[n]
+        for n in selected_nodes(G, projected, band)
+        if projected[n] in problem.candidate_zones(n)
+    }
+    fixed, _, _ = release_unreachable_assignments(problem, fixed, dict(projected))
+    return {int(a) for n in fixed for a in areas(n)}
+
+
+def load_stages(run_dir: Path, *, current_release: bool = False):
+    """``(blocks, coarse_units, labels)`` for the run's first and last stage.
+
+    With ``current_release`` the refine step's fixed set is rebuilt with the
+    current pipeline code instead of read from the run's saved metadata.
+    """
     archive = read_zonings(run_dir)
     if len(archive["stages"]) < 2:
         raise ValueError(f"{run_dir} saved one stage; it is not a multi-level run.")
     first, last = _stage(archive, 0), _stage(archive, -1)
     coarse = area_assignment(archive, first)
     final = area_assignment(archive, last)
-    fixed = {
-        int(area)
-        for area in (last.get("metadata") or {}).get("pipeline_fixed_areas", {})
-    }
     config = OptimizationConfig.from_yaml(str(run_dir / "zoning_config.yaml"))
+    if current_release:
+        fixed = current_fixed_areas(config, archive)
+    else:
+        fixed = {
+            int(area)
+            for area in (last.get("metadata") or {}).get("pipeline_fixed_areas", {})
+        }
     unit = LevelSpec.parse(first["level"]).unit
 
     blocks = load_census_shapefile(unit, config.data_scenario)[[unit, "geometry"]]
@@ -85,7 +170,7 @@ def load_stages(run_dir: Path):
     blocks["changed"] = blocks["coarse"] != blocks["final"]
 
     # The first stage's own units (aggregates of blocks), to show its grain.
-    G = Dataset(config).graph_for(LevelSpec.parse(first["level"]))
+    G = run_graph(Dataset(config), archive, first)
     area_node = {
         int(a): int(n)
         for n, attrs in G.nodes(data=True)
@@ -146,7 +231,7 @@ def plot(blocks, units, labels, output: Path) -> None:
     blocks[~blocks["fixed"]].plot(ax=ax, color=RELEASED, linewidth=0)
     coarse_zones.boundary.plot(ax=ax, color=INK, linewidth=0.6)
     ax.set_title(
-        f"2. Boundary band released ({released:,} of {len(blocks):,} blocks)",
+        f"2. Boundary band released ({released / len(blocks):.0%} of blocks)",
         loc="left",
         fontsize=10.5,
     )
@@ -193,7 +278,7 @@ def plot(blocks, units, labels, output: Path) -> None:
         fontsize=8.5,
     )
     ax.set_title(
-        f"3. {labels['last']} solution ({changed:,} blocks changed zone)",
+        f"3. {labels['last']} solution ({changed / len(blocks):.0%} of blocks changed zone)",
         loc="left",
         fontsize=10.5,
     )
@@ -210,8 +295,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run_dir", help="A multi-level run folder.")
     parser.add_argument("-o", "--output", default="multilevel_stages.png")
+    parser.add_argument(
+        "--current-release",
+        action="store_true",
+        help="Rebuild step 2's fixed set with the current pipeline code "
+        "instead of reading the run's saved one.",
+    )
     args = parser.parse_args(argv)
-    blocks, units, labels = load_stages(Path(args.run_dir))
+    blocks, units, labels = load_stages(
+        Path(args.run_dir), current_release=args.current_release
+    )
     plot(blocks, units, labels, Path(args.output))
     print(f"Saved {args.output}")
 
