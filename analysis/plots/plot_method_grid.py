@@ -151,8 +151,8 @@ def _ink_for(rgb) -> str:
 
 
 METRICS = {
-    "feasible": "Feasible runs (of seeds × centroid sets)",
-    "cut_edges": "Median cut edges of feasible runs, and gap to the best for that zone count",
+    "feasible": "Feasible Runs",
+    "cut_edges": "Number of Cut Edges",
 }
 
 
@@ -175,7 +175,6 @@ def plot(
     kind: str,
     *,
     title: str | None = None,
-    min_runs: int = 5,
 ) -> None:
     """One row of heatmaps (a panel per level) for ``kind`` in :data:`METRICS`."""
     methods = [m for m in METHOD_ORDER if m in set(cells["method"])]
@@ -184,8 +183,6 @@ def plot(
     feas_cmap = mcolors.LinearSegmentedColormap.from_list("feas", BLUE)
     gap_cmap = mcolors.LinearSegmentedColormap.from_list("gap", ORANGE)
     header = METRICS[kind]
-    if kind == "cut_edges":
-        header += f" (hatched: fewer than {min_runs} feasible runs)"
 
     plt.rcParams.update(
         {
@@ -344,7 +341,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     table = output.with_suffix(".csv")
     cells.sort_values(["level", "zones", "method"]).to_csv(table, index=False)
     for kind, path in output_paths(output).items():
-        plot(cells, path, kind, title=args.title, min_runs=args.min_runs)
+        plot(cells, path, kind, title=args.title)
         print(f"Saved {path}")
     print(f"Saved {table}")
 
