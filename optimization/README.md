@@ -60,6 +60,23 @@ config records the expanded `steps` and `strategy: pipeline`.
   (`frl_dev`/`racial_dev`/`overage`/`shortage` times
   `looseness ** (levels after it)`).
 
+Hard inputs are then loosened until the solver can satisfy them. Blocks out of
+`max_distance` are freed. A projected block with no same-zone neighbor closer
+to its school is freed, and its zone opened along closer-neighbor paths toward
+the school: one shortest path ending at the first supported block of that zone
+(`release_paths: shortest`, the default) or every such path (`all`, which can
+release most of the city). Any fixed
+piece left reaching its centroid only through freed blocks becomes a hint, and
+the two releases repeat until neither frees more, so every zone's fixed blocks
+form one piece with its centroid. A school on its zone's boundary sits in the
+band, which can cut the whole interior off from it, so the blocks within
+`keep_centroid_radius` hops of each centroid (walking that zone's blocks) stay
+fixed. It defaults to the radius of the step's interior hard input
+(`boundary_radius` in a recursive run, 0 for a step without one); 0 keeps only
+the centroid. Both settings are step options too, and drop
+out of task ids at their defaults, so tasks saved before these defaults keep
+their ids although they were refined with the old release (`all`, radius 0).
+
 A step's objective defaults to the run's `objective`, else
 `compactness_objective` (CP/MIP) or `recom_objective` (ReCom). Stages report
 the solver's own `wall_time`, and `carry_over_compute` hands that unused

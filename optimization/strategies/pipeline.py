@@ -74,7 +74,7 @@ def detached_fixed_pieces(problem, fixed):
     return detached
 
 
-def relax_unsupported_assignments(problem, fixed, assignment):
+def relax_unsupported_assignments(problem, fixed, assignment, paths="all"):
     """Loosen hard assignments the CP contiguity rows could never satisfy.
 
     The MIP/CP solvers require every non-centroid block to have a same-zone
@@ -84,7 +84,9 @@ def relax_unsupported_assignments(problem, fixed, assignment):
     its zone as a candidate along its closer-neighbor paths, so a fixed block
     on such a path keeps its own zone and gains only the ones it may need.
     Returns ``(fixed, candidates)``: still-forced blocks, and blocks the
-    relaxation widened, with their allowed zones.
+    relaxation widened, with their allowed zones. ``paths`` is
+    ``release_paths``: open every closer-neighbor path (``"all"``) or one
+    shortest path (``"shortest"``).
     """
     if not fixed:
         return fixed, {}
@@ -94,6 +96,7 @@ def relax_unsupported_assignments(problem, fixed, assignment):
         list(problem.centroids),
         problem.centroid_school_ids,
         {node: {zone} for node, zone in fixed.items()},
+        paths=paths,
     )
     kept, candidates = {}, {}
     for node, zone in fixed.items():
@@ -103,6 +106,55 @@ def relax_unsupported_assignments(problem, fixed, assignment):
         elif zones is not None:
             candidates[node] = zones
     return kept, candidates
+
+
+def release_unreachable_assignments(problem, fixed, hints, paths="all"):
+    """Free hard assignments until every fixed piece reaches its centroid.
+
+    Alternates :func:`detached_fixed_pieces` (pieces cut off from their
+    centroid become hints) and :func:`relax_unsupported_assignments` (blocks
+    without closer-neighbor support are freed or widened). Widening can cut a
+    piece off again, so one pass of each is not enough. ``hints`` is updated
+    in place with every released block's zone. Returns ``(fixed, candidates,
+    detached)``.
+    """
+    fixed = dict(fixed)
+    detached_all, candidates = {}, {}
+    while True:
+        detached = detached_fixed_pieces(problem, fixed)
+        for node, zone in detached.items():
+            del fixed[node]
+            hints[node] = zone
+        detached_all.update(detached)
+        hints.update(fixed)
+        before = len(fixed)
+        fixed, widened = relax_unsupported_assignments(problem, fixed, hints, paths)
+        candidates.update(widened)
+        # The relaxation frees unsupported blocks outright as well as widening
+        # others, so repeat while either release shrank the fixed set.
+        if not detached and len(fixed) == before:
+            return fixed, candidates, detached_all
+
+
+def centroid_neighborhood(G, centroids, zoning, radius):
+    """``{node: zone}`` within ``radius`` hops of each zone's centroid.
+
+    The walk only steps through blocks ``zoning`` puts in that zone, so the
+    result is connected to the centroid within its zone.
+    """
+    keep = {}
+    for zone, centroid in enumerate(centroids):
+        seen, frontier = {centroid}, [centroid]
+        for _ in range(radius):
+            reached = []
+            for node in frontier:
+                for neighbor in G.neighbors(node):
+                    if neighbor not in seen and zoning.get(neighbor) == zone:
+                        seen.add(neighbor)
+                        reached.append(neighbor)
+            frontier = reached
+        keep.update({node: zone for node in seen})
+    return keep
 
 
 def _base_area_candidates(G, candidates):
@@ -329,6 +381,7 @@ class PipelineStrategy(Strategy):
             apply_capacity_reference(problem, reference)
             extra["capacity_reference"] = reference
         fixed, hints = {}, dict(problem.hint or {})
+        assigned = {}  # every block's zone in the hard-assignment sources
         for binding in step.inputs:
             source = self._source(binding.source, results, by_name)
             if source is None:
@@ -347,6 +400,8 @@ class PipelineStrategy(Strategy):
                     problem.level,
                 )
             projected = self._projected[key]
+            if binding.mode == "assign":
+                assigned.update(projected)
             for node in selected_nodes(problem.G, projected, binding):
                 zone = projected[node]
                 if zone not in range(problem.Z):
@@ -364,6 +419,25 @@ class PipelineStrategy(Strategy):
                 raise ValueError(
                     f"Hard assignment conflicts with centroid {centroid} in step {step.name!r}."
                 )
+        # A school on its zone's boundary sits in the released band, which
+        # would cut the zone's fixed interior off from it; keep the blocks
+        # near each centroid that the source puts in its zone.
+        radius = effective.keep_centroid_radius
+        if radius is None:
+            # Default: as far as the released band reaches; a step without one
+            # (explicit or whole-zoning hard inputs) releases no band to keep.
+            radius = max(
+                (
+                    b.radius
+                    for b in step.inputs
+                    if b.mode == "assign" and b.select == "interior"
+                ),
+                default=0,
+            )
+        if radius > 0 and assigned:
+            kept = centroid_neighborhood(problem.G, problem.centroids, assigned, radius)
+            for node, zone in kept.items():
+                fixed.setdefault(node, zone)
         # A source solved on coarser nodes measured max_distance from those
         # nodes, so a projected block can lie beyond the distance this step
         # allows its zone. Free it to its own distance candidates.
@@ -375,12 +449,9 @@ class PipelineStrategy(Strategy):
         for node in out_of_range:
             del fixed[node]
             hints.pop(node, None)
-        islands = detached_fixed_pieces(problem, fixed)
-        for node, zone in islands.items():
-            del fixed[node]
-            hints[node] = zone
-        hints.update(fixed)
-        fixed, candidates = relax_unsupported_assignments(problem, fixed, hints)
+        fixed, candidates, islands = release_unreachable_assignments(
+            problem, fixed, hints, effective.release_paths
+        )
         problem.fixed = fixed or None
         problem.candidates = candidates or None
         if hints:
