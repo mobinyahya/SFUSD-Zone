@@ -122,7 +122,9 @@ def _label_zones(ax, zones: gpd.GeoDataFrame, column: str) -> None:
 
 
 def plot(blocks, units, labels, output: Path) -> None:
-    plt.rcParams.update({"font.family": "sans-serif", "font.size": 9})
+    plt.rcParams.update(
+        {"font.family": "sans-serif", "font.size": 9, "hatch.linewidth": 1.6}
+    )
     fig, axes = plt.subplots(1, 3, figsize=(15, 5.6), facecolor=SURFACE)
     coarse_zones = _zone_outlines(blocks, "coarse")
     final_zones = _zone_outlines(blocks, "final")
@@ -140,7 +142,7 @@ def plot(blocks, units, labels, output: Path) -> None:
 
     ax = axes[1]
     fixed = blocks[blocks["fixed"]]
-    fixed.plot(ax=ax, color=fixed["coarse"].map(_zone_color), alpha=0.35, linewidth=0)
+    fixed.plot(ax=ax, color=fixed["coarse"].map(_zone_color), alpha=0.7, linewidth=0)
     blocks[~blocks["fixed"]].plot(ax=ax, color=RELEASED, linewidth=0)
     coarse_zones.boundary.plot(ax=ax, color=INK, linewidth=0.6)
     ax.set_title(
@@ -151,7 +153,7 @@ def plot(blocks, units, labels, output: Path) -> None:
     ax.legend(
         handles=[
             mpatches.Patch(color=RELEASED, label="released, re-solved"),
-            mpatches.Patch(color=ZONE_COLORS[0], alpha=0.35, label="fixed to its zone"),
+            mpatches.Patch(color=ZONE_COLORS[0], alpha=0.7, label="fixed to its zone"),
         ],
         loc="upper left",
         bbox_to_anchor=(0.0, 0.0),
@@ -162,11 +164,34 @@ def plot(blocks, units, labels, output: Path) -> None:
 
     ax = axes[2]
     blocks.plot(ax=ax, color=colors_final, linewidth=0)
-    moved = blocks[blocks["changed"]]
-    if not moved.empty:
-        moved.boundary.plot(ax=ax, color=INK, linewidth=0.5)
+    # Blocks that changed zone: stripes in the zone they left, over the zone
+    # they joined. Dissolved per (old, new) pair so the stripes span whole
+    # patches rather than vanishing inside single small blocks.
+    moved = blocks[blocks["changed"]].dissolve(by=["coarse", "final"], as_index=False)
+    for _, patch in moved.iterrows():
+        gpd.GeoSeries([patch.geometry], crs=blocks.crs).plot(
+            ax=ax,
+            facecolor="none",
+            edgecolor=_zone_color(patch["coarse"]),
+            hatch="////",
+            linewidth=0,
+        )
     final_zones.boundary.plot(ax=ax, color=INK, linewidth=0.9)
     _label_zones(ax, final_zones, "final")
+    stripe = mpatches.Patch(
+        facecolor=ZONE_COLORS[2],
+        edgecolor=ZONE_COLORS[1],
+        hatch="////",
+        linewidth=0,
+        label="changed zone (stripes: zone it left)",
+    )
+    ax.legend(
+        handles=[stripe],
+        loc="upper left",
+        bbox_to_anchor=(0.0, 0.0),
+        frameon=False,
+        fontsize=8.5,
+    )
     ax.set_title(
         f"3. {labels['last']} solution ({changed:,} blocks changed zone)",
         loc="left",
