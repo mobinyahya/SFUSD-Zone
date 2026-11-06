@@ -11,7 +11,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from loaders.config import ATTENDANCE_AREA_FILL_ROLE, DataScenario, ResolvedSource
+from loaders.config import (
+    ATTENDANCE_AREA_FILL_ROLE,
+    ENROLLED_STUDENT_POPULATIONS,
+    DataScenario,
+    ResolvedSource,
+)
 
 _SCHOOL_ROUND = re.compile(r"r(\d+)_ranked_idschool")
 _PROGRAM_ROUND = re.compile(r"r(\d+)_programs")
@@ -320,7 +325,8 @@ def _enrolled_mask(
     would change every existing optimization graph for 2023-24.
     """
     if group != "assignment" or (
-        scenario.filter(group, "student_population") != "enrolled"
+        scenario.filter(group, "student_population")
+        not in ENROLLED_STUDENT_POPULATIONS
     ):
         return None
     if "enrolled_idschool" not in frame.columns:
@@ -462,6 +468,46 @@ def fill_attendance_areas(frame: pd.DataFrame, scenario: DataScenario) -> pd.Dat
         stacklevel=2,
     )
     return frame
+
+
+def attendance_area_units(
+    scenario: DataScenario, units, unit_column: str, lived_in
+) -> dict[int, int]:
+    """``{unit id: attendance-area school}`` for Census units on the map.
+
+    Each unit takes the polygon holding its representative point, named as in
+    :func:`fill_attendance_areas`; ``lived_in`` (attendance-area schools named
+    by student records) settles the polygon two schools share. Units off the
+    map are left out.
+    """
+    if ATTENDANCE_AREA_FILL_ROLE not in scenario.roles or not scenario.sources(
+        ATTENDANCE_AREA_FILL_ROLE
+    ):
+        raise ValueError(
+            f"The scenario binds no {ATTENDANCE_AREA_FILL_ROLE!r} map, so "
+            "attendance areas cannot be placed."
+        )
+    import geopandas as gpd
+
+    areas = gpd.read_file(scenario.source(ATTENDANCE_AREA_FILL_ROLE).path)
+    if areas.crs is None:
+        raise ValueError("The attendance-area fill map must define a CRS.")
+    areas = areas[["geometry"]].reset_index(drop=True)
+    named = _attendance_area_polygon_schools(
+        scenario, areas, {_school_identity(value) for value in lived_in}
+    )
+    points = gpd.GeoDataFrame(
+        {unit_column: units[unit_column].to_numpy()},
+        geometry=units.to_crs(areas.crs).representative_point().to_numpy(),
+        crs=areas.crs,
+    )
+    joined = gpd.sjoin(points, areas, how="inner", predicate="within")
+    joined = joined.loc[~joined.index.duplicated(keep="first")]
+    return {
+        int(unit): int(named[polygon])
+        for unit, polygon in zip(joined[unit_column], joined["index_right"])
+        if polygon in named
+    }
 
 
 def _frl_count_rates(source: ResolvedSource) -> pd.Series:
@@ -620,6 +666,8 @@ def normalize_student_records(
     aliases = school_id_aliases(scenario, group)
     include_mission_bay = scenario.filter(group, "include_mission_bay")
     special_mode = scenario.filter(group, "special_programs")
+    proxies = _planned_demand_proxies(scenario, group)
+    proxied = 0
     any_special = pd.Series(False, index=frame.index)
     for round_number in rounds:
         school_column = f"r{round_number}_ranked_idschool"
@@ -694,6 +742,11 @@ def normalize_student_records(
                 }
             if include_mission_bay:
                 schools = [aliases.get(school, school) for school in schools]
+            if proxies:
+                schools, programs, aligned, added = _add_planned_demand(
+                    schools, programs, aligned, proxies
+                )
+                proxied += added
             parsed_schools.append(schools)
             parsed_programs.append(programs)
             for column, values in aligned.items():
@@ -707,6 +760,12 @@ def normalize_student_records(
         for column, values in parsed_aligned.items():
             frame[column] = pd.Series(values, index=frame.index, dtype=object)
 
+    if proxies:
+        warnings.warn(
+            f"Planned-school demand proxy added {proxied} preference entries "
+            f"(schools {sorted({school for school, _, _ in proxies})}).",
+            stacklevel=2,
+        )
     if special_mode == "exclude_any_special":
         frame, source_rows = _filter_student_rows(frame, source_rows, ~any_special)
 
@@ -1629,6 +1688,71 @@ def load_school_records(
                 located = located.combine_first(result[column])
             result[column] = located.astype("Int64")
     return result
+
+
+def _planned_demand_proxies(
+    scenario: DataScenario, group: str
+) -> tuple[tuple[int, frozenset[int], frozenset[str]], ...]:
+    """``(planned school, proxy schools, proxy programs)`` for included schools."""
+    proxies = []
+    for definition in scenario.selected_planned_schools(group):
+        proxy = definition.get("demand_proxy")
+        if not proxy:
+            continue
+        proxies.append(
+            (
+                int(definition["school_id"]),
+                frozenset(int(school) for school in proxy["schools"]),
+                frozenset(str(program) for program in proxy["programs"]),
+            )
+        )
+    return tuple(proxies)
+
+
+def _add_planned_demand(
+    schools: list[int],
+    programs: list[str],
+    aligned: dict[str, list[Any]],
+    proxies: tuple[tuple[int, frozenset[int], frozenset[str]], ...],
+) -> tuple[list[int], list[str], dict[str, list[Any]], int]:
+    """Rank each planned school right after the student's first proxy choice.
+
+    The planned program is the proxy's pathway at the planned school. The
+    added entry copies the proxy's lottery number and cohort string, and takes
+    a listed rank half a step below it, so every choice the student filed
+    keeps its own rank in the choice metrics.
+    """
+    added = 0
+    for planned, proxy_schools, proxy_programs in proxies:
+        if planned in schools:
+            continue
+        position = next(
+            (
+                index
+                for index, (school, program) in enumerate(
+                    zip(schools, programs, strict=True)
+                )
+                if school in proxy_schools and program in proxy_programs
+            ),
+            None,
+        )
+        if position is None:
+            continue
+        insert = position + 1
+        schools = [*schools[:insert], planned, *schools[insert:]]
+        programs = [*programs[:insert], programs[position], *programs[insert:]]
+        updated = {}
+        for column, values in aligned.items():
+            if not values:
+                updated[column] = values
+                continue
+            value = values[position]
+            if column.endswith("listed_ranks"):
+                value = float(value) + 0.5
+            updated[column] = [*values[:insert], value, *values[insert:]]
+        aligned = updated
+        added += 1
+    return schools, programs, aligned, added
 
 
 def _planned_school_rows(

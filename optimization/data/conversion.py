@@ -29,6 +29,10 @@ from loaders.tables import read_csv
 from optimization import run_archive
 from optimization.levels import LevelSpec, level_unit
 
+#: ``hint_zoning`` value naming today's attendance areas instead of a file:
+#: one zone per attendance-area school, as the 2013 map draws them.
+ATTENDANCE_AREA_HINT = "attendance_areas"
+
 
 def base_area_assignment(G: nx.Graph, assignment: dict[int, int]) -> dict[int, int]:
     """Expand a node->zone map to ``{base_area_id: zone}`` for ``G``'s unit."""

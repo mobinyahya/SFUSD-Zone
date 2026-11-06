@@ -26,6 +26,8 @@ CONSTRAINT_FIELDS = frozenset(
         "shortage",
         "max_distance",
         "boundary_prop",
+        "min_zone_residents",
+        "frl_reference_dev",
         "centroid_neighbor_radius",
     }
 )
@@ -387,6 +389,7 @@ def step_config(
                 "capacity_match",
                 "aa_capacity_match",
                 "fill_polarization",
+                "frl_dissimilarity",
                 "weighted_sum",
             }
             else "cut_edges"

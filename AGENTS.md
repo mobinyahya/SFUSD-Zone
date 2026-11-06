@@ -90,8 +90,28 @@ non-GE program with attendance-area seats, or a GE program at an
 attendance-area school with citywide seats.
 The workbook's new Mandarin Immersion TK-8 (placeholder school `400`) is in no
 data file; both groups' `include_mandarin_immersion` (default `false`) adds it
-from base `planned_schools`. Its site and its ME/MN (non-native/native) seat
-split are still null, so setting it true fails at load, naming what is missing.
+from base `planned_schools`. Its site (midpoint of Ortega 746 and Starr King
+838) and its 27 ME / 39 MN seat split are placeholders until the district
+names a site; its `demand_proxy` makes every student ranking an ME/MN program
+at 746 or 838 also rank the same pathway at 400, right after that choice.
+
+**Student populations.** Every year registers `applicant` (the Main Round
+market) and `enrolled` (the part of it that enrolled). 2026-27 also registers
+`enrolled_all` (everyone the Oct 2026 CBEDS roster enrols at KG at a real
+school) and `applied_or_enrolled` (the market plus those enrollees), built by
+`analysis/data_prep/convert_sfusd_transfer.py --enrollment-transfer`. From
+that transfer, enrolment comes from CBEDS, not the demographics extract.
+
+**School-level FRL dissimilarity.** `frl_dissimilarity` is a ReCom/MID
+objective term: the two-group FRL index across schools after the match, in
+percentage points. Matching reports the same quantity as
+`Dissimilarity (FRL)`. `min_zone_residents` is a per-zone floor on
+`all_prog_students`, and `hint_zoning: attendance_areas` starts from (or, with
+`recom_iterations: 0`, scores) today's 2013 attendance areas. A step with a
+`capacity_reference` can set `frl_reference_dev`: each zone's FRL residents
+sent to attendance-area GE seats must stay within that relative band of the
+FRL students the reference match put on its school's seats (schema v3 of the
+reference; v2 stages still load, without the row).
 
 **Mission Bay ES is school 1731** (`loaders.tables.MISSION_BAY_SCHOOL_ID`). The
 2023-24 tables and the 2023-24 choice estimate carry the old placeholders 999
@@ -240,7 +260,23 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `overage` / `shortage` | `0.8` / `0.2` | Capacity tolerance (proportion) |
 | `capacity_scenario` | `programs` | Program-table capacities, or an explicit scenario overlay |
 | `hints` | `voronoi` | Warm-start method: `feasible`, `voronoi`, or `none` |
+| `hint_zoning` | `attendance_areas` | Start from a saved zoning (`zonings.json.xz` or `{area_id: zone}` JSON), or from today's 2013 attendance areas |
+| `min_zone_residents` | `20` | Per-zone floor on resident students (`all_prog_students`); negative disables |
+| `frl_reference_dev` | `0.10` | Steps with a `capacity_reference` only: relative band on each zone's frozen school FRL count; negative disables |
+| `objective_weights` | `{capacity_match: 1, frl_dissimilarity: 10}` | `weighted_sum` terms (ReCom); `frl_dissimilarity` is in percentage points |
 | `seed` | `42` | Solver seed |
+
+**Pipeline refinement.** A step's `inputs` project an earlier step onto its
+level. `{mode: assign, select: interior, radius: r}` fixes every block
+outside the boundary band, which is the endpoints of every cut edge plus `r`
+hops. `{mode: hint, select: boundary, radius: r}` warm-starts the band
+itself. Blocks within `keep_centroid_radius` hops of their school (default:
+the interior radius) stay fixed even inside the band. A fixed block with no
+same-zone neighbor closer to its school is released along one shortest path
+toward it (`release_paths: shortest`). `capacity_reference: <step>` replaces the
+capacity rows' counts with that step's MID match: each zone's AA GE residents
+against the seats its school used there, within `overage`/`shortage`. With
+`frl_reference_dev`, the same holds for FRL residents.
 
 Cache paths carry the artifact's schema version, which lives in code and moves
 without this file: `graph_builder.GRAPH_CACHE_SCHEMA_VERSION` (18),

@@ -135,6 +135,19 @@ files:
     root: data
     classification: restricted
     geography_vintage: "2010"
+  # Built from the Oct 27 2026 CBEDS roster (analysis/data_prep/
+  # convert_sfusd_transfer.py --enrollment-transfer): everyone enrolled at KG
+  # on census day, and the Main Round market plus those enrollees.
+  optimization.students.enrolled_all.2627:
+    path: Data/Cleaned/enrolled_all_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applied_or_enrolled.2627:
+    path: Data/Cleaned/applied_or_enrolled_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
 
   assignment.students.1415:
     path: Data/Cleaned/student_1415.csv
@@ -976,16 +989,30 @@ capacity_scenarios:
 planned_schools:
   # The new citywide Mandarin Immersion TK-8 in the district's 2026-27 KG
   # capacity workbook: 66 MAN DLI seats, no school code (400 is a placeholder
-  # no table uses). Still missing: its site, and how its seats divide between
-  # the ME (non-native) and MN (native speaker) lottery pools.
+  # no table uses). All of its seats are citywide, so it owns no zone.
+  #
+  # PLACEHOLDERS until the district names a site (expected January 2027):
+  # - lat/lon: the midpoint of Jose Ortega ES (746) and Starr King ES (838),
+  #   the two Mandarin pathways whose applicants proxy its demand. Citywide
+  #   seats take students from every zone, so the site moves only distances.
+  # - ME/MN: the two pathways' combined 2026-27 KG seats, 9+18 ME
+  #   (non-native) and 13+26 MN (native), which total exactly the workbook's
+  #   66. A workbook scenario overlays its pooled 66 in this 27:39 ratio.
+  # - demand_proxy: everyone who ranks an ME/MN program at 746 or 838 also
+  #   ranks the same pathway here, right after their first such choice. Alice
+  #   Fong Yu (485) was discussed as a proxy too, but its pathways are
+  #   Cantonese (CE/CT); add 485 with its codes here to include it.
   mandarin_immersion:
     school_id: 400
     school_name: Mandarin Immersion TK-8
     category: Citywide
-    lat: null
-    lon: null
+    lat: 37.735276
+    lon: -122.433177
     programs:
-      KG: {ME: null, MN: null}
+      KG: {ME: 27, MN: 39}
+    demand_proxy:
+      schools: [746, 838]
+      programs: [ME, MN]
 
 school_years:
   "1415":
@@ -1305,10 +1332,14 @@ school_years:
       students:
         applicant: optimization.students.applicant.2627
         enrolled: optimization.students.enrolled.2627
+        enrolled_all: optimization.students.enrolled_all.2627
+        applied_or_enrolled: optimization.students.applied_or_enrolled.2627
     assignment:
       students:
         applicant: assignment.students.2627
         enrolled: optimization.students.enrolled.2627
+        enrolled_all: optimization.students.enrolled_all.2627
+        applied_or_enrolled: optimization.students.applied_or_enrolled.2627
       grades:
         KG:
           profiles:

@@ -116,6 +116,7 @@ class EvaluateAssignments:
             "AALPI in school with +15% FRL",
             "Dissimilarity AALPI",
             "Dissimilarity SES3",
+            "Dissimilarity (FRL)",
             "Programs with 1-4 AA",
         ]
         choice = [

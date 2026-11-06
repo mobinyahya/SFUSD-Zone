@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -52,6 +52,10 @@ class MidStudent:
     priorities: tuple[int, ...]
     utilities: tuple[float, ...]
     scaled_utilities: tuple[int, ...]
+    #: The student's free/reduced-lunch probability (``Students.frl``, after
+    #: any ``frl_estimate``). It rides along with the type so school-level FRL
+    #: composition can be read off a match; it never changes the match.
+    frl: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,10 @@ class MidType:
     priorities: tuple[int, ...]
     utility_sums: tuple[float, ...]
     scaled_utility_sums: tuple[int, ...]
+    #: Sum of the members' ``MidStudent.frl``: the type's expected FRL count.
+    #: Every member follows the same path through the match, so a school's FRL
+    #: count is ``sum_t frl_sum_t * mass_t / lottery_scale``.
+    frl_sum: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -287,6 +295,7 @@ def build_mid_student_market(
     if area_column not in students_frame:
         raise ValueError(f"Assignment students lack {area_column!r}.")
     program_indices = assignment_market.programs.indices
+    frl_values = assignment_market.students.frl
     students = []
     utility_students = 0
     for student_id, row in students_frame.iterrows():
@@ -298,8 +307,9 @@ def build_mid_student_market(
                 f"from graph {problem.level.name}."
             )
         student_key = _identity_text(student_id)
+        frl = float(frl_values.loc[student_id])
         if student_key not in utility.index:
-            student = MidStudent(node, (), (), (), ())
+            student = MidStudent(node, (), (), (), (), frl)
         else:
             utility_students += 1
             values = utility.loc[student_key, available_programs].to_numpy(dtype=float)
@@ -313,8 +323,9 @@ def build_mid_student_market(
                 ],
                 dtype=float,
             )
-            student = make_mid_student(
-                node, available_programs, values, tiers, handling
+            student = replace(
+                make_mid_student(node, available_programs, values, tiers, handling),
+                frl=frl,
             )
         students.append(student)
 
@@ -406,15 +417,22 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
                 0,
                 [0.0] * len(student.programs),
                 [0] * len(student.programs),
+                0.0,
             ]
         aggregate = grouped[key]
         aggregate[0] += 1
+        aggregate[3] += student.frl
         for rank, utility in enumerate(student.utilities):
             aggregate[1][rank] += utility
             aggregate[2][rank] += student.scaled_utilities[rank]
 
     types = []
-    for (node, programs, priorities), (count, utilities, scaled) in grouped.items():
+    for (node, programs, priorities), (
+        count,
+        utilities,
+        scaled,
+        frl_sum,
+    ) in grouped.items():
         types.append(
             MidType(
                 node=node,
@@ -423,6 +441,7 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
                 priorities=priorities,
                 utility_sums=tuple(utilities),
                 scaled_utility_sums=tuple(scaled),
+                frl_sum=frl_sum,
             )
         )
     return tuple(
@@ -468,9 +487,11 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
                 0,
                 [0.0] * len(kept),
                 [0] * len(kept),
+                0.0,
             ]
         aggregate = grouped[key]
         aggregate[0] += student_type.count
+        aggregate[3] += student_type.frl_sum
         for target_rank, source_rank in enumerate(kept):
             aggregate[1][target_rank] += student_type.utility_sums[source_rank]
             aggregate[2][target_rank] += student_type.scaled_utility_sums[source_rank]
@@ -483,6 +504,7 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
             priorities=priorities,
             utility_sums=tuple(values[1]),
             scaled_utility_sums=tuple(values[2]),
+            frl_sum=values[3],
         )
         for (node, program_ids, priorities), values in sorted(grouped.items())
     )

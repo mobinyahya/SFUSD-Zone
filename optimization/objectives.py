@@ -68,6 +68,10 @@ _OBJECTIVES = {
     "capacity_match": Objective("capacity_match", _HEURISTICS, False, True),
     "aa_capacity_match": Objective("aa_capacity_match", _HEURISTICS, False, True),
     "fill_polarization": Objective("fill_polarization", _HEURISTICS, False, True),
+    # School-level FRL dissimilarity after the MID match, in percentage points.
+    "frl_dissimilarity": Objective(
+        "frl_dissimilarity", _HEURISTICS, False, True, unit="percentage_point"
+    ),
     # A weighted sum of the objectives named in ``objective_weights``.
     "weighted_sum": Objective("weighted_sum", _HEURISTICS, False, True),
 }
@@ -114,7 +118,13 @@ WEIGHTED_SUM_TERMS = tuple(
     and name not in {"cut_edges", "boundary_perimeter", "weighted_sum"}
 )
 _MID_TERMS = frozenset(
-    {"matching_welfare", "capacity_match", "aa_capacity_match", "fill_polarization"}
+    {
+        "matching_welfare",
+        "capacity_match",
+        "aa_capacity_match",
+        "fill_polarization",
+        "frl_dissimilarity",
+    }
 )
 
 

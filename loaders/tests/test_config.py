@@ -14,6 +14,7 @@ from loaders.config import (
     REPOSITORY_ROOT,
     anchor_data_config,
     load_scenario,
+    planned_school_gaps,
 )
 
 
@@ -774,7 +775,7 @@ def test_noncanonical_school_year_values_are_rejected(year):
         (
             "optimization",
             {"student_population": "all"},
-            "must be applicant or enrolled",
+            "student_population must be one of",
         ),
         ("optimization", {"rounds": 1}, "rounds must be all or"),
         ("optimization", {"program_population": " "}, "non-empty string"),
@@ -1095,21 +1096,26 @@ def test_mandarin_immersion_is_registered_off_by_default_and_rekeys_nothing():
         for values in plain.source_manifest([])["filters"].values()
     )
 
-    # The site and the native/non-native split are not known yet, so the
-    # scenario refuses to load and names every gap.
-    with pytest.raises(
-        ValueError,
-        match=r"missing lat, lon, programs\.KG\.ME, programs\.KG\.MN\.",
-    ):
-        load_scenario(
-            {
-                "scenario": "sfusd-2627",
-                "overrides": {
-                    "filters": {"optimization": {"include_mandarin_immersion": True}}
-                },
+    # The registry carries placeholder site, seats and demand proxy, so the
+    # school loads; a gap would name every missing field (see
+    # planned_school_gaps).
+    included = load_scenario(
+        {
+            "scenario": "sfusd-2627",
+            "overrides": {
+                "filters": {"optimization": {"include_mandarin_immersion": True}}
             },
-            environ={},
-        )
+        },
+        environ={},
+    )
+    (school,) = included.selected_planned_schools("optimization")
+    assert school["programs"]["KG"] == {"ME": 27, "MN": 39}
+    assert dict(school["demand_proxy"]) == {
+        "schools": (746, 838),
+        "programs": ("ME", "MN"),
+    }
+    gap = {**school, "lat": None, "programs": {"KG": {"ME": None}}}
+    assert planned_school_gaps(gap) == ["lat", "programs.KG.ME"]
 
     with pytest.raises(
         ValueError, match="include_mandarin_immersion must be a boolean"

@@ -145,6 +145,19 @@ TRANSFER_FILE_FRAGMENTS: dict[str, str] = {
     "demographics": "demographics",
 }
 
+#: Files of an *enrolment* transfer: the district's fall roster, shipped
+#: separately from (and after) the Main Round files. The Oct 27 2026 transfer
+#: carries the CBEDS census-day roster ("out_SY26-27
+#: student_CBEDS_active_all.csv") and a coordinate file keyed by student, in
+#: the district's own spelling ("Latitude_Longtitude"). Its "full student
+#: file" is deliberately not read: where a student's CBEDS record has a blank
+#: grade or school 899 it overwrote the Main Round grade (2,468 SY26-27 rows),
+#: and the Main Round side of it is the post-run this converter already reads.
+ENROLLMENT_FILE_FRAGMENTS: dict[str, str] = {
+    "cbeds": "cbeds",
+    "coordinates": "latitudelongtitude",
+}
+
 # --------------------------------------------------------------------------- #
 # Raw columns
 # --------------------------------------------------------------------------- #
@@ -211,6 +224,65 @@ DEMOGRAPHICS_OPTIONAL: tuple[str, ...] = (
     "SCHOOL_CODE",
 )
 
+#: CBEDS roster columns without which no enrolment record can be built.
+CBEDS_REQUIRED: tuple[str, ...] = (
+    "scrambledstudentno",
+    "Grade",
+    "SchNo",
+)
+
+CBEDS_OPTIONAL: tuple[str, ...] = (
+    "Acty",
+    "bilg",
+    "CHARTER",
+    "SCHTYPE",
+    "StEthnic",
+    "HispanicLatino",
+    "HomeLang",
+    "ZipCode",
+)
+
+COORDINATES_REQUIRED: tuple[str, ...] = (
+    "scrambledstudentno",
+    "Latitude",
+    "Longitude",
+)
+
+#: CBEDS ``StEthnic`` code -> the demographics extract's ``Race_Ethnicity``
+#: label. Read off the SY26-27 students who appear in both files: every code
+#: maps to one label for all but a handful of its students (``400`` Filipino
+#: is 1,318 Filipino and 440 "Two or More", because CBEDS codes a multi-racial
+#: Filipino student 400). The multi-group codes (200, 300, 700, 800) are all
+#: "Two or More" there, and 999 "Decline to State" is "Not Specified". Used
+#: only for a student the demographics extract does not hold.
+CBEDS_ETHNICITY_LABELS: dict[str, str] = {
+    "100": "American Indian or Alaska Native",
+    "200": "Two or More",
+    "201": "Chinese",
+    "202": "Japanese",
+    "203": "Korean",
+    "204": "Vietnamese",
+    "205": "Asian Indian",
+    "206": "Laotian",
+    "207": "Cambodian",
+    "208": "Hmong",
+    "299": "Other Asian",
+    "300": "Two or More",
+    "301": "Hawaiian",
+    "302": "Guamanian",
+    "303": "Samoan",
+    "304": "Tahitian",
+    "399": "Other Pacific Islander",
+    "400": "Filipino",
+    "500": "Hispanic",
+    "600": "Black or African American",
+    "700": "Two or More",
+    "701": "White",
+    "702": "Middle Eastern/Arab",
+    "800": "Two or More",
+    "999": "Not Specified",
+}
+
 # --------------------------------------------------------------------------- #
 # Fixed school identities
 # --------------------------------------------------------------------------- #
@@ -226,6 +298,12 @@ SOTA_SCHOOL_ID = 815
 #: ID (``loaders.tables.MISSION_BAY_SCHOOL_ID``), so the converter writes it
 #: through unchanged; the shared loader reads the older placeholders 999 and
 #: 909 in the borrowed 2023-24 tables as 1731.
+
+#: School codes the CBEDS roster writes differently from the request files.
+#: CBEDS (like the district's capacity workbook, see
+#: ``convert_capacity_workbook.SCHOOL_CODE_CORRECTIONS``) carries Mission Bay
+#: ES as 731; the pre-run, post-run and every repository table use 1731.
+CBEDS_SCHOOL_CODE_CORRECTIONS: dict[int, int] = {731: 1731}
 
 # --------------------------------------------------------------------------- #
 # Per-request priority columns
@@ -417,18 +495,25 @@ PROMOTION_STUDENT_COLUMNS: tuple[str, ...] = (
     "pref_source",
 )
 
-#: The four values ``pref_source`` can take, in resolution order. It names the
+#: The values ``pref_source`` can take, in resolution order. It names the
 #: *source* consulted for the student's list, not the list's contents: a
 #: student found in the prior year's TK requests is ``tk_imputed`` even when
 #: none of those requests has a kindergarten counterpart, because that is still
 #: where the converter looked. ``feeder_only`` and ``aa_only`` mean no source
 #: held the student at all, split by whether they have a feeder to fall back
 #: on.
+#:
+#: ``cbeds_enrolled`` marks a student who is not in the Main Round market at
+#: all -- they filed no request and the run did not seat them -- but whom the
+#: CBEDS roster has enrolled at the grade. Their list is the program they
+#: enrolled in when it is placeable, else their attendance-area program. They
+#: appear only in the ``enrolled_all`` and ``applied_or_enrolled`` tables.
 PREF_SOURCES: tuple[str, ...] = (
     "k_list",
     "tk_imputed",
     "feeder_only",
     "aa_only",
+    "cbeds_enrolled",
 )
 
 #: Column order of the emitted program tables. Everything after ``capacity`` up
@@ -531,9 +616,15 @@ __all__ = [
     "AUXILIARY_DIRECTORY",
     "BLOCK_INDEX_COLUMNS",
     "BLOCK_INDEX_SOURCE_YEARS",
+    "CBEDS_ETHNICITY_LABELS",
+    "CBEDS_OPTIONAL",
+    "CBEDS_REQUIRED",
+    "CBEDS_SCHOOL_CODE_CORRECTIONS",
+    "COORDINATES_REQUIRED",
     "DEMOGRAPHICS_OPTIONAL",
     "DEMOGRAPHICS_REQUIRED",
     "EES_FEEDER_FIRST_YEAR",
+    "ENROLLMENT_FILE_FRAGMENTS",
     "GRADE_BUNDLES",
     "GradeBundle",
     "LOWELL_SCHOOL_ID",

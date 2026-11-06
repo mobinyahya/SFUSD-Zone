@@ -27,6 +27,18 @@ objectives need:
   the citywide share of a GE program take no one.  The match runs on those
   seats, and students it leaves out are designated to the attendance-area
   seats their zone still has free.
+* ``frl_dissimilarity`` -- the two-group index of dissimilarity between FRL
+  and non-FRL students across *schools*, after the match, in percentage
+  points: ``50 * sum_s |f_s / F - (n_s - f_s) / (N - F)|``. ``n_s`` is the
+  students the match places at school ``s`` plus those designated there, and
+  ``f_s`` their expected FRL count (each student's block FRL probability, so
+  membership is fractional and the index moves smoothly with the zoning).
+  Designated students are pooled per zone, so a zone's designated students
+  -- with the FRL share of the zone's unmatched students -- are spread over
+  its schools in proportion to the GE seats each still has free. Students
+  left unassigned count nowhere. It reads as the share of FRL students (or,
+  equally, of non-FRL students) who would have to change school for every
+  school to mirror the placed population.
 """
 
 from __future__ import annotations
@@ -52,6 +64,9 @@ class DesignationSeat:
     program_id: str
     school_node: int
     capacity: int
+    #: The program's school, which places designated students for
+    #: ``frl_dissimilarity``; ``None`` charges them to the seat's node.
+    school_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +76,8 @@ class MidOutcome:
     designated: float
     cutoffs: dict[str, int]
     fill_polarization: float = 0.0
+    #: School-level FRL dissimilarity in percentage points (0-100).
+    frl_dissimilarity: float = 0.0
 
 
 def is_general_education(program_id: str) -> bool:
@@ -79,7 +96,12 @@ def designation_seats(market: MidMarket) -> tuple[DesignationSeat, ...]:
     """
 
     return tuple(
-        DesignationSeat(program.program_id, int(program.school_node), program.capacity)
+        DesignationSeat(
+            program.program_id,
+            int(program.school_node),
+            program.capacity,
+            program.school_id,
+        )
         for program in market.programs
         if not program.citywide
         and program.school_node is not None
@@ -129,7 +151,10 @@ def attendance_area_designation_seats(
 
     return tuple(
         DesignationSeat(
-            program.program_id, int(program.school_node), attendance_area_seats(program)
+            program.program_id,
+            int(program.school_node),
+            attendance_area_seats(program),
+            program.school_id,
         )
         for program in market.programs
         if program.school_node is not None and attendance_area_seats(program) > 0
@@ -192,6 +217,76 @@ def designation_outcome(
     return max(0.0, total - designated), designated, polarization
 
 
+def school_frl_dissimilarity(
+    market: MidMarket,
+    seats: tuple[DesignationSeat, ...],
+    zoning: Mapping[int, int],
+    result: MidOracleResult,
+    lottery_scale: int,
+) -> float:
+    """School-level FRL dissimilarity of one matching, in percentage points.
+
+    See the module docstring.
+    """
+
+    programs = market.program_by_id
+    placed: dict[int, float] = defaultdict(float)
+    frl: dict[int, float] = defaultdict(float)
+    unmatched: dict[int, float] = defaultdict(float)
+    unmatched_frl: dict[int, float] = defaultdict(float)
+    for student_type, masses, remaining in zip(
+        market.types, result.assignment_masses, result.remaining_masses, strict=True
+    ):
+        share = student_type.frl_sum / student_type.count
+        for program_id, mass in zip(student_type.programs, masses, strict=True):
+            if mass <= 0:
+                continue
+            school = programs[program_id].school_id
+            students = student_type.count * mass / lottery_scale
+            placed[school] += students
+            frl[school] += share * students
+        left = remaining[-1] if remaining else lottery_scale
+        if left > 0:
+            zone = zoning[student_type.node]
+            students = student_type.count * left / lottery_scale
+            unmatched[zone] += students
+            unmatched_frl[zone] += share * students
+
+    free_by_zone: dict[int, list[tuple[int, float]]] = defaultdict(list)
+    for seat in seats:
+        free = max(0.0, seat.capacity - result.demands.get(seat.program_id, 0.0))
+        if free > 0:
+            free_by_zone[zoning[seat.school_node]].append(
+                (
+                    ("node", seat.school_node)
+                    if seat.school_id is None
+                    else seat.school_id,
+                    free,
+                )
+            )
+    for zone, students in unmatched.items():
+        targets = free_by_zone.get(zone, ())
+        total_free = sum(free for _, free in targets)
+        if students <= 0 or total_free <= 0:
+            continue
+        designated = min(students, total_free)
+        frl_share = unmatched_frl[zone] / students
+        for school, free in targets:
+            moved = designated * free / total_free
+            placed[school] += moved
+            frl[school] += frl_share * moved
+
+    total = math.fsum(placed.values())
+    total_frl = math.fsum(frl.values())
+    other = total - total_frl
+    if total_frl <= 0 or other <= 0:
+        return 0.0
+    return 50.0 * math.fsum(
+        abs(frl[school] / total_frl - (placed[school] - frl[school]) / other)
+        for school in placed
+    )
+
+
 def mid_outcome(
     market: MidMarket,
     seats: tuple[DesignationSeat, ...],
@@ -215,6 +310,9 @@ def mid_outcome(
         designated=designated,
         cutoffs={key: int(value) for key, value in result.cutoffs.items()},
         fill_polarization=polarization,
+        frl_dissimilarity=school_frl_dissimilarity(
+            market, seats, zoning, result, lottery_scale
+        ),
     )
 
 
@@ -318,7 +416,13 @@ class MidBatchEvaluator:
             self.executor.shutdown(wait=True, cancel_futures=True)
 
 
-CHOICE_METRICS = ("welfare", "capacity_match", "aa_capacity_match", "fill_polarization")
+CHOICE_METRICS = (
+    "welfare",
+    "capacity_match",
+    "aa_capacity_match",
+    "fill_polarization",
+    "frl_dissimilarity",
+)
 CAPACITY_METRICS = frozenset({"capacity_match", "aa_capacity_match"})
 
 
@@ -347,6 +451,8 @@ class MidBurstScorer:
             return outcome.welfare
         if self.metric == "fill_polarization":
             return outcome.fill_polarization
+        if self.metric == "frl_dissimilarity":
+            return outcome.frl_dissimilarity
         return (
             self.unassigned_weight * outcome.unassigned
             + self.designated_weight * outcome.designated
@@ -371,6 +477,7 @@ class MidBurstScorer:
             "best_unassigned_students": outcome.unassigned,
             "best_designated_students": outcome.designated,
             "best_fill_polarization": outcome.fill_polarization,
+            "best_frl_dissimilarity": outcome.frl_dissimilarity,
         }
 
     def close(self) -> None:

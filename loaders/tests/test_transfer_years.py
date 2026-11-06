@@ -30,13 +30,15 @@ def test_registry_year_offers_both_populations_and_three_grades(base, year):
     catalog = set(base["files"])
 
     optimization = entry["optimization"]["students"]
-    assert set(optimization) == {"applicant", "enrolled"}
+    # 2026-27 adds the CBEDS populations; every year has the two required ones.
+    cbeds = {"enrolled_all", "applied_or_enrolled"} if year == "2627" else set()
+    assert set(optimization) == {"applicant", "enrolled", *cbeds}
     assert optimization["applicant"] == f"optimization.students.applicant.{year}"
     assert optimization["enrolled"] == f"optimization.students.enrolled.{year}"
     assert set(optimization.values()) <= catalog
 
     assignment = entry["assignment"]
-    assert set(assignment["students"]) == {"applicant", "enrolled"}
+    assert set(assignment["students"]) == {"applicant", "enrolled", *cbeds}
     assert set(assignment["students"].values()) <= catalog
 
     # The transfer carries requests for every grade, but only KG, 6, and 9 have

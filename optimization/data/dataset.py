@@ -8,12 +8,14 @@ operate purely against a ``Dataset``; they never read raw files.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
 from loaders import CacheStore
 from optimization.data import closer_neighbors, graph_builder, loaders, node_areas
+from optimization.data.conversion import ATTENDANCE_AREA_HINT
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS, LevelSpec
 from optimization.problem import ZoneProblem
@@ -183,17 +185,60 @@ class Dataset:
         path = str(path)
         key = (path, level.name, tuple(centroids))
         if key not in self._area_hints:
-            if path not in self._area_assignments:
-                self._area_assignments[path] = conversion.load_area_assignment(path)
+            if path == ATTENDANCE_AREA_HINT:
+                source_level = LevelSpec(level.unit, 0)
+                assignment = self._attendance_area_assignment(level.unit)
+            else:
+                source_level = conversion.area_file_level(path, level)
+                if path not in self._area_assignments:
+                    self._area_assignments[path] = conversion.load_area_assignment(
+                        path
+                    )
+                assignment = self._area_assignments[path]
             self._area_hints[key] = conversion.hint_from_area_assignment(
-                self._area_assignments[path],
-                conversion.area_file_level(path, level),
+                assignment,
+                source_level,
                 G,
                 level,
                 centroids,
                 converter=conversion.LevelConverter(data=self.data),
             )
         return dict(self._area_hints[key])
+
+    def _attendance_area_assignment(self, unit: str) -> dict[int, int]:
+        """Today's attendance areas as ``{area_id: zone}`` on base ``unit`` ids.
+
+        A unit takes the zone of the attendance-area school whose 2013
+        polygon holds it. Units whose school anchors no zone here -- off the
+        map, or in the area of a school the selected capacity scenario makes
+        citywide -- are left out, and ``hint_from_area_assignment`` gives them
+        their neighbors' zone.
+        """
+        from loaders.tables import attendance_area_units, load_student_records
+
+        zone_of = {
+            int(school): zone for zone, school in enumerate(self.centroid_school_ids())
+        }
+        students = load_student_records(
+            self.data, "assignment.students", filter_group="assignment"
+        )
+        lived_in = students["idschoolattendance"].dropna().unique()
+        units = loaders.load_census_shapefile(unit, self.data)
+        units = units.dissolve(by=unit, as_index=False)
+        schools = attendance_area_units(self.data, units, unit, lived_in)
+        assignment = {
+            area: zone_of[school]
+            for area, school in schools.items()
+            if school in zone_of
+        }
+        dropped = sorted({school for school in schools.values()} - set(zone_of))
+        if dropped:
+            warnings.warn(
+                f"Attendance areas of schools {dropped} anchor no zone here; "
+                "their units take a neighboring zone.",
+                stacklevel=2,
+            )
+        return assignment
 
     def centroid_school_ids(self, centroids_type=None) -> list[int]:
         """Read a centroid definition once across all levels and pipeline steps."""
@@ -325,6 +370,8 @@ class Dataset:
             shortage=config.shortage * constraint_multiplier,
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
+            min_zone_residents=config.min_zone_residents,
+            frl_reference_dev=config.frl_reference_dev,
             weight_edges=config.weight_edges,
             compactness_objective=config.compactness_objective,
             school_distance_area_weight=config.school_distance_area_weight,

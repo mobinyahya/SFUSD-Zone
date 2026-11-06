@@ -190,3 +190,80 @@ def test_old_reference_semantics_are_rejected():
     reference["schema_version"] = 1
     with pytest.raises(ValueError, match="schema/geography"):
         apply_capacity_reference(problem, reference)
+
+
+def _frl_market():
+    """Node 0 (one FRL student) and node 1 (none) split between the citywide
+    seat and school 100; nodes 2 (FRL) and 3 rank nothing and are designated
+    to school 200."""
+    market = _market()
+    frl = {0: 1.0, 1: 0.0, 2: 1.0, 3: 0.0}
+    return replace(
+        market,
+        types=tuple(replace(t, frl_sum=frl[t.node]) for t in market.types),
+    )
+
+
+def test_frl_reference_counts_follow_the_capacity_split():
+    reference = build_capacity_reference(_problem(), ZONING, _frl_market(), 20)
+    assert reference["frl_students_by_area"] == {
+        1000: 0.5,
+        1001: 0.0,
+        1002: 1.0,
+        1003: 0.0,
+    }
+    assert reference["frl_seats_by_school"] == {100: 0.5, 200: 1.0}
+
+
+def test_frl_reference_band_holds_school_frl_counts():
+    problem = make_grid_problem(
+        2, 2, program_population="All", overage=-1, shortage=-1
+    )
+    problem.frl_reference_dev = 0.1
+    apply_capacity_reference(
+        problem, build_capacity_reference(problem, ZONING, _frl_market(), 20)
+    )
+    assert problem.has_frl_reference
+    assert "frl_reference" in {c.kind for c in balance_constraints(problem)}
+    # The source balances exactly; moving node 2's FRL student to zone 0
+    # sends 1.5 FRL residents to 0.5 frozen FRL seats.
+    assert check_zoning(problem, ZONING).feasible
+    moved = {0: 0, 1: 0, 2: 0, 3: 1}
+    kinds = {v.kind for v in check_zoning(problem, moved).violations}
+    assert "frl_reference_lower" in kinds
+
+    off = make_grid_problem(2, 2, program_population="All", overage=-1, shortage=-1)
+    apply_capacity_reference(
+        off, build_capacity_reference(off, ZONING, _frl_market(), 20)
+    )
+    assert not off.has_frl_reference
+    assert feasibility_fingerprint(off) != feasibility_fingerprint(problem)
+
+
+def test_version_2_references_load_without_frl_rows():
+    problem = _problem()
+    problem.frl_reference_dev = 0.1
+    reference = build_capacity_reference(problem, ZONING, _frl_market(), 20)
+    reference["schema_version"] = 2
+    del reference["frl_students_by_area"], reference["frl_seats_by_school"]
+    apply_capacity_reference(problem, reference)
+    assert not problem.has_frl_reference
+
+
+def test_frl_reference_dev_needs_a_capacity_reference():
+    from optimization.config import OptimizationConfig
+
+    with pytest.raises(ValueError, match="frl_reference_dev without a capacity_ref"):
+        OptimizationConfig(
+            strategy="pipeline",
+            centroids_type="all",
+            steps=[
+                {
+                    "name": "shape",
+                    "level": "Block_0",
+                    "method": "cp_bool",
+                    "objective": "cut_edges",
+                    "constraints": {"frl_reference_dev": 0.1},
+                }
+            ],
+        )

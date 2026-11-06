@@ -374,14 +374,19 @@ class MipSolver(Solver):
         self, m: gp.Model, problem: ZoneProblem, x: _AssignmentVars
     ) -> None:
         bounds = problem.school_count_bounds()
-        if bounds is None:
-            return
-        floor_, ceiling = bounds
-        for z in range(problem.Z):
-            nodes = self._candidate_nodes(problem, z)
-            terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
-            self._add_linear_constraint(m, x, terms, ">=", floor_)
-            self._add_linear_constraint(m, x, terms, "<=", ceiling)
+        if bounds is not None:
+            floor_, ceiling = bounds
+            for z in range(problem.Z):
+                nodes = self._candidate_nodes(problem, z)
+                terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
+                self._add_linear_constraint(m, x, terms, ">=", floor_)
+                self._add_linear_constraint(m, x, terms, "<=", ceiling)
+        resident_floor = problem.resident_floor()
+        if resident_floor is not None:
+            for z in range(problem.Z):
+                nodes = self._candidate_nodes(problem, z)
+                terms = [(problem.residents(n), z, n) for n in nodes]
+                self._add_linear_constraint(m, x, terms, ">=", resident_floor)
 
     def _add_linear_constraint(
         self,

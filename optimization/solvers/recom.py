@@ -55,7 +55,8 @@ _CHAIN_BLOCK = 25
 # weighted count of students left unassigned or designated by the MID match,
 # ``aa_capacity_match`` the same count with the match confined to
 # attendance-area seats, ``fill_polarization`` how far zones' seats sit from
-# full or empty, and ``weighted_sum`` the sum of ``objective_weights`` terms.
+# full or empty, ``frl_dissimilarity`` the school-level FRL dissimilarity of
+# the match, and ``weighted_sum`` the sum of ``objective_weights`` terms.
 RECOM_OBJECTIVES = (
     "cut_edges",
     "school_distance",
@@ -63,6 +64,7 @@ RECOM_OBJECTIVES = (
     "capacity_match",
     "aa_capacity_match",
     "fill_polarization",
+    "frl_dissimilarity",
     "weighted_sum",
 )
 
@@ -102,6 +104,8 @@ class _ZoneStats:
     # One value per balance row, then the student count its ratio is against.
     values: tuple[float, ...]
     schools: float
+    # Resident students (``ZoneProblem.residents``), for the resident floor.
+    residents: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -272,6 +276,8 @@ class _ReComContext:
             for node in self.nodes
         )
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
+        self.residents = tuple(problem.residents(node) for node in self.nodes)
+        self.resident_floor = problem.resident_floor()
         # Mirrors the CP/MIP models and ``check_zoning``: an unweighted count
         # against a floored proportion of the edge count.
         self.cut_limit = (
@@ -311,7 +317,11 @@ class _ReComContext:
     # the whole partition. Every consumer treats each row alike.
     @property
     def zone_row_count(self) -> int:
-        return len(self.balance_rows) + (2 if self.school_bounds else 0)
+        return (
+            len(self.balance_rows)
+            + (2 if self.school_bounds else 0)
+            + (self.resident_floor is not None)
+        )
 
     @property
     def cut_row(self) -> int | None:
@@ -342,13 +352,21 @@ class _ReComContext:
             scale = 100.0 / self.average_schools
             out.append((lower - stats.schools) * scale)
             out.append((stats.schools - upper) * scale)
+        if self.resident_floor is not None:
+            floor_ = self.resident_floor
+            out.append(
+                (floor_ - stats.residents) / floor_ * 100.0
+                if floor_ > 0
+                else 0.0
+            )
         return tuple(out)
 
     def row_students(self, stats: _ZoneStats) -> tuple[float, ...]:
         """Per row, what its residual is a percentage of: ``count = g s / 100``."""
         rows = len(self.balance_rows)
         schools = (self.average_schools,) * (2 if self.school_bounds else 0)
-        return (*stats.values[rows:], *schools)
+        residents = () if self.resident_floor is None else (self.resident_floor,)
+        return (*stats.values[rows:], *schools, *residents)
 
     def cut_residual(self, cut_edges: int) -> float:
         return (cut_edges - self.cut_limit) / max(self.cut_limit, 1) * 100.0
@@ -385,6 +403,8 @@ class _ReComContext:
         ]
         if self.school_bounds is not None:
             labels += ["schools_lower", "schools_upper"]
+        if self.resident_floor is not None:
+            labels.append("residents_lower")
         if self.cut_limit is not None:
             labels.append("boundary")
         return tuple(labels)
@@ -432,6 +452,7 @@ class _ReComContext:
             students=sum(self.students[node] for node in nodes),
             values=tuple(values),
             schools=sum(self.schools[node] for node in nodes),
+            residents=sum(self.residents[node] for node in nodes),
         )
 
     def assignment_dict(
@@ -702,6 +723,7 @@ class _ReComKernel:
         sub_nodes = [1] * count
         sub_students = [context.students[n] for n in preorder]
         sub_schools = [context.schools[n] for n in preorder]
+        sub_residents = [context.residents[n] for n in preorder]
         sub_values = [list(context.values[n]) for n in preorder]
         illegal_a = [int(zone_a not in context.allowed[n]) for n in preorder]
         illegal_b = [int(zone_b not in context.allowed[n]) for n in preorder]
@@ -710,6 +732,7 @@ class _ReComKernel:
             sub_nodes[p] += sub_nodes[idx]
             sub_students[p] += sub_students[idx]
             sub_schools[p] += sub_schools[idx]
+            sub_residents[p] += sub_residents[idx]
             illegal_a[p] += illegal_a[idx]
             illegal_b[p] += illegal_b[idx]
             for k, value in enumerate(sub_values[idx]):
@@ -748,7 +771,11 @@ class _ReComKernel:
             for k in range(context.zone_row_count)
         ]
         total = _ZoneStats(
-            sub_nodes[0], sub_students[0], tuple(sub_values[0]), sub_schools[0]
+            sub_nodes[0],
+            sub_students[0],
+            tuple(sub_values[0]),
+            sub_schools[0],
+            sub_residents[0],
         )
         cuts: list[_Cut] = []
 
@@ -783,12 +810,14 @@ class _ReComKernel:
                 sub_students[idx],
                 tuple(sub_values[idx]),
                 sub_schools[idx],
+                sub_residents[idx],
             )
             rest = _ZoneStats(
                 total.node_count - sub.node_count,
                 total.students - sub.students,
                 tuple(t - s for t, s in zip(total.values, sub.values)),
                 total.schools - sub.schools,
+                total.residents - sub.residents,
             )
             if illegal_a[idx] == 0 and illegal_b[0] == illegal_b[idx]:
                 add(idx, True, sub, rest)

@@ -27,6 +27,8 @@ Every check here is implied by the constraints the solvers post, never stricter:
   :func:`optimization.solvers.balance.balance_constraints`
 * school count -- every zone holds floor(schools / zones) to
   ceil(schools / zones) schools
+* residents -- every zone holds at least ``min_zone_residents`` resident
+  students, when that floor is on
 * boundary -- cut edges within ``boundary_prop`` of the graph's edge count,
   counted unweighted, as :meth:`_add_boundary_constraint` posts it
 
@@ -108,6 +110,7 @@ def check_zoning(
     violations.extend(_contiguity_violations(problem, assignment))
     violations.extend(_balance_violations(problem, zones, tolerance))
     violations.extend(_school_count_violations(problem, zones, tolerance))
+    violations.extend(_resident_violations(problem, zones, tolerance))
     violations.extend(_boundary_violations(problem, assignment))
     return FeasibilityReport(tuple(violations), tolerance)
 
@@ -283,6 +286,29 @@ def _school_count_violations(
                     f"zone {zone} holds {schools:g} schools against a ceiling of "
                     f"{ceiling:.6g}",
                     schools - ceiling,
+                )
+            )
+    return violations
+
+
+def _resident_violations(
+    problem: ZoneProblem,
+    zones: list[list[int]],
+    tolerance: float,
+) -> list[FeasibilityViolation]:
+    floor_ = problem.resident_floor()
+    if floor_ is None:
+        return []
+    violations: list[FeasibilityViolation] = []
+    for zone, nodes in enumerate(zones):
+        residents = math.fsum(problem.residents(node) for node in nodes)
+        if floor_ - residents > tolerance:
+            violations.append(
+                FeasibilityViolation(
+                    "residents_lower",
+                    f"zone {zone} holds {residents:.6g} residents against a floor "
+                    f"of {floor_:.6g}",
+                    floor_ - residents,
                 )
             )
     return violations

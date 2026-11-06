@@ -84,6 +84,21 @@ class ZoneProblem:
     boundary_prop:
         Maximum proportion of graph edges whose endpoints may be assigned to
         different zones. A negative value disables the constraint.
+    frl_reference_dev:
+        With a pipeline ``capacity_reference``, the band on each zone's
+        frozen FRL count: the FRL students the source zoning's match put on
+        the zone's schools' attendance-area seats must lie within
+        ``[(1 - dev), (1 + dev)]`` times the FRL residents the zone now
+        sends there (both from ``capacity_reference``). It keeps the source's
+        school FRL composition, and so its FRL dissimilarity, through
+        refinement. A negative value disables it; without a reference it
+        has no counts to bound and adds no row.
+    min_zone_residents:
+        Minimum resident students per zone: ``sum`` of :meth:`residents` over
+        the zone's nodes. Residents are every student of the selected
+        ``student_population`` living there, whatever program they rank
+        (``all_prog_students``), so the floor does not move with
+        ``program_population``. A negative value disables the constraint.
     compactness_objective:
         What CP/MIP solvers minimize when there is no choice objective:
         ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
@@ -123,6 +138,8 @@ class ZoneProblem:
     shortage: float = 0.2
     max_distance: float | str = float("inf")
     boundary_prop: float = -1.0
+    min_zone_residents: float = -1.0
+    frl_reference_dev: float = -1.0
     weight_edges: bool = False
     compactness_objective: str = "cut_edges"
     school_distance_area_weight: float = 0.75
@@ -138,6 +155,8 @@ class ZoneProblem:
     # Solve-local reference counts; never written into the shared graph.
     capacity_student_counts: Optional[dict[int, float]] = None
     capacity_seat_counts: Optional[dict[int, float]] = None
+    frl_reference_student_counts: Optional[dict[int, float]] = None
+    frl_reference_seat_counts: Optional[dict[int, float]] = None
 
     # cached candidate structures (populated lazily by `candidate_zones`)
     _candidates: Optional[dict[int, set[int]]] = field(
@@ -252,6 +271,39 @@ class ZoneProblem:
 
     def num_schools(self, node: int) -> int:
         return int(self.G.nodes[node].get("num_schools", 0))
+
+    def frl_reference_students(self, node: int) -> float:
+        """Frozen FRL residents sent to attendance-area seats (reference)."""
+        return self.frl_reference_student_counts[node]
+
+    def frl_reference_seats(self, node: int) -> float:
+        """Frozen FRL students on the node's schools' attendance-area seats."""
+        return self.frl_reference_seat_counts[node]
+
+    @property
+    def has_frl_reference(self) -> bool:
+        return (
+            self.frl_reference_dev >= 0
+            and self.frl_reference_student_counts is not None
+            and self.frl_reference_seat_counts is not None
+        )
+
+    def residents(self, node: int) -> float:
+        """Students of the selected population living at ``node``.
+
+        ``all_prog_students``; a hand-built graph without it counts
+        :meth:`students`.
+        """
+        attrs = self.G.nodes[node]
+        if "all_prog_students" not in attrs:
+            return self.students(node)
+        return float(attrs["all_prog_students"])
+
+    def resident_floor(self) -> float | None:
+        """The per-zone resident floor, or ``None`` when it is off."""
+        if self.min_zone_residents is None or self.min_zone_residents < 0:
+            return None
+        return float(self.min_zone_residents)
 
     def school_count_bounds(self) -> tuple[float, float] | None:
         """Per-zone school counts ``(floor, ceil)`` of ``schools / zones``.

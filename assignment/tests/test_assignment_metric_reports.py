@@ -90,7 +90,7 @@ def test_basic_report_preserves_benchmark_contract():
     assert metrics["Average Utility"] == 14 / 3
     # Listed (real-preference) runs carry no outside-option draw.
     assert np.isnan(metrics["Designated below outside option"])
-    assert len(metrics) == 74
+    assert len(metrics) == 75
 
 
 def test_designated_below_outside_option_counts_only_designated_students():
@@ -1225,3 +1225,18 @@ def test_legacy_assignment_analysis_fails_on_missing_iteration(tmp_path, monkeyp
     with pytest.raises(FileNotFoundError):
         evaluator.evaluate_results(tmp_path, ["policy"], table_path)
     assert not table_path.exists()
+
+
+def test_school_frl_dissimilarity_is_the_two_group_index() -> None:
+    students = pd.DataFrame(
+        {
+            "assigned school": [1, 1, 1, 1, 2, 2],
+            "frl": [1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+        }
+    )
+    value = MatchEvaluator.school_frl_dissimilarity(students)
+    # School 1 holds all 3 FRL and 1 of 3 non-FRL students.
+    assert value == pytest.approx(50.0 * (abs(1 - 1 / 3) + abs(0 - 2 / 3)))
+    assert MatchEvaluator.school_frl_dissimilarity(
+        students.assign(frl=0.0)
+    ) == pytest.approx(0.0)

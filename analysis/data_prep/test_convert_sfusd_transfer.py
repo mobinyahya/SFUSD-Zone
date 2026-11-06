@@ -1333,3 +1333,74 @@ def test_dataless_detection_uses_the_size_and_block_count(tmp_path, monkeypatch)
     assert converter.dataless(path)
     with pytest.raises(TransferGapError, match="no local content"):
         converter.require_readable(path, "test input")
+
+
+# --------------------------------------------------------------------------- #
+# Enrolment transfer (CBEDS)
+# --------------------------------------------------------------------------- #
+def _write_enrollment_transfer(root: Path, *, ethnic: str = "500") -> Path:
+    folder = root / "SY26-27"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "scrambledstudentno": ["S000000001", "S000000002", "S000000003"],
+            "Acty": ["A", "A", "W"],
+            "Grade": ["K", "K", "01"],
+            "SchNo": ["731", "039", "899"],
+            "bilg": ["GE", "SN", ""],
+            "CHARTER": ["", "Y", ""],
+            "SCHTYPE": ["ES", "CH", "NS"],
+            "StEthnic": [ethnic, "201", "999"],
+            "HispanicLatino": ["Y", "N", "D"],
+            "HomeLang": ["SP", "CC", "EN"],
+            "ZipCode": ["94110", "94112", "94124"],
+        }
+    ).to_csv(folder / "out_SY26-27 student_CBEDS_active_all.csv", index=False)
+    pd.DataFrame(
+        {
+            "Latitude": [37.75, 37.75, 37.72],
+            "Longitude": [-122.41, -122.41, -122.44],
+            "scrambledstudentno": ["S000000001", "S000000001", "S000000002"],
+        }
+    ).to_csv(folder / "out_SY26-27_Latitude_Longtitude.csv", index=False)
+    return root
+
+
+def test_enrollment_transfer_reads_cbeds_as_an_enrolment_record(tmp_path) -> None:
+    report = converter.Report(year="2627", transfer=str(tmp_path))
+    transfer = converter.load_enrollment_transfer(
+        _write_enrollment_transfer(tmp_path), "2627", report
+    )
+
+    roster = transfer.roster
+    # CBEDS writes Mission Bay as 731; the repository's id is 1731.
+    assert roster.loc[1, "school"] == 1731
+    assert roster.loc[2, "school"] == 39
+    assert roster["grade"].tolist() == ["KG", "KG", "01"]
+    assert roster["charter"].tolist() == [False, True, False]
+    assert transfer.record["Race_Ethnicity"].tolist() == [
+        "Hispanic",
+        "Chinese",
+        "Not Specified",
+    ]
+    # The coordinate file's exact repeats collapse to one row per student.
+    assert transfer.coordinates.index.tolist() == [1, 2]
+    # 899 is enrolled nowhere, and grade 1 is not kindergarten.
+    assert converter.enrolled_at_grade_students(transfer.record, "KG", report) == {
+        1,
+        2,
+    }
+
+
+def test_enrollment_transfer_rejects_an_unmapped_ethnicity_code(tmp_path) -> None:
+    report = converter.Report(year="2627", transfer=str(tmp_path))
+    with pytest.raises(converter.TransferGapError, match="StEthnic"):
+        converter.load_enrollment_transfer(
+            _write_enrollment_transfer(tmp_path, ethnic="123"), "2627", report
+        )
+
+
+def test_enrolled_only_lottery_draws_are_reproducible() -> None:
+    first = converter._enrolled_lottery([3, 1, 2], "2627")
+    assert first == converter._enrolled_lottery([1, 2, 3], "2627")
+    assert all(0.0 <= value < 1.0 for value in first.values())

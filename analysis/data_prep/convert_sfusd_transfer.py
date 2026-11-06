@@ -79,8 +79,14 @@ from analysis.data_prep.sfusd_transfer_schema import (  # noqa: E402
     EES_FEEDER_FIRST_YEAR,
     BLOCK_INDEX_COLUMNS,
     BLOCK_INDEX_SOURCE_YEARS,
+    CBEDS_ETHNICITY_LABELS,
+    CBEDS_OPTIONAL,
+    CBEDS_REQUIRED,
+    CBEDS_SCHOOL_CODE_CORRECTIONS,
+    COORDINATES_REQUIRED,
     DEMOGRAPHICS_OPTIONAL,
     DEMOGRAPHICS_REQUIRED,
+    ENROLLMENT_FILE_FRAGMENTS,
     GRADE_BUNDLES,
     LOWELL_SCHOOL_ID,
     MARKET_STUDENT_COLUMNS,
@@ -121,6 +127,7 @@ from loaders.tables import (  # noqa: E402
     MISSION_BAY_SCHOOL_ID,
     MISSION_BAY_SCHOOL_IDS,
     NOT_ENROLLED_SCHOOL_ID,
+    fill_attendance_areas,
     normalize_grade,
 )
 
@@ -330,8 +337,17 @@ def _literal(value: Any) -> list[Any]:
 # --------------------------------------------------------------------------- #
 # Transfer discovery
 # --------------------------------------------------------------------------- #
-def discover_transfer_files(transfer: Path, year: str) -> dict[str, Path]:
-    """Locate the three CSVs for one school year inside a transfer folder."""
+def discover_transfer_files(
+    transfer: Path,
+    year: str,
+    *,
+    fragments: dict[str, str] = TRANSFER_FILE_FRAGMENTS,
+) -> dict[str, Path]:
+    """Locate one school year's CSVs, one per role in ``fragments``.
+
+    The default roles are a Main Round transfer's three files; an enrolment
+    transfer passes ``ENROLLMENT_FILE_FRAGMENTS``.
+    """
     folder_name = TRANSFER_YEAR_FOLDERS.get(year)
     if folder_name is None:
         raise TransferGapError(
@@ -344,7 +360,7 @@ def discover_transfer_files(transfer: Path, year: str) -> dict[str, Path]:
 
     candidates = sorted(path for path in folder.glob("*.csv") if path.is_file())
     resolved: dict[str, Path] = {}
-    for role, fragment in TRANSFER_FILE_FRAGMENTS.items():
+    for role, fragment in fragments.items():
         matches = [
             path
             for path in candidates
@@ -1563,6 +1579,375 @@ def _apply_fall_enrollment(
 
 
 # --------------------------------------------------------------------------- #
+# Enrolment transfer (CBEDS census-day roster)
+# --------------------------------------------------------------------------- #
+@dataclass
+class EnrollmentTransfer:
+    """The district's fall roster, shipped apart from the Main Round files.
+
+    ``record`` is the roster in the demographics extract's shape
+    (``SCHOOL_CODE``, ``GRADE``, ``ENR_PATHWAY``, ``Race_Ethnicity``, ...), so
+    that :func:`_fall_enrollment` and :func:`_attach_demographics_columns`
+    read it exactly as they read the extract. ``roster`` is the same students
+    indexed by ``studentno`` with the fields only CBEDS carries.
+    ``coordinates`` holds one ``latitude``/``longitude`` per student.
+    """
+
+    record: pd.DataFrame
+    roster: pd.DataFrame
+    coordinates: pd.DataFrame
+
+
+def load_enrollment_transfer(
+    transfer: Path, year: str, report: Report
+) -> EnrollmentTransfer:
+    """Read and validate one year's CBEDS roster and coordinate file."""
+    paths = discover_transfer_files(
+        transfer, year, fragments=ENROLLMENT_FILE_FRAGMENTS
+    )
+    for role, path in paths.items():
+        require_readable(path, f"enrolment transfer {role} file")
+        report.inputs[f"enrollment_{role}"] = str(path)
+
+    cbeds = _clean_nulls(pd.read_csv(paths["cbeds"], dtype=str))
+    _check_columns(cbeds, CBEDS_REQUIRED, CBEDS_OPTIONAL, "CBEDS", report)
+    studentno = _student_identity(cbeds["scrambledstudentno"], "CBEDS")
+    if studentno.duplicated().any():
+        raise TransferGapError(
+            f"The CBEDS roster lists {int(studentno.duplicated().sum())} students "
+            "more than once; it is expected to hold one census-day record each."
+        )
+    school = _school_ids(cbeds["SchNo"], "CBEDS SchNo")
+    corrected = school.isin(list(CBEDS_SCHOOL_CODE_CORRECTIONS))
+    school = school.replace(CBEDS_SCHOOL_CODE_CORRECTIONS).astype("Int64")
+    if corrected.any():
+        report.derived(
+            "CBEDS SchNo",
+            f"read as the repository's school ID; {int(corrected.sum()):,} rows "
+            f"recoded through {CBEDS_SCHOOL_CODE_CORRECTIONS} (CBEDS writes "
+            "Mission Bay ES as 731)",
+        )
+
+    def column(name: str) -> pd.Series:
+        if name in cbeds.columns:
+            return cbeds[name]
+        return pd.Series(pd.NA, index=cbeds.index, dtype=object)
+
+    codes = column("StEthnic").astype("string").str.strip()
+    unknown = sorted(set(codes.dropna()) - set(CBEDS_ETHNICITY_LABELS))
+    if unknown:
+        raise TransferGapError(
+            f"CBEDS StEthnic carries codes {unknown} that CBEDS_ETHNICITY_LABELS "
+            "does not map. Add them to sfusd_transfer_schema.py."
+        )
+    record = pd.DataFrame(
+        {
+            "scrambledstudentno": cbeds["scrambledstudentno"],
+            "SCHOOL_CODE": school,
+            "GRADE": cbeds["Grade"],
+            "ENR_PATHWAY": column("bilg"),
+            "Race_Ethnicity": codes.map(CBEDS_ETHNICITY_LABELS),
+            "HISPANIC_INDICATOR": column("HispanicLatino"),
+            "HLS1__Language_First_Learn": column("HomeLang"),
+            "Home_Zip": column("ZipCode"),
+        }
+    )
+    roster = pd.DataFrame(
+        {
+            "school": school.to_numpy(),
+            "grade": cbeds["Grade"].map(normalize_grade).to_numpy(),
+            "program": column("bilg").to_numpy(),
+            "charter": column("CHARTER").astype("string").str.upper().eq("Y")
+            .fillna(False)
+            .to_numpy(),
+            "school_type": column("SCHTYPE").to_numpy(),
+            "activity": column("Acty").to_numpy(),
+        },
+        index=pd.Index(studentno.to_numpy(), name="studentno"),
+    )
+
+    raw = _clean_nulls(pd.read_csv(paths["coordinates"], dtype=str))
+    _check_columns(raw, COORDINATES_REQUIRED, (), "Coordinates", report)
+    coordinates = pd.DataFrame(
+        {
+            "studentno": _student_identity(raw["scrambledstudentno"], "Coordinates"),
+            "latitude": pd.to_numeric(raw["Latitude"], errors="coerce"),
+            "longitude": pd.to_numeric(raw["Longitude"], errors="coerce"),
+        }
+    ).drop_duplicates()
+    conflicting = coordinates["studentno"].duplicated(keep=False)
+    if conflicting.any():
+        raise TransferGapError(
+            f"The coordinate file gives {coordinates.loc[conflicting, 'studentno'].nunique()} "
+            "students more than one location."
+        )
+    report.substitute(
+        kind="coordinate_duplicate_collapse",
+        rows=int(len(raw) - len(coordinates)),
+        rule="dropped exact repeats of a (student, latitude, longitude) row",
+        reason="the coordinate file repeats some students with identical values",
+    )
+    coordinates = coordinates.set_index("studentno")
+
+    report.row_counts["cbeds_rows"] = len(cbeds)
+    report.row_counts["coordinate_rows"] = len(raw)
+    return EnrollmentTransfer(record=record, roster=roster, coordinates=coordinates)
+
+
+def _enrolled_lottery(students: Iterable[int], year: str) -> dict[int, float]:
+    """A lottery draw for students the Main Round never ran.
+
+    They have no post-run ``studentRandomNumber``, and ``_lottery_for``'s
+    fallback of 0 is the worst draw, which would put every one of them last
+    at every tie. A uniform draw seeded by the year is as uninformative as the
+    district's own and keeps the tables reproducible.
+    """
+    ordered = sorted(int(studentno) for studentno in students)
+    draws = np.random.default_rng(int(year)).random(len(ordered))
+    return dict(zip(ordered, (float(value) for value in draws), strict=True))
+
+
+def add_enrolled_only_students(
+    students: pd.DataFrame,
+    demographics: pd.DataFrame,
+    block_indices: pd.DataFrame,
+    enrollment: EnrollmentTransfer,
+    *,
+    market: Market,
+    year: str,
+    report: Report,
+    scenario_name: str,
+    attendance_area_scenario: str,
+) -> pd.DataFrame:
+    """Rows for the students CBEDS enrols at the grade who are not in the market.
+
+    They filed no Main Round request and the run did not seat them, so the
+    pre-run and post-run say nothing about them: late registrants, in the
+    main, plus charter enrolment. Charter and non-public students are kept --
+    a charter is a real school, not 899 -- and their list falls back to
+    their attendance-area program because no charter program is placeable.
+
+    Returns the rows with the student table's columns and
+    ``enrolled_programcode``. ``enrolled_idschool`` is the CBEDS school, the
+    same value in both emitted tables: there is no post-run seat to put in
+    the student table's version of it, and optimization counts a student
+    toward general-education demand only when ``enrolled_idschool`` is set.
+    """
+    grade = market.grade
+    roster = enrollment.roster
+    at_grade = roster.loc[
+        roster["grade"].eq(grade)
+        & roster["school"].notna()
+        & roster["school"].ne(NOT_ENROLLED_SCHOOL_ID)
+    ]
+    population = pd.Index(sorted(set(at_grade.index) - set(market.population)))
+    population = population.rename("studentno")
+    at_grade = at_grade.loc[population]
+
+    extra = pd.DataFrame(index=population)
+    extra["grade"] = grade
+    for column in (
+        "sibling",
+        "currentlpsibling",
+        "currentlp",
+        "aaprek",
+        "prek",
+        "aa",
+    ):
+        extra[column] = "[]"
+    for column in ("bayview_to_all_ms", "bayview_to_brown_ms", "brown_ms_to_hs"):
+        extra[column] = 0
+    extra["ctip1"] = pd.NA
+    extra["msf"] = pd.NA
+    extra["latitude"] = enrollment.coordinates["latitude"].reindex(population)
+    extra["longitude"] = enrollment.coordinates["longitude"].reindex(population)
+    extra["enrolled_idschool"] = at_grade["school"].astype("Int64")
+    extra["enrolled_programcode"] = at_grade["program"]
+
+    # The demographics extract is the source every other row uses; CBEDS
+    # fills the students it does not hold.
+    demo = _collapse_demographics(demographics, report, record=False)
+    cbeds = _collapse_demographics(enrollment.record, report, record=False)
+    from_cbeds = population.difference(demo.index)
+    combined = pd.concat([demo, cbeds.loc[cbeds.index.intersection(from_cbeds)]])
+    _attach_demographics_columns(extra, combined, report)
+
+    extra = extra.reset_index()
+    extra = attach_geography(
+        extra,
+        report,
+        scenario_name=scenario_name,
+        report_label="geography_enrolled_only",
+    )
+    extra = attach_block_indices(
+        extra, block_indices, report, report_label="block_indices_enrolled_only"
+    )
+    # The map names a polygon by the school inside it, and one polygon holds
+    # two (Webster and Mission Bay); the loader settles that from the areas
+    # students are already recorded in, so the market's rows go in alongside.
+    extra["idschoolattendance"] = np.nan
+    known = students.loc[
+        students["grade"].eq(grade) & students["idschoolattendance"].notna(),
+        ["studentno", "idschoolattendance", "latitude", "longitude"],
+    ]
+    filled = fill_attendance_areas(
+        pd.concat(
+            [known, extra[["studentno", "idschoolattendance", "latitude", "longitude"]]],
+            ignore_index=True,
+        ),
+        load_scenario({"scenario": attendance_area_scenario, "overrides": {}}),
+    )
+    extra["idschoolattendance"] = (
+        filled.iloc[len(known) :]["idschoolattendance"].to_numpy()
+    )
+
+    lottery = _enrolled_lottery(population, year)
+    enrolled_programs = {
+        int(studentno): (int(school), str(program))
+        for studentno, school, program in zip(
+            at_grade.index, at_grade["school"], at_grade["program"], strict=True
+        )
+        if pd.notna(program) and (int(school), str(program)) in market.programs
+    }
+    inputs = PreferenceInputs(
+        submitted={studentno: [key] for studentno, key in enrolled_programs.items()},
+        submitted_ranks={studentno: [1] for studentno in enrolled_programs},
+        submitted_lottery={
+            studentno: [lottery[studentno]] for studentno in enrolled_programs
+        },
+        submitted_cohort={studentno: [""] for studentno in enrolled_programs},
+        prior_tk={},
+        tk_to_k={},
+        feeders={},
+        attendance_area={
+            int(studentno): int(school)
+            for studentno, school in zip(
+                extra["studentno"], extra["idschoolattendance"], strict=True
+            )
+            if pd.notna(school)
+        },
+        student_lottery=lottery,
+        kindergarten_programs=market.programs,
+    )
+    results = {
+        result.studentno: result
+        for result in build_market_preferences(
+            [int(studentno) for studentno in population], inputs
+        )
+    }
+    ordered = [results[int(studentno)] for studentno in extra["studentno"]]
+    extra["r1_ranked_idschool"] = [_as_list_literal(r.schools) for r in ordered]
+    extra["r1_listed_ranks"] = [_as_list_literal(r.ranks) for r in ordered]
+    extra["r1_programs"] = [_as_list_literal(r.programs) for r in ordered]
+    extra["r1_randomnumber"] = [_as_list_literal(r.lottery) for r in ordered]
+    extra["r1_cohortstring"] = [_as_list_literal(r.cohort) for r in ordered]
+    extra["r1_designation_randomnumber"] = [
+        lottery[int(studentno)] for studentno in extra["studentno"]
+    ]
+    extra["num_ranked"] = [len(r.schools) for r in ordered]
+    extra["lowell_ranked"] = [int(LOWELL_SCHOOL_ID in r.schools) for r in ordered]
+    extra["sota_ranked"] = [int(SOTA_SCHOOL_ID in r.schools) for r in ordered]
+    extra["promote_eligible"] = 0
+    extra["promote"] = "[]"
+    extra["feeder_school"] = pd.array([pd.NA] * len(extra), dtype="Int64")
+    extra["feeder_program"] = pd.array([pd.NA] * len(extra), dtype="string")
+    extra["pref_source"] = "cbeds_enrolled"
+    extra["mr_applicant"] = 0
+
+    empty = sum(1 for r in ordered if not r.schools)
+    charter = int(at_grade["charter"].sum())
+    report.row_counts[f"enrolled_only_{grade}_total"] = len(extra)
+    report.row_counts[f"enrolled_only_{grade}_charter"] = charter
+    report.row_counts[f"enrolled_only_{grade}_listed_enrolled_program"] = len(
+        enrolled_programs
+    )
+    report.row_counts[f"enrolled_only_{grade}_attendance_area_fallback"] = sum(
+        1 for r in ordered if r.attendance_area_appended
+    )
+    report.row_counts[f"enrolled_only_{grade}_empty_list"] = empty
+    report.row_counts[f"enrolled_only_{grade}_demographics_from_cbeds"] = len(
+        from_cbeds
+    )
+    report.derived(
+        "pref_source = cbeds_enrolled",
+        "a student CBEDS enrols at the grade who is not in the Main Round "
+        "market. Their list is the program they enrolled in when the capacity "
+        "file holds it at a placeable school, else their attendance-area GE "
+        "program (the attendance area is read off the 2013 map at their CBEDS "
+        "coordinates). Their lottery numbers are a uniform draw seeded by the "
+        "year, since the run gave them none",
+    )
+    report.note(
+        f"{len(extra):,} grade-{grade} students are enrolled on the CBEDS roster "
+        "without being in the Main Round market. They are added to "
+        f"enrolled_all_<year>.csv and applied_or_enrolled_<year>.csv only. "
+        f"{charter:,} are at a charter. {len(enrolled_programs):,} list their "
+        "enrolled program; the rest fall back to their attendance-area program, "
+        f"and {empty:,} are left with no list at all (no placeable enrolled "
+        "program and no attendance area), which the loader drops."
+    )
+    student_columns = [
+        *STUDENT_COLUMNS,
+        *PROMOTION_STUDENT_COLUMNS,
+        *MARKET_STUDENT_COLUMNS,
+        "enrolled_programcode",
+    ]
+    for column in student_columns:
+        if column not in extra.columns:
+            extra[column] = pd.NA
+    return extra[student_columns]
+
+
+def compare_enrollment_records(
+    market: Market,
+    demographics: pd.DataFrame,
+    enrollment: EnrollmentTransfer,
+    report: Report,
+) -> None:
+    """Report how the CBEDS roster and the demographics extract disagree."""
+    grade = market.grade
+    old = enrolled_at_grade_students(demographics, grade, report) or set()
+    new = enrolled_at_grade_students(enrollment.record, grade, report) or set()
+    members = set(market.population)
+    report.row_counts[f"cbeds_vs_demographics_{grade}_market_enrolled_both"] = len(
+        old & new & members
+    )
+    report.row_counts[f"cbeds_vs_demographics_{grade}_market_enrolled_cbeds_only"] = (
+        len((new - old) & members)
+    )
+    report.row_counts[
+        f"cbeds_vs_demographics_{grade}_market_enrolled_demographics_only"
+    ] = len((old - new) & members)
+
+
+def merge_enrolled_only(
+    table: pd.DataFrame, extra: pd.DataFrame, *, grade: str, report: Report
+) -> pd.DataFrame:
+    """Append the enrolled-only rows to an emitted table.
+
+    A student can sit at another grade in the student table -- the run seated
+    them at grade 1 or TK -- while CBEDS enrols them at this one. The census-
+    day record is the later fact, so that other-grade row is dropped here
+    rather than emitting the same student twice.
+    """
+    clash = table["studentno"].isin(extra["studentno"]) & table["grade"].ne(grade)
+    if clash.any():
+        report.row_counts[f"enrolled_only_{grade}_other_grade_rows_replaced"] = int(
+            clash.sum()
+        )
+    columns = list(table.columns)
+    for column in columns:
+        if column not in extra.columns:
+            extra = extra.assign(**{column: pd.NA})
+    merged = pd.concat([table.loc[~clash], extra[columns]], ignore_index=True)
+    if merged["studentno"].duplicated().any():
+        raise TransferGapError(
+            "Merging the CBEDS-only students produced duplicate studentno rows."
+        )
+    return merged.sort_values("studentno", kind="stable").reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
 # Program tables
 # --------------------------------------------------------------------------- #
 def build_program_table(
@@ -2544,13 +2929,29 @@ def convert_year(
     gaps: str,
     scenario_name: str,
     dry_run: bool,
+    enrollment_transfer: Path | None = None,
+    attendance_area_scenario: str = "attendance-areas-2627",
 ) -> Report:
-    """Convert one school year and write its outputs and gap report."""
+    """Convert one school year and write its outputs and gap report.
+
+    With ``enrollment_transfer``, the CBEDS roster in it replaces the
+    demographics extract as the fall enrolment record, and two more tables
+    are written: ``enrolled_all_<year>.csv`` (everyone CBEDS enrols at the
+    grade at a real school) and ``applied_or_enrolled_<year>.csv`` (the
+    student table plus the enrolled students the market does not hold).
+    """
     paths = discover_transfer_files(transfer, year)
     auxiliary = discover_auxiliary_files(transfer, year)
     report = Report(year=year, transfer=str(transfer))
     report.inputs = {role: str(path) for role, path in paths.items()}
     report.inputs |= {role: str(path) for role, path in auxiliary.items()}
+    enrollment = (
+        None
+        if enrollment_transfer is None
+        else load_enrollment_transfer(enrollment_transfer, year, report)
+    )
+    # The record enrolment is read from: the CBEDS roster when one is given,
+    # which is a census-day count taken after the demographics extract.
 
     for role, path in paths.items():
         require_readable(path, f"transfer {role} file")
@@ -2568,7 +2969,8 @@ def convert_year(
     demographics = _clean_nulls(pd.read_csv(paths["demographics"], low_memory=False))
     capacities = load_mr_capacities(auxiliary["capacities"])
     promotion = build_promotion_map(auxiliary["autopromotion"], year)
-    report.row_counts = {
+    fall_record = demographics if enrollment is None else enrollment.record
+    report.row_counts |= {
         "prerun_rows": len(prerun),
         "postrun_rows": len(postrun),
         "demographics_rows": len(demographics),
@@ -2660,7 +3062,7 @@ def convert_year(
     # The enrolled table is a filter of the student table, so the enrolled
     # population is a subset of the applicant one by construction.
     enrolled = build_enrolled_table(
-        students, postrun, demographics, market=market, report=report
+        students, postrun, fall_record, market=market, report=report
     )
     validate_market(
         table,
@@ -2669,7 +3071,7 @@ def convert_year(
         postrun,
         market=market,
         report=report,
-        recorded=enrolled_at_grade_students(demographics, market.grade, report),
+        recorded=enrolled_at_grade_students(fall_record, market.grade, report),
     )
 
     # Counted after the market is written on, so the promotion columns are
@@ -2687,6 +3089,40 @@ def convert_year(
         f"student_{year}.csv": students,
         f"enrolled_{year}.csv": enrolled,
     }
+    if enrollment is not None:
+        compare_enrollment_records(market, demographics, enrollment, report)
+        enrolled_only = add_enrolled_only_students(
+            students,
+            demographics,
+            block_indices,
+            enrollment,
+            market=market,
+            year=year,
+            report=report,
+            scenario_name=scenario_name,
+            attendance_area_scenario=attendance_area_scenario,
+        )
+        enrolled_all = merge_enrolled_only(
+            enrolled, enrolled_only, grade=market.grade, report=report
+        )
+        applied_or_enrolled = merge_enrolled_only(
+            students, enrolled_only, grade=market.grade, report=report
+        )
+        outputs[f"enrolled_all_{year}.csv"] = enrolled_all
+        outputs[f"applied_or_enrolled_{year}.csv"] = applied_or_enrolled
+        grade = market.grade
+        report.row_counts[f"enrolled_all_{grade}_total"] = len(enrolled_all)
+        report.row_counts[f"applied_or_enrolled_{grade}_total"] = int(
+            applied_or_enrolled["grade"].eq(grade).sum()
+        )
+        report.note(
+            f"Enrolment is read from the CBEDS roster "
+            f"({report.inputs['enrollment_cbeds']}), not from the demographics "
+            "extract. enrolled_<year>.csv keeps its meaning -- market students "
+            "the post-run seats who enrolled -- and enrolled_all_<year>.csv and "
+            "applied_or_enrolled_<year>.csv add the students CBEDS enrols "
+            "without a Main Round record."
+        )
 
     for grade, bundle in GRADE_BUNDLES.items():
         variants = (
@@ -2811,6 +3247,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Loader scenario supplying the 2010 Census geometry and crosswalk.",
     )
     parser.add_argument(
+        "--enrollment-transfer",
+        type=Path,
+        default=None,
+        help=(
+            "Enrolment transfer folder (one subfolder per school year) holding "
+            "the CBEDS census-day roster and its coordinate file. When given, "
+            "CBEDS is the enrolment record and enrolled_all_<year>.csv and "
+            "applied_or_enrolled_<year>.csv are written."
+        ),
+    )
+    parser.add_argument(
+        "--attendance-area-scenario",
+        default="attendance-areas-2627",
+        help=(
+            "Loader scenario binding the attendance-area map used to place "
+            "enrolled-only students, who carry no district attendance area."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Report gaps without writing any file.",
@@ -2840,6 +3295,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 gaps=args.gaps,
                 scenario_name=args.scenario,
                 dry_run=args.dry_run,
+                enrollment_transfer=args.enrollment_transfer,
+                attendance_area_scenario=args.attendance_area_scenario,
             )
         except TransferGapError as exc:
             failures.append(f"{year}: {exc}")

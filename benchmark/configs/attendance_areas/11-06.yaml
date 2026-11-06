@@ -1,0 +1,282 @@
+# One attendance area per school, on the Oct 27 2026 CBEDS student data.
+#
+# The trade-off is unassignment against realized school-level FRL
+# dissimilarity; there is no zone FRL band (frl_dev: -1) and no polarization
+# term. shape minimizes
+#   capacity_match (weight 1): students the full MID match leaves unassigned
+#   + w * frl_dissimilarity: the two-group FRL/non-FRL dissimilarity across
+#     schools after that match, in percentage points (0-100), with designated
+#     students spread over their zone's free GE seats.
+# w is swept over 0/10/30/100. The current attendance areas (2013 map) score
+# ~481 unassigned and 30.1 points of dissimilarity on ideal_baseline_2627 x
+# applied_or_enrolled. Dissimilarity is stiff: in a 2-minute smoke run, w = 20
+# against w = 0 cost 33 more unassigned students (303 -> 336) for 0.9 points
+# (29.4 -> 28.5), so the grid reaches 100 to span the frontier.
+#
+# distance/perimeter keep shape's gains through capacity_reference: each
+# zone's attendance-area GE students must stay within +/-10% of the seats its
+# school used in shape's match (overage = shortage = 0.10), and within
+# +/-10% of the FRL students that match put there (frl_reference_dev = 0.10),
+# which holds each school's FRL composition and so shape's dissimilarity.
+#
+# Every zone holds at least 20 resident students of the selected population
+# (min_zone_residents), which removes the micro-zones of the v1 maps.
+#
+# data: the six ideal 2026-27 capacity scenarios x four student populations,
+# each paired between optimization and assignment, plus the new citywide
+# Mandarin Immersion school (400; placeholder site, 27 ME / 39 MN, demand
+# proxied from Ortega and Starr King Mandarin applicants) on the baseline.
+#   applied_or_enrolled -- Main Round market plus CBEDS enrollees (primary)
+#   applicant           -- Main Round market only
+#   enrolled            -- Main Round market students who enrolled (CBEDS)
+#   enrolled_all        -- everyone CBEDS enrols at KG, applicant or not
+#
+# tasks:
+#   maps       -- shape (ReCom, Block_1, 450 s), then distance (CP-SAT, Block_0,
+#                 600 s, releasing cut-edge endpoints + 1 hop) and perimeter
+#                 (CP-SAT, Block_0, 600 s, cut-edge endpoints only);
+#                 5 seeds x 4 weights
+#   current_aa -- today's attendance areas, scored and matched unchanged (one
+#                 per data value), the trade-offs view's "current AA" card
+# 25 data x (5 x 4 + 1) = 525 runs.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/attendance_areas/11-06.yaml
+
+name: attendance_areas_11-06
+mode: run
+
+optimization_defaults:
+  centroids_type: all
+  hints: voronoi
+  workers: 8
+  save_solver_logs: false
+  save_solver_progress: false
+  mid_preference_source: stated
+  capacity_match_unassigned_weight: 1
+  capacity_match_designated_weight: 0
+  constraints:
+    frl_dev: -1
+    racial_dev: -1
+    overage: 0.10
+    shortage: 0.10
+    max_distance: auto
+    boundary_prop: -1
+    min_zone_residents: 20
+
+sweep:
+  data:
+    -
+      scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_baseline_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_baseline_2627, student_population: enrolled_all}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled, include_mandarin_immersion: true}
+          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled, include_mandarin_immersion: true}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled_all}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled_all}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled_all}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled_all}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applied_or_enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applicant}
+          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applicant}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled}
+    - scenario: attendance-areas-2627
+      overrides:
+        filters:
+          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled_all}
+
+tasks:
+  - seed: [1, 2, 3, 4, 5]
+    objective_weights:
+      - {capacity_match: 1, frl_dissimilarity: 0}
+      - {capacity_match: 1, frl_dissimilarity: 10}
+      - {capacity_match: 1, frl_dissimilarity: 30}
+      - {capacity_match: 1, frl_dissimilarity: 100}
+    steps:
+      - name: shape
+        level: Block_1
+        method: recom
+        objective: weighted_sum
+        time_limit: 450
+        constraints: {overage: -1, shortage: -1}
+        options:
+          workers: 1
+          recom_iterations: -1
+          recom_burst_length: 25
+          recom_weights: hedge
+          recom_tree_sampler: random_mst
+          hints: voronoi
+      - name: distance
+        level: Block_0
+        method: cp_bool
+        objective: average_squared_distance
+        time_limit: 600
+        capacity_reference: shape
+        constraints: {frl_reference_dev: 0.10}
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 1}
+          - {source: previous, mode: hint, select: boundary, radius: 1}
+      - name: perimeter
+        level: Block_0
+        method: cp_bool
+        objective: boundary_perimeter
+        time_limit: 600
+        capacity_reference: shape
+        constraints: {frl_reference_dev: 0.10}
+        inputs:
+          - {source: previous, mode: assign, select: interior, radius: 0}
+          - {source: previous, mode: hint, select: boundary, radius: 0}
+
+  # Today's map, unchanged: zero ReCom moves from the attendance-area start,
+  # with every constraint off so nothing rejects it. Its terms are reported
+  # at weight 1 (objective_term_* in the stage metadata).
+  - seed: 1
+    hint_zoning: attendance_areas
+    objective_weights: {capacity_match: 1, frl_dissimilarity: 1}
+    constraints:
+      frl_dev: -1
+      racial_dev: -1
+      overage: -1
+      shortage: -1
+      max_distance: .inf
+      boundary_prop: -1
+      min_zone_residents: -1
+    steps:
+      # Block_0, so the map is the 2013 boundaries exactly rather than an
+      # aggregate's majority.
+      - name: current_aa
+        level: Block_0
+        method: recom
+        objective: weighted_sum
+        time_limit: 60
+        options:
+          workers: 1
+          recom_iterations: 0
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/attendance_areas_11-06'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
+
+visualization:
+  enabled: true
+  stages: final
+
+matching:
+  enabled: true
+  config: ../../../assignment/configs/attendance_areas/restrictive_aa_2627.yaml
+  compute_stage_assignments: false

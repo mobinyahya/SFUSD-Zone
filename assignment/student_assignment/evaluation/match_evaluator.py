@@ -950,6 +950,9 @@ class MatchEvaluator:
         metrics["Dissimilarity SES3"] = self._basic_dissimilarity(
             ses3_students, enrollment
         )
+        metrics["Dissimilarity (FRL)"] = self.school_frl_dissimilarity(
+            assigned_students
+        )
         black_students = assigned_students[
             assigned_students["resolved_ethnicity"] == "Black or African American"
         ]
@@ -1150,6 +1153,42 @@ class MatchEvaluator:
         return (
             group_students["assigned school"].map(school_frl) > district_avg + threshold
         ).mean()
+
+    @staticmethod
+    def school_frl_dissimilarity(assigned_students):
+        """Two-group FRL dissimilarity across schools, in percentage points.
+
+        ``50 * sum_s |f_s / F - (n_s - f_s) / (N - F)|`` over the assigned
+        (matched or designated) students, with ``f_s`` the sum of each
+        student's FRL probability at school ``s``. Fractional membership makes
+        it the quantity the ``frl_dissimilarity`` optimization objective reads
+        off the MID match, so the two are directly comparable. Unlike the
+        one-sided ``Dissimilarity (High FRL)`` it is symmetric in the two
+        groups and needs no FRL threshold.
+        """
+        if assigned_students.empty:
+            return np.nan
+        frl = pd.to_numeric(assigned_students["frl"], errors="coerce").fillna(0.0)
+        by_school = (
+            pd.DataFrame(
+                {"school": assigned_students["assigned school"], "frl": frl}
+            )
+            .groupby("school")["frl"]
+            .agg(["sum", "size"])
+        )
+        total_frl = by_school["sum"].sum()
+        other = by_school["size"].sum() - total_frl
+        if total_frl <= 0 or other <= 0:
+            return 0.0
+        return float(
+            50.0
+            * (
+                by_school["sum"] / total_frl
+                - (by_school["size"] - by_school["sum"]) / other
+            )
+            .abs()
+            .sum()
+        )
 
     @staticmethod
     def _basic_dissimilarity(group_students, total_enrollment):
@@ -2955,6 +2994,9 @@ class MatchEvaluator:
 
         enrollment = aggregates.school_stats["enrollment"]
         metrics["# Racial majority schools"] = self.metric_racial_majority_schools(
+            assigned_students
+        )
+        metrics["Dissimilarity (FRL)"] = self.school_frl_dissimilarity(
             assigned_students
         )
 

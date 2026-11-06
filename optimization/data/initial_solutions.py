@@ -321,6 +321,32 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
     schools = sum(problem.num_schools(node) for node in problem.nodes)
     if schools and schools % problem.Z == 0:
         _write(digest, ["school_count_tolerance", 0.0])
+    if problem.has_frl_reference:
+        nodes = sorted(int(node) for node in problem.G.nodes())
+        _write(
+            digest,
+            [
+                "frl_reference",
+                float(problem.frl_reference_dev),
+                [float(problem.frl_reference_students(node)) for node in nodes],
+                [float(problem.frl_reference_seats(node)) for node in nodes],
+            ],
+        )
+    # Appended only when the floor is on, so every hint whose feasible set
+    # does not have one keeps its key.
+    resident_floor = problem.resident_floor()
+    if resident_floor is not None:
+        _write(
+            digest,
+            [
+                "min_zone_residents",
+                resident_floor,
+                [
+                    float(problem.residents(node))
+                    for node in sorted(int(node) for node in problem.G.nodes())
+                ],
+            ],
+        )
     _write(
         digest,
         [

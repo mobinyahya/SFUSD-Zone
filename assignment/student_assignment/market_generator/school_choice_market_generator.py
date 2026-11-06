@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from loaders import load_scenario
+from loaders.config import ENROLLED_STUDENT_POPULATIONS
 
 from ..choice_ranks import (
     ASSIGNMENT_SCHEMA_VERSION,
@@ -1597,9 +1598,10 @@ class MarketGenerator(SchoolChoiceMarket):
         population = (
             scenario.filter("assignment", "student_population") if scenario else None
         )
-        if population != "enrolled":
+        if population not in ENROLLED_STUDENT_POPULATIONS:
             raise ValueError(
-                "real-match-source: enrollment requires the enrolled population; "
+                "real-match-source: enrollment requires an enrolled population "
+                f"({sorted(ENROLLED_STUDENT_POPULATIONS)}); "
                 "set data.overrides.filters.assignment.student_population: "
                 f"enrolled (got {population!r})."
             )

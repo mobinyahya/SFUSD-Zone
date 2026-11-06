@@ -269,4 +269,8 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
         values = [float(problem.num_schools(node)) for node in nodes]
         add("schools_lower", ">=", values, floor_)
         add("schools_upper", "<=", values, ceiling)
+    resident_floor = problem.resident_floor()
+    if resident_floor is not None:
+        values = [problem.residents(node) for node in nodes]
+        add("residents_lower", ">=", values, resident_floor)
     return tuple(rows)

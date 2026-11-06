@@ -670,14 +670,28 @@ class _CpSatSolver(Solver):
         x: _AssignmentVars,
     ) -> None:
         bounds = problem.school_count_bounds()
-        if bounds is None:
+        if bounds is not None:
+            floor_, ceiling = bounds
+            for z in range(problem.Z):
+                nodes = self._candidate_nodes(problem, z)
+                terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
+                self._add_linear_constraint(m, x, terms, ">=", floor_)
+                self._add_linear_constraint(m, x, terms, "<=", ceiling)
+        self._add_resident_floor(m, problem, x)
+
+    def _add_resident_floor(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+    ) -> None:
+        floor_ = problem.resident_floor()
+        if floor_ is None:
             return
-        floor_, ceiling = bounds
         for z in range(problem.Z):
             nodes = self._candidate_nodes(problem, z)
-            terms = [(float(problem.num_schools(n)), z, n) for n in nodes]
+            terms = [(problem.residents(n), z, n) for n in nodes]
             self._add_linear_constraint(m, x, terms, ">=", floor_)
-            self._add_linear_constraint(m, x, terms, "<=", ceiling)
 
     def _add_linear_constraint(
         self,
