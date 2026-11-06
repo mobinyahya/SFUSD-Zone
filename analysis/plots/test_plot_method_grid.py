@@ -41,7 +41,7 @@ def test_method_order_matches_the_success_heatmap():
     "solver, levels, recom, label",
     [
         ("recom", ["Block_0"], {"burst": 0, "reject": True}, "Recom"),
-        ("recom", ["Block_0"], {"burst": 0}, "Relaxed Recom"),
+        ("recom", ["Block_0"], {"burst": 0}, "Recom"),
         (
             "recom",
             ["Block_0"],

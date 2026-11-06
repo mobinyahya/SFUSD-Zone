@@ -74,13 +74,13 @@ def method_label(row: pd.Series) -> str:
     levels = _levels(row["config_levels"])
     if solver == "recom":
         burst = int(float(row.get("config_recom_burst_length", 25)))
-        reject = str(row.get("config_recom_reject_infeasible", "False")) == "True"
         uniform = (
             row.get("config_recom_pair_selection") == "uniform"
             and row.get("config_recom_cut_selection") == "uniform"
         )
         if burst == 0:
-            return "Recom" if reject else "Relaxed Recom"
+            # One continuous chain, with or without rejecting infeasible moves.
+            return "Recom"
         return "Short Bursts" if uniform else "Adaptive Short Bursts"
     base = {"mip": "MIP", "cp_bool": "CP", "cp_int": "CP (Int)"}[solver]
     if len(levels) > 1:
