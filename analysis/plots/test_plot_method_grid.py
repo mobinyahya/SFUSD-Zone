@@ -111,7 +111,8 @@ def test_main_writes_figure_and_table(tmp_path):
     )
     out = tmp_path / "fig" / "grid.png"
     grid.main([str(root), "-o", str(out), "--min-runs", "1", "--title", "t"])
-    assert out.stat().st_size > 0
-    assert out.with_suffix(".pdf").stat().st_size > 0
+    for kind in ("feasible", "cut_edges"):
+        assert (out.parent / f"grid_{kind}.png").stat().st_size > 0
+    assert not out.exists() and not out.with_suffix(".pdf").exists()
     table = pd.read_csv(out.with_suffix(".csv"))
     assert set(table["method"]) == {"CP", "Adaptive Short Bursts"}

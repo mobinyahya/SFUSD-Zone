@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""One-figure method comparison: feasibility and cut edges by level and zones.
+"""Method comparison heatmaps: feasibility and cut edges by level and zones.
 
-Reads the ``summary.csv`` of one or more benchmark sweeps and draws a 2 x L
-grid of heatmaps, one column per target level (coarse to fine):
+Reads the ``summary.csv`` of one or more benchmark sweeps and draws two
+figures, each a row of heatmaps with one panel per target level (coarse to
+fine), methods as rows and zone counts as columns:
 
-* top row: feasible runs out of all runs in the cell (seeds x centroid sets);
-* bottom row: the median cut edges of the feasible runs, coloured by how far
-  it sits above the best median for that zone count across every method and
-  level. Cut edges are counted on Block_0 for every level, so cells compare
-  across levels.
+* ``<stem>_feasible.png``: feasible runs out of all runs in the cell
+  (seeds x centroid sets);
+* ``<stem>_cut_edges.png``: the median cut edges of the feasible runs,
+  coloured by how far it sits above the best median for that zone count
+  across every method and level. Cut edges are counted on Block_0 for every
+  level, so cells compare across levels.
 
-Darker is better in both rows. Cells where fewer than ``--min-runs`` runs were
+Darker is better in both. Cells where fewer than ``--min-runs`` runs were
 feasible are hatched, since their median rests on a handful of runs, and they
 never set the reference best.
 
@@ -22,7 +24,7 @@ rerun of some tasks replaces the original runs::
         /soalnas/.../local_runs/benchmark_methods_2324_mipfix \
         -o figures/method_grid.png
 
-The aggregated table is written next to the figure as ``<stem>.csv``.
+The aggregated table is written next to the figures as ``<stem>.csv``.
 """
 
 from __future__ import annotations
@@ -148,180 +150,142 @@ def _ink_for(rgb) -> str:
     return "#ffffff" if luminance < 0.45 else INK
 
 
+METRICS = {
+    "feasible": "Feasible runs (of seeds × centroid sets)",
+    "cut_edges": "Median cut edges of feasible runs, and gap to the best for that zone count",
+}
+
+
+def _cell(c: pd.Series, kind: str, feas_cmap, gap_cmap):
+    """``(fill, text, subtext)`` for one cell of the ``kind`` figure."""
+    if kind == "feasible":
+        fill = feas_cmap(c["feasible"] / c["runs"]) if c["feasible"] else EMPTY
+        return fill, f"{int(c['feasible'])}/{int(c['runs'])}", None
+    if not c["feasible"]:
+        return EMPTY, "–", None
+    gap = max(float(c["gap"]), 0.0)
+    fill = gap_cmap(1.0 - min(gap, GAP_CAP) / GAP_CAP)
+    sub = "best" if gap < 0.005 else f"+{gap:.0%}"
+    return fill, f"{int(round(c['median_cut_edges'])):,}", sub
+
+
 def plot(
-    cells: pd.DataFrame, output: Path, *, title: str | None = None, min_runs: int = 5
+    cells: pd.DataFrame,
+    output: Path,
+    kind: str,
+    *,
+    title: str | None = None,
+    min_runs: int = 5,
 ) -> None:
+    """One row of heatmaps (a panel per level) for ``kind`` in :data:`METRICS`."""
     methods = [m for m in METHOD_ORDER if m in set(cells["method"])]
     levels = [lv for lv in LEVEL_ORDER if lv in set(cells["level"])]
     zones = sorted(cells["zones"].unique())
     feas_cmap = mcolors.LinearSegmentedColormap.from_list("feas", BLUE)
     gap_cmap = mcolors.LinearSegmentedColormap.from_list("gap", ORANGE)
+    header = METRICS[kind]
+    if kind == "cut_edges":
+        header += f" (hatched: fewer than {min_runs} feasible runs)"
 
     plt.rcParams.update(
         {
             "font.family": "sans-serif",
             "font.size": 9,
-            "axes.edgecolor": SURFACE,
             "text.color": INK,
             "axes.labelcolor": INK_2,
             "xtick.color": INK_2,
             "ytick.color": INK,
+            "hatch.linewidth": 0.7,
         }
     )
-    plt.rcParams["hatch.linewidth"] = 0.7
-    # Lay the panels out in inches so headings, level titles and tick labels
-    # never collide, whatever the number of methods, zones or levels.
+    # Laid out in inches so headings, level titles and tick labels never
+    # collide, whatever the number of methods, zones or levels.
     cell_w, cell_h = 0.62, 0.42
     left, right, panel_gap = 1.75, 0.15, 0.3
-    title_h = 0.45 if title else 0.1
-    header_h, level_h, ticks_h, row_gap, xlabel_h, footer_h = (
-        0.3,
-        0.3,
-        0.25,
-        0.3,
-        0.2,
-        0.35,
-    )
+    title_h = 0.4 if title else 0.0
+    header_h, level_h, bottom_h = 0.35, 0.3, 0.5
     panel_w, panel_h = len(zones) * cell_w, len(methods) * cell_h
     width = left + len(levels) * panel_w + (len(levels) - 1) * panel_gap + right
-    height = (
-        title_h
-        + 2 * (header_h + panel_h + ticks_h)
-        + level_h
-        + row_gap
-        + xlabel_h
-        + footer_h
-    )
+    height = title_h + header_h + level_h + panel_h + bottom_h
     fig = plt.figure(figsize=(width, height), facecolor=SURFACE)
-    tops = [
-        height - title_h - header_h - level_h,
-        height - title_h - header_h - level_h - panel_h - ticks_h - row_gap - header_h,
-    ]
-    axes = [
-        [
-            fig.add_axes(
-                (
-                    (left + col * (panel_w + panel_gap)) / width,
-                    (top - panel_h) / height,
-                    panel_w / width,
-                    panel_h / height,
-                )
-            )
-            for col in range(len(levels))
-        ]
-        for top in tops
-    ]
     index = cells.set_index(["method", "level", "zones"])
 
     for col, level in enumerate(levels):
-        for row_i, kind in enumerate(("feasible", "gap")):
-            ax = axes[row_i][col]
-            ax.set_facecolor(SURFACE)
-            for i, method in enumerate(methods):
-                for j, z in enumerate(zones):
-                    key = (method, level, z)
-                    x0, y0 = j, i
-                    if key not in index.index:
-                        continue
-                    c = index.loc[key]
-                    if kind == "feasible":
-                        rate = c["feasible"] / c["runs"]
-                        fill = feas_cmap(rate) if c["feasible"] else EMPTY
-                        text = f"{int(c['feasible'])}/{int(c['runs'])}"
-                        sub = None
-                    else:
-                        if not c["feasible"]:
-                            fill, text, sub = EMPTY, "–", None
-                        else:
-                            gap = max(float(c["gap"]), 0.0)
-                            fill = gap_cmap(1.0 - min(gap, GAP_CAP) / GAP_CAP)
-                            text = f"{int(round(c['median_cut_edges'])):,}"
-                            sub = "best" if gap < 0.005 else f"+{gap:.0%}"
-                    rect = plt.Rectangle(
-                        (x0 + 0.04, y0 + 0.06),
-                        0.92,
-                        0.88,
-                        facecolor=fill,
-                        edgecolor="none",
+        ax = fig.add_axes(
+            (
+                (left + col * (panel_w + panel_gap)) / width,
+                bottom_h / height,
+                panel_w / width,
+                panel_h / height,
+            )
+        )
+        ax.set_facecolor(SURFACE)
+        for i, method in enumerate(methods):
+            for j, z in enumerate(zones):
+                key = (method, level, z)
+                if key not in index.index:
+                    continue
+                c = index.loc[key]
+                fill, text, sub = _cell(c, kind, feas_cmap, gap_cmap)
+                box = dict(xy=(j + 0.04, i + 0.06), width=0.92, height=0.88)
+                ax.add_patch(plt.Rectangle(**box, facecolor=fill, edgecolor="none"))
+                if kind == "cut_edges" and c["feasible"] and not c["reliable"]:
+                    ax.add_patch(
+                        plt.Rectangle(
+                            **box,
+                            facecolor="none",
+                            edgecolor=(1, 1, 1, 0.45),
+                            hatch="///",
+                            linewidth=0,
+                            zorder=2,
+                        )
                     )
-                    ax.add_patch(rect)
-                    if kind == "gap" and c["feasible"] and not c["reliable"]:
-                        ax.add_patch(
-                            plt.Rectangle(
-                                (x0 + 0.04, y0 + 0.06),
-                                0.92,
-                                0.88,
-                                facecolor="none",
-                                edgecolor=(1, 1, 1, 0.45),
-                                hatch="///",
-                                linewidth=0,
-                                zorder=2,
-                            )
-                        )
-                    ink = _ink_for(fill) if fill != EMPTY else MUTED
-                    if sub is None:
-                        ax.text(
-                            x0 + 0.5,
-                            y0 + 0.5,
-                            text,
-                            ha="center",
-                            va="center",
-                            fontsize=8.5,
-                            color=ink,
-                        )
-                    else:
-                        weight = "bold" if sub == "best" else "normal"
-                        ax.text(
-                            x0 + 0.5,
-                            y0 + 0.38,
-                            text,
-                            ha="center",
-                            va="center",
-                            fontsize=8.5,
-                            color=ink,
-                            fontweight=weight,
-                        )
-                        ax.text(
-                            x0 + 0.5,
-                            y0 + 0.70,
-                            sub,
-                            ha="center",
-                            va="center",
-                            fontsize=7,
-                            color=ink,
-                            fontweight=weight,
-                        )
-            ax.set_xlim(0, len(zones))
-            ax.set_ylim(len(methods), 0)
-            ax.set_xticks(np.arange(len(zones)) + 0.5)
-            ax.set_xticklabels([str(z) for z in zones])
-            ax.set_yticks(np.arange(len(methods)) + 0.5)
-            ax.set_yticklabels(methods if col == 0 else [])
-            ax.tick_params(length=0, pad=3)
-            for spine in ax.spines.values():
-                spine.set_visible(False)
-            if row_i == 0:
-                ax.set_title(level.replace("_", " "), fontsize=10.5, color=INK, pad=8)
-            if row_i == 1:
-                ax.set_xlabel("zones", fontsize=8.5)
+                ink = _ink_for(fill) if fill != EMPTY else MUTED
+                if sub is None:
+                    ax.text(
+                        j + 0.5,
+                        i + 0.5,
+                        text,
+                        ha="center",
+                        va="center",
+                        fontsize=8.5,
+                        color=ink,
+                    )
+                    continue
+                weight = "bold" if sub == "best" else "normal"
+                ax.text(
+                    j + 0.5,
+                    i + 0.38,
+                    text,
+                    ha="center",
+                    va="center",
+                    fontsize=8.5,
+                    color=ink,
+                    fontweight=weight,
+                )
+                ax.text(
+                    j + 0.5,
+                    i + 0.70,
+                    sub,
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    color=ink,
+                    fontweight=weight,
+                )
+        ax.set_xlim(0, len(zones))
+        ax.set_ylim(len(methods), 0)
+        ax.set_xticks(np.arange(len(zones)) + 0.5)
+        ax.set_xticklabels([str(z) for z in zones])
+        ax.set_yticks(np.arange(len(methods)) + 0.5)
+        ax.set_yticklabels(methods if col == 0 else [])
+        ax.tick_params(length=0, pad=3)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.set_title(level.replace("_", " "), fontsize=10.5, color=INK, pad=8)
+        ax.set_xlabel("zones", fontsize=8.5)
 
     x_left = 0.12 / width
-    headers = (
-        "Feasible runs (of seeds × centroid sets)",
-        "Median cut edges of feasible runs, and gap to the best for that zone count",
-    )
-    header_tops = [tops[0] + level_h + header_h, tops[1] + header_h]
-    for label, top in zip(headers, header_tops):
-        fig.text(
-            x_left,
-            (top - 0.05) / height,
-            label,
-            fontsize=9.5,
-            color=INK,
-            fontweight="bold",
-            ha="left",
-            va="top",
-        )
     if title:
         fig.text(
             x_left,
@@ -334,19 +298,22 @@ def plot(
         )
     fig.text(
         x_left,
-        0.08 / height,
-        "Darker is better in both rows. Cut edges are counted on Block_0 at every level. "
-        f"Hatched: fewer than {min_runs} feasible runs, so the median is never taken as the best.",
-        fontsize=7.5,
-        color=INK_2,
+        (height - title_h - 0.05) / height,
+        header,
+        fontsize=9.5,
+        color=INK,
+        fontweight="bold" if not title else "normal",
         ha="left",
-        va="bottom",
+        va="top",
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=200, facecolor=SURFACE, bbox_inches="tight")
-    if output.suffix.lower() == ".png":
-        fig.savefig(output.with_suffix(".pdf"), facecolor=SURFACE, bbox_inches="tight")
     plt.close(fig)
+
+
+def output_paths(output: Path) -> dict[str, Path]:
+    """``<stem>_feasible.png`` and ``<stem>_cut_edges.png`` beside ``output``."""
+    return {kind: output.with_name(f"{output.stem}_{kind}.png") for kind in METRICS}
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -356,7 +323,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         nargs="+",
         help="Sweep folders (or summary.csv files); later ones override earlier runs.",
     )
-    parser.add_argument("-o", "--output", default="method_grid.png")
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="method_grid.png",
+        help="Base path: writes <stem>_feasible.png, <stem>_cut_edges.png and <stem>.csv.",
+    )
     parser.add_argument(
         "--min-runs",
         type=int,
@@ -369,11 +341,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     output = Path(args.output)
     cells = aggregate(load_runs(args.roots), args.min_runs)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cells.sort_values(["level", "zones", "method"]).to_csv(
-        output.with_suffix(".csv"), index=False
-    )
-    plot(cells, output, title=args.title, min_runs=args.min_runs)
-    print(f"Saved {output} ({len(cells)} cells) and {output.with_suffix('.csv')}")
+    table = output.with_suffix(".csv")
+    cells.sort_values(["level", "zones", "method"]).to_csv(table, index=False)
+    for kind, path in output_paths(output).items():
+        plot(cells, path, kind, title=args.title, min_runs=args.min_runs)
+        print(f"Saved {path}")
+    print(f"Saved {table}")
 
 
 if __name__ == "__main__":
