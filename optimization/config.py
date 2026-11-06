@@ -72,7 +72,6 @@ _BOOLEANS = (
 _INTEGERS = {
     "recom_iterations": None,
     "centroid_neighbor_radius": 0,
-    "keep_centroid_radius": 0,
     "choice_access_triangle_limit": 0,
     "choice_access_completion_limit": 0,
     "dw_recom_samples": 0,
@@ -228,15 +227,17 @@ class OptimizationConfig:
     boundary_radius: int = 1
     # Refine steps with hard inputs. A projected block with no same-zone
     # neighbor closer to its school is freed, and its zone opened along
-    # closer-neighbor paths toward the school: every such path ("all") or
-    # one shortest path ending at the first supported block of that zone
-    # ("shortest").
-    release_paths: str = "all"
+    # closer-neighbor paths toward the school: one shortest path ending at
+    # the first supported block of that zone ("shortest"), or every such
+    # path ("all", which can release most of the city).
+    release_paths: str = "shortest"
     # Blocks within this many hops of their own zone's centroid (walking
     # only that zone's blocks in the source) stay fixed even inside the
     # boundary band, so a school on its zone's boundary does not cut the
-    # zone's fixed interior off from it. 0 keeps only the centroid.
-    keep_centroid_radius: int = 0
+    # zone's fixed interior off from it. 0 keeps only the centroid; null
+    # (the default) uses the radius of the step's interior hard input, i.e.
+    # ``boundary_radius`` in a recursive run, and 0 without one.
+    keep_centroid_radius: int | None = None
     boundary_prop: float = -1.0
     max_iterations: int = 5
     choice_model_method: str = "logsum"
@@ -460,6 +461,12 @@ class OptimizationConfig:
             value = getattr(self, name)
             if not _is_integer(value) or (minimum is not None and value < minimum):
                 raise ValueError(f"{name} must be {_INTEGER_KINDS[minimum]}.")
+        if self.keep_centroid_radius is not None and (
+            not _is_integer(self.keep_centroid_radius) or self.keep_centroid_radius < 0
+        ):
+            raise ValueError(
+                "keep_centroid_radius must be a non-negative integer or null."
+            )
         for name, (message, bounds) in _NUMBERS.items():
             self._check_number(name, message, **bounds)
         for name in ("saa_tie_breaking_method", "stable_cutoff_tie_breaking_method"):

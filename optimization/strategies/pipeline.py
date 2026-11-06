@@ -422,7 +422,18 @@ class PipelineStrategy(Strategy):
         # A school on its zone's boundary sits in the released band, which
         # would cut the zone's fixed interior off from it; keep the blocks
         # near each centroid that the source puts in its zone.
-        radius = int(effective.keep_centroid_radius)
+        radius = effective.keep_centroid_radius
+        if radius is None:
+            # Default: as far as the released band reaches; a step without one
+            # (explicit or whole-zoning hard inputs) releases no band to keep.
+            radius = max(
+                (
+                    b.radius
+                    for b in step.inputs
+                    if b.mode == "assign" and b.select == "interior"
+                ),
+                default=0,
+            )
         if radius > 0 and assigned:
             kept = centroid_neighborhood(problem.G, problem.centroids, assigned, radius)
             for node, zone in kept.items():

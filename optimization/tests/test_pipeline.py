@@ -429,9 +429,11 @@ def test_keep_centroid_radius_keeps_blocks_near_the_school_fixed(monkeypatch):
         config.make_strategy().run(MemoryDataset(config), config.make_solver())
         return problems[1]
 
-    assert not refine().fixed
-    kept = refine(keep_centroid_radius=1)
-    assert kept.fixed == {0: 0, 1: 0, 4: 0, 15: 1, 14: 1, 11: 1}
+    near_schools = {0: 0, 1: 0, 4: 0, 15: 1, 14: 1, 11: 1}
+    assert not refine(keep_centroid_radius=0).fixed
+    assert refine(keep_centroid_radius=1).fixed == near_schools
+    # By default the radius is the band's (the interior input's radius, 1).
+    assert refine().fixed == near_schools
 
 
 def test_release_settings_leave_existing_task_ids_unchanged():
@@ -441,8 +443,9 @@ def test_release_settings_leave_existing_task_ids_unchanged():
         config = _config(method="cp_bool", objective="cut_edges", **kwargs)
         return optimization_config_hash(config, source_manifest={"sources": {}})
 
-    assert task_id() == task_id(release_paths="all", keep_centroid_radius=0)
-    assert task_id() != task_id(release_paths="shortest")
+    assert task_id() == task_id(release_paths="shortest", keep_centroid_radius=None)
+    assert task_id() != task_id(release_paths="all")
+    assert task_id() != task_id(keep_centroid_radius=0)
     assert task_id() != task_id(keep_centroid_radius=2)
     with pytest.raises(ValueError):
         _config(release_paths="cone")
