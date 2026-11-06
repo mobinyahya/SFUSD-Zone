@@ -24,6 +24,7 @@ from optimization.mid_options import (
     MID_PREFERENCE_SOURCES,
     normalize_complementary_slackness_slack,
 )
+from optimization.data.contiguity import RELEASE_PATHS
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
@@ -49,6 +50,7 @@ _CHOICES = {
     "saa_welfare_bound": WELFARE_BOUNDS,
     "priced_access_price_source": PRICE_SOURCES,
     "budget_accounting": BUDGET_ACCOUNTING_MODES,
+    "release_paths": RELEASE_PATHS,
     "hints": ("feasible", "voronoi", "none"),
     "compactness_objective": ("cut_edges", "school_distance", "average_distance"),
 }
@@ -70,6 +72,7 @@ _BOOLEANS = (
 _INTEGERS = {
     "recom_iterations": None,
     "centroid_neighbor_radius": 0,
+    "keep_centroid_radius": 0,
     "choice_access_triangle_limit": 0,
     "choice_access_completion_limit": 0,
     "dw_recom_samples": 0,
@@ -223,6 +226,17 @@ class OptimizationConfig:
     objective_weights: dict[str, float] | None = None
     # --- strategy-specific -------------------------------------------- #
     boundary_radius: int = 1
+    # Refine steps with hard inputs. A projected block with no same-zone
+    # neighbor closer to its school is freed, and its zone opened along
+    # closer-neighbor paths toward the school: every such path ("all") or
+    # one shortest path ending at the first supported block of that zone
+    # ("shortest").
+    release_paths: str = "all"
+    # Blocks within this many hops of their own zone's centroid (walking
+    # only that zone's blocks in the source) stay fixed even inside the
+    # boundary band, so a school on its zone's boundary does not cut the
+    # zone's fixed interior off from it. 0 keeps only the centroid.
+    keep_centroid_radius: int = 0
     boundary_prop: float = -1.0
     max_iterations: int = 5
     choice_model_method: str = "logsum"

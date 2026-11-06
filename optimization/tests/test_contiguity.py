@@ -59,6 +59,64 @@ def test_relax_unsupported_candidates_opens_closer_path():
     assert relaxed[4] == {1}
 
 
+def test_shortest_release_opens_one_path_instead_of_every_path():
+    # Block 1 (zone 0) has two closer neighbours toward school 100, both in
+    # zone 1: 2 leads straight to the centroid 0, 3 leads there through 5.
+    # "all" opens zone 0 on both; "shortest" only on the one-block path via 2.
+    G = nx.Graph()
+    G.add_nodes_from(range(6))
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset({2})},
+        1: {100: frozenset({2, 3}), 200: frozenset({2})},
+        2: {100: frozenset({0}), 200: frozenset({4})},
+        3: {100: frozenset({5}), 200: frozenset({4})},
+        4: {100: frozenset({3}), 200: frozenset()},
+        5: {100: frozenset({0}), 200: frozenset({3})},
+    }
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1, 4: 1, 5: 0}
+    candidates = {node: {zone} for node, zone in assignment.items()}
+    args = (G, assignment, [0, 4], [100, 200], candidates)
+
+    every = contiguity.relax_unsupported_candidates(*args)
+    shortest = contiguity.relax_unsupported_candidates(*args, paths="shortest")
+
+    assert every[2] == {0, 1} and every[3] == {0, 1}
+    assert shortest[2] == {0, 1} and shortest[3] == {1}
+    assert 1 not in every and 1 not in shortest
+    with pytest.raises(ValueError, match="paths must be one of"):
+        contiguity.relax_unsupported_candidates(*args, paths="cone")
+
+
+def test_shortest_release_stops_at_the_first_supported_block_of_its_zone():
+    # From 1 the walk reaches 5, already zone 0 and supported by 0, after one
+    # zone-1 block (3); it stops there rather than continuing to the centroid.
+    G = nx.Graph()
+    G.add_nodes_from(range(6))
+    G.graph["closer_neighbors"] = {
+        0: {100: frozenset(), 200: frozenset({2})},
+        1: {100: frozenset({3}), 200: frozenset({2})},
+        2: {100: frozenset({0}), 200: frozenset({4})},
+        3: {100: frozenset({5}), 200: frozenset({4})},
+        4: {100: frozenset({3}), 200: frozenset()},
+        5: {100: frozenset({2}), 200: frozenset({3})},
+    }
+    # 5 is zone 0 but its only closer neighbour 2 is zone 1, so 5 is itself
+    # unsupported and the walk must go on through 2 to the centroid.
+    assignment = {0: 0, 1: 0, 2: 1, 3: 1, 4: 1, 5: 0}
+    candidates = {node: {zone} for node, zone in assignment.items()}
+    relaxed = contiguity.relax_unsupported_candidates(
+        G, assignment, [0, 4], [100, 200], candidates, paths="shortest"
+    )
+    assert relaxed[3] == {0, 1} and relaxed[2] == {0, 1}
+
+    # Give 5 its own support (closer neighbour 0): the walk from 1 now ends at 5.
+    G.graph["closer_neighbors"][5] = {100: frozenset({0}), 200: frozenset({3})}
+    relaxed = contiguity.relax_unsupported_candidates(
+        G, assignment, [0, 4], [100, 200], candidates, paths="shortest"
+    )
+    assert relaxed[3] == {0, 1} and relaxed[2] == {1}
+
+
 def test_contiguity_supports_do_not_fall_back_for_geometry_local_minimum():
     G = nx.path_graph(3)
     G.graph["closer_neighbors"] = {

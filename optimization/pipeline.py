@@ -63,6 +63,8 @@ OPTION_FIELDS = frozenset(
         "max_iterations",
         "tolerance",
         "budget_accounting",
+        "release_paths",
+        "keep_centroid_radius",
         "choice_model_method",
         "choice_utility_scale",
         "choice_utility_hints",

@@ -15,6 +15,7 @@ from optimization.strategies.pipeline import (
     detached_fixed_pieces,
     relax_unsupported_assignments,
     release_unreachable_assignments,
+    centroid_neighborhood,
     selected_nodes,
 )
 from optimization.tests.synthetic import make_grid_problem
@@ -387,6 +388,66 @@ def test_released_unsupported_blocks_do_not_leave_cut_off_fixed_pieces():
     # The old single pass would have kept 2-3 pinned with no fixed path home.
     once, _ = relax_unsupported_assignments(problem, {1: 0, 2: 0, 3: 0}, hints)
     assert once == {2: 0, 3: 0}
+
+
+def test_centroid_neighborhood_walks_only_the_zones_own_blocks():
+    G = nx.path_graph(6)  # 0-1-2-3-4-5, centroids 0 and 5
+    zoning = {0: 0, 1: 0, 2: 1, 3: 0, 4: 1, 5: 1}
+    # Zone 0 stops at 1 (2 is zone 1), so 3 is never reached from 0.
+    assert centroid_neighborhood(G, [0, 5], zoning, 3) == {0: 0, 1: 0, 5: 1, 4: 1}
+    assert centroid_neighborhood(G, [0, 5], zoning, 0) == {0: 0, 5: 1}
+
+
+def test_keep_centroid_radius_keeps_blocks_near_the_school_fixed(monkeypatch):
+    # On the 4x4 grid the zones are rows 0-1 and 2-3 with centroids 0 and 15.
+    # A radius-1 band around the row 1/2 cut covers every row, so nothing is
+    # fixed unless each centroid's same-zone neighbours are kept.
+    def steps(**options):
+        return [
+            {"name": "loose", "level": "BlockGroup_0"},
+            {
+                "level": "BlockGroup_0",
+                "options": options,
+                "inputs": [
+                    {"source": "loose", "mode": "assign", "select": "interior"},
+                    {"source": "loose", "mode": "hint"},
+                ],
+            },
+        ]
+
+    def refine(**options):
+        config = _config(steps=steps(**options))
+        problems = []
+
+        def solve(problem, *args, **kwargs):
+            problems.append(problem)
+            return ZoneSolution(
+                problem, {n: int(n >= 8) for n in problem.G}, "FEASIBLE"
+            )
+
+        monkeypatch.setattr("optimization.strategies.pipeline.solve_objective", solve)
+        config.make_strategy().run(MemoryDataset(config), config.make_solver())
+        return problems[1]
+
+    assert not refine().fixed
+    kept = refine(keep_centroid_radius=1)
+    assert kept.fixed == {0: 0, 1: 0, 4: 0, 15: 1, 14: 1, 11: 1}
+
+
+def test_release_settings_leave_existing_task_ids_unchanged():
+    from benchmark.config import optimization_config_hash
+
+    def task_id(**kwargs):
+        config = _config(method="cp_bool", objective="cut_edges", **kwargs)
+        return optimization_config_hash(config, source_manifest={"sources": {}})
+
+    assert task_id() == task_id(release_paths="all", keep_centroid_radius=0)
+    assert task_id() != task_id(release_paths="shortest")
+    assert task_id() != task_id(keep_centroid_radius=2)
+    with pytest.raises(ValueError):
+        _config(release_paths="cone")
+    with pytest.raises(ValueError):
+        _config(keep_centroid_radius=-1)
 
 
 def test_detached_pieces_are_found_per_zone():

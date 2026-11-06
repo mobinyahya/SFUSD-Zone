@@ -408,6 +408,11 @@ def optimization_config_hash(
         semantic.pop("school_distance_student_weight", None)
     if not _contains_value(semantic, "feasible"):
         semantic.pop("feasible_hint_time_limit", None)
+    # Release settings drop out at their defaults so existing task ids hold.
+    if semantic.get("release_paths") == "all":
+        semantic.pop("release_paths")
+    if semantic.get("keep_centroid_radius") == 0:
+        semantic.pop("keep_centroid_radius")
     if semantic.get("objective_weights") is None:
         semantic.pop("objective_weights", None)
     if semantic.get("hint_zoning") is None:
