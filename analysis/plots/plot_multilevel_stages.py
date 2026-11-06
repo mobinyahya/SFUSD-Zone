@@ -33,6 +33,7 @@ from optimization.levels import LevelSpec
 from optimization.pipeline import SolutionInput
 from optimization.run_archive import area_assignment, read_zonings
 from optimization.strategies.pipeline import (
+    centroid_neighborhood,
     release_unreachable_assignments,
     selected_nodes,
 )
@@ -106,8 +107,9 @@ def current_fixed_areas(config: OptimizationConfig, archive) -> set[int]:
     """The refine step's fixed base areas as the current pipeline code builds them.
 
     Rebuilds what ``PipelineStrategy._solve_step`` fixes for a
-    ``recursive`` step (interior of the radius-``boundary_radius`` band,
-    within distance, then :func:`release_unreachable_assignments`) from the
+    ``recursive`` step (interior of the radius-``boundary_radius`` band plus
+    the kept centroid neighborhood, within distance, then
+    :func:`release_unreachable_assignments` with ``release_paths``) from the
     saved coarse zoning, on the graph the run itself used, so a run saved by
     older code can be shown as it would be solved now.
     """
@@ -124,15 +126,21 @@ def current_fixed_areas(config: OptimizationConfig, archive) -> set[int]:
         return attrs.get("block_ids") or [attrs["area_id"]]
 
     projected = {n: coarse[int(areas(n)[0])] for n in G}
-    band = SolutionInput(
-        mode="assign", select="interior", radius=int(config.boundary_radius)
+    radius = int(config.boundary_radius)
+    band = SolutionInput(mode="assign", select="interior", radius=radius)
+    fixed = {n: projected[n] for n in selected_nodes(G, projected, band)}
+    # The run's own release settings, or the current defaults for a run saved
+    # before they existed (keep radius null: the band radius).
+    keep = config.keep_centroid_radius
+    keep = radius if keep is None else keep
+    for node, zone in centroid_neighborhood(
+        G, problem.centroids, projected, keep
+    ).items():
+        fixed.setdefault(node, zone)
+    fixed = {n: z for n, z in fixed.items() if z in problem.candidate_zones(n)}
+    fixed, _, _ = release_unreachable_assignments(
+        problem, fixed, dict(projected), config.release_paths
     )
-    fixed = {
-        n: projected[n]
-        for n in selected_nodes(G, projected, band)
-        if projected[n] in problem.candidate_zones(n)
-    }
-    fixed, _, _ = release_unreachable_assignments(problem, fixed, dict(projected))
     return {int(a) for n in fixed for a in areas(n)}
 
 
