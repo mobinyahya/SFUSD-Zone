@@ -50,7 +50,7 @@ exactly those inputs with the worker count excluded from the key.
 
 It also defaults to a single thread. Gurobi runs concurrent LP, racing several
 algorithms against each other, and on a model this size they mostly just
-contend for memory bandwidth: sweeping 1/2/4/6/8 threads on two Block_2
+contend for memory bandwidth: sweeping 1/2/4/6/8 threads on two Block_3
 instances, no count above one was reliably faster and ``flow`` degraded from
 2.4s to 4.4s. The whole spread is a couple of seconds against a 300s master
 solve, so this is not a speed decision so much as a reason not to take cores

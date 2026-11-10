@@ -24,7 +24,7 @@ Why (A4) alone is exact
 *continuous* relaxation it is famously incomplete -- it has fractional extreme
 points that no stable matching reaches, which is what the comb family of
 Proposition 2 exists to cut off and what makes a recourse LP over it
-over-report realized deferred acceptance by 195 to 252 units on Block_2. With
+over-report realized deferred acceptance by 195 to 252 units on Block_3. With
 ``D`` Boolean none of that survives: read (A4) at an integral point and it is
 Lemma 1 verbatim, so its integral solutions are exactly the stable matchings of
 the market the zoning leaves, the comb rows are implied, and there is nothing
@@ -56,14 +56,14 @@ Over the first ``q_s`` positions of an order the shaft cannot reach ``q_s``, so
 1`` and the running variable is redundant -- a program with ``n_s <= q_s``
 needs no chain at all. Writing that out was measured and reverted: it removes
 about a third of the shaft variables at build time (97,086 columns down to
-93,273 on a Block_2-scale instance), but CP-SAT presolve derives it unaided and
+93,273 on a Block_3-scale instance), but CP-SAT presolve derives it unaided and
 lands within four columns either way -- 82,892 against 82,888 -- and the two
 solve a pinned matching in the same 0.2s. Presolve is the right place for it.
 
 What the access block costs
 ---------------------------
 The SAA master instantiates a co-zoning indicator only for the vertex pairs
-carrying a non-zero marginal dual value -- about 1,700 on Block_2. This model
+carrying a non-zero marginal dual value -- about 1,700 on Block_3. This model
 needs one for *every* pair in ``Gamma``, because every seat variable is bounded
 by its own, and each indicator brings one conjunction variable per zone the two
 vertices share. That block, not the seats, is the bulk of the model, and it is

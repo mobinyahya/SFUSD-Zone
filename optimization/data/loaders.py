@@ -371,7 +371,7 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
     )
     frame = apply_student_frl_estimate(frame, cfg.data, "optimization")
     frame = filter_outside_district_students(frame, cfg.data, "optimization")
-    frame.rename(
+    frame = frame.rename(
         columns={
             "census_block": "Block",
             "census_blockgroup": "BlockGroup",
@@ -379,7 +379,6 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
             "idschoolattendance": "attendance_area",
             "FRL Score": "FRL",
         },
-        inplace=True,
     )
     missing = set(BUILDING_BLOCKS) - set(frame.columns)
     if missing:
@@ -431,7 +430,7 @@ def _load_students_for_year(cfg: IngestConfig, source, year: str) -> pd.DataFram
             frame[column] = frame[column].fillna(frame[column].mean())
     fill_columns = [column for column in frame.columns if column not in GEOGRAPHY_UNITS]
     frame[fill_columns] = frame[fill_columns].fillna(value=0)
-    frame.rename(columns=_ETHNICITY_RENAME, inplace=True)
+    frame = frame.rename(columns=_ETHNICITY_RENAME)
     for ethnicity in AREA_ETHNICITIES + SUPPLEMENTARY_ETHNICITIES:
         if ethnicity not in frame.columns:
             frame[ethnicity] = 0.0
@@ -495,12 +494,11 @@ def load_schools(cfg: IngestConfig) -> pd.DataFrame:
     frame["K-8"] = frame["school_id"].map(lambda school: int(school in K8_SCHOOLS))
     frame = _attach_capacity(frame, cfg)
     frame["num_schools"] = 1
-    frame.rename(
+    frame = frame.rename(
         columns={
             "eng_scores_1819": "english_score",
             "math_scores_1819": "math_score",
         },
-        inplace=True,
     )
     return frame
 
@@ -639,7 +637,7 @@ def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
     area = _add_missing_areas(area, cfg)
     if cfg.unit == "Block":
         area = area.loc[~area[cfg.unit].isin(EXCLUDED_OPTIMIZATION_BLOCKS)].copy()
-    area.fillna(value=0, inplace=True)
+    area = area.fillna(value=0)
     if cfg.capacity_scenario == "Closure":
         area = _apply_closure_scaling(area)
     area[cfg.unit] = area[cfg.unit].astype("int64")
@@ -706,7 +704,7 @@ def _add_missing_areas(area: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
         area[cfg.unit] = area[cfg.unit].astype(int)
         extra[cfg.unit] = extra[cfg.unit].astype(int)
         area = pd.merge(area, extra, how="outer", on=cfg.unit)
-        area.fillna(value=0, inplace=True)
+        area = area.fillna(value=0)
     return area
 
 

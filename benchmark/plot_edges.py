@@ -491,6 +491,29 @@ def benchmark_root(source: str | Path) -> Path:
     return path
 
 
+def _run_shape(config: dict) -> str:
+    """``single``, ``recursive``, or the run's own strategy name.
+
+    Every single and recursive run is now a pipeline. One that solves the
+    run's own solver at every step, without any other step settings, plots
+    as one solve at its level (one step) or as one coarse-to-fine run.
+    """
+    strategy = config.get("strategy", "single")
+    steps = config.get("steps") or []
+    if strategy != "pipeline" or not steps:
+        return strategy
+    plain = all(
+        step.get("method") == config.get("solver")
+        and step.get("objective") in {"cut_edges", "boundary_perimeter"}
+        and not step.get("options")
+        and step.get("capacity_reference") is None
+        for step in steps
+    )
+    if not plain:
+        return strategy
+    return "single" if len(steps) == 1 else "recursive"
+
+
 def load_trajectories(
     root: Path,
     *,
@@ -520,7 +543,7 @@ def load_trajectories(
             skipped["unreadable config"] += 1
             print(f"SKIP {run_dir}: {exc}")
             continue
-        strategy = config.get("strategy", "single")
+        strategy = _run_shape(config)
         if strategy != "single" and not (
             strategy == "recursive" and weighted and not single_only
         ):
@@ -596,7 +619,7 @@ def load_trajectories(
                 continue
         else:
             rows = [row for row in rows if row.get("level") == target]
-        # Never silently join restarts / enumerated solves on a resetting clock.
+        # Never silently join restarts on a resetting clock.
         if strategy == "single" and len({row["log_file"] for row in rows}) > 1:
             skipped["multiple logs at target level"] += 1
             continue

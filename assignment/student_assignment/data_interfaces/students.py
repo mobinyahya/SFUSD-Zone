@@ -79,7 +79,7 @@ class Students:
         self.studentno2idx = dict(
             zip(self.student_data["studentno"], self.student_data.index)
         )
-        self.student_data.set_index("studentno", inplace=True)
+        self.student_data = self.student_data.set_index("studentno")
         self.get_diversity_categories()
 
         self._prefs = {}
@@ -95,7 +95,7 @@ class Students:
         self._source_row_positions = np.asarray(
             st_df.attrs.get("source_rows", np.arange(len(st_df))), dtype=int
         )
-        st_df.reset_index(inplace=True, drop=True)
+        st_df = st_df.reset_index(drop=True)
         # Held above instead. Left in attrs, the list is deep-copied by every
         # pandas operation that derives a new frame or row Series from this one.
         st_df.attrs.pop("source_rows", None)

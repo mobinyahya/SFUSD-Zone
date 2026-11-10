@@ -500,12 +500,17 @@ def load_solutions(
         manifest = load_manifest(output_dir)
     config = optimization_config_from_dict(manifest["config"])
     dataset = dataset or config.make_dataset()
-    pipeline = config.make_strategy() if config.strategy == "pipeline" else None
+    pipeline = None
+    if config.strategy == "pipeline":
+        from optimization.strategies.pipeline import PipelineStrategy
+
+        # Only its saved-stage reconstruction is used; nothing is solved.
+        pipeline = PipelineStrategy(config=config)
     records = list(manifest.get("stages", []))
     archive = load_run_zonings(output_dir, records)
     saved_by_name = {saved["name"]: saved for saved in archive["stages"]}
     solutions: list[ZoneSolution] = []
-    for stage in records:
+    for stage_index, stage in enumerate(records):
         level = stage["level"]
         saved = saved_by_name.get(stage["name"])
         if saved is None:
@@ -521,7 +526,9 @@ def load_solutions(
         ):
             centroid_school_ids = [metadata["centroid_school_id"]]
         if pipeline is not None:
-            problem = pipeline.problem_for_stage(dataset, metadata)
+            problem = pipeline.problem_for_stage(
+                dataset, metadata, centroid_school_ids, stage_index
+            )
         else:
             problem = dataset.problem_for(
                 level,

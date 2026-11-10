@@ -128,12 +128,12 @@ class ConvertEstimates:
         return estimates_df
 
     def _reorder_columns(self, estimates_df):
-        estimates_df.rename(columns=self._programs.indices, inplace=True)
+        estimates_df = estimates_df.rename(columns=self._programs.indices)
         sorted_columns = sorted(estimates_df.columns, key=int)
         estimates_df = estimates_df[sorted_columns]
         print(estimates_df)
         self.prog_to_idx = dict(zip(sorted_columns, range(len(sorted_columns))))
-        estimates_df.rename(columns=self._programs.codes, inplace=True)
+        estimates_df = estimates_df.rename(columns=self._programs.codes)
         return estimates_df
 
     def build_estimates(self):

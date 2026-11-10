@@ -17,7 +17,7 @@ optimization_defaults:
   shortage: -1
   frl_dev: 0.15
   strategy: 'single'
-  levels: ['Block_2']
+  levels: ['Block_3']
   solve_time_limits: [180]
   # boundary_radius: 1
   gap_limits: [0]

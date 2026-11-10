@@ -38,10 +38,13 @@ def solve_welfare_objective(problem, method, objective, options):
     from optimization.solvers import get_solver
 
     strategy_name = "saa" if objective == "saa_welfare" else "iterative_choice"
-    # The loop brings its own objective, so the config keeps the default one.
+    # A run config names its steps; the welfare loop is one solve of this one,
+    # and brings its own objective.
     config = replace(
         config,
         strategy=strategy_name,
+        steps=[],
+        method=None,
         objective="cut_edges",
         _resolved_data_scenario=config.data_scenario,
     )

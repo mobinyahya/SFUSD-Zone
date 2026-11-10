@@ -14,7 +14,7 @@ objective: cut_edges
 constraints: {frl_dev: 0.3, racial_dev: 0.3, max_distance: 5}
 steps:
   - name: coarse
-    level: Block_1
+    level: Block_2
     time_limit: 30
   - name: refine
     level: Block_0
@@ -44,7 +44,44 @@ silently soften. A failed solve stops the sequence and remains a saved stage.
 Each successful step emits one `ZoneSolution`; the last is the run's result.
 
 For a single solve, omit `steps` and specify `levels: [Block_0]`, `method`, and
-`objective`. Full examples are in [config.example.yaml](config.example.yaml)
+`objective`.
+
+`strategy: single` and `strategy: recursive` are shorthand for steps, expanded
+when the config loads (`optimization.pipeline.shorthand_steps`); every saved
+config records the expanded `steps` and `strategy: pipeline`.
+
+- `single` is one step at `levels[-1]` under the last `solve_time_limits` and
+  `gap_limits` entries. `cp_single_zone` needs a single-step run.
+- `recursive` is one step per level. Each finer step takes
+  `[{mode: assign, select: interior, radius: boundary_radius}, {mode: hint}]`
+  from the previous step (the hint is dropped under `hints: none`), so only the
+  boundary band is re-decided, over every zone within `max_distance`.
+  `looseness` becomes each coarser step's `constraints`
+  (`frl_dev`/`racial_dev`/`overage`/`shortage` times
+  `looseness ** (levels after it)`).
+
+Hard inputs are then loosened until the solver can satisfy them. Blocks out of
+`max_distance` are freed. A projected block with no same-zone neighbor closer
+to its school is freed, and its zone opened along closer-neighbor paths toward
+the school: one shortest path ending at the first supported block of that zone
+(`release_paths: shortest`, the default) or every such path (`all`, which can
+release most of the city). Any fixed
+piece left reaching its centroid only through freed blocks becomes a hint, and
+the two releases repeat until neither frees more, so every zone's fixed blocks
+form one piece with its centroid. A school on its zone's boundary sits in the
+band, which can cut the whole interior off from it, so the blocks within
+`keep_centroid_radius` hops of each centroid (walking that zone's blocks) stay
+fixed. It defaults to the radius of the step's interior hard input
+(`boundary_radius` in a recursive run, 0 for a step without one); 0 keeps only
+the centroid. Both settings are step options too, and drop
+out of task ids at their defaults, so tasks saved before these defaults keep
+their ids although they were refined with the old release (`all`, radius 0).
+
+A step's objective defaults to the run's `objective`. Stages report
+the solver's own `wall_time`, and `carry_over_compute` hands that unused
+solver time to the next step. A step that is not the last whose coarse graph
+merges two centroids into one node is saved as `SKIPPED`, and `previous`
+then names the step before it. Full examples are in [config.example.yaml](config.example.yaml)
 and [the benchmark pipeline sweep](../benchmark/sweep.pipeline.example.yaml).
 The CLI is unchanged:
 
@@ -123,7 +160,7 @@ student travel distance, with each step hinted from its predecessor:
 
 ```yaml
 steps:
-  - {name: counts, level: Block_1, method: cp_int, objective: cut_edges}
+  - {name: counts, level: Block_2, method: cp_int, objective: cut_edges}
   - {name: perimeter, level: Block_0, method: cp_bool, objective: boundary_perimeter}
   - {name: distance, level: Block_0, method: recom, objective: average_distance}
   - {name: squared, level: Block_0, method: cp_int, objective: school_distance,
@@ -193,7 +230,7 @@ runner.
 |-------|----------|-----------|---------------|
 | **Data** | `Dataset` → `ZoneProblem` | Predefined Block / BlockGroup hierarchies and `Tract_0` | extend `data/loaders.py` / `graph_builder.py` |
 | **Solver** | `Solver.solve(problem) → ZoneSolution` | `cp_int`, `cp_bool`, `cp_single_zone`, `mip`, `recom` | subclass `Solver`, `@register("name")` |
-| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `single`, `recursive`, `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
+| **Strategy** | `Strategy.run(dataset, solver) → [ZoneSolution]` | `pipeline` (also `single`/`recursive`, see above), `iterative_choice`, `mid`, `mid_decomp`, `saa`, `direct_samples`, `priced_access`, `stable_cutoff` | subclass `Strategy`, `@register("name")` |
 
 The two layers communicate only through `ZoneProblem` (a solver-agnostic
 instance) and `ZoneSolution` (its result), so solvers and strategies vary
@@ -238,7 +275,7 @@ independently.
   formulation: a non-centroid node may join a zone only if a strictly-closer
   neighbor does too. Same module validates contiguity and repairs assignments.
 - **Levels are data, not file edits.** A `LevelSpec` is `(unit, depth)`
-  (`"BlockGroup_0"`, `"Block_2"`). `Dataset` generates and caches whatever
+  (`"BlockGroup_0"`, `"Block_3"`). `Dataset` generates and caches whatever
   graph a level needs; `LevelConverter` maps assignments between any two
   levels (across depth or unit).
 - **Nested graph hierarchy.** Level 0 contains the source census units. Every
@@ -289,7 +326,7 @@ choice, or heatmap code.
 Switch granularity, solver, or strategy purely in the config:
 
 ```yaml
-levels: ['Block_2', 'Block_1', 'Block_0']
+levels: ['Block_3', 'Block_2', 'Block_0']
 solver: 'cp_bool'
 strategy: 'recursive'
 data:
@@ -445,7 +482,7 @@ how many splits a call harvests. Solved pairs are memoized on
 `(pair, territory, fixings)`, which expires exactly when another pair disturbs
 one of the two zones, so sweeps after the incumbent settles cost ~0s.
 
-Measured on Block_2 (501 units, `Z = 6`, 4,154 applicants,
+Measured on Block_3 (501 units, `Z = 6`, 4,154 applicants,
 `max_distance: 3.1`, six workers, 600s), seeded with one `cp_bool` feasibility
 hint and ReCom off so the comparison isolates the redraw: `mid` goes
 10,307.2692 -> 11,822.4615 (**+14.70%**) and `stable_matching` goes
@@ -517,7 +554,7 @@ not formal exact-arithmetic certificates. See
 
 Pricing is fast -- anchoring plus the CP-SAT formulation took a label's solve
 from ~600s for a 0.62% gap to 0.1-8s proved optimal -- and two-zone redraws
-now move the incumbent 15-17% off the feasibility hint on Block_2, but the
+now move the incumbent 15-17% off the feasibility hint on Block_3, but the
 *bound* side is untouched. The certified bound is the first-choice constant in
 every run: for it to stay at 16,830.95 while the restricted LP sits at
 12,050.60, the per-label pricing residuals must sum to ~4,780, against total

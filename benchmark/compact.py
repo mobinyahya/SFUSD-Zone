@@ -42,7 +42,7 @@ from benchmark.runner import (
     write_json,
 )
 from optimization import run_archive
-from optimization.levels import LevelSpec
+from optimization.levels import level_unit
 from optimization.solution import ZONING_CONFIG_FILENAME, save_zoning_config
 
 
@@ -200,7 +200,7 @@ def _verify(
         for record, stage in zip(progress, written["stages"]):
             if len(record["entries"]) != len(stage["entries"]):
                 raise ValueError(f"progress {record['stage']}: entry count differs")
-            ids = written["area_ids"].get(LevelSpec.parse(stage["level"]).unit, [])
+            ids = written["area_ids"].get(level_unit(stage["level"]), [])
             for old, new in zip(record["entries"], stage["entries"]):
                 if old["node_zones"] != new["node_zones"]:
                     raise ValueError(f"progress {record['stage']}: zones differ")

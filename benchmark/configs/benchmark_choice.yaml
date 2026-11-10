@@ -42,7 +42,7 @@ optimization_defaults:
 
 sweep:
   centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4']
-  levels: [['Block_2']]
+  levels: [['Block_3']]
 
 tasks:
   - solver: 'cp_bool'

@@ -126,7 +126,7 @@ def test_average_distance_rejects_an_empty_student_population():
 def test_step_config_carries_the_objective_and_its_weights(method):
     config = OptimizationConfig(method=method, objective="school_distance")
     effective = step_config(config, config.steps[0])
-    assert effective.strategy == "single"
+    assert (effective.strategy, effective.steps) == ("pipeline", [])
     assert effective.solver == method
     assert effective.objective == "school_distance"
     assert effective.school_distance_area_weight == 0.75

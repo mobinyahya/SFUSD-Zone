@@ -521,7 +521,8 @@ def test_config_passes_objective_options() -> None:
     )
     solver = config.make_solver()
 
-    assert config.strategy == "single"
+    assert config.strategy == "pipeline"
+    assert config.steps[0].objective == "capacity_match"
     assert solver.options["capacity_match_unassigned_weight"] == 4.0
     assert solver.options["capacity_match_designated_weight"] == 0.5
     assert "recom_objective" not in solver.options

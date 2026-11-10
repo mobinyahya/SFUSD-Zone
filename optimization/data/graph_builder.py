@@ -12,7 +12,7 @@ from loaders.edge_overrides import apply_block_edge_overrides
 from optimization.data import edge_weights, loaders, node_areas
 from optimization.data.geography import great_circle_miles
 from optimization.data.loaders import IngestConfig
-from optimization.levels import LEVEL_NODE_TARGETS, LEVEL_PARENT_DEPTHS
+from optimization.levels import LEVEL_NODE_TARGETS
 
 # Node attributes summed when aggregating.
 _SUM_ATTRS = [
@@ -32,8 +32,10 @@ _OPTIONAL_SUM_ATTRS = ["ge_enrolling_students", "all_prog_enrolling_students"]
 # stable area ids in each part rather than from KaHIP's own labels), and to 15
 # when nodes gained the ``*_enrolling_students`` capacity-row counts, and to 16
 # when Mission Bay's canonical school ID became 1731, and to 17 when coarse
-# levels began balancing land area with students and isolating oversized nodes.
-GRAPH_CACHE_SCHEMA_VERSION = 17
+# levels began balancing land area with students and isolating oversized nodes,
+# and to 18 when the fractional Block_0.5 became Block_1 and every Block level
+# was renumbered and coarsened from the one before it.
+GRAPH_CACHE_SCHEMA_VERSION = 18
 PARTITION_INITIAL_IMBALANCE = 0.8
 PARTITION_MAX_ATTEMPTS = 14
 PARTITION_SEED = 42
@@ -266,11 +268,6 @@ def partition_cache_policy(
             for depth, target in sorted(LEVEL_NODE_TARGETS.get(unit, {}).items())
         },
     }
-    parent_depths = LEVEL_PARENT_DEPTHS.get(unit, {})
-    if parent_depths:
-        policy["parent_depths"] = {
-            str(depth): parent for depth, parent in sorted(parent_depths.items())
-        }
     if weight_edges:
         policy["edge_weighting"] = edge_weights.weighting_policy()
     return policy
@@ -732,11 +729,10 @@ def aggregate_level(
 def build_hierarchy(
     cfg: IngestConfig, *, weight_edges: bool = False, area_weight: float = 0.5
 ) -> dict[int, nx.Graph]:
-    """Build every predefined level from its parent (normally ``depth - 1``)."""
+    """Build every predefined level sequentially from its immediate parent."""
     graphs: dict[int, nx.Graph] = {0: build_base_graph(cfg, weight_edges=weight_edges)}
-    parent_depths = LEVEL_PARENT_DEPTHS.get(cfg.unit, {})
     for depth, target in sorted(LEVEL_NODE_TARGETS[cfg.unit].items()):
-        parent = graphs[parent_depths.get(depth, depth - 1)]
+        parent = graphs[depth - 1]
         if area_weight:
             node_areas.attach_land_areas(parent, cfg.unit, cfg.data)
         graphs[depth] = aggregate_level(

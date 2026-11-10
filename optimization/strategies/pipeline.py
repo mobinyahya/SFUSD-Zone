@@ -22,6 +22,8 @@ from optimization.data.conversion import (
 from optimization.objectives import get_objective, solve_objective
 from optimization.levels import LevelSpec
 from optimization.pipeline import step_config
+from optimization.problem import DuplicateCentroidError
+from optimization.solution import ZoneSolution
 from optimization.strategies.base import Strategy, register
 
 
@@ -72,17 +74,19 @@ def detached_fixed_pieces(problem, fixed):
     return detached
 
 
-def relax_unsupported_assignments(problem, fixed, assignment):
+def relax_unsupported_assignments(problem, fixed, assignment, paths="all"):
     """Loosen hard assignments the CP contiguity rows could never satisfy.
 
     The MIP/CP solvers require every non-centroid block to have a same-zone
     neighbor strictly closer to its school, which a prior step's zoning (ReCom
-    zonings are only connected) need not give. As in the recursive strategy,
+    zonings are only connected) need not give.
     :func:`relax_unsupported_candidates` frees each unsupported block and adds
     its zone as a candidate along its closer-neighbor paths, so a fixed block
     on such a path keeps its own zone and gains only the ones it may need.
     Returns ``(fixed, candidates)``: still-forced blocks, and blocks the
-    relaxation widened, with their allowed zones.
+    relaxation widened, with their allowed zones. ``paths`` is
+    ``release_paths``: open every closer-neighbor path (``"all"``) or one
+    shortest path (``"shortest"``).
     """
     if not fixed:
         return fixed, {}
@@ -92,6 +96,7 @@ def relax_unsupported_assignments(problem, fixed, assignment):
         list(problem.centroids),
         problem.centroid_school_ids,
         {node: {zone} for node, zone in fixed.items()},
+        paths=paths,
     )
     kept, candidates = {}, {}
     for node, zone in fixed.items():
@@ -101,6 +106,55 @@ def relax_unsupported_assignments(problem, fixed, assignment):
         elif zones is not None:
             candidates[node] = zones
     return kept, candidates
+
+
+def release_unreachable_assignments(problem, fixed, hints, paths="all"):
+    """Free hard assignments until every fixed piece reaches its centroid.
+
+    Alternates :func:`detached_fixed_pieces` (pieces cut off from their
+    centroid become hints) and :func:`relax_unsupported_assignments` (blocks
+    without closer-neighbor support are freed or widened). Widening can cut a
+    piece off again, so one pass of each is not enough. ``hints`` is updated
+    in place with every released block's zone. Returns ``(fixed, candidates,
+    detached)``.
+    """
+    fixed = dict(fixed)
+    detached_all, candidates = {}, {}
+    while True:
+        detached = detached_fixed_pieces(problem, fixed)
+        for node, zone in detached.items():
+            del fixed[node]
+            hints[node] = zone
+        detached_all.update(detached)
+        hints.update(fixed)
+        before = len(fixed)
+        fixed, widened = relax_unsupported_assignments(problem, fixed, hints, paths)
+        candidates.update(widened)
+        # The relaxation frees unsupported blocks outright as well as widening
+        # others, so repeat while either release shrank the fixed set.
+        if not detached and len(fixed) == before:
+            return fixed, candidates, detached_all
+
+
+def centroid_neighborhood(G, centroids, zoning, radius):
+    """``{node: zone}`` within ``radius`` hops of each zone's centroid.
+
+    The walk only steps through blocks ``zoning`` puts in that zone, so the
+    result is connected to the centroid within its zone.
+    """
+    keep = {}
+    for zone, centroid in enumerate(centroids):
+        seen, frontier = {centroid}, [centroid]
+        for _ in range(radius):
+            reached = []
+            for node in frontier:
+                for neighbor in G.neighbors(node):
+                    if neighbor not in seen and zoning.get(neighbor) == zone:
+                        seen.add(neighbor)
+                        reached.append(neighbor)
+            frontier = reached
+        keep.update({node: zone for node in seen})
+    return keep
 
 
 def _base_area_candidates(G, candidates):
@@ -114,6 +168,14 @@ def _base_area_candidates(G, candidates):
 
 @register("pipeline")
 class PipelineStrategy(Strategy):
+    """Run ``config.steps`` in order; every run, single or multi-level, is one.
+
+    ``strategy: single`` and ``strategy: recursive`` are shorthand for steps
+    (``optimization.pipeline.shorthand_steps``). Each step's solver reports its
+    own ``wall_time``, and that solver time is what ``carry_over_compute``
+    hands the next step: problem building and input projection are free.
+    """
+
     def __init__(self, *, config=None, **options):
         if config is None:
             from optimization.config import OptimizationConfig
@@ -130,9 +192,17 @@ class PipelineStrategy(Strategy):
             for step in self.config.steps
         )
 
-    def problem_for_stage(self, dataset, metadata):
-        """Reconstruct the feasible set of a saved benchmark stage."""
-        index = metadata["pipeline_step_index"]
+    def problem_for_stage(
+        self, dataset, metadata, centroid_school_ids=None, stage_index=None
+    ):
+        """Reconstruct the feasible set of a saved benchmark stage.
+
+        A stage names its step in ``pipeline_step_index``; one saved without it
+        is taken to be step ``stage_index``, its position in the run.
+        """
+        index = metadata.get("pipeline_step_index", stage_index)
+        if index is None:
+            raise ValueError("Saved stage does not name its pipeline step.")
         step = self.config.steps[index]
         fixed = {int(n): int(z) for n, z in metadata.get("pipeline_fixed", {}).items()}
         if "pipeline_fixed_areas" in metadata:
@@ -154,11 +224,15 @@ class PipelineStrategy(Strategy):
                 ids = [a for a in _node_base_ids(graph, node) if a in areas]
                 if ids:
                     candidates[node] = areas[ids[0]]
+        extra = {}
+        if centroid_school_ids is not None:
+            extra["centroid_school_ids"] = centroid_school_ids
         problem = dataset.problem_for(
             step.level,
             config=step_config(self.config, step, index),
             fixed=fixed or None,
             candidates=candidates or None,
+            **extra,
         )
         if step.capacity_reference is not None:
             if "capacity_reference" not in metadata:
@@ -169,124 +243,17 @@ class PipelineStrategy(Strategy):
         return problem
 
     def run(self, dataset, solver):
-        converter = LevelConverter(data=dataset.data)
+        self._converter = LevelConverter(data=dataset.data)
+        self._projected = {}
+        self._capacity_references = {}
         results = []
         by_name = {}
-        projected_cache = {}
-        capacity_references = {}
         carry = 0.0
         output_dir = solver.options.get("output_dir")
+        final = len(self.config.steps) - 1
         for index, step in enumerate(self.config.steps):
             started = time.perf_counter()
             effective = step_config(self.config, step, index)
-            problem = dataset.problem_for(step.level, config=effective)
-            reference = None
-            if step.capacity_reference is not None:
-                source = (
-                    results[-1]
-                    if step.capacity_reference == "previous"
-                    else by_name[step.capacity_reference]
-                )
-                source_name = source.metadata["pipeline_step"]
-                if source_name not in capacity_references:
-                    if not source.feasible or set(source.assignment) != set(
-                        source.problem.G
-                    ):
-                        raise ValueError(
-                            "A capacity reference needs a complete feasible source."
-                        )
-                    source_config = source.problem.optimization_config
-                    base = dataset.problem_for(
-                        LevelSpec(source.level.unit, 0), config=source_config
-                    )
-                    zoning = converter.between(
-                        source.problem.G,
-                        source.assignment,
-                        source.level,
-                        base.G,
-                        base.level,
-                    )
-                    from optimization.data.mid import build_mid_market
-
-                    reference = build_capacity_reference(
-                        base,
-                        zoning,
-                        build_mid_market(base, source_config),
-                        source_config.mid_lottery_scale,
-                    )
-                    reference["source_step"] = source_name
-                    reference["preference_source"] = source_config.mid_preference_source
-                    capacity_references[source_name] = reference
-                reference = capacity_references[source_name]
-                apply_capacity_reference(problem, reference)
-            fixed, hints = {}, dict(problem.hint or {})
-            for binding in step.inputs:
-                source = (
-                    results[-1]
-                    if binding.source == "previous"
-                    else by_name[binding.source]
-                )
-                if not source.feasible or set(source.assignment) != set(
-                    source.problem.G
-                ):
-                    raise ValueError(
-                        f"Step {step.name!r} needs a complete feasible input from {binding.source!r}."
-                    )
-                key = (id(source), step.level)
-                if key not in projected_cache:
-                    projected_cache[key] = converter.between(
-                        source.problem.G,
-                        source.assignment,
-                        source.level,
-                        problem.G,
-                        problem.level,
-                    )
-                projected = projected_cache[key]
-                for node in selected_nodes(problem.G, projected, binding):
-                    zone = projected[node]
-                    if zone not in range(problem.Z):
-                        raise ValueError(
-                            f"Input supplies invalid zone {zone} for node {node}."
-                        )
-                    target = fixed if binding.mode == "assign" else hints
-                    if (
-                        binding.mode == "assign"
-                        and node in fixed
-                        and fixed[node] != zone
-                    ):
-                        raise ValueError(
-                            f"Conflicting hard assignments for node {node} in step {step.name!r}."
-                        )
-                    target[node] = zone
-            for zone, centroid in enumerate(problem.centroids):
-                if centroid in fixed and fixed[centroid] != zone:
-                    raise ValueError(
-                        f"Hard assignment conflicts with centroid {centroid} in step {step.name!r}."
-                    )
-            # A source solved on coarser nodes measured max_distance from those
-            # nodes, so a projected block can lie beyond the distance this step
-            # allows its zone. Free it to its own distance candidates.
-            out_of_range = {
-                node: zone
-                for node, zone in fixed.items()
-                if zone not in problem.candidate_zones(node)
-            }
-            for node in out_of_range:
-                del fixed[node]
-                hints.pop(node, None)
-            islands = detached_fixed_pieces(problem, fixed)
-            for node, zone in islands.items():
-                del fixed[node]
-                hints[node] = zone
-            hints.update(fixed)
-            fixed, candidates = relax_unsupported_assignments(problem, fixed, hints)
-            problem.fixed = fixed or None
-            problem.candidates = candidates or None
-            if hints:
-                hints.update(
-                    {centroid: zone for zone, centroid in enumerate(problem.centroids)}
-                )
-            problem.hint = hints or None
             step_solver = effective.make_solver(output_dir=output_dir)
             options = dict(step_solver.options)
             if output_dir:
@@ -307,41 +274,216 @@ class PipelineStrategy(Strategy):
             configured_time = float(options["solve_time_limit"])
             received = carry if self.config.carry_over_compute else 0.0
             options["solve_time_limit"] = configured_time + received
-            self.add_initial_hint(problem, step_solver.with_options(**options))
-            solution = solve_objective(
-                problem, step.method, step.objective, options=options
-            )
-            elapsed = time.perf_counter() - started
-            solution.metadata.update(
+            problem = dataset.problem_for(step.level, config=effective)
+            extra = {}
+            try:
+                stages, extra = self._solve_step(
+                    dataset,
+                    problem,
+                    step,
+                    effective,
+                    step_solver.with_options(**options),
+                    results,
+                    by_name,
+                )
+            except DuplicateCentroidError as exc:
+                # A coarse level can merge two schools into one node. Only the
+                # finest step has to place every centroid on its own node.
+                if index == final:
+                    raise
+                stages = [_skipped_duplicate_centroid(problem, exc)]
+            selected = stages[-1]
+            used = 0.0 if selected.wall_time is None else float(selected.wall_time)
+            metadata = dict(
                 pipeline_step=step.name,
                 pipeline_step_index=index,
                 pipeline_spec=asdict(step),
-                pipeline_fixed=fixed,
-                pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
-                pipeline_out_of_range_areas=base_area_assignment(
-                    problem.G, out_of_range
-                ),
-                pipeline_detached_areas=base_area_assignment(problem.G, islands),
-                pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
                 method=step.method,
                 objective_kind=step.objective,
                 configured_time_limit_seconds=configured_time,
-                pipeline_elapsed_seconds=elapsed,
-                solver_reported_wall_time_seconds=solution.wall_time,
+                pipeline_elapsed_seconds=time.perf_counter() - started,
+                **extra,
             )
-            if reference is not None:
-                solution.metadata["capacity_reference"] = reference
-            solution.wall_time = elapsed
             if self.config.carry_over_compute:
-                carry = max(0.0, configured_time + received - elapsed)
-                solution.metadata.update(
+                carry = max(0.0, configured_time + received - used)
+                metadata.update(
                     carry_over_time_received_seconds=received,
+                    effective_time_limit_seconds=configured_time + received,
                     unused_time_carried_forward_seconds=carry,
                 )
-            results.append(solution)
-            by_name[step.name] = solution
+            for stage in stages:
+                stage.metadata.update(metadata)
+            results.extend(stages)
+            if selected.status == "SKIPPED":
+                continue
+            by_name[step.name] = selected
             # Failed steps remain visible in benchmark output. Their values are
             # never passed to another solve as if they were a valid zoning.
-            if not solution.feasible:
+            if not selected.feasible:
                 break
         return results
+
+    def _source(self, name, results, by_name):
+        """The solution a step input names, or ``None``.
+
+        ``previous`` is the latest step that was not skipped; with every
+        earlier step skipped there is none, and the step starts from scratch.
+        """
+        if name != "previous":
+            return by_name[name]
+        return next((s for s in reversed(results) if s.status != "SKIPPED"), None)
+
+    def _capacity_reference(self, dataset, step, results, by_name):
+        source = self._source(step.capacity_reference, results, by_name)
+        if source is None:
+            raise ValueError("A capacity reference needs a complete feasible source.")
+        source_name = source.metadata["pipeline_step"]
+        if source_name not in self._capacity_references:
+            if not source.feasible or set(source.assignment) != set(source.problem.G):
+                raise ValueError(
+                    "A capacity reference needs a complete feasible source."
+                )
+            source_config = source.problem.optimization_config
+            base = dataset.problem_for(
+                LevelSpec(source.level.unit, 0), config=source_config
+            )
+            zoning = self._converter.between(
+                source.problem.G,
+                source.assignment,
+                source.level,
+                base.G,
+                base.level,
+            )
+            from optimization.data.mid import build_mid_market
+
+            reference = build_capacity_reference(
+                base,
+                zoning,
+                build_mid_market(base, source_config),
+                source_config.mid_lottery_scale,
+            )
+            reference["source_step"] = source_name
+            reference["preference_source"] = source_config.mid_preference_source
+            self._capacity_references[source_name] = reference
+        return self._capacity_references[source_name]
+
+    def _solve_step(
+        self, dataset, problem, step, effective, step_solver, results, by_name
+    ):
+        """Apply the step's inputs to ``problem`` and solve it.
+
+        Returns the step's solutions and the metadata describing its
+        feasible set.
+        """
+        extra = {}
+        if step.capacity_reference is not None:
+            reference = self._capacity_reference(dataset, step, results, by_name)
+            apply_capacity_reference(problem, reference)
+            extra["capacity_reference"] = reference
+        fixed, hints = {}, dict(problem.hint or {})
+        assigned = {}  # every block's zone in the hard-assignment sources
+        for binding in step.inputs:
+            source = self._source(binding.source, results, by_name)
+            if source is None:
+                continue
+            if not source.feasible or set(source.assignment) != set(source.problem.G):
+                raise ValueError(
+                    f"Step {step.name!r} needs a complete feasible input from {binding.source!r}."
+                )
+            key = (id(source), step.level)
+            if key not in self._projected:
+                self._projected[key] = self._converter.between(
+                    source.problem.G,
+                    source.assignment,
+                    source.level,
+                    problem.G,
+                    problem.level,
+                )
+            projected = self._projected[key]
+            if binding.mode == "assign":
+                assigned.update(projected)
+            for node in selected_nodes(problem.G, projected, binding):
+                zone = projected[node]
+                if zone not in range(problem.Z):
+                    raise ValueError(
+                        f"Input supplies invalid zone {zone} for node {node}."
+                    )
+                target = fixed if binding.mode == "assign" else hints
+                if binding.mode == "assign" and node in fixed and fixed[node] != zone:
+                    raise ValueError(
+                        f"Conflicting hard assignments for node {node} in step {step.name!r}."
+                    )
+                target[node] = zone
+        for zone, centroid in enumerate(problem.centroids):
+            if centroid in fixed and fixed[centroid] != zone:
+                raise ValueError(
+                    f"Hard assignment conflicts with centroid {centroid} in step {step.name!r}."
+                )
+        # A school on its zone's boundary sits in the released band, which
+        # would cut the zone's fixed interior off from it; keep the blocks
+        # near each centroid that the source puts in its zone.
+        radius = effective.keep_centroid_radius
+        if radius is None:
+            # Default: as far as the released band reaches; a step without one
+            # (explicit or whole-zoning hard inputs) releases no band to keep.
+            radius = max(
+                (
+                    b.radius
+                    for b in step.inputs
+                    if b.mode == "assign" and b.select == "interior"
+                ),
+                default=0,
+            )
+        if radius > 0 and assigned:
+            kept = centroid_neighborhood(problem.G, problem.centroids, assigned, radius)
+            for node, zone in kept.items():
+                fixed.setdefault(node, zone)
+        # A source solved on coarser nodes measured max_distance from those
+        # nodes, so a projected block can lie beyond the distance this step
+        # allows its zone. Free it to its own distance candidates.
+        out_of_range = {
+            node: zone
+            for node, zone in fixed.items()
+            if zone not in problem.candidate_zones(node)
+        }
+        for node in out_of_range:
+            del fixed[node]
+            hints.pop(node, None)
+        fixed, candidates, islands = release_unreachable_assignments(
+            problem, fixed, hints, effective.release_paths
+        )
+        problem.fixed = fixed or None
+        problem.candidates = candidates or None
+        if hints:
+            hints.update(
+                {centroid: zone for zone, centroid in enumerate(problem.centroids)}
+            )
+        problem.hint = hints or None
+        extra.update(
+            pipeline_fixed=fixed,
+            pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
+            pipeline_out_of_range_areas=base_area_assignment(problem.G, out_of_range),
+            pipeline_detached_areas=base_area_assignment(problem.G, islands),
+            pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
+        )
+        self.add_initial_hint(problem, step_solver)
+        solution = solve_objective(
+            problem, step.method, step.objective, options=step_solver.options
+        )
+        return [solution], extra
+
+
+def _skipped_duplicate_centroid(problem, exc: DuplicateCentroidError) -> ZoneSolution:
+    return ZoneSolution(
+        problem=problem,
+        assignment={},
+        status="SKIPPED",
+        objective=None,
+        wall_time=0.0,
+        metadata={
+            "skip_reason": "duplicate_centroid",
+            "error_message": str(exc),
+            "duplicate_centroid_node": exc.node,
+            "duplicate_centroid_zones": list(exc.zones),
+        },
+    )

@@ -401,10 +401,15 @@ def optimization_config_hash(
     if not _contains_value(semantic, "school_distance"):
         semantic.pop("school_distance_area_weight", None)
         semantic.pop("school_distance_student_weight", None)
-    if semantic.get("enumerated_solutions", -1) <= 0:
-        semantic.pop("enumerated_solutions", None)
     if not _contains_value(semantic, "feasible"):
         semantic.pop("feasible_hint_time_limit", None)
+    # Release settings drop out at their defaults so existing task ids hold.
+    # The defaults changed (from all/0) without new ids: a task saved before
+    # the change was refined with the old release.
+    if semantic.get("release_paths") == "shortest":
+        semantic.pop("release_paths")
+    if semantic.get("keep_centroid_radius") is None:
+        semantic.pop("keep_centroid_radius", None)
     if semantic.get("objective_weights") is None:
         semantic.pop("objective_weights", None)
     if semantic.get("hint_zoning") is None:

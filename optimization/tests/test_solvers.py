@@ -601,6 +601,40 @@ def test_mip_solver_forbids_zone_without_closer_neighbor():
 
 
 @pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
+def test_mip_start_drops_blocks_breaking_closer_neighbor_rows():
+    # Centroids 0 and 8 on a 3x3 grid. Block 2 is hinted to zone 1, but its
+    # only block closer to school 200 (block 5) is hinted to zone 0, so a
+    # full start would violate a contiguity row and Gurobi would discard it.
+    problem = make_grid_problem(3, 3)
+    hint = {0: 0, 1: 0, 2: 1, 3: 0, 4: 0, 5: 0, 6: 0, 7: 1, 8: 1}
+    start = get_solver("mip")._start_hint(problem, hint)
+
+    assert 2 not in start
+    assert start[0] == 0 and start[8] == 1
+    # What is kept supports itself: every kept block has a kept same-zone
+    # closer neighbor (or is a centroid).
+    supports = contiguity.contiguity_supports(
+        problem.G,
+        problem.centroids,
+        problem.centroid_school_ids,
+        problem.candidate_zones,
+    )
+    for node, zone in start.items():
+        if node not in problem.centroids:
+            assert any(start.get(s) == zone for s in supports[(node, zone)])
+
+    problem.hint = hint
+    try:
+        solution = get_solver("mip", solve_time_limit=10).solve(problem)
+    except Exception as exc:  # no usable Gurobi license in this environment
+        if "gurobi" in type(exc).__module__.lower():
+            pytest.skip(f"Gurobi unavailable: {exc}")
+        raise
+    assert solution.metadata["hint_dropped_nodes"] >= 1
+    assert_valid_solution(problem, solution, check_boundary_objective=False)
+
+
+@pytest.mark.skipif("mip" not in available_solvers(), reason="gurobipy not installed")
 def test_mip_solver_saves_progress(tmp_path):
     problem = make_grid_problem(3, 3)
     try:

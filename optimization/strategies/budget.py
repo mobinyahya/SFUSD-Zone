@@ -11,7 +11,7 @@ The floor exists because the schedule's first shares are tiny -- at
 solve that cannot finish CP-SAT's presolve returns ``UNKNOWN`` having searched
 nothing at all. ``iterative_choice`` seeds its master with one MNL cut per
 node, which puts it at 60k-134k Booleans and 13-48s of presolve on a
-Block_2-sized instance; under the old 30s floor its two largest centroid
+Block_3-sized instance; under the old 30s floor its two largest centroid
 configurations aborted at iteration 0 with no zoning saved. Set the floor
 above the presolve cost of the *largest* master any strategy here builds, not
 the typical one.

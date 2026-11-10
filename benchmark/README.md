@@ -95,8 +95,8 @@ A scenario with no `assignment` filter group cannot be matched.
 A local `mode: run` runs the same targets for the sweep's own tasks as one
 batch after the last task, with stage targets taken from the stages each task
 saved. Slurm needs every stage planned before the run, so there
-`compute_stage_assignments` is limited to pipelines, `recursive`, `single` without
-`enumerated_solutions`, and `saa`; other strategies are rejected. A task drops
+`compute_stage_assignments` is limited to pipelines (`single` and `recursive`
+runs are pipelines) and `saa`; other strategies are rejected. A task drops
 the zone files and skip markers a previous run left when its optimization
 starts (never at plan time), so a rerun that fails is not matched on its old
 zoning. Saved assignments are keyed on the zone file's checksum, so a rerun
@@ -353,7 +353,7 @@ uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml
 
 # Local output and a comparison of individual runs on the same instance:
 uv run python -m benchmark.plot_edges benchmark/configs/benchmark_edges.yaml \
-  --centroids 6-zone-3 --seeds 1 --levels Block_2 --time-limits 600 \
+  --centroids 6-zone-3 --seeds 1 --levels Block_3 --time-limits 600 \
   --output-dir analysis/plots/output/edges_6_zone_3
 ```
 
@@ -407,7 +407,7 @@ stay in seconds too, the same way objective columns stay in metres.
 `log` is the default because it crops nothing, which matters most where one
 method lands several times worse than the rest (plain CP on `Block_0`). Use
 `zoom` where every method finishes within a few percent and the log axis still
-bunches them (`Block_2`); the suffixes let both coexist in one output
+bunches them (`Block_3`); the suffixes let both coexist in one output
 directory. The frame is deliberately not called `median`, which already names
 an `--aggregate` choice and appears in every filename. Either way the
 `by_zone` figures keep a full-range **Full run** panel beside the zoom, so
@@ -512,7 +512,7 @@ weights, rather than for an exact geometrical perimeter.
 
 Even with comparable weighted objectives, **recursive bounds remain local to
 each stage**. Coarse aggregation restricts possible partitions, and finer
-recursive solves restrict candidate zones near the previous boundary. Their
+recursive solves hold the previous step's interior fixed. Their
 lower bounds do not certify the unrestricted fine-level optimum and should
 not be merged into a global bound curve. The plotter omits them; the raw events
 retain them only as `stage_bound` for auditing.

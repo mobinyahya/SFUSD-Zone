@@ -46,7 +46,7 @@ class Zones:
         self.programs = programs
         self.aa_schools = attendance_area_schools
         self.aa_schools.index.name = "school_id"
-        self.aa_schools.reset_index(inplace=True)
+        self.aa_schools = self.aa_schools.reset_index()
         self.students = students
 
         self.config = config

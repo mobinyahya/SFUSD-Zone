@@ -40,7 +40,7 @@ a variable whose objective coefficient is linear in it. A fractional
 ``A_is = 0.3`` buys 0.3 of a seat and 0.3 of the utility. That is the structural
 difference from the finite-grid recurrence, whose ``min`` is concave in the
 lottery mass and therefore pays *more* than pro rata for fractional access.
-Measured on the real 6-zone-3 / Block_2 instance at eight enumerated feasible
+Measured on the real 6-zone-3 / Block_3 instance at eight enumerated feasible
 zonings, this model's LP sits 0.73-0.91% above realised DA welfare, against the
 aggregated recurrence's +0.8% and the SAA recourse LP's own +225 mean at the
 same zonings -- i.e. it is a strictly better relaxation of zoned DA than the

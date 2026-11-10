@@ -8,7 +8,6 @@ import networkx as nx
 import pytest
 import yaml
 
-from optimization import run_archive
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
@@ -33,7 +32,6 @@ from benchmark.runner import (
     write_json,
 )
 from metrics import MetricsCalculator
-from metrics import diversity, run_metrics
 
 
 def test_sweep_yaml_generates_cartesian_optimization_tasks(tmp_path):
@@ -143,7 +141,8 @@ def test_single_zone_sweep_generates_scalar_optimization_values():
     for task in tasks:
         config = task.optimization_config()
         assert config.solver == "cp_single_zone"
-        assert config.strategy == "single"
+        assert config.strategy == "pipeline"
+        assert [step.method for step in config.steps] == ["cp_single_zone"]
         assert config.save_solver_progress is False
         assert config.frl_dev * 1.0 == 0.15
         assert config.overage * 1.0 == 0.15
@@ -321,46 +320,6 @@ def test_stage_artifacts_reconstruct_and_aggregate(tmp_path, shared_cache_root):
     assert stages.loc[0, "solver_progress_count"] == 2
     assert (tmp_path / "summary.csv").exists()
     assert (tmp_path / "stages.csv").exists()
-
-
-def test_enumerated_solutions_are_saved_as_distinct_stages(tmp_path, shared_cache_root):
-    problem = make_grid_problem(3, 3)
-    config = OptimizationConfig(
-        levels=["BlockGroup_0"],
-        solver="cp_bool",
-        strategy="single",
-        enumerated_solutions=4,
-        workers=8,
-        seed=3,
-        data={
-            "scenario": "legacy",
-            "overrides": {"roots": {"cache": str(shared_cache_root)}},
-        },
-    )
-    solutions = config.make_strategy().run(FakeDataset(problem), config.make_solver())
-    stage_names = stage_names_for(solutions, config)
-
-    records = save_stage_artifacts(solutions, str(tmp_path), stage_names)
-    # Exercise actual run selection and demographic metrics on this grid;
-    # spatial/program/choice metrics require production geography and tables.
-    metrics = MetricsCalculator(
-        solutions, config=config, modules=[run_metrics.compute, diversity.compute]
-    ).compute()
-
-    assert len(records) == 4
-    assert len({record["path"] for record in records}) == 4
-    archive = run_archive.read_zonings(tmp_path)
-    assert [stage["name"] for stage in archive["stages"]] == stage_names
-    assert [run_archive.node_assignment(stage) for stage in archive["stages"]] == [
-        solution.assignment for solution in solutions
-    ]
-    assert records[-1]["metadata"]["enumerated_solution_selected"] is True
-    assert metrics.run["selection"] == "seeded_random_enumerated_solution"
-    assert metrics.metrics["frl_mad"] == pytest.approx(0.0)
-    assert sum(zone["ge_students"] for zone in metrics.zone_data.values()) == 9
-    assert metrics.run["total_wall_time"] == pytest.approx(
-        records[-1]["metadata"]["enumeration_wall_time_seconds"]
-    )
 
 
 def test_saved_area_assignment_reconstructs_on_relabeled_graph(
@@ -568,6 +527,27 @@ def test_aggregation_prefers_evaluated_stage_contiguity(tmp_path, shared_cache_r
 
     assert bool(stages.loc[0, "contiguous"]) is True
     assert (tmp_path / ".benchmark-aggregate.lock").exists()
+
+
+def test_aggregation_lock_gives_up_instead_of_hanging(tmp_path, monkeypatch):
+    import fcntl
+
+    from benchmark import results
+
+    monkeypatch.setattr(results, "_AGGREGATION_LOCK_POLL", 0.01)
+    lock_path = tmp_path / ".benchmark-aggregate.lock"
+    with lock_path.open("a+") as holder:
+        # Another open file description holding the lock, as a stuck
+        # aggregation elsewhere would.
+        fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+        ran = False
+        with pytest.warns(RuntimeWarning, match="aggregating without it"):
+            with results._aggregation_lock(str(tmp_path), timeout=0.05):
+                ran = True
+        assert ran
+    # Released normally, the lock is taken without a warning.
+    with results._aggregation_lock(str(tmp_path), timeout=0.05):
+        pass
 
 
 def _write_synthetic_run(tmp_path, cache_root):

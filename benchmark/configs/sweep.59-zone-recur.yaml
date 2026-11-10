@@ -29,7 +29,7 @@ sweep:
 
 tasks:
   - strategy: 'single'
-    levels: ['Block_2']
+    levels: ['Block_3']
     solve_time_limits: [500]
 
 

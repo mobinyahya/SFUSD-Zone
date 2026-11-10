@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from optimization.levels import LevelSpec
+from optimization.levels import level_unit
 
 ZONINGS_FILENAME = "zonings.json.xz"
 SOLVER_PROGRESS_FILENAME = "solver_progress.json.xz"
@@ -260,7 +260,7 @@ def _encode_areas(
     universe: dict[str, set[int]] = {}
     for record in records:
         if record.get("areas") is not None:
-            unit = LevelSpec.parse(record["level"]).unit
+            unit = level_unit(record["level"])
             universe.setdefault(unit, set()).update(
                 int(area) for area in record["areas"]
             )
@@ -273,7 +273,7 @@ def _encode_areas(
             out["area_zones"] = None
         else:
             areas = {int(area): int(zone) for area, zone in areas.items()}
-            ids = area_ids.get(LevelSpec.parse(record["level"]).unit, [])
+            ids = area_ids.get(level_unit(record["level"]), [])
             out["area_zones"] = [areas.get(area) for area in ids]
         encoded.append(out)
     return area_ids, encoded
@@ -356,7 +356,7 @@ def area_assignment(
     zones = stage.get("area_zones")
     if zones is None:
         return None
-    ids = archive["area_ids"][LevelSpec.parse(stage["level"]).unit]
+    ids = archive["area_ids"][level_unit(stage["level"])]
     return {int(area): int(zone) for area, zone in zip(ids, zones) if zone is not None}
 
 

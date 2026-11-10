@@ -608,14 +608,13 @@ def normalize_student_records(
     if not rounds:
         raise ValueError("Student data contains no selected preference rounds.")
     unselected = school_rounds - set(rounds)
-    frame.drop(
+    frame = frame.drop(
         columns=[
             column
             for column in frame.columns
             if (match := _ROUND_PREFERENCE_COLUMN.fullmatch(str(column)))
             and int(match.group(1)) in unselected
         ],
-        inplace=True,
     )
 
     aliases = school_id_aliases(scenario, group)

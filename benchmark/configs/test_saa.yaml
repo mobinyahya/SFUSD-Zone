@@ -18,7 +18,7 @@ optimization_defaults:
   frl_dev: 0.15
   strategy: 'saa'
   max_iterations: 15 
-  levels: ['Block_2']
+  levels: ['Block_3']
   solve_time_limits: [300]
   # boundary_radius: 1
   gap_limits: [0]

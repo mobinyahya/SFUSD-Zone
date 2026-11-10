@@ -63,6 +63,8 @@ OPTION_FIELDS = frozenset(
         "max_iterations",
         "tolerance",
         "budget_accounting",
+        "release_paths",
+        "keep_centroid_radius",
         "choice_model_method",
         "choice_utility_scale",
         "choice_utility_hints",
@@ -112,8 +114,7 @@ class SolutionInput:
 
     A hard assignment the CP contiguity rows cannot honor -- the block has no
     same-zone neighbor strictly closer to its school, which a ReCom zoning
-    need not give -- is loosened as in the recursive strategy
-    (``relax_unsupported_candidates``): the block becomes free and each block
+    need not give -- is loosened (``relax_unsupported_candidates``): the block becomes free and each block
     on its closer-neighbor paths keeps its own zone plus that one. Widened
     blocks are saved per stage as ``pipeline_candidates_areas``.
     """
@@ -209,17 +210,63 @@ class SolveStep:
         )
 
 
+# The constraints ``looseness`` relaxes on the coarser levels of a recursive run.
+LOOSENED_CONSTRAINTS = ("frl_dev", "racial_dev", "overage", "shortage")
+
+
+def shorthand_steps(config: OptimizationConfig) -> list[dict]:
+    """The steps a run without explicit ``steps`` stands for.
+
+    ``strategy: recursive`` solves every level coarse to fine. Each finer step
+    holds the previous step's interior (``select: interior``, beyond
+    ``boundary_radius`` hops of a cut edge) as hard assignments and, unless
+    ``hints: none``, hints the rest with it. ``looseness`` scales the coarser
+    steps' constraints by ``looseness ** (levels after this one)``.
+
+    Any other run (``strategy: single``) is one solve at the finest level under
+    the last configured time and gap limits.
+    """
+    levels = list(config.levels)
+    if config.strategy != "recursive":
+        return [
+            {
+                "level": levels[-1],
+                "time_limit": float(config.solve_time_limits[-1]),
+                "gap_limit": float(config.gap_limits[-1]),
+            }
+        ]
+    refine = [
+        {
+            "source": "previous",
+            "mode": "assign",
+            "select": "interior",
+            "radius": config.boundary_radius,
+        }
+    ]
+    if config.hints != "none":
+        refine.append({"source": "previous", "mode": "hint"})
+    steps = []
+    for index, level in enumerate(levels):
+        step = {"level": level, "inputs": refine if index else []}
+        multiplier = float(config.looseness) ** (len(levels) - index - 1)
+        if multiplier != 1.0:
+            # A negative value switches its constraint off; keep it off.
+            step["constraints"] = {
+                name: getattr(config, name) * multiplier
+                for name in LOOSENED_CONSTRAINTS
+                if getattr(config, name) >= 0
+            }
+        steps.append(step)
+    return steps
+
+
 def normalize_steps(config: OptimizationConfig) -> list[SolveStep]:
     """Expand defaults once, validating names and backward-only dependencies."""
     raw_steps = config.steps
     if not isinstance(raw_steps, list):
         raise ValueError("steps must be a list of solve steps.")
     if not raw_steps:
-        if len(config.levels) != 1:
-            raise ValueError(
-                "method/objective shorthand needs one level; use steps for multiple solves."
-            )
-        raw_steps = [{"level": config.levels[0]}]
+        raw_steps = shorthand_steps(config)
     result = []
     known = set()
     for index, value in enumerate(raw_steps):
@@ -299,7 +346,7 @@ def step_config(
         objective=objective,
         steps=[],
         constraints={},
-        strategy="single",
+        strategy="pipeline",
         levels=[step.level],
         solver=step.method,
         solve_time_limits=[
@@ -313,6 +360,7 @@ def step_config(
             else gaps[min(index, len(gaps) - 1)]
         ],
         _resolved_data_scenario=config.data_scenario,
+        _solve_local=True,
         **step.constraints,
         **step.options,
     )

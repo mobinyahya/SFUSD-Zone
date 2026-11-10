@@ -14,13 +14,13 @@ This module provides:
 * :func:`is_contiguous` / :func:`boundary_edges` -- validators / objective
   helpers,
 * :func:`repair` -- a post-hoc assignment fixer,
-* :func:`boundary_candidates` -- the candidate-narrowing used by the recursive
-  strategy to relax only near zone borders,
 * :func:`relax_unsupported_candidates` -- targeted expansion for projected
   blocks without monotone support toward their centroid.
 """
 
 from __future__ import annotations
+
+from collections import deque
 
 import networkx as nx
 
@@ -183,50 +183,44 @@ def repair(
     return result
 
 
-def boundary_candidates(
-    G: nx.Graph,
-    assignment: dict[int, int],
-    centroids: list[int],
-    radius: int = 1,
-) -> dict[int, set[int]]:
-    """Candidate sets that relax only near zone borders.
+#: How many closer-neighbor paths :func:`relax_unsupported_candidates` opens.
+RELEASE_PATHS = ("all", "shortest")
 
-    Nodes within ``radius`` hops of a zone boundary may switch to any zone
-    present in that neighborhood; interior nodes are pinned to their current
-    zone. This is the clean re-derivation of the legacy ``drop_boundary`` /
-    ``trim_noncontiguity`` heuristics, used to seed a finer level from a coarser
-    solution in the recursive strategy.
+
+def _shortest_support_path(
+    relation, assignment, source, zone, school_id, centroid, centroid_set, unsupported
+) -> list[int]:
+    """Blocks strictly between ``source`` and the nearest support for ``zone``.
+
+    Breadth-first along closer-neighbor links (fewest blocks), stopping at the
+    zone's centroid or at a block the assignment already puts in ``zone`` that
+    has support of its own. Other zones' centroids are never crossed. Empty if
+    no such path exists.
     """
-    anchored = dict(assignment)
-    for z, centroid in enumerate(centroids):
-        anchored[centroid] = z
-
-    candidates: dict[int, set[int]] = {
-        node: {zone} for node, zone in anchored.items() if node in G
-    }
-    boundary_sources: list[tuple[int, set[int]]] = []
-    for u, v in G.edges():
-        zu = anchored.get(u)
-        zv = anchored.get(v)
-        if zu is None or zv is None or zu == zv:
-            continue
-        zones = {zu, zv}
-        boundary_sources.append((u, zones))
-        boundary_sources.append((v, zones))
-
-    # Let adjacent-zone labels propagate into the boundary band. The previous
-    # implementation expanded the band but still only inspected immediate
-    # neighbors, so radius > 1 rarely changed the candidate sets.
-    cutoff = max(0, int(radius))
-    for source, zones in boundary_sources:
-        for node in nx.single_source_shortest_path_length(G, source, cutoff=cutoff):
-            if node in anchored:
-                candidates.setdefault(node, {anchored[node]}).update(zones)
-
-    # Pin centroids regardless of coverage.
-    for z, centroid in enumerate(centroids):
-        candidates[centroid] = {z}
-    return candidates
+    parent = {source: None}
+    queue = deque([source])
+    end = None
+    while queue:
+        node = queue.popleft()
+        if node != source and (
+            node == centroid
+            or (assignment.get(node) == zone and node not in unsupported)
+        ):
+            end = node
+            break
+        for neighbor in sorted(relation[node][school_id]):
+            if neighbor in parent or (
+                neighbor in centroid_set and neighbor != centroid
+            ):
+                continue
+            parent[neighbor] = node
+            queue.append(neighbor)
+    path = []
+    node = parent.get(end) if end is not None else None
+    while node is not None and node != source:
+        path.append(node)
+        node = parent[node]
+    return path
 
 
 def relax_unsupported_candidates(
@@ -235,13 +229,19 @@ def relax_unsupported_candidates(
     centroids: list[int],
     centroid_school_ids: list[int],
     candidates: dict[int, set[int]],
+    paths: str = "all",
 ) -> dict[int, set[int]]:
     """Relax projected blocks without a same-zone closer neighbor.
 
     The unsupported block itself falls back to distance-based candidacy. Its
     projected zone is also opened along closer-neighbor paths so a reassignment
-    can retain monotone support toward the centroid.
+    can retain monotone support toward the centroid: with ``paths="all"`` every
+    block on every such path to the school, with ``paths="shortest"`` only one
+    path with the fewest blocks, ending at the first block already in that
+    zone with its own support (or at the centroid).
     """
+    if paths not in RELEASE_PATHS:
+        raise ValueError(f"paths must be one of: {', '.join(RELEASE_PATHS)}.")
     if len(centroid_school_ids) != len(centroids):
         raise ValueError("Candidate relaxation requires one school ID per centroid.")
     relation = G.graph.get(CLOSER_NEIGHBORS_GRAPH_KEY)
@@ -262,6 +262,27 @@ def relax_unsupported_candidates(
             result.pop(node, None)
 
     centroid_set = set(centroids)
+    if paths == "shortest":
+        for zone, sources in unsupported.items():
+            school_id = int(centroid_school_ids[zone])
+            for source in sorted(sources):
+                path = _shortest_support_path(
+                    relation,
+                    assignment,
+                    source,
+                    zone,
+                    school_id,
+                    centroids[zone],
+                    centroid_set,
+                    sources,
+                )
+                for node in path:
+                    if node in result:
+                        result[node].add(zone)
+        for zone, centroid in enumerate(centroids):
+            result[centroid] = {zone}
+        return result
+
     for zone, sources in unsupported.items():
         school_id = int(centroid_school_ids[zone])
         stack = [

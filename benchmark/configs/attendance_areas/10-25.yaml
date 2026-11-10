@@ -86,7 +86,7 @@ sweep:
 tasks:
   - steps:
       - name: shape
-        level: Block_0.5
+        level: Block_1
         method: recom
         objective: weighted_sum
         time_limit: 600

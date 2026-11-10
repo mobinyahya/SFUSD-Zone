@@ -5,7 +5,7 @@ What this is for
 Pricing asks a question about one label at a time, and the answer is a bound.
 That is what Proposition 9 needs and it is why the pricer must range over all
 of ``F_z``. But it is also why the pool stopped growing in any useful
-direction. Measured on ``Block_2`` (501 units, ``Z = 6``, 4,154 applicants)
+direction. Measured on ``Block_3`` (501 units, ``Z = 6``, 4,154 applicants)
 seeded with one ``cp_bool`` feasibility hint: 21 column-generation rounds
 admitted 542 to 555 zones of strictly positive reduced cost in 600s, and the
 restricted LP sat at the hint value to four decimal places on every single

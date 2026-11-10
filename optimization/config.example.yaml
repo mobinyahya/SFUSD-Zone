@@ -25,7 +25,7 @@ constraints:
 
 steps:
   - name: coarse
-    level: Block_1
+    level: Block_2
     time_limit: 45
 
   - name: refine

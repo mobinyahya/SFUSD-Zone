@@ -81,7 +81,7 @@ hull of the stable matchings, DA is applicant-optimal, and the utilities are
 rank-consistent -- the column value is **one run of the mechanism**. No LP, no
 MIP, a few hundred microseconds, and *exactly* realized welfare: the +195 to
 +252 over-report that `SaaOracle`'s aggregated Rothblum row carries on
-`Block_2` does not arise here, because a single zone's stable matchings are
+`Block_3` does not arise here, because a single zone's stable matchings are
 enumerated by running the mechanism rather than described by inequalities.
 
 **`boundary`.** `-b(A)`, where `b(A)` is half the weighted cut of `A`, so a
@@ -151,7 +151,7 @@ Three things address that, and none of them costs rigour:
 ### The pool, not the prices: why this needed a second column source
 
 None of that was sufficient, and the reason is not the dual degeneracy those
-remedies were chosen for. Measured on `Block_2` (501 units, six anchors, 4,154
+remedies were chosen for. Measured on `Block_3` (501 units, six anchors, 4,154
 applicants) seeded with one `cp_bool` feasibility hint, both welfare objectives
 ran 21 rounds and admitted 542 to 555 columns of strictly positive reduced cost
 inside 600s while the restricted LP stayed at the hint value to four decimal
@@ -221,7 +221,7 @@ has `-M + alpha_v`, so `d = e = 0` is optimal exactly when
 variables price themselves out and the degenerate single point is back, with
 nothing gained; below it the LP drifts toward overlapping high-welfare zones
 that will never tile. `M` therefore has to be discovered per instance, per
-objective and per graph level, in welfare-per-node units -- on `Block_2` a
+objective and per graph level, in welfare-per-node units -- on `Block_3` a
 scale of roughly 24, from 12,050 welfare over 501 units.
 
 Budgeting inverts that. The budget row's dual `mu_K >= 0` *is* `M`, chosen by
@@ -327,7 +327,7 @@ under a minute now that a label prices in 0.1-8s. The primal pass/fail stays
 the one-tiling diagnostic: delete the `Z` seed columns and re-solve the integer
 master.
 
-### Measured on Block_2, 2026-09-14
+### Measured on Block_3, 2026-09-14
 
 `analysis/probe_overlap_budget.py` (at tag `pre-cleanup-v4`), mid objective, 501 nodes, 4,154 students,
 constant 16,830.9547. The exact master reproduced the pathology precisely: LP
@@ -475,14 +475,14 @@ pricing call's.
   for pricing to be *exhausted* is too late: on a district-sized instance under
   a finite budget it never is, and a redraw hook placed there measurably never
   fired. A round that only redraws re-solves the master and cannot close the
-  node. On `Block_2` this trigger is the whole difference between +0.000% and
+  node. On `Block_3` this trigger is the whole difference between +0.000% and
   +15%.
 
 Each pending pair gets a share of the sweep's remaining budget and pairs are
 queued by attempt count, so one expensive pair can neither consume a sweep nor
 monopolize later ones.
 
-### Measured on Block_2
+### Measured on Block_3
 
 The district instance, `max_distance: 3.1`, `centroids_type: 6-zone-9`,
 `program_population: All`, citywide programs removed: 501 geographic units,
@@ -539,7 +539,7 @@ The two sides of the gap behave completely differently.
 **Primal: yes, and on the district it is still converging when the budget
 expires.** 600s gave +14.70%, 1800s gave +16.91%. On the small synthetic a
 sweep exhausts the neighbourhood in seconds and every later sweep costs 0.0s;
-on Block_2 it does not get that far in ten minutes.
+on Block_3 it does not get that far in ten minutes.
 
 **Bound: not at all.** In every run measured -- both instances, both
 objectives, redraw on and off, 90s through 1800s -- the certified bound is
@@ -577,7 +577,7 @@ needed -- the boundary objective, or a live boundary cap.
 CP-SAT rather than Gurobi for two model-specific reasons. The `min` recurrence
 that *defines* finite-grid MID welfare is native here (`AddMinEquality`), where
 a MIP needs a big-`M` disjunction per `(type, rank)` pair: about 24,000
-auxiliary integers on `Block_2`, and the weakest part of that relaxation. And
+auxiliary integers on `Block_3`, and the weakest part of that relaxation. And
 the zoning block is what CP-SAT is best at in this repo.
 
 Two simplifications come from there being exactly one zone:

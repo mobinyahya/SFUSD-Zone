@@ -18,7 +18,7 @@ optimization_defaults:
   frl_dev: 0.15
   overage: 0.15
   shortage: 0.15
-  levels: ["Block_1"]
+  levels: ["Block_2"]
 
 sweep:
   centroids_type: ['6-zone-3',  '8-zone-24',  '10-zone-3', '13-zone-5']

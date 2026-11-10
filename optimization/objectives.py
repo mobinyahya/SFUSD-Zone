@@ -40,9 +40,10 @@ class Objective:
 
 
 _OBJECTIVES = {
-    "cut_edges": Objective("cut_edges", frozenset(METHODS)),
+    # cp_single_zone selects one zone and scores only its own boundary.
+    "cut_edges": Objective("cut_edges", frozenset(METHODS) | {"cp_single_zone"}),
     "boundary_perimeter": Objective(
-        "boundary_perimeter", frozenset(METHODS), unit="meter"
+        "boundary_perimeter", frozenset(METHODS) | {"cp_single_zone"}, unit="meter"
     ),
     # Student-weighted mean distance to each node's zone centroid.
     "average_distance": Objective(
@@ -70,6 +71,8 @@ _OBJECTIVES = {
     "weighted_sum": Objective("weighted_sum", _HEURISTICS, False, True),
 }
 OBJECTIVES = tuple(_OBJECTIVES)
+# Every method a step may name: the general methods and the single-zone model.
+STEP_METHODS = (*METHODS, "cp_single_zone")
 
 
 def get_objective(name: str) -> Objective:
@@ -82,9 +85,9 @@ def get_objective(name: str) -> Objective:
 
 
 def supported_objectives(method: str) -> tuple[str, ...]:
-    if method not in METHODS:
+    if method not in STEP_METHODS:
         raise ValueError(
-            f"Unknown method {method!r}. Choose one of: {', '.join(METHODS)}."
+            f"Unknown method {method!r}. Choose one of: {', '.join(STEP_METHODS)}."
         )
     return tuple(name for name, spec in _OBJECTIVES.items() if method in spec.methods)
 
