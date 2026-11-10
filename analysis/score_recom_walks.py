@@ -18,10 +18,12 @@ this records
 
   and the cell, the subset of the three met (bit 0 frl, 1 schools,
   2 capacity, so ``cell == 7`` meets all three);
-* every objective in ``--objectives`` (default: all of the registry but
-  ``weighted_sum``), each in its own units from its batch scorer.
+* every objective in ``--objectives`` (default: cut_edges, average_distance,
+  matching_welfare, capacity_match, frl_dissimilarity), each in its own units
+  from its batch scorer; the three market ones share one MID match per state.
 
-Output: ``<output>/<walk stem>.npz`` with one row per state: ``seed``,
+Output: ``<output>/<walk stem>.npz`` (``<centroids>_seed<s>.npz`` with
+``--seed``) with one row per state: ``seed``,
 ``step``, the flags and worst values, ``cell``, and one array per objective.
 A file whose output exists is skipped, so a rerun finishes what failed.
 
@@ -40,9 +42,21 @@ import numpy as np
 
 from optimization.config import OptimizationConfig
 from optimization.data.contiguity import boundary_cost
-from optimization.objectives import OBJECTIVES, heuristic_scorer
+from optimization.objectives import heuristic_scorer
 
-DEFAULT_OBJECTIVES = tuple(name for name in OBJECTIVES if name != "weighted_sum")
+# "All objectives": the user's five. Left out as near-duplicates, unusable on
+# this data, or combinations: school_distance (~ average_distance),
+# boundary_perimeter (~ cut_edges), aa_capacity_match and fill_polarization
+# (~ capacity_match), saa_welfare, choice_welfare (0 here: the MNL estimate
+# covers none of the cohort) and weighted_sum. Any registry objective can still
+# be named with --objectives.
+DEFAULT_OBJECTIVES = (
+    "cut_edges",
+    "average_distance",
+    "matching_welfare",
+    "capacity_match",
+    "frl_dissimilarity",
+)
 # These read the full MID market and share one match per state; the
 # attendance-area match (aa_capacity_match) is a different market.
 SHARED_MARKET = {
@@ -180,6 +194,9 @@ def main(argv=None) -> None:
     parser.add_argument("--school-slack", type=float, default=1.0)
     parser.add_argument("--capacity-dev", type=float, default=0.3)
     parser.add_argument("--batch", type=int, default=200)
+    parser.add_argument(
+        "--seed", type=int, default=None, help="Score only this seed's walk."
+    )
     args = parser.parse_args(argv)
     warnings.filterwarnings("ignore")
     os.makedirs(args.output, exist_ok=True)
@@ -192,6 +209,8 @@ def main(argv=None) -> None:
         tag = "" if args.objectives == list(DEFAULT_OBJECTIVES) else (
             "__" + "+".join(args.objectives)
         )
+        if args.seed is not None:
+            stem = f"{stem.split('_seeds')[0]}_seed{args.seed}"
         out = os.path.join(args.output, f"{stem}{tag}.npz")
         if os.path.exists(out):
             print(f"skip {out}", flush=True)
@@ -203,11 +222,18 @@ def main(argv=None) -> None:
         nodes = [int(n) for n in walk["node_ids"]]
         if nodes != list(problem.nodes):
             raise ValueError(f"{path}: node order differs from the problem's.")
-        states = walk["states"][:, :: args.every]  # [seeds, steps, nodes]
+        seeds = np.asarray(walk["seeds"])
+        states = walk["states"]
+        if args.seed is not None:
+            rows = np.flatnonzero(seeds == args.seed)
+            if len(rows) != 1:
+                raise ValueError(f"{path} holds no walk for seed {args.seed}.")
+            seeds, states = seeds[rows], states[rows]
+        states = states[:, :: args.every]  # [seeds, steps, nodes]
         seeds_n, steps_n, _ = states.shape
         flat = states.reshape(-1, states.shape[-1])
         columns = {
-            "seed": np.repeat(walk["seeds"], steps_n),
+            "seed": np.repeat(seeds, steps_n),
             "step": np.tile(np.arange(steps_n) * args.every, seeds_n),
             **constraint_columns(
                 problem,
