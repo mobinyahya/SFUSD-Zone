@@ -5,7 +5,8 @@ scores a few of one walk's states (every ``--every``-th) with every registered
 objective (``weighted_sum`` aside, which only combines the others) and
 reports the scorer's build time, the time per state, and the first values.
 
-    uv run python analysis/time_walk_objectives.py CONFIG WALK.npz [WALK.npz ...]
+    uv run python analysis/time_walk_objectives.py CONFIG WALK.npz [WALK.npz ...] \
+        [--objectives NAME ...]
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ def main(argv=None) -> None:
     parser.add_argument("walks", nargs="+")
     parser.add_argument("--level", default="Block_1")
     parser.add_argument("--every", type=int, default=100)
+    parser.add_argument(
+        "--objectives", nargs="+", default=None, help="Default: every objective."
+    )
     args = parser.parse_args(argv)
     warnings.filterwarnings("ignore")
 
@@ -45,7 +49,7 @@ def main(argv=None) -> None:
         states = walk["states"][0, :: args.every]
         assignments = tuple(dict(zip(nodes, map(int, s))) for s in states)
         print(f"== {path}: Z={problem.Z}, {len(assignments)} states", flush=True)
-        for name in OBJECTIVES:
+        for name in args.objectives or OBJECTIVES:
             if name == "weighted_sum":
                 continue
             try:
