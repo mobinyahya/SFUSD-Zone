@@ -106,14 +106,23 @@ def overview_figure(data, asb, zones, by_zone, output):
             ax.set_yscale("log")
             ax.set_ylim(0.7, peak * 3)
             ax.set_xlim(edges[0], edges[-1])
+            # Few runs: one marked line each. Many (seeds x sets): thinner, so
+            # their spread reads as a band rather than a wall.
+            width = 1.8 if len(runs) <= 4 else 1.0
             for r in runs:
-                ax.axvline(r[name], color=SURFACE, linewidth=3.6, zorder=8)
-                ax.axvline(r[name], color=ASB, linewidth=1.8, zorder=9)
+                ax.axvline(r[name], color=SURFACE, linewidth=width + 1.8, zorder=8)
+                ax.axvline(r[name], color=ASB, linewidth=width, zorder=9, alpha=0.9)
             text = [f"≥1 met: {share_text(met >= 1)}  ·  ≥2 met: {share_text(met >= 2)}"]
             if runs:
-                shares = [beats(values, r[name], lower) for r in runs]
-                listed = ", ".join(f"{s:.1%}" for s in shares)
-                text.append(f"{len(runs)} ASB run{'s' if len(runs) > 1 else ''} beat {listed}")
+                shares = np.array([beats(values, r[name], lower) for r in runs])
+                if len(runs) <= 4:
+                    listed = ", ".join(f"{s:.1%}" for s in shares)
+                    text.append(f"{len(runs)} ASB run{'s' if len(runs) > 1 else ''} beat {listed}")
+                else:
+                    text.append(
+                        f"{len(runs)} ASB runs beat median {np.median(shares):.1%} "
+                        f"({shares.min():.1%}–{shares.max():.1%})"
+                    )
             else:
                 text.append("no ASB run optimized this yet")
             ax.set_title(f"{zones_n} zones", loc="left", fontsize=8.5, fontweight="bold", pad=4)

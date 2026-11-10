@@ -1,8 +1,8 @@
 # Adaptive short bursts (ReCom, hedge preset) on the naive walk ensemble's
 # scenarios, with every constraint held, one run per objective.
 #
-# Scenarios: the walk ensemble's 21 centroid sets (benchmark_edges' 20 plus
-# one zone per school) on the same data (11-06's ideal_baseline_2627 x
+# Scenarios: benchmark_edges' 20 centroid sets, the walk ensemble's minus
+# `all`, on the same data (11-06's ideal_baseline_2627 x
 # applied_or_enrolled, paired filters, and its Block_1 graph via
 # load_edge_weights).
 #
@@ -23,7 +23,10 @@
 # bursts of 25 from the Voronoi start, 300 s of walk (solver_time: the market
 # build and setup are not charged).
 #
-# 21 sets x 5 objectives = 105 runs.
+# 20 sets x 5 objectives x 5 seeds = 500 runs. `all` (one zone per school) is
+# left out: in a local 5-minute test it never became feasible, stalling 0.2 s
+# in at a capacity + FRL violation the walk never reduced; the other 20 sets
+# were feasible in 0.8-108 s.
 #
 # Run: uv run python -m benchmark.slurm submit --config benchmark/configs/recom_walks/asb_objectives.yaml
 
@@ -45,7 +48,6 @@ optimization_defaults:
   solver: recom
   hints: voronoi
   workers: 1
-  seed: 1
   solve_time_limits: [300]
   budget_accounting: solver_time
   recom_iterations: -1
@@ -75,7 +77,8 @@ sweep:
                    '8-zone-22', '8-zone-24', '8-zone-25', '8-zone-31',
                    '10-zone-3', '10-zone-9', '10-zone-1', '10-zone-7',
                    '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
-                   '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8', 'all']
+                   '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8']
+  seed: [1, 2, 3, 4, 5]
 
 tasks:
   - objective: [cut_edges, average_distance, matching_welfare, capacity_match, frl_dissimilarity]
