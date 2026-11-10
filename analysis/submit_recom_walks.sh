@@ -12,7 +12,9 @@
 # for it and never syncs, so the processes do not race on the same .venv.
 #
 # Each block writes OUTPUT_DIR/<centroids>_seeds<a>-<b>.{npz,json} and a log
-# under OUTPUT_DIR/logs/. Run from the checkout the jobs should use, on sc.
+# under OUTPUT_DIR/logs/; a block whose .json exists is skipped, so rerunning
+# the same command finishes what failed. Run from the checkout the jobs
+# should use, on sc. SKIP_SYNC=1 skips the environment sync job.
 set -euo pipefail
 
 OUTPUT_DIR=${1:?usage: $0 OUTPUT_DIR [JOBS] [SEEDS_PER_BLOCK] [NUM_SEEDS] [ITERATIONS]}
@@ -20,6 +22,10 @@ JOBS=${2:-10}
 SEEDS_PER_BLOCK=${3:-5}
 NUM_SEEDS=${4:-100}
 ITERATIONS=${5:-1000}
+# Each walk process briefly peaks near 3 GB while the data loads, and every
+# block of a job starts together, so 3 GB a block is not enough: 40 of 420
+# were OOM-killed at 3 GB.
+MEM_PER_BLOCK_GB=${MEM_PER_BLOCK_GB:-6}
 CONFIG=benchmark/configs/recom_walks/ideal_baseline_2627.yaml
 # benchmark_edges' 20 centroid sets, plus one zone per school.
 SETS="6-zone-3 6-zone-9 6-zone-1 6-zone-4 8-zone-22 8-zone-24 8-zone-25 8-zone-31
@@ -54,7 +60,7 @@ if [[ -z "${SKIP_SYNC:-}" ]]; then
 fi
 
 sbatch --parsable --account=soal --partition=soal "${dependency[@]}" \
-  --array=0-$((JOBS - 1)) --cpus-per-task=$per_job --mem=$(( per_job * 3 ))G \
+  --array=0-$((JOBS - 1)) --cpus-per-task=$per_job --mem=$(( per_job * MEM_PER_BLOCK_GB ))G \
   --time=01:00:00 --job-name=recom-walks --output="$OUTPUT_DIR/logs/job-%A_%a.out" \
   --export=ALL,JOBS=$JOBS,ITERATIONS=$ITERATIONS,CONFIG=$CONFIG,OUTPUT_DIR=$OUTPUT_DIR,REPO=$PWD \
   <<'JOB'
@@ -68,6 +74,8 @@ echo "job $SLURM_ARRAY_TASK_ID on $(hostname), $SLURM_CPUS_PER_TASK CPUs, at $(g
 awk -v j="$SLURM_ARRAY_TASK_ID" -v n="$JOBS" '(NR - 1) % n == j' "$OUTPUT_DIR/blocks.txt" |
   xargs -P "$SLURM_CPUS_PER_TASK" -L 1 bash -c '
     log="$OUTPUT_DIR/logs/$0_seeds$1.log"
+    # Rerunnable: a block whose result exists is done.
+    [[ -s "$OUTPUT_DIR/$0_seeds$1.json" ]] && { echo "skip $0 $1"; exit 0; }
     uv run --no-sync python analysis/recom_walk_ensemble.py "$CONFIG" --level Block_1 \
       --centroids "$0" --seeds "$1" --iterations "$ITERATIONS" -o "$OUTPUT_DIR" \
       > "$log" 2>&1 && echo "ok $0 $1" || { echo "FAILED $0 $1 (see $log)"; exit 1; }'
