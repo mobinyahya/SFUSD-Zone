@@ -19,6 +19,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from analysis.score_recom_walks import walk_problem
 from optimization.config import OptimizationConfig
 from optimization.data.contiguity import boundary_cost
 from optimization.objectives import OBJECTIVES, heuristic_scorer
@@ -42,7 +43,7 @@ def main(argv=None) -> None:
     for path in args.walks:
         walk = np.load(path, allow_pickle=True)
         school_ids = [int(s) for s in walk["centroid_school_ids"]]
-        problem = dataset.problem_for(args.level, centroid_school_ids=school_ids)
+        problem = walk_problem(dataset, config, args.level, school_ids)
         nodes = [int(n) for n in walk["node_ids"]]
         if nodes != list(problem.nodes):
             raise ValueError(f"{path}: node order differs from the problem's.")
