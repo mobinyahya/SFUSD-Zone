@@ -104,3 +104,37 @@ def test_the_cell_packs_the_three_flags() -> None:
         cols["cell"]
         == cols["frl_ok"] + 2 * cols["schools_ok"] + 4 * cols["capacity_ok"]
     ).all()
+
+
+def test_summary_counts_every_state_in_its_cell(tmp_path) -> None:
+    import csv
+
+    from analysis.summarize_walk_scores import CELL_NAMES, load, summarize
+
+    rng = np.random.default_rng(0)
+    for name, zones in (("6-zone-1", 6), ("all", 59)):
+        for seed in (1, 2):
+            cell = rng.integers(0, 8, 11).astype(np.int8)
+            np.savez(
+                tmp_path / f"{name}_seed{seed}.npz",
+                seed=np.full(11, seed), step=np.arange(11), cell=cell,
+                frl_ok=cell & 1 > 0, schools_ok=cell & 2 > 0, capacity_ok=cell & 4 > 0,
+                cut_edges=rng.normal(100, 5, 11), capacity_match=rng.normal(50, 5, 11),
+                centroids_type=name, num_zones=zones,
+                objectives=np.asarray(["cut_edges", "capacity_match"]),
+                timings=np.zeros(2), thresholds=np.zeros(3), build_seconds=0.0,
+            )
+    table = load(str(tmp_path))
+    summarize(table, str(tmp_path))
+    assert len(table["cell"]) == 44
+    with open(tmp_path / "cell_counts.csv") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["centroids_type"] for r in rows] == ["6-zone-1", "all", "ALL"]
+    for row in rows:
+        assert sum(int(row[CELL_NAMES[c]]) for c in range(8)) == int(row["states"])
+    with open(tmp_path / "cells.csv") as f:
+        cells = [r for r in csv.DictReader(f) if r["centroids_type"] == "ALL"]
+    assert sum(int(r["states"]) for r in cells) == 44
+    full = [r for r in cells if int(r["states"]) > 0][0]
+    sel = table["cell"] == int(full["cell"])
+    assert float(full["cut_edges_p50"]) == pytest.approx(np.median(table["cut_edges"][sel]))
