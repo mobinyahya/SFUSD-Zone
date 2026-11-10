@@ -13,6 +13,11 @@
 centroids_type: all
 levels: [Block_1]
 hints: voronoi
+# Boundary lengths in metres: the walk's moves never read them (uniform pair
+# by cut-edge count, unweighted random spanning trees, uniform cuts), but a
+# weighted graph is what 11-06 built and cached, so this reuses its Block_1
+# graph exactly; ReCom only reports boundary cost in metres.
+weight_edges: true
 workers: 1
 save_solver_logs: false
 save_solver_progress: false
@@ -30,3 +35,6 @@ data:
   overrides:
     filters:
       optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+      # Paired with optimization as in 11-06, so the graph cache key (which
+      # covers both groups) is 11-06's and later matching uses the same data.
+      assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}

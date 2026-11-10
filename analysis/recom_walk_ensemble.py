@@ -13,7 +13,8 @@ here (``NoSchoolCountProblem``). A move that breaks a rule is rejected and the
 chain records the unchanged state again, so a walk is always ``iterations + 1``
 states, one per attempted move.
 
-Output, one file per centroid set, ``<output>/<centroids_type>.npz``:
+Output, one file per centroid set and seed range,
+``<output>/<centroids_type>_seeds<first>-<last>.npz``:
 
     states      uint8 [seeds, iterations + 1, nodes]  zone of each node
     seeds       int   [seeds]
@@ -26,7 +27,7 @@ Output, one file per centroid set, ``<output>/<centroids_type>.npz``:
     moves_accepted      int [seeds]  states that differ from their predecessor
                                      (``iterations`` minus rejected moves)
 
-plus ``<output>/<centroids_type>.json`` with the run's settings and timing.
+plus a ``.json`` of the same stem with the run's settings and timing.
 
     uv run python analysis/recom_walk_ensemble.py CONFIG --level Block_1 \
         --centroids 6-zone-1 all --seeds 1-100 --iterations 1000 -o OUT
@@ -168,7 +169,8 @@ def main(argv=None) -> None:
             attrs = G.nodes[n]
             ids = [attrs["area_id"]] if "area_id" in attrs else attrs["block_ids"]
             block_ids[i] = np.asarray(sorted(int(a) for a in ids), dtype=np.int64)
-        path = os.path.join(args.output, f"{centroids_type}.npz")
+        stem = f"{centroids_type}_seeds{seeds[0]}-{seeds[-1]}"
+        path = os.path.join(args.output, f"{stem}.npz")
         np.savez_compressed(
             path,
             states=np.stack(walks),
@@ -203,7 +205,7 @@ def main(argv=None) -> None:
             "population_balance_dev": population_devs,
             "bytes": os.path.getsize(path),
         }
-        with open(os.path.join(args.output, f"{centroids_type}.json"), "w") as f:
+        with open(os.path.join(args.output, f"{stem}.json"), "w") as f:
             json.dump(summary, f, indent=2)
         print(
             f"{centroids_type}: Z={problem.Z} nodes={len(nodes)} "
