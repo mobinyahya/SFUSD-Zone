@@ -24,7 +24,15 @@ chunks=$(( (NUM_SEEDS + SEEDS_PER_TASK - 1) / SEEDS_PER_TASK ))
 tasks=$(( ${#sets[@]} * chunks ))
 mkdir -p "$OUTPUT_DIR/logs"
 
-sbatch --parsable --account=soal --partition=soal \
+# One job syncs the environment; the array waits for it and never syncs, so
+# hundreds of tasks do not race on the same .venv.
+sync_job=$(sbatch --parsable --account=soal --partition=soal \
+  --cpus-per-task=1 --mem=4G --time=00:20:00 --job-name=recom-walks-sync \
+  --output="$OUTPUT_DIR/logs/sync-%j.out" \
+  --wrap "export PATH=\$HOME/.local/bin:\$PATH; cd $PWD && uv sync --frozen")
+echo "sync job $sync_job" >&2
+
+sbatch --parsable --account=soal --partition=soal --dependency=afterok:$sync_job \
   --array=0-$((tasks - 1)) --cpus-per-task=1 --mem=3G --time=00:45:00 \
   --job-name=recom-walks --output="$OUTPUT_DIR/logs/%A_%a.out" \
   --export=ALL,SETS="$SETS",CHUNKS=$chunks,SEEDS_PER_TASK=$SEEDS_PER_TASK,NUM_SEEDS=$NUM_SEEDS,ITERATIONS=$ITERATIONS,CONFIG=$CONFIG,OUTPUT_DIR=$OUTPUT_DIR,REPO=$PWD \
@@ -40,7 +48,7 @@ last=$(( first + SEEDS_PER_TASK - 1 ))
 (( last > NUM_SEEDS )) && last=$NUM_SEEDS
 cd "$REPO"
 echo "task $id: $set_name seeds $first-$last on $(hostname) at $(git rev-parse HEAD)"
-uv run python analysis/recom_walk_ensemble.py "$CONFIG" --level Block_1 \
+uv run --no-sync python analysis/recom_walk_ensemble.py "$CONFIG" --level Block_1 \
   --centroids "$set_name" --seeds "$first-$last" --iterations "$ITERATIONS" \
   -o "$OUTPUT_DIR"
 JOB
