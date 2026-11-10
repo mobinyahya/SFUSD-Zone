@@ -261,8 +261,11 @@ def main(argv=None) -> None:
         finally:
             close_all(scorers)
         columns.update(values)
+        # Written aside and renamed, so a killed job never leaves a partial
+        # file that a rerun would take for a finished one.
+        partial = out[: -len(".npz")] + ".partial.npz"
         np.savez_compressed(
-            out,
+            partial,
             **columns,
             centroids_type=os.path.basename(path).split("_seeds")[0],
             num_zones=problem.Z,
@@ -271,6 +274,7 @@ def main(argv=None) -> None:
             build_seconds=build_seconds,
             thresholds=np.asarray([args.frl_dev, args.school_slack, args.capacity_dev]),
         )
+        os.replace(partial, out)
         print(
             f"{stem}: {len(flat)} states in {time.monotonic() - start:.0f} s "
             f"(scorers built in {build_seconds:.0f} s) "
