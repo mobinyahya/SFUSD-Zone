@@ -1,0 +1,36 @@
+# Scores the naive ReCom walks (analysis/score_recom_walks.py): the walk
+# config (ideal_baseline_2627.yaml) plus the 11-06 matching settings that the
+# market objectives read. The data filters and weight_edges are the walk's,
+# so the graph, and so every node index in the saved states, is the same.
+centroids_type: all
+# Matching settings the market objectives read, as in 11-06.
+mid_preference_source: stated
+capacity_match_unassigned_weight: 1
+capacity_match_designated_weight: 0
+levels: [Block_1]
+hints: voronoi
+# Boundary lengths in metres: the walk's moves never read them (uniform pair
+# by cut-edge count, unweighted random spanning trees, uniform cuts), but a
+# weighted graph is what 11-06 built and cached, so this reuses its Block_1
+# graph exactly; ReCom only reports boundary cost in metres.
+weight_edges: true
+workers: 1
+save_solver_logs: false
+save_solver_progress: false
+constraints:
+  frl_dev: -1
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  max_distance: .inf
+  boundary_prop: -1
+  min_zone_residents: -1
+  population_balance: auto
+data:
+  scenario: attendance-areas-2627
+  overrides:
+    filters:
+      optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+      # Paired with optimization as in 11-06, so the graph cache key (which
+      # covers both groups) is 11-06's and later matching uses the same data.
+      assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
