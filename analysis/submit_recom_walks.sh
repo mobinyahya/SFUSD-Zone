@@ -35,7 +35,6 @@ SETS="6-zone-3 6-zone-9 6-zone-1 6-zone-4 8-zone-22 8-zone-24 8-zone-25 8-zone-3
 read -r -a sets <<< "$(echo $SETS)"
 chunks=$(( (NUM_SEEDS + SEEDS_PER_BLOCK - 1) / SEEDS_PER_BLOCK ))
 blocks=$(( ${#sets[@]} * chunks ))
-per_job=$(( (blocks + JOBS - 1) / JOBS ))
 mkdir -p "$OUTPUT_DIR/logs"
 
 # A block is "<set> <first>-<last>"; job j runs blocks j, j + JOBS, ...
@@ -45,9 +44,19 @@ for set_name in "${sets[@]}"; do
     first=$(( c * SEEDS_PER_BLOCK + 1 ))
     last=$(( first + SEEDS_PER_BLOCK - 1 ))
     (( last > NUM_SEEDS )) && last=$NUM_SEEDS
+    # Rerunnable: a block whose result exists is done.
+    [[ -s "$OUTPUT_DIR/${set_name}_seeds$first-$last.json" ]] && continue
     echo "$set_name $first-$last" >> "$OUTPUT_DIR/blocks.txt"
   done
 done
+remaining=$(wc -l < "$OUTPUT_DIR/blocks.txt")
+if (( remaining == 0 )); then
+  echo "all $blocks blocks are done" >&2
+  exit 0
+fi
+(( JOBS > remaining )) && JOBS=$remaining
+per_job=$(( (remaining + JOBS - 1) / JOBS ))
+echo "$remaining of $blocks blocks to run in $JOBS jobs of $per_job" >&2
 
 dependency=()
 if [[ -z "${SKIP_SYNC:-}" ]]; then
