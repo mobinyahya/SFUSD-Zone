@@ -365,16 +365,11 @@ def test_adaptive_choice_objectives_hash_the_assignment_market(tmp_path):
     sweep_path, _, _, _ = _write_custom_sweep(tmp_path)
     programs = sweep_path.parent / "inputs/assignment-programs.csv"
     raw = yaml.safe_load(sweep_path.read_text(encoding="utf-8"))
-    # capacity_match reads the assignment market, which needs every program.
     raw["optimization_defaults"]["data"]["overrides"].setdefault("filters", {})[
         "optimization"
     ] = {"program_population": "All"}
-    sweep_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    _with_optimization(
-        sweep_path,
-        solver="recom",
-        recom_objective="capacity_match",
-    )
+    raw["optimization_defaults"].update(solver="recom", objective="capacity_match")
+    sweep_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
     sweep = SimulationSweep.from_yaml(str(sweep_path))
 
     first = sweep.generate_tasks()[0]

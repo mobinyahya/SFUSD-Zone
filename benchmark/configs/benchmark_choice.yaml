@@ -82,7 +82,7 @@ tasks:
   # Uniform short bursts that reject infeasible moves, scored by MID welfare.
   - solver: 'recom'
     strategy: ['single']
-    recom_objective: welfare
+    objective: matching_welfare
     recom_reject_infeasible: true
     recom_pair_selection: uniform
     recom_cut_selection: uniform

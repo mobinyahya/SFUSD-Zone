@@ -49,26 +49,6 @@ _EPS = 1e-6
 # Moves between objective batches when the walk never restarts.
 _CHAIN_BLOCK = 25
 
-# What ``solve`` ranks feasible partitions by (``recom_objective``):
-# ``cut_edges`` is the boundary cost (metres under ``weight_edges``),
-# ``school_distance`` the weighted squared distance to each zone's school,
-# ``welfare`` the discrete MID program welfare, ``capacity_match`` the
-# weighted count of students left unassigned or designated by the MID match,
-# ``aa_capacity_match`` the same count with the match confined to
-# attendance-area seats, ``fill_polarization`` how far zones' seats sit from
-# full or empty, ``frl_dissimilarity`` the school-level FRL dissimilarity of
-# the match, and ``weighted_sum`` the sum of ``objective_weights`` terms.
-RECOM_OBJECTIVES = (
-    "cut_edges",
-    "school_distance",
-    "welfare",
-    "capacity_match",
-    "aa_capacity_match",
-    "fill_polarization",
-    "frl_dissimilarity",
-    "weighted_sum",
-)
-
 ShortBurstBatchScorer = Callable[
     [tuple[Mapping[int, int], ...], Mapping[int, int] | None],
     tuple[float, ...],
@@ -975,13 +955,49 @@ class ReComSolver(Solver):
     """ReCom walks; ``ReComSettings`` (``recom_*`` options) pick the method."""
 
     def solve(self, problem: ZoneProblem) -> ZoneSolution:
-        """Rank feasible partitions by ``recom_objective`` (default cut edges)."""
-        kind = str(self.options.get("recom_objective", "cut_edges"))
-        if kind not in RECOM_OBJECTIVES:
-            raise ValueError(
-                f"recom_objective must be one of: {', '.join(RECOM_OBJECTIVES)}."
+        """Rank feasible partitions by ``problem.objective``.
+
+        The boundary objectives are scored inside the walk (metres under
+        ``weight_edges``); every other objective is the registry's batch
+        scorer, so a distance is measured to each zone's centroid exactly as
+        the CP/MIP models measure it, with centroids anchored to their zones.
+        """
+        from optimization.objectives import (
+            _heuristic_domains,
+            get_objective,
+            heuristic_scorer,
+        )
+
+        spec = get_objective(problem.objective)
+        if "recom" not in spec.methods:
+            raise ValueError(f"recom does not support objective {spec.name!r}.")
+        if spec.name in {"cut_edges", "boundary_perimeter"}:
+            return self._run(problem, lambda: _BurstObjective("cut_edges"))
+        if spec.model_cost != "cut_edges":
+            # A distance is charged to zone z's centroid, so z must hold it.
+            problem = replace(
+                problem, candidates=_heuristic_domains(problem, self.options)
             )
-        return self._run(problem, lambda: _make_objective(problem, kind, self.options))
+        # Built before the solver's clock starts, so it reports what the build
+        # took for wall-clock accounting to charge.
+        prepared = time.monotonic()
+        scorer = heuristic_scorer(problem, spec.name, self.options)
+        try:
+            solution = self.solve_with_scorer(
+                problem,
+                scorer,
+                objective_kind=spec.name,
+                maximize=spec.maximize,
+                prepared_seconds=time.monotonic() - prepared,
+            )
+            describe = getattr(scorer, "describe", None)
+            if solution.feasible and describe is not None:
+                solution.metadata.update(describe(solution.assignment))
+            return solution
+        finally:
+            close = getattr(scorer, "close", None)
+            if close is not None:
+                close()
 
     def solve_with_scorer(
         self,
@@ -1414,23 +1430,6 @@ def voronoi_hint(context: _ReComContext) -> dict[int, int]:
         for pos, node in enumerate(context.nodes)
     }
     return contiguity.repair(problem.G, assignment, problem.centroids)
-
-
-def _make_objective(problem: ZoneProblem, kind: str, options) -> _BurstObjective:
-    if kind == "cut_edges":
-        return _BurstObjective(kind)
-    from optimization.objectives import get_objective, heuristic_scorer
-
-    if kind == "school_distance":
-        # Unanchored school identities; pipeline dispatch passes anchored costs.
-        from optimization.solvers.burst_objectives import school_distance_burst_scorer
-
-        return _BurstObjective(kind, school_distance_burst_scorer(problem))
-    return _BurstObjective(
-        kind,
-        heuristic_scorer(problem, kind, options),
-        maximize=get_objective(kind).maximize,
-    )
 
 
 def _zone_pair(zone_a: int, zone_b: int) -> tuple[int, int]:

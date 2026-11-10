@@ -18,6 +18,7 @@ import yaml
 from loaders import DataScenario, anchor_data_config
 from optimization.config import OptimizationConfig
 from optimization.data.conversion import ATTENDANCE_AREA_HINT
+from optimization.objectives import get_objective
 
 
 SEQUENCE_OPTIMIZATION_FIELDS = {
@@ -386,7 +387,7 @@ def optimization_config_hash(
     # identity it had before pipeline configuration was introduced.
     for name, default in {
         "method": None,
-        "objective": None,
+        "objective": "cut_edges",
         "steps": [],
         "constraints": {},
     }.items():
@@ -397,14 +398,8 @@ def optimization_config_hash(
     # At its default, so task ids from before the setting existed still hold.
     if semantic.get("partition_area_weight") == 0.5:
         semantic.pop("partition_area_weight")
-    # New objective settings drop out at their defaults so existing task ids hold;
-    # the weights only matter once school_distance is selected.
-    if semantic.get("compactness_objective") == "cut_edges":
-        semantic.pop("compactness_objective")
-    if not any(
-        _contains_value(semantic, name)
-        for name in ("school_distance", "average_squared_distance")
-    ):
+    # The weights only matter once school_distance is selected.
+    if not _contains_value(semantic, "school_distance"):
         semantic.pop("school_distance_area_weight", None)
         semantic.pop("school_distance_student_weight", None)
     if not _contains_value(semantic, "feasible"):
@@ -449,8 +444,9 @@ def _contains_value(value: Any, target: str) -> bool:
 
 
 def _reads_assignment_market(config: OptimizationConfig) -> bool:
-    return config.make_strategy().reads_assignment_market or (
-        config.solver == "recom" and config.recom_objective != "cut_edges"
+    return (
+        config.make_strategy().reads_assignment_market
+        or get_objective(config.objective).reads_assignment_market
     )
 
 

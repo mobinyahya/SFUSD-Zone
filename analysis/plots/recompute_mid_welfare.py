@@ -6,8 +6,8 @@ one, so ``iterative_choice`` runs have none at all and the MID numbers that do
 exist are different quantities (continuum vs. finite-grid vs. solver-market).
 This script puts every saved zoning on one MID yardstick by replaying it through
 ``finite_grid_oracle`` - the same call ``mid`` uses to report
-``mid_finite_grid_welfare`` and a ``recom`` run with ``recom_objective:
-welfare`` uses as its burst score.
+``mid_finite_grid_welfare`` and a ``recom`` run with ``objective:
+matching_welfare`` uses as its burst score.
 
 It replays *every stage*, not only the zoning the run ended on. The iterative
 strategies save one zoning per iteration, and the one they hand back is chosen

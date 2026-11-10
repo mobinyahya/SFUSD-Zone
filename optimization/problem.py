@@ -21,6 +21,7 @@ from Config.Constants import AREA_ETHNICITIES, AALPI_ETHNICITIES
 from choice.objective import ChoiceObjective
 from optimization.data.edge_weights import edge_weight
 from optimization.levels import LevelSpec
+from optimization.objectives import get_objective
 
 #: ``population_balance: auto``: the start's worst deviation plus this.
 POPULATION_BALANCE_AUTO = "auto"
@@ -111,13 +112,13 @@ class ZoneProblem:
         ``POPULATION_BALANCE_AUTO_SLACK``, so a walk may never be more than
         that much less balanced than where it began and its start is always
         feasible. A negative value disables the constraint.
-    compactness_objective:
-        What CP/MIP solvers minimize when there is no choice objective:
-        ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
-        ``"school_distance"`` (``sum_n w_n * d(n, school of n's zone)^2``, see
-        :meth:`school_distance_weights`), or ``"average_distance"`` (student-
-        weighted mean distance in miles). Pipeline objective names are resolved
-        to these shared model costs before solving.
+    objective:
+        The registered objective (``optimization.objectives``) every solver
+        optimizes when there is no choice objective. CP/MIP models build its
+        :attr:`model_cost`: ``"cut_edges"`` (boundary cost, metres under
+        ``weight_edges``), ``"school_distance"`` (``sum_n w_n * d(n, centroid
+        of n's zone)^2``, see :meth:`school_distance_weights`) or
+        ``"average_distance"`` (student-weighted mean distance in miles).
     school_distance_area_weight, school_distance_student_weight:
         Mix of land-area share and student share in each node's
         ``school_distance`` weight; both in ``[0, 1]`` and summing to one.
@@ -154,7 +155,7 @@ class ZoneProblem:
     population_balance: float | str = -1.0
     frl_reference_dev: float = -1.0
     weight_edges: bool = False
-    compactness_objective: str = "cut_edges"
+    objective: str = "cut_edges"
     school_distance_area_weight: float = 0.75
     school_distance_student_weight: float = 0.25
 
@@ -183,6 +184,7 @@ class ZoneProblem:
             )
         if not isinstance(self.weight_edges, bool):
             raise ValueError("weight_edges must be a Boolean.")
+        get_objective(self.objective)  # rejects unknown names
         if (
             isinstance(self.max_distance, str)
             and self.max_distance.strip().lower() == "auto"
@@ -211,6 +213,11 @@ class ZoneProblem:
                 raise ValueError(
                     "max_distance must be a non-negative float, 'inf', or 'auto'."
                 )
+
+    @property
+    def model_cost(self) -> str:
+        """The cost a CP/MIP model builds for :attr:`objective`."""
+        return get_objective(self.objective).model_cost
 
     # ------------------------------------------------------------------ #
     # basic dimensions
@@ -438,13 +445,13 @@ class ZoneProblem:
         """Shared assignment coefficients for the linear and squared objectives."""
         return (
             self.average_distance_costs()
-            if self.compactness_objective == "average_distance"
+            if self.model_cost == "average_distance"
             else self.school_distance_costs()
         )
 
     def distance_objective_metadata(self) -> dict:
-        metadata = {"objective_kind": self.compactness_objective}
-        if self.compactness_objective == "average_distance":
+        metadata = {"objective_kind": self.model_cost}
+        if self.model_cost == "average_distance":
             metadata.update(objective_unit="mile", distance_weighting="student_share")
         else:
             metadata.update(

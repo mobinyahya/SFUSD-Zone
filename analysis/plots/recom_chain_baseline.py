@@ -76,7 +76,7 @@ DEFAULT_BENCHMARK_DIR = (
 # Whose config to copy: the welfare-scored short bursts, which run the same
 # ReCom kernel and so define the problem the baseline should walk over. Runs
 # saved before the strategy was removed carry its name; later ones are a
-# ``single`` recom solve with ``recom_objective: welfare``.
+# ``single`` recom solve with ``objective: matching_welfare``.
 CONFIG_DONOR_STRATEGY = "short_bursts_choice"
 
 
@@ -84,7 +84,7 @@ def is_donor(snapshot: dict[str, Any]) -> bool:
     return snapshot["strategy"] == CONFIG_DONOR_STRATEGY or (
         snapshot["strategy"] == "single"
         and snapshot.get("solver") == "recom"
-        and snapshot.get("recom_objective") == "welfare"
+        and snapshot.get("objective") == "matching_welfare"
     )
 
 # Proposals per requested iteration before the walk is declared stuck. Around

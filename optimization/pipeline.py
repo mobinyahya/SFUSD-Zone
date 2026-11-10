@@ -217,24 +217,6 @@ class SolveStep:
 LOOSENED_CONSTRAINTS = ("frl_dev", "racial_dev", "overage", "shortage")
 
 
-def default_objective(config: OptimizationConfig, method: str) -> str:
-    """The objective a step solves when it names none.
-
-    An explicit run-level ``objective`` wins. Otherwise the run's objective
-    field for that method family: ``recom_objective`` for ReCom,
-    ``compactness_objective`` for the CP/MIP models.
-    """
-    if config.objective is not None:
-        return config.objective
-    if method == "recom":
-        return (
-            "matching_welfare"
-            if config.recom_objective == "welfare"
-            else config.recom_objective
-        )
-    return config.compactness_objective
-
-
 def shorthand_steps(config: OptimizationConfig) -> list[dict]:
     """The steps a run without explicit ``steps`` stands for.
 
@@ -303,7 +285,7 @@ def normalize_steps(config: OptimizationConfig) -> list[SolveStep]:
             raw.setdefault(
                 "method", config.method if config.method is not None else config.solver
             )
-            raw.setdefault("objective", default_objective(config, raw["method"]))
+            raw.setdefault("objective", config.objective)
             raw.setdefault("inputs", [{"source": "previous"}] if index else [])
             step = SolveStep(**raw)
         if step.inputs is None:
@@ -339,9 +321,6 @@ def step_config(
     limits = config.solve_time_limits
     gaps = config.gap_limits
     objective = step.objective
-    from optimization.objectives import get_objective
-
-    objective_spec = get_objective(objective)
     if objective in {"choice_welfare", "saa_welfare"}:
         import math
 
@@ -367,34 +346,12 @@ def step_config(
     return replace(
         config,
         method=None,
-        objective=None,
+        objective=objective,
         steps=[],
         constraints={},
         strategy="pipeline",
         levels=[step.level],
         solver=step.method,
-        weight_edges=config.weight_edges or objective == "boundary_perimeter",
-        compactness_objective=objective_spec.compactness_objective
-        if step.method in {"cp_bool", "cp_int", "mip"}
-        else "cut_edges",
-        recom_objective=(
-            "welfare"
-            if objective in {"matching_welfare", "welfare"}
-            else "school_distance"
-            if objective_spec.compactness_objective == "school_distance"
-            else objective
-            if objective
-            in {
-                "cut_edges",
-                "school_distance",
-                "capacity_match",
-                "aa_capacity_match",
-                "fill_polarization",
-                "frl_dissimilarity",
-                "weighted_sum",
-            }
-            else "cut_edges"
-        ),
         solve_time_limits=[
             step.time_limit
             if step.time_limit is not None
