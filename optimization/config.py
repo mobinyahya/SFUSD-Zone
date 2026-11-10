@@ -56,6 +56,7 @@ _CHOICES = {
 }
 _BOOLEANS = (
     "weight_edges",
+    "load_edge_weights",
     "mid_transport_bounds",
     "mid_complementary_slackness",
     "saa_relative_gap",
@@ -199,6 +200,11 @@ class OptimizationConfig:
     save_solver_logs: bool = False
     save_solver_progress: bool = False
     secondary_objective: bool = False
+    # Load boundary lengths into the graph even when no objective costs them,
+    # so the run uses (and shares the cache key of) the weighted graph that a
+    # weighted run builds. Problems still cost cut edges unless weight_edges
+    # or boundary_perimeter asks for metres.
+    load_edge_weights: bool = False
     weight_edges: bool = False
     # KaHIP balances each coarse level's aggregates on this mix of student and
     # land-area shares: 0 balances students only, 1 land area only. Each value
@@ -756,8 +762,10 @@ class OptimizationConfig:
         A weighted graph can also serve unit-cut and distance objectives. The
         legacy ``weight_edges`` flag still controls each problem's edge cost.
         """
-        return self.uses_weighted_edges or any(
-            step.objective == "boundary_perimeter" for step in self.steps
+        return (
+            self.load_edge_weights
+            or self.uses_weighted_edges
+            or any(step.objective == "boundary_perimeter" for step in self.steps)
         )
 
     @property

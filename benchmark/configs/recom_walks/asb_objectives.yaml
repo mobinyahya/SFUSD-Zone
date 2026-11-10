@@ -1,0 +1,93 @@
+# Adaptive short bursts (ReCom, hedge preset) on the naive walk ensemble's
+# scenarios, with every constraint held, one run per objective.
+#
+# Scenarios: the walk ensemble's 21 centroid sets (benchmark_edges' 20 plus
+# one zone per school) on the same data (11-06's ideal_baseline_2627 x
+# applied_or_enrolled, paired filters, and its Block_1 graph via
+# load_edge_weights).
+#
+# Constraints, as in the walk scoring (analysis/score_recom_walks.py):
+#   frl_dev 0.15     every zone's FRL share within 0.15 of the district's
+#   overage/shortage 0.3   every zone's seats within 30% of its students
+#   school counts    floor or ceil of schools / zones per zone (ReCom's own
+#                    row; within 1 of the average, and stricter only when the
+#                    average is a whole number)
+# plus contiguity and each centroid in its own zone. Nothing else: no
+# distance, boundary, resident or population row.
+#
+# Objectives: the five ("all objectives"): cut_edges, average_distance,
+# matching_welfare, capacity_match, frl_dissimilarity.
+#
+# Method: ReCom with the hedge preset (PRESETS["hedge"]: hedge weights, zone
+# pair selection, no exploration, temperature 1.2, no entropy target) in
+# bursts of 25 from the Voronoi start, 300 s of walk (solver_time: the market
+# build and setup are not charged).
+#
+# 21 sets x 5 objectives = 105 runs.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/recom_walks/asb_objectives.yaml
+
+name: asb_objectives_ideal_baseline_2627
+mode: run
+
+optimization_defaults:
+  data:
+    scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+        assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+  # The walks' weighted Block_1 graph (cache key 131dba...), but problems cost
+  # cut edges, not metres: weight_edges would make cut_edges a perimeter.
+  load_edge_weights: true
+  weight_edges: false
+  levels: [Block_1]
+  solver: recom
+  hints: voronoi
+  workers: 1
+  seed: 1
+  solve_time_limits: [300]
+  budget_accounting: solver_time
+  recom_iterations: -1
+  # PRESETS["hedge"]
+  recom_burst_length: 25
+  recom_weights: hedge
+  recom_pair_selection: zone
+  recom_exploration: 0.0
+  recom_temperature: 1.2
+  recom_entropy: null
+  # Market objectives, as in 11-06.
+  mid_preference_source: stated
+  capacity_match_unassigned_weight: 1
+  capacity_match_designated_weight: 0
+  save_solver_logs: true
+  save_solver_progress: false
+  frl_dev: 0.15
+  racial_dev: -1
+  overage: 0.3
+  shortage: 0.3
+  max_distance: .inf
+  boundary_prop: -1
+  min_zone_residents: -1
+
+sweep:
+  centroids_type: ['6-zone-3', '6-zone-9', '6-zone-1', '6-zone-4',
+                   '8-zone-22', '8-zone-24', '8-zone-25', '8-zone-31',
+                   '10-zone-3', '10-zone-9', '10-zone-1', '10-zone-7',
+                   '13-zone-6', '13-zone-7', '13-zone-2', '13-zone-3',
+                   '18-zone-1', '18-zone-7', '18-zone-5', '18-zone-8', 'all']
+
+tasks:
+  - objective: [cut_edges, average_distance, matching_welfare, capacity_match, frl_dissimilarity]
+
+execution:
+  output_dir: '/soalnas/share/data/school_choice/local_runs/asb_objectives_ideal_baseline_2627'
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: 'summary.csv'
+  stages_csv: 'stages.csv'
