@@ -25,6 +25,7 @@ from optimization.solvers.recom import (
     _ZoneStats,
 )
 from optimization.solvers.recom_policy import (
+    PAIR_SELECTIONS,
     PRESETS,
     TREE_SAMPLERS,
     DualWeights,
@@ -148,14 +149,25 @@ def test_recom_allows_negative_capacity_tolerances(preset: str) -> None:
 
 
 @pytest.mark.parametrize("preset", PRESETS)
-def test_recom_ignores_centroid_anchors_and_max_distance(preset: str) -> None:
-    swapped = {0: 1, 1: 1, 2: 0, 3: 0}
-    problem = make_solver_contract_problem(hint=swapped, max_distance=0.0)
+def test_recom_ignores_max_distance(preset: str) -> None:
+    hint = {0: 0, 1: 0, 2: 1, 3: 1}
+    problem = make_solver_contract_problem(hint=hint, max_distance=0.0)
 
     solution = _solver(preset, recom_iterations=0).solve(problem)
 
     _assert_valid_recom_solution(problem, solution)
-    assert solution.assignment == swapped
+    assert solution.assignment == hint
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+def test_recom_rejects_a_hint_that_moves_a_centroid(preset: str) -> None:
+    # Centroid 0 anchors zone 0 and centroid 3 zone 1; this swaps them.
+    problem = make_solver_contract_problem(hint={0: 1, 1: 1, 2: 0, 3: 0})
+
+    solution = _solver(preset, recom_iterations=10).solve(problem)
+
+    assert solution.status == "ERROR"
+    assert "centroid node 0" in solution.metadata["error_message"]
 
 
 @pytest.mark.parametrize("preset", PRESETS)
@@ -214,9 +226,10 @@ def test_recom_uses_weighted_boundary_cost(preset: str) -> None:
 @pytest.mark.parametrize("pair_score", ["pressure", "pooled"])
 @pytest.mark.parametrize("preset", PRESETS)
 def test_every_preset_repairs_an_infeasible_start(preset: str, pair_score: str) -> None:
-    # One school per zone, but the start puts both in zone 0.
-    problem = make_grid_problem(4, 4)
-    start = [int(pos == 14) for pos in range(16)]
+    # Eight students a zone, within 25%, but the start gives zone 1 only its
+    # centroid (node 15) and zone 0 the other fifteen.
+    problem = make_grid_problem(4, 4, population_balance=0.25)
+    start = [int(pos == 15) for pos in range(16)]
     context = _ReComContext(problem)
     assert not context.build_state(start).feasible
     problem = replace(problem, hint=context.assignment_dict(start))
@@ -317,8 +330,8 @@ def test_scored_walks_repair_an_infeasible_start() -> None:
 
     assert solution.metadata["initial_feasible"] is False
     assert solution.status == "FEASIBLE"
-    # The one feasible split, under either labelling (centroids are not pinned).
-    assert scored and all(a[0] == a[1] != a[2] == a[3] for a in scored)
+    # The one feasible split, with each centroid in its own zone.
+    assert scored and all(a == {0: 0, 1: 0, 2: 1, 3: 1} for a in scored)
 
 
 class _SlowScorer:
@@ -807,3 +820,170 @@ def _assert_valid_recom_solution(problem, solution) -> None:
         problem.G, solution.assignment, weight_edges=problem.weight_edges
     )
     assert solution.is_contiguous()
+
+
+# --------------------------------------------------------------------------- #
+# centroids, uniform_boundary pairs, recorded chains, population balance
+# --------------------------------------------------------------------------- #
+_GRID_SCHOOLS = {0: 100, 5: 200, 30: 300, 35: 400}
+
+
+@pytest.mark.parametrize("pair_selection", PAIR_SELECTIONS)
+@pytest.mark.parametrize("preset", PRESETS)
+def test_no_move_ever_takes_a_centroid_out_of_its_zone(
+    preset: str, pair_selection: str
+) -> None:
+    from optimization.solvers.recom import _anchor_centroids
+
+    problem = _anchor_centroids(
+        make_grid_problem(6, 6, schools=_GRID_SCHOOLS, overage=-1, shortage=-1), {}
+    )
+    context = _ReComContext(problem)
+    state = context.build_state(
+        context.validate_hint(
+            {n: (n // 6 >= 3) * 2 + (n % 6 >= 3) for n in problem.nodes}
+        )
+    )
+    rng = random.Random(11)
+    settings = replace(PRESETS[preset], pair_selection=pair_selection)
+    kernel = _ReComKernel(context, rng, None, tree_sampler=settings.tree_sampler)
+    policy = Policy(context, rng, settings, objective_local=True)
+    position = {node: i for i, node in enumerate(context.nodes)}
+
+    for _ in range(300):
+        try:
+            move = kernel.propose(state, policy)
+        except _NoProposal:
+            continue
+        kernel.apply(state, move)
+        assert [state.assignment[position[c]] for c in problem.centroids] == list(
+            range(problem.Z)
+        )
+
+
+def test_the_recorded_chain_is_one_state_per_attempted_move() -> None:
+    # A tight population band rejects many proposals; each rejection records
+    # the unchanged state again.
+    problem = make_grid_problem(
+        6, 6, schools=_GRID_SCHOOLS, overage=-1, shortage=-1, population_balance=0.2
+    )
+    hint = {n: (n // 6 >= 3) * 2 + (n % 6 >= 3) for n in problem.nodes}
+    problem = replace(problem, hint=hint)
+    visits: list[dict[int, int]] = []
+
+    solution = _solver(recom_iterations=200, seed=4).sample_feasible(
+        problem,
+        lambda assignment: visits.append(assignment),
+        pair_selection="uniform_boundary",
+        visit_rejected=True,
+    )
+
+    meta = solution.metadata
+    assert meta["rejected_moves"] > 0
+    assert len(visits) == 201
+    assert meta["accepted_moves"] + meta["rejected_moves"] + meta[
+        "proposal_failures"
+    ] == 200
+    changed = sum(a != b for a, b in zip(visits, visits[1:]))
+    assert changed <= meta["accepted_moves"]
+    for visit in visits:
+        assert all(visit[c] == z for z, c in enumerate(problem.centroids))
+        sizes = [list(visit.values()).count(z) for z in range(problem.Z)]
+        assert all(9 * 0.8 - 1e-9 <= size <= 9 * 1.2 + 1e-9 for size in sizes)
+
+
+def test_without_visit_rejected_the_chain_visits_only_accepted_moves() -> None:
+    problem = make_grid_problem(
+        6, 6, schools=_GRID_SCHOOLS, overage=-1, shortage=-1, population_balance=0.2
+    )
+    hint = {n: (n // 6 >= 3) * 2 + (n % 6 >= 3) for n in problem.nodes}
+    visits: list[dict[int, int]] = []
+
+    solution = _solver(recom_iterations=200, seed=4).sample_feasible(
+        replace(problem, hint=hint), visits.append
+    )
+
+    assert len(visits) == solution.metadata["accepted_moves"] + 1
+
+
+def test_uniform_boundary_draws_a_pair_in_proportion_to_its_cut_edges() -> None:
+    from optimization.solvers.recom_policy import BoundaryEdgePairs
+
+    problem = make_grid_problem(6, 6, schools=_GRID_SCHOOLS, overage=-1, shortage=-1)
+    context = _ReComContext(problem)
+    state = context.build_state(
+        context.validate_hint(
+            {n: (n // 6 >= 3) * 2 + (n % 6 >= 3) for n in problem.nodes}
+        )
+    )
+    pairs = sorted(state.boundary_pairs)
+    choose = BoundaryEdgePairs(
+        Weights(context, PRESETS["chain"]), PRESETS["chain"], random.Random(2), 0.0
+    )
+
+    draws = [choose.choose(state, pairs) for _ in range(6000)]
+
+    # Quadrants of a 6x6 grid: each pair shares 3 edges, so it is uniform here.
+    assert set(draws) == set(pairs)
+    assert {state.boundary_pairs[p] for p in pairs} == {3}
+    for pair in pairs:
+        assert abs(draws.count(pair) / len(draws) - 0.25) < 0.03
+
+
+def test_uniform_boundary_prefers_the_longer_shared_boundary() -> None:
+    from optimization.solvers.recom_policy import BoundaryEdgePairs
+
+    # Zone 0 is the left column of a 3x3 grid, zone 1 the middle and right
+    # columns but the bottom-right node, which is zone 2: pair (0, 1) shares
+    # 3 edges, (1, 2) 2, (0, 2) none.
+    problem = make_grid_problem(
+        3, 3, schools={0: 100, 1: 200, 8: 300}, overage=-1, shortage=-1
+    )
+    context = _ReComContext(problem)
+    hint = {0: 0, 3: 0, 6: 0, 1: 1, 2: 1, 4: 1, 5: 1, 7: 1, 8: 2}
+    state = context.build_state(context.validate_hint(hint))
+    pairs = sorted(state.boundary_pairs)
+    choose = BoundaryEdgePairs(
+        Weights(context, PRESETS["chain"]), PRESETS["chain"], random.Random(5), 0.0
+    )
+
+    draws = [choose.choose(state, pairs) for _ in range(5000)]
+
+    assert state.boundary_pairs == {(0, 1): 3, (1, 2): 2}
+    assert abs(draws.count((0, 1)) / len(draws) - 0.6) < 0.03
+
+
+def test_uniform_boundary_is_a_recom_option() -> None:
+    settings = ReComSettings.from_options({"recom_pair_selection": "uniform_boundary"})
+    assert settings.pair_selection == "uniform_boundary"
+    config = OptimizationConfig(recom_pair_selection="uniform_boundary")
+    assert config.recom_settings().pair_selection == "uniform_boundary"
+
+
+def test_auto_population_balance_is_the_start_plus_five_points() -> None:
+    problem = make_grid_problem(
+        6,
+        6,
+        schools=_GRID_SCHOOLS,
+        overage=-1,
+        shortage=-1,
+        population_balance="auto",
+    )
+    # 6 + 12 + 6 + 12 students against an average of 9: worst deviation 1/3.
+    hint = {n: (n // 6 >= 3) * 2 + (n % 6 >= 2) for n in problem.nodes}
+    visits: list[dict[int, int]] = []
+
+    solution = _solver(recom_iterations=300, seed=9).sample_feasible(
+        replace(problem, hint=hint), visits.append, visit_rejected=True
+    )
+
+    dev = solution.metadata["population_balance_dev"]
+    assert dev == pytest.approx(1 / 3 + 0.05)
+    assert solution.metadata["violation_labels"][-2:] == (
+        "population_lower",
+        "population_upper",
+    )
+    assert len(visits) == 301
+    for visit in visits:
+        sizes = [list(visit.values()).count(z) for z in range(problem.Z)]
+        assert all(abs(size - 9) <= dev * 9 + 1e-9 for size in sizes)

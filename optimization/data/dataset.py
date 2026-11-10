@@ -371,6 +371,7 @@ class Dataset:
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
             min_zone_residents=config.min_zone_residents,
+            population_balance=config.population_balance,
             frl_reference_dev=config.frl_reference_dev,
             weight_edges=config.weight_edges,
             compactness_objective=config.compactness_objective,

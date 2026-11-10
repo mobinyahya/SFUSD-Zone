@@ -347,6 +347,9 @@ def feasibility_fingerprint(problem: ZoneProblem, *, include_hint: bool = True) 
                 ],
             ],
         )
+    # Likewise appended only when the population band is on.
+    if problem.population_balance == "auto" or float(problem.population_balance) >= 0:
+        _write(digest, ["population_balance", str(problem.population_balance)])
     _write(
         digest,
         [

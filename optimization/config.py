@@ -169,6 +169,10 @@ class OptimizationConfig:
     # Minimum resident students (``all_prog_students``) per zone; negative
     # disables it.
     min_zone_residents: float = -1.0
+    # Each zone's students within (1 +/- dev) of the average zone; "auto"
+    # (ReCom only) is the start's worst deviation plus 5 points. Negative
+    # disables it. See ZoneProblem.population_balance.
+    population_balance: float | str = -1.0
     # With a capacity_reference, the relative band on each zone's frozen
     # school FRL count (see ZoneProblem.frl_reference_dev); negative disables.
     frl_reference_dev: float = -1.0
@@ -513,6 +517,7 @@ class OptimizationConfig:
             if "cp_single_zone" in methods and not single_step:
                 raise ValueError("cp_single_zone requires a single-step run.")
         self._validate_school_distance()
+        self._validate_population_balance()
         if isinstance(self.max_distance, str):
             if self.max_distance.strip().lower() == "auto":
                 self.max_distance = "auto"
@@ -716,6 +721,18 @@ class OptimizationConfig:
             raise ValueError(f"{name} {message}.")
         if coerce:
             setattr(self, name, value)
+
+    def _validate_population_balance(self) -> None:
+        value = self.population_balance
+        if isinstance(value, str) and value.strip().lower() == "auto":
+            self.population_balance = "auto"
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(
+                "population_balance must be a finite number (negative disables "
+                "it) or 'auto'."
+            )
+        self.population_balance = float(value)
 
     def _validate_school_distance(self) -> None:
         if self.compactness_objective not in {

@@ -14,7 +14,9 @@ violation over many zones. Three independent pieces then make the choices:
     raised by how often a row was violated during the last burst.  ``dual``:
     ``w = 1 + lambda``, projected subgradient ascent on the multipliers.
 ``PairSelection`` (``recom_pair_selection``)
-    Which two adjacent zones merge: ``uniform``; ``proportional`` to the
+    Which two adjacent zones merge: ``uniform`` over the pairs;
+    ``uniform_boundary``, the two zones of a uniform cut edge (a pair in
+    proportion to its shared boundary edges); ``proportional`` to the
     pair's pressure with an exploration floor; ``softmax`` over pairs;
     ``zone`` (a zone by pressure, then a uniform neighbour); ``exp3``, the
     proportional rule times discounted EXP3-IX weights learned per pair.
@@ -45,7 +47,14 @@ if TYPE_CHECKING:
 _EPS = 1e-6
 
 WEIGHTS = ("fixed", "hedge", "dual")
-PAIR_SELECTIONS = ("uniform", "proportional", "softmax", "zone", "exp3")
+PAIR_SELECTIONS = (
+    "uniform",
+    "uniform_boundary",
+    "proportional",
+    "softmax",
+    "zone",
+    "exp3",
+)
 PAIR_SCORES = ("pressure", "pooled")
 CUT_SELECTIONS = ("uniform", "softmax")
 TREE_SAMPLERS = ("random_mst", "wilson_uniform")
@@ -467,6 +476,18 @@ class PairSelection:
         return {}
 
 
+class BoundaryEdgePairs(PairSelection):
+    """The two zones of a uniformly random cut edge.
+
+    A pair is drawn in proportion to the graph edges it shares, unweighted
+    even under ``weight_edges``, as GerryChain's boundary-edge proposal does.
+    """
+
+    def choose(self, state, pairs):
+        counts = [state.boundary_pairs[pair] for pair in pairs]
+        return self.rng.choices(pairs, weights=counts, k=1)[0]
+
+
 class ProportionalPairs(PairSelection):
     """``(1 - gamma) P_ab / sum P + gamma / K``, uniform once nothing is violated.
 
@@ -601,6 +622,7 @@ def _sigmoid(x: float) -> float:
 
 _PAIRS = {
     "uniform": PairSelection,
+    "uniform_boundary": BoundaryEdgePairs,
     "proportional": ProportionalPairs,
     "softmax": SoftmaxPairs,
     "zone": ZonePairs,

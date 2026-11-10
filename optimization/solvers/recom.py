@@ -22,9 +22,10 @@ hint, and building the objective, a choice objective's market included - and
 built before the solve is called reports its build time as
 ``prepared_seconds``, which ``wall_clock`` charges too.
 
-Centroids set the number of zones and seed the Voronoi hint, but they and
-distance-derived candidates are not hard constraints here; explicit candidate
-and fixed assignments are.
+Centroids set the number of zones and seed the Voronoi hint, and every walk
+holds each centroid in its own zone: no cut moves one out. Explicit candidate
+and fixed assignments are honoured too; other distance-derived candidates are
+not hard constraints here.
 """
 
 from __future__ import annotations
@@ -278,6 +279,19 @@ class _ReComContext:
         self.schools = tuple(float(problem.num_schools(node)) for node in self.nodes)
         self.residents = tuple(problem.residents(node) for node in self.nodes)
         self.resident_floor = problem.resident_floor()
+        # The population band: its dev is known now unless it is "auto",
+        # which ``calibrate_population`` fixes from the start before any
+        # state is built.
+        self.population_balanced = problem.population_balance == "auto" or (
+            problem.population_balance is not None
+            and float(problem.population_balance) >= 0
+        )
+        self.population_dev = (
+            problem.population_band()
+            if self.population_balanced and problem.population_balance != "auto"
+            else None
+        )
+        self.average_students = sum(self.students) / self.zone_count
         # Mirrors the CP/MIP models and ``check_zoning``: an unweighted count
         # against a floored proportion of the edge count.
         self.cut_limit = (
@@ -321,6 +335,7 @@ class _ReComContext:
             len(self.balance_rows)
             + (2 if self.school_bounds else 0)
             + (self.resident_floor is not None)
+            + (2 if self.population_balanced else 0)
         )
 
     @property
@@ -359,14 +374,29 @@ class _ReComContext:
                 if floor_ > 0
                 else 0.0
             )
+        if self.population_balanced:
+            dev, average = self.population_dev, self.average_students
+            if dev is None:
+                raise RuntimeError("population_balance 'auto' was never calibrated.")
+            scale = 100.0 / average if average > 0 else 0.0
+            out.append(((1.0 - dev) * average - stats.students) * scale)
+            out.append((stats.students - (1.0 + dev) * average) * scale)
         return tuple(out)
+
+    def calibrate_population(self, assignment: list[int]) -> None:
+        """Fix an ``"auto"`` population band from the starting zoning."""
+        if self.problem.population_balance == "auto":
+            self.population_dev = self.problem.population_band(
+                self.assignment_dict(assignment)
+            )
 
     def row_students(self, stats: _ZoneStats) -> tuple[float, ...]:
         """Per row, what its residual is a percentage of: ``count = g s / 100``."""
         rows = len(self.balance_rows)
         schools = (self.average_schools,) * (2 if self.school_bounds else 0)
         residents = () if self.resident_floor is None else (self.resident_floor,)
-        return (*stats.values[rows:], *schools, *residents)
+        population = (self.average_students,) * (2 if self.population_balanced else 0)
+        return (*stats.values[rows:], *schools, *residents, *population)
 
     def cut_residual(self, cut_edges: int) -> float:
         return (cut_edges - self.cut_limit) / max(self.cut_limit, 1) * 100.0
@@ -405,6 +435,8 @@ class _ReComContext:
             labels += ["schools_lower", "schools_upper"]
         if self.resident_floor is not None:
             labels.append("residents_lower")
+        if self.population_balanced:
+            labels += ["population_lower", "population_upper"]
         if self.cut_limit is not None:
             labels.append("boundary")
         return tuple(labels)
@@ -478,6 +510,13 @@ class _ReComContext:
                 raise _HintError(
                     f"ReCom hint assigns invalid zone {zone} to node {node}."
                 )
+            if zone not in self.allowed[pos] and len(self.allowed[pos]) == 1:
+                (anchored,) = self.allowed[pos]
+                if node in self.problem.centroids:
+                    raise _HintError(
+                        f"ReCom hint puts centroid node {node} in zone {zone}, "
+                        f"outside its own zone {anchored}."
+                    )
             if zone not in self.allowed[pos]:
                 raise _HintError(
                     f"ReCom hint assigns node {node} to explicitly forbidden zone {zone}."
@@ -965,20 +1004,34 @@ class ReComSolver(Solver):
             prepared_seconds=prepared_seconds,
         )
 
-    def sample_feasible(self, problem: ZoneProblem, visitor) -> ZoneSolution:
+    def sample_feasible(
+        self,
+        problem: ZoneProblem,
+        visitor,
+        *,
+        pair_selection: str | None = None,
+        visit_rejected: bool = False,
+    ) -> ZoneSolution:
         """Walk a rejection chain with the configured tree sampler and visit the
         initial and every accepted feasible partition, improving or not, as a
-        fresh assignment dict. Other policy settings use the chain preset.
-        A visitor returning False stops it.
+        fresh assignment dict. Other policy settings use the chain preset,
+        except ``pair_selection`` when given. With ``visit_rejected`` a rejected
+        move visits the unchanged partition again, so the visits are the
+        Markov chain itself, one per attempted move. A visitor returning False
+        stops it.
         """
+        settings = replace(
+            PRESETS["chain"],
+            tree_sampler=ReComSettings.from_options(self.options).tree_sampler,
+        )
+        if pair_selection is not None:
+            settings = replace(settings, pair_selection=pair_selection)
         return self._run(
             problem,
             lambda: _BurstObjective("cut_edges"),
             visitor=visitor,
-            settings=replace(
-                PRESETS["chain"],
-                tree_sampler=ReComSettings.from_options(self.options).tree_sampler,
-            ),
+            settings=settings,
+            visit_rejected=visit_rejected,
         )
 
     def _run(
@@ -990,12 +1043,14 @@ class ReComSolver(Solver):
         visitor=None,
         settings: ReComSettings | None = None,
         prepared_seconds: float = 0.0,
+        visit_rejected: bool = False,
     ) -> ZoneSolution:
         if problem.choice_objective is not None:
             raise NotImplementedError(
                 "recom does not support iterative choice objectives; use cp_int, cp_bool, or mip."
             )
         settings = settings or ReComSettings.from_options(self.options)
+        problem = _anchor_centroids(problem, self.options)
         # Imported here: the strategies package imports this module.
         from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 
@@ -1039,6 +1094,7 @@ class ReComSolver(Solver):
                 visitor,
                 hint_metadata,
                 budget_start,
+                visit_rejected,
             )
         finally:
             if close_objective:
@@ -1055,6 +1111,7 @@ class ReComSolver(Solver):
         visitor,
         hint_metadata: dict[str, object],
         budget_start: float,
+        visit_rejected: bool = False,
     ) -> ZoneSolution:
         max_moves, deadline = self._limits(budget_start)
         rng = random.Random(int(self.options.get("seed", 42)))
@@ -1105,10 +1162,16 @@ class ReComSolver(Solver):
                     if exc.reason == "no_adjacent_zone_pairs":
                         stop_reason = exc.reason
                         break
+                    if visit_rejected and not visit(_snapshot(walk, walk_merit)):
+                        stop_reason = "visitor_stop"
+                        break
                     continue
                 if settings.reject_infeasible and not move.cut.feasible:
                     tally.rejected_moves += 1
                     policy.moved(walk, walk_merit, walk_merit)
+                    if visit_rejected and not visit(_snapshot(walk, walk_merit)):
+                        stop_reason = "visitor_stop"
+                        break
                     continue
                 kernel.apply(walk, move)
                 tally.accepted_moves += 1
@@ -1218,6 +1281,9 @@ class ReComSolver(Solver):
             assignment = context.validate_hint(hint)
         except _HintError as exc:  # add the provenance validate_hint cannot know
             raise _HintError(str(exc), metadata) from exc
+        context.calibrate_population(assignment)
+        if context.population_balanced:
+            metadata = {**metadata, "population_balance_dev": context.population_dev}
         return context, context.build_state(assignment), metadata
 
     def _limits(self, start: float) -> tuple[int | None, float | None]:
@@ -1293,6 +1359,48 @@ class ReComSolver(Solver):
             wall_time=time.monotonic() - start,
             metadata={"solver": self.name, **metadata},
         )
+
+
+def _anchor_centroids(
+    problem: ZoneProblem, options: Mapping[str, object]
+) -> ZoneProblem:
+    """Pin each centroid (and its ``centroid_neighbor_radius`` neighbourhood)
+    to its own zone, on top of any explicit candidates and fixed assignments.
+
+    This is part of the move set, not a balance row: no cut ever moves a
+    centroid out of its zone, so every state of every walk keeps them all.
+    Only the anchored nodes gain a candidate entry; distance-derived
+    candidates (``max_distance``) stay out of ReCom, as before. Idempotent.
+    """
+    if not problem.centroids:
+        return problem
+    from optimization.solvers.base import (
+        centroid_neighborhoods,
+        checked_centroid_neighbor_radius,
+    )
+
+    neighborhoods = centroid_neighborhoods(
+        problem,
+        checked_centroid_neighbor_radius(options.get("centroid_neighbor_radius", 0)),
+    )
+    candidates = {
+        node: set(zones) for node, zones in (problem.candidates or {}).items()
+    }
+    for zone, nodes in neighborhoods.items():
+        for node in nodes:
+            if node in candidates:
+                allowed = candidates[node]
+            elif problem.fixed is not None and node in problem.fixed:
+                allowed = {int(problem.fixed[node])}
+            else:
+                allowed = set(range(problem.Z))
+            if zone not in allowed:
+                raise ValueError(
+                    f"Node {node} anchors zone {zone}, which its candidates or "
+                    "fixed assignment forbid."
+                )
+            candidates[node] = {zone}
+    return replace(problem, candidates=candidates)
 
 
 def voronoi_hint(context: _ReComContext) -> dict[int, int]:

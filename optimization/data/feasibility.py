@@ -29,6 +29,9 @@ Every check here is implied by the constraints the solvers post, never stricter:
   ceil(schools / zones) schools
 * residents -- every zone holds at least ``min_zone_residents`` resident
   students, when that floor is on
+* population -- every zone's students within ``population_balance`` of the
+  average zone, when that band is numeric (``"auto"`` is relative to a walk's
+  start, which a zoning does not carry, so it is not checked)
 * boundary -- cut edges within ``boundary_prop`` of the graph's edge count,
   counted unweighted, as :meth:`_add_boundary_constraint` posts it
 
@@ -111,6 +114,7 @@ def check_zoning(
     violations.extend(_balance_violations(problem, zones, tolerance))
     violations.extend(_school_count_violations(problem, zones, tolerance))
     violations.extend(_resident_violations(problem, zones, tolerance))
+    violations.extend(_population_violations(problem, zones, tolerance))
     violations.extend(_boundary_violations(problem, assignment))
     return FeasibilityReport(tuple(violations), tolerance)
 
@@ -288,6 +292,39 @@ def _school_count_violations(
                     schools - ceiling,
                 )
             )
+    return violations
+
+
+def _population_violations(
+    problem: ZoneProblem,
+    zones: list[list[int]],
+    tolerance: float,
+) -> list[FeasibilityViolation]:
+    # "auto" is a band around a walk's own start, which a zoning alone does
+    # not carry, so only a numeric band is checked here.
+    if problem.population_balance == "auto":
+        return []
+    dev = problem.population_band()
+    if dev is None:
+        return []
+    average = problem.average_zone_students()
+    violations: list[FeasibilityViolation] = []
+    for zone, nodes in enumerate(zones):
+        students = math.fsum(problem.students(node) for node in nodes)
+        for row, excess in (
+            ("population_lower", (1.0 - dev) * average - students),
+            ("population_upper", students - (1.0 + dev) * average),
+        ):
+            if excess > tolerance:
+                violations.append(
+                    FeasibilityViolation(
+                        row,
+                        f"zone {zone} holds {students:.6g} students against "
+                        f"{1.0 - dev:.4g}-{1.0 + dev:.4g} times the average "
+                        f"{average:.6g}",
+                        excess,
+                    )
+                )
     return violations
 
 

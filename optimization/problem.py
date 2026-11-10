@@ -22,6 +22,10 @@ from choice.objective import ChoiceObjective
 from optimization.data.edge_weights import edge_weight
 from optimization.levels import LevelSpec
 
+#: ``population_balance: auto``: the start's worst deviation plus this.
+POPULATION_BALANCE_AUTO = "auto"
+POPULATION_BALANCE_AUTO_SLACK = 0.05
+
 if TYPE_CHECKING:
     from optimization.config import OptimizationConfig
 
@@ -99,6 +103,14 @@ class ZoneProblem:
         ``student_population`` living there, whatever program they rank
         (``all_prog_students``), so the floor does not move with
         ``program_population``. A negative value disables the constraint.
+    population_balance:
+        Each zone's students (:meth:`students`) must lie within
+        ``[(1 - dev), (1 + dev)]`` times the average zone's, ``total / Z``.
+        A non-negative number is ``dev``; ``"auto"`` (ReCom only) takes the
+        starting zoning's worst relative deviation plus
+        ``POPULATION_BALANCE_AUTO_SLACK``, so a walk may never be more than
+        that much less balanced than where it began and its start is always
+        feasible. A negative value disables the constraint.
     compactness_objective:
         What CP/MIP solvers minimize when there is no choice objective:
         ``"cut_edges"`` (boundary cost, metres under ``weight_edges``) or
@@ -139,6 +151,7 @@ class ZoneProblem:
     max_distance: float | str = float("inf")
     boundary_prop: float = -1.0
     min_zone_residents: float = -1.0
+    population_balance: float | str = -1.0
     frl_reference_dev: float = -1.0
     weight_edges: bool = False
     compactness_objective: str = "cut_edges"
@@ -304,6 +317,38 @@ class ZoneProblem:
         if self.min_zone_residents is None or self.min_zone_residents < 0:
             return None
         return float(self.min_zone_residents)
+
+    def average_zone_students(self) -> float:
+        """``total students / Z``, the population balance's reference."""
+        return math.fsum(self.students(node) for node in self.nodes) / self.Z
+
+    def population_band(
+        self, start: "dict[int, int] | None" = None
+    ) -> float | None:
+        """The population balance's ``dev``, or ``None`` when it is off.
+
+        ``"auto"`` needs the ``start`` zoning it is calibrated on.
+        """
+        value = self.population_balance
+        if value == POPULATION_BALANCE_AUTO:
+            if start is None:
+                raise ValueError(
+                    "population_balance 'auto' is calibrated on a starting "
+                    "zoning, which only ReCom has."
+                )
+            average = self.average_zone_students()
+            totals = [0.0] * self.Z
+            for node, zone in start.items():
+                totals[int(zone)] += self.students(node)
+            worst = (
+                max(abs(total - average) for total in totals) / average
+                if average > 0
+                else 0.0
+            )
+            return worst + POPULATION_BALANCE_AUTO_SLACK
+        if value is None or float(value) < 0:
+            return None
+        return float(value)
 
     def school_count_bounds(self) -> tuple[float, float] | None:
         """Per-zone school counts ``(floor, ceil)`` of ``schools / zones``.

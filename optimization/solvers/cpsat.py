@@ -678,6 +678,7 @@ class _CpSatSolver(Solver):
                 self._add_linear_constraint(m, x, terms, ">=", floor_)
                 self._add_linear_constraint(m, x, terms, "<=", ceiling)
         self._add_resident_floor(m, problem, x)
+        self._add_population_balance(m, problem, x)
 
     def _add_resident_floor(
         self,
@@ -692,6 +693,22 @@ class _CpSatSolver(Solver):
             nodes = self._candidate_nodes(problem, z)
             terms = [(problem.residents(n), z, n) for n in nodes]
             self._add_linear_constraint(m, x, terms, ">=", floor_)
+
+    def _add_population_balance(
+        self,
+        m: cp_model.CpModel,
+        problem: ZoneProblem,
+        x: _AssignmentVars,
+    ) -> None:
+        dev = problem.population_band()
+        if dev is None:
+            return
+        average = problem.average_zone_students()
+        for z in range(problem.Z):
+            nodes = self._candidate_nodes(problem, z)
+            terms = [(problem.students(n), z, n) for n in nodes]
+            self._add_linear_constraint(m, x, terms, ">=", (1.0 - dev) * average)
+            self._add_linear_constraint(m, x, terms, "<=", (1.0 + dev) * average)
 
     def _add_linear_constraint(
         self,

@@ -1,0 +1,32 @@
+# Naive ReCom baseline: plain chains on the 11-06 attendance-area data, with
+# no objective. Read by analysis/recom_walk_ensemble.py.
+#
+# Data: the 11-06 sweep's primary row (ideal_baseline_2627 capacities,
+# applied_or_enrolled students, attendance-areas-2627 scenario). Every
+# balance row is off but the population band: no zone's students may stray
+# from the average zone by more than the Voronoi start's worst deviation plus
+# 5 points (population_balance: auto). ReCom's own rules stay: each zone holds
+# its centroid, and zones stay contiguous. The script drops the school counts.
+#
+# centroids_type here only names the dataset's default; the script walks every
+# centroid set it is given (benchmark_edges' 20, plus `all`).
+centroids_type: all
+levels: [Block_1]
+hints: voronoi
+workers: 1
+save_solver_logs: false
+save_solver_progress: false
+constraints:
+  frl_dev: -1
+  racial_dev: -1
+  overage: -1
+  shortage: -1
+  max_distance: .inf
+  boundary_prop: -1
+  min_zone_residents: -1
+  population_balance: auto
+data:
+  scenario: attendance-areas-2627
+  overrides:
+    filters:
+      optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}

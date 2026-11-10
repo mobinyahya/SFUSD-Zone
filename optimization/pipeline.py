@@ -27,6 +27,7 @@ CONSTRAINT_FIELDS = frozenset(
         "max_distance",
         "boundary_prop",
         "min_zone_residents",
+        "population_balance",
         "frl_reference_dev",
         "centroid_neighbor_radius",
     }
@@ -94,7 +95,7 @@ def checked_constraints(value, label="constraints") -> dict:
 
     result = checked_map(value, CONSTRAINT_FIELDS, label)
     for name, raw in result.items():
-        if name in {"max_distance", "centroid_neighbor_radius"}:
+        if name in {"max_distance", "centroid_neighbor_radius", "population_balance"}:
             continue  # Validated by OptimizationConfig, including 'auto'.
         if (
             isinstance(raw, bool)

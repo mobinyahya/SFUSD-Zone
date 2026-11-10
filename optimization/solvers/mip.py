@@ -387,6 +387,14 @@ class MipSolver(Solver):
                 nodes = self._candidate_nodes(problem, z)
                 terms = [(problem.residents(n), z, n) for n in nodes]
                 self._add_linear_constraint(m, x, terms, ">=", resident_floor)
+        dev = problem.population_band()
+        if dev is not None:
+            average = problem.average_zone_students()
+            for z in range(problem.Z):
+                nodes = self._candidate_nodes(problem, z)
+                terms = [(problem.students(n), z, n) for n in nodes]
+                self._add_linear_constraint(m, x, terms, ">=", (1.0 - dev) * average)
+                self._add_linear_constraint(m, x, terms, "<=", (1.0 + dev) * average)
 
     def _add_linear_constraint(
         self,

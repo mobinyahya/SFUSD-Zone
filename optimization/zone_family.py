@@ -273,4 +273,10 @@ def _integer_rows(problem: ZoneProblem, nodes) -> tuple[IntegerRow, ...]:
     if resident_floor is not None:
         values = [problem.residents(node) for node in nodes]
         add("residents_lower", ">=", values, resident_floor)
+    dev = problem.population_band()
+    if dev is not None:
+        average = problem.average_zone_students()
+        values = [problem.students(node) for node in nodes]
+        add("population_lower", ">=", values, (1.0 - dev) * average)
+        add("population_upper", "<=", values, (1.0 + dev) * average)
     return tuple(rows)
