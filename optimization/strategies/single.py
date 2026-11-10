@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 
 from optimization.data.dataset import Dataset
+from optimization.objectives import METHODS, solve_objective
 from optimization.solution import ZoneSolution
 from optimization.solvers.base import Solver
 from optimization.strategies.base import Strategy, register
@@ -40,4 +41,14 @@ class SingleShotStrategy(Strategy):
                     "seed", 42
                 )
             return solutions
-        return [solver.solve(problem)]
+        if solver.name not in METHODS:  # cp_single_zone: its own model only
+            return [solver.solve(problem)]
+        return [
+            solve_objective(
+                problem,
+                solver.name,
+                problem.objective,
+                options=solver.options,
+                solver=solver,
+            )
+        ]

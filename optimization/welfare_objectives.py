@@ -38,8 +38,12 @@ def solve_welfare_objective(problem, method, objective, options):
     from optimization.solvers import get_solver
 
     strategy_name = "saa" if objective == "saa_welfare" else "iterative_choice"
+    # The loop brings its own objective, so the config keeps the default one.
     config = replace(
-        config, strategy=strategy_name, _resolved_data_scenario=config.data_scenario
+        config,
+        strategy=strategy_name,
+        objective="cut_edges",
+        _resolved_data_scenario=config.data_scenario,
     )
     strategy = config.make_strategy()
     # The pipeline owns the feasible set. Welfare does not implicitly switch

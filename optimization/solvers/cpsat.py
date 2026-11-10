@@ -438,7 +438,7 @@ class _CpSatSolver(Solver):
                 metadata["choice_best_bound"] = (
                     solver.BestObjectiveBound() / objective_scale
                 )
-        elif problem.compactness_objective in {"school_distance", "average_distance"}:
+        elif problem.model_cost != "cut_edges":
             metadata.update(problem.distance_objective_metadata())
         elif problem.weight_edges:
             metadata.update(
@@ -515,7 +515,7 @@ class _CpSatSolver(Solver):
         y: _ZoneVars,
     ) -> tuple[bool, float]:
         if problem.choice_objective is None:
-            if problem.compactness_objective in {"school_distance", "average_distance"}:
+            if problem.model_cost != "cut_edges":
                 self._add_distance_objective(m, problem, x)
                 return False, float(SCHOOL_DISTANCE_SCALE)
             self._add_boundary_objective(m, problem, x, y)

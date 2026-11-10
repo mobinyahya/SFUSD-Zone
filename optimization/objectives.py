@@ -32,7 +32,10 @@ class Objective:
     methods: frozenset[str]
     maximize: bool = False
     reads_assignment_market: bool = False
-    compactness_objective: str = "cut_edges"
+    # The cost CP/MIP models build for it: ``cut_edges`` (boundary cost),
+    # ``school_distance`` or ``average_distance``. Market objectives keep the
+    # boundary cost; their own models replace it.
+    model_cost: str = "cut_edges"
     unit: str | None = None
 
 
@@ -41,22 +44,18 @@ _OBJECTIVES = {
     "boundary_perimeter": Objective(
         "boundary_perimeter", frozenset(METHODS), unit="meter"
     ),
+    # Student-weighted mean distance to each node's zone centroid.
     "average_distance": Objective(
         "average_distance",
         frozenset(METHODS),
-        compactness_objective="average_distance",
+        model_cost="average_distance",
         unit="mile",
     ),
-    "average_squared_distance": Objective(
-        "average_squared_distance",
-        frozenset(METHODS),
-        compactness_objective="school_distance",
-        unit="mile^2",
-    ),
+    # Area/student-weighted mean squared distance to each node's zone centroid.
     "school_distance": Objective(
         "school_distance",
         frozenset(METHODS),
-        compactness_objective="school_distance",
+        model_cost="school_distance",
         unit="mile^2",
     ),
     "matching_welfare": Objective(
@@ -74,7 +73,6 @@ OBJECTIVES = tuple(_OBJECTIVES)
 
 
 def get_objective(name: str) -> Objective:
-    name = "matching_welfare" if name == "welfare" else name
     try:
         return _OBJECTIVES[name]
     except KeyError:
@@ -222,13 +220,8 @@ def heuristic_scorer(problem: ZoneProblem, objective: str, options: Mapping[str,
         return None
     if objective == "weighted_sum":
         return _weighted_sum_scorer(problem, options)
-    if spec.compactness_objective in {
-        "school_distance",
-        "average_distance",
-    }:
-        return _CentroidDistanceScorer(
-            replace(problem, compactness_objective=spec.compactness_objective)
-        )
+    if spec.model_cost != "cut_edges":
+        return _CentroidDistanceScorer(replace(problem, objective=objective))
     if objective in {"choice_welfare", "saa_welfare"}:
         from optimization.solvers.welfare_scorers import (
             ChoiceWelfareScorer,
@@ -323,8 +316,12 @@ def solve_objective(
     objective: str,
     *,
     options: Mapping[str, Any] | None = None,
+    solver=None,
 ) -> ZoneSolution:
     """Solve one stage, preserving its constraints and explicit method choice.
+
+    ``solver``, an instance of ``method``, serves the objectives the method's
+    own model optimizes; one is built from ``options`` when it is absent.
 
     Matching welfare means discrete MID program welfare for every supported method.
     CP methods use the joint finite-grid model; heuristics evaluate the same
@@ -351,7 +348,7 @@ def solve_objective(
     problem = replace(
         problem,
         weight_edges=problem.weight_edges or objective == "boundary_perimeter",
-        compactness_objective=spec.compactness_objective,
+        objective=objective,
         candidates=(
             _heuristic_domains(problem, options)
             if method in _HEURISTICS
@@ -359,7 +356,7 @@ def solve_objective(
         ),
     )
     if problem.choice_objective is not None:
-        raise ValueError("Pipeline objectives require choice_objective=None.")
+        raise ValueError("Named objectives require choice_objective=None.")
     from optimization.solvers import get_solver
 
     if objective in {"saa_welfare", "choice_welfare"} and method not in _HEURISTICS:
@@ -368,36 +365,14 @@ def solve_objective(
         solution = solve_welfare_objective(problem, method, objective, options)
     elif objective == "matching_welfare" and method in {"cp_bool", "cp_int"}:
         solution = _welfare_solver(problem, method, options).solve(problem)
-    elif method in _HEURISTICS and objective in {"cut_edges", "boundary_perimeter"}:
-        solution = get_solver(method, **{**options, "recom_objective": "cut_edges"}).solve(
-            problem
-        )
-    elif method in _HEURISTICS:
-        # Built before the solver's clock starts, so it reports what the build
-        # took for wall-clock accounting to charge.
-        prepared = time.monotonic()
-        scorer = heuristic_scorer(problem, objective, options)
-        try:
-            solution = get_solver(method, **options).solve_with_scorer(
-                problem,
-                scorer,
-                objective_kind=objective,
-                maximize=spec.maximize,
-                prepared_seconds=time.monotonic() - prepared,
-            )
-            describe = getattr(scorer, "describe", None)
-            if solution.feasible and describe is not None:
-                solution.metadata.update(describe(solution.assignment))
-        finally:
-            close = getattr(scorer, "close", None)
-            if close is not None:
-                close()
     else:
-        solution = get_solver(method, **options).solve(problem)
+        # Every solver's own ``solve`` honors ``problem.objective``.
+        solver = solver if solver is not None else get_solver(method, **options)
+        solution = solver.solve(problem)
     solution.metadata.update(
         method=method, objective=objective, objective_maximize=spec.maximize
     )
-    if spec.compactness_objective in {"school_distance", "average_distance"}:
+    if spec.model_cost != "cut_edges":
         solution.metadata.update(problem.distance_objective_metadata())
     if spec.unit is not None:
         solution.metadata.update(objective_kind=objective, objective_unit=spec.unit)

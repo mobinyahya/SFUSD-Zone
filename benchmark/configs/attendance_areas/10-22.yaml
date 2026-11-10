@@ -24,7 +24,7 @@
 #   shape     Block_0.5, recom short bursts for 10 minutes, optimizing
 #             capacity_match. Not Block_2: its aggregates hold up to 195
 #             students, too coarse for one school per zone.
-#   distance  Block_0, cp_bool for 5 minutes, average_squared_distance. The
+#   distance  Block_0, cp_bool for 5 minutes, school_distance. The
 #             shape zoning's interior is fixed; its boundary band (the
 #             endpoints of every cut edge plus one hop, radius 1) is free and
 #             hinted.
@@ -96,7 +96,7 @@ tasks:
       - name: distance
         level: Block_0
         method: cp_bool
-        objective: average_squared_distance
+        objective: school_distance
         time_limit: 300
         inputs:
           - {source: previous, mode: assign, select: interior, radius: 1}

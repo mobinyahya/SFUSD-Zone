@@ -36,7 +36,7 @@ _RECOM = ReComSettings()
 _MAX_ITERATION_STRATEGIES = {"iterative_choice", "priced_access", "mid_decomp", "saa"}
 _TOLERANCE_STRATEGIES = _MAX_ITERATION_STRATEGIES | {"dantzig_wolfe"}
 
-# Field validation tables. ``strategy``, ``solver`` and ``recom_objective`` are
+# Field validation tables. ``strategy``, ``solver`` and ``objective`` are
 # checked against their registries; the ``recom_*`` method settings by
 # ``ReComSettings`` itself.
 _CHOICES = {
@@ -146,7 +146,11 @@ class OptimizationConfig:
     strategy: str = "single"
     # Composable API. Legacy solver/strategy configurations remain readable.
     method: str | None = None
-    objective: str | None = None
+    # What every solve optimizes: a name registered in
+    # ``optimization.objectives`` (e.g. ``cut_edges``, ``boundary_perimeter``,
+    # ``school_distance``, ``average_distance``, ``matching_welfare``,
+    # ``capacity_match``). Pipeline steps default to it and may pick their own.
+    objective: str = "cut_edges"
     steps: list = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
 
@@ -176,10 +180,6 @@ class OptimizationConfig:
     # land-area shares: 0 balances students only, 1 land area only. Each value
     # keys its own graph cache.
     partition_area_weight: float = 0.5
-    # Legacy CP/MIP cost selector: cut_edges, school_distance (squared), or
-    # average_distance (student-weighted linear distance). Pipelines select
-    # named objectives through ``objective`` instead.
-    compactness_objective: str = "cut_edges"
     # school_distance node weight = area share * this + student share * that;
     # both in [0, 1] and summing to one.
     school_distance_area_weight: float = 0.75
@@ -207,13 +207,6 @@ class OptimizationConfig:
     recom_learning_rate: float | None = _RECOM.learning_rate
     recom_bandit_window: float = _RECOM.bandit_window
     recom_objective_weight: float = _RECOM.objective_weight
-    # What a plain ``recom`` solve ranks feasible partitions by: ``cut_edges``
-    # (boundary cost), ``school_distance``, ``welfare`` (discrete MID welfare,
-    # maximized), ``capacity_match``, or ``aa_capacity_match`` (the same, with
-    # the match confined to attendance-area seats). The choice objectives build
-    # a MID market and need program_population='All'. Pipeline steps pick theirs
-    # through ``objective`` instead.
-    recom_objective: str = "cut_edges"
     # capacity_match: the weights of an unassigned and a designated student.
     capacity_match_unassigned_weight: float = 1.0
     capacity_match_designated_weight: float = 1.0
@@ -377,15 +370,10 @@ class OptimizationConfig:
             raise ValueError("steps must be a list of solve steps.")
         for name, value in self.constraints.items():
             setattr(self, name, value)
-        if (
-            self.steps
-            or self.method is not None
-            or self.objective is not None
-            or self.strategy == "pipeline"
-        ):
+        if self.steps or self.method is not None or self.strategy == "pipeline":
             if self.strategy not in {"single", "pipeline"}:
                 raise ValueError(
-                    "steps/method/objective cannot be combined with a legacy strategy."
+                    "steps/method cannot be combined with a legacy strategy."
                 )
             self.steps = normalize_steps(self)
             self.levels = [step.level for step in self.steps]
@@ -419,13 +407,11 @@ class OptimizationConfig:
             )
         import optimization.solvers  # noqa: F401  (registers the solvers)
         from optimization.solvers.base import available_solvers
-        from optimization.solvers.recom import RECOM_OBJECTIVES
         from optimization.strategies.base import available_strategies
 
         for name, choices in {
             "strategy": available_strategies(),
             "solver": available_solvers(),
-            "recom_objective": RECOM_OBJECTIVES,
             **_CHOICES,
         }.items():
             if getattr(self, name) not in choices:
@@ -573,60 +559,27 @@ class OptimizationConfig:
             )
         self.recom_settings()  # validates every recom_* setting
         if (
-            self.recom_objective in {"capacity_match", "aa_capacity_match"}
+            self.objective in {"capacity_match", "aa_capacity_match"}
             and self.capacity_match_unassigned_weight == 0
             and self.capacity_match_designated_weight == 0
         ):
             raise ValueError(
-                f"{self.recom_objective} needs a positive "
-                "unassigned or designated weight."
+                f"{self.objective} needs a positive unassigned or designated weight."
             )
         from optimization.objectives import checked_objective_weights
 
         self.objective_weights = checked_objective_weights(self.objective_weights)
-        if self.recom_objective == "weighted_sum" and self.objective_weights is None:
+        if self.objective == "weighted_sum" and self.objective_weights is None:
             raise ValueError("The weighted_sum objective needs objective_weights.")
+        self._validate_objective()
         if self.strategy == "pipeline":
             from optimization.pipeline import step_config
 
             for index, step in enumerate(self.steps):
+                # Each step config validates its own objective's market needs.
                 effective = step_config(self, step, index)
-                market_use = (
-                    "capacity_reference"
-                    if step.capacity_reference is not None
-                    else step.objective
-                )
-                if step.capacity_reference is not None or step.objective in {
-                    "matching_welfare",
-                    "welfare",
-                    "saa_welfare",
-                    "capacity_match",
-                    "aa_capacity_match",
-                    "fill_polarization",
-                    "weighted_sum",
-                }:
-                    if effective.program_population != "All":
-                        raise ValueError(
-                            f"{market_use} requires program_population='All'."
-                        )
-                if step.capacity_reference is not None or step.objective in {
-                    "matching_welfare",
-                    "welfare",
-                    "saa_welfare",
-                    "capacity_match",
-                    "aa_capacity_match",
-                    "fill_polarization",
-                    "weighted_sum",
-                    "choice_welfare",
-                }:
-                    if effective.data_scenario.filter(
-                        "optimization", "geography_vintage"
-                    ) != effective.data_scenario.filter(
-                        "assignment", "geography_vintage"
-                    ):
-                        raise ValueError(
-                            f"{market_use} requires matching optimization and assignment geography_vintage values."
-                        )
+                if step.capacity_reference is not None:
+                    effective._check_market("capacity_reference")
 
     def _check_number(
         self,
@@ -663,20 +616,48 @@ class OptimizationConfig:
         if coerce:
             setattr(self, name, value)
 
+    def _validate_objective(self) -> None:
+        """Check ``objective`` names a registered objective this run can solve.
+
+        A pipeline's steps each check their own method; ``single`` solves with
+        ``solver``; ``recursive`` calls the solver's own model at every level,
+        so it takes the boundary and distance objectives; every other strategy
+        brings its own objective and keeps the default.
+        """
+        from optimization.objectives import get_objective, validate_method_objective
+
+        spec = get_objective(self.objective)
+        if self.strategy == "single" and spec.name != "cut_edges":
+            validate_method_objective(self.solver, spec.name)
+        elif self.strategy == "recursive":
+            if spec.reads_assignment_market:
+                raise ValueError(
+                    "recursive takes a boundary or distance objective, "
+                    f"not {spec.name!r}."
+                )
+            if spec.name != "cut_edges":
+                validate_method_objective(self.solver, spec.name)
+        elif self.strategy != "pipeline" and spec.name != "cut_edges":
+            raise ValueError(
+                f"strategy {self.strategy!r} brings its own objective; "
+                "objective must stay cut_edges."
+            )
+        if spec.reads_assignment_market:
+            self._check_market(spec.name)
+
+    def _check_market(self, use: str) -> None:
+        """A use that builds the assignment market needs its selectors."""
+        if use != "choice_welfare" and self.program_population != "All":
+            raise ValueError(f"{use} requires program_population='All'.")
+        if self._data_scenario.filter(
+            "optimization", "geography_vintage"
+        ) != self._data_scenario.filter("assignment", "geography_vintage"):
+            raise ValueError(
+                f"{use} requires matching optimization and assignment "
+                "geography_vintage values."
+            )
+
     def _validate_school_distance(self) -> None:
-        if self.compactness_objective not in {
-            "cut_edges",
-            "school_distance",
-            "average_distance",
-        }:
-            raise ValueError(
-                "compactness_objective must be one of: cut_edges, school_distance, average_distance."
-            )
-        if self.compactness_objective != "cut_edges" and self.solver == "recom":
-            raise ValueError(
-                "compactness_objective applies to CP/MIP solvers; recom takes "
-                "recom_objective: school_distance instead."
-            )
         weights = []
         for name in ("school_distance_area_weight", "school_distance_student_weight"):
             value = getattr(self, name)
@@ -711,9 +692,14 @@ class OptimizationConfig:
         A weighted graph can also serve unit-cut and distance objectives. The
         legacy ``weight_edges`` flag still controls each problem's edge cost.
         """
-        return self.weight_edges or any(
+        return self.uses_weighted_edges or any(
             step.objective == "boundary_perimeter" for step in self.steps
         )
+
+    @property
+    def uses_weighted_edges(self) -> bool:
+        """Whether this config's problems cost boundaries in metres."""
+        return self.weight_edges or self.objective == "boundary_perimeter"
 
     # ------------------------------------------------------------------ #
     # scenario-backed data settings
@@ -857,7 +843,6 @@ class OptimizationConfig:
             # recom reads it; the iterative strategies read their own copy.
             "budget_accounting": self.budget_accounting,
             **self.recom_settings().as_options(),
-            "recom_objective": self.recom_objective,
             "capacity_match_unassigned_weight": self.capacity_match_unassigned_weight,
             "capacity_match_designated_weight": self.capacity_match_designated_weight,
             "objective_weights": self.objective_weights,

@@ -123,11 +123,12 @@ class Dataset:
         return G
 
     def _uses_school_distance(self, config=None) -> bool:
+        """Whether the config's objective weighs nodes by land area."""
         config = config or self.config
-        return (
-            config.compactness_objective == "school_distance"
-            or config.recom_objective == "school_distance"
-        )
+        terms = {config.objective}
+        if config.objective == "weighted_sum":
+            terms.update(config.objective_weights or {})
+        return "school_distance" in terms
 
     @staticmethod
     def _partition_payload(level: LevelSpec) -> str:
@@ -292,7 +293,7 @@ class Dataset:
         if (
             level.unit != self.ingest.unit
             or config.unit != self.ingest.unit
-            or (config.weight_edges and not self.config.graph_weight_edges)
+            or (config.uses_weighted_edges and not self.config.graph_weight_edges)
         ):
             raise ValueError(
                 "Pipeline steps must preserve the dataset's geography unit; weighted objectives require boundary lengths in the dataset."
@@ -325,8 +326,8 @@ class Dataset:
             shortage=config.shortage * constraint_multiplier,
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
-            weight_edges=config.weight_edges,
-            compactness_objective=config.compactness_objective,
+            weight_edges=config.uses_weighted_edges,
+            objective=config.objective,
             school_distance_area_weight=config.school_distance_area_weight,
             school_distance_student_weight=config.school_distance_student_weight,
             fixed=fixed,

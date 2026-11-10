@@ -50,7 +50,7 @@ optimization_defaults:
   shortage: -1
   # boundary_prop is set per task: 1.15 x the hint's own cut-edge share.
 
-  recom_objective: capacity_match
+  objective: capacity_match
   capacity_match_unassigned_weight: 1.0
   capacity_match_designated_weight: 1.0
   recom_burst_length: 25

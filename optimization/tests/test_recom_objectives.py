@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -207,6 +208,24 @@ def test_designation_split_counts_unassigned_and_designated(split, expected) -> 
     assert split_counts == pytest.approx(expected)
 
 
+ALL_PROGRAMS = {
+    "scenario": "legacy",
+    "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+}
+
+
+def test_market_objectives_need_the_all_program_population_at_config() -> None:
+    with pytest.raises(ValueError, match="program_population='All'"):
+        OptimizationConfig(
+            levels=["BlockGroup_0"], solver="recom", objective="capacity_match"
+        )
+
+
+def _with(problem, objective):
+    """``problem`` asking for ``objective``."""
+    return replace(problem, objective=objective)
+
+
 def _recom(**options):
     options.setdefault("recom_iterations", 40)
     options.setdefault("recom_burst_length", 5)
@@ -266,10 +285,9 @@ def test_capacity_match_reaches_the_weighted_optimum(
     )[0]
 
     solution = _recom(
-        recom_objective="capacity_match",
         capacity_match_unassigned_weight=unassigned_weight,
         capacity_match_designated_weight=designated_weight,
-    ).solve(problem)
+    ).solve(_with(problem, "capacity_match"))
 
     assert solution.status == "FEASIBLE"
     assert solution.objective == pytest.approx(best)
@@ -286,10 +304,9 @@ def test_capacity_match_weights_change_the_answer(monkeypatch) -> None:
 
     def solve(unassigned_weight, designated_weight):
         return _recom(
-            recom_objective="capacity_match",
             capacity_match_unassigned_weight=unassigned_weight,
             capacity_match_designated_weight=designated_weight,
-        ).solve(_choice_problem())
+        ).solve(_choice_problem(objective="capacity_match"))
 
     # Unassigned students dominate: everyone is placed, three by designation.
     placed = solve(10.0, 1.0)
@@ -423,7 +440,7 @@ def test_aa_capacity_match_ignores_the_citywide_share_of_a_ge_program(
 def test_aa_capacity_match_runs_under_recom(monkeypatch) -> None:
     _use_market(monkeypatch, _capacity_market())
 
-    solution = _recom(recom_objective="aa_capacity_match").solve(_choice_problem())
+    solution = _recom().solve(_choice_problem(objective="aa_capacity_match"))
 
     # Every program here is a zoned GE seat, so it agrees with capacity_match.
     assert solution.status == "FEASIBLE"
@@ -438,7 +455,8 @@ def test_aa_capacity_match_needs_a_positive_weight() -> None:
     with pytest.raises(ValueError, match="aa_capacity_match needs a positive"):
         OptimizationConfig(
             levels=["BlockGroup_0"],
-            recom_objective="aa_capacity_match",
+            solver="recom",
+            objective="aa_capacity_match",
             capacity_match_unassigned_weight=0.0,
             capacity_match_designated_weight=0.0,
         )
@@ -450,7 +468,7 @@ def test_welfare_objective_maximizes_mid_welfare(monkeypatch) -> None:
     problem = _choice_problem()
     best = max(_scores(market, problem, "welfare"), key=lambda item: item[0])[0]
 
-    solution = _recom(recom_objective="welfare").solve(problem)
+    solution = _recom().solve(_with(problem, "matching_welfare"))
 
     expected = finite_grid_oracle(
         burst_objectives.preprocess_mid_market(market, problem),
@@ -461,7 +479,7 @@ def test_welfare_objective_maximizes_mid_welfare(monkeypatch) -> None:
     assert solution.status == "FEASIBLE"
     assert solution.objective == pytest.approx(expected.welfare)
     assert solution.objective == pytest.approx(best)
-    assert solution.metadata["objective_kind"] == "welfare"
+    assert solution.metadata["objective_kind"] == "matching_welfare"
 
 
 def test_welfare_objective_still_enforces_boundary_prop(monkeypatch) -> None:
@@ -469,9 +487,9 @@ def test_welfare_objective_still_enforces_boundary_prop(monkeypatch) -> None:
 
     _use_market(monkeypatch, _welfare_market())
     # Both splits cut two of the four edges; a cap of one rules both out.
-    problem = _choice_problem(boundary_prop=0.25)
+    problem = _choice_problem(boundary_prop=0.25, objective="matching_welfare")
 
-    solution = _recom(recom_objective="welfare").solve(problem)
+    solution = _recom().solve(problem)
 
     assert solution.status == "UNKNOWN"
     assert solution.metadata["initial_feasible"] is False
@@ -482,40 +500,37 @@ def test_choice_objectives_require_the_all_program_population(monkeypatch) -> No
     _use_market(monkeypatch, _welfare_market())
 
     with pytest.raises(ValueError, match="program_population='All'"):
-        _recom(recom_objective="welfare").solve(
-            _choice_problem(program_population="GE")
+        _recom().solve(
+            _choice_problem(program_population="GE", objective="matching_welfare")
         )
 
 
 def test_unknown_objective_is_rejected() -> None:
-    with pytest.raises(ValueError, match="recom_objective"):
-        _recom(recom_objective="nonsense").solve(_choice_problem())
+    with pytest.raises(ValueError, match="Unknown objective"):
+        _choice_problem(objective="nonsense")
 
 
-def test_config_passes_recom_objective_options() -> None:
-    solver = OptimizationConfig(
+def test_config_passes_objective_options() -> None:
+    config = OptimizationConfig(
         levels=["BlockGroup_0"],
         solver="recom",
-        recom_objective="capacity_match",
+        objective="capacity_match",
+        data=ALL_PROGRAMS,
         capacity_match_unassigned_weight=4,
         capacity_match_designated_weight=0.5,
-    ).make_solver()
+    )
+    solver = config.make_solver()
 
-    assert solver.options["recom_objective"] == "capacity_match"
+    assert config.strategy == "single"
     assert solver.options["capacity_match_unassigned_weight"] == 4.0
     assert solver.options["capacity_match_designated_weight"] == 0.5
-    assert (
-        OptimizationConfig(levels=["BlockGroup_0"])
-        .make_solver()
-        .options["recom_objective"]
-        == "cut_edges"
-    )
+    assert "recom_objective" not in solver.options
 
 
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"recom_objective": "bad"}, "recom_objective"),
+        ({"objective": "bad"}, "Unknown objective"),
         ({"capacity_match_unassigned_weight": -1}, "unassigned_weight"),
         (
             {"capacity_match_designated_weight": float("nan")},
@@ -523,7 +538,8 @@ def test_config_passes_recom_objective_options() -> None:
         ),
         (
             {
-                "recom_objective": "capacity_match",
+                "solver": "recom",
+                "objective": "capacity_match",
                 "capacity_match_unassigned_weight": 0,
                 "capacity_match_designated_weight": 0,
             },
@@ -531,7 +547,7 @@ def test_config_passes_recom_objective_options() -> None:
         ),
     ],
 )
-def test_config_rejects_invalid_recom_objective_options(overrides, message) -> None:
+def test_config_rejects_invalid_objective_options(overrides, message) -> None:
     with pytest.raises(ValueError, match=message):
         OptimizationConfig(levels=["BlockGroup_0"], **overrides)
 
@@ -550,7 +566,7 @@ def test_choice_objectives_refuse_a_market_without_utilities(monkeypatch) -> Non
     _use_market(monkeypatch, market)
 
     with pytest.raises(ValueError, match="no student with a choice-utility row"):
-        _recom(recom_objective="capacity_match").solve(_choice_problem())
+        _recom().solve(_choice_problem(objective="capacity_match"))
 
 
 # --------------------------------------------------------------------------- #
@@ -660,7 +676,7 @@ def test_weighted_sum_subtracts_maximized_terms(monkeypatch) -> None:
     _use_market(monkeypatch, _half_full_market())
     from optimization.objectives import heuristic_scorer
 
-    options = {"workers": 1, "objective_weights": {"welfare": 2.0}}
+    options = {"workers": 1, "objective_weights": {"matching_welfare": 2.0}}
     scorer = heuristic_scorer(_choice_problem(), "weighted_sum", options)
     welfare = burst_objectives.mid_burst_scorer(_choice_problem(), "welfare", options)
     try:
@@ -698,9 +714,8 @@ def test_weighted_sum_runs_under_recom(monkeypatch) -> None:
     _use_market(monkeypatch, _half_full_market())
 
     solution = _recom(
-        recom_objective="weighted_sum",
         objective_weights={"capacity_match": 1.0, "fill_polarization": 0.5},
-    ).solve(_choice_problem())
+    ).solve(_choice_problem(objective="weighted_sum"))
 
     assert solution.status == "FEASIBLE"
     assert solution.metadata["objective_kind"] == "weighted_sum"
@@ -712,4 +727,4 @@ def test_weighted_sum_runs_under_recom(monkeypatch) -> None:
 
 def test_weighted_sum_config_needs_weights() -> None:
     with pytest.raises(ValueError, match="needs objective_weights"):
-        OptimizationConfig(solver="recom", recom_objective="weighted_sum")
+        OptimizationConfig(solver="recom", objective="weighted_sum")

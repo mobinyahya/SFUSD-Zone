@@ -105,7 +105,7 @@ tasks:
       - name: distance
         level: Block_0
         method: cp_bool
-        objective: average_squared_distance
+        objective: school_distance
         time_limit: 300
         capacity_reference: shape
         inputs:
