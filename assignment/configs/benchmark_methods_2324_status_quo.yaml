@@ -1,0 +1,45 @@
+# Status-quo baseline for benchmark_methods_2324_assignment.yaml.
+#
+# Today's 2013 attendance-area map (Con1, one zone per attendance area) under
+# the status_quo policy: open choice (restrict-zone off), zone priority at the
+# student's own attendance area, sibling access, designation. Same market and
+# preferences as the generated-zone runs: summer-26-zoning 2023-24 KG Round 1
+# applicants, special_programs exclude_only_special, utility.2324.exp8 choice
+# model with list length 0.8 x submitted length, 25 iterations.
+#
+# summer-26-zoning binds no zone maps, so the data block adds Con1 (the same
+# source every assignment scenario names); nothing else about the market changes.
+#
+# Local:   uv run sfusd-match simulate --config assignment/configs/benchmark_methods_2324_status_quo.yaml
+# Cluster: uv run python -m assignment.slurm submit --config assignment/configs/benchmark_methods_2324_status_quo.yaml
+
+data:
+  scenario: summer-26-zoning
+  overrides:
+    sources:
+      assignment.zones:
+        Con1: zones.common.con1
+    filters:
+      assignment:
+        special_programs: exclude_only_special
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/benchmark_methods_2324_combined/assignments_status_quo
+output_dir: /soalnas/share/data/school_choice/local_runs/benchmark_methods_2324_combined/assignments_status_quo/
+
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: true
+
+r1-only: true
+save-assignment: true
+subconfigs:
+- status_quo
+utility-model:
+  enable: true
+  designate-lp-for-all: false
+  list-length: 0.8*round(real_length)

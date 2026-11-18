@@ -1,0 +1,57 @@
+# Assignment for every feasible zoning of benchmark_methods_2324_combined.
+#
+# The combined sweep is benchmark_methods_2324 with its MIP tasks taken from
+# benchmark_methods_2324_mipfix and its multilevel tasks from
+# benchmark_methods_2324_release (analysis/benchmark_methods_2324/
+# combine_sweeps.py). Each run's final zoning replaces the policies' zone map
+# (generated-zones, Block building blocks), so the two policies differ only in
+# their reserves:
+#   small_zones+no_reserves     guard-rails off
+#   medium_zones+reserves_05frl soft guard-rails, median freelunch_prob split,
+#                               50/50 at GE programs (citywide GE programs keep
+#                               the default citywide-reserve-ratios [0.57, 0.43])
+# Neither gives attendance-area priority: zone priority (weight 4) is the only
+# geographic priority, and the 2013 attendance areas only label students for
+# the per-area metrics. benchmark_methods_2324_status_quo.yaml is the baseline.
+#
+# Market: each run's own data (summer-26-zoning, 2023-24 KG Round 1 applicants,
+# 2020 geography, Mission Bay as 1731), with the assignment filter
+# special_programs: exclude_only_special added by plan_assignments.py to match
+# the optimization. This file's data block is ignored for generated zones and
+# kept equal to that market for reference.
+#
+# Preferences come from the utility.2324.exp8 choice model, list length
+# 0.8 x the student's submitted length.
+#
+# Plan (on scdt): uv run python -m analysis.benchmark_methods_2324.plan_assignments \
+#   --root /soalnas/share/data/school_choice/local_runs/benchmark_methods_2324_combined \
+#   --config assignment/configs/benchmark_methods_2324_assignment.yaml
+
+data:
+  scenario: summer-26-zoning
+  overrides:
+    filters:
+      assignment:
+        special_programs: exclude_only_special
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/dummy/
+# replaced by the planner
+
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+export_heatmaps: true
+reuse_assignments: true
+
+r1-only: true
+save-assignment: true
+subconfigs:
+- small_zones+no_reserves
+- medium_zones+reserves_05frl
+utility-model:
+  enable: true
+  designate-lp-for-all: false
+  list-length: 0.8*round(real_length)
