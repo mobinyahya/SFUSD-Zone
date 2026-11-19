@@ -27,8 +27,9 @@ output_dir: /soalnas/share/data/school_choice/local_runs/attendance_areas/restri
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
-# The per-area reports run in two processes: matching tasks hold 2 CPUs.
-metric-workers: 2
+# Slurm metrics jobs give each worker one CPU, so the per-area reports run in
+# that worker's own process.
+metric-workers: 1
 export_heatmaps: true
 reuse_assignments: true
 
