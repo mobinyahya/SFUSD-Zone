@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import re
-from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -487,8 +486,6 @@ def _filter_to_population(
 # normalizing costs ~0.8 s a school table and ~5 s a student table. The
 # fingerprint covers source contents, selectors, capacity scenarios and planned
 # schools, so any change misses.
-_RECORD_MEMO: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
-_RECORD_MEMO_SIZE = 16
 ASSIGNMENT_STUDENT_ROLE = "assignment.students"
 
 
@@ -497,18 +494,11 @@ def _scenario_records(
 ) -> pd.DataFrame:
     """``loader(data, role, filter_group=..., low_memory=False)``, read once a process.
 
-    Every caller gets its own copy, so callers may modify what they receive.
+    The ``loaders.tables`` readers memoise in process and on disk
+    (``loaders.table_cache``) and return a fresh frame each call, so callers
+    may modify what they receive.
     """
-    key = (loader, data.source_fingerprint, role, filter_group)
-    frame = _RECORD_MEMO.get(key)
-    if frame is None:
-        frame = loader(data, role, filter_group=filter_group, low_memory=False)
-        _RECORD_MEMO[key] = frame
-        while len(_RECORD_MEMO) > _RECORD_MEMO_SIZE:
-            _RECORD_MEMO.popitem(last=False)
-    else:
-        _RECORD_MEMO.move_to_end(key)
-    return frame.copy()
+    return loader(data, role, filter_group=filter_group, low_memory=False)
 
 
 def load_school_table(data: DataScenario) -> pd.DataFrame:

@@ -767,20 +767,13 @@ def test_area_student_stats_are_the_aggregated_student_rows(tmp_path, scenario_f
     pd.testing.assert_frame_equal(stats, expected)
 
 
-def test_scenario_records_are_read_once_and_copied(scenario_factory, monkeypatch):
+def test_scenario_tables_are_copies(scenario_factory):
+    # The loaders.tables memo serves repeated reads; each caller gets its own
+    # frame, so a caller's edits never reach the next one.
     scenario = scenario_factory()
-    calls = []
+    first = loaders.load_school_table(scenario)
+    original = first.copy()
+    first.iloc[0, 0] = None
+    second = loaders.load_school_table(scenario)
 
-    def fake_loader(data, role, *, filter_group, low_memory):
-        calls.append((role, filter_group, low_memory))
-        return pd.DataFrame({"school_id": [1, 2]})
-
-    monkeypatch.setattr(loaders, "_RECORD_MEMO", type(loaders._RECORD_MEMO)())
-    first = loaders._scenario_records(fake_loader, scenario, loaders.SCHOOL_ROLE)
-    first.loc[0, "school_id"] = 99
-    second = loaders._scenario_records(fake_loader, scenario, loaders.SCHOOL_ROLE)
-
-    assert calls == [(loaders.SCHOOL_ROLE, "optimization", False)]
-    assert second["school_id"].tolist() == [1, 2]
-    loaders._scenario_records(fake_loader, scenario, loaders.PROGRAM_ROLE)
-    assert len(calls) == 2
+    pd.testing.assert_frame_equal(second, original)
