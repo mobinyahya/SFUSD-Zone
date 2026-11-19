@@ -743,10 +743,10 @@ def policy_config(optimization_config) -> dict:
         encoding="utf-8"
     ) as stream:
         config = yaml.safe_load(stream)
-    # The base config enables the utility model for its own runs; a MID
-    # market matches the submitted lists, as every matching config does, so
-    # only a policy that turns the utility model on itself is rejected.
-    config["utility-model"] = {**config.get("utility-model", {}), "enable": False}
+    # base_config leaves utility-model.enable unset (null), which a MID market
+    # reads as the submitted lists. A policy that sets it true is rejected by
+    # the shared-market whitelist (policy_market.unmodelled_policy_settings),
+    # as is every other setting the market does not model.
     policy = getattr(optimization_config, "matching_policy", None)
     policy_path = (
         POLICY_CONFIG_DIR / "status_quo.yaml"

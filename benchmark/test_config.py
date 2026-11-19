@@ -198,6 +198,28 @@ def test_saa_manifest_hashes_matching_policy_files():
     }
 
 
+def test_market_manifest_hashes_the_runs_own_policy_file():
+    # A run optimized for a matching_policy is keyed by that policy's config,
+    # so editing the policy changes its task id (and the status quo's does not).
+    config = OptimizationConfig(
+        levels=["BlockGroup_0"],
+        solver="mip",
+        strategy="saa",
+        data={
+            "scenario": "legacy",
+            "overrides": {"filters": {"optimization": {"program_population": "All"}}},
+        },
+    )
+    config.matching_policy = "restrictive_aa_sib_ctip_reserves"
+
+    manifest = _benchmark_source_manifest(config, reads_market=True)
+
+    assert set(manifest["matching_policy"]) == {
+        "assignment/configs/base_config.yaml",
+        "assignment/configs/policy_configs/restrictive_aa_sib_ctip_reserves.yaml",
+    }
+
+
 @pytest.mark.parametrize("strategy, reads_market", [("saa", True), ("single", False)])
 def test_market_manifest_tracks_other_vintage_blocks(strategy, reads_market):
     vintage = {"geography_vintage": "2020"}

@@ -295,7 +295,12 @@ class SimulationSweep:
             # even when their methods, seeds or time limits differ.
             reads_market = _reads_assignment_market(config)
             manifest_key = stable_hash(
-                (data_key, config.capacity_scenario, reads_market)
+                (
+                    data_key,
+                    config.capacity_scenario,
+                    reads_market,
+                    getattr(config, "matching_policy", None),
+                )
             )
             source_manifest = source_manifests.get(manifest_key)
             if source_manifest is None:
@@ -522,10 +527,17 @@ def _benchmark_source_manifest(
         },
     }
     if matching_strategy:
+        from optimization.data.mid import policy_config_path
+
         root = Path(__file__).resolve().parents[1]
+        # The market is base_config plus the run's own policy config (the
+        # status quo without a matching_policy), so both files key the run.
+        policy = getattr(config, "matching_policy", None)
         policy_files = (
             root / "assignment/configs/base_config.yaml",
-            root / "assignment/configs/policy_configs/status_quo.yaml",
+            root / "assignment/configs/policy_configs/status_quo.yaml"
+            if policy is None
+            else policy_config_path(policy),
         )
         manifest["matching_policy"] = {
             str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()

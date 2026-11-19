@@ -179,6 +179,12 @@ class Configerator:
                 # Local and cluster path files now contain output paths only.
                 path_config = self._load_yaml(f"{CONFIGS_DIR}{LOCAL_PATH_CONFIG_NAME}")
                 base_config.update(path_config)
+                # base_config leaves utility-model.enable for each matching
+                # config to choose; the per-user default config keeps the
+                # utility model on, as base_config set it before.
+                utility_model = base_config.setdefault("utility-model", {})
+                if utility_model.get("enable") is None:
+                    utility_model["enable"] = True
                 # Write atomically: parallel simulations (e.g. the pipeline
                 # script launches every run at once) all auto-create the same
                 # user config on first use; a plain open(..., "w") truncates

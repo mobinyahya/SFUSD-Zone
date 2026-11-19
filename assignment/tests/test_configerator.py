@@ -12,7 +12,30 @@ def _valid_config():
     config_root = Path(CONFIGS_DIR)
     config = yaml.safe_load((config_root / "base_config.yaml").read_text())
     config.update(yaml.safe_load((config_root / "local_path_config.yaml").read_text()))
+    # base_config leaves the choice to each matching config.
+    config["utility-model"]["enable"] = False
     return config
+
+
+def test_base_config_leaves_the_utility_model_unset():
+    config_root = Path(CONFIGS_DIR)
+    base = yaml.safe_load((config_root / "base_config.yaml").read_text())
+    assert base["utility-model"]["enable"] is None
+
+
+def test_a_config_must_choose_the_utility_model():
+    config = _valid_config()
+    config["utility-model"]["enable"] = None
+
+    with pytest.raises(ValueError):
+        Configerator.from_config(config)
+
+
+@pytest.mark.parametrize("enable", [True, False])
+def test_either_utility_model_choice_is_accepted(enable):
+    config = _valid_config()
+    config["utility-model"]["enable"] = enable
+    Configerator.from_config(config)
 
 
 def test_aggregate_metrics_export_is_disabled_by_default():
