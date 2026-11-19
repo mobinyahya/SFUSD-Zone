@@ -76,6 +76,7 @@ _INTEGERS = {
     "choice_access_completion_limit": 0,
     "dw_recom_samples": 0,
     "mid_lottery_scale": 1,
+    "mid_reserve_seed": 0,
     "saa_num_seeds": 1,
     "zoned_transport_workers": 1,
     "stable_cutoff_num_seeds": 1,
@@ -259,6 +260,15 @@ class OptimizationConfig:
     # per-student fit for one cohort) or "stated" (each applicant's submitted
     # list, ordinal only). Use "stated" for cohorts the estimate does not cover.
     mid_preference_source: str = "estimate"
+    # The assignment policy (assignment/configs/policy_configs/<name>.yaml) the
+    # MID market models: its CTIP option, priority weights, out-of-zone access
+    # (restrict-zone, sibling-access, tk-access) and reserves, so a zoning is
+    # optimized for the policy it will be matched under. null keeps the
+    # status-quo market (status_quo.yaml with the 2013 attendance-area tier).
+    # Read by the ReCom MID scorers and capacity references only.
+    matching_policy: str | None = None
+    # The lottery a reserve policy's match is drawn from (optimization.reserve_da).
+    mid_reserve_seed: int = 0
     mid_transport_bounds: bool = True
     mid_complementary_slackness: bool = False
     mid_complementary_slackness_slack: float | str = "auto"
@@ -626,6 +636,7 @@ class OptimizationConfig:
         self.objective_weights = checked_objective_weights(self.objective_weights)
         if self.objective == "weighted_sum" and self.objective_weights is None:
             raise ValueError("The weighted_sum objective needs objective_weights.")
+        self._validate_matching_policy()
         self._validate_objective(_solve_local)
         if self.strategy == "pipeline":
             from optimization.pipeline import step_config
@@ -677,6 +688,20 @@ class OptimizationConfig:
         if coerce:
             setattr(self, name, value)
 
+    def _validate_matching_policy(self) -> None:
+        if self.matching_policy is None:
+            return
+        if not isinstance(self.matching_policy, str) or not self.matching_policy:
+            raise ValueError("matching_policy must name a policy config or be null.")
+        from optimization.data.mid import policy_config_path
+
+        policy_config_path(self.matching_policy)
+        if self.strategy not in {"pipeline", "single", "recursive"}:
+            raise ValueError(
+                f"matching_policy is modelled by the ReCom MID scorers only, not "
+                f"the {self.strategy} strategy."
+            )
+
     def _validate_objective(self, solve_local: bool) -> None:
         """Check ``objective`` names a registered objective this run can solve.
 
@@ -691,6 +716,14 @@ class OptimizationConfig:
             validate_method_objective(self.solver, spec.name)
             if spec.reads_assignment_market:
                 self._check_market(spec.name)
+                if self.matching_policy is not None and (
+                    self.solver != "recom"
+                    or spec.name in {"saa_welfare", "choice_welfare"}
+                ):
+                    raise ValueError(
+                        f"matching_policy is modelled by the ReCom MID scorers "
+                        f"only, not {self.solver} {spec.name}."
+                    )
 
     def _check_market(self, use: str) -> None:
         """A use that builds the assignment market needs its selectors."""

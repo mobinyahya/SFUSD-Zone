@@ -6,7 +6,11 @@ import math
 import time
 
 from optimization.data.initial_solutions import initial_solution
-from optimization.data.mid import build_mid_market, preprocess_mid_market
+from optimization.data.mid import (
+    build_mid_market,
+    preprocess_mid_market,
+    require_label_access,
+)
 from optimization.levels import LevelSpec
 from optimization.mid_oracle import (
     MidOracleResult,
@@ -60,10 +64,9 @@ class MidDecompositionStrategy(Strategy):
             problem.hint = hint.assignment
 
         preprocessing_start = time.perf_counter()
-        market = preprocess_mid_market(
-            build_mid_market(problem, dataset.config),
-            problem,
-        )
+        market = build_mid_market(problem, dataset.config)
+        require_label_access(market, "The mid_decomp strategy")
+        market = preprocess_mid_market(market, problem)
         preprocessing_seconds = time.perf_counter() - preprocessing_start
 
         lottery_scale = int(self.options.get("mid_lottery_scale", 20))

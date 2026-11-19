@@ -208,7 +208,19 @@ def resolve_generated_zone_batch_config(
     resolved = []
     for target, target_id in zip(targets, target_ids, strict=True):
         zone_path = Path(target["zone_file"]).expanduser().resolve()
+        # A target may name the policies it is matched under (a run optimized
+        # for one matching_policy); otherwise it takes every subconfig.
+        wanted = target.get("policies")
+        if wanted is not None:
+            unknown = sorted(set(wanted) - set(policy_names))
+            if unknown:
+                raise ValueError(
+                    f"Target {target_id} asks for policies {unknown}, which the "
+                    f"matching config does not list (subconfigs: {policy_names})."
+                )
         for template in templates:
+            if wanted is not None and template["name"] not in wanted:
+                continue
             config = copy.deepcopy(template["config"])
             config["data"] = copy.deepcopy(target_data[target_id])
             _inject_generated_zone(

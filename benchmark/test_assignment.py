@@ -644,3 +644,31 @@ def test_matching_requires_target_data_and_agreeing_selectors(tmp_path):
         matching_data(data)
     data["overrides"]["filters"]["assignment"] = {"capacity_scenario": "ideal_baseline_aug_2026"}
     assert matching_data(data) == data
+
+
+def test_a_target_naming_policies_is_matched_under_those_alone(tmp_path):
+    base_config = load_custom_config(ASSIGNMENT_CONFIG)
+    policies = list(base_config["subconfigs"])
+    target = {
+        "id": "run-root",
+        "zone_file": tmp_path / "assignment_zones.csv",
+        "zone_building_blocks": "block_group",
+        "geography_vintage": "2020",
+        "data": MATCHING_DATA,
+    }
+    _, every = resolve_generated_zone_batch_config(
+        base_config, [target], assignment_folder=tmp_path
+    )
+    assert [entry["policy"] for entry in every] == policies
+
+    _, one = resolve_generated_zone_batch_config(
+        base_config, [{**target, "policies": policies[-1:]}], assignment_folder=tmp_path
+    )
+    assert [entry["policy"] for entry in one] == policies[-1:]
+
+    with pytest.raises(ValueError, match="does not list"):
+        resolve_generated_zone_batch_config(
+            base_config,
+            [{**target, "policies": ["not_a_policy"]}],
+            assignment_folder=tmp_path,
+        )

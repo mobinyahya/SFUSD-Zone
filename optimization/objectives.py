@@ -293,7 +293,7 @@ def _heuristic_domains(
 
 
 def _welfare_solver(problem: ZoneProblem, method: str, options: Mapping[str, Any]):
-    from optimization.data.mid import build_mid_market
+    from optimization.data.mid import build_mid_market, require_label_access
     from optimization.solvers.mid import MidCpIntSolver, MidCpSatSolver
 
     if problem.program_population != "All":
@@ -304,6 +304,7 @@ def _welfare_solver(problem: ZoneProblem, method: str, options: Mapping[str, Any
         )
     start = time.perf_counter()
     market = build_mid_market(problem, problem.optimization_config)
+    require_label_access(market, f"The {method} matching_welfare model")
     preprocessing_seconds = time.perf_counter() - start
     if market.utility_student_count == 0:
         raise ValueError(

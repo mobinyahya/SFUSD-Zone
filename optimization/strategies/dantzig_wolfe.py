@@ -34,7 +34,7 @@ from dataclasses import replace
 
 from optimization.branch_price import branch_and_price
 from optimization.data.initial_solutions import FeasibleHintError, initial_solution
-from optimization.data.mid import build_mid_market
+from optimization.data.mid import build_mid_market, require_label_access
 from optimization.data.saa import build_saa_market
 from optimization.dw_options import DW_OBJECTIVES
 from optimization.solution import ZoneSolution
@@ -57,8 +57,10 @@ def build_objective(problem, config, options):
     if kind == "boundary":
         return BoundaryZoneObjective()
     if kind == "mid":
+        market = build_mid_market(problem, config)
+        require_label_access(market, "Dantzig-Wolfe pricing")
         return MidZoneObjective(
-            build_mid_market(problem, config),
+            market,
             int(options.get("mid_lottery_scale", 20)),
         )
     if kind == "stable_matching":

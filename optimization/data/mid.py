@@ -56,6 +56,15 @@ class MidStudent:
     #: any ``frl_estimate``). It rides along with the type so school-level FRL
     #: composition can be read off a match; it never changes the match.
     frl: float = 0.0
+    #: Policy access (``OptimizationConfig.matching_policy``): per alternative,
+    #: the priority tier the student holds at a zoned program *outside* their
+    #: zone, or -1 when the policy gives them no access there. ``priorities``
+    #: is then the in-zone tier. ``None`` (no policy): zoned programs are
+    #: reachable only in zone, at ``priorities``.
+    open_priorities: tuple[int, ...] | None = None
+    #: Set only in reserve markets, which keep one type per student.
+    student_id: str | None = None
+    reserve_class: int = -1
 
 
 @dataclass(frozen=True)
@@ -70,6 +79,27 @@ class MidType:
     #: Every member follows the same path through the match, so a school's FRL
     #: count is ``sum_t frl_sum_t * mass_t / lottery_scale``.
     frl_sum: float = 0.0
+    #: See ``MidStudent``; types differing in any of these never merge.
+    open_priorities: tuple[int, ...] | None = None
+    student_id: str | None = None
+    reserve_class: int = -1
+
+
+@dataclass(frozen=True)
+class ReserveSpec:
+    """A matching policy's reserves (``guard-rails`` >= 0), as the DA runs them.
+
+    ``fractions`` maps each reserved program to its per-class seat fractions
+    (``assignment.student_assignment.da.guardrail_setup``); a program absent
+    from it has none. Every type of a reserve market is one student, matched
+    by a discrete deferred acceptance on one lottery drawn from ``seed``
+    (``optimization.reserve_da``).
+    """
+
+    fractions: dict[str, tuple[float, ...]]
+    num_classes: int
+    strict: bool
+    seed: int
 
 
 @dataclass(frozen=True)
@@ -81,6 +111,9 @@ class MidMarket:
     utility_student_count: int
     utility_handling: str
     utility_scale: int = CP_SAT_SCALE
+    #: The ``matching_policy`` the market was built for (``None``: status quo).
+    policy: str | None = None
+    reserves: ReserveSpec | None = None
 
     def __post_init__(self) -> None:
         program_ids = [program.program_id for program in self.programs]
@@ -154,6 +187,26 @@ class MidMarket:
                 raise ValueError(
                     "MID scaled utility sums must be non-increasing by rank."
                 )
+            if student_type.open_priorities is not None and (
+                len(student_type.open_priorities) != len(student_type.programs)
+                or any(
+                    isinstance(tier, bool) or not isinstance(tier, int) or tier < -1
+                    for tier in student_type.open_priorities
+                )
+            ):
+                raise ValueError(
+                    "MID open priorities must align with the preferences and be "
+                    "integers of at least -1."
+                )
+            if self.reserves is not None and (
+                student_type.count != 1
+                or student_type.student_id is None
+                or not 0 <= student_type.reserve_class < self.reserves.num_classes
+            ):
+                raise ValueError(
+                    "A reserve market keeps one student per type, each with a "
+                    "reserve class."
+                )
         if sum(student_type.count for student_type in self.types) != self.student_count:
             raise ValueError("MID type counts must sum to the student count.")
 
@@ -165,6 +218,28 @@ class MidMarket:
     def preference_count(self) -> int:
         return sum(len(student_type.programs) for student_type in self.types)
 
+    @property
+    def policy_access(self) -> bool:
+        """Whether access or priority depends on more than the seat label."""
+        return self.reserves is not None or any(
+            student_type.open_priorities is not None for student_type in self.types
+        )
+
+
+def require_label_access(market: MidMarket, label: str) -> None:
+    """Fail for a model that reads access off the seat label alone.
+
+    The CP/MIP welfare models, SAA and the zoned transport bound know
+    attendance-area seats only as "in zone or not"; a policy market's
+    out-of-zone access and reserves are modelled by the least-cutoff oracle
+    and the reserve DA, which the ReCom scorers and capacity references use.
+    """
+    if getattr(market, "policy_access", False):
+        raise ValueError(
+            f"{label} does not model matching policy {market.policy!r} "
+            "(out-of-zone access or reserves); use it with ReCom objectives."
+        )
+
 
 @dataclass(frozen=True)
 class MidStudentMarket:
@@ -172,6 +247,8 @@ class MidStudentMarket:
     students: tuple[MidStudent, ...]
     utility_student_count: int
     utility_handling: str
+    policy: str | None = None
+    reserves: ReserveSpec | None = None
 
 
 class _StaticZones:
@@ -191,19 +268,24 @@ def build_mid_student_market(
     if handling not in MID_UTILITY_HANDLING:
         raise ValueError(f"Unknown MID utility handling {handling!r}.")
 
+    policy_name = getattr(optimization_config, "matching_policy", None)
     assignment_market = _assignment_market(optimization_config)
     priority_config = assignment_market.config
     policies = priority_config["policies"]
     ctip_options = priority_config["ctip-options"]
     if len(policies) != 1 or len(ctip_options) != 1:
         raise ValueError(
-            "Matching welfare requires one status-quo policy and CTIP option."
+            "The MID market requires a policy with one zone policy and one CTIP option."
         )
-    priorities = PriorityGenerator(assignment_market).get_base_policy_priorities(
-        policies[0],
-        ctip_options[0],
-        zone_priority_matrix=_attendance_area_priority_matrix(assignment_market),
-    )
+    open_priorities = None
+    if policy_name is None:
+        priorities = PriorityGenerator(assignment_market).get_base_policy_priorities(
+            policies[0],
+            ctip_options[0],
+            zone_priority_matrix=_attendance_area_priority_matrix(assignment_market),
+        )
+    else:
+        priorities, open_priorities = policy_priorities(assignment_market)
 
     source = getattr(optimization_config, "mid_preference_source", "estimate")
     if source not in MID_PREFERENCE_SOURCES:
@@ -253,9 +335,7 @@ def build_mid_student_market(
         # a program holding both (loaders.tables.attach_attendance_area_capacity).
         attendance_seats = row.get("attendance_area_capacity")
         if attendance_seats is None or pd.isna(attendance_seats):
-            raise ValueError(
-                f"Program {program_id} has no attendance-area seat count."
-            )
+            raise ValueError(f"Program {program_id} has no attendance-area seat count.")
         attendance_seats = _integer(
             attendance_seats, f"attendance-area seats for {program_id}"
         )
@@ -290,6 +370,12 @@ def build_mid_student_market(
     # utility and priority columns have to be narrowed in the same order.
     available_programs = retained_programs
 
+    reserves, classes = None, None
+    if policy_name is not None and priority_config.get("guard-rails", -1) != -1:
+        reserves, classes = policy_reserves(
+            assignment_market, programs, optimization_config
+        )
+
     area_column = _student_area_column(problem)
     students_frame = assignment_market.students.student_data
     if area_column not in students_frame:
@@ -308,24 +394,32 @@ def build_mid_student_market(
             )
         student_key = _identity_text(student_id)
         frl = float(frl_values.loc[student_id])
+        row_index = assignment_market.students.studentno2idx[student_id]
         if student_key not in utility.index:
-            student = MidStudent(node, (), (), (), (), frl)
+            student = MidStudent(
+                node, (), (), (), (), frl, None if open_priorities is None else ()
+            )
         else:
             utility_students += 1
             values = utility.loc[student_key, available_programs].to_numpy(dtype=float)
-            tiers = np.asarray(
-                [
-                    priorities[
-                        assignment_market.students.studentno2idx[student_id],
-                        program_indices[p] - 1,
-                    ]
-                    for p in available_programs
-                ],
-                dtype=float,
+            columns = [program_indices[p] - 1 for p in available_programs]
+            tiers = np.asarray(priorities[row_index, columns], dtype=float)
+            open_tiers = (
+                None
+                if open_priorities is None
+                else np.asarray(open_priorities[row_index, columns], dtype=float)
             )
             student = replace(
-                make_mid_student(node, available_programs, values, tiers, handling),
+                make_mid_student(
+                    node, available_programs, values, tiers, handling, open_tiers
+                ),
                 frl=frl,
+            )
+        if reserves is not None:
+            student = replace(
+                student,
+                student_id=student_key,
+                reserve_class=int(classes[row_index]),
             )
         students.append(student)
 
@@ -334,6 +428,8 @@ def build_mid_student_market(
         students=tuple(students),
         utility_student_count=utility_students,
         utility_handling=handling,
+        policy=policy_name,
+        reserves=reserves,
     )
 
 
@@ -349,6 +445,8 @@ def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
         ),
         utility_student_count=student_market.utility_student_count,
         utility_handling=student_market.utility_handling,
+        policy=student_market.policy,
+        reserves=student_market.reserves,
     )
 
 
@@ -358,8 +456,13 @@ def make_mid_student(
     utility_values,
     priority_values,
     handling: str,
+    open_priority_values=None,
 ) -> MidStudent:
-    """Transform one utility row into deterministic preferences."""
+    """Transform one utility row into deterministic preferences.
+
+    ``open_priority_values``, aligned with ``priority_values``, are a policy's
+    out-of-zone tiers (-1: no access); see ``MidStudent.open_priorities``.
+    """
     if handling not in MID_UTILITY_HANDLING:
         raise ValueError(f"Unknown MID utility handling {handling!r}.")
     program_ids = [str(value) for value in program_ids]
@@ -391,8 +494,13 @@ def make_mid_student(
         value = float(transformed[index])
         if not math.isfinite(value) or value <= 0:
             raise ValueError("Included MID utilities must be positive and finite.")
+        open_tier = (
+            None
+            if open_priority_values is None
+            else _integer(open_priority_values[index], "open priority")
+        )
         alternatives.append(
-            (program_ids[index], float(utilities[index]), value, priority)
+            (program_ids[index], float(utilities[index]), value, priority, open_tier)
         )
 
     alternatives.sort(key=lambda item: (-item[1], item[0]))
@@ -404,6 +512,11 @@ def make_mid_student(
         scaled_utilities=tuple(
             max(1, round(CP_SAT_SCALE * item[2])) for item in alternatives
         ),
+        open_priorities=(
+            None
+            if open_priority_values is None
+            else tuple(item[4] for item in alternatives)
+        ),
     )
 
 
@@ -411,7 +524,14 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
     """Aggregate students with identical assignment recurrences."""
     grouped: dict[tuple, list] = {}
     for student in students:
-        key = (student.node, student.programs, student.priorities)
+        key = (
+            student.node,
+            student.programs,
+            student.priorities,
+            student.open_priorities,
+            student.student_id,
+            student.reserve_class,
+        )
         if key not in grouped:
             grouped[key] = [
                 0,
@@ -427,7 +547,7 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
             aggregate[2][rank] += student.scaled_utilities[rank]
 
     types = []
-    for (node, programs, priorities), (
+    for (node, programs, priorities, open_priorities, student_id, reserve_class), (
         count,
         utilities,
         scaled,
@@ -442,10 +562,22 @@ def compress_mid_students(students) -> tuple[MidType, ...]:
                 utility_sums=tuple(utilities),
                 scaled_utility_sums=tuple(scaled),
                 frl_sum=frl_sum,
+                open_priorities=open_priorities,
+                student_id=student_id,
+                reserve_class=reserve_class,
             )
         )
-    return tuple(
-        sorted(types, key=lambda item: (item.node, item.programs, item.priorities))
+    return tuple(sorted(types, key=_type_order))
+
+
+def _type_order(student_type) -> tuple:
+    return (
+        student_type.node,
+        student_type.programs,
+        student_type.priorities,
+        student_type.open_priorities or (),
+        student_type.student_id or "",
+        student_type.reserve_class,
     )
 
 
@@ -463,11 +595,14 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
 
     for student_type in market.types:
         kept = []
+        open_tiers = student_type.open_priorities
         for rank, program_id in enumerate(student_type.programs):
             program = programs.get(program_id)
             if program is None:
                 continue
-            if not program.citywide:
+            if not program.citywide and not (
+                open_tiers is not None and open_tiers[rank] >= 0
+            ):
                 access_key = (student_type.node, program.school_node)
                 if access_key not in possible_access:
                     possible_access[access_key] = bool(
@@ -481,7 +616,17 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
 
         program_ids = tuple(student_type.programs[rank] for rank in kept)
         priorities = tuple(student_type.priorities[rank] for rank in kept)
-        key = (student_type.node, program_ids, priorities)
+        open_kept = (
+            None if open_tiers is None else tuple(open_tiers[rank] for rank in kept)
+        )
+        key = (
+            student_type.node,
+            program_ids,
+            priorities,
+            open_kept,
+            student_type.student_id,
+            student_type.reserve_class,
+        )
         if key not in grouped:
             grouped[key] = [
                 0,
@@ -497,16 +642,31 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
             aggregate[2][target_rank] += student_type.scaled_utility_sums[source_rank]
 
     types = tuple(
-        MidType(
-            node=node,
-            count=values[0],
-            programs=program_ids,
-            priorities=priorities,
-            utility_sums=tuple(values[1]),
-            scaled_utility_sums=tuple(values[2]),
-            frl_sum=values[3],
+        sorted(
+            (
+                MidType(
+                    node=node,
+                    count=values[0],
+                    programs=program_ids,
+                    priorities=priorities,
+                    utility_sums=tuple(values[1]),
+                    scaled_utility_sums=tuple(values[2]),
+                    frl_sum=values[3],
+                    open_priorities=open_kept,
+                    student_id=student_id,
+                    reserve_class=reserve_class,
+                )
+                for (
+                    node,
+                    program_ids,
+                    priorities,
+                    open_kept,
+                    student_id,
+                    reserve_class,
+                ), values in grouped.items()
+            ),
+            key=_type_order,
         )
-        for (node, program_ids, priorities), values in sorted(grouped.items())
     )
     return MidMarket(
         programs=tuple(
@@ -522,7 +682,24 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
         utility_student_count=market.utility_student_count,
         utility_handling=market.utility_handling,
         utility_scale=market.utility_scale,
+        policy=market.policy,
+        reserves=market.reserves,
     )
+
+
+POLICY_CONFIG_DIR = Path(__file__).resolve().parents[2] / (
+    "assignment/configs/policy_configs"
+)
+
+
+def policy_config_path(name: str) -> Path:
+    """The policy config a ``matching_policy`` names, which must exist."""
+    path = POLICY_CONFIG_DIR / f"{name}.yaml"
+    if not path.is_file():
+        raise ValueError(
+            f"matching_policy {name!r} names no policy config: {path} is missing."
+        )
+    return path
 
 
 def _assignment_market(optimization_config):
@@ -531,9 +708,13 @@ def _assignment_market(optimization_config):
         encoding="utf-8"
     ) as stream:
         config = yaml.safe_load(stream)
-    with (root / "assignment/configs/policy_configs/status_quo.yaml").open(
-        encoding="utf-8"
-    ) as stream:
+    policy = getattr(optimization_config, "matching_policy", None)
+    policy_path = (
+        POLICY_CONFIG_DIR / "status_quo.yaml"
+        if policy is None
+        else policy_config_path(policy)
+    )
+    with policy_path.open(encoding="utf-8") as stream:
         config.update(yaml.safe_load(stream))
     data = optimization_config.data_scenario
     programs, schools, students = load_market_data(data)
@@ -548,6 +729,118 @@ def _assignment_market(optimization_config):
         num_programs=programs.num_programs,
         zones=_StaticZones(),
     )
+
+
+def policy_priorities(market) -> tuple[np.ndarray, np.ndarray]:
+    """In-zone and out-of-zone priority tiers of the market's matching policy.
+
+    The assignment simulator adds the policy's ``zone`` weight at every
+    program in the student's zone (under ``restrict-zone``, every citywide
+    program too) and masks every program outside it unless the policy opens
+    it (``Zones.zone_eligibility_matrix``). So the two tiers are the policy's
+    priorities with every program in zone, and with none; the second is kept
+    only where an exception opens the program -- every program without
+    ``restrict-zone``, the student's CTIP status under ``CTIP_access``, a
+    sibling's school under ``sibling-access``, a TK promote's feeder under
+    ``tk-access`` -- and is -1 elsewhere.
+    """
+    config = market.config
+    generator = PriorityGenerator(market)
+    shape = (market.n, market.num_programs)
+    policy, ctip = config["policies"][0], config["ctip-options"][0]
+    in_zone = generator.get_base_policy_priorities(
+        policy, ctip, zone_priority_matrix=np.ones(shape, dtype=int)
+    )
+    out_of_zone = generator.get_base_policy_priorities(
+        policy, ctip, zone_priority_matrix=np.zeros(shape, dtype=int)
+    )
+    restrict = config.get("restrict-zone", False)
+    students = market.students
+    if not restrict:
+        access = np.ones(shape, dtype=bool)
+    else:
+        access = np.zeros(shape, dtype=bool)
+        if restrict == "CTIP_access":
+            ctip_students = students.student_data["ctip1"].fillna(0).to_numpy() > 0
+            access |= ctip_students[:, None]
+        if config.get("sibling-access", False):
+            access |= np.asarray(students.sibling(market.programs)) > 0
+        if config.get("tk-access", False):
+            access |= np.asarray(students.promotion(market.programs.indices)) > 0
+    return in_zone, np.where(access, out_of_zone, -1)
+
+
+def policy_reserves(market, programs, optimization_config):
+    """The policy's reserves and each student's class (by assignment row).
+
+    Mirrors ``GuardrailSetup``: classes split ``reserve-settings.column`` at its
+    thresholds (missing values take the mean), every GE program -- or every
+    citywide-school GE program under ``citywide_only`` -- reserves
+    ``reserve_fraction``, and citywide-school GE programs take
+    ``citywide-reserve-ratios`` unless ``citywide-separate-reserves`` is off.
+    Zone-share reserves (no ``reserve_fraction``) depend on the zoning and are
+    not modelled.
+    """
+    config = market.config
+    settings = config.get("reserve-settings") or {}
+    data = market.students.student_data
+    column = settings["column"]
+    if isinstance(column, dict):
+        index = sum(weight * data[name] for name, weight in column.items())
+    else:
+        index = data[column]
+    values = pd.to_numeric(index, errors="coerce").to_numpy(dtype=float)
+    values = np.nan_to_num(values, nan=np.nanmean(values))
+    if "num_categories" in settings:
+        count = int(settings["num_categories"])
+        thresholds = np.percentile(values, 100 * np.arange(1, count) / count)
+    elif "thresholds" in settings:
+        thresholds = settings["thresholds"]
+        if isinstance(thresholds, str) and thresholds.startswith("percentile:"):
+            thresholds = np.atleast_1d(
+                np.percentile(values, float(thresholds.split(":")[1]))
+            )
+        thresholds = np.asarray(thresholds, dtype=float)
+    else:
+        raise ValueError("reserve-settings needs num_categories or thresholds.")
+    classes = np.searchsorted(thresholds, values)
+    if not settings["lower_disadvantaged"]:
+        classes = len(thresholds) - classes
+    num_classes = len(thresholds) + 1
+
+    fraction = settings.get("reserve_fraction", -1)
+    if fraction == -1:
+        raise ValueError(
+            f"matching_policy {optimization_config.matching_policy!r}: reserves "
+            "sized by each zone's class shares change with the zoning and are "
+            "not modelled; give reserve-settings.reserve_fraction."
+        )
+    fraction = tuple(float(value) for value in fraction)
+    ratios = tuple(
+        float(value) for value in config.get("citywide-reserve-ratios", [0.57, 0.43])
+    )
+    if len(fraction) != num_classes or len(ratios) != num_classes:
+        raise ValueError("Reserve fractions must give one share per class.")
+    citywide_schools = {int(value) for value in market.schools.citywide_schools}
+    separate = config.get("citywide-separate-reserves", True)
+    citywide_only = settings.get("citywide_only", False)
+    fractions = {}
+    for program in programs:
+        parts = program.program_id.split("-")
+        if len(parts) < 2 or parts[1] != "GE":
+            continue
+        citywide_ge = program.school_id in citywide_schools
+        if separate and citywide_ge:
+            fractions[program.program_id] = ratios
+        elif citywide_ge or not citywide_only:
+            fractions[program.program_id] = fraction
+    reserves = ReserveSpec(
+        fractions=fractions,
+        num_classes=num_classes,
+        strict=int(config["guard-rails"]) == 1,
+        seed=int(getattr(optimization_config, "mid_reserve_seed", 0)),
+    )
+    return reserves, classes
 
 
 def _attendance_area_priority_matrix(market) -> np.ndarray:

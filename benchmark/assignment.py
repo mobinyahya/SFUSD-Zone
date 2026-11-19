@@ -283,10 +283,14 @@ def assignment_targets(
                 )
                 for stage in load_manifest(root).get("stages", [])
             )
+        # A run optimized for one matching policy is matched under that policy
+        # alone; one without is matched under every policy of the config.
+        policy = task.config.get("matching_policy")
         for suffix, folder, level in folders:
             targets.append(
                 {
                     "id": f"{task.task_id}-{suffix}",
+                    **({"policies": [policy]} if policy is not None else {}),
                     "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
                     "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
                     "zone_building_blocks": zone_building_blocks(

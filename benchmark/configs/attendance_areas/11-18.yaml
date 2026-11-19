@@ -11,14 +11,18 @@
 # (capacity_reference, frl_reference_dev) and at least 20 resident students
 # per zone. No zone FRL band, no polarization term.
 #
-# Matching changes: every zoning is matched under four policies
-# (assignment/configs/attendance_areas/restrictive_aa_sib_2627.yaml), all
-# restrictive attendance areas with sibling-access true and tk-access false:
+# One optimization per matching policy: matching_policy sweeps the four
+# policies of assignment/configs/attendance_areas/restrictive_aa_sib_2627.yaml,
+# all restrictive attendance areas with sibling-access true and tk-access
+# false -- CTIP priority on/off x the FRL reserves (50/50 at the median
+# freelunch_prob) on/off:
 #   restrictive_aa_sib_ctip, restrictive_aa_sib_ctip_reserves,
 #   restrictive_aa_sib_no_ctip, restrictive_aa_sib_no_ctip_reserves
-# -- CTIP priority on/off x the FRL reserves (50/50 at the median
-# freelunch_prob) on/off. The policies do not touch the optimization: the
-# maps are the same whichever policy scores them.
+# The MID market the maps are drawn against reads the policy: its CTIP option
+# and priority weights, sibling (not TK) access across zone lines, and for the
+# reserve policies the reserves themselves, matched by a deferred acceptance
+# on one fixed lottery (mid_reserve_seed 0; optimization/reserve_da.py). Each
+# run is then matched under its own policy only.
 #
 # data: the seven ideal 2026-27 capacity scenarios (the Nov 13 baseline, the
 # Aug baseline and its five single-school variants) x four student
@@ -33,7 +37,8 @@
 # tasks:
 #   maps       -- shape, distance, perimeter; 5 seeds x 5 weights
 #   current_aa -- today's attendance areas, scored and matched unchanged
-# 29 data x (5 x 5 + 1) = 754 runs, each matched under 4 policies.
+# 29 data x 4 policies x (5 x 5 + 1) = 3,016 runs, each matched under its
+# own policy.
 #
 # Run: uv run python -m benchmark.slurm submit --config benchmark/configs/attendance_areas/11-18.yaml
 
@@ -207,6 +212,11 @@ sweep:
           assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: enrolled_all}
 tasks:
   - seed: [1, 2, 3, 4, 5]
+    matching_policy:
+      - restrictive_aa_sib_ctip
+      - restrictive_aa_sib_ctip_reserves
+      - restrictive_aa_sib_no_ctip
+      - restrictive_aa_sib_no_ctip_reserves
     objective_weights:
       - {capacity_match: 1, frl_dissimilarity: 0}
       - {capacity_match: 1, frl_dissimilarity: 10}
@@ -253,6 +263,11 @@ tasks:
   # at weight 1 (objective_term_* in the stage metadata).
   - seed: 1
     hint_zoning: attendance_areas
+    matching_policy:
+      - restrictive_aa_sib_ctip
+      - restrictive_aa_sib_ctip_reserves
+      - restrictive_aa_sib_no_ctip
+      - restrictive_aa_sib_no_ctip_reserves
     objective_weights: {capacity_match: 1, frl_dissimilarity: 1}
     constraints:
       frl_dev: -1
