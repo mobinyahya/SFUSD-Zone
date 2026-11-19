@@ -120,8 +120,14 @@ class CacheStore:
         schema_version: int,
         roles: str | Iterable[str] | None = None,
         classification: str = "derived",
+        source_manifest: Mapping[str, Any] | None = None,
     ) -> CacheNamespace:
-        """Resolve a namespace for one explicit artifact schema version."""
+        """Resolve a namespace for one explicit artifact schema version.
+
+        ``source_manifest`` replaces ``scenario.source_manifest(roles)`` as the
+        key's source identity, for an artifact that depends on fewer selectors
+        than the whole scenario (it then names those in ``parameters``).
+        """
         artifact = _validate_name(artifact, "Artifact")
         if (
             isinstance(schema_version, bool)
@@ -132,7 +138,10 @@ class CacheStore:
         if not isinstance(classification, str) or not classification:
             raise ValueError("Cache classification must be a non-empty string.")
         normalized_parameters = _normalized(parameters or {})
-        source_manifest = self.scenario.source_manifest(roles)
+        if source_manifest is None:
+            source_manifest = self.scenario.source_manifest(roles)
+        else:
+            source_manifest = _normalized(source_manifest)
         identity = {
             "artifact": artifact,
             "schema_version": schema_version,
@@ -178,6 +187,7 @@ class CacheNamespace:
         self.path = self.version_dir / key
         self.manifest_path = self.path / "manifest.json"
         self.lock_path = self.version_dir / f".{key}.lock"
+        self.build_lock_path = self.version_dir / f".{key}.build.lock"
 
     def payload_path(self, name: str) -> Path:
         return self.path / _validate_name(name, "Payload name")
@@ -216,9 +226,52 @@ class CacheNamespace:
             ):
                 return None
 
-    def save_pickle(self, name: str, value: Any) -> Path:
+    def save_pickle(
+        self, name: str, value: Any, *, protocol: int | None = None
+    ) -> Path:
         """Atomically save a pickle payload and update the namespace manifest."""
-        return self._save_payload(name, pickle.dumps(value), "pickle")
+        return self._save_payload(
+            name, pickle.dumps(value, protocol=protocol), "pickle"
+        )
+
+    def load_pickle_bytes(self, name: str) -> bytes | None:
+        """Return a validated pickle payload's raw bytes, or ``None`` on a miss.
+
+        The file is read once and checksummed in memory, so a caller that keeps
+        the bytes (to unpickle fresh copies later) pays for one read.
+        """
+        name = _validate_name(name, "Payload name")
+        with self._lock(shared=True):
+            manifest = self._read_valid_manifest()
+            if manifest is None:
+                return None
+            record = manifest["payloads"].get(name)
+            if not isinstance(record, dict):
+                return None
+            if record.get("file") != name or record.get("format") != "pickle":
+                return None
+            try:
+                payload = self.payload_path(name).read_bytes()
+            except OSError:
+                return None
+            if _sha256_bytes(payload) != record.get("sha256"):
+                return None
+            return payload
+
+    def save_pickle_bytes(self, name: str, payload: bytes) -> Path:
+        """Atomically save already-pickled bytes as a pickle payload."""
+        return self._save_payload(name, payload, "pickle")
+
+    @contextmanager
+    def build_lock(self):
+        """Hold this key's exclusive *build* lock.
+
+        Separate from the payload lock, which ``save_*`` takes itself, so one
+        process can build and save an entry while every other process that
+        wants it waits here, then loads what was saved.
+        """
+        with self._flock(self.build_lock_path, shared=False):
+            yield
 
     def load_dataframe(self, name: str, **read_csv_kwargs: Any) -> pd.DataFrame | None:
         """Load a validated CSV payload as a DataFrame."""
@@ -346,8 +399,13 @@ class CacheNamespace:
 
     @contextmanager
     def _lock(self, *, shared: bool):
+        with self._flock(self.lock_path, shared=shared):
+            yield
+
+    @contextmanager
+    def _flock(self, path: Path, *, shared: bool):
         self._ensure_directory(self.version_dir)
-        descriptor = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o660)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o660)
         with os.fdopen(descriptor, "r+b") as stream:
             if self._restricted:
                 os.fchmod(stream.fileno(), 0o660)

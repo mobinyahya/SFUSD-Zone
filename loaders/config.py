@@ -9,6 +9,7 @@ import os
 import re
 import threading
 from collections.abc import Iterable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -158,6 +159,12 @@ _GEOGRAPHY_KEYS = {
     "manual_edges",
 }
 _MISSING = object()
+#: Active scenario-access recorders (``loaders.table_cache``): every role a
+#: ``DataScenario`` resolves and every filter it reads is noted on each, so a
+#: cached table can check that its key named every input its build read.
+SCENARIO_ACCESS_RECORDERS: ContextVar[tuple[Any, ...]] = ContextVar(
+    "scenario_access_recorders", default=()
+)
 _CHECKSUM_CACHE: dict[tuple[str, int, int, int, int, int], str] = {}
 _CHECKSUM_LOCK = threading.Lock()
 
@@ -471,6 +478,8 @@ class DataScenario:
 
     def resolved(self, role: str) -> Any:
         """Return a role's resolved scalar, tuple, or named map."""
+        for recorder in SCENARIO_ACCESS_RECORDERS.get():
+            recorder.note_role(role)
         try:
             return self._source_values[role]
         except KeyError as exc:
@@ -513,6 +522,8 @@ class DataScenario:
 
     def filter(self, group: str, key: str, default: Any = _MISSING) -> Any:
         """Read one validated filter, optionally returning a default."""
+        for recorder in SCENARIO_ACCESS_RECORDERS.get():
+            recorder.note_filter(group, key)
         if group not in _FILTER_KEYS:
             raise ValueError(f"Unknown filter group {group!r}.")
         if key not in _FILTER_KEYS[group]:
@@ -600,6 +611,30 @@ class DataScenario:
         if planned:
             manifest["planned_schools"] = planned
         return manifest
+
+    def role_sources_manifest(self, roles: Iterable[str]) -> dict[str, Any]:
+        """Content manifest of just the named roles that exist, by role.
+
+        Unlike :meth:`source_manifest` it carries no filters, scenario id, or
+        registries, so a caller keying a cache on it states those itself. A
+        named role the scenario lacks is left out, so its absence is part of
+        the identity too.
+        """
+
+        def build(value: Any) -> Any:
+            if isinstance(value, ResolvedSource):
+                return value.manifest()
+            if isinstance(value, Mapping):
+                return {key: build(child) for key, child in value.items()}
+            if isinstance(value, tuple):
+                return [build(child) for child in value]
+            raise TypeError(f"Unsupported resolved source value {value!r}.")
+
+        return {
+            role: build(self._source_values[role])
+            for role in sorted(set(roles))
+            if role in self._source_values
+        }
 
     @property
     def semantic_fingerprint(self) -> str:
