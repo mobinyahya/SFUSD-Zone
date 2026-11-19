@@ -1166,11 +1166,10 @@ def test_stated_preferences_score_each_list_by_its_order() -> None:
     from optimization.data.mid import _stated_utility_table
 
     indices = {"100-GE-KG": 1, "200-GE-KG": 2, "300-SE-KG": 3}
+    # The PolicyMarket fields the table reads.
     market = SimpleNamespace(
-        programs=SimpleNamespace(indices=indices, index_list=None),
-        students=SimpleNamespace(
-            selected_preferences=lambda _: np.array([[2, 1, 0], [0, 0, 0], [3, 0, 0]])
-        ),
+        program_ids=tuple(indices),
+        selected=np.array([[2, 1, 0], [0, 0, 0], [3, 0, 0]]),
     )
 
     table = _stated_utility_table(None, ["s1", "s2", "s3"], list(indices), market)
