@@ -20,6 +20,20 @@ from ..data_interfaces import Programs, Students
 from ..definitions import CW2AA
 
 
+def _column_values(frame: pd.DataFrame, column: str) -> np.ndarray:
+    """A column's values as ``DataFrame.iterrows`` rows hand them out.
+
+    Student tables always mix list and scalar columns, so their rows are
+    object Series whose cells are the column's values boxed to Python
+    objects -- exactly ``to_numpy(dtype=object)``.
+    """
+    return frame[column].to_numpy(dtype=object)
+
+
+def _column_items(frame: pd.DataFrame, column: str):
+    return zip(frame.index, _column_values(frame, column), strict=True)
+
+
 class Zones:
     """Object to handle zone data for market_generator."""
 
@@ -542,27 +556,27 @@ class Zones:
             # already tolerate a student missing from this map -- see
             # GuardrailSetup, which falls back to a NaN zone.
             return {
-                studentno: self.area2zone[x["idschoolattendance"]]
-                for studentno, x in student_data.iterrows()
-                if pd.notna(x["idschoolattendance"]) and x["idschoolattendance"] != 0
+                studentno: self.area2zone[area]
+                for studentno, area in _column_items(student_data, "idschoolattendance")
+                if pd.notna(area) and area != 0
             }
         elif self.config["zone-building-blocks"] == "block_group":
             return {
-                studentno: self.area2zone[x["census_blockgroup"]]
-                for studentno, x in student_data.iterrows()
-                if pd.notna(x["census_blockgroup"])
+                studentno: self.area2zone[area]
+                for studentno, area in _column_items(student_data, "census_blockgroup")
+                if pd.notna(area)
             }
         elif self.config["zone-building-blocks"] == "block":
             return {
-                studentno: self.area2zone[x["census_block"]]
-                for studentno, x in student_data.iterrows()
-                if pd.notna(x["census_block"])
+                studentno: self.area2zone[area]
+                for studentno, area in _column_items(student_data, "census_block")
+                if pd.notna(area)
             }
         elif self.config["zone-building-blocks"] == "tract":
             return {
-                studentno: self.area2zone[x["census_tract"]]
-                for studentno, x in student_data.iterrows()
-                if pd.notna(x["census_tract"])
+                studentno: self.area2zone[area]
+                for studentno, area in _column_items(student_data, "census_tract")
+                if pd.notna(area)
             }
 
     def get_program_idx_to_zone_dict(self) -> dict:
@@ -596,17 +610,28 @@ class Zones:
             (self.students.n, self.programs.num_programs), dtype=int
         )
 
-        for studentno, row in self.students.student_data.iterrows():
-            tract = (
-                row.get("census_tract")
-                if self.config["zone-building-blocks"] == "tract"
-                else None
-            )
+        data = self.students.student_data
+        # Column values exactly as ``row.<column>`` gave them, without a row
+        # Series per student.
+        tracts = (
+            _column_values(data, "census_tract")
+            if self.config["zone-building-blocks"] == "tract"
+            and "census_tract" in data.columns
+            else [None] * len(data)
+        )
+        for studentno, attendance_area, blockgroup, block, tract in zip(
+            data.index,
+            _column_values(data, "idschoolattendance"),
+            _column_values(data, "census_blockgroup"),
+            _column_values(data, "census_block"),
+            tracts,
+            strict=True,
+        ):
             self._zone_priority_matrix[self.students.studentno2idx[studentno], :] = (
                 self.programs_for_area_id(
-                    row.idschoolattendance,
-                    row.census_blockgroup,
-                    row.census_block,
+                    attendance_area,
+                    blockgroup,
+                    block,
                     studentno,
                     **({"tract": tract} if tract is not None else {}),
                 )

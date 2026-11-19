@@ -149,12 +149,16 @@ class Students:
 
     def _validate_ranked_programs(self) -> None:
         known_programs = set(self.programs.indices)
-        for _, row in self.student_data.iterrows():
-            schools = row["selected_ranked_idschool"]
-            programs = row["selected_programs"]
+        # Column arrays, not iterrows: a row Series per student cost ~0.3 s.
+        for studentno, schools, programs in zip(
+            self.student_data["studentno"].to_numpy(dtype=object),
+            self.student_data["selected_ranked_idschool"].to_numpy(dtype=object),
+            self.student_data["selected_programs"].to_numpy(dtype=object),
+            strict=True,
+        ):
             if len(schools) != len(programs):
                 raise ValueError(
-                    f"Student {row['studentno']} selected choice has "
+                    f"Student {studentno} selected choice has "
                     f"{len(schools)} ranked schools but {len(programs)} ranked programs."
                 )
             ranked = [
@@ -164,7 +168,7 @@ class Students:
             unknown = [program for program in ranked if program not in known_programs]
             if unknown:
                 raise ValueError(
-                    f"Student {row['studentno']} selected choice ranked unknown "
+                    f"Student {studentno} selected choice ranked unknown "
                     f"program IDs: {list(dict.fromkeys(unknown))[:10]}"
                 )
 
@@ -208,12 +212,16 @@ class Students:
         if "selected" in self._prefs:
             return self._prefs["selected"]
         prefs = np.zeros((self.n, self.num_programs), dtype=int)
-        for row_index, (_, row) in enumerate(self.student_data.iterrows()):
+        for row_index, (schools, programs) in enumerate(
+            zip(
+                self.student_data["selected_ranked_idschool"].to_numpy(dtype=object),
+                self.student_data["selected_programs"].to_numpy(dtype=object),
+                strict=True,
+            )
+        ):
             codes = [
                 f"{school}-{program}-{self.grade}"
-                for school, program in zip(
-                    row["selected_ranked_idschool"], row["selected_programs"]
-                )
+                for school, program in zip(schools, programs)
             ]
             program_indices = code2idx(codes)
             prefs[row_index, : len(program_indices)] = program_indices
@@ -499,12 +507,20 @@ class Students:
         """Return an pd.Series of length n containing 1 when the student requested
         language program designation priority, 0 otherwise (0 for missing data
         as well), index is the student number.
+
+        Read once per student by the designation ordering, so it is built once
+        per student table (nothing rewrites the column in place).
         """
-        return (
+        cached = getattr(self, "_language_designation_cache", None)
+        if cached is not None and cached[0] is self.student_data:
+            return cached[1]
+        result = (
             self.student_data["requestprogramdesignation"]
             .fillna(value=0)
             .astype("int64")
         )
+        self._language_designation_cache = (self.student_data, result)
+        return result
 
     @property
     def attendance_area(self):
@@ -560,8 +576,8 @@ class Students:
             return self._sibling
         sibling = np.zeros((self.n, self.num_programs), dtype=int)
         df = self.student_data.dropna(subset=["sibling"])
-        for idx, row in df.iterrows():
-            sib_schools = self._str_to_list(row["sibling"])
+        for idx, value in zip(df.index, df["sibling"].to_numpy(dtype=object)):
+            sib_schools = self._str_to_list(value)
             st_idx = self.studentno2idx[idx]
             for school in sib_schools:
                 if int(school) in programs.school_to_indices:
@@ -581,9 +597,7 @@ class Students:
                 row.get("prek", [])
             )
             if prek_id:
-                program_idx = (
-                    self.programs.index(f"{prek_id[0]}-GE-{self.grade}") - 1
-                )
+                program_idx = self.programs.index(f"{prek_id[0]}-GE-{self.grade}") - 1
                 st_idx = self.studentno2idx[studentno]
                 prek[st_idx, program_idx] = 1
         self._prek = prek
@@ -601,13 +615,25 @@ class Students:
 
     def language_pathway_priority_kg(self, program_id2index):
         language_pathway = np.zeros((self.n, self.num_programs), dtype=int)
-        for studentno, row in self.student_data.iterrows():
-            cohort_values = self._programs_to_list(row.get("selected_cohortstring", []))
+        data = self.student_data
+        cohorts = (
+            data["selected_cohortstring"].to_numpy(dtype=object)
+            if "selected_cohortstring" in data.columns
+            else [[]] * len(data)
+        )
+        for studentno, cohort_value, schools, programs in zip(
+            data.index,
+            cohorts,
+            data["selected_ranked_idschool"].to_numpy(dtype=object),
+            data["selected_programs"].to_numpy(dtype=object),
+            strict=True,
+        ):
+            cohort_values = self._programs_to_list(cohort_value)
             for idx, cohort in enumerate(cohort_values):
                 if "CL;" not in cohort:
                     continue
-                school = row["selected_ranked_idschool"][idx]
-                program = row["selected_programs"][idx]
+                school = schools[idx]
+                program = programs[idx]
                 program_id = f"{school}-{program}-{self.grade}"
                 if program_id in program_id2index:
                     language_pathway[

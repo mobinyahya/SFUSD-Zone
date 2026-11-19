@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import pathlib
 import re
@@ -24,12 +25,34 @@ from ..choice_ranks import (
     ranks_from_preference_order,
 )
 from ..configerator import Configerator
+from ..lottery_files import (
+    LEGACY_ITERATION_PATTERN,
+    LotteryFileCache,
+    lottery_file_paths,
+    remove_lotteries,
+    render_lottery,
+    saved_lotteries,
+    write_lotteries,
+)
 from ..da.da import DeferredAcceptance
 from ..da.guardrail_setup import GuardrailSetup
 from .policy import Policy
 from .preference_generator import OUTSIDE_OPTION_LIST_LENGTH, PreferenceGenerator
 from .priority_generator import PriorityGenerator
 from .school_choice_market import SchoolChoiceMarket
+
+
+_OBJECT_DTYPE = np.dtype(object)
+_FLOAT_CELL_TYPES = (float, np.float64)
+_IS_FLOAT_CELL = np.frompyfunc(lambda cell: type(cell) in _FLOAT_CELL_TYPES, 1, 1)
+
+
+class _PendingLotteries(dict):
+    """Rendered lotteries of one variant awaiting their file, by lottery."""
+
+    def __init__(self):
+        super().__init__()
+        self.legacy_paths: list[pathlib.Path] = []
 
 
 class MarketGenerator(SchoolChoiceMarket):
@@ -130,6 +153,9 @@ class MarketGenerator(SchoolChoiceMarket):
         write_config: bool = True,
     ) -> None:
         """Replace a run config, reusing immutable data for the same sources."""
+        # Buffered lotteries belong to the outgoing config's save paths.
+        self._flush_pending_lotteries()
+        self._lottery_cache().invalidate()
         previous_source_identity = getattr(self, "source_identity", None)
         configurator = Configerator.from_config(config)
         self.configurator = configurator
@@ -267,22 +293,21 @@ class MarketGenerator(SchoolChoiceMarket):
                     self._reset_zones()
 
                 policy_options = self._policy_data_options(policy)
-                target_paths = [
-                    self._assignment_save_path(policy_data, iteration)
-                    for policy_data in policy_options
-                ]
+                targets = [(policy_data, iteration) for policy_data in policy_options]
                 if self.config.get("reuse_assignments", True) and all(
-                    path.is_file() for path in target_paths
+                    self._saved_assignment_exists(*target) for target in targets
                 ):
                     for policy_data in policy_options:
                         yield self._load_reusable_assignment(policy_data, iteration)
                     continue
 
                 # A targeted retry owns only this iteration's variants. Never
-                # remove complete outputs belonging to sibling iteration jobs.
-                for path in target_paths:
-                    path.unlink(missing_ok=True)
-                yield from self._run_single_iteration_of_policy(iteration, policy)
+                # remove complete outputs belonging to sibling iteration jobs:
+                # the variant file keeps their lotteries.
+                self._discard_saved_assignments(targets)
+                yield from self._buffered_lotteries(
+                    [self._run_single_iteration_of_policy(iteration, policy)]
+                )
 
     def simulate_target(
         self,
@@ -410,7 +435,7 @@ class MarketGenerator(SchoolChoiceMarket):
         missing = [
             path
             for path, _save_name, _iteration, _policy in specs
-            if not path.is_file()
+            if not self._saved_path_exists(path)
         ]
         if missing:
             preview = ", ".join(str(path) for path in missing[:5])
@@ -422,7 +447,7 @@ class MarketGenerator(SchoolChoiceMarket):
         self._reset_aggregate_metric_reports()
         for assignment_path, save_name, iteration, policy in specs:
             assignment_df = self._validate_reusable_assignment(
-                pd.read_csv(assignment_path), assignment_path
+                self._read_saved_path(assignment_path), assignment_path
             )
             self._record_assignment_metric_reports(
                 assignment_df, save_name, iteration, policy
@@ -519,6 +544,7 @@ class MarketGenerator(SchoolChoiceMarket):
         )
 
     def _finalize_aggregate_metric_batch(self):
+        self._flush_pending_lotteries()
         if self._heatmap_metric_batches:
             from ..evaluation.heatmaps import average_heatmap_data
 
@@ -866,41 +892,134 @@ class MarketGenerator(SchoolChoiceMarket):
                 digest.update(chunk)
         return digest.hexdigest()
 
-    @classmethod
-    def _write_metric_csv(cls, path, report_name, report):
-        cls._validate_aggregate_metric_report(report_name, report)
-        report.to_csv(path, index=False)
+    @staticmethod
+    def _metric_csv_dtypes(report) -> dict:
+        """The nullable dtypes that make ``report`` re-read as itself.
+
+        ``infer_dtype`` of the non-missing values decides. Combined reports
+        hold object columns of floats (thousands of them in the area
+        reports), and a column whose every cell is a float can only infer as
+        floating or empty, neither of which sets a dtype; float64 columns
+        likewise. int64/bool columns hold no missing values. Those skip the
+        per-column ``dropna``, which was most of the writer's time.
+        """
         dtypes = {}
-        for column in report:
-            inferred = pd.api.types.infer_dtype(report[column].dropna(), skipna=True)
+        column_dtypes = report.dtypes.to_numpy()
+        object_positions = [
+            position
+            for position, dtype in enumerate(column_dtypes)
+            if dtype == _OBJECT_DTYPE
+        ]
+        all_float = set()
+        if object_positions and len(report):
+            cells = report.iloc[:, object_positions].to_numpy(dtype=object)
+            floats = _IS_FLOAT_CELL(cells).astype(bool)
+            all_float = {
+                position
+                for position, column_floats in zip(
+                    object_positions, floats.all(axis=0), strict=True
+                )
+                if column_floats
+            }
+        for position, column in enumerate(report.columns):
+            dtype = column_dtypes[position]
+            if dtype == np.float64 or position in all_float:
+                continue
+            series = report.iloc[:, position]
+            if dtype == np.int64 or dtype == np.bool_:
+                inferred = "integer" if dtype == np.int64 else "boolean"
+                if len(series) == 0:
+                    inferred = "empty"
+            else:
+                inferred = pd.api.types.infer_dtype(series.dropna(), skipna=True)
             if inferred == "integer":
                 dtypes[column] = "Int64"
             elif inferred == "boolean":
                 dtypes[column] = "boolean"
             elif inferred in {"string", "unicode"}:
                 dtypes[column] = "string"
-        round_trip = pd.read_csv(
-            path,
-            dtype=dtypes,
-            float_precision="round_trip",
-        )
-        expected = report.astype(object).mask(report.isna(), None)
-        actual = round_trip.astype(object).mask(round_trip.isna(), None)
-        try:
-            pd.testing.assert_frame_equal(
-                expected.reset_index(drop=True),
-                actual,
-                check_dtype=False,
-                check_exact=True,
+        return dtypes
+
+    @staticmethod
+    def _metric_frames_match(expected, actual) -> bool:
+        """Exact value equality with missing equal to missing, by column.
+
+        The same test as comparing ``astype(object).mask(isna(), None)`` frames
+        with ``assert_frame_equal(check_dtype=False, check_exact=True)``: the
+        missing cells must coincide and every other cell compare ``==``. Every
+        column the CSV re-read as float64 is checked in one 2-D block.
+        """
+        if list(expected.columns) != list(actual.columns) or len(expected) != len(
+            actual
+        ):
+            return False
+        expected_dtypes = expected.dtypes.to_numpy()
+        actual_dtypes = actual.dtypes.to_numpy()
+        float_positions = [
+            position
+            for position in range(len(expected.columns))
+            if actual_dtypes[position] == np.float64
+            and (
+                expected_dtypes[position] == np.float64
+                or expected_dtypes[position] == _OBJECT_DTYPE
             )
-        except AssertionError as exc:
+        ]
+        if float_positions:
+            left = expected.iloc[:, float_positions].to_numpy(dtype=object)
+            right = actual.iloc[:, float_positions].to_numpy(dtype=np.float64)
+            left_missing = pd.isna(left)
+            right_missing = np.isnan(right)
+            if not np.array_equal(left_missing, right_missing):
+                return False
+            left = left.copy()
+            left[left_missing] = 0.0
+            right = np.where(right_missing, 0.0, right).astype(object)
+            if not np.all(left == right):
+                return False
+        floats = set(float_positions)
+        for position in range(len(expected.columns)):
+            if position in floats:
+                continue
+            left = expected.iloc[:, position]
+            right = actual.iloc[:, position]
+            left_missing = left.isna().to_numpy()
+            right_missing = right.isna().to_numpy()
+            if not np.array_equal(left_missing, right_missing):
+                return False
+            left_values = left.to_numpy(dtype=object)[~left_missing]
+            right_values = right.to_numpy(dtype=object)[~right_missing]
+            if len(left_values) and not all(
+                bool(a == b) for a, b in zip(left_values, right_values, strict=True)
+            ):
+                return False
+        return True
+
+    @classmethod
+    def _write_metric_csv(cls, path, report_name, report):
+        cls._validate_aggregate_metric_report(report_name, report)
+        # One render serves the file, the round-trip check and the checksum.
+        text = report.to_csv(index=False)
+        payload = text.encode("utf-8")
+        pathlib.Path(path).write_bytes(payload)
+        dtypes = cls._metric_csv_dtypes(report)
+        with warnings.catch_warnings():
+            # pandas 3 deprecates float_precision; "round_trip" is still what
+            # the readers of these files use.
+            warnings.simplefilter("ignore", FutureWarning)
+            warnings.filterwarnings("ignore", message=".*float_precision.*")
+            round_trip = pd.read_csv(
+                io.StringIO(text),
+                dtype=dtypes,
+                float_precision="round_trip",
+            )
+        if not cls._metric_frames_match(report.reset_index(drop=True), round_trip):
             raise ValueError(
                 f"{report_name} metrics did not round-trip through CSV without "
                 "changing values."
-            ) from exc
+            )
         return {
             "filename": pathlib.Path(path).name,
-            "sha256": cls._file_sha256(path),
+            "sha256": hashlib.sha256(payload).hexdigest(),
             "row_count": len(report),
             "columns": list(report.columns),
             "dtypes": dtypes,
@@ -1286,11 +1405,98 @@ class MarketGenerator(SchoolChoiceMarket):
                 if reusable_assignments is not None:
                     yield from reusable_assignments
                     continue
-                for iteration in range(
-                    self.config["iterations"]["start"],
-                    self.config["iterations"]["end"],
-                ):
-                    yield from self._run_single_iteration_of_policy(iteration, policy)
+                yield from self._buffered_lotteries(
+                    self._run_single_iteration_of_policy(iteration, policy)
+                    for iteration in range(
+                        self.config["iterations"]["start"],
+                        self.config["iterations"]["end"],
+                    )
+                )
+
+    def _buffered_lotteries(self, runs):
+        """Yield every run's assignments, then write their lottery files.
+
+        ``runs`` yields one generator of assignments per lottery. Lotteries
+        are buffered in memory by :meth:`_save_assignment` and written
+        together once every run has finished, so an interrupted run leaves no
+        partial file; on failure the buffer is dropped.
+        """
+        try:
+            for run in runs:
+                yield from run
+        except BaseException:
+            self._pending_lottery_buffer().clear()
+            raise
+        self._flush_pending_lotteries()
+
+    def _pending_lottery_buffer(self) -> dict:
+        buffer = getattr(self, "_pending_lotteries", None)
+        if buffer is None:
+            buffer = self._pending_lotteries = {}
+        return buffer
+
+    def _lottery_cache(self) -> LotteryFileCache:
+        cache = getattr(self, "_lottery_file_cache", None)
+        if cache is None:
+            cache = self._lottery_file_cache = LotteryFileCache()
+        return cache
+
+    def _flush_pending_lotteries(self) -> None:
+        """Write every buffered lottery into its variant's long-format file."""
+        buffer = self._pending_lottery_buffer()
+        cache = self._lottery_cache()
+        while buffer:
+            data_path, rendered = buffer.popitem()
+            write_lotteries(data_path, rendered)
+            cache.invalidate(data_path)
+            # The long file now holds these lotteries; a per-lottery file of
+            # an older run would only be a stale duplicate.
+            for legacy_path in rendered.legacy_paths:
+                legacy_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _lottery_target(path):
+        """``(data_path, iteration)`` for a per-lottery path, else None."""
+        path = pathlib.Path(path)
+        match = LEGACY_ITERATION_PATTERN.match(path.name)
+        if match is None:
+            return None
+        return lottery_file_paths(path)[0], int(match.group("iteration"))
+
+    def _saved_path_exists(self, path) -> bool:
+        """Whether a lottery (by its per-lottery path) is saved in any layout."""
+        target = self._lottery_target(path)
+        if target is not None and target[1] in saved_lotteries(target[0]):
+            return True
+        return pathlib.Path(path).is_file()
+
+    def _read_saved_path(self, path) -> pd.DataFrame:
+        """A saved lottery as ``pd.read_csv`` returned its per-lottery file."""
+        target = self._lottery_target(path)
+        if target is not None:
+            saved = self._lottery_cache().get(target[0])
+            if saved is not None and target[1] in saved.lotteries:
+                return saved.frame(target[1])
+        return pd.read_csv(path)
+
+    def _saved_assignment_exists(self, policy_data, iteration) -> bool:
+        return self._saved_path_exists(
+            self._assignment_save_path(policy_data, iteration)
+        )
+
+    def _discard_saved_assignments(self, targets) -> None:
+        """Delete saved lotteries in either layout, keeping their siblings."""
+        by_file = {}
+        for policy_data, iteration in targets:
+            path = self._assignment_save_path(policy_data, iteration)
+            path.unlink(missing_ok=True)
+            target = self._lottery_target(path)
+            if target is not None:
+                by_file.setdefault(target[0], set()).add(target[1])
+        cache = self._lottery_cache()
+        for data_path, iterations in by_file.items():
+            remove_lotteries(data_path, iterations)
+            cache.invalidate(data_path)
 
     def _get_reserve_options(self):
         """Get a list of guard rails and reserve setting options from policy configs.
@@ -1476,15 +1682,11 @@ class MarketGenerator(SchoolChoiceMarket):
             )
             for policy_data in self._policy_data_options(policy)
         ]
-        assignment_paths = [
-            self._assignment_save_path(policy_data, iteration)
-            for policy_data, iteration in expected
-        ]
         if not self.config.get("reuse_assignments", True) or not all(
-            path.is_file() for path in assignment_paths
+            self._saved_assignment_exists(policy_data, iteration)
+            for policy_data, iteration in expected
         ):
-            for path in assignment_paths:
-                path.unlink(missing_ok=True)
+            self._discard_saved_assignments(expected)
             return None
         return [
             self._load_reusable_assignment(policy_data, iteration)
@@ -2041,10 +2243,10 @@ class MarketGenerator(SchoolChoiceMarket):
         if not self.config.get("reuse_assignments", True):
             return None
         assignment_path = self._assignment_save_path(policy_data, iteration)
-        if not assignment_path.is_file():
+        if not self._saved_path_exists(assignment_path):
             return None
         assignment_df = self._validate_reusable_assignment(
-            pd.read_csv(assignment_path),
+            self._read_saved_path(assignment_path),
             assignment_path,
             policy_data,
         )
@@ -2122,6 +2324,29 @@ class MarketGenerator(SchoolChoiceMarket):
 
         save_name = self._get_assignment_save_name(policy_data, iteration)
         save_path = self._assignment_save_path(policy_data, iteration)
+        target = self._lottery_target(save_path) if iteration is not None else None
+        if target is not None:
+            data_path, lottery = target
+            pending = self._pending_lottery_buffer().setdefault(
+                data_path, _PendingLotteries()
+            )
+            pending[lottery] = render_lottery(assignment_df)
+            pending.legacy_paths.append(save_path)
+        else:
+            self._write_assignment_csv(assignment_df, save_path)
+        if self.config.get("export-aggregate-metrics", False) or self.config.get(
+            "export_heatmaps", False
+        ):
+            self._record_assignment_metric_reports(
+                assignment_df,
+                save_name,
+                iteration,
+                policy_data.name,
+            )
+        return assignment_df
+
+    @staticmethod
+    def _write_assignment_csv(assignment_df, save_path) -> None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = None
         try:
@@ -2138,16 +2363,6 @@ class MarketGenerator(SchoolChoiceMarket):
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
-        if self.config.get("export-aggregate-metrics", False) or self.config.get(
-            "export_heatmaps", False
-        ):
-            self._record_assignment_metric_reports(
-                assignment_df,
-                save_name,
-                iteration,
-                policy_data.name,
-            )
-        return assignment_df
 
     def _zone_signature(self, policy: str) -> dict | None:
         """The manifest of a policy's zone file, or None when it has none.

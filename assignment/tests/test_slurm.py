@@ -1081,6 +1081,38 @@ def test_assignment_batches_skips_completed_iterations_when_reuse_true(tmp_path)
     assert scheduled_iterations == [1, 2]
 
 
+def test_assignment_batches_skip_lotteries_saved_in_the_long_format(tmp_path):
+    import pandas as pd
+
+    from assignment.student_assignment.lottery_files import (
+        render_lottery,
+        write_lotteries,
+    )
+
+    variant_dir = tmp_path / "subconfig-1" / "policy_variant"
+    frame = pd.DataFrame({"studentno": [1], "programno": [0], "programcodes": [""]})
+    write_lotteries(
+        variant_dir / "policy_variant_lotteries.csv.gz",
+        {0: render_lottery(frame), 2: render_lottery(frame)},
+    )
+    entry = {"name": "subconfig-1"}
+
+    done = [
+        assignment_slurm._is_iteration_assignment_done(entry, tmp_path, iteration)
+        for iteration in range(3)
+    ]
+
+    assert done == [True, False, True]
+    # A zone file rewritten after the lotteries were saved invalidates them.
+    zone_file = tmp_path / "zones.csv"
+    zone_file.write_text("1\n")
+    sidecar = variant_dir / "policy_variant_lotteries.json"
+    old = sidecar.stat().st_mtime_ns - 10**9
+    os.utime(sidecar, ns=(old, old))
+    entry["zone_file"] = str(zone_file)
+    assert not assignment_slurm._is_iteration_assignment_done(entry, tmp_path, 0)
+
+
 def test_assignment_batches_does_not_skip_when_reuse_false(tmp_path):
     subconfig_dir = tmp_path / "subconfig-1"
     subconfig_dir.mkdir(parents=True)

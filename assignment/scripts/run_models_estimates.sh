@@ -154,11 +154,22 @@ _is_done() {
     local run_label="$1"
     local subconfig="$2"
     local done_marker
-    local iteration
     done_marker="$(_run_folder "$run_label")/${subconfig}"
     [[ -d "$done_marker" ]] || return 1
 
+    # Every iteration must be saved: as an old run's *_iteration<N>.csv, or
+    # listed by the sidecar of a variant's *_lotteries.csv.gz.
+    local saved iteration sidecar
+    saved=" "
+    while IFS= read -r -d '' sidecar; do
+        [[ -f "${sidecar%_lotteries.json}_lotteries.csv.gz" ]] || continue
+        saved+="$(tr -d ' \n\t\r' < "$sidecar" \
+            | sed -n 's/.*"lotteries":\[\([0-9,]*\)\].*/\1/p' \
+            | tr ',' ' ') "
+    done < <(find "$done_marker" -type f -name "*_lotteries.json" -print0 2>/dev/null)
+
     for (( iteration=ITER_START; iteration<ITER_END; iteration++ )); do
+        [[ "$saved" == *" ${iteration} "* ]] && continue
         if [[ -z "$(find "$done_marker" -type f \
             -name "*_iteration${iteration}.csv" -print -quit 2>/dev/null)" ]]; then
             return 1
