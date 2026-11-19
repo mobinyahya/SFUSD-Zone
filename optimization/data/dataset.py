@@ -215,14 +215,13 @@ class Dataset:
         citywide -- are left out, and ``hint_from_area_assignment`` gives them
         their neighbors' zone.
         """
-        from loaders.tables import attendance_area_units, load_student_records
+        from loaders.tables import attendance_area_units
 
         zone_of = {
             int(school): zone for zone, school in enumerate(self.centroid_school_ids())
         }
-        students = load_student_records(
-            self.data, "assignment.students", filter_group="assignment"
-        )
+        # The MNL metrics read the same table; the memo shares it in process.
+        students = loaders.load_assignment_students(self.data)
         lived_in = students["idschoolattendance"].dropna().unique()
         units = loaders.load_census_shapefile(unit, self.data)
         units = units.dissolve(by=unit, as_index=False)

@@ -228,21 +228,25 @@ def _nearby_out_of_zone_ge(
     school_to_node: dict[int, int],
     distance_dict: dict,
 ) -> float:
+    # The out-of-zone GE school nodes are the same for every node of the zone.
+    school_nodes = [
+        school_to_node[school_id]
+        for school_id, school_zone in ge_school_to_zone.items()
+        if school_zone != zone_id and school_id in school_to_node
+    ]
+    infinity = float("inf")
     counts = []
     for node in nodes:
         if node not in distance_dict:
             continue
-        nearby = 0
-        for school_id, school_zone in ge_school_to_zone.items():
-            if school_zone == zone_id or school_id not in school_to_node:
-                continue
-            school_node = school_to_node[school_id]
-            if (
-                distance_dict[node].get(school_node, float("inf"))
-                <= GE_PROXIMITY_RADIUS
-            ):
-                nearby += 1
-        counts.append(nearby)
+        row = distance_dict[node]
+        counts.append(
+            sum(
+                1
+                for school_node in school_nodes
+                if row.get(school_node, infinity) <= GE_PROXIMITY_RADIUS
+            )
+        )
     return _mean(counts)
 
 

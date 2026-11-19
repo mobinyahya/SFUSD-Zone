@@ -43,6 +43,8 @@ def test_great_circle_distance_dict_keeps_node_order_and_zero_diagonal():
     for a, i in enumerate(nodes):
         assert list(distances[i]) == nodes
         for b, j in enumerate(nodes):
-            expected = 0.0 if i == j else great_circle_miles(lat[a], lon[a], lat[b], lon[b])
+            expected = (
+                0.0 if i == j else great_circle_miles(lat[a], lon[a], lat[b], lon[b])
+            )
             assert distances[i][j] == expected
             assert type(distances[i][j]) is float

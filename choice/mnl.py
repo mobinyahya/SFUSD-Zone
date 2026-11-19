@@ -9,7 +9,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
-from loaders import DataScenario, load_student_records
+from loaders import DataScenario
 from scipy.special import logsumexp
 
 from choice.estimate import (
@@ -230,12 +230,8 @@ class MNLChoiceModel(ChoiceModel):
     def _load_tables(
         self,
     ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, list[str]]]:
-        student_df = load_student_records(
-            self.data,
-            "assignment.students",
-            filter_group="assignment",
-            low_memory=False,
-        )
+        # Shared with the dataset's attendance-area hint, in process.
+        student_df = optimization_loaders.load_assignment_students(self.data)
         if "studentno" not in student_df.columns:
             paths = [
                 str(source.path) for source in self.data.sources("assignment.students")
