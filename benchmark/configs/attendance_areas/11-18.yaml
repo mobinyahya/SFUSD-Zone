@@ -8,6 +8,7 @@
 #     after that match, in percentage points (0-100),
 # with w over 0/10/30/50/100 (50 is new); then distance (CP-SAT, Block_1,
 # 600 s, school_distance) and perimeter (CP-SAT, Block_1, 600 s) refine it,
+# each freeing only the cut-edge endpoints (boundary band 0),
 # holding shape's school seats and FRL counts within +/-10%
 # (capacity_reference, frl_reference_dev) and at least 20 resident students
 # per zone. No zone FRL band, no polarization term.
@@ -251,8 +252,8 @@ tasks:
         capacity_reference: shape
         constraints: {frl_reference_dev: 0.10}
         inputs:
-          - {source: previous, mode: assign, select: interior, radius: 1}
-          - {source: previous, mode: hint, select: boundary, radius: 1}
+          - {source: previous, mode: assign, select: interior, radius: 0}
+          - {source: previous, mode: hint, select: boundary, radius: 0}
       - name: perimeter
         level: Block_1
         method: cp_bool
