@@ -266,7 +266,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `frl_reference_dev` | `0.10` | Steps with a `capacity_reference` only: relative band on each zone's frozen school FRL count; negative disables |
 | `objective_weights` | `{capacity_match: 1, frl_dissimilarity: 10}` | `weighted_sum` terms (ReCom); `frl_dissimilarity` is in percentage points |
 | `seed` | `42` | Solver seed |
-| `boundary_domain_hops` | `4` | CP-SAT/MIP refinement steps with fixed nodes: a free block may take only its own source zone and those of blocks within this many hops, then pairs the closer-neighbour contiguity rows cannot satisfy are pruned exactly (`optimization/data/boundary_domain.py`); `null` = unrestricted (and drops out of task ids) |
+| `boundary_domain_hops` | `4` | CP-SAT/MIP refinement steps with fixed nodes: a free block may take only its own source zone and those of blocks within this many hops, then pairs the closer-neighbour contiguity rows cannot satisfy are pruned exactly (`optimization/data/boundary_domain.py`); blocks within 2 hops of a source block breaking the closer rule stay unrestricted, and a still-infeasible step re-solves unrestricted; `null` = unrestricted (and drops out of task ids) |
 | `contract_fixed` | `true` | CP-SAT refinement steps with fixed nodes solve on a problem with each connected fixed group contracted to one node (`optimization/data/contraction.py`); exact, so `true` keeps task ids |
 
 **Pipeline refinement.** A step's `inputs` project an earlier step onto its

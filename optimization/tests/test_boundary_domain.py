@@ -331,6 +331,7 @@ def test_pipeline_restricts_refinement_domains_by_default():
     meta = refined.metadata
     assert refined.feasible
     assert meta["boundary_domain_hops"] == 4
+    assert meta["boundary_domain_repair_radius"] == 2
     assert meta["boundary_domain_free_nodes"] > 0
     assert meta["boundary_domain_pairs_after"] <= meta["boundary_domain_pairs_before"]
     assert meta["boundary_domain_seconds"] >= 0
@@ -348,22 +349,44 @@ def test_an_infeasible_restricted_step_is_solved_with_full_domains(monkeypatch):
     seen = []
 
     def solve(problem, *args, **kwargs):
-        seen.append(dict(problem.candidates or {}))
         solution = real(problem, *args, **kwargs)
-        if problem.fixed and len(seen) == 2:  # the restricted refinement
-            solution.status = "INFEASIBLE"
+        if problem.fixed:
+            seen.append(dict(problem.candidates or {}))
+            if len(seen) == 1:
+                solution.status = "INFEASIBLE"
         return solution
 
     monkeypatch.setattr(pipeline, "solve_step_problem", solve)
     results = _run(_pipeline_config(boundary_domain_hops=0))
     refined = results[-1]
-    assert len(seen) == 3
+    assert len(seen) == 2
     assert refined.feasible
     assert refined.metadata["boundary_domain_fallback"] is True
     assert "boundary_domain_restricted_wall_time" in refined.metadata
     # The retry gets the unrestricted candidates, and the stage saves them.
-    assert seen[2] == {}
+    assert seen[1] == {}
     assert not refined.metadata["pipeline_candidates_areas"]
+
+
+def test_repair_radius_frees_every_zone_near_a_closer_rule_violation():
+    from optimization.data.boundary_domain import closer_rule_violations
+
+    source = _hooked_source()
+    problem = _problem()
+    assert closer_rule_violations(problem, source) == [12]
+    problem.fixed = _band_split(problem, source)
+    problem.hint = dict(source)
+    full = {n: set(problem.candidate_zones(n)) for n in problem.G}
+    meta = restrict_boundary_domains(problem, source, 0, prune=False, repair_radius=1)
+    assert meta["boundary_domain_source_violations"] == 1
+    near = {12, 6, 13, 18}
+    free = [n for n in problem.G if n not in problem.fixed and n not in problem.centroids]
+    assert meta["boundary_domain_repair_nodes"] == len(near & set(free))
+    for node in free:
+        if node in near:
+            assert problem.candidate_zones(node) == full[node]
+        else:
+            assert len(problem.candidate_zones(node)) < len(full[node])
 
 
 def test_saved_stage_rebuilds_the_restricted_domains():

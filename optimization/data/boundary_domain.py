@@ -30,10 +30,15 @@ fixed nodes and centroids keep their domains unchanged. A protected pair the
 contiguity rows cannot satisfy is kept anyway (the solver forbids it) and
 counted in ``boundary_domain_unsupported_protected``.
 
-The restriction can make a step infeasible -- the source zoning may break the
-closer-neighbour rows (ReCom zonings do) and the nearby zones alone may leave
-no repair -- so the pipeline re-solves an ``INFEASIBLE`` restricted step with
-its full domains.
+The restriction can make a step infeasible only when the source zoning itself
+is not feasible for the model: every source zone is kept, so a feasible source
+stays feasible. A ReCom source breaks the closer-neighbour rows (at ~50
+Block_0 blocks on the 11-18 data), and repairing a broken block can need
+zones no nearby source block holds. So every free node within
+:data:`REPAIR_RADIUS` hops of a broken block (:func:`closer_rule_violations`)
+keeps all its candidate zones; everything else is restricted. As a backstop
+the pipeline re-solves a restricted step that still comes back
+``INFEASIBLE`` with full domains.
 """
 
 from __future__ import annotations
@@ -43,6 +48,11 @@ import time
 
 from optimization.data import contiguity
 from optimization.data.closer_neighbors import CLOSER_NEIGHBORS_GRAPH_KEY
+
+#: Hops around a source block breaking the closer-neighbour rule within which
+#: free nodes keep every zone. On the 11-18 distance step (51 broken blocks)
+#: k=1 is infeasible with radius 0 or 1 and feasible from 2.
+REPAIR_RADIUS = 2
 
 
 def zones_within_hops(G, source, nodes, hops):
@@ -99,7 +109,21 @@ def prune_unsupported(G, centroids, centroid_school_ids, domains, mutable, prote
     return removed
 
 
-def restrict_boundary_domains(problem, source, hops, *, prune=True, paths="shortest"):
+def closer_rule_violations(problem, source):
+    """Source blocks with no same-zone closer neighbour toward their school."""
+    relation = problem.G.graph[CLOSER_NEIGHBORS_GRAPH_KEY]
+    schools = problem.centroid_school_ids
+    return [
+        n
+        for n, z in source.items()
+        if n != problem.centroids[z]
+        and not any(source.get(u) == z for u in relation[n][int(schools[z])])
+    ]
+
+
+def restrict_boundary_domains(
+    problem, source, hops, *, prune=True, paths="shortest", repair_radius=None
+):
     """Restrict ``problem``'s free nodes to nearby zones; returns metadata.
 
     ``problem.fixed`` and ``problem.candidates`` must already hold the step's
@@ -109,7 +133,10 @@ def restrict_boundary_domains(problem, source, hops, *, prune=True, paths="short
     the zoning the step starts from; ``paths`` the step's ``release_paths``,
     used to replay the relaxation on free nodes. ``prune=False`` skips the
     exact pruning (for a model whose contiguity is not the closer-neighbour
-    rows).
+    rows). With ``repair_radius`` r, free nodes within r hops of a source
+    block that breaks the closer-neighbour rule
+    (:func:`closer_rule_violations`) keep every candidate zone, so the solver
+    has room to repair it.
     """
     started = time.perf_counter()
     G = problem.G
@@ -137,8 +164,18 @@ def restrict_boundary_domains(problem, source, hops, *, prune=True, paths="short
         protected.update((n, z) for z in keep & domains[n])
 
     near = zones_within_hops(G, source, free, hops)
+    repair = set()
+    violations = closer_rule_violations(problem, source)
+    if repair_radius is not None:
+        frontier = set(violations)
+        repair = set(frontier)
+        for _ in range(repair_radius):
+            frontier = {u for v in frontier for u in G.neighbors(v)} - repair
+            repair |= frontier
     unrestricted = 0
     for n in free:
+        if n in repair:
+            continue
         kept = {z for z in domains[n] if z in near[n] or (n, z) in protected}
         # A block whose nearby zones are all out of its distance range (a
         # source zone freed as out of range, say) keeps its candidates.
@@ -195,6 +232,9 @@ def restrict_boundary_domains(problem, source, hops, *, prune=True, paths="short
         "boundary_domain_protected_pairs": len(protected),
         "boundary_domain_unsupported_protected": unsupported,
         "boundary_domain_unrestricted_nodes": unrestricted,
+        "boundary_domain_source_violations": len(violations),
+        "boundary_domain_repair_radius": repair_radius,
+        "boundary_domain_repair_nodes": sum(1 for n in free if n in repair),
         "boundary_domain_infeasible_nodes": infeasible,
         "boundary_domain_hint_outside": len(hint_outside),
         "boundary_domain_seconds": time.perf_counter() - started,

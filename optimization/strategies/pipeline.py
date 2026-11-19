@@ -14,7 +14,10 @@ from optimization.data.capacity_reference import (
     apply_capacity_reference,
     build_capacity_reference,
 )
-from optimization.data.boundary_domain import restrict_boundary_domains
+from optimization.data.boundary_domain import (
+    REPAIR_RADIUS,
+    restrict_boundary_domains,
+)
 from optimization.data.contraction import contract_fixed
 from optimization.data.feasibility import check_zoning
 from optimization.data.conversion import (
@@ -469,13 +472,15 @@ class PipelineStrategy(Strategy):
             )
         problem.hint = hints or None
         unrestricted = problem.candidates
+        source = hints or assigned
         restricted = restrict_step_domains(
             problem,
-            hints or assigned,
+            source,
             step.method,
             effective.boundary_domain_hops,
             step_solver.options,
             effective.release_paths,
+            repair_radius=REPAIR_RADIUS,
         )
         extra.update(restricted)
         extra.update(
@@ -500,9 +505,9 @@ class PipelineStrategy(Strategy):
 
         solution = solve()
         if "boundary_domain_free_nodes" in restricted and solution.status == "INFEASIBLE":
-            # The source zoning breaks the closer-neighbour rows at some
-            # blocks (ReCom zonings do), and the nearby zones alone may leave
-            # no way to repair them. Solve again with the full domains.
+            # A backstop: with the blocks around each closer-rule violation
+            # free, the restriction has not made a feasible step infeasible
+            # in any run measured, but nothing proves it cannot.
             restricted_time = solution.wall_time
             problem.candidates = unrestricted
             solution = solve()
@@ -521,7 +526,9 @@ class PipelineStrategy(Strategy):
 BOUNDARY_DOMAIN_METHODS = frozenset({"cp_bool", "cp_int", "mip"})
 
 
-def restrict_step_domains(problem, source, method, hops, options, paths):
+def restrict_step_domains(
+    problem, source, method, hops, options, paths, repair_radius=None
+):
     """Apply ``boundary_domain_hops`` to a refinement step's free nodes.
 
     Runs on the original problem after the step's split is final -- the
@@ -538,7 +545,9 @@ def restrict_step_domains(problem, source, method, hops, options, paths):
         return {"boundary_domain_hops": hops, "boundary_domain_skipped": "method"}
     prune = not (method == "mip" and options.get("contiguity_model") == "flow")
     source = {n: z for n, z in source.items() if n in problem.G}
-    return restrict_boundary_domains(problem, source, hops, prune=prune, paths=paths)
+    return restrict_boundary_domains(
+        problem, source, hops, prune=prune, paths=paths, repair_radius=repair_radius
+    )
 
 
 #: Methods whose solve contracts fixed groups: the CP-SAT models.

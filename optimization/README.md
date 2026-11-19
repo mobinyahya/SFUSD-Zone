@@ -92,9 +92,13 @@ initial hint and the fixed-group contraction, which contracts a free block
 pruned to one zone with its fixed neighbors. `null` keeps today's distance
 candidates and drops out of task ids; the default changed them. The source
 zoning can break the closer-neighbor rows at some blocks (a ReCom shape does,
-at ~50 Block_0 blocks), and with few hops no repair may remain: a restricted
-step that comes back `INFEASIBLE` is solved again with the full domains
-(`boundary_domain_fallback`, the restricted attempt's time in
+at ~50 Block_0 blocks), and repairing such a block can need zones no nearby
+source block holds (k=1 is then infeasible). So free blocks within 2 hops of
+a broken block (`REPAIR_RADIUS`) keep every candidate zone and only the rest
+are restricted; a source the model accepts (a CP-SAT step's output) has no
+broken blocks and is always inside the restricted domains. As a backstop, a
+restricted step that still comes back `INFEASIBLE` is solved again with the
+full domains (`boundary_domain_fallback`, the restricted attempt's time in
 `boundary_domain_restricted_wall_time`). Stages record
 `boundary_domain_*` metadata (free blocks, mean/max zones per block and pairs
 before and after, pruned pairs, seconds).
